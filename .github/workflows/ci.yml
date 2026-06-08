@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    name: Rust and script checks
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check ROM-free packages
+        run: cargo check -p snes -p zelda3 -p platform -p renderer -p assets
+
+      - name: Test ROM-free packages
+        run: cargo test -p snes -p zelda3 -p platform -p renderer -p assets
+
+      - name: Check Python scripts
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Check RAM readability guardrails
+        run: python3 scripts/check_ram_readability.py

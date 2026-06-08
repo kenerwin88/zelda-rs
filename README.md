@@ -11,6 +11,13 @@ This repository does not include a ROM, generated game assets, or packaged
 binaries. Builders must provide their own legally obtained USA ROM when running
 asset generation, lockstep, replay, or oracle commands.
 
+Clone with submodules:
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd zelda3-rs
+```
+
 ## Status
 
 See [PROGRESS.md](PROGRESS.md) for what's built, what's stubbed, and where to
@@ -26,12 +33,18 @@ then refactor toward idiomatic Rust once each piece is verified green).
 ## Quick start
 
 ```bash
-cargo test --workspace
-cargo build --release           # builds zelda3-bin and embeds generated assets
+cargo fmt --all -- --check
+cargo check -p snes -p zelda3 -p platform -p renderer -p assets
+cargo test -p snes -p zelda3 -p platform -p renderer -p assets
+ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
 ./target/release/zelda3         # standalone playable binary, no ROM needed at runtime
 ./target/release/zelda3 <path-to-zelda3.sfc>
 ./target/release/zelda3 --lockstep <path-to-zelda3.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--trace-state]
 ```
+
+The CI workflow only runs ROM-free package checks. It does not build
+`zelda3-bin`, generate assets, or run oracle parity because those commands
+require private local ROM material and the original C checkout.
 
 ## Generated Assets
 
@@ -115,9 +128,37 @@ ROM at runtime. Explicit ROM, replay, and oracle commands still load the ROM and
 look for `zelda3_assets.dat` next to the ROM or in the current working directory
 so parity work can keep comparing against original-ROM behavior.
 
+## Local Git Hooks
+
+Install the tracked hooks when your checkout has the local parity dependencies:
+
+```bash
+scripts/install_hooks.sh
+```
+
+The pre-commit hook runs RAM readability guardrails, builds the release replay
+binary, and runs the standard C/Rust replay parity gate. It expects the C
+checkout at `../zelda3` by default and the ROM at `../zelda3/zelda3.sfc`.
+Override script paths with the documented `--c-root`, `--rom`, and environment
+options when your local layout differs.
+
+## Fixtures
+
+The repository tracks two non-ROM binary fixtures needed for deterministic
+parity checks:
+
+- `saves/zelda3-combined-route.sav`
+- `scripts/inputs/tas-us-full-completion-smv.sram`
+
+See [docs/fixtures.md](docs/fixtures.md) for provenance and the list of
+local-only artifacts that must stay out of git.
+
 ## License
 
 This project is licensed under the MIT license. See [LICENSE.txt](LICENSE.txt).
+
+See [NOTICE.md](NOTICE.md) for upstream attribution and repository artifact
+policy.
 
 ## macOS Distribution Signing
 

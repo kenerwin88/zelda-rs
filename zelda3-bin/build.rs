@@ -66,10 +66,6 @@ fn find_rom(repo_root: &Path) -> Option<PathBuf> {
                 .map(|name| repo_root.join(name))
                 .find(|path| path.is_file())
         })
-        .or_else(|| {
-            let path = PathBuf::from("/Users/missingno/Documents/zelda3/zelda3.sfc");
-            path.is_file().then_some(path)
-        })
 }
 
 fn extract_assets(repo_root: &Path, rom: &Path, out_dir: &Path) {
