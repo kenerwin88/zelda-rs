@@ -611,6 +611,10 @@ pub(crate) mod semantic {
             self.ram[ANCILLA_TYPE + self.slot] = value;
         }
 
+        pub(crate) fn clear(&mut self) {
+            self.set_ancilla_type(0);
+        }
+
         pub(crate) fn set_x(&mut self, value: u16) {
             write_position(
                 self.ram,
@@ -699,6 +703,12 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_item_to_link(&mut self, value: u8) {
             self.ram[ANCILLA_ITEM_TO_LINK + self.slot] = value;
+        }
+
+        pub(crate) fn advance_item_to_link(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ITEM_TO_LINK + self.slot].wrapping_add(1);
+            self.set_item_to_link(value);
+            value
         }
 
         pub(crate) fn set_timer(&mut self, value: u8) {

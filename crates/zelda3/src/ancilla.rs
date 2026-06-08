@@ -1221,7 +1221,7 @@ impl ZeldaState {
             let ay = self
                 .ancilla_get_y(k)
                 .wrapping_sub(24)
-                .wrapping_sub(self.ram[ANCILLA_Z + k] as u16);
+                .wrapping_sub(self.ancilla_slot_view(k).z() as u16);
             let mut hb = SpriteHitBox {
                 r0_xlo: ax as u8,
                 r8_xhi: (ax >> 8) as u8,
@@ -1243,7 +1243,7 @@ impl ZeldaState {
             if self.ram[SPRITE_TYPE + j] == 0x92 && self.ram[SPRITE_C_ANCILLA + j] >= 3 {
                 continue;
             }
-            self.ancilla_check_damage_to_sprite(j, self.ram[ANCILLA_TYPE + k]);
+            self.ancilla_check_damage_to_sprite(j, self.ancilla_slot_view(k).ancilla_type());
             let pt = self.ancilla_project_reflexive_speed_onto_sprite(
                 j,
                 self.ancilla_get_x(k),
@@ -1265,7 +1265,8 @@ impl ZeldaState {
         ];
         const BOMB_DMG_TO_LINK: [u8; 3] = [8, 4, 2];
 
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] == 0 || self.ram[ANCILLA_ITEM_TO_LINK + k] >= 9 {
+        let bomb_phase = self.ancilla_slot_view(k).item_to_link();
+        if bomb_phase == 0 || bomb_phase >= 9 {
             return;
         }
         self.bomb_check_sprite_damage(k);
@@ -1350,7 +1351,7 @@ impl ZeldaState {
         self.ancilla_handle_lift_logic(k);
 
         let mut old_y = self.ancilla_latch_y_coord_to_z(k);
-        let s1a = self.ram[ANCILLA_DIR + k];
+        let s1a = self.ancilla_slot_view(k).direction();
         let s1b = self.ram[ANCILLA_OBJPRIO + k];
         self.ram[ANCILLA_OBJPRIO + k] = 0;
         let mut flag = self.ancilla_check_tile_collision_class2(k);
@@ -1369,7 +1370,7 @@ impl ZeldaState {
             {
                 if s1b == 0 && self.ram[ANCILLA_ARR4 + k] == 0 {
                     self.ram[ANCILLA_ARR4 + k] = 1;
-                    let qq = if self.ram[ANCILLA_DIR + k] == 1 {
+                    let qq = if self.ancilla_slot_view(k).direction() == 1 {
                         16
                     } else {
                         4
@@ -1388,16 +1389,18 @@ impl ZeldaState {
                         self.ancilla_slot_view_mut(k)
                             .set_x_velocity(if sign8(x_velocity) { 4 } else { (-4i8) as u8 });
                     }
-                    if self.ram[ANCILLA_DIR + k] == 1 && self.ram[ANCILLA_Z + k] != 0 {
+                    if self.ancilla_slot_view(k).direction() == 1
+                        && self.ancilla_slot_view(k).z() != 0
+                    {
                         self.ancilla_slot_view_mut(k).set_y_velocity((-4i8) as u8);
                         self.ram[ANCILLA_L + k] = 2;
                     }
                 }
             } else if !(k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize
                 && self.ram[LINK_STATE_BITS] & 0x80 != 0)
-                && (self.ram[ANCILLA_Z + k] == 0 || self.ram[ANCILLA_Z + k] == 0xff)
+                && (self.ancilla_slot_view(k).z() == 0 || self.ancilla_slot_view(k).z() == 0xff)
             {
-                self.ram[ANCILLA_DIR + k] = 16;
+                self.ancilla_slot_view_mut(k).set_direction(16);
                 let bak0 = self.ram[ANCILLA_OBJPRIO + k];
                 self.ancilla_check_tile_collision(k);
                 self.ram[ANCILLA_OBJPRIO + k] = bak0;
@@ -1408,8 +1411,8 @@ impl ZeldaState {
                 } else if a == 0x0c || a == 0x1c {
                     if self.ram[DUNG_HDR_COLLISION] != 3 {
                         if self.ram[ANCILLA_FLOOR + k] == 0
-                            && self.ram[ANCILLA_Z + k] != 0
-                            && self.ram[ANCILLA_Z + k] != 0xff
+                            && self.ancilla_slot_view(k).z() != 0
+                            && self.ancilla_slot_view(k).z() != 0xff
                         {
                             self.ram[ANCILLA_FLOOR + k] = 1;
                         }
@@ -1428,8 +1431,8 @@ impl ZeldaState {
                         if k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize {
                             self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
                         }
-                        if self.ram[ANCILLA_TIMER + k] == 0 {
-                            self.ram[ANCILLA_TYPE + k] = 0;
+                        if self.ancilla_slot_view(k).timer() == 0 {
+                            self.ancilla_slot_view_mut(k).clear();
                             return;
                         }
                     }
@@ -1437,7 +1440,7 @@ impl ZeldaState {
                     if k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize {
                         self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
                     }
-                    if self.ram[ANCILLA_TIMER + k] == 0 {
+                    if self.ancilla_slot_view(k).timer() == 0 {
                         self.ancilla_set_y(k, self.ancilla_get_y(k).wrapping_sub(24));
                         self.ancilla_transmute_to_splash(k);
                         return;
@@ -1446,20 +1449,21 @@ impl ZeldaState {
                     self.ancilla_apply_conveyor(k);
                     old_y = self.ancilla_get_y(k);
                 } else {
-                    self.ram[ANCILLA_TIMER + k] = if self.ram[ANCILLA_L + k] != 0 { 0 } else { 2 };
+                    let timer = if self.ram[ANCILLA_L + k] != 0 { 0 } else { 2 };
+                    self.ancilla_slot_view_mut(k).set_timer(timer);
                 }
             }
             break;
         }
 
         self.ancilla_set_y(k, old_y);
-        self.ram[ANCILLA_DIR + k] = s1a;
+        self.ancilla_slot_view_mut(k).set_direction(s1a);
         self.ram[ANCILLA_OBJPRIO + k] |= s1b;
         self.bomb_check_sprite_and_player_damage(k);
         self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
         if self.ram[ANCILLA_ARR3 + k] == 0 {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] == 1 {
+            let bomb_phase = self.ancilla_slot_view_mut(k).advance_item_to_link();
+            if bomb_phase == 1 {
                 self.ancilla_sfx2_pan(k, 0x0c);
                 if k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize {
                     self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
@@ -1470,18 +1474,19 @@ impl ZeldaState {
                 }
             }
 
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] == 11 {
-                self.ram[ANCILLA_TYPE + k] = if self.ram[ANCILLA_STEP + k] != 0 {
+            if bomb_phase == 11 {
+                let next_type = if self.ram[ANCILLA_STEP + k] != 0 {
                     8
                 } else {
                     0
                 };
+                self.ancilla_slot_view_mut(k).set_ancilla_type(next_type);
                 return;
             }
-            self.ram[ANCILLA_ARR3 + k] = K_BOMB_TAB0[self.ram[ANCILLA_ITEM_TO_LINK + k] as usize];
+            self.ram[ANCILLA_ARR3 + k] = K_BOMB_TAB0[bomb_phase as usize];
         }
 
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] == 7 && self.ram[ANCILLA_ARR3 + k] == 2 {
+        if self.ancilla_slot_view(k).item_to_link() == 7 && self.ram[ANCILLA_ARR3 + k] == 2 {
             write_le_u16(&mut self.ram, DOOR_DEBRIS_X + k * 2, 0);
             self.bomb_check_for_destructibles(
                 self.ancilla_get_x(k),
