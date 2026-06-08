@@ -5344,13 +5344,16 @@ impl ZeldaState {
 
         if self.frame_control_view().submodule() == 0 {
             if self.ram[ANCILLA_STEP + k] != 3 {
-                self.ram[ANCILLA_Z_VEL + k] = self.ram[ANCILLA_Z_VEL + k].wrapping_sub(2);
+                self.ancilla_slot_view_mut(k).add_z_velocity((-2i8) as u8);
                 self.ancilla_move_x(k);
                 self.ancilla_move_z(k);
-                if sign8(self.ram[ANCILLA_Z + k]) || self.ram[ANCILLA_Z + k] >= 0xf0 {
+                let z = self.ancilla_slot_view(k).z();
+                if sign8(z) || z >= 0xf0 {
                     self.ram[ANCILLA_STEP + k] = self.ram[ANCILLA_STEP + k].wrapping_add(1);
-                    self.ram[ANCILLA_Z_VEL + k] = FLUTE_VELS[self.ram[ANCILLA_STEP + k] as usize];
-                    self.ram[ANCILLA_Z + k] = 0;
+                    let z_velocity = FLUTE_VELS[self.ram[ANCILLA_STEP + k] as usize];
+                    let mut flute = self.ancilla_slot_view_mut(k);
+                    flute.set_z_velocity(z_velocity);
+                    flute.set_z(0);
                 }
             } else if self.ancilla_check_link_collision(k, 2)
                 && self.ram[RELATED_TO_HOOKSHOT] == 0
@@ -5423,17 +5426,24 @@ impl ZeldaState {
             self.ram[ANCILLA_Y_HI + k] = self.ram[WEATHERVANE_ARR7 + i];
             self.ram[ANCILLA_X_LO + k] = self.ram[WEATHERVANE_ARR8 + i];
             self.ram[ANCILLA_X_HI + k] = self.ram[WEATHERVANE_ARR9 + i];
-            self.ram[ANCILLA_Z + k] = self.ram[WEATHERVANE_ARR10 + i];
-            self.ram[ANCILLA_Y_VEL + k] = self.ram[WEATHERVANE_ARR3 + i];
-            self.ram[ANCILLA_X_VEL + k] = self.ram[WEATHERVANE_ARR4 + i];
+            {
+                let z = self.ram[WEATHERVANE_ARR10 + i];
+                let y_velocity = self.ram[WEATHERVANE_ARR3 + i];
+                let x_velocity = self.ram[WEATHERVANE_ARR4 + i];
+                let mut debris = self.ancilla_slot_view_mut(k);
+                debris.set_z(z);
+                debris.set_y_velocity(y_velocity);
+                debris.set_x_velocity(x_velocity);
+            }
             self.ram[WEATHERVANE_ARR5 + i] = self.ram[WEATHERVANE_ARR5 + i].wrapping_sub(1);
-            self.ram[ANCILLA_Z_VEL + k] = self.ram[WEATHERVANE_ARR5 + i];
+            let z_velocity = self.ram[WEATHERVANE_ARR5 + i];
+            self.ancilla_slot_view_mut(k).set_z_velocity(z_velocity);
 
             self.ancilla_move_y(k);
             self.ancilla_move_x(k);
             self.ancilla_move_z(k);
 
-            let c = if self.ram[ANCILLA_Z + k] < 0xf0 {
+            let c = if self.ancilla_slot_view(k).z() < 0xf0 {
                 0
             } else {
                 0xff
@@ -5446,7 +5456,7 @@ impl ZeldaState {
             self.ram[WEATHERVANE_ARR7 + i] = self.ram[ANCILLA_Y_HI + k];
             self.ram[WEATHERVANE_ARR8 + i] = self.ram[ANCILLA_X_LO + k];
             self.ram[WEATHERVANE_ARR9 + i] = self.ram[ANCILLA_X_HI + k];
-            self.ram[WEATHERVANE_ARR10 + i] = self.ram[ANCILLA_Z + k];
+            self.ram[WEATHERVANE_ARR10 + i] = self.ancilla_slot_view(k).z();
         }
         for i in (0..=11).rev() {
             if self.ram[WEATHERVANE_ARR12 + i] != 0xff {
@@ -8162,9 +8172,12 @@ impl ZeldaState {
                     const ANCILLA_LIFTABLE_XVEL: [i8; 4] = [0, 0, -32, 32];
                     let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
                     self.ram[ANCILLA_DIR + k] = j as u8;
-                    self.ram[ANCILLA_Z_VEL + k] = 24;
-                    self.ram[ANCILLA_Y_VEL + k] = ANCILLA_LIFTABLE_YVEL[j] as u8;
-                    self.ram[ANCILLA_X_VEL + k] = ANCILLA_LIFTABLE_XVEL[j] as u8;
+                    {
+                        let mut liftable = self.ancilla_slot_view_mut(k);
+                        liftable.set_z_velocity(24);
+                        liftable.set_y_velocity(ANCILLA_LIFTABLE_YVEL[j] as u8);
+                        liftable.set_x_velocity(ANCILLA_LIFTABLE_XVEL[j] as u8);
+                    }
                     self.ram[LINK_PICKING_THROW_STATE] = 2;
                     self.ram[ANCILLA_L + k] = 1;
                     self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
@@ -8177,41 +8190,47 @@ impl ZeldaState {
         }
 
         if self.ram[ANCILLA_ITEM_TO_LINK + k] == 0 {
-            self.ram[ANCILLA_Z_VEL + k] = self.ram[ANCILLA_Z_VEL + k].wrapping_sub(2);
+            self.ancilla_slot_view_mut(k).add_z_velocity((-2i8) as u8);
             self.ancilla_move_y(k);
             self.ancilla_move_x(k);
-            let old_z = self.ram[ANCILLA_Z + k];
+            let old_z = self.ancilla_slot_view(k).z();
             self.ancilla_move_z(k);
+            let z = self.ancilla_slot_view(k).z();
             if self.ram[ANCILLA_ARR4 + k] != 0
                 && self.ram[ANCILLA_DIR + k] == 1
-                && !(self.ram[ANCILLA_Z + k] as i8).is_negative()
+                && !(z as i8).is_negative()
             {
                 self.ancilla_set_y(
                     k,
-                    self.ancilla_get_y(k).wrapping_add(
-                        self.ram[ANCILLA_Z + k].wrapping_sub(old_z) as i8 as i16 as u16
-                    ),
+                    self.ancilla_get_y(k)
+                        .wrapping_add(z.wrapping_sub(old_z) as i8 as i16 as u16),
                 );
             }
-            if !(self.ram[ANCILLA_Z + k] as i8).is_negative() || self.ram[ANCILLA_Z + k] == 0xff {
+            if !(z as i8).is_negative() || z == 0xff {
                 return;
             }
-            self.ram[ANCILLA_Z + k] = 0;
+            self.ancilla_slot_view_mut(k).set_z(0);
             self.ancilla_sfx2_pan(k, 0x21);
             self.ram[ANCILLA_L + k] = self.ram[ANCILLA_L + k].wrapping_add(1);
             if self.ram[ANCILLA_L + k] != 3 {
-                self.ram[ANCILLA_Y_VEL + k] = ((self.ram[ANCILLA_Y_VEL + k] as i8) / 2) as u8;
-                self.ram[ANCILLA_X_VEL + k] = ((self.ram[ANCILLA_X_VEL + k] as i8) / 2) as u8;
-                self.ram[ANCILLA_Z_VEL + k] = 16;
+                let mut liftable = self.ancilla_slot_view_mut(k);
+                let y_velocity = ((liftable.y_velocity() as i8) / 2) as u8;
+                let x_velocity = ((liftable.x_velocity() as i8) / 2) as u8;
+                liftable.set_y_velocity(y_velocity);
+                liftable.set_x_velocity(x_velocity);
+                liftable.set_z_velocity(16);
                 self.ram[ANCILLA_ARR4 + k] = 0;
             } else {
-                self.ram[ANCILLA_Z + k] = 0;
+                self.ancilla_slot_view_mut(k).set_z(0);
                 self.ram[ANCILLA_L + k] = 0;
                 self.ram[ANCILLA_ARR4 + k] = 0;
                 self.ram[LINK_SPEED_SETTING] = 0;
-                self.ram[ANCILLA_Y_VEL + k] = 0;
-                self.ram[ANCILLA_X_VEL + k] = 0;
-                self.ram[ANCILLA_Z_VEL + k] = 0;
+                {
+                    let mut liftable = self.ancilla_slot_view_mut(k);
+                    liftable.set_y_velocity(0);
+                    liftable.set_x_velocity(0);
+                    liftable.set_z_velocity(0);
+                }
                 if self.ram[ANCILLA_T_PLAYER + k] != 0 {
                     self.ram[ANCILLA_FLOOR + k] = self.ram[ANCILLA_T_PLAYER + k];
                     self.ram[ANCILLA_T_PLAYER + k] = 0;
@@ -8255,7 +8274,7 @@ impl ZeldaState {
         self.ram[ANCILLA_K + k] = 0;
         self.ram[ANCILLA_AUX_TIMER + k] = liftable_delay[0];
         self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_Z + k] = 0;
+        self.ancilla_slot_view_mut(k).set_z(0);
         true
     }
 
@@ -8264,7 +8283,7 @@ impl ZeldaState {
             return;
         }
         if self.ram[ANCILLA_K + k] == 3 {
-            self.ram[ANCILLA_Z_VEL + k] = self.ram[ANCILLA_Z_VEL + k].wrapping_sub(2);
+            self.ancilla_slot_view_mut(k).add_z_velocity((-2i8) as u8);
             self.ancilla_move_z(k);
             if self.ram[ANCILLA_Z + k] != 0 && self.ram[ANCILLA_Z + k] < 252 {
                 return;

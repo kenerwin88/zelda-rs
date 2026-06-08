@@ -23,9 +23,11 @@ This file records the current implementation status for
   fireballs, dug-up flute setup, boomerangs, bombs, snoring, hit stars, bird
   setup, ice-rod shots/sparkles, Somaria block movement setup, boomerang
   return acceleration, bomb bounce response, revival/duck Z setup, and Ether
-  spell velocity transitions. Current sprite coordinate latching and local
-  attract/ending coordinate helpers now delegate through those paths, so new
-  call sites can migrate without reintroducing raw lo/hi/subpixel byte packing.
+  spell velocity transitions. They also cover flute Z bounces, weather-vane
+  debris slot velocity/Z replay, and liftable thrown-object velocity/Z
+  settling. Current sprite coordinate latching and local attract/ending
+  coordinate helpers now delegate through those paths, so new call sites can
+  migrate without reintroducing raw lo/hi/subpixel byte packing.
 
 ## Graduated Subsystems
 
