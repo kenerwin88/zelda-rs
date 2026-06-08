@@ -1,0 +1,51 @@
+# Deterministic lockstep input script that enters a new game and advances
+# Uncle's opening telepathy message.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+1777 START
+2200 A
+2400 A
+2500 START
+3000 A
+5100 A
+7100 A
+7450 A
+7800 A
+8020 A
+8120 A
+8220 A
+8320 A
+8420 A
+8520 A
+8620 A
+8720 A
+8820 A
+8920 A
+9020 A
+9120 A
+9220 A
+9320 A
+9420 A
+9520 A
+9620 A
+9720 A
+9820 A
+9920 A
+10020 A
+10120 A
+10220 A
+10320 A
+10420 A
+10520 A
+10620 A
+10720 A
+10820 A
+10920 A
+11020 A
+11120 A
+11220 A
+11320 A
+11420 A
+11520 A

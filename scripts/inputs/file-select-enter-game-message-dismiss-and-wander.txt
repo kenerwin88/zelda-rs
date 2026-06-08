@@ -1,0 +1,29 @@
+# Extends the saved-slot gameplay route after the current in-room message
+# frontier. The base route reaches frame 107000 inside an active message box;
+# this route dismisses that message, exercises more indoor movement/OAM churn,
+# then triggers another interaction/message cycle.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game.txt
+
+107100 A
+107180 A
+107260 A
+107340 A
+107420 A
+107500 A
+107580 A
+108000..110000 RIGHT
+110020..112020 DOWN
+112040..114040 LEFT
+114060..116060 UP
+116200 A
+116280 A
+116360 A
+116440 A
+116520 A
+116600 A
+116800..118800 DOWN
+118820..120820 RIGHT

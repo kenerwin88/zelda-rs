@@ -1,0 +1,28 @@
+# Extends the saved-slot gameplay route from the 107000-frame message
+# frontier with isolated button taps after the message is dismissed.
+# This covers harmless no-item/no-sword button handling separately from the
+# combined button+direction frontier that currently exposes a divergence.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game.txt
+
+107100 A
+107180 A
+107260 A
+107340 A
+107420 A
+107500 A
+107580 A
+108000 B
+108080 Y
+108160 X
+108240 L
+108320 R
+108500 B
+108580 Y
+108660 X
+108740 R
+108900..109900 RIGHT
+109920..110920 LEFT

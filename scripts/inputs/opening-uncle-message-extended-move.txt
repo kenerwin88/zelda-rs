@@ -1,0 +1,21 @@
+# Extends the new-game opening route after Uncle's opening messages are
+# dismissed. This keeps Link in the house but adds longer movement and
+# interaction probes past the existing 36810-frame frontier.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include opening-uncle-message-dismiss-and-move.txt
+
+37000..38200 RIGHT
+38220..39420 DOWN
+39440..40640 LEFT
+40660..41860 UP
+42000 A
+42080 A
+42160 A
+42240 A
+42320 A
+42400 A
+42600..43800 DOWN
+43820..45020 RIGHT

@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/snes",
+    "crates/zelda3",
+    "crates/platform",
+    "crates/assets",
+    "crates/renderer",
+    "zelda3-bin",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.78"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,32 @@
+# Extends the saved-slot gameplay route past the combined button+direction
+# probes with longer in-room movement sweeps and periodic interaction checks.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game-button-probes.txt
+
+114200..115000 RIGHT
+115020..115820 DOWN
+115840..116640 LEFT
+116660..117460 UP
+117500 A
+117580 A
+117660 A
+117740 A
+118000..118700 RIGHT+DOWN
+118720..119420 LEFT+DOWN
+119440..120140 LEFT+UP
+120160..120860 RIGHT+UP
+121000 B+RIGHT
+121080 Y+LEFT
+121160 X+UP
+121240 R+DOWN
+121500..122300 DOWN
+122320..123120 RIGHT
+123140..123940 UP
+123960..124760 LEFT
+125000 A
+125080 A
+125160 A
+125240 A

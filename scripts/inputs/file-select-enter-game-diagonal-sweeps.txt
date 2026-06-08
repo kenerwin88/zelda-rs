@@ -1,0 +1,27 @@
+# Extends the saved-slot gameplay route from the 107000-frame message
+# frontier with diagonal D-pad sweeps after dismissing the active message.
+# This targets diagonal movement animation, direction limiting, and collision
+# probes while Link is still inside the house.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game.txt
+
+107100 A
+107180 A
+107260 A
+107340 A
+107420 A
+107500 A
+107580 A
+108000..109200 UP+RIGHT
+109220..110420 DOWN+RIGHT
+110440..111640 DOWN+LEFT
+111660..112860 UP+LEFT
+113000..114200 RIGHT
+114220..115420 LEFT
+115600 A
+115680 A
+115760 A
+115840 A

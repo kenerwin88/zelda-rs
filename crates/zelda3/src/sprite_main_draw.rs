@@ -1,0 +1,25509 @@
+//! Ported SpriteDraw_* helpers from sprite_main.c.
+//!
+//! Each method preserves a 1:1 mapping to the C source. The original C body
+//! is reproduced as a comment block immediately above each port so a
+//! reviewer can verify behavior line-by-line.
+//!
+//! Local `_for_draw` helpers at the bottom of the file adapt shared private
+//! OAM helpers and overworld map-update bridges that this split module calls.
+//!
+//! `SpriteDraw_BombGuard_Arm` (sprite_main.c:4527) lives in
+//! `sprite_main_guard.rs` already; this file does NOT redefine it.
+
+use super::sprite::{
+    DrawMultipleData, PrepOamCoordsRet as SpritePrepOamCoordsRet, SpriteSpawnInfo,
+};
+use super::*;
+use crate::types::{sign8, PointU8, ProjectSpeedRet, SpriteHitBox};
+
+// ---------------------------------------------------------------------------
+// File-local PrepOamCoordsRet copy.
+// ---------------------------------------------------------------------------
+// Mirror of the C-side `PrepOamCoordsRet` (sprite.c). The canonical
+// `sprite::PrepOamCoordsRet` is module-private; keep a local copy so the
+// `SpriteDraw_*(int k, PrepOamCoordsRet *info)` signatures retain their
+// named-struct shape and stay convertible from the 3-tuple returned by
+// `sprite_prep_oam_coord_or_double_ret`.
+#[derive(Copy, Clone, Default)]
+pub(super) struct PrepOamCoordsRet {
+    pub x: u16,
+    pub y: u16,
+    pub r4: u8,
+    pub flags: u8,
+}
+
+impl PrepOamCoordsRet {
+    pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
+        Self {
+            x: t.0,
+            y: t.1,
+            r4: 0,
+            flags: t.2,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File-local RAM offsets. The canonical zelda_rtl.rs already exports the
+// frequently-shared ones; these are the remaining `variables.h` addresses
+// referenced by SpriteDraw_*. Local names use `_DRAW` so they cannot clash
+// with constants other sprite_main_* modules declare for their own use.
+// ---------------------------------------------------------------------------
+
+// variables.h:647..652 — overlord scratch banks.
+const OVERLORD_X_LO_DRAW: usize = 0x0b08;
+const OVERLORD_X_HI_DRAW: usize = 0x0b10;
+const OVERLORD_Y_LO_DRAW: usize = 0x0b18;
+const OVERLORD_Y_HI_DRAW: usize = 0x0b20;
+const OVERLORD_GEN1_DRAW: usize = 0x0b28;
+const OVERLORD_GEN2_DRAW: usize = 0x0b30;
+// variables.h:672 — sprite_ignore_projectile.
+const SPRITE_IGNORE_PROJECTILE_DRAW: usize = 0x0ba0;
+// variables.h:673 — sprite_unk2.
+const SPRITE_UNK2_DRAW: usize = 0x0bb0;
+// variables.h:721..722 — sprite_B / sprite_C live in pages 0xDA0..0xDC0.
+const SPRITE_B_DRAW: usize = 0x0da0;
+const SPRITE_C_DRAW: usize = 0x0db0;
+// variables.h:727..728 — sprite_delay_aux1 / aux2.
+const SPRITE_DELAY_AUX1_DRAW: usize = 0x0e00;
+const SPRITE_DELAY_AUX2_DRAW: usize = 0x0e10;
+// variables.h:737 — sprite_F.
+const SPRITE_F_DRAW: usize = 0x0ea0;
+// variables.h:739..742 — sprite_anim_clock / sprite_G / sprite_delay_aux3 /
+// sprite_hit_timer.
+const SPRITE_ANIM_CLOCK_DRAW: usize = 0x0ec0;
+const SPRITE_G_DRAW: usize = 0x0ed0;
+const SPRITE_DELAY_AUX3_DRAW: usize = 0x0ee0;
+// variables.h:743 — sprite_y_recoil.
+const SPRITE_Y_RECOIL_DRAW: usize = 0x0f30;
+// variables.h:776 — light/dark world flag.
+const IS_IN_DARK_WORLD_DRAW: usize = 0x0fff;
+// variables.h:758..761 — repulsespark_*.
+const REPULSESPARK_TIMER_DRAW: usize = 0x0fac;
+const REPULSESPARK_X_LO_DRAW: usize = 0x0fad;
+const REPULSESPARK_Y_LO_DRAW: usize = 0x0fae;
+// variables.h:755 — sprite_tiletype.
+const SPRITE_TILETYPE_DRAW: usize = 0x0fa5;
+// overlord.c stores the active overlord slot here before sprite code consumes it.
+const ACTIVE_OVERLORD_INDEX_DRAW: usize = 0x0fde;
+// variables.h:766..768 — garnish_active / tmp_counter / shared draw scratch.
+const GARNISH_ACTIVE_DRAW: usize = 0x0fb4;
+const TMP_COUNTER_DRAW: usize = 0x0fb5;
+const SPRITE_DRAW_SCRATCH_Y_OR_FLAGS: usize = 0x0fb6;
+// variables.h:910 — sram_progress_indicator_3.
+const SRAM_PROGRESS_INDICATOR_3_DRAW: usize = 0x0f3c9;
+// hud.c private table mirrored for bomb shop purchase gating.
+const K_MAX_BOMBS_FOR_LEVEL_DRAW: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
+// variables.h:1203..1217 — garnish_* tables (paged at 0x1F800+).
+const GARNISH_TYPE_DRAW: usize = 0x1f800;
+const GARNISH_Y_LO_DRAW: usize = 0x1f81e;
+const GARNISH_X_LO_DRAW: usize = 0x1f83c;
+const GARNISH_Y_HI_DRAW: usize = 0x1f85a;
+const GARNISH_X_HI_DRAW: usize = 0x1f878;
+const GARNISH_COUNTDOWN_DRAW: usize = 0x1f90e;
+const GARNISH_SPRITE_DRAW: usize = 0x1f92c;
+const GARNISH_FLOOR_DRAW: usize = 0x1f968;
+const GARNISH_OAM_FLAGS_DRAW: usize = 0x1f9fe;
+// variables.h:690 — activate_bomb_trap_overlord.
+const ACTIVATE_BOMB_TRAP_OVERLORD_DRAW: usize = 0x0cf4;
+// variables.h:1208 — sprite_I.
+const SPRITE_I_DRAW: usize = 0x1f9c2;
+// variables.h:1210 — sprite_unk3.
+const SPRITE_UNK3_DRAW: usize = 0x1fa1c;
+// variables.h:1233..1239 — moldorm history buffer.
+const MOLDORM_X_LO_DRAW: usize = 0x1fc00;
+const MOLDORM_X_HI_DRAW: usize = 0x1fc80;
+const MOLDORM_Y_LO_DRAW: usize = 0x1fd00;
+const MOLDORM_Y_HI_DRAW: usize = 0x1fd80;
+// variables.h:1241..1242 — chainchomp history buffer aliases the moldorm pages.
+const CHAINCHOMP_X_HIST_DRAW: usize = 0x1fc00;
+const CHAINCHOMP_Y_HIST_DRAW: usize = 0x1fd00;
+// variables.h:1222..1241 — swamola segment history and targets.
+const SWAMOLA_X_LO_DRAW: usize = 0x1fa5c;
+const SWAMOLA_X_HI_DRAW: usize = 0x1fb1c;
+const SWAMOLA_Y_LO_DRAW: usize = 0x1fbdc;
+const SWAMOLA_Y_HI_DRAW: usize = 0x1fc9c;
+const SWAMOLA_TARGET_X_LO_DRAW: usize = 0x1fd5c;
+const SWAMOLA_TARGET_X_HI_DRAW: usize = 0x1fd62;
+const SWAMOLA_TARGET_Y_LO_DRAW: usize = 0x1fd68;
+const SWAMOLA_TARGET_Y_HI_DRAW: usize = 0x1fd6e;
+// variables.h:679..683 — ancilla_*.
+const ANCILLA_TYPE_DRAW: usize = 0x0c4a;
+const ANCILLA_Y_LO_DRAW: usize = 0x0bfa;
+const ANCILLA_X_LO_DRAW: usize = 0x0c04;
+const ANCILLA_Y_HI_DRAW: usize = 0x0c0e;
+const ANCILLA_X_HI_DRAW: usize = 0x0c18;
+const ANCILLA_X_VEL_DRAW: usize = 0x0c2c;
+const ANCILLA_Y_VEL_DRAW: usize = 0x0c22;
+const ANCILLA_Z_DRAW: usize = 0x29e;
+// variables.h:179 — sound_effect_1.
+const SOUND_EFFECT_1_DRAW: usize = 0x12e;
+// variables.h:535 — minigame_credits.
+const MINIGAME_CREDITS_DRAW: usize = 0x04c4;
+// variables.h:834 — dialogue_number[2].
+const DIALOGUE_NUMBER_DRAW: usize = 0x1cf2;
+// variables.h:741 — flag_overworld_area_did_change.
+const FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW: usize = 0x0abf;
+// sprite_main.c local scratch words.
+const MAZE_GAME_TIMER_LO: usize = 0x1fe00;
+const MAZE_GAME_TIMER_HI: usize = 0x1fe02;
+const MAZE_GAME_TIMER_SNAPSHOT_LO: usize = 0x1fe04;
+const MAZE_GAME_TIMER_SNAPSHOT_HI: usize = 0x1fe06;
+// variables.h:488 — enhanced_features0.
+const ENHANCED_FEATURES0_DRAW: usize = 0x064c;
+const K_FEATURES0_MISC_BUG_FIXES_DRAW: u32 = 4096;
+const K_FEATURES0_GAME_CHANGING_BUG_FIXES_DRAW: u32 = 16384;
+// hud.h:10 — kHudItem_BookMudora.
+const K_HUD_ITEM_BOOK_MUDORA_DRAW: u8 = 15;
+// hud.h:9 — kHudItem_Flute.
+const K_HUD_ITEM_FLUTE_DRAW: u8 = 13;
+// hud.h:7 — kHudItem_Mushroom.
+const K_HUD_ITEM_MUSHROOM_DRAW: u8 = 5;
+// player.h:30 — kPlayerState_OpeningDesertPalace.
+const K_PLAYER_STATE_OPENING_DESERT_PALACE_DRAW: u8 = 27;
+// variables.h:1071 — link_item_bombos_medallion.
+const LINK_ITEM_BOMBOS_MEDALLION_DRAW: usize = 0x0f347;
+const LINK_ITEM_QUAKE_MEDALLION_DRAW: usize = 0x0f349;
+// variables.h:1249..1252 — beamos laser history buffers.
+const BEAMOS_X_LO_DRAW: usize = 0x1fd80;
+const BEAMOS_X_HI_DRAW: usize = 0x1fe00;
+const BEAMOS_Y_LO_DRAW: usize = 0x1fe80;
+const BEAMOS_Y_HI_DRAW: usize = 0x1ff00;
+
+// ---------------------------------------------------------------------------
+// kSinusLookupTable from sprite_main.c:338 — 256-entry sine half-wave used
+// by ChainBallSin / HelmasaurSin. Verbatim from the C source.
+// ---------------------------------------------------------------------------
+const K_SINUS_LOOKUP_TABLE: [u16; 256] = [
+    0, 3, 6, 9, 12, 15, 18, 21, 25, 28, 31, 34, 37, 40, 40, 46, 49, 53, 56, 59, 62, 65, 68, 71, 74,
+    77, 80, 83, 86, 89, 92, 95, 97, 100, 103, 106, 109, 112, 115, 117, 120, 123, 126, 128, 131,
+    134, 136, 139, 142, 144, 147, 149, 152, 155, 157, 159, 162, 164, 167, 169, 171, 174, 176, 178,
+    181, 183, 185, 187, 189, 191, 193, 195, 197, 199, 201, 203, 205, 207, 209, 211, 212, 214, 216,
+    217, 219, 221, 222, 224, 225, 227, 228, 230, 231, 232, 234, 235, 236, 237, 238, 239, 241, 242,
+    243, 244, 244, 245, 246, 247, 248, 249, 249, 250, 251, 251, 252, 252, 253, 253, 254, 254, 254,
+    255, 255, 255, 255, 255, 255, 255, 256, 255, 255, 255, 255, 255, 255, 255, 254, 254, 254, 253,
+    253, 252, 252, 251, 251, 250, 249, 249, 248, 247, 246, 245, 244, 244, 243, 242, 241, 239, 238,
+    237, 236, 235, 234, 232, 231, 230, 228, 227, 225, 224, 222, 221, 219, 217, 216, 214, 212, 211,
+    209, 207, 205, 203, 201, 199, 197, 195, 193, 191, 189, 187, 185, 183, 181, 178, 176, 174, 171,
+    169, 167, 164, 162, 159, 157, 155, 152, 149, 147, 144, 142, 139, 136, 134, 131, 128, 126, 123,
+    120, 117, 115, 112, 109, 106, 103, 100, 97, 95, 92, 89, 86, 83, 80, 77, 74, 71, 68, 65, 62, 59,
+    56, 53, 49, 46, 43, 40, 37, 34, 31, 28, 25, 21, 18, 15, 12, 9, 6, 3,
+];
+
+// ---------------------------------------------------------------------------
+// kLargeShadow_Dmd from sprite_main.c:373 — 15-entry shadow table used by
+// SpriteDraw_BigShadow.
+// ---------------------------------------------------------------------------
+const K_LARGE_SHADOW_DMD: [DrawMultipleData; 15] = [
+    DrawMultipleData {
+        x: -6,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 6,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -5,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 3,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 2,
+        y: 19,
+        char_flags: 0x086c,
+        ext: 2,
+    },
+];
+
+// ---------------------------------------------------------------------------
+// kChainBallTrooperHead_* from sprite_main.c:293-294.
+// kFlailTrooperBody_* from sprite_main.c:295-336.
+// kFlailTrooperWeapon_* from sprite_main.c:356-362.
+// ---------------------------------------------------------------------------
+const K_CHAIN_BALL_TROOPER_HEAD_CHAR: [u8; 4] = [2, 2, 0, 4];
+const K_CHAIN_BALL_TROOPER_HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+const K_CHAIN_BALL_TROOPER_TAB1: [u8; 4] = [0x0d, 0x60, 0x22, 0x10];
+const K_FLAIL_TROOPER_GFX: [u8; 32] = [
+    0x10, 0x11, 0x12, 0x13, 0x10, 0x11, 0x12, 0x13, 6, 7, 8, 9, 6, 7, 8, 9, 0, 1, 2, 3, 0, 1, 4, 5,
+    0x0a, 0x0b, 0x0c, 0x0d, 0x0a, 0x0b, 0x0e, 0x0f,
+];
+const K_FLAIL_TROOPER_BODY_X: [i8; 72] = [
+    -4, 4, 12, -4, 4, 13, -4, 4, 13, -4, 4, 13, -4, 4, 13, -4, 4, 13, 0, 0, 4, 0, 0, 5, 0, 0, 6, 0,
+    0, 4, -4, 4, -6, -4, 4, -5, -4, 4, -5, -4, 4, -6, -4, 4, -5, -4, 4, -6, 0, 0, 4, 0, 0, 3, 0, 0,
+    2, 0, 0, 4, 0, 0, 0, 0, 0, 0, -4, 4, 4, -4, 4, 4,
+];
+const K_FLAIL_TROOPER_BODY_Y: [i8; 72] = [
+    0, 0, -4, 0, 0, -4, 0, 0, -3, 0, 0, -2, 0, 0, -3, 0, 0, -2, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 2,
+    0, 0, -2, 0, 0, -2, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+const K_FLAIL_TROOPER_BODY_CHAR: [u8; 72] = [
+    0x46, 6, 0x2f, 0x46, 6, 0x2f, 0x48, 0xd, 0x2f, 0x48, 0xd, 0x2f, 0x49, 0xc, 0x2f, 0x49, 0xc,
+    0x2f, 8, 8, 0x2f, 8, 8, 0x2f, 0x22, 0x22, 0x2f, 0x22, 0x22, 0x2f, 0xa, 0x64, 0x2f, 0xa, 0x64,
+    0x2f, 0x2c, 0x67, 0x2f, 0x2c, 0x67, 0x2f, 0x2d, 0x66, 0x2f, 0x2d, 0x66, 0x2f, 8, 8, 0x2f, 8, 8,
+    0x2f, 0x22, 0x22, 0x2f, 0x22, 0x22, 0x2f, 0x62, 0x62, 0x62, 0x62, 0x62, 0x62, 0x46, 0x4b, 0x4b,
+    0x69, 0x64, 0x64,
+];
+const K_FLAIL_TROOPER_BODY_FLAGS: [u8; 72] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0x40, 0x40, 0, 0x40, 0x40, 0, 0, 0x40, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+    0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0,
+    0, 0, 0x40, 0x40, 0, 0x40, 0x40,
+];
+const K_FLAIL_TROOPER_BODY_BIG: [u8; 72] = [
+    2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2,
+    0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2,
+];
+const K_FLAIL_TROOPER_BODY_NUM: [u8; 24] = [
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1,
+];
+const K_FLAIL_TROOPER_BODY_SPR_OFFS: [u8; 24] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8,
+];
+const K_FLAIL_TROOPER_WEAPON_TAB4: [u8; 4] = [0x33, 0x66, 0x99, 0xcc];
+const K_FLAIL_TROOPER_WEAPON_TAB0: [u8; 32] = [
+    0x10, 0x12, 0x14, 0x16, 0x18, 0x1a, 0x1c, 0x1e, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2a, 0x2c, 0x2e,
+    0x30, 0x2e, 0x2c, 0x2a, 0x28, 0x26, 0x24, 0x22, 0x20, 0x1e, 0x1c, 0x1a, 0x18, 0x16, 0x14, 0x12,
+];
+const K_FLAIL_TROOPER_WEAPON_TAB1: [i8; 4] = [4, 4, 12, -5];
+const K_FLAIL_TROOPER_WEAPON_TAB2: [i8; 4] = [-2, -2, -6, -4];
+const K_FLAIL_TROOPER_ATTACK_DIR: [u8; 4] = [3, 1, 2, 0];
+const K_SPRITE_ROPE_GFX: [u8; 8] = [0, 0, 2, 3, 2, 3, 1, 1];
+const K_SPRITE_ROPE_FLAGS: [u8; 8] = [0, 0x40, 0, 0, 0x40, 0x40, 0, 0x40];
+const K_SPRITE_ROPE_TAB1: [u8; 8] = [4, 5, 2, 3, 0, 1, 6, 7];
+const K_SPRITE_ROPE_XVEL: [i8; 8] = [8, -8, 0, 0, 16, -16, 0, 0];
+const K_SPRITE_ROPE_YVEL: [i8; 8] = [0, 0, 8, -8, 0, 0, 0x10, -0x10];
+const K_SPRITE_ROPE_TAB0: [u8; 4] = [2, 3, 1, 0];
+const K_SPRITE_RECRUIT_XVEL: [u8; 8] = [12, 244, 0, 0, 18, 238, 0, 0];
+const K_SPRITE_RECRUIT_YVEL: [u8; 8] = [0, 0, 12, 244, 0, 0, 18, 238];
+const K_SPRITE_RECRUIT_GFX: [u8; 8] = [0, 2, 4, 6, 1, 3, 5, 7];
+const K_SPRITE_ZORA_SURFACING_GFX: [u8; 16] = [4, 3, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 0, 0];
+const K_ABSORB_BIG_KEY_DRAW: [u16; 2] = [0x40, 0x20];
+const K_HEART_REFILL_ACCEL_X: [i8; 2] = [1, -1];
+const K_HEART_REFILL_VEL_TARGET: [i8; 2] = [10, -10];
+const K_CHECK_DAMAGE_FROM_PLAYER_CARRY_DRAW: u8 = 1;
+const K_CHECK_DAMAGE_FROM_PLAYER_NE_DRAW: u8 = 2;
+
+// kThrowableScenery_DrawLarge_* from sprite_main.c:137-141.
+const K_THROWABLE_SCENERY_DRAW_LARGE_X: [i16; 4] = [-8, 8, -8, 8];
+const K_THROWABLE_SCENERY_DRAW_LARGE_Y: [i16; 4] = [-14, -14, 2, 2];
+const K_THROWABLE_SCENERY_DRAW_LARGE_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
+const K_THROWABLE_SCENERY_DRAW_LARGE_X2: [i16; 3] = [-6, 0, 6];
+const K_THROWABLE_SCENERY_DRAW_LARGE_OAM_FLAGS: [u8; 2] = [0xc, 0];
+const K_THROWABLE_SCENERY_CHAR: [u8; 12] = [
+    0x42, 0x44, 0x46, 0, 0x46, 0x44, 0x42, 0x44, 0x44, 0, 0x46, 0x44,
+];
+const K_THROWABLE_SCENERY_FLAGS: [u8; 9] = [0x0c, 0x0c, 0x0c, 0, 0, 0, 0xb0, 0x08, 0xb4];
+const K_SCATTER_DEBRIS_X: [i16; 4] = [-8, 8, -8, 8];
+const K_SCATTER_DEBRIS_Y: [i16; 4] = [-8, -8, 8, 8];
+
+impl ZeldaState {
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_LightFountain(int k) {  // 858a94 — sprite_main.c:2169
+    //   static const DrawMultipleData kMasterSword_LightBall_Dmd[12] = {
+    //     {-6, 4, 0x0082, 2}, {-6, 4, 0x4082, 2}, {-6, 4, 0xc082, 2},
+    //     {-6, 4, 0x8082, 2}, {-6, 4, 0x00a0, 2}, {-6, 4, 0x40a0, 2},
+    //     {-6, 4, 0xc0a0, 2}, {-6, 4, 0x80a0, 2}, {-6, 4, 0x0080, 2},
+    //     {-6, 4, 0x4080, 2}, {-6, 4, 0xc080, 2}, {-6, 4, 0x8080, 2},
+    //   };
+    //   Oam_AllocateFromRegionC(4);
+    //   Sprite_DrawMultiple(k, &kMasterSword_LightBall_Dmd[sprite_graphics[k] * 4 + sprite_D[k]], 1, NULL);
+    // }
+    pub(super) fn sprite_draw_light_fountain(&mut self, k: usize) {
+        const K_MASTER_SWORD_LIGHT_BALL_DMD: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0xc082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x8082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0xc0a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x80a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x4080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0xc080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 4,
+                char_flags: 0x8080,
+                ext: 2,
+            },
+        ];
+        self.oam_allocate_from_region_c(4);
+        let idx = (self.ram[SPRITE_GRAPHICS + k] as usize) * 4 + (self.ram[SPRITE_D + k] as usize);
+        self.sprite_draw_multiple(k, &K_MASTER_SWORD_LIGHT_BALL_DMD[idx..idx + 1], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Beamos_Eyeball(int k, PrepOamCoordsRet *info) {  // 859151
+    //   sprite_main.c:2509 — 32-entry eyeball cycle drawn over a base offset.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_beamos_eyeball(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_BEAMOS_EYEBALL_DRAW_X: [i8; 32] = [
+            -1, 0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 15, 14, 13, 12, 11, 10, 8,
+            7, 5, 4, 3, 2, 1, 0, -2,
+        ];
+        const K_BEAMOS_EYEBALL_DRAW_Y: [i8; 32] = [
+            11, 12, 13, 14, 14, 15, 15, 15, 15, 15, 15, 14, 14, 13, 12, 11, 10, 9, 8, 7, 7, 6, 6,
+            6, 6, 6, 6, 7, 7, 8, 9, 10,
+        ];
+        const K_BEAMOS_EYEBALL_DRAW_CHAR: [u8; 32] = [
+            0x5b, 0x5b, 0x5a, 0x5a, 0x4b, 0x4b, 0x4a, 0x4a, 0x4a, 0x4a, 0x4b, 0x4b, 0x5a, 0x5a,
+            0x5b, 0x5b, 0x5b, 0x5b, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c, 0x5b, 0x5b, 0x4c, 0x4c,
+            0x4c, 0x4c, 0x4c, 0x4c,
+        ];
+        const K_BEAMOS_EYEBALL_DRAW_FLAGS: [u8; 32] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let n: usize = if self.ram[SPRITE_D + k] < 0x20 { 0 } else { 2 };
+        let oam = (read_le_u16(&self.ram, OAM_CUR_PTR) as usize) + n * 4;
+        let i = (self.ram[SPRITE_D + k] >> 1) as usize;
+        let dx = K_BEAMOS_EYEBALL_DRAW_X[i].wrapping_sub(3);
+        let dy = K_BEAMOS_EYEBALL_DRAW_Y[i].wrapping_sub(18);
+        write_le_u16(
+            &mut self.ram,
+            DUNGMAP_VAR7,
+            (dx as u8 as u16) | ((dy as u8 as u16) << 8),
+        );
+        // oam.x = dx + info.x (low byte only — `SetOamHelper0` style write).
+        let x = info.x.wrapping_add(dx as i16 as u16);
+        let y = info.y.wrapping_add(dy as i16 as u16);
+        // Mimic the C — write only oam.x/oam.y/oam.charnum/oam.flags. We
+        // use set_oam_helper0_at to get the OAM-low/high split, then patch
+        // the flags afterwards to match the C bit ops.
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            x,
+            y,
+            K_BEAMOS_EYEBALL_DRAW_CHAR[i],
+            (info.flags & 0x31) | 0xA | K_BEAMOS_EYEBALL_DRAW_FLAGS[i],
+            2,
+        );
+        // oam_cur_ptr += n * 4; oam_ext_cur_ptr += n;
+        let cur_oam = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(
+            &mut self.ram,
+            OAM_CUR_PTR,
+            cur_oam.wrapping_add((n as u16) * 4),
+        );
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(n as u16));
+        self.sprite_correct_oam_entries_for_draw(k, 0, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_WaterRipple_WithOamAdjust(int k) {  // 859fe5
+    //   SpriteDraw_WaterRipple(k);
+    //   oam_cur_ptr += 8;
+    //   oam_ext_cur_ptr += 2;
+    // }
+    pub(super) fn sprite_draw_water_ripple_with_oam_adjust(&mut self, k: usize) {
+        self.sprite_draw_water_ripple(k);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+    }
+
+    // -----------------------------------------------------------------------
+    // void WalkingZora_AdjustShadow(int k) {  // 859edb
+    pub(super) fn walking_zora_adjust_shadow(&mut self, k: usize) {
+        self.ram[SPRITE_ANIM_CLOCK_DRAW + k] =
+            u8::from(self.ram[SPRITE_Z + k] == 0 && self.ram[SPRITE_TILETYPE_DRAW] == 9);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Zora_Draw(int k) {  // 8598f5
+    pub(super) fn zora_draw(&mut self, k: usize) {
+        const X: [i8; 26] = [
+            4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4, 11, 0, 4, -8, 18, -8, 18,
+        ];
+        const Y: [i8; 26] = [
+            4, 4, 0, 0, 0, 0, 0, -3, 0, -3, -3, -3, -3, -3, -3, -3, -6, -6, -8, -9, -3, 5, -10,
+            -11, -10, -11,
+        ];
+        const CH: [u8; 26] = [
+            0xa8, 0xa8, 0x88, 0x88, 0x88, 0x88, 0x88, 0xa4, 0x88, 0xa4, 0xa4, 0xa4, 0xa6, 0xa6,
+            0xa4, 0xc0, 0x8a, 0x8a, 0xae, 0xaf, 0xa6, 0x8d, 0xcf, 0xcf, 0xdf, 0xdf,
+        ];
+        const FLAGS: [u8; 26] = [
+            0x25, 0x25, 0x25, 0x25, 0xe5, 0xe5, 0x25, 0x20, 0xe5, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x24, 0x25, 0x25, 0x24, 0x64, 0x20, 0x26, 0x24, 0x64, 0x24, 0x64,
+        ];
+        const BIG: [u8; 26] = [
+            0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0,
+        ];
+
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let d = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        for i in (0..2usize).rev() {
+            let j = d + i;
+            let f = FLAGS[j];
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(X[j] as i16 as u16),
+                y.wrapping_add(Y[j] as i16 as u16),
+                CH[j],
+                f | if f & 0x0f != 0 { 0 } else { info_flags },
+                BIG[j],
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_55_Zora(int k) {  // 85967b
+    pub(super) fn sprite_55_zora(&mut self, k: usize) {
+        if self.ram[SPRITE_E + k] != 0 {
+            self.sprite_fireball(k);
+        } else {
+            self.sprite_zora_main(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Fireball(int k) {  // 859683
+    pub(super) fn sprite_fireball(&mut self, k: usize) {
+        const OFFS: [u8; 4] = [3, 2, 0, 0];
+        const X: [i8; 4] = [4, 4, -4, 16];
+        const Y: [i8; 4] = [0, 16, 8, 8];
+        const W: [u8; 4] = [8, 8, 4, 4];
+        const H: [u8; 4] = [4, 4, 8, 8];
+
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_E + k];
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            self.oam_allocate_from_region_c(4);
+        }
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.fireball_spawn_trail_garnish(k);
+        if self.sprite_check_damage_to_link(k) {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        self.sprite_move_xy(k);
+        if self.ram[PLAYER_IS_INDOORS] != 0
+            && self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0
+            && (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0
+            && self.sprite_check_tile_collision(k) != 0
+        {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+
+        if (self.ram[LINK_IS_BUNNY_MIRROR] | self.ram[LINK_DISABLE_SPRITE_DAMAGE]) != 0
+            || sign8(self.ram[LINK_STATE_BITS])
+            || self.ram[LINK_SHIELD_TYPE] < 2
+            || self.ram[LINK_IS_ON_LOWER_LEVEL] != self.ram[SPRITE_FLOOR + k]
+        {
+            return;
+        }
+
+        let mut hb = SpriteHitBox {
+            r0_xlo: 0,
+            r8_xhi: 0,
+            r1_ylo: 0,
+            r9_yhi: 0,
+            r2: 0,
+            r3: 0,
+            r4_spr_xlo: 0,
+            r10_spr_xhi: 0,
+            r5_spr_ylo: 0,
+            r11_spr_yhi: 0,
+            r6_spr_xsize: 0,
+            r7_spr_ysize: 0,
+        };
+        self.sprite_setup_hit_box(k, &mut hb);
+        let mut j = usize::from((self.ram[LINK_DIRECTION_FACING] >> 1) & 3);
+        if self.ram[BUTTON_B_FRAMES] != 0 {
+            j = usize::from(OFFS[j]);
+        }
+        let x = self
+            .player_state_view()
+            .x()
+            .wrapping_add(X[j] as i16 as u16);
+        let y = self
+            .player_state_view()
+            .y()
+            .wrapping_add(Y[j] as i16 as u16);
+        hb.r0_xlo = x as u8;
+        hb.r8_xhi = (x >> 8) as u8;
+        hb.r2 = W[j];
+        hb.r1_ylo = y as u8;
+        hb.r9_yhi = (y >> 8) as u8;
+        hb.r3 = H[j];
+        if self.check_if_hit_boxes_overlap(&hb) {
+            self.sprite_place_rupulse_spark_2(k);
+            self.ram[SPRITE_STATE + k] = 0;
+            self.sprite_sfx_queue_sfx2_with_pan(k, 6);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Zora_Main(int k) {  // 859725
+    pub(super) fn sprite_zora_main(&mut self, k: usize) {
+        const SURFACE_XY: [i8; 8] = [-32, -24, -16, -8, 8, 16, 24, 32];
+        const ATTACK_GFX: [u8; 8] = [5, 5, 6, 10, 6, 5, 5, 5];
+        const SUBMERGE_GFX: [u8; 12] = [12, 11, 9, 8, 7, 0, 0, 0, 0, 0, 0, 0];
+
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+        } else {
+            self.zora_draw(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let org_x = u16::from(self.ram[SPRITE_A + k])
+                        | (u16::from(self.ram[SPRITE_B_DRAW + k]) << 8);
+                    let org_y = u16::from(self.ram[SPRITE_C_DRAW + k])
+                        | (u16::from(self.ram[SPRITE_HEAD_DIR + k]) << 8);
+                    let x_idx = usize::from(self.get_random_number() & 7);
+                    self.sprite_set_x(k, org_x.wrapping_add(SURFACE_XY[x_idx] as i16 as u16));
+                    let y_idx = usize::from(self.get_random_number() & 7);
+                    self.sprite_set_y(k, org_y.wrapping_add(SURFACE_XY[y_idx] as i16 as u16));
+                    self.sprite_get16_bit_coords(k);
+                    self.sprite_check_tile_collision(k);
+                    let spawn_anyway = self.ram[SPRITE_TILETYPE_DRAW] == 8
+                        || (self.ram[SPRITE_TILETYPE_DRAW] == 9
+                            && self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 1
+                            && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW)
+                                & K_FEATURES0_GAME_CHANGING_BUG_FIXES_DRAW)
+                                != 0);
+                    if spawn_anyway {
+                        self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_FLAGS3 + k] |= 0x40;
+                    } else if (self.read_u32_ram(ENHANCED_FEATURES0_DRAW)
+                        & K_FEATURES0_GAME_CHANGING_BUG_FIXES_DRAW)
+                        != 0
+                    {
+                        self.sprite_set_x(k, org_x);
+                        self.sprite_set_y(k, org_y);
+                        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 1;
+                        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+                            self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 32;
+                        }
+                    }
+                }
+            }
+            1 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] = K_SPRITE_ZORA_SURFACING_GFX
+                        [usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+                }
+            }
+            2 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 23;
+                } else {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 48 {
+                        let _ = self.sprite_spawn_fireball(k);
+                    }
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        ATTACK_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4)];
+                }
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 128;
+                    self.ram[SPRITE_GRAPHICS + k] = 0;
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        SUBMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 2)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_SpawnBigSplash(int k) {  // 859b40
+    pub(super) fn sprite_spawn_big_splash(&mut self, k: usize) {
+        const X: [i8; 8] = [-8, -5, 4, 13, 16, 13, 4, -5];
+        const Y: [i8; 8] = [4, -5, -8, -5, 4, 13, 16, 13];
+        const XVEL: [i8; 8] = [-8, -6, 0, 6, 8, 6, 0, -6];
+        const YVEL: [i8; 8] = [0, -6, -8, -6, 0, 6, 8, 6];
+
+        self.sprite_sfx_queue_sfx2_with_pan(k, 0x24);
+        for i in (0..8usize).rev() {
+            let mut info = SpriteSpawnInfo::default();
+            let j = self.sprite_spawn_dynamically(k, 8, &mut info);
+            if j >= 0 {
+                let j = j as usize;
+                self.ram[SPRITE_STATE + j] = 3;
+                self.sprite_set_x(
+                    j,
+                    info.r0_x.wrapping_add(X[i] as i16 as u16).wrapping_sub(4),
+                );
+                self.sprite_set_y(
+                    j,
+                    info.r2_y.wrapping_add(Y[i] as i16 as u16).wrapping_sub(4),
+                );
+                self.ram[SPRITE_X_VEL + j] = XVEL[i] as u8;
+                self.ram[SPRITE_Y_VEL + j] = YVEL[i] as u8;
+                self.ram[SPRITE_A + j] = i as u8;
+                self.ram[SPRITE_Z_VEL + j] = (self.get_random_number() & 15).wrapping_add(24);
+                self.ram[SPRITE_AI_STATE + j] = 1;
+                self.ram[SPRITE_Z + j] = 0;
+                self.ram[SPRITE_FLAGS3 + j] |= 0x40;
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + j] = self.ram[SPRITE_FLAGS3 + j];
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_52_KingZora(int k) {  // 85995b
+    pub(super) fn sprite_52_king_zora(&mut self, k: usize) {
+        self.zora_king_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                let dx = self.player_state_view().x();
+                let dy = self.player_state_view().y();
+                if dx.wrapping_sub(self.sprite_get_x(k)).wrapping_add(16) < 32
+                    && dy.wrapping_sub(self.sprite_get_y(k)).wrapping_add(48) < 96
+                {
+                    self.link_cancel_dash();
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    self.ram[SOUND_EFFECT_1_DRAW] = 0x35;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    for j in (0..16usize).rev() {
+                        if j != k && (self.ram[SPRITE_DEFL_BITS + j] & 0x80) == 0 {
+                            if self.ram[SPRITE_STATE + j] == 10 {
+                                self.ram[LINK_STATE_BITS] = 0;
+                                self.ram[LINK_PICKING_THROW_STATE] = 0;
+                            }
+                            self.sprite_kill_self(j);
+                        }
+                    }
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    write_le_u16(&mut self.ram, BG1_X_OFFSET, 0);
+                    self.ram[SPRITE_GRAPHICS + k] = 4;
+                } else {
+                    let offs = if self.ram[SPRITE_DELAY_MAIN + k] & 1 != 0 {
+                        (-1i16) as u16
+                    } else {
+                        1
+                    };
+                    write_le_u16(&mut self.ram, BG1_X_OFFSET, offs);
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                }
+            }
+            2 => {
+                const SURFACING_GFX: [u8; 16] = [0, 0, 0, 3, 9, 8, 7, 6, 9, 8, 7, 6, 5, 4, 5, 4];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                } else {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 28 {
+                        self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 15;
+                        self.sprite_spawn_big_splash(k);
+                    }
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        SURFACING_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+                }
+            }
+            3 => {
+                const DIALOGUE_GFX: [u8; 8] = [0, 0, 1, 2, 1, 2, 0, 0];
+                let j = self.ram[SPRITE_DELAY_MAIN + k];
+                if j == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 36;
+                    return;
+                }
+                self.ram[SPRITE_GRAPHICS + k] = DIALOGUE_GFX[usize::from(j >> 4)];
+                if j == 80 {
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x142);
+                    self.sprite_show_message_minimal_c();
+                } else if j == 79 {
+                    if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 {
+                        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x143);
+                        self.sprite_show_message_minimal_c();
+                    } else {
+                        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x146);
+                        self.sprite_show_message_minimal_c();
+                        self.ram[SPRITE_DELAY_MAIN + k] = 0x30;
+                    }
+                } else if j == 78 {
+                    if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0
+                        && read_le_u16(&self.ram, LINK_RUPEES_GOAL) >= 500
+                    {
+                        let rupees = read_le_u16(&self.ram, LINK_RUPEES_GOAL).wrapping_sub(500);
+                        write_le_u16(&mut self.ram, LINK_RUPEES_GOAL, rupees);
+                        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x144);
+                        self.sprite_show_message_minimal_c();
+                        self.ram[SPRITE_E + k] = 1;
+                    } else {
+                        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x145);
+                        self.sprite_show_message_minimal_c();
+                        self.ram[SPRITE_DELAY_MAIN + k] = 0x30;
+                    }
+                } else if j == 77 && self.ram[SPRITE_E + k] != 0 {
+                    self.sprite_zora_regurgitate_flippers(k);
+                }
+            }
+            4 => {
+                const SUBMERGE_GFX: [u8; 21] = [
+                    12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11, 10, 10, 10, 10, 3, 3, 3, 3, 3, 3,
+                ];
+                let j = self.ram[SPRITE_DELAY_MAIN + k];
+                if j == 0 {
+                    self.sprite_kill_self(k);
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                } else {
+                    if j == 29 {
+                        self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 15;
+                        self.sprite_spawn_big_splash(k);
+                    }
+                    self.ram[SPRITE_GRAPHICS + k] = SUBMERGE_GFX[usize::from(j >> 1)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
+    pub(super) fn sprite_zora_regurgitate_flippers(&mut self, k: usize) {
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0xc0, &mut info);
+        if j < 0 {
+            return;
+        }
+        let j = j as usize;
+        self.sprite_set_spawned_coordinates(j, &info);
+        self.ram[SPRITE_Z_VEL + j] = 32;
+        self.ram[SPRITE_Y_VEL + j] = 16;
+        self.ram[SPRITE_A + j] = 30;
+        self.sprite_sfx_queue_sfx2_with_pan(j, 0x20);
+        self.ram[SPRITE_FLAGS2 + j] = 0x83;
+        self.ram[SPRITE_FLAGS3 + j] = 0x54;
+        self.ram[SPRITE_OAM_FLAGS + j] = 0x54 & 15;
+        self.ram[SPRITE_DELAY_AUX3_DRAW + j] = 0x30;
+        self.DecodeAnimatedSpriteTile_variable(0x11);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ZoraKing_Draw(int k) {  // 859cab
+    pub(super) fn zora_king_draw(&mut self, k: usize) {
+        let Some((mut x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+
+        if self.ram[SPRITE_AI_STATE + k] >= 2 {
+            const X0: [i8; 52] = [
+                -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, 0, 0, 0, 0, 0, 0, 0, 0, -8,
+                8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -9, 9, -9, 9, -10, 10, -10, 10,
+                -11, 11, -11, 11,
+            ];
+            const Y0: [i8; 52] = [
+                -18, -18, -2, -2, -18, -18, -2, -2, -18, -18, -2, -2, -12, -12, 4, 4, 0, 0, 0, 0,
+                0, 0, 0, 0, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -5, -5, 5, 5,
+                -5, -5, 5, 5, -5, -5, 5, 5,
+            ];
+            const CH0: [u8; 52] = [
+                0xc0, 0xc0, 0xe0, 0xe0, 0xc2, 0xea, 0xe2, 0xe2, 0xea, 0xc2, 0xe2, 0xe2, 0xc0, 0xc0,
+                0xe4, 0xe6, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0xc4, 0xc6, 0xe4, 0xe6,
+                0xc6, 0xc4, 0xe6, 0xe4, 0xe6, 0xe4, 0xc6, 0xc4, 0xe4, 0xe6, 0xc4, 0xc6, 0x88, 0x88,
+                0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88,
+            ];
+            const FLAGS0: [u8; 52] = [
+                0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 5, 5, 5, 5, 5, 5,
+                0xc5, 0xc5, 0xc5, 0xc5, 5, 5, 5, 5, 0x45, 0x45, 0x45, 0x45, 0xc5, 0xc5, 0xc5, 0xc5,
+                0x85, 0x85, 0x85, 0x85, 4, 0x44, 0x84, 0xc4, 4, 0x44, 0x84, 0xc4, 4, 0x44, 0x84,
+                0xc4,
+            ];
+            let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+            for i in (0..4usize).rev() {
+                let j = g * 4 + i;
+                let f = FLAGS0[j];
+                self.ram[oam] = x.wrapping_add(X0[j] as i16 as u16) as u8;
+                self.ram[oam + 1] = y.wrapping_add(Y0[j] as i16 as u16) as u8;
+                self.ram[oam + 2] = CH0[j];
+                self.ram[oam + 3] = (if f & 0x0f != 0 { f } else { f | info_flags }) | 0x20;
+                oam += 4;
+            }
+            self.sprite_correct_oam_entries_for_draw(k, 3, 2);
+            let Some(poc) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+                return;
+            };
+            x = poc.0;
+            y = poc.1;
+        }
+
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+            return;
+        }
+
+        const X1: [i8; 8] = [-23, 23, 23, 23, -20, -15, 13, 18];
+        const Y1: [i8; 8] = [-8, -8, -8, -8, -7, 0, 0, -7];
+        const CH1: [u8; 8] = [0xae, 0xae, 0xae, 0xae, 0xac, 0xac, 0xac, 0xac];
+        const FLAGS1: [u8; 8] = [0, 0x40, 0x40, 0x40, 0, 0, 0x40, 0x40];
+        self.oam_allocate_from_region_c(0x10);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from((self.ram[SPRITE_DELAY_AUX2_DRAW + k] >> 1) & 4);
+        for i in (0..4usize).rev() {
+            let j = g + i;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                x.wrapping_add(X1[j] as i16 as u16) as u8,
+                y.wrapping_add(Y1[j] as i16 as u16) as u8,
+                CH1[j],
+                FLAGS1[j] | 0x24,
+                2,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_C0_Catfish(int k) {  // 9ddf49
+    pub(super) fn sprite_c0_catfish(&mut self, k: usize) {
+        if self.ram[SPRITE_A + k] & 0x80 != 0 {
+            self.sprite_catfish_splash_of_water(k);
+        } else if self.ram[SPRITE_A + k] == 0 {
+            self.catfish_big_fish(k);
+        } else {
+            self.sprite_catfish_quake_medallion(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Catfish_QuakeMedallion(int k) {  // 9ddf54
+    pub(super) fn sprite_catfish_quake_medallion(&mut self, k: usize) {
+        if self.ram[SPRITE_Z + k] == 0 {
+            self.sprite_draw_water_ripple_with_oam_adjust(k);
+            if self.frame_control_view().submodule() == 0
+                && self.sprite_check_damage_to_link_same_layer(k)
+            {
+                self.ram[SPRITE_STATE + k] = 0;
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(self.ram[SPRITE_A + k], 0);
+            }
+        }
+        if self.ram[SPRITE_DELAY_AUX3_DRAW + k] != 0 {
+            self.oam_allocate_from_region_c(8);
+        }
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xyz(k);
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_X_VEL + k] = ((self.ram[SPRITE_X_VEL + k] as i8) >> 1) as u8;
+            self.ram[SPRITE_Y_VEL + k] = ((self.ram[SPRITE_Y_VEL + k] as i8) >> 1) as u8;
+            let j = self.ram[SPRITE_AI_STATE + k];
+            if j == 4 {
+                self.ram[SPRITE_X_VEL + k] = 0;
+                self.ram[SPRITE_Y_VEL + k] = 0;
+                self.ram[SPRITE_Z_VEL + k] = 0;
+            } else {
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                const ZVEL: [u8; 4] = [0x20, 0x10, 8, 0];
+                self.ram[SPRITE_Z_VEL + k] = ZVEL[usize::from(j)];
+                if j < 2 {
+                    let splash = self.sprite_spawn_water_splash(k);
+                    if splash >= 0 {
+                        self.ram[SPRITE_DELAY_MAIN + splash as usize] = 16;
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Catfish_BigFish(int k) {  // 9ddfd1
+    pub(super) fn catfish_big_fish(&mut self, k: usize) {
+        self.great_catfish_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                for j in (0..16usize).rev() {
+                    if j == k || self.ram[SPRITE_STATE + j] != 3 {
+                        continue;
+                    }
+                    if self
+                        .sprite_get_x(k)
+                        .wrapping_sub(self.sprite_get_x(j))
+                        .wrapping_add(32)
+                        < 64
+                        && self
+                            .sprite_get_y(k)
+                            .wrapping_sub(self.sprite_get_y(j))
+                            .wrapping_add(32)
+                            < 64
+                    {
+                        self.ram[SPRITE_AI_STATE + k] = 1;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                        return;
+                    }
+                }
+            }
+            1 => {
+                let j = self.ram[SPRITE_DELAY_MAIN + k];
+                if j == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                    write_le_u16(&mut self.ram, BG1_X_OFFSET, 0);
+                    self.ram[SOUND_EFFECT_AMBIENT] = 5;
+                    self.ram[SPRITE_Z_VEL + k] = 48;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.catfish_spawn_plop(k);
+                } else if j < 0xc0 {
+                    if j == 0xbf {
+                        self.ram[SOUND_EFFECT_AMBIENT] = 7;
+                    }
+                    let offs = if j & 1 != 0 { (-1i16) as u16 } else { 1 };
+                    write_le_u16(&mut self.ram, BG1_X_OFFSET, offs);
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                }
+            }
+            2 => {
+                const EMERGE_GFX: [u8; 16] = [1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 0, 0, 0, 0];
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                self.sprite_move_xyz(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+                if self.ram[SPRITE_Z_VEL + k] == (-48i8) as u8 {
+                    self.catfish_spawn_plop(k);
+                }
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                }
+                self.ram[SPRITE_GRAPHICS + k] =
+                    EMERGE_GFX[usize::from(self.ram[SPRITE_SUBTYPE2 + k] >> 2)];
+            }
+            3 => {
+                const CONVERSATE_GFX: [u8; 20] =
+                    [0, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6];
+                let j = self.ram[SPRITE_DELAY_MAIN + k];
+                if j == 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                } else {
+                    if matches!(j, 160 | 252 | 4) {
+                        self.sprite_spawn_water_splash(k);
+                    } else if j == 10 {
+                        self.catfish_spawn_plop(k);
+                    } else if j == 96 {
+                        self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                        let msg = if self.ram[LINK_ITEM_QUAKE_MEDALLION_DRAW] != 0 {
+                            0x12b
+                        } else {
+                            0x12a
+                        };
+                        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, msg);
+                        self.sprite_show_message_minimal_c();
+                        return;
+                    } else if j == 80 {
+                        if self.ram[LINK_ITEM_QUAKE_MEDALLION_DRAW] != 0 {
+                            if self.get_random_number() & 1 != 0 {
+                                self.sprite_spawn_bomb(k);
+                            } else {
+                                self.sprite_spawn_fireball(k);
+                            }
+                        } else {
+                            self.catfish_regurgitate_medallion(k);
+                        }
+                    }
+                    if j < 160 {
+                        self.ram[SPRITE_GRAPHICS + k] = CONVERSATE_GFX[usize::from(j >> 3)];
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Catfish_SplashOfWater(int k) {  // 9de37d
+    pub(super) fn sprite_catfish_splash_of_water(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -8,
+                y: -4,
+                char_flags: 0x0080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 18,
+                y: -7,
+                char_flags: 0x0080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: -2,
+                char_flags: 0x00bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 15,
+                y: -4,
+                char_flags: 0x40af,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00e7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00e7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        let base = usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_56_WalkingZora(int k) {  // 859d4a
+    pub(super) fn sprite_56_walking_zora(&mut self, k: usize) {
+        if self.ram[SPRITE_F_DRAW + k] != 0 {
+            self.ram[SPRITE_F_DRAW + k] = 0;
+            self.ram[SPRITE_B_DRAW + k] = 3;
+            self.ram[SPRITE_G_DRAW + k] = 192;
+            self.ram[SPRITE_X_VEL + k] = ((self.ram[SPRITE_X_RECOIL + k] as i8) >> 1) as u8;
+            self.ram[SPRITE_Y_VEL + k] = ((self.ram[SPRITE_Y_RECOIL_DRAW + k] as i8) >> 1) as u8;
+        }
+
+        match self.ram[SPRITE_B_DRAW + k] {
+            0 => {
+                let mut info = SpritePrepOamCoordsRet {
+                    x: 0,
+                    y: 0,
+                    r4: 0,
+                    flags: 0,
+                };
+                self.sprite_prep_oam_coord(k, &mut info);
+                if self.sprite_return_if_inactive(k) {
+                    return;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_add(1);
+                    self.ram[SPRITE_FLAGS3 + k] |= 0x40;
+                }
+            }
+            1 => {
+                self.zora_draw(k);
+                if self.sprite_return_if_inactive(k) {
+                    return;
+                }
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
+                    self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_add(1);
+                    self.ram[SPRITE_Z_VEL + k] = 48;
+                    let dir = self.sprite_direction_to_face_link(k, None);
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] = K_SPRITE_ZORA_SURFACING_GFX
+                        [usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+                }
+            }
+            2 => {
+                self.ram[SPRITE_GRAPHICS + k] = K_SPRITE_RECRUIT_GFX[usize::from(
+                    ((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 4) + self.ram[SPRITE_D + k],
+                )];
+                self.walking_zora_draw(k);
+                if self.sprite_return_if_inactive(k) {
+                    return;
+                }
+                self.sprite_check_damage_to_and_from_link(k);
+                self.sprite_move_z(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+                if sign8(self.ram[SPRITE_Z + k].wrapping_sub(1)) {
+                    if sign8(self.ram[SPRITE_Z_VEL + k].wrapping_add(16)) {
+                        self.sprite_zero_velocity_xy(k);
+                    }
+                    self.ram[SPRITE_Z + k] = 0;
+                    self.ram[SPRITE_Z_VEL + k] = 0;
+                    if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+                        let j = self.sprite_direction_to_face_link(k, None);
+                        self.ram[SPRITE_HEAD_DIR + k] = j;
+                        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 31) == 0 {
+                            self.ram[SPRITE_D + k] = j;
+                            self.sprite_apply_speed_towards_link(k, 8);
+                        }
+                    }
+                }
+                self.sprite_move_xy(k);
+                self.sprite_check_tile_collision(k);
+                if sign8(self.ram[SPRITE_Z + k].wrapping_sub(1)) {
+                    self.walking_zora_adjust_shadow(k);
+                    if self.ram[SPRITE_TILETYPE_DRAW] == 8 {
+                        self.sprite_kill_self(k);
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
+                        self.ram[SPRITE_STATE + k] = 3;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 15;
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_FLAGS2 + k] = 3;
+                    }
+                }
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+            }
+            3 => {
+                self.sprite_check_damage_from_link(k);
+                if (self.ram[FRAME_COUNTER] & 3) == 0 {
+                    let g = self.ram[SPRITE_G_DRAW + k].wrapping_sub(1);
+                    self.ram[SPRITE_G_DRAW + k] = g;
+                    if g == 0 {
+                        self.ram[SPRITE_B_DRAW + k] = 2;
+                        if self.ram[SPRITE_STATE + k] == 10 {
+                            self.ram[LINK_STATE_BITS] = 0;
+                            self.ram[LINK_PICKING_THROW_STATE] = 0;
+                        }
+                        self.ram[SPRITE_STATE + k] = 9;
+                    }
+                }
+                if self.ram[SPRITE_G_DRAW + k] < 48 && (self.ram[FRAME_COUNTER] & 1) == 0 {
+                    let delta = if self.ram[FRAME_COUNTER] & 2 != 0 {
+                        -1
+                    } else {
+                        1
+                    };
+                    self.sprite_set_x(k, self.sprite_get_x(k).wrapping_add(delta as i16 as u16));
+                }
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                self.ram[SPRITE_WALLCOLL + k] = 0;
+                self.walking_zora_draw_water_ripples(k);
+                self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_sub(2);
+                self.sprite_draw_single_large(k);
+                self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(2);
+                self.ram[SPRITE_ANIM_CLOCK_DRAW + k] = 0;
+                if self.sprite_return_if_inactive(k) || self.sprite_return_if_recoiling(k) {
+                    return;
+                }
+                self.sprite_move_xy(k);
+                self.thrown_sprite_tile_and_sprite_interaction(k);
+                self.walking_zora_adjust_shadow(k);
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void WalkingZora_Draw(int k) {  // 859f08
+    pub(super) fn walking_zora_draw(&mut self, k: usize) {
+        const CH: [u8; 4] = [0xce, 0xce, 0xa4, 0xee];
+        const FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+        const CH2: [u8; 8] = [0xcc, 0xec, 0xcc, 0xec, 0xe8, 0xe8, 0xca, 0xca];
+        const FLAGS2: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0x40, 0, 0x40];
+
+        self.walking_zora_draw_water_ripples(k);
+        let Some((x, mut y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        if g == 0 || g == 2 {
+            y = y.wrapping_sub(1);
+        }
+        let i = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+        self.set_oam_helper0_at_for_draw(oam, x, y.wrapping_sub(6), CH[i], flags | FLAGS[i], 2);
+        self.set_oam_helper0_at_for_draw(
+            oam + 4,
+            x,
+            y.wrapping_add(2),
+            CH2[g],
+            flags | FLAGS2[g],
+            2,
+        );
+        if self.ram[SPRITE_ANIM_CLOCK_DRAW + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+            self.sprite_draw_shadow_custom(k, &mut info, 10);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void WalkingZora_DrawWaterRipples(int k) {  // 859fe0
+    pub(super) fn walking_zora_draw_water_ripples(&mut self, k: usize) {
+        if self.ram[SPRITE_ANIM_CLOCK_DRAW + k] != 0 {
+            self.sprite_draw_water_ripple_with_oam_adjust(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_WaterRipple(int k) {  // 859ffa
+    //   static const DrawMultipleData kWaterRipple_Dmd[6] = {
+    //     {0, 10, 0x01d8, 0}, {8, 10, 0x41d8, 0},
+    //     {0, 10, 0x01d9, 0}, {8, 10, 0x41d9, 0},
+    //     {0, 10, 0x01da, 0}, {8, 10, 0x41da, 0},
+    //   };
+    //   static const uint8 kWaterRipple_Idx[4] = {0, 1, 2, 1};
+    //   Sprite_DrawMultiple(k, &kWaterRipple_Dmd[kWaterRipple_Idx[frame_counter >> 2 & 3] * 2], 2, NULL);
+    //   OamEnt *oam = GetOamCurPtr();
+    //   uint8 t = (oam[0].flags & 0x30) | 0x4;
+    //   oam[0].flags = t;
+    //   oam[1].flags = t | 0x40;
+    // }
+    pub(super) fn sprite_draw_water_ripple(&mut self, k: usize) {
+        const K_WATER_RIPPLE_DMD: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 0,
+                y: 10,
+                char_flags: 0x01d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 10,
+                char_flags: 0x41d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 10,
+                char_flags: 0x01d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 10,
+                char_flags: 0x41d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 10,
+                char_flags: 0x01da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 10,
+                char_flags: 0x41da,
+                ext: 0,
+            },
+        ];
+        const K_WATER_RIPPLE_IDX: [u8; 4] = [0, 1, 2, 1];
+        let frame = self.ram[FRAME_COUNTER];
+        let base = (K_WATER_RIPPLE_IDX[((frame >> 2) & 3) as usize] as usize) * 2;
+        self.sprite_draw_multiple(k, &K_WATER_RIPPLE_DMD[base..base + 2], None);
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let t = (self.ram[oam + 3] & 0x30) | 0x4;
+        self.ram[oam + 3] = t;
+        self.ram[oam + 4 + 3] = t | 0x40;
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_GuardHead(int k, PrepOamCoordsRet *info, int spr_offs) {  // 85b160
+    //   int j = sprite_head_dir[k];
+    //   OamEnt *oam = GetOamCurPtr() + spr_offs;
+    //   SetOamHelper0(oam, info->x, info->y - 9, kChainBallTrooperHead_Char[j],
+    //                 info->flags | kChainBallTrooperHead_Flags[j], 2);
+    // }
+    pub(super) fn sprite_draw_guard_head(
+        &mut self,
+        k: usize,
+        info: &PrepOamCoordsRet,
+        spr_offs: i32,
+    ) {
+        let j = (self.ram[SPRITE_HEAD_DIR + k] & 3) as usize;
+        let oam = ((read_le_u16(&self.ram, OAM_CUR_PTR) as i32) + spr_offs * 4) as usize;
+        let y = info.y.wrapping_sub(9);
+        let flags = info.flags | K_CHAIN_BALL_TROOPER_HEAD_FLAGS[j];
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            info.x,
+            y,
+            K_CHAIN_BALL_TROOPER_HEAD_CHAR[j],
+            flags,
+            2,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_BNCBody(int k, PrepOamCoordsRet *info, int spr_offs) {  // 85b3cb
+    //   int g = sprite_graphics[k];
+    //   spr_offs += kFlailTrooperBody_SprOffs[g] >> 2;
+    //   OamEnt *oam = GetOamCurPtr() + spr_offs;
+    //   int n = kFlailTrooperBody_Num[g];
+    //   do {
+    //     int j = g * 3 + n;
+    //     SetOamHelper0(oam, info->x + kFlailTrooperBody_X[j], info->y + kFlailTrooperBody_Y[j],
+    //                   kFlailTrooperBody_Char[j], info->flags | kFlailTrooperBody_Flags[j],
+    //                   kFlailTrooperBody_Big[j]);
+    //     if (n == 2)
+    //       oam++;
+    //   } while (oam++, --n >= 0);
+    // }
+    pub(super) fn sprite_draw_bnc_body(
+        &mut self,
+        k: usize,
+        info: &PrepOamCoordsRet,
+        spr_offs: i32,
+    ) {
+        let g = self.ram[SPRITE_GRAPHICS + k] as usize;
+        let spr_offs = spr_offs + ((K_FLAIL_TROOPER_BODY_SPR_OFFS[g] >> 2) as i32);
+        let mut oam = ((read_le_u16(&self.ram, OAM_CUR_PTR) as i32) + spr_offs * 4) as usize;
+        let mut n: i32 = K_FLAIL_TROOPER_BODY_NUM[g] as i32;
+        loop {
+            let j = (g * 3) + (n as usize);
+            let x = info.x.wrapping_add(K_FLAIL_TROOPER_BODY_X[j] as i16 as u16);
+            let y = info.y.wrapping_add(K_FLAIL_TROOPER_BODY_Y[j] as i16 as u16);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y,
+                K_FLAIL_TROOPER_BODY_CHAR[j],
+                info.flags | K_FLAIL_TROOPER_BODY_FLAGS[j],
+                K_FLAIL_TROOPER_BODY_BIG[j],
+            );
+            if n == 2 {
+                oam += 4;
+            }
+            oam += 4;
+            n -= 1;
+            if n < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_BNCFlail(int k, PrepOamCoordsRet *info) {  // 85b468
+    //   See sprite_main.c:3962 — chain-ball flail with sin-wave segments.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_bnc_flail(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+
+        // BYTE(dungmap_var7) = info->x; HIBYTE(dungmap_var7) = info->y;
+        write_le_u16(
+            &mut self.ram,
+            DUNGMAP_VAR7,
+            (info.x as u8 as u16) | ((info.y as u8 as u16) << 8),
+        );
+
+        let r0 = (self.ram[SPRITE_A + k] as u16) | ((self.ram[SPRITE_B_DRAW + k] as u16) << 8);
+        let qq = if self.ram[SPRITE_AI_STATE + k] < 2 {
+            0u8
+        } else {
+            K_FLAIL_TROOPER_WEAPON_TAB0[(self.ram[SPRITE_DELAY_AUX2_DRAW + k] & 0x1f) as usize]
+        };
+        let r12 = K_FLAIL_TROOPER_WEAPON_TAB1[(self.ram[SPRITE_D + k] & 3) as usize] as u8;
+        let r13 = K_FLAIL_TROOPER_WEAPON_TAB2[(self.ram[SPRITE_D + k] & 3) as usize] as u8;
+
+        let r2 = (r0.wrapping_add(0x80)) & 0x1ff;
+
+        let r14 = chain_ball_mult_draw(K_SINUS_LOOKUP_TABLE[(r0 & 0xff) as usize], qq);
+        let r4: u8 = if (r0 & 0x100) != 0 {
+            0u8.wrapping_sub(r14)
+        } else {
+            r14
+        };
+
+        let r15 = chain_ball_mult_draw(K_SINUS_LOOKUP_TABLE[(r2 & 0xff) as usize], qq);
+        let r6: u8 = if (r2 & 0x100) != 0 {
+            0u8.wrapping_sub(r15)
+        } else {
+            r15
+        };
+
+        // HIBYTE(dungmap_var8) = r4 - 4 + r12; BYTE(dungmap_var8) = r6 - 4 + r13;
+        let hib_dv8 = r4.wrapping_sub(4).wrapping_add(r12);
+        let lob_dv8 = r6.wrapping_sub(4).wrapping_add(r13);
+        write_le_u16(
+            &mut self.ram,
+            DUNGMAP_VAR8,
+            (lob_dv8 as u16) | ((hib_dv8 as u16) << 8),
+        );
+
+        // SetOamPlain(oam, HIBYTE(dungmap_var8) + BYTE(dungmap_var7),
+        //                  BYTE(dungmap_var8) + HIBYTE(dungmap_var7), 0x2a, 0x2d, 2);
+        let dv7_byte = info.x as u8;
+        let dv7_hibyte = info.y as u8;
+        let x0 = hib_dv8.wrapping_add(dv7_byte);
+        let y0 = lob_dv8.wrapping_add(dv7_hibyte);
+        self.set_oam_plain_at_for_draw(oam, x0, y0, 0x2a, 0x2d, 2);
+
+        let mut oam_cur = oam + 4;
+        // for (int i = 3; i >= 0; i--, oam++) {
+        let mut i: i32 = 3;
+        loop {
+            let mult = K_FLAIL_TROOPER_WEAPON_TAB4[i as usize];
+            let t = (mult as u16).wrapping_mul(r14 as u16) >> 8;
+            let mut t = t as u8;
+            if sign8(r4) {
+                t = 0u8.wrapping_sub(t);
+            }
+            let x = t.wrapping_add(dv7_byte).wrapping_add(r12);
+            let ty = (mult as u16).wrapping_mul(r15 as u16) >> 8;
+            let mut ty = ty as u8;
+            if sign8(r6) {
+                ty = 0u8.wrapping_sub(ty);
+            }
+            let y = ty.wrapping_add(dv7_hibyte).wrapping_add(r13);
+            self.set_oam_plain_at_for_draw(oam_cur, x, y, 0x3f, 0x2d, 0);
+            oam_cur += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 4, 0xff);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_BigCannonball(int k) {  // 85b6a4 — sprite_main.c:4019
+    //   Sprite_PrepOamCoordOrDoubleRet, then four large-tile OAM entries.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_big_cannonball(&mut self, k: usize) {
+        const K_METAL_BALL_LARGE_X: [i8; 4] = [-8, 8, -8, 8];
+        const K_METAL_BALL_LARGE_Y: [i8; 4] = [-8, -8, 8, 8];
+        const K_METAL_BALL_LARGE_CHAR: [u8; 8] = [0x84, 0x88, 0x88, 0x88, 0x86, 0x88, 0x88, 0x88];
+        const K_METAL_BALL_LARGE_FLAGS: [u8; 4] = [0, 0, 0xc0, 0x80];
+        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+            Some(p) => PrepOamCoordsRet::from_tuple(p),
+            None => return,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = (self.ram[SPRITE_GRAPHICS + k] & 1) as usize;
+        let mut i: i32 = 3;
+        loop {
+            let x = info
+                .x
+                .wrapping_add(K_METAL_BALL_LARGE_X[i as usize] as i16 as u16);
+            let y = info
+                .y
+                .wrapping_add(K_METAL_BALL_LARGE_Y[i as usize] as i16 as u16);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y,
+                K_METAL_BALL_LARGE_CHAR[g * 4 + i as usize],
+                K_METAL_BALL_LARGE_FLAGS[i as usize] | info.flags,
+                2,
+            );
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // SpriteDraw_BombGuard_Arm (sprite_main.c:4527) is already ported in
+    // crates/zelda3/src/sprite_main_guard.rs; this file does NOT re-port it.
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_SpriteBombExplosion(int k) {  // 85c113 — sprite_main.c:4537
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_sprite_bomb_explosion(&mut self, k: usize) {
+        const K_ENEMY_BOMB_EXPLOSION_X: [i8; 16] =
+            [-12, 12, -12, 12, -8, 8, -8, 8, -8, 8, -8, 8, 0, 0, 0, 0];
+        const K_ENEMY_BOMB_EXPLOSION_Y: [i8; 16] =
+            [-12, -12, 12, 12, -8, -8, 8, 8, -8, -8, 8, 8, 0, 0, 0, 0];
+        const K_ENEMY_BOMB_EXPLOSION_CHAR: [u8; 16] = [
+            0x88, 0x88, 0x88, 0x88, 0x8a, 0x8a, 0x8a, 0x8a, 0x84, 0x84, 0x84, 0x84, 0x86, 0x86,
+            0x86, 0x86,
+        ];
+        const K_ENEMY_BOMB_EXPLOSION_FLAGS: [u8; 16] = [
+            0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0, 0, 0,
+        ];
+        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+            Some(p) => PrepOamCoordsRet::from_tuple(p),
+            None => return,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let base = ((self.ram[SPRITE_DELAY_AUX1_DRAW + k] >> 1) & 0xc) as usize;
+        let mut i: i32 = 3;
+        loop {
+            let j = base + i as usize;
+            // The C writes only x/y/charnum/flags (no SetOamHelper0). Mirror.
+            self.ram[oam] =
+                info.x
+                    .wrapping_add(K_ENEMY_BOMB_EXPLOSION_X[j] as i16 as u16) as u8;
+            self.ram[oam + 1] =
+                info.y
+                    .wrapping_add(K_ENEMY_BOMB_EXPLOSION_Y[j] as i16 as u16) as u8;
+            self.ram[oam + 2] = K_ENEMY_BOMB_EXPLOSION_CHAR[j];
+            self.ram[oam + 3] = K_ENEMY_BOMB_EXPLOSION_FLAGS[j] | info.flags;
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 3, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_GuardSpear(int k, PrepOamCoordsRet *info, int spr_offs) {  // 85cd54
+    //   sprite_main.c:4926 — javelin/spear OAM emitter.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_guard_spear(
+        &mut self,
+        k: usize,
+        info: &PrepOamCoordsRet,
+        spr_offs: i32,
+    ) {
+        const K_SOLDER_THROWING_DRAW_X: [i8; 16] =
+            [15, 7, 17, 9, -8, 0, -10, -2, 13, 13, 13, 13, -4, -4, -4, -4];
+        const K_SOLDER_THROWING_DRAW_Y: [i8; 16] = [
+            -2, -2, -2, -2, -2, -2, -2, -2, 8, 0, 10, 2, -14, -6, -16, -8,
+        ];
+        const K_SOLDER_THROWING_DRAW_CHAR: [u8; 16] = [
+            0x6f, 0x7f, 0x6f, 0x7f, 0x6f, 0x7f, 0x6f, 0x7f, 0x6e, 0x7e, 0x6e, 0x7e, 0x6e, 0x7e,
+            0x6e, 0x7e,
+        ];
+        const K_SOLDER_THROWING_DRAW_FLAGS: [u8; 16] = [
+            0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0,
+        ];
+
+        let mut oam = ((read_le_u16(&self.ram, OAM_CUR_PTR) as i32) + spr_offs * 4) as usize;
+        let r6 = (self.ram[SPRITE_D + k] as u8)
+            .wrapping_mul(4)
+            .wrapping_add(((self.ram[SPRITE_A + k] ^ 1) << 1) & 2);
+        let mut i: i32 = 1;
+        loop {
+            let j = (r6.wrapping_add(i as u8) & 0xf) as usize;
+            let x = info
+                .x
+                .wrapping_add(K_SOLDER_THROWING_DRAW_X[j] as i16 as u16);
+            let y = info
+                .y
+                .wrapping_add(K_SOLDER_THROWING_DRAW_Y[j] as i16 as u16);
+            // HIBYTE(dungmap_var8) = X[j]; BYTE(dungmap_var8) = Y[j];
+            write_le_u16(
+                &mut self.ram,
+                DUNGMAP_VAR8,
+                (K_SOLDER_THROWING_DRAW_Y[j] as u8 as u16)
+                    | ((K_SOLDER_THROWING_DRAW_X[j] as u8 as u16) << 8),
+            );
+            let char_off = if self.ram[SPRITE_TYPE + k] >= 0x48 {
+                3u8
+            } else {
+                0u8
+            };
+            let charnum = K_SOLDER_THROWING_DRAW_CHAR[j].wrapping_sub(char_off);
+            let flags = ((K_SOLDER_THROWING_DRAW_FLAGS[j] | info.flags) & 0xf1) | 8;
+            self.set_oam_helper0_at_for_draw(oam, x, y, charnum, flags, 0);
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Archer_Weapon(int k, int spr_offs, PrepOamCoordsRet *info) {  // 85d4d4
+    //   sprite_main.c:5273 — 48-entry archer-weapon OAM cycle.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_archer_weapon(
+        &mut self,
+        k: usize,
+        spr_offs: i32,
+        info: &PrepOamCoordsRet,
+    ) {
+        const K_ARCHER_SOLDIER_TAB1: [u8; 4] = [9, 3, 0, 6];
+        const K_ARCHER_SOLDIER_DRAW_X: [i8; 48] = [
+            -1, 7, 3, 3, -1, 7, 3, 3, -1, 7, 7, 7, -5, -5, -10, -2, -4, -4, -6, 2, -5, -5, -5, -5,
+            6, 14, 11, 11, 6, 14, 11, 11, 6, 14, 14, 14, 11, 11, 18, 10, 12, 12, 14, 6, 11, 11, 11,
+            11,
+        ];
+        const K_ARCHER_SOLDIER_DRAW_Y: [i8; 48] = [
+            7, 7, 3, 11, 6, 6, 1, 9, 7, 7, 7, 7, -2, 6, 2, 2, -2, 6, 2, 2, -2, 6, 6, 6, -6, -6,
+            -12, -4, -6, -6, -9, -1, -6, -6, -6, -6, -2, 6, 2, 2, -2, 6, 2, 2, -2, 6, 6, 6,
+        ];
+        const K_ARCHER_SOLDIER_DRAW_CHAR: [u8; 48] = [
+            0xa, 0xa, 0x2a, 0x2b, 0x1a, 0x1a, 0x2a, 0x2b, 0xa, 0xa, 0xa, 0xa, 0xb, 0xb, 0x3d, 0x3a,
+            0x1b, 0x1b, 0x3d, 0x3a, 0xb, 0xb, 0xb, 0xb, 0xa, 0xa, 0x2b, 0x2a, 0xa, 0xa, 0x2b, 0x2a,
+            0xa, 0xa, 0xa, 0xa, 0xb, 0xb, 0x3d, 0x3a, 0x1b, 0x1b, 0x3d, 0x3a, 0xb, 0xb, 0xb, 0xb,
+        ];
+        const K_ARCHER_SOLDIER_DRAW_FLAGS: [u8; 48] = [
+            0xd, 0x4d, 8, 8, 0xd, 0x4d, 8, 8, 0xd, 0x4d, 0x4d, 0x4d, 0xd, 0x8d, 0x48, 0x48, 0xd,
+            0x8d, 0x48, 0x48, 0xd, 0x8d, 0x8d, 0x8d, 0x8d, 0xcd, 0x88, 0x88, 0x8d, 0xcd, 0x88,
+            0x88, 0x8d, 0xcd, 0xcd, 0xcd, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 0xcd,
+            0xcd,
+        ];
+        let mut oam = ((read_le_u16(&self.ram, OAM_CUR_PTR) as i32) + spr_offs * 4) as usize;
+        let g_signed = self.ram[SPRITE_GRAPHICS + k] as i32 - 14;
+        let base: usize = if g_signed < 0 {
+            K_ARCHER_SOLDIER_TAB1[(self.ram[SPRITE_D + k] & 3) as usize] as usize
+        } else {
+            g_signed as usize
+        };
+        let mut i: i32 = 3;
+        loop {
+            let j = base * 4 + i as usize;
+            let x = info
+                .x
+                .wrapping_add(K_ARCHER_SOLDIER_DRAW_X[j] as i16 as u16);
+            let y = info
+                .y
+                .wrapping_add(K_ARCHER_SOLDIER_DRAW_Y[j] as i16 as u16);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y,
+                K_ARCHER_SOLDIER_DRAW_CHAR[j],
+                K_ARCHER_SOLDIER_DRAW_FLAGS[j] | 0x20,
+                0,
+            );
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_ThrownItem_Gigantic(int k) {  // 86ab76 — sprite_main.c:9629
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_thrown_item_gigantic(&mut self, k: usize) {
+        let c_idx = usize::from(self.ram[SPRITE_C_DRAW + k].wrapping_sub(6));
+        self.ram[SPRITE_OAM_FLAGS + k] = K_THROWABLE_SCENERY_DRAW_LARGE_OAM_FLAGS[c_idx];
+
+        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+            Some(p) => PrepOamCoordsRet::from_tuple(p),
+            None => return,
+        };
+
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let mut i: i32 = 3;
+        loop {
+            let x = info
+                .x
+                .wrapping_add(K_THROWABLE_SCENERY_DRAW_LARGE_X[i as usize] as u16);
+            let y = info
+                .y
+                .wrapping_add(K_THROWABLE_SCENERY_DRAW_LARGE_Y[i as usize] as u16);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y,
+                0x4a,
+                K_THROWABLE_SCENERY_DRAW_LARGE_FLAGS[i as usize] | info.flags,
+                2,
+            );
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.oam_allocate_from_region_b(12);
+        oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let info_y = self
+            .sprite_get_y(k)
+            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+        let info_x = info.x;
+        let mut i: i32 = 2;
+        loop {
+            let x = info_x.wrapping_add(K_THROWABLE_SCENERY_DRAW_LARGE_X2[i as usize] as u16);
+            let y = info_y.wrapping_add(12);
+            self.set_oam_helper0_at_for_draw(oam, x, y, 0x6c, 0x24, 2);
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void ThrowableScenery_ScatterIntoDebris(int k) {  // 86ac41
+    pub(super) fn throwable_scenery_scatter_into_debris(&mut self, k: usize) {
+        if !sign8(self.ram[SPRITE_C_DRAW + k]) && self.ram[SPRITE_C_DRAW + k] >= 6 {
+            for i in (0..4).rev() {
+                let mut info = SpriteSpawnInfo::default();
+                let j = self.sprite_spawn_dynamically(k, 0xec, &mut info);
+                if j >= 0 {
+                    let j = j as usize;
+                    self.ram[SPRITE_Z + j] = self.ram[SPRITE_Z + k];
+                    self.sprite_set_x(j, info.r0_x.wrapping_add(K_SCATTER_DEBRIS_X[i] as u16));
+                    self.sprite_set_y(j, info.r2_y.wrapping_add(K_SCATTER_DEBRIS_Y[i] as u16));
+                    self.ram[SPRITE_C_DRAW + j] = 1;
+                    self.sprite_schedule_for_breakage(j);
+                    self.ram[SPRITE_OAM_FLAGS + j] = if self.ram[SPRITE_C_DRAW + k] < 7 {
+                        12
+                    } else {
+                        0
+                    };
+                }
+            }
+            self.ram[SPRITE_STATE + k] = 0;
+        } else {
+            self.ram[SPRITE_STATE + k] = 0;
+            let Some(t) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+                return;
+            };
+            let info = PrepOamCoordsRet::from_tuple(t);
+            let mut j: i32 = 29;
+            while {
+                let old = j as usize;
+                let filled = self.ram[GARNISH_TYPE_DRAW + old] != 0;
+                j -= 1;
+                filled && j >= 0
+            } {}
+            j += 1;
+            let j = j as usize;
+            self.ram[GARNISH_TYPE_DRAW + j] = 22;
+            self.ram[GARNISH_ACTIVE_DRAW] = 22;
+            self.ram[GARNISH_X_LO_DRAW + j] = self.ram[SPRITE_X_LO + k];
+            self.ram[GARNISH_X_HI_DRAW + j] = self.ram[SPRITE_X_HI + k];
+            let y = self
+                .sprite_get_y(k)
+                .wrapping_sub(self.ram[SPRITE_Z + k] as u16)
+                .wrapping_add(0x10);
+            self.ram[GARNISH_Y_LO_DRAW + j] = y as u8;
+            self.ram[GARNISH_Y_HI_DRAW + j] = (y >> 8) as u8;
+            self.ram[GARNISH_OAM_FLAGS_DRAW + j] = info.flags;
+            self.ram[GARNISH_FLOOR_DRAW + j] = self.ram[SPRITE_FLOOR + k];
+            self.ram[GARNISH_COUNTDOWN_DRAW + j] = 31;
+            self.ram[GARNISH_SPRITE_DRAW + j] = self.ram[SPRITE_C_DRAW + k];
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_OctorokStoneCrumbling(int k) {  // 86d643 — sprite_main.c:12032
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_octorok_stone_crumbling(&mut self, k: usize) {
+        const K_OCTOSTONE_DRAW_X: [i8; 16] = [
+            0, 8, 0, 8, -8, 16, -8, 16, -12, 20, -12, 20, -14, 22, -14, 22,
+        ];
+        const K_OCTOSTONE_DRAW_Y: [i8; 16] = [
+            0, 0, 8, 8, -8, -8, 16, 16, -12, -12, 20, 20, -14, -14, 22, 22,
+        ];
+        const K_OCTOSTONE_DRAW_FLAGS: [u8; 16] = [
+            0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0,
+        ];
+        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+            Some(p) => PrepOamCoordsRet::from_tuple(p),
+            None => return,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = (((self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 0xc) ^ 0xc) as usize;
+        let mut i: i32 = 3;
+        loop {
+            let j = g + i as usize;
+            let x = info.x.wrapping_add(K_OCTOSTONE_DRAW_X[j] as i16 as u16);
+            let y = info.y.wrapping_add(K_OCTOSTONE_DRAW_Y[j] as i16 as u16);
+            self.set_oam_helper0_at_for_draw(oam, x, y, 0xbc, K_OCTOSTONE_DRAW_FLAGS[j] | 0x2d, 0);
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_ZirroBomb(int k) {  // 8dd606 — sprite_main.c:13246
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_zirro_bomb(&mut self, k: usize) {
+        const K_BOMBER_PELLET_DMD: [DrawMultipleData; 15] = [
+            DrawMultipleData {
+                x: -11,
+                y: 0,
+                char_flags: 0x019b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0xc19b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 6,
+                char_flags: 0x419b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -15,
+                y: -6,
+                char_flags: 0x018a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -14,
+                char_flags: 0x018a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 0,
+                char_flags: 0x018a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -15,
+                y: -6,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -14,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 0,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x0186,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x01aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x01aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x01aa,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        let base = ((self.ram[SPRITE_DELAY_MAIN + k] >> 2) as usize) * 3;
+        self.sprite_draw_multiple(k, &K_BOMBER_PELLET_DMD[base..base + 3], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Pikit_Tongue(int k, PrepOamCoordsRet *info) {  // 8dd74a — sprite_main.c:13316
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_pikit_tongue(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_PIKIT_TONGUE_MULT: [u8; 4] = [0x33, 0x66, 0x99, 0xcc];
+        const K_PIKIT_DRAW_CHAR: [u8; 8] = [0xee, 0xfd, 0xed, 0xfd, 0xee, 0xfd, 0xed, 0xfd];
+        const K_PIKIT_DRAW_FLAGS: [u8; 8] = [0, 0, 0, 0x40, 0x40, 0xc0, 0x80, 0x80];
+        if self.ram[SPRITE_AI_STATE + k] != 2 || self.ram[SPRITE_PAUSE + k] != 0 {
+            return;
+        }
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let x = info.x.wrapping_add(4) as u8;
+        let y = info.y.wrapping_add(3) as u8;
+        // oam[5]: 20 byte offset from oam base.
+        self.ram[oam + 5 * 4] = x;
+        self.ram[oam + 5 * 4 + 1] = y;
+        // oam[0]:
+        self.ram[oam] = x.wrapping_add(self.ram[SPRITE_A + k]);
+        self.ram[oam + 1] = y.wrapping_add(self.ram[SPRITE_B_DRAW + k]);
+        self.ram[oam + 2] = 0xfe;
+        self.ram[oam + 5 * 4 + 2] = 0xfe;
+        self.ram[oam + 3] = info.flags;
+        self.ram[oam + 5 * 4 + 3] = info.flags;
+        // oam++; loop over i=3..=0 starting at oam[1].
+        let mut cur = oam + 4;
+        let g = self.ram[SPRITE_D + k] as usize;
+        let mut i: i32 = 3;
+        loop {
+            let sa = self.ram[SPRITE_A + k] as i8 as i32;
+            let sb = self.ram[SPRITE_B_DRAW + k] as i8 as i32;
+            let xv = x as i32 + (sa * K_PIKIT_TONGUE_MULT[i as usize] as i32) / 256;
+            let yv = y as i32 + (sb * K_PIKIT_TONGUE_MULT[i as usize] as i32) / 256;
+            self.ram[cur] = xv as u8;
+            self.ram[cur + 1] = yv as u8;
+            self.ram[cur + 2] = K_PIKIT_DRAW_CHAR[g];
+            self.ram[cur + 3] = K_PIKIT_DRAW_FLAGS[g] | info.flags;
+            cur += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 5, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Pikit_Loot(int k, PrepOamCoordsRet *info) {  // 8dd858 — sprite_main.c:13341
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_pikit_loot(&mut self, k: usize, _info: &PrepOamCoordsRet) {
+        const K_PIKIT_DRAW_GRABBED_ITEM_X: [i8; 20] = [
+            -4, 4, -4, 4, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, -4, 4, -4, 4,
+        ];
+        const K_PIKIT_DRAW_GRABBED_ITEM_Y: [i8; 20] = [
+            -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4,
+        ];
+        const K_PIKIT_DRAW_GRABBED_ITEM_CHAR: [u8; 20] = [
+            0x6e, 0x6f, 0x7e, 0x7f, 0x63, 0x7c, 0x73, 0x7c, 0xb, 0x7c, 0x1b, 0x7c, 0xec, 0xf9,
+            0xfc, 0xf9, 0xea, 0xeb, 0xfa, 0xfb,
+        ];
+        const K_PIKIT_DRAW_GRABBED_ITEM_FLAGS: [u8; 5] = [0x24, 0x24, 0x28, 0x29, 0x2f];
+        if self.ram[SPRITE_G_DRAW + k] == 0 {
+            return;
+        }
+        let mut g = (self.ram[SPRITE_G_DRAW + k] as usize) - 1;
+        if g == 3 {
+            g = (self.ram[SPRITE_SUBTYPE + k] as usize) + 2;
+        }
+        self.oam_allocate_from_region_c(0x10);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let tmp_x = self.ram[TMP_COUNTER_DRAW];
+        let tmp_y = self.ram[SPRITE_DRAW_SCRATCH_Y_OR_FLAGS];
+        let mut i: i32 = 3;
+        loop {
+            let j = g * 4 + i as usize;
+            self.ram[oam] = tmp_x.wrapping_add(K_PIKIT_DRAW_GRABBED_ITEM_X[j] as u8);
+            self.ram[oam + 1] = tmp_y.wrapping_add(K_PIKIT_DRAW_GRABBED_ITEM_Y[j] as u8);
+            self.ram[oam + 2] = K_PIKIT_DRAW_GRABBED_ITEM_CHAR[j];
+            self.ram[oam + 3] = K_PIKIT_DRAW_GRABBED_ITEM_FLAGS[g];
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 3, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_TrinexxRockHead(int k, PrepOamCoordsRet *info) {  // 9db560
+    //   sprite_main.c:16348 — 36-entry head OAM block.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_trinexx_rock_head(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_TRINEXX_DRAW1_DMD: [DrawMultipleData; 36] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x40c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x40e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x00e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x0022,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x00c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x80c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x80c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x8020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x8022,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x8000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x8002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0xc0e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x80e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0xc0c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x80c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0xc022,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0xc020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0xc002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x40c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x40c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0xc0c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc0c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x4022,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0026,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4026,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x8026,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc026,
+                ext: 2,
+            },
+        ];
+        if !sign8(self.ram[SPRITE_AI_STATE + k]) {
+            self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        }
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 4;
+        let base = base.min(K_TRINEXX_DRAW1_DMD.len() - 4);
+        // Sprite_DrawMultiple(... info) — the canonical helper takes
+        // Option<&mut PrepOamCoordsRet>; mirror the same effect by recomputing
+        // from prep, then copy into our local struct.
+        let prepped = match self.sprite_prep_oam_coord_or_double_ret(k) {
+            Some(p) => p,
+            None => return,
+        };
+        // Manually emit the four DMD entries so we don't have to thread
+        // a mutable canonical-struct reference here.
+        self.sprite_draw_multiple_with_info(k, &K_TRINEXX_DRAW1_DMD[base..base + 4], prepped);
+        // info is an out-pointer in C; update fields the caller cares about.
+        let info_ptr = info as *const PrepOamCoordsRet as *mut PrepOamCoordsRet;
+        unsafe {
+            (*info_ptr).x = prepped.0;
+            (*info_ptr).y = prepped.1;
+            (*info_ptr).flags = prepped.2;
+            (*info_ptr).r4 = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_TrinexxRockHeadAndBody(int k) {  // 9db587 — sprite_main.c:16395
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_trinexx_rock_head_and_body(&mut self, k: usize) {
+        const K_TRINEXX_DRAW_X: [i8; 35] = [
+            0, 3, 9, 16, 24, 0, 2, 7, 13, 20, 0, 1, 4, 9, 15, 0, 0, 0, 0, 0, 0, -1, -4, -9, -15, 0,
+            -2, -7, -13, -20, 0, -3, -9, -16, -24,
+        ];
+        const K_TRINEXX_DRAW_Y: [u8; 35] = [
+            0x18, 0x20, 0x25, 0x25, 0x21, 0x18, 0x20, 0x27, 0x2a, 0x2c, 0x18, 0x20, 0x28, 0x2f,
+            0x34, 0x18, 0x21, 0x2a, 0x34, 0x3d, 0x18, 0x20, 0x28, 0x2f, 0x34, 0x18, 0x20, 0x27,
+            0x2a, 0x2c, 0x18, 0x20, 0x25, 0x25, 0x21,
+        ];
+        const K_TRINEXX_DRAW_CHAR: [u8; 5] = [6, 0x28, 0x28, 0x2c, 0x2c];
+        const K_TRINEXX_MULTS: [u8; 8] = [0xfc, 0xe0, 0xc0, 0xa0, 0x80, 0x60, 0x40, 0x20];
+        const K_TRINEXX_DRAW_XOFFS: [i8; 16] =
+            [0, 2, 3, 4, 4, 4, 3, 2, 0, -2, -3, -4, -4, -4, -3, -2];
+        const K_TRINEXX_DRAW_YOFFS: [i8; 16] =
+            [-4, -4, -3, -2, 0, 2, 3, 4, 4, 4, 3, 2, 0, -2, -3, -4];
+
+        if sign8(self.ram[SPRITE_HEAD_DIR + k]) {
+            return;
+        }
+
+        let mut info = PrepOamCoordsRet::default();
+        self.sprite_draw_trinexx_rock_head(k, &info);
+        // Pick up the freshly written info from the helper above. Because the
+        // helper mutates the by-shared-ref-as-out-ptr, the C semantics work; in
+        // Rust we re-prep here to keep `info` in sync.
+        if let Some(p) = self.sprite_prep_oam_coord_or_double_ret(k) {
+            info = PrepOamCoordsRet::from_tuple(p);
+        }
+        info.flags &= !0x10;
+
+        if self.ram[SPRITE_AI_STATE + k] == 3 {
+            let mut oam = (read_le_u16(&self.ram, OAM_CUR_PTR) as usize) + 4 * 4;
+            let xb = self.ram[SPRITE_A + k].wrapping_sub(self.ram[SPRITE_X_LO + k]);
+            let yb = self.ram[SPRITE_C_DRAW + k].wrapping_sub(self.ram[SPRITE_Y_LO + k]);
+            let mut i: i32 = 7;
+            loop {
+                let xv = info.x.wrapping_add(
+                    trinexx_mult_draw(xb, K_TRINEXX_MULTS[i as usize]) as i8 as i16 as u16
+                );
+                let yv = info.y.wrapping_add(
+                    trinexx_mult_draw(yb, K_TRINEXX_MULTS[i as usize]) as i8 as i16 as u16
+                );
+                self.set_oam_plain_at_for_draw(oam, xv as u8, yv as u8, 0x28, info.flags, 2);
+                oam += 4;
+                i -= 1;
+                if i < 0 {
+                    break;
+                }
+            }
+            self.ram[SPRITE_DRAW_SCRATCH_Y_OR_FLAGS] = 0x30;
+        }
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, 0x9f0);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, 0xa9c);
+
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let xb = self.ram[SPRITE_A + k].wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2) as u8);
+        let yb = ((self.ram[SPRITE_C_DRAW + k] as u16) | ((self.ram[SPRITE_Y_HI + k] as u16) << 8))
+            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+
+        let xvel = self.ram[SPRITE_X_VEL + k] as i8;
+        let xidx: u8 = if (xvel.wrapping_add(3) as u8) < 7 {
+            0
+        } else {
+            self.ram[SPRITE_SUBTYPE2 + k] >> 2
+        };
+        let yidx: u8 = self.ram[SPRITE_SUBTYPE2 + k] >> 2;
+
+        let mut i: i32 = 1;
+        loop {
+            let xshift: u8 = if i != 0 { 0u8.wrapping_sub(28) } else { 28 };
+            let off_x = K_TRINEXX_DRAW_XOFFS
+                [(xidx.wrapping_add(((1 - i) as u8).wrapping_mul(8)) & 0xf) as usize];
+            let off_y =
+                K_TRINEXX_DRAW_YOFFS[(yidx.wrapping_add((i as u8).wrapping_mul(8)) & 0xf) as usize];
+            let x = xb.wrapping_add(xshift).wrapping_add(off_x as u8);
+            let y = yb.wrapping_sub(8).wrapping_add(off_y as i16 as u16) as u8;
+            let f = info.flags | (if i != 0 { 0 } else { 0x40 });
+            self.set_oam_plain_at_for_draw(oam, x, y, 0xc, f, 2);
+            self.set_oam_plain_at_for_draw(oam + 4, x, y.wrapping_add(16), 0x2a, f, 2);
+            oam += 8;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+
+        // oam = (OamEnt *)&g_ram[0x800] + 91;
+        let mut oam = OAM_BUF + 91 * 4;
+        let g = self.ram[OVERLORD_X_LO_DRAW + 2] as usize;
+        let ov7 = (self.ram[OVERLORD_X_LO_DRAW + 7] as u16)
+            | ((self.ram[OVERLORD_X_LO_DRAW + 8] as u16) << 8);
+        for i in 0..5 {
+            let j = g * 5 + i;
+            let jc = j.min(K_TRINEXX_DRAW_X.len() - 1);
+            let x = xb.wrapping_add(K_TRINEXX_DRAW_X[jc] as u8);
+            let y = yb
+                .wrapping_sub(K_TRINEXX_DRAW_Y[jc] as u16)
+                .wrapping_sub(0x20)
+                .wrapping_add(ov7);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x as u16,
+                y,
+                K_TRINEXX_DRAW_CHAR[i],
+                info.flags,
+                2,
+            );
+            oam += 4;
+        }
+        self.ram[TMP_COUNTER_DRAW] = 0xff;
+
+        if self.frame_control_view().submodule() != 0 {
+            self.sprite_correct_oam_entries_for_draw(k, 3, 2);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_BigShadow(int k, int anim) {  // 9dd1a8 — sprite_main.c:17651
+    //   cur_sprite_y += sprite_z[k];
+    //   oam_cur_ptr += 16;
+    //   oam_ext_cur_ptr += 4;
+    //   Sprite_DrawMultiple(k, &kLargeShadow_Dmd[anim * 3], 3, NULL);
+    //   Sprite_Get16BitCoords(k);
+    // }
+    pub(super) fn sprite_draw_big_shadow(&mut self, k: usize, anim: i32) {
+        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        let z = self.ram[SPRITE_Z + k] as u16;
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y.wrapping_add(z));
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(16));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(4));
+        let base = (anim as usize) * 3;
+        self.sprite_draw_multiple(k, &K_LARGE_SHADOW_DMD[base..base + 3], None);
+        self.sprite_get16_bit_coords(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_CutsceneAgahnimSpell(int k, PrepOamCoordsRet *info) {  // 9dd516
+    //   sprite_main.c:17829.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_cutscene_agahnim_spell(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        // 28-entry table compiled below. Layout: (x:i8, y:i8, charnum, flags).
+        const K_CHATTY_AGAHNIM_TELEWARP_DATA: [(i8, i8, u8, u8); 28] = [
+            (-10, -16, 0xce, 0x06),
+            (18, -16, 0xce, 0x06),
+            (20, -13, 0x26, 0x06),
+            (20, -5, 0x36, 0x06),
+            (-12, -13, 0x26, 0x46),
+            (-12, -5, 0x36, 0x46),
+            (18, 0, 0x26, 0x06),
+            (18, 8, 0x36, 0x06),
+            (-10, 0, 0x26, 0x46),
+            (-10, 8, 0x36, 0x46),
+            (-8, 0, 0x22, 0x06),
+            (8, 0, 0x22, 0x46),
+            (-8, 16, 0x22, 0x86),
+            (8, 16, 0x22, 0xc6),
+            (-10, -16, 0xce, 0x04),
+            (18, -16, 0xce, 0x04),
+            (20, -13, 0x26, 0x44),
+            (20, -5, 0x36, 0x44),
+            (-12, -13, 0x26, 0x04),
+            (-12, -5, 0x36, 0x04),
+            (18, 0, 0x26, 0x44),
+            (18, 8, 0x36, 0x44),
+            (-10, 0, 0x26, 0x04),
+            (-10, 8, 0x36, 0x04),
+            (-8, 0, 0x20, 0x04),
+            (8, 0, 0x20, 0x44),
+            (-8, 16, 0x20, 0x84),
+            (8, 16, 0x20, 0xc4),
+        ];
+        const K_TELEWARP_BIG: [u8; 14] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2];
+        self.oam_allocate_from_region_a(0x38);
+        let mut data_off: usize = 0;
+        if self.ram[FRAME_COUNTER] & 2 == 0 {
+            data_off += 14;
+        }
+        if self.ram[SPRITE_SUBTYPE2 + k] == 0 {
+            return;
+        }
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let kn = self.ram[SPRITE_SUBTYPE2 + k].wrapping_sub(1);
+        let end = self.ram[SPRITE_SUBTYPE + k];
+        let t = end.wrapping_add(1) as usize;
+        let mut cur_oam = oam + t * 4;
+        let mut data_idx = data_off + t;
+        let mut big_idx = t;
+        let mut kn_var = kn;
+        loop {
+            let (dx, dy, ch, fl) = K_CHATTY_AGAHNIM_TELEWARP_DATA[data_idx % 28];
+            let big = K_TELEWARP_BIG[big_idx % 14];
+            let x = info.x.wrapping_add(dx as i16 as u16) as u8;
+            let y = info.y.wrapping_add(dy as i16 as u16).wrapping_sub(8) as u8;
+            self.set_oam_plain_at_for_draw(cur_oam, x, y, ch, fl | 0x31, big);
+            data_idx = data_idx.wrapping_add(1);
+            big_idx = big_idx.wrapping_add(1);
+            cur_oam += 4;
+            kn_var = kn_var.wrapping_sub(1);
+            if kn_var == end {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_AltarZeldaWarp(int k) {  // 9dd6b1 — sprite_main.c:17912
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_altar_zelda_warp(&mut self, k: usize) {
+        const K_ALTAR_ZELDA_WARP_DMD: [DrawMultipleData; 10] = [
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x0480,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x0480,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x04b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x04b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 0,
+                char_flags: 0x0524,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 0,
+                char_flags: 0x4524,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0524,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4524,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x05c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x05c6,
+                ext: 2,
+            },
+        ];
+        self.oam_allocate_from_region_a(8);
+        let base = ((self.ram[SPRITE_DELAY_MAIN + k] >> 2) as usize) * 2;
+        let base = base.min(K_ALTAR_ZELDA_WARP_DMD.len() - 2);
+        self.sprite_draw_multiple(k, &K_ALTAR_ZELDA_WARP_DMD[base..base + 2], None);
+    }
+
+    pub(super) fn sprite_cutscene_agahnim_zelda(&mut self, k: usize) {
+        const K_ALTAR_ZELDA_DMD: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0103,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x0104,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0100,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x0101,
+                ext: 2,
+            },
+        ];
+        let j = self.ram[SPRITE_DELAY_MAIN + k];
+        if j != 0 {
+            self.sprite_draw_altar_zelda_warp(k);
+            if j == 1 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            if j < 12 {
+                return;
+            }
+        }
+        self.oam_allocate_from_region_a(8);
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        let base = base.min(K_ALTAR_ZELDA_DMD.len() - 2);
+        self.sprite_draw_multiple(k, &K_ALTAR_ZELDA_DMD[base..base + 2], Some(&mut info));
+        let local_info = PrepOamCoordsRet {
+            x: info.x,
+            y: info.y,
+            r4: info.r4,
+            flags: info.flags,
+        };
+        self.altar_zelda_draw_body(k, &local_info);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_C1_CutsceneAgahnim(int k) {  // 9dd234
+    pub(super) fn sprite_c1_cutscene_agahnim(&mut self, k: usize) {
+        match self.ram[SPRITE_A + k] {
+            0 => self.cutscene_agahnim_agahnim(k),
+            1 => self.sprite_cutscene_agahnim_zelda(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void CutsceneAgahnim_Agahnim(int k) {  // 9dd23f
+    pub(super) fn cutscene_agahnim_agahnim(&mut self, k: usize) {
+        const LEVITATE_GFX: [u8; 4] = [2, 0, 3, 0];
+
+        let mut info = PrepOamCoordsRet::default();
+        if self.ram[SPRITE_C_DRAW + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            if (self.ram[SPRITE_DELAY_MAIN + k] & 1) == 0 {
+                self.chatty_agahnim_draw(k, &mut info);
+            }
+            return;
+        }
+
+        self.chatty_agahnim_draw(k, &mut info);
+        self.sprite_draw_cutscene_agahnim_spell(k, &info);
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            self.ram[SPRITE_AI_STATE + k] = 0;
+            self.ram[SPRITE_B_DRAW + k] = 0;
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+            self.ram[SPRITE_DELAY_MAIN + k] = 64;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x013d);
+                    self.sprite_show_message_minimal_c();
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+            }
+            1 => {
+                self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_add(1);
+                let j = self.ram[SPRITE_B_DRAW + k];
+                self.ram[SPRITE_GRAPHICS + k] = if self.ram[SPRITE_Z + 15] < 16 {
+                    LEVITATE_GFX[usize::from((j >> 5) & 3)]
+                } else {
+                    1
+                };
+                if (j & 15) == 0 {
+                    self.ram[SPRITE_GRAPHICS + 15] = 1;
+                    self.ram[SPRITE_Z + 15] = self.ram[SPRITE_Z + 15].wrapping_add(1);
+                    if self.ram[SPRITE_Z + 15] == 22 {
+                        self.ram[SOUND_EFFECT_2] = 0x27;
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                        self.ram[SPRITE_SUBTYPE2 + k] = 2;
+                        self.ram[SPRITE_SUBTYPE + k] = 255;
+                    }
+                }
+            }
+            2 => {
+                let delay = self.ram[SPRITE_DELAY_MAIN + k];
+                if delay == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                } else if delay == 120 {
+                    self.ram[INTRO_TIMES_PAL_FLASH] = 120;
+                } else if delay < 128 && (delay & 3) == 0 {
+                    self.ram[SOUND_EFFECT_2] = 0x2b;
+                    if self.ram[SPRITE_SUBTYPE2 + k] != 14 {
+                        self.ram[SPRITE_SUBTYPE2 + k] =
+                            self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(4);
+                    }
+                }
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    if (self.ram[SPRITE_DELAY_MAIN + k] & 3) == 0
+                        && self.ram[SPRITE_SUBTYPE + k] != 9
+                    {
+                        self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(2);
+                    }
+                } else {
+                    self.ram[SPRITE_DELAY_MAIN + 15] = 19;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                    self.ram[SPRITE_SUBTYPE2 + k] = 0;
+                    self.ram[SOUND_EFFECT_1_DRAW] = 0x33;
+                }
+            }
+            4 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x013e);
+                    self.sprite_show_message_minimal_c();
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 2;
+                }
+            }
+            5 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                    self.ram[SOUND_EFFECT_2] = 0x28;
+                }
+                self.ram[SPRITE_Y_VEL + k] = (-32i8) as u8;
+                self.sprite_move_y(k);
+                if self.ram[SPRITE_Y_LO + k] < 48 {
+                    self.ram[SPRITE_DELAY_AUX4 + k] = 66;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+                self.sprite_agahnim_apply_motion_blur(k);
+            }
+            6 => {
+                if self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                    self.ram[SPRITE_STATE + k] = 0;
+                    self.sprite_manually_set_death_flag_uw(k);
+                    let bits = read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) | 0x4000;
+                    write_le_u16(&mut self.ram, DUNG_SAVEGAME_STATE_BITS, bits);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn sprite_agahnim_apply_motion_blur(&mut self, k: usize) -> i32 {
+        if self.ram[FRAME_COUNTER] & 3 != 0 {
+            return -1;
+        }
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0xc1, &mut info);
+        if j >= 0 {
+            let ju = j as usize;
+            self.sprite_set_spawned_coordinates(ju, &info);
+            self.ram[SPRITE_GRAPHICS + ju] = self.ram[SPRITE_GRAPHICS + k];
+            self.ram[SPRITE_DELAY_MAIN + ju] = 32;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + ju] = 32;
+            self.ram[SPRITE_C + ju] = 32;
+        }
+        j
+    }
+
+    pub(super) fn agahnim_perform_attack(&mut self, k: usize) {
+        const K_AGAHNIM_X0: [i8; 6] = [0, 10, 8, 0, -10, -10];
+        const K_AGAHNIM_Y0: [i8; 6] = [-9, -2, -2, -9, -2, -2];
+
+        if k == 0 {
+            self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(1);
+            if self.ram[IS_IN_DARK_WORLD_DRAW] != 0 {
+                self.ram[SPRITE_SUBTYPE + k] &= 3;
+            }
+        }
+        if self.ram[SPRITE_SUBTYPE + k] == 5 {
+            self.ram[SPRITE_SUBTYPE + k] = 0;
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+            for _ in 0..4 {
+                self.sprite_spawn_lightning(k);
+            }
+        } else {
+            let mut info = SpriteSpawnInfo::default();
+            let j = self.sprite_spawn_dynamically(k, 0x7b, &mut info);
+            if j >= 0 {
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x29);
+                let ju = j as usize;
+                let i = usize::from(self.ram[SPRITE_D + k]).min(K_AGAHNIM_X0.len() - 1);
+                self.sprite_set_x(ju, info.r0_x.wrapping_add(K_AGAHNIM_X0[i] as i16 as u16));
+                self.sprite_set_y(ju, info.r2_y.wrapping_add(K_AGAHNIM_Y0[i] as i16 as u16));
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + ju] = self.ram[SPRITE_Y_HI + ju];
+                self.ram[SPRITE_X_VEL + ju] = self.ram[SPRITE_X_VEL + k];
+                self.ram[SPRITE_Y_VEL + ju] = self.ram[SPRITE_Y_VEL + k];
+                if self.ram[SPRITE_SUBTYPE + k] >= 2 && (self.get_random_number() & 1) == 0 {
+                    self.ram[SPRITE_B + ju] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + ju] = 32;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Agahnim_Draw(int k) {  // 9ed978
+    pub(super) fn agahnim_draw(&mut self, k: usize) {
+        const X0: [i8; 72] = [
+            -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8,
+            8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8,
+            -8, 8, -6, 6, -6, 6, -8, 8, -8, 8, -6, 6, -6, 6, 0, 8, 0, 8, -8, 8, -8, 8,
+        ];
+        const Y0: [i8; 72] = [
+            -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8,
+            -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8,
+            8, 8, -6, -6, 6, 6, -8, -8, 8, 8, -6, -6, 6, 6, 0, 0, 8, 8, 8, 8, 8, 8,
+        ];
+        const CHAR0: [u8; 72] = [
+            0x82, 0x82, 0xa2, 0xa2, 0x80, 0x80, 0xa0, 0xa0, 0x84, 0x84, 0xa4, 0xa4, 0x86, 0x86,
+            0xa6, 0xa6, 0x88, 0x8a, 0xa8, 0xaa, 0x8c, 0x8e, 0xac, 0xae, 0xc4, 0xc2, 0xe4, 0xe6,
+            0xc0, 0xc2, 0xe0, 0xe2, 0x8a, 0x88, 0xaa, 0xa8, 0x8e, 0x8c, 0xae, 0xac, 0xc2, 0xc4,
+            0xe6, 0xe4, 0xc2, 0xc0, 0xe2, 0xe0, 0xec, 0xec, 0xec, 0xec, 0xec, 0xec, 0xec, 0xec,
+            0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xdf, 0xdf, 0xdf, 0xdf, 0x40, 0x42,
+            0x40, 0x42,
+        ];
+        const FLAGS0: [u8; 72] = [
+            0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0,
+            0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0, 0, 0,
+        ];
+        const X1: [i8; 72] = [
+            -7, 15, -11, 11, -11, 11, -8, 8, -4, 4, 0, 0, -10, -1, -14, -5, -14, -5, -12, -7, -10,
+            -7, -10, -10, 16, 8, 12, 4, 12, 4, 10, 6, 9, 7, 8, 8, -6, -6, -10, -10, -10, -10, -10,
+            -10, -10, -10, -10, -10, 14, 14, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, -7, 15, -11,
+            11, -11, 11, -8, 8, -4, 4, 0, 0,
+        ];
+        const Y1: [i8; 72] = [
+            -5, -5, -9, -9, -9, -9, -9, -9, -9, -9, -9, -9, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2,
+            -2, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2, -2, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2,
+            -2, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2, -2, -5, -5, -9, -9, -9, -9, -9, -9, -9, -9,
+            -9, -9,
+        ];
+        const CHAR1: [u8; 36] = [
+            0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc,
+            0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6,
+            0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6,
+        ];
+        const BIG1: [u8; 36] = [
+            0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2,
+            2, 0, 2, 2, 2, 2, 2,
+        ];
+
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]).min(17);
+        for i in (0..=3).rev() {
+            let j = g * 4 + i;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                info_x.wrapping_add(X0[j] as i16 as u16) as u8,
+                info_y.wrapping_add(Y0[j] as i16 as u16) as u8,
+                CHAR0[j],
+                info_flags | FLAGS0[j],
+                if (0x40..0x44).contains(&j) { 0 } else { 2 },
+            );
+            oam += 4;
+        }
+        if g < 12 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info_x,
+                y: info_y,
+                r4: 0,
+                flags: info_flags,
+            };
+            self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
+        }
+        if self.frame_control_view().submodule() != 0 {
+            self.sprite_correct_oam_entries_for_draw(k, 3, 0xff);
+        }
+
+        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+        else {
+            return;
+        };
+        if self.ram[SPRITE_D + k] != 0 {
+            self.oam_allocate_from_region_c(8);
+        } else {
+            self.oam_allocate_from_region_b(8);
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        if self.ram[SPRITE_HEAD_DIR + k] == 0 {
+            return;
+        }
+        let g = usize::from(self.ram[SPRITE_HEAD_DIR + k].wrapping_sub(1)).min(35);
+        let flags = (((self.ram[FRAME_COUNTER] >> 1) & 2).wrapping_add(2)).wrapping_add(0x31);
+        for i in (0..=1).rev() {
+            let j = g * 2 + i;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                info_x.wrapping_add(X1[j] as i16 as u16) as u8,
+                info_y.wrapping_add(Y1[j] as i16 as u16) as u8,
+                CHAR1[g],
+                flags,
+                BIG1[g],
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_7A_Agahnim(int k) {  // 9ed330
+    pub(super) fn sprite_7_a_agahnim(&mut self, k: usize) {
+        const START_STATE: [u8; 2] = [1, 6];
+        const GFX0: [u8; 5] = [12, 13, 14, 15, 16];
+        const TAB5: [i8; 2] = [32, -32];
+        const TAB6: [u8; 2] = [9, 11];
+        const DIR: [u8; 25] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 1, 1, 4, 4, 0, 2, 2, 4, 4, 3, 2, 2,
+        ];
+        const GFX1: [u8; 6] = [2, 10, 8, 0, 4, 6];
+        const TAB0: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0];
+        const TAB1: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 6, 5, 4, 3, 2, 1, 0, 0, 0];
+        const TAB2: [u8; 6] = [30, 24, 12, 0, 6, 18];
+        const GFX2: [u8; 5] = [16, 15, 14, 13, 12];
+        const TAB3: [u8; 16] = [
+            0x38, 0x38, 0x38, 0x58, 0x78, 0x98, 0xb8, 0xb8, 0xb8, 0x98, 0x58, 0x58, 0x60, 0x90,
+            0x98, 0x78,
+        ];
+        const TAB4: [u8; 16] = [
+            0xb8, 0x78, 0x58, 0x48, 0x48, 0x48, 0x58, 0x78, 0xb8, 0xb8, 0xb8, 0x90, 0x70, 0x70,
+            0x90, 0xa0,
+        ];
+        const GFX3: [u8; 7] = [0, 8, 10, 2, 2, 6, 4];
+        const AGAHNIM_PHASE_SCRATCH: usize = 0x0ff8;
+
+        self.agahnim_draw(k);
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 32;
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+            self.ram[SPRITE_D + k] = 3;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 1;
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_AI_STATE + k] =
+                    START_STATE[usize::from(self.ram[IS_IN_DARK_WORLD_DRAW] != 0)];
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x013f);
+                    self.sprite_show_message_minimal_c();
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                }
+            }
+            2 => {
+                self.ram[AGAHNIM_PHASE_SCRATCH] = 0;
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        GFX0[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3).min(4)];
+                }
+            }
+            3 => {
+                let delay = self.ram[SPRITE_DELAY_MAIN + k];
+                if delay == 192 {
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x27);
+                }
+                if delay >= 239 || delay < 16 {
+                    let filter_k = if self.ram[IS_IN_DARK_WORLD_DRAW] != 0 {
+                        k
+                    } else {
+                        2
+                    };
+                    self.AgahnimWarpShadowFilter(filter_k);
+                } else if k == 0 {
+                    self.sprite_check_damage_to_and_from_link(k);
+                    self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 0;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 39;
+                    return;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] >= 128 {
+                    self.sprite_apply_speed_towards_link(k, 2);
+                    let idx = ((self.ram[SPRITE_Y_VEL + k] as i8 as i32 + 2) * 5
+                        + 2
+                        + self.ram[SPRITE_X_VEL + k] as i8 as i32)
+                        .clamp(0, 24) as usize;
+                    self.ram[SPRITE_D + k] = DIR[idx];
+                    self.sprite_apply_speed_towards_link(k, 32);
+                    if self.ram[SPRITE_SUBTYPE + k] == 4 {
+                        self.ram[SPRITE_D + k] = 3;
+                    }
+                } else if self.ram[SPRITE_DELAY_MAIN + k] == 112 {
+                    self.agahnim_perform_attack(k);
+                }
+                let j = usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4);
+                self.ram[SPRITE_A + k] = TAB0[j];
+                let t = TAB1[j];
+                self.ram[SPRITE_HEAD_DIR + k] = if t != 0 {
+                    t.wrapping_add(TAB2[usize::from(self.ram[SPRITE_D + k]).min(5)])
+                } else {
+                    t
+                };
+                self.ram[SPRITE_GRAPHICS + k] =
+                    GFX1[usize::from(self.ram[SPRITE_D + k]).min(5)] + self.ram[SPRITE_A + k];
+            }
+            4 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    let j = if self.ram[SPRITE_SUBTYPE + k] == 4 {
+                        4
+                    } else {
+                        self.get_random_number() & 0x0f
+                    };
+                    self.ram[SPRITE_C_DRAW + k] = TAB3[usize::from(j)];
+                    self.ram[SPRITE_E + k] = TAB4[usize::from(j)];
+                    self.ram[SPRITE_G_DRAW + k] = 8;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        GFX2[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3).min(4)];
+                }
+            }
+            5 => {
+                if self.ram[SPRITE_X_LO + k]
+                    .wrapping_sub(self.ram[SPRITE_C_DRAW + k])
+                    .wrapping_add(7)
+                    < 14
+                    && self.ram[SPRITE_Y_LO + k]
+                        .wrapping_sub(self.ram[SPRITE_E + k])
+                        .wrapping_add(7)
+                        < 14
+                {
+                    self.ram[SPRITE_X_LO + k] = self.ram[SPRITE_C_DRAW + k];
+                    self.ram[SPRITE_Y_LO + k] = self.ram[SPRITE_E + k];
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 39;
+                    return;
+                }
+                let x = (u16::from(self.ram[SPRITE_X_HI + k]) << 8)
+                    | u16::from(self.ram[SPRITE_C_DRAW + k]);
+                let y =
+                    (u16::from(self.ram[SPRITE_Y_HI + k]) << 8) | u16::from(self.ram[SPRITE_E + k]);
+                let pt = self.sprite_project_speed_towards_location(
+                    k,
+                    x,
+                    y,
+                    self.ram[SPRITE_G_DRAW + k],
+                );
+                self.ram[SPRITE_Y_VEL + k] = pt.y;
+                self.ram[SPRITE_X_VEL + k] = pt.x;
+                if self.ram[SPRITE_G_DRAW + k] < 64 {
+                    self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+                }
+                self.sprite_move_xy(k);
+            }
+            6 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x0141);
+                    self.sprite_show_message_minimal_c();
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                }
+            }
+            7 => {
+                if self.ram[SPRITE_ANIM_CLOCK_DRAW + k] != 0 {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 3;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                    } else {
+                        let idx = k.saturating_sub(1).min(1);
+                        self.ram[SPRITE_X_VEL + k] = TAB5[idx] as u8;
+                        self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(2);
+                        self.sprite_move_xy(k);
+                        let j = self.sprite_agahnim_apply_motion_blur(k);
+                        if j >= 0 {
+                            self.ram[SPRITE_OAM_FLAGS + j as usize] = 4;
+                        }
+                    }
+                } else if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                } else if self.ram[SPRITE_DELAY_MAIN + k] == 64 {
+                    self.ram[SOUND_EFFECT_2] = 0x28;
+                    self.ram[TMP_COUNTER_DRAW] = 1;
+                    loop {
+                        let mut info = SpriteSpawnInfo::default();
+                        let j = self.sprite_spawn_dynamically_ex(k, 0x7a, &mut info, 2);
+                        if j >= 0 {
+                            let ju = j as usize;
+                            self.sprite_set_spawned_coordinates(ju, &info);
+                            self.ram[SPRITE_FLAGS3 + ju] = TAB6[ju.saturating_sub(1).min(1)];
+                            self.ram[SPRITE_ANIM_CLOCK_DRAW + ju] =
+                                self.ram[SPRITE_FLAGS3 + ju] & 15;
+                            self.ram[SPRITE_OAM_FLAGS + ju] = self.ram[SPRITE_ANIM_CLOCK_DRAW + ju];
+                            self.ram[SPRITE_AI_STATE + ju] = self.ram[SPRITE_AI_STATE + k];
+                            self.ram[SPRITE_DELAY_MAIN + ju] = 32;
+                        }
+                        self.ram[TMP_COUNTER_DRAW] = self.ram[TMP_COUNTER_DRAW].wrapping_sub(1);
+                        if sign8(self.ram[TMP_COUNTER_DRAW]) {
+                            break;
+                        }
+                    }
+                }
+            }
+            8 => {
+                self.ram[FLAG_BLOCK_LINK_MENU] = 2;
+                self.ram[SPRITE_HEAD_DIR + k] = 0;
+                if self.ram[SPRITE_DELAY_MAIN + k] >= 64 {
+                    self.ram[SPRITE_HIT_TIMER + k] |= 0xe0;
+                } else {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                        self.sprite_spawn_phantom_ganon(k);
+                        self.ram[MUSIC_CONTROL] = 0x1d;
+                    }
+                    self.ram[SPRITE_HIT_TIMER + k] = 0;
+                    self.ram[SPRITE_GRAPHICS + k] = 17;
+                }
+            }
+            9 => {
+                self.ram[SPRITE_HEAD_DIR + k] = 0;
+                let x = self.sprite_get_x(0);
+                let y = self.sprite_get_y(0);
+                let cur_x = self.sprite_get_x(k);
+                let cur_y = self.sprite_get_y(k);
+                if cur_x.wrapping_sub(x).wrapping_add(4) < 8
+                    && cur_y.wrapping_sub(y).wrapping_add(4) < 8
+                {
+                    self.ram[SPRITE_STATE + k] = 0;
+                }
+                let pt = self.sprite_project_speed_towards_location(k, x, y, 0x20);
+                self.ram[SPRITE_Y_VEL + k] = pt.y;
+                self.ram[SPRITE_X_VEL + k] = pt.x;
+                self.sprite_move_xy(k);
+                self.sprite_agahnim_apply_motion_blur(k);
+            }
+            10 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                    self.prepare_dungeon_exit_from_boss_fight();
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] < 16 {
+                    self.ram[CGADSUB_COPY] = 0x7f;
+                    self.ram[TM_COPY] = 6;
+                    self.ram[TS_COPY] = 0x10;
+                    self.PaletteFilter_SP5F();
+                }
+                if self.ram[SPRITE_Z_VEL + k] != 0xff {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(1);
+                }
+                let z = u16::from(self.ram[SPRITE_Z_SUBPOS + k])
+                    + u16::from(self.ram[SPRITE_Z_VEL + k]);
+                self.ram[SPRITE_Z_SUBPOS + k] = z as u8;
+                if z & 0x100 != 0 {
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    if self.ram[SPRITE_SUBTYPE2 + k] == 7 {
+                        self.ram[SPRITE_SUBTYPE2 + k] = 0;
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x04);
+                    }
+                }
+                self.ram[SPRITE_GRAPHICS + k] =
+                    GFX3[usize::from(self.ram[SPRITE_SUBTYPE2 + k]).min(6)];
+            }
+            _ => {}
+        }
+    }
+
+    // void SpriteActive_Main(int k) {  // 869271
+    pub(super) fn sprite_active_main(&mut self, k: usize) {
+        match self.ram[SPRITE_TYPE + k] {
+            0x00 => self.sprite_raven(k),
+            0x01 => self.sprite_01_vulture_bounce(k),
+            0x02 => self.sprite_02_stalfos_head(k),
+            0x03 => {}
+            0x04 => self.sprite_pull_switch_bounce(k),
+            0x05 => self.sprite_pull_switch_bounce(k),
+            0x06 => self.sprite_pull_switch_bounce(k),
+            0x07 => self.sprite_pull_switch_bounce(k),
+            0x08 => self.sprite_08_octorok(k),
+            0x09 => self.sprite_09_giant_moldorm(k),
+            0x0a => self.sprite_08_octorok(k),
+            0x0b => self.sprite_0_b_cucco(k),
+            0x0c => self.sprite_0_c_octorok_stone(k),
+            0x0d => self.sprite_0_d_buzzblob(k),
+            0x0e => self.sprite_0_e_snapdragon(k),
+            0x0f => self.sprite_0_f_octoballoon(k),
+            0x10 => self.sprite_10_octoballoon_baby(k),
+            0x11 => self.sprite_11_hinox(k),
+            0x12 => self.sprite_12_moblin(k),
+            0x13 => self.sprite_13_mini_helmasaur(k),
+            0x14 => self.sprite_14_thieves_town_grate(k),
+            0x15 => self.sprite_15_antifairy(k),
+            0x16 => self.sprite_16_elder_bounce(k),
+            0x17 => self.sprite_17_hoarder(k),
+            0x18 => self.sprite_18_mini_moldorm(k),
+            0x19 => self.sprite_19_poe(k),
+            0x1a => self.sprite_1_a_smithy(k),
+            0x1b => self.sprite_1_b_arrow(k),
+            0x1c => self.sprite_1_c_statue(k),
+            0x1d => self.sprite_1_d_flute_quest(k),
+            0x1e => self.sprite_1_e_crystal_switch(k),
+            0x1f => self.sprite_1_f_sick_kid(k),
+            0x20 => self.sprite_20_sluggula(k),
+            0x21 => self.sprite_21_water_switch(k),
+            0x22 => self.sprite_22_ropa(k),
+            0x23 => self.sprite_23_red_bari(k),
+            0x24 => self.sprite_23_red_bari(k),
+            0x25 => self.sprite_25_talking_tree(k),
+            0x26 => self.sprite_26_hardhat_beetle(k),
+            0x27 => self.sprite_27_deadrock(k),
+            0x28 => self.sprite_28_dark_world_hint_npc(k),
+            0x29 => self.sprite_human_multi_1(k),
+            0x2a => self.sprite_sweeping_lady(k),
+            0x2b => self.sprite_2_b_hobo(k),
+            0x2c => self.sprite_lumberjacks(k),
+            0x2d => self.sprite_2_d_telepathic_tile(k),
+            0x2e => self.sprite_2_e_flute_kid(k),
+            0x2f => self.sprite_maze_game_lady(k),
+            0x30 => self.sprite_maze_game_guy(k),
+            0x31 => self.sprite_fortune_teller(k),
+            0x32 => self.sprite_quarrel_bros(k),
+            0x33 => self.sprite_33_rupee_pull(k),
+            0x34 => self.sprite_young_snitch_lady(k),
+            0x35 => self.sprite_inn_keeper(k),
+            0x36 => self.sprite_witch(k),
+            0x37 => self.sprite_37_waterfall(k),
+            0x38 => self.sprite_38_eye_statue(k),
+            0x39 => self.sprite_39_locksmith(k),
+            0x3a => self.sprite_3_a_magic_bat(k),
+            0x3b => self.sprite_dash_item(k),
+            0x3c => self.sprite_trough_boy(k),
+            0x3d => self.sprite_old_snitch_lady(k),
+            0x3e => self.sprite_17_hoarder(k),
+            0x3f => self.sprite_tutorial_guard_or_barrier(k),
+            0x40 => self.sprite_tutorial_guard_or_barrier(k),
+            0x41 => self.sprite_41_blue_guard(k),
+            0x42 => self.sprite_41_blue_guard(k),
+            0x43 => self.sprite_41_blue_guard(k),
+            0x44 => self.sprite_44_bluesain_bolt(k),
+            0x45 => self.sprite_45_hog_spear_man(k),
+            0x46 => self.sprite_46_blue_archer(k),
+            0x47 => self.sprite_47_green_bush_guard(k),
+            0x48 => self.sprite_48_red_javelin_guard(k),
+            0x49 => self.sprite_49_red_bush_guard(k),
+            0x4a => self.sprite_4_a_bomb_guard(k),
+            0x4b => self.sprite_4_b_green_knife_guard(k),
+            0x4c => self.sprite_4_c_geldman(k),
+            0x4d => self.sprite_4_d_toppo(k),
+            0x4e => self.sprite_4_e_popo(k),
+            0x4f => self.sprite_4_e_popo(k),
+            0x50 => self.sprite_50_cannonball(k),
+            0x51 => self.sprite_51_armos_statue(k),
+            0x52 => self.sprite_52_king_zora(k),
+            0x53 => self.sprite_53_armos_knight(k),
+            0x54 => self.sprite_54_lanmolas(k),
+            0x55 => self.sprite_55_zora(k),
+            0x56 => self.sprite_56_walking_zora(k),
+            0x57 => self.sprite_57_desert_statue(k),
+            0x58 => self.sprite_58_crab(k),
+            0x59 => self.sprite_59_lost_woods_bird(k),
+            0x5a => self.sprite_5_a_lost_woods_squirrel(k),
+            0x5b => self.sprite_5_b_spark_clockwise(k),
+            0x5c => self.sprite_5_b_spark_clockwise(k),
+            0x5d => self.sprite_5_d_roller_vertical_down_first(k),
+            0x5e => self.sprite_5_d_roller_vertical_down_first(k),
+            0x5f => self.sprite_5_d_roller_vertical_down_first(k),
+            0x60 => self.sprite_5_d_roller_vertical_down_first(k),
+            0x61 => self.sprite_61_beamos(k),
+            0x62 => self.sprite_62_master_sword(k),
+            0x63 => self.sprite_63_debirando_pit(k),
+            0x64 => self.sprite_64_debirando(k),
+            0x65 => self.sprite_65_archery_game(k),
+            0x66 => self.sprite_66_wall_cannon_vertical_left(k),
+            0x67 => self.sprite_66_wall_cannon_vertical_left(k),
+            0x68 => self.sprite_66_wall_cannon_vertical_left(k),
+            0x69 => self.sprite_66_wall_cannon_vertical_left(k),
+            0x6a => self.sprite_6_a_ball_n_chain(k),
+            0x6b => self.sprite_6_b_cannon_trooper(k),
+            0x6c => self.sprite_6_c_mirror_portal(k),
+            0x6d => self.sprite_6_d_rat(k),
+            0x6e => self.sprite_6_e_rope(k),
+            0x6f => self.sprite_6_f_keese(k),
+            0x70 => self.sprite_70_king_helmasaur_fireball(k),
+            0x71 => self.sprite_71_leever(k),
+            0x72 => self.sprite_72_fairy_pond(k),
+            0x73 => self.sprite_73_uncle_and_priest(k),
+            0x74 => self.sprite_running_man(k),
+            0x75 => self.sprite_bottle_vendor(k),
+            0x76 => self.sprite_76_zelda(k),
+            0x77 => self.sprite_15_antifairy(k),
+            0x78 => self.sprite_78_mrs_sahasrahla(k),
+            0x79 => self.sprite_79_bee(k),
+            0x7a => self.sprite_7_a_agahnim(k),
+            0x7b => self.sprite_7_b_agahnim_balls(k),
+            0x7c => self.sprite_7_c_green_stalfos(k),
+            0x7d => self.sprite_7_d_big_spike(k),
+            0x7e => self.sprite_7_e_firebar_clockwise(k),
+            0x7f => self.sprite_7_e_firebar_clockwise(k),
+            0x80 => self.sprite_80_firesnake(k),
+            0x81 => self.sprite_81_hover(k),
+            0x82 => self.sprite_82_antifairy_circle(k),
+            0x83 => self.sprite_83_green_eyegore(k),
+            0x84 => self.sprite_83_green_eyegore(k),
+            0x85 => self.sprite_85_yellow_stalfos(k),
+            0x86 => self.sprite_86_kodongo(k),
+            0x87 => self.sprite_87_kodongo_fire(k),
+            0x88 => self.sprite_88_mothula(k),
+            0x89 => self.sprite_89_mothula_beam(k),
+            0x8a => self.sprite_8_a_spike_block(k),
+            0x8b => self.sprite_8_b_gibdo(k),
+            0x8c => self.sprite_8_c_arrghus(k),
+            0x8d => self.sprite_8_d_arrghi(k),
+            0x8e => self.sprite_8_e_terrorpin(k),
+            0x8f => self.sprite_8_f_blob(k),
+            0x90 => self.sprite_90_wallmaster(k),
+            0x91 => self.sprite_91_stalfos_knight(k),
+            0x92 => self.sprite_92_helmasaur_king(k),
+            0x93 => self.sprite_93_bumper(k),
+            0x94 => self.sprite_94_pirogusu(k),
+            0x95 => self.sprite_95_laser_eye_left(k),
+            0x96 => self.sprite_95_laser_eye_left(k),
+            0x97 => self.sprite_95_laser_eye_left(k),
+            0x98 => self.sprite_95_laser_eye_left(k),
+            0x99 => self.sprite_99_pengator(k),
+            0x9a => self.sprite_9_a_kyameron(k),
+            0x9b => self.sprite_9_b_wizzrobe(k),
+            0x9c => self.sprite_9_c_zoro(k),
+            0x9d => self.sprite_9_c_zoro(k),
+            0x9e => self.sprite_9_e_haunted_grove_ostritch(k),
+            0x9f => self.sprite_9_f_haunted_grove_rabbit(k),
+            0xa0 => self.sprite_a0_haunted_grove_bird(k),
+            0xa1 => self.sprite_a1_freezor(k),
+            0xa2 => self.sprite_a2_kholdstare(k),
+            0xa3 => self.sprite_a3_kholdstare_shell(k),
+            0xa4 => self.sprite_a4_falling_ice(k),
+            0xa5 => self.sprite_zazak_main(k),
+            0xa6 => self.sprite_zazak_main(k),
+            0xa7 => self.sprite_a7_stalfos(k),
+            0xa8 => self.sprite_a8_green_zirro(k),
+            0xa9 => self.sprite_a8_green_zirro(k),
+            0xaa => self.sprite_aa_pikit(k),
+            0xab => self.sprite_ab_crystal_maiden(k),
+            0xac => self.sprite_ac_apple(k),
+            0xad => self.sprite_ad_old_man(k),
+            0xae => self.sprite_ae_pipe_down(k),
+            0xaf => self.sprite_ae_pipe_down(k),
+            0xb0 => self.sprite_ae_pipe_down(k),
+            0xb1 => self.sprite_ae_pipe_down(k),
+            0xb2 => self.sprite_b2_player_bee(k),
+            0xb3 => self.sprite_b3_pedestal_plaque(k),
+            0xb4 => self.sprite_b4_purple_chest(k),
+            0xb5 => self.sprite_b5_bomb_shop(k),
+            0xb6 => self.sprite_b6_kiki(k),
+            0xb7 => self.sprite_b7_blind_maiden(k),
+            0xb8 => self.sprite_b8_dialogue_tester(k),
+            0xb9 => self.sprite_b9_bully_and_pink_ball(k),
+            0xba => self.sprite_ba_whirlpool(k),
+            0xbb => self.sprite_bb_shopkeeper(k),
+            0xbc => self.sprite_bc_drunkard(k),
+            0xbd => self.sprite_bd_vitreous(k),
+            0xbe => self.sprite_be_vitreous_eye(k),
+            0xbf => self.sprite_bf_lightning(k),
+            0xc0 => self.sprite_c0_catfish(k),
+            0xc1 => self.sprite_c1_cutscene_agahnim(k),
+            0xc2 => self.sprite_c2_boulder(k),
+            0xc3 => self.sprite_c3_gibo(k),
+            0xc4 => self.sprite_c4_thief(k),
+            0xc5 => self.sprite_c5_medusa(k),
+            0xc6 => self.sprite_c6_4_way_shooter(k),
+            0xc7 => self.sprite_c7_pokey(k),
+            0xc8 => self.sprite_c8_big_fairy(k),
+            0xc9 => self.sprite_c9_tektite(k),
+            0xca => self.sprite_ca_chain_chomp(k),
+            0xcb => self.sprite_cb_trinexx_rock_head(k),
+            0xcc => self.sprite_cc(k),
+            0xcd => self.sprite_cd(k),
+            0xce => self.sprite_ce_blind(k),
+            0xcf => self.sprite_cf_swamola(k),
+            0xd0 => self.sprite_d0_lynel(k),
+            0xd1 => self.sprite_d1_bunny_beam(k),
+            0xd2 => self.sprite_d2_flopping_fish(k),
+            0xd3 => self.sprite_d3_stal(k),
+            0xd4 => self.sprite_d4_landmine(k),
+            0xd5 => self.sprite_d5_dig_game_guy(k),
+            0xd6 => self.sprite_d6_ganon(k),
+            0xd7 => self.sprite_d6_ganon(k),
+            0xd8 => self.sprite_d8_heart(k),
+            0xd9 => self.sprite_d9_green_rupee(k),
+            0xda => self.sprite_d9_green_rupee(k),
+            0xdb => self.sprite_d9_green_rupee(k),
+            0xdc => self.sprite_d9_green_rupee(k),
+            0xdd => self.sprite_d9_green_rupee(k),
+            0xde => self.sprite_d9_green_rupee(k),
+            0xdf => self.sprite_d9_green_rupee(k),
+            0xe0 => self.sprite_d9_green_rupee(k),
+            0xe1 => self.sprite_d9_green_rupee(k),
+            0xe2 => self.sprite_d9_green_rupee(k),
+            0xe3 => self.sprite_e3_fairy(k),
+            0xe4 => self.sprite_e4_small_key(k),
+            0xe5 => self.sprite_e4_small_key(k),
+            0xe6 => self.sprite_d9_green_rupee(k),
+            0xe7 => self.sprite_e7_mushroom(k),
+            0xe8 => self.sprite_e8_fake_sword(k),
+            0xe9 => self.sprite_e9_potion_shop(k),
+            0xea => self.sprite_heart_container(k),
+            0xeb => self.sprite_heart_piece(k),
+            0xec => self.sprite_ec_thrown_item(k),
+            0xed => self.sprite_ed_somaria_platform(k),
+            0xee => self.sprite_ee_movable_mantle(k),
+            0xef => self.sprite_ed_somaria_platform(k),
+            0xf0 => self.sprite_ed_somaria_platform(k),
+            0xf1 => self.sprite_ed_somaria_platform(k),
+            0xf2 => self.sprite_f2_medallion_tablet(k),
+            _ => {}
+        }
+    }
+
+    pub(super) fn sprite_7_b_agahnim_balls(&mut self, k: usize) {
+        const K_ENERGY_BALL_GFX: [u8; 16] = [2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0];
+
+        if self.ram[SPRITE_B + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                self.sprite_apply_speed_towards_link(k, 32);
+            }
+            self.ram[SPRITE_OAM_FLAGS + k] = 5;
+        } else {
+            self.ram[SPRITE_OAM_FLAGS + k] = ((self.ram[FRAME_COUNTER] >> 1) & 2).wrapping_add(3);
+        }
+
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_GRAPHICS + k] != 2 {
+                self.sprite_draw_single_large(k);
+            } else {
+                self.sprite_draw_single_small(k);
+            }
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+            } else if self.ram[SPRITE_DELAY_MAIN + k] == 6 {
+                self.ram[SPRITE_X_VEL + k] = 64;
+                self.ram[SPRITE_Y_VEL + k] = 64;
+                self.sprite_move_xy(k);
+            }
+            self.ram[SPRITE_GRAPHICS + k] =
+                K_ENERGY_BALL_GFX[self.ram[SPRITE_DELAY_MAIN + k] as usize];
+            return;
+        }
+
+        if self.ram[SPRITE_B + k] != 0 {
+            self.seeker_energy_ball_draw(k);
+        } else {
+            self.sprite_draw_single_large(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.sprite_move_xy(k);
+        if self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+            if self.ram[SPRITE_B + k] != 0 {
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
+                self.create_six_blue_balls(k);
+                return;
+            }
+        }
+
+        if self.ram[SPRITE_A + k] != 0 && self.ram[SPRITE_IGNORE_PROJECTILE_DRAW] == 0 {
+            let mut hb = SpriteHitBox {
+                r0_xlo: self.ram[SPRITE_X_LO + k],
+                r8_xhi: self.ram[SPRITE_X_HI + k],
+                r1_ylo: self.ram[SPRITE_Y_LO + k],
+                r9_yhi: self.ram[SPRITE_Y_HI + k],
+                r2: 15,
+                r3: 15,
+                r4_spr_xlo: 0,
+                r10_spr_xhi: 0,
+                r5_spr_ylo: 0,
+                r11_spr_yhi: 0,
+                r6_spr_xsize: 0,
+                r7_spr_ysize: 0,
+            };
+            self.sprite_setup_hit_box(0, &mut hb);
+            if self.check_if_hit_boxes_overlap(&hb) {
+                self.sprite_give_damage(0, 16, 0xa0);
+                self.ram[SPRITE_STATE + k] = 0;
+                self.ram[SPRITE_X_RECOIL] = self.ram[SPRITE_X_VEL + k];
+                self.ram[SPRITE_Y_RECOIL_DRAW] = self.ram[SPRITE_Y_VEL + k];
+            }
+        } else {
+            self.sprite_check_damage_to_link(k);
+            if (self.sprite_check_damage_from_link(k) & K_CHECK_DAMAGE_FROM_PLAYER_CARRY_DRAW) != 0
+            {
+                if self.ram[SPRITE_B + k] != 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
+                    self.create_six_blue_balls(k);
+                    return;
+                }
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x05);
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x29);
+                self.sprite_apply_speed_towards_link(k, 0x30);
+                self.ram[SPRITE_X_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_X_VEL + k]);
+                self.ram[SPRITE_Y_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_Y_VEL + k]);
+                self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+            }
+        }
+
+        if ((((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) | self.ram[SPRITE_B + k]) != 0 {
+            return;
+        }
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0x7b, &mut info);
+        if j < 0 {
+            return;
+        }
+        let ju = j as usize;
+        self.sprite_set_spawned_coordinates(ju, &info);
+        self.ram[SPRITE_DELAY_MAIN + ju] = 15;
+        self.ram[SPRITE_AI_STATE + ju] = 15;
+        self.ram[SPRITE_B + ju] = self.ram[SPRITE_B + k];
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Moldorm_Head(int k) {  // 9dd993 — sprite_main.c:17976
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_09_giant_moldorm(&mut self, k: usize) {
+        const K_GIANT_MOLDORM_XVEL: [i8; 32] = [
+            24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9, 0, 9, 17, 22, 36, 33, 25, 13, 0,
+            -13, -25, -33, -36, -33, -25, -13, 0, 13, 25, 33,
+        ];
+        const K_GIANT_MOLDORM_YVEL: [i8; 32] = [
+            0, 9, 17, 22, 24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9, 0, 13, 25, 33, 36, 33,
+            25, 13, 0, -13, -25, -33, -36, -33, -25, -13,
+        ];
+        const K_GIANT_MOLDORM_NEXT_DIR: [u8; 16] =
+            [8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7];
+
+        self.giant_moldorm_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_AI_STATE + k] == 3 {
+            if self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
+                self.ram[SPRITE_STATE + k] = 4;
+                self.ram[SPRITE_A + k] = 0;
+                self.ram[SPRITE_DELAY_MAIN + k] = 224;
+            } else {
+                self.ram[SPRITE_HIT_TIMER + k] = self.ram[SPRITE_DELAY_AUX4 + k] | 224;
+            }
+            return;
+        }
+
+        self.sprite_check_damage_from_link(k);
+        let low_health = self.ram[SPRITE_HEALTH + k] < 3;
+        self.ram[SPRITE_SUBTYPE2 + k] =
+            self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(if low_health { 2 } else { 1 });
+        if (self.ram[FRAME_COUNTER] & if low_health { 3 } else { 7 }) == 0 {
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
+        }
+
+        if self.ram[SPRITE_F_DRAW + k] != 0 {
+            self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 64;
+            if (self.ram[FRAME_COUNTER] & 3) == 0 {
+                self.ram[SPRITE_F_DRAW + k] = self.ram[SPRITE_F_DRAW + k].wrapping_sub(1);
+            }
+            return;
+        }
+
+        if self.ram[LINK_INCAPACITATED_TIMER] == 0 && self.sprite_check_damage_to_link(k) {
+            self.link_cancel_dash();
+            let pt = self.sprite_project_speed_towards_link(k, 0x28);
+            self.ram[LINK_ACTUAL_VEL_Y] = pt.y;
+            self.ram[LINK_ACTUAL_VEL_X] = pt.x;
+            self.ram[LINK_INCAPACITATED_TIMER] = 24;
+            self.ram[SPRITE_DELAY_AUX1_DRAW + k] = 48;
+            self.ram[SOUND_EFFECT_2] = self.sprite_calculate_sfx_pan(k)
+                | if self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & K_FEATURES0_MISC_BUG_FIXES_DRAW
+                    != 0
+                {
+                    0x32
+                } else {
+                    0
+                };
+        }
+
+        let j = usize::from(self.ram[SPRITE_D + k]) + if low_health { 16 } else { 0 };
+        self.ram[SPRITE_X_VEL + k] = K_GIANT_MOLDORM_XVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = K_GIANT_MOLDORM_YVEL[j] as u8;
+        self.sprite_move_xy(k);
+        if self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_D + k] = K_GIANT_MOLDORM_NEXT_DIR[self.ram[SPRITE_D + k] as usize];
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let mut j = 1;
+                    self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+                    if self.ram[SPRITE_G_DRAW + k] == 3 {
+                        self.ram[SPRITE_G_DRAW + k] = 0;
+                        j = 2;
+                    }
+                    self.ram[SPRITE_AI_STATE + k] = j;
+                    self.ram[SPRITE_HEAD_DIR + k] = (self.get_random_number() & 2).wrapping_sub(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 31).wrapping_add(32);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 15).wrapping_add(8);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                } else if (self.ram[SPRITE_DELAY_MAIN + k] & 3) == 0 {
+                    self.ram[SPRITE_D + k] =
+                        self.ram[SPRITE_D + k].wrapping_add(self.ram[SPRITE_HEAD_DIR + k]) & 0x0f;
+                }
+            }
+            2 => {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0 {
+                    self.sprite_apply_speed_towards_link(k, 0x1f);
+                    let dir = Self::sprite_convert_velocity_to_angle(
+                        self.ram[SPRITE_X_VEL + k],
+                        self.ram[SPRITE_Y_VEL + k],
+                    )
+                    .wrapping_sub(self.ram[SPRITE_D + k]);
+                    if dir == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    } else {
+                        self.ram[SPRITE_D + k] =
+                            self.ram[SPRITE_D + k].wrapping_add(if sign8(dir) { 0xff } else { 1 });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn giant_moldorm_draw(&mut self, k: usize) {
+        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(prepped);
+        self.ram[SPRITE_OAM_FLAGS + k] = 11;
+        self.sprite_draw_moldorm_eyeballs(k, &info);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+
+        let j = usize::from(self.ram[SPRITE_SUBTYPE2 + k] & 0x7f);
+        self.ram[MOLDORM_X_LO_DRAW + j] = self.ram[SPRITE_X_LO + k];
+        self.ram[MOLDORM_X_HI_DRAW + j] = self.ram[SPRITE_X_HI + k];
+        self.ram[MOLDORM_Y_LO_DRAW + j] = self.ram[SPRITE_Y_LO + k];
+        self.ram[MOLDORM_Y_HI_DRAW + j] = self.ram[SPRITE_Y_HI + k];
+
+        self.sprite_draw_moldorm_head(k);
+        if self.ram[SPRITE_B + k] < 4 {
+            self.giant_moldorm_draw_segment_ab(k, 16);
+            if self.ram[SPRITE_B + k] < 3 {
+                self.giant_moldorm_draw_segment_ab(k, 28);
+                if self.ram[SPRITE_B + k] < 2 {
+                    self.sprite_draw_moldorm_segment_c(k);
+                    if self.ram[SPRITE_B + k] == 0 {
+                        self.moldorm_handle_tail(k);
+                    }
+                }
+            }
+        }
+        self.giant_moldorm_incremental_segment_explosion(k);
+        let cur_x =
+            u16::from(self.ram[SPRITE_X_LO + k]) | (u16::from(self.ram[SPRITE_X_HI + k]) << 8);
+        let cur_y =
+            u16::from(self.ram[SPRITE_Y_LO + k]) | (u16::from(self.ram[SPRITE_Y_HI + k]) << 8);
+        write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y);
+    }
+
+    pub(super) fn giant_moldorm_draw_segment_ab(&mut self, k: usize, lookback: i32) {
+        const K_GIANT_MOLDORM_SEG_A_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+        ];
+        let j = (i32::from(self.ram[SPRITE_SUBTYPE2 + k]).wrapping_sub(lookback) & 0x7f) as usize;
+        let cur_x = u16::from(self.ram[MOLDORM_X_LO_DRAW + j])
+            | (u16::from(self.ram[MOLDORM_X_HI_DRAW + j]) << 8);
+        let cur_y = u16::from(self.ram[MOLDORM_Y_LO_DRAW + j])
+            | (u16::from(self.ram[MOLDORM_Y_HI_DRAW + j]) << 8);
+        write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(0x10));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(4));
+        let base = usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 1) * 4;
+        self.sprite_draw_multiple(k, &K_GIANT_MOLDORM_SEG_A_DMD[base..base + 4], None);
+    }
+
+    pub(super) fn giant_moldorm_draw_segment_c_or_tail(&mut self, k: usize, lookback: i32) {
+        const K_GIANT_MOLDORM_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+        let j = (i32::from(self.ram[SPRITE_SUBTYPE2 + k]).wrapping_sub(lookback) & 0x7f) as usize;
+        let cur_x = u16::from(self.ram[MOLDORM_X_LO_DRAW + j])
+            | (u16::from(self.ram[MOLDORM_X_HI_DRAW + j]) << 8);
+        let cur_y = u16::from(self.ram[MOLDORM_Y_LO_DRAW + j])
+            | (u16::from(self.ram[MOLDORM_Y_HI_DRAW + j]) << 8);
+        write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y);
+        let bak = self.ram[SPRITE_OAM_FLAGS + k];
+        self.ram[SPRITE_OAM_FLAGS + k] = (bak & 0x3f)
+            | K_GIANT_MOLDORM_OAM_FLAGS[((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 3) as usize];
+        self.sprite_draw_single_large(k);
+        self.ram[SPRITE_OAM_FLAGS + k] = bak;
+    }
+
+    pub(super) fn sprite_draw_moldorm_head(&mut self, k: usize) {
+        const K_GIANT_MOLDORM_HEAD_DMD: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: -6,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: -6,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 6,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 6,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: -6,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: -6,
+                char_flags: 0x4080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 6,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 6,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+        ];
+        let t =
+            ((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 1) + (self.ram[SPRITE_DELAY_AUX1_DRAW + k] & 2);
+        let base = (t as usize) * 4;
+        let base = base.min(K_GIANT_MOLDORM_HEAD_DMD.len() - 4);
+        self.sprite_draw_multiple(k, &K_GIANT_MOLDORM_HEAD_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Moldorm_SegmentC(int k) {  // 9dda5f — sprite_main.c:17999
+    //   sprite_graphics[k] = 0;
+    //   oam_cur_ptr += 0x10;
+    //   oam_ext_cur_ptr += 4;
+    //   GiantMoldorm_DrawSegment_C_OrTail(k, 0x28);
+    // }
+    pub(super) fn sprite_draw_moldorm_segment_c(&mut self, k: usize) {
+        self.ram[SPRITE_GRAPHICS + k] = 0;
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(0x10));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(4));
+        self.giant_moldorm_draw_segment_c_or_tail(k, 0x28);
+    }
+
+    pub(super) fn moldorm_handle_tail(&mut self, k: usize) {
+        self.sprite_draw_moldorm_tail(k);
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+            self.ram[SPRITE_A + k] = 1;
+            self.ram[SPRITE_FLAGS4 + k] = 0;
+            self.ram[SPRITE_DEFL_BITS + k] = 0;
+            let oldx = self.sprite_get_x(k);
+            let oldy = self.sprite_get_y(k);
+            self.sprite_set_x(k, read_le_u16(&self.ram, CUR_SPRITE_X));
+            self.sprite_set_y(k, read_le_u16(&self.ram, CUR_SPRITE_Y));
+            self.sprite_check_damage_from_link(k);
+            self.ram[SPRITE_A + k] = 0;
+            self.ram[SPRITE_FLAGS4 + k] = 9;
+            self.ram[SPRITE_DEFL_BITS + k] = 4;
+            self.sprite_set_x(k, oldx);
+            self.sprite_set_y(k, oldy);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Moldorm_Tail(int k) {  // 9ddb17 — sprite_main.c:18025
+    //   oam_cur_ptr += 4;
+    //   oam_ext_cur_ptr += 1;
+    //   sprite_graphics[k]++;
+    //   sprite_oam_flags[k] = 13;
+    //   GiantMoldorm_DrawSegment_C_OrTail(k, 0x30);
+    // }
+    pub(super) fn sprite_draw_moldorm_tail(&mut self, k: usize) {
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+        self.ram[SPRITE_OAM_FLAGS + k] = 13;
+        self.giant_moldorm_draw_segment_c_or_tail(k, 0x30);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Moldorm_Eyeballs(int k, PrepOamCoordsRet *info) {  // 9ddb9e
+    //   sprite_main.c:18033 — two eyeballs cycling around a 16-entry circle.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_moldorm_eyeballs(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_GIANT_MOLDORM_EYE_X: [i16; 16] = [
+            16, 15, 12, 6, 0, -6, -12, -13, -16, -13, -12, -6, 0, 6, 12, 15,
+        ];
+        const K_GIANT_MOLDORM_EYE_Y: [i16; 16] = [
+            0, 6, 12, 15, 16, 15, 12, 6, 0, -6, -12, -13, -16, -13, -12, -6,
+        ];
+        const K_GIANT_MOLDORM_EYE_CHAR: [u8; 16] = [
+            0xaa, 0xaa, 0xa8, 0xa8, 0x8a, 0x8a, 0xa8, 0xa8, 0xaa, 0xaa, 0xa8, 0xa8, 0x8a, 0x8a,
+            0xa8, 0xa8,
+        ];
+        const K_GIANT_MOLDORM_EYE_FLAGS: [u8; 16] = [
+            0, 0, 0, 0, 0x80, 0x80, 0x40, 0x40, 0x40, 0x40, 0xc0, 0xc0, 0, 0, 0x80, 0x80,
+        ];
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let r7: u8 = if self.ram[SPRITE_F_DRAW + k] != 0 {
+            self.ram[FRAME_COUNTER]
+        } else {
+            0
+        };
+        let mut r6: i32 = (self.ram[SPRITE_D + k] as i32).wrapping_sub(1);
+        let mut i: i32 = 1;
+        loop {
+            let idx = (r6 & 0xf) as usize;
+            let x = info.x.wrapping_add(K_GIANT_MOLDORM_EYE_X[idx] as u16);
+            let y = info.y.wrapping_add(K_GIANT_MOLDORM_EYE_Y[idx] as u16);
+            let cf_idx = ((r6 + r7 as i32) & 0xf) as usize;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y,
+                K_GIANT_MOLDORM_EYE_CHAR[cf_idx],
+                info.flags | K_GIANT_MOLDORM_EYE_FLAGS[cf_idx],
+                2,
+            );
+            oam += 4;
+            r6 += 2;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_Antfairy(int k) {  // 9df395 — sprite_main.c:18841
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_antfairy(&mut self, k: usize) {
+        const K_DRAW_FOUR_AROUND_ONE_DMD: [DrawMultipleData; 30] = [
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 2,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 2,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 7,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: -3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 1,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 7,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: -1,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 5,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -2,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -2,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 6,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 6,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 5,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 7,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x02e1,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 1,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 3,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 7,
+                char_flags: 0x02e3,
+                ext: 0,
+            },
+        ];
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        if (self.ram[SPRITE_SUBTYPE2 + k] & 1)
+            | self.frame_control_view().submodule()
+            | self.ram[FLAG_UNK1]
+            == 0
+        {
+            self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+            if self.ram[SPRITE_GRAPHICS + k] == 6 {
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+            }
+        }
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 5;
+        self.sprite_draw_multiple(k, &K_DRAW_FOUR_AROUND_ONE_DMD[base..base + 5], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_KingHelmasaur_Eyes(int k, PrepOamCoordsRet *info) {  // 9e856b
+    //   sprite_main.c:19586.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_king_helmasaur_eyes(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_HELMASAUR_KING_DRAW_B_X: [i8; 2] = [-3, 11];
+        const K_HELMASAUR_KING_DRAW_B_CHAR: [u8; 8] =
+            [0xce, 0xcf, 0xde, 0xde, 0xde, 0xde, 0xcf, 0xce];
+        const K_HELMASAUR_KING_DRAW_B_FLAGS: [u8; 2] = [0x3b, 0x7b];
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(0x40));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(0x10));
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let mut i: i32 = 1;
+        loop {
+            let j = ((self.ram[OVERLORD_X_LO_DRAW + 4] >> 2) & 7) as usize;
+            let x = info
+                .x
+                .wrapping_add(K_HELMASAUR_KING_DRAW_B_X[i as usize] as i16 as u16);
+            let y = info.y.wrapping_add(0x14);
+            self.set_oam_plain_at_for_draw(
+                oam,
+                x as u8,
+                y as u8,
+                K_HELMASAUR_KING_DRAW_B_CHAR[j],
+                K_HELMASAUR_KING_DRAW_B_FLAGS[i as usize],
+                0,
+            );
+            oam += 4;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        if self.frame_control_view().submodule() != 0 {
+            self.sprite_correct_oam_entries_for_draw(k, 1, 0);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_KingHelmasaur_Body(int k, PrepOamCoordsRet *info) {  // 9e87e5
+    //   sprite_main.c:19661.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_king_helmasaur_body(
+        &mut self,
+        k: usize,
+        info: &mut PrepOamCoordsRet,
+    ) {
+        const K_HELMASAUR_KING_DRAW_D_DMD: [DrawMultipleData; 19] = [
+            DrawMultipleData {
+                x: -24,
+                y: -32,
+                char_flags: 0x0b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -32,
+                char_flags: 0x0b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -32,
+                char_flags: 0x4b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: -32,
+                char_flags: 0x4b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -24,
+                y: -16,
+                char_flags: 0x0b84,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -16,
+                char_flags: 0x0b86,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -16,
+                char_flags: 0x4b86,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: -16,
+                char_flags: 0x4b84,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -24,
+                y: 0,
+                char_flags: 0x0b88,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0b8a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4b8a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: 0,
+                char_flags: 0x4b88,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -24,
+                y: 16,
+                char_flags: 0x0b8c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 16,
+                char_flags: 0x0b8e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x4b8e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: 16,
+                char_flags: 0x4b8c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 32,
+                char_flags: 0x0ba0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 32,
+                char_flags: 0x4ba0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -40,
+                char_flags: 0x0bac,
+                ext: 2,
+            },
+        ];
+        let mut prepped = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple(k, &K_HELMASAUR_KING_DRAW_D_DMD, Some(&mut prepped));
+        info.x = prepped.x;
+        info.y = prepped.y;
+        info.r4 = prepped.r4;
+        info.flags = prepped.flags;
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_KingHelmasaur_Legs(int k, PrepOamCoordsRet *info) {  // 9e8805
+    //   sprite_main.c:19686.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_king_helmasaur_legs(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_HELMASAUR_KING_DRAW_E_X: [i8; 4] = [-28, -28, 28, 28];
+        const K_HELMASAUR_KING_DRAW_E_Y: [i8; 4] = [-28, 4, -28, 4];
+        const K_HELMASAUR_KING_DRAW_E_CHAR: [u8; 4] = [0xa2, 0xa6, 0xa2, 0xa6];
+        const K_HELMASAUR_KING_DRAW_E_FLAGS: [u8; 4] = [0xb, 0xb, 0x4b, 0x4b];
+
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(19 * 4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(19));
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let mut i: i32 = 3;
+        loop {
+            let x = info
+                .x
+                .wrapping_add(K_HELMASAUR_KING_DRAW_E_X[i as usize] as i16 as u16)
+                as u8;
+            let y = info
+                .y
+                .wrapping_add(K_HELMASAUR_KING_DRAW_E_Y[i as usize] as i16 as u16)
+                .wrapping_add(self.ram[OVERLORD_X_LO_DRAW + i as usize] as u16)
+                as u8;
+            let f = K_HELMASAUR_KING_DRAW_E_FLAGS[i as usize] ^ info.flags;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                x,
+                y,
+                K_HELMASAUR_KING_DRAW_E_CHAR[i as usize],
+                f,
+                2,
+            );
+            self.set_oam_plain_at_for_draw(
+                oam + 4,
+                x,
+                y.wrapping_add(16),
+                K_HELMASAUR_KING_DRAW_E_CHAR[i as usize].wrapping_add(2),
+                f,
+                2,
+            );
+            oam += 8;
+            i -= 1;
+            if i < 0 {
+                break;
+            }
+        }
+        self.ram[TMP_COUNTER_DRAW] = 0xff;
+        if self.frame_control_view().submodule() != 0 {
+            self.sprite_correct_oam_entries_for_draw(k, 7, 2);
+            // Sprite_PrepOamCoordOrDoubleRet(k, info) — refresh the out-ref.
+            if let Some(p) = self.sprite_prep_oam_coord_or_double_ret(k) {
+                let info_ptr = info as *const PrepOamCoordsRet as *mut PrepOamCoordsRet;
+                unsafe {
+                    (*info_ptr).x = p.0;
+                    (*info_ptr).y = p.1;
+                    (*info_ptr).flags = p.2;
+                    (*info_ptr).r4 = 0;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_KingHelmasaur_Mouth(int k, PrepOamCoordsRet *info) {  // 9e88bc
+    //   sprite_main.c:19709.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_king_helmasaur_mouth(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_HELMASAUR_KING_DRAW_F_Y: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 9,
+            8, 7, 6, 5, 4, 3, 2, 1,
+        ];
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+            return;
+        }
+        let yd_idx = (self.ram[SPRITE_DELAY_AUX2_DRAW + k] >> 2) as usize;
+        let yd = K_HELMASAUR_KING_DRAW_F_Y[yd_idx];
+        self.oam_allocate_from_region_b(4);
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let x = info.x as u8;
+        let y = (info.y as u8).wrapping_add(yd).wrapping_add(0x13);
+        self.set_oam_plain_at_for_draw(oam, x, y, 0xaa, info.flags ^ 0xb, 2);
+    }
+
+    // void KingHelmasaurMask(int k, PrepOamCoordsRet *info) {  // 9e8686
+    pub(super) fn king_helmasaur_mask(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
+        const DMD: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: -16,
+                y: -5,
+                char_flags: 0x0dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x0dc0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: -5,
+                char_flags: 0x4dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: 11,
+                char_flags: 0x0dc2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0dc4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 11,
+                char_flags: 0x4dc2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 27,
+                char_flags: 0x0dc6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 27,
+                char_flags: 0x4dc6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: -5,
+                char_flags: 0x0dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x0dc0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: -5,
+                char_flags: 0x4dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: 11,
+                char_flags: 0x0dc8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0dc4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 11,
+                char_flags: 0x4dc2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 27,
+                char_flags: 0x0dc6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 27,
+                char_flags: 0x4dc6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: -5,
+                char_flags: 0x0dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x0dc0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: -5,
+                char_flags: 0x4dae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: 11,
+                char_flags: 0x0dc8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0dc4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 11,
+                char_flags: 0x4dc8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 27,
+                char_flags: 0x0dc6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 27,
+                char_flags: 0x4dc6,
+                ext: 2,
+            },
+        ];
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+        if self.ram[SPRITE_C_DRAW + k] >= 3 {
+            return;
+        }
+        let start = self.ram[SPRITE_C_DRAW + k] as usize * 8;
+        let mut prepped = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple(k, &DMD[start..start + 8], Some(&mut prepped));
+        info.x = prepped.x;
+        info.y = prepped.y;
+        info.r4 = prepped.r4;
+        info.flags = prepped.flags;
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(0x20));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(8));
+        if self.ram[SPRITE_DELAY_AUX4 + k] != 0 {
+            return;
+        }
+        for i in (0..=1usize).rev() {
+            if self.ram[ANCILLA_TYPE_DRAW + i] == 7
+                && (self.ram[ANCILLA_X_VEL_DRAW + i] | self.ram[ANCILLA_Y_VEL_DRAW + i]) != 0
+            {
+                self.king_helmasaur_check_bomb_damage(k, i);
+            }
+        }
+    }
+
+    // void KingHelmasaur_CheckBombDamage(int k, int j) {  // 9e86e5
+    pub(super) fn king_helmasaur_check_bomb_damage(&mut self, k: usize, j: usize) {
+        let mut hb = SpriteHitBox {
+            r0_xlo: 0,
+            r8_xhi: 0,
+            r1_ylo: 0,
+            r9_yhi: 0,
+            r2: 0,
+            r3: 0,
+            r4_spr_xlo: 0,
+            r10_spr_xhi: 0,
+            r5_spr_ylo: 0,
+            r11_spr_yhi: 0,
+            r6_spr_xsize: 0,
+            r7_spr_ysize: 0,
+        };
+        self.sprite_setup_hit_box(k, &mut hb);
+        let x = (((self.ram[ANCILLA_X_HI_DRAW + j] as u16) << 8)
+            | self.ram[ANCILLA_X_LO_DRAW + j] as u16)
+            .wrapping_sub(6);
+        let y = (((self.ram[ANCILLA_Y_HI_DRAW + j] as u16) << 8)
+            | self.ram[ANCILLA_Y_LO_DRAW + j] as u16)
+            .wrapping_sub(self.ram[ANCILLA_Z_DRAW + j] as u16);
+        hb.r0_xlo = x as u8;
+        hb.r8_xhi = (x >> 8) as u8;
+        hb.r1_ylo = y as u8;
+        hb.r9_yhi = (y >> 8) as u8;
+        hb.r2 = 2;
+        hb.r3 = 15;
+        if self.check_if_hit_boxes_overlap(&hb) {
+            self.ram[ANCILLA_X_VEL_DRAW + j] = 0u8.wrapping_sub(self.ram[ANCILLA_X_VEL_DRAW + j]);
+            self.ram[ANCILLA_Y_VEL_DRAW + j] =
+                ((0u8.wrapping_sub(self.ram[ANCILLA_Y_VEL_DRAW + j]) as i8) >> 1) as u8;
+            self.ram[SPRITE_DELAY_AUX4 + k] = 32;
+            self.ram[REPULSESPARK_TIMER_DRAW] = 5;
+            self.ram[REPULSESPARK_X_LO_DRAW] = self.ram[ANCILLA_X_LO_DRAW + j];
+            self.ram[REPULSESPARK_Y_LO_DRAW] =
+                self.ram[ANCILLA_Y_LO_DRAW + j].wrapping_sub(self.ram[ANCILLA_Z_DRAW + j]);
+            self.ram[SOUND_EFFECT_1_DRAW] = 5;
+        }
+    }
+
+    // void KingHelmasaur_OperateTail(int k, PrepOamCoordsRet *info) {  // 9e8920
+    pub(super) fn king_helmasaur_operate_tail(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
+        const MULT: [u8; 32] = [
+            0xff, 0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30,
+            0x20, 0x10, 0xff, 0xf8, 0xf0, 0xe8, 0xe0, 0xd8, 0xd0, 0xc8, 0xbc, 0xb0, 0xa0, 0x90,
+            0x70, 0x40, 0x20, 0x10,
+        ];
+        const MULT_B: [u8; 16] = [
+            0xff, 0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30,
+            0x20, 0x10,
+        ];
+        for i in 0..16usize {
+            let j = i + if self.ram[SPRITE_ANIM_CLOCK_DRAW + k] != 0 {
+                16
+            } else {
+                0
+            };
+            let rs = read_le_u16(&self.ram, OVERLORD_GEN1_DRAW + 5)
+                .wrapping_add(read_le_u16(&self.ram, OVERLORD_GEN2_DRAW + 1));
+            let f = ((rs >> 8) as u8).wrapping_sub(1);
+            let abs_rs = if sign8(f) { 0u16.wrapping_sub(rs) } else { rs };
+            let r6 = ((u16::from(abs_rs as u8) * u16::from(MULT[j])) >> 8) as u8;
+            let angle = (rs & 0xff00)
+                | if sign8(f) {
+                    u16::from(r6 ^ 0xff)
+                } else {
+                    u16::from(r6)
+                };
+            let r15 =
+                ((u16::from(self.ram[OVERLORD_GEN1_DRAW + 7]) * u16::from(MULT_B[i])) >> 8) as u8;
+            self.ram[OVERLORD_X_LO_DRAW + i + 5] = helmasaur_sin(angle, r15) as u8;
+            self.ram[OVERLORD_Y_LO_DRAW + i + 5] =
+                helmasaur_sin(angle.wrapping_add(0x80), r15).wrapping_sub(40) as u8;
+        }
+
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let start = self.ram[OVERLORD_GEN2_DRAW + 3] as usize;
+        let mut is_hit = false;
+        for i in start..16usize {
+            let x = self.ram[OVERLORD_X_LO_DRAW + i + 5].wrapping_add(info.x as u8);
+            let y = self.ram[OVERLORD_Y_LO_DRAW + i + 5].wrapping_add(info.y as u8);
+            self.ram[oam] = x;
+            self.ram[oam + 1] = y;
+            self.ram[oam + 2] = if i == start { 0xe4 } else { 0xac };
+            self.ram[oam + 3] = info.flags ^ 0x1b;
+            if self.ram[COUNTDOWN_FOR_BLINK] == 0 && self.ram[SPRITE_ANIM_CLOCK_DRAW + k] != 0 {
+                let link_x = self.ram[LINK_X_COORD].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+                let link_y = self.ram[LINK_Y_COORD]
+                    .wrapping_sub(self.ram[BG2VOFS_COPY2])
+                    .wrapping_add(8);
+                if link_x.wrapping_sub(x).wrapping_add(12) < 24
+                    && link_y.wrapping_sub(y).wrapping_add(8) < 16
+                {
+                    is_hit = true;
+                    self.ram[LINK_ACTUAL_VEL_X] = 0;
+                    self.ram[LINK_ACTUAL_VEL_Y] = 56;
+                }
+            }
+            oam += 4;
+        }
+        if is_hit && self.ram[FLAG_BLOCK_LINK_MENU] == 0 {
+            self.sprite_attempt_damage_to_link_plus_recoil(k);
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 16, 2);
+        if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) {
+            info.x = prepped.0;
+            info.y = prepped.1;
+            info.r4 = 0;
+            info.flags = prepped.2;
+        }
+        self.ram[TMP_COUNTER_DRAW] = 16;
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_StalfosKnight_Head(int k, PrepOamCoordsRet *info) {  // 9eae4e
+    //   sprite_main.c:21654.
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_stalfos_knight_head(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const K_STALFOS_KNIGHT_DRAW_HEAD_CHAR: [u8; 4] = [0x66, 0x66, 0x46, 0x46];
+        const K_STALFOS_KNIGHT_DRAW_HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+        if self.ram[SPRITE_GRAPHICS + k] == 2 {
+            return;
+        }
+        let i = (self.ram[SPRITE_HEAD_DIR + k] & 3) as usize;
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let y = info
+            .y
+            .wrapping_add(self.ram[SPRITE_C_DRAW + k] as u16)
+            .wrapping_sub(12);
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            info.x,
+            y,
+            K_STALFOS_KNIGHT_DRAW_HEAD_CHAR[i],
+            info.flags | K_STALFOS_KNIGHT_DRAW_HEAD_FLAGS[i],
+            2,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpriteDraw_ShopItem(int k) {  // 9ef4ce — sprite_main.c:25333
+    // -----------------------------------------------------------------------
+    pub(super) fn sprite_draw_shop_item(&mut self, k: usize) {
+        const K_SHOP_KEEPER_ITEM_WITH_PRICE_DMD: [DrawMultipleData; 35] = [
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x0231,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x02c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x036c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 12,
+                char_flags: 0x0338,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x08cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 12,
+                char_flags: 0x0338,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0231,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0231,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0329,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 11,
+                char_flags: 0x0338,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x0203,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x0203,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0338,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0213,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x036c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0231,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x0231,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x0230,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0ff4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 11,
+                char_flags: 0x0338,
+                ext: 0,
+            },
+        ];
+        let base = (self.ram[SPRITE_SUBTYPE2 + k].wrapping_sub(7) as usize) * 5;
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &K_SHOP_KEEPER_ITEM_WITH_PRICE_DMD[base..base + 5],
+            None,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_61_Beamos(int k) {  // 858f54
+    pub(super) fn sprite_61_beamos(&mut self, k: usize) {
+        if self.ram[SPRITE_C_DRAW + k] == 1 {
+            self.sprite_beamos_laser(k);
+            return;
+        } else if self.ram[SPRITE_C_DRAW + k] != 0 {
+            self.sprite_beamos_laser_hit(k);
+            return;
+        }
+
+        self.beamos_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_check_damage_to_link(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0 {
+                    self.sprite_spawn_probe_always(k, self.ram[SPRITE_D + k]);
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k].wrapping_add(1);
+                }
+                self.ram[SPRITE_D + k] &= 63;
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                    self.sprite_prep_load_palette(k);
+                } else {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 15 {
+                        self.beamos_fire_laser(k);
+                    }
+                    self.ram[SPRITE_OAM_FLAGS + k] ^= (self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 0x0e;
+                }
+            }
+            _ => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_SpawnProbeAlways(int k, uint8 r15) {  // 85c612
+    pub(super) fn sprite_spawn_probe_always(&mut self, k: usize, r15: u8) {
+        const XVEL: [i8; 64] = [
+            -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6,
+            8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12,
+            10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16, -16, -16,
+            -16, -16,
+        ];
+        const YVEL: [i8; 64] = [
+            0, 2, 4, 6, 8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+            16, 14, 12, 10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16,
+            -16, -16, -16, -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4,
+            -2, 0,
+        ];
+
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically_ex(k, 0x41, &mut info, 10);
+        if j < 0 {
+            return;
+        }
+        let j = j as usize;
+        let t = info.r0_x.wrapping_add(8);
+        self.ram[SPRITE_X_LO + j] = t as u8;
+        self.ram[SPRITE_X_HI + j] = (t >> 8) as u8;
+        let t = info.r2_y.wrapping_add(4);
+        self.ram[SPRITE_Y_LO + j] = t as u8;
+        self.ram[SPRITE_Y_HI + j] = (t >> 8) as u8;
+        self.ram[SPRITE_D + j] = r15;
+        self.ram[SPRITE_X_VEL + j] = XVEL[usize::from(r15)] as u8;
+        self.ram[SPRITE_Y_VEL + j] = YVEL[usize::from(r15)] as u8;
+        self.ram[SPRITE_FLAGS2 + j] = (self.ram[SPRITE_FLAGS2 + j] & 0xf0) | 0xa0;
+        self.ram[SPRITE_C_DRAW + j] = (k as u8).wrapping_add(1);
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + j] = (k as u8).wrapping_add(1);
+        self.ram[SPRITE_FLAGS4 + j] = 0x40;
+        self.ram[SPRITE_FLAGS3 + j] = 0x40;
+        self.ram[SPRITE_DEFL_BITS + j] = 2;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_70_KingHelmasaurFireball(int k) {  // 85807f
+    pub(super) fn sprite_70_king_helmasaur_fireball(&mut self, k: usize) {
+        const CH: [u8; 3] = [0xcc, 0xcc, 0xca];
+        const FLAGS: [u8; 2] = [0x33, 0x73];
+        const GFX: [u8; 4] = [2, 2, 1, 0];
+
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let flags = FLAGS[usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1)];
+        let x = self.ram[SPRITE_X_LO + k].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+        self.ram[oam] = x;
+        if x.wrapping_add(32) < 64 {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        let y = self.ram[SPRITE_Y_LO + k].wrapping_sub(self.ram[BG2VOFS_COPY2]);
+        self.ram[oam + 1] = y;
+        if y.wrapping_add(16) < 32 {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        self.ram[oam + 2] = CH[usize::from(self.ram[SPRITE_GRAPHICS + k])];
+        self.ram[oam + 3] = flags;
+        self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = 2;
+
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0
+            && self
+                .player_state_view()
+                .x()
+                .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_X))
+                .wrapping_add(8)
+                < 16
+            && self
+                .player_state_view()
+                .y()
+                .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_Y))
+                .wrapping_add(16)
+                < 16
+        {
+            self.sprite_attempt_damage_to_link_plus_recoil(k);
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 18;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_Y_VEL + k] = 36;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 31;
+                }
+                self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_sub(2);
+                self.sprite_move_y(k);
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.helmasaur_fireball_tri_split(k);
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+                }
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.helmasaur_fireball_quad_split(k);
+                } else if self.ram[SPRITE_HEAD_DIR + k] < 20 {
+                    self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_add(1);
+                    self.sprite_move_xy(k);
+                }
+            }
+            4 => self.sprite_move_xy(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Beamos_Draw(int k) {  // 859068
+    //   Draw the two 16x16 body tiles, then overlay the rotating eyeball.
+    // }
+    pub(super) fn beamos_draw(&mut self, k: usize) {
+        const K_BEAMOS_DRAW_Y: [i8; 2] = [-16, 0];
+        const K_BEAMOS_DRAW_CHAR: [u8; 2] = [0x48, 0x68];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet { x, y, r4: 0, flags };
+        let spr_offs = if self.ram[SPRITE_D + k] < 0x20 {
+            self.oam_allocate_from_region_b(12);
+            1
+        } else {
+            self.oam_allocate_from_region_c(12);
+            0
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + spr_offs * 4;
+        for i in (0..2).rev() {
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info.x,
+                info.y.wrapping_add(K_BEAMOS_DRAW_Y[i] as i16 as u16),
+                K_BEAMOS_DRAW_CHAR[i],
+                info.flags,
+                2,
+            );
+            oam += 4;
+        }
+        self.sprite_draw_beamos_eyeball(k, &info);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BeamosLaser_Draw(int k) {  // 85925b
+    //   Replay the 32-sample beamos history buffer as small laser tiles.
+    // }
+    pub(super) fn beamos_laser_draw(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = self.ram[SPRITE_GRAPHICS + k] as usize;
+        for i in (0..32).rev() {
+            let j = g * 32 + i;
+            let x = (self.ram[BEAMOS_X_LO_DRAW + j] as u16
+                | ((self.ram[BEAMOS_X_HI_DRAW + j] as u16) << 8))
+                .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2));
+            let y = (self.ram[BEAMOS_Y_LO_DRAW + j] as u16
+                | ((self.ram[BEAMOS_Y_HI_DRAW + j] as u16) << 8))
+                .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+            self.set_oam_helper0_at_for_draw(oam, x, y, 0x5c, info.flags, 0);
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Beamos_Laser(int k) {  // 8591b5
+    pub(super) fn sprite_beamos_laser(&mut self, k: usize) {
+        if self.ram[SPRITE_DELAY_AUX1_DRAW + k] != 0 {
+            return;
+        }
+        self.beamos_laser_draw(k);
+        if self.ram[SPRITE_STATE + k] == 0 {
+            self.ram[SPRITE_LIMIT_INSTANCE] = self.ram[SPRITE_LIMIT_INSTANCE].wrapping_sub(1);
+            return;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        for _ in (0..4).rev() {
+            let t = usize::from(self.ram[SPRITE_SUBTYPE2 + k] & 31)
+                + usize::from(self.ram[SPRITE_GRAPHICS + k]) * 32;
+            self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+            self.ram[BEAMOS_Y_HI_DRAW + t] = self.ram[SPRITE_Y_HI + k];
+            self.ram[BEAMOS_Y_LO_DRAW + t] = self.ram[SPRITE_Y_LO + k];
+            self.ram[BEAMOS_X_HI_DRAW + t] = self.ram[SPRITE_X_HI + k];
+            self.ram[BEAMOS_X_LO_DRAW + t] = self.ram[SPRITE_X_LO + k];
+            self.sprite_move_xy(k);
+        }
+
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                self.ram[SPRITE_STATE + k] = 0;
+                self.ram[SPRITE_LIMIT_INSTANCE] = self.ram[SPRITE_LIMIT_INSTANCE].wrapping_sub(1);
+            }
+            return;
+        }
+        if !self.sprite_check_damage_to_link_same_layer(k)
+            && self.sprite_check_tile_collision(k) == 0
+        {
+            return;
+        }
+        self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+        self.ram[SPRITE_DELAY_MAIN + k] = 16;
+        self.sprite_zero_velocity_xy(k);
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0x61, &mut info);
+        if j >= 0 {
+            let j = j as usize;
+            self.sprite_set_spawned_coordinates(j, &info);
+            self.ram[SPRITE_DELAY_MAIN + j] = 16;
+            self.ram[SPRITE_FLAGS2 + j] = 3;
+            self.ram[SPRITE_C_DRAW + j] = 2;
+            self.ram[SPRITE_FLAGS3 + j] = 0x40;
+        }
+        self.ram[SPRITE_Y_HI + k] = 128;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Beamos_LaserHit(int k) {  // 8592da
+    pub(super) fn sprite_beamos_laser_hit(&mut self, k: usize) {
+        const X: [i8; 4] = [-4, 4, -4, 4];
+        const Y: [i8; 4] = [-4, -4, 4, 4];
+        const FLAGS: [u8; 4] = [6, 0x46, 0x86, 0xc6];
+
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        for i in (0..4).rev() {
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[i] as i16 as u16),
+                info_y.wrapping_add(Y[i] as i16 as u16),
+                0xd6,
+                FLAGS[i] | (info_flags & 0x30),
+                0,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Crab_Draw(int k) {  // 859510
+    //   Two mirrored 16x16 body tiles plus the common shadow.
+    // }
+    pub(super) fn crab_draw(&mut self, k: usize) {
+        const K_CRAB_DRAW_X: [i16; 4] = [-8, 8, -8, 8];
+        const K_CRAB_DRAW_CHAR: [u8; 4] = [0x8e, 0x8e, 0xae, 0xae];
+        const K_CRAB_DRAW_FLAGS: [u8; 4] = [0, 0x40, 0, 0x40];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let d = (self.ram[SPRITE_GRAPHICS + k] as usize) * 2;
+        for i in (0..2).rev() {
+            let j = d + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_CRAB_DRAW_X[j] as u16),
+                y,
+                K_CRAB_DRAW_CHAR[j],
+                K_CRAB_DRAW_FLAGS[j] | flags,
+                2,
+            );
+            oam += 4;
+        }
+        let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Poe_Draw(int k) {  // 869786
+    //   Single small flame body tile.
+    // }
+    pub(super) fn poe_draw(&mut self, k: usize) {
+        const K_POE_DRAW_X: [i8; 2] = [9, -1];
+        const K_POE_DRAW_CHAR: [u8; 4] = [0x7c, 0x80, 0xb7, 0x80];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let d = usize::from(self.ram[SPRITE_D + k] & 1);
+        let ch = K_POE_DRAW_CHAR[((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3) as usize];
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            x.wrapping_add(K_POE_DRAW_X[d] as i16 as u16),
+            y.wrapping_add(9),
+            ch,
+            (flags & 0xf0) | 2,
+            0,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_23_RedBari(int k) {  // 86a23d
+    //   Red Bari movement, electrocuted phase, and split behavior.
+    // }
+    pub(super) fn sprite_23_red_bari(&mut self, k: usize) {
+        const K_BARI_XVEL2: [u8; 16] = [
+            0, 8, 11, 14, 16, 14, 11, 8, 0, 0xf8, 0xf5, 0xf2, 0xf0, 0xf2, 0xf5, 0xf8,
+        ];
+        const K_BARI_YVEL2: [u8; 16] = [
+            0xf0, 0xf2, 0xf5, 0xf8, 0, 8, 11, 14, 16, 14, 11, 8, 0, 0xf7, 0xf5, 0xf2,
+        ];
+        const K_BARI_GFX: [u8; 2] = [0, 3];
+
+        if sign8(self.ram[SPRITE_C + k]) {
+            if self.ram[SPRITE_HEAD_DIR + k] != 16 {
+                self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_add(1);
+            } else {
+                self.ram[SPRITE_X_VEL + k] = 255;
+                self.ram[SPRITE_SUBTYPE + k] = 255;
+                self.sprite_check_tile_collision2(k);
+                self.ram[SPRITE_SUBTYPE + k] = 0;
+                if self.ram[SPRITE_TILETYPE_DRAW] == 0 {
+                    self.ram[SPRITE_C + k] = 0;
+                    self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 0;
+                    self.red_bari_set_electrocute_delay(k);
+                } else {
+                    self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_TILETYPE_DRAW];
+                }
+            }
+            return;
+        }
+        if self.ram[SPRITE_C + k] != 0 {
+            self.sprite_draw_single_small(k);
+        } else if self.ram[SPRITE_GRAPHICS + k] >= 2 {
+            self.sprite_draw_single_large(k);
+        } else {
+            self.red_bari_draw(k);
+        }
+
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        let recoil_from_split = self.ram[SPRITE_DELAY_AUX2 + k] != 0;
+
+        if self.ram[SPRITE_AI_STATE + k] == 2 {
+            const K_BARI_XVEL: [u8; 2] = [8, 0xf8];
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_AI_STATE + k];
+            self.ram[SPRITE_X_VEL + k] =
+                K_BARI_XVEL[usize::from((self.ram[FRAME_COUNTER] >> 1) & 1)];
+            self.sprite_move_x(k);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.red_bari_split(k);
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            return;
+        }
+
+        if !recoil_from_split {
+            self.sprite_check_damage_to_and_from_link(k);
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+                self.ram[SPRITE_A + k] =
+                    self.ram[SPRITE_A + k].wrapping_add(if (self.ram[SPRITE_B + k] & 1) != 0 {
+                        0xff
+                    } else {
+                        1
+                    });
+                if (self.get_random_number() & 3) == 0 {
+                    self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                }
+            }
+            let j = usize::from(self.ram[SPRITE_A + k] & 15);
+            self.ram[SPRITE_X_VEL + k] = K_BARI_XVEL2[j];
+            self.ram[SPRITE_Y_VEL + k] = K_BARI_YVEL2[j];
+        }
+
+        if recoil_from_split
+            || ((((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) | self.ram[SPRITE_DELAY_MAIN + k]) == 0
+        {
+            if self.ram[SPRITE_WALLCOLL + k] == 0 {
+                self.sprite_move_xy(k);
+            }
+            self.sprite_check_tile_collision2(k);
+        }
+        let j = usize::from(self.ram[SPRITE_C + k]);
+        self.ram[SPRITE_GRAPHICS + k] = ((self.ram[FRAME_COUNTER] >> 3) & 1) + K_BARI_GFX[j];
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                self.ram[SPRITE_GRAPHICS + k] =
+                    ((self.ram[FRAME_COUNTER] >> 1) & 2) + K_BARI_GFX[j];
+                return;
+            }
+            self.ram[SPRITE_AI_STATE + k] = 0;
+        } else if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            return;
+        } else if (self.get_random_number() & 1) == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 128;
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            return;
+        }
+        self.red_bari_set_electrocute_delay(k);
+    }
+
+    fn red_bari_set_electrocute_delay(&mut self, k: usize) {
+        self.ram[SPRITE_DELAY_AUX1 + k] = (self.get_random_number() & 63).wrapping_add(128);
+    }
+
+    // -----------------------------------------------------------------------
+    // void RedBari_Draw(int k) {  // 86a3dc
+    //   Four 8x8 body tiles selected by sprite_graphics.
+    // }
+    pub(super) fn red_bari_draw(&mut self, k: usize) {
+        const K_RED_BARI_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0022,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4022,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0032,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4032,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0023,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4023,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0033,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4033,
+                ext: 0,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize).min(1) * 4;
+        self.sprite_draw_multiple(k, &K_RED_BARI_DMD[base..base + 4], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void HardHatBeetle_Draw(int k) {  // 86a4f2
+    //   Two large body tiles, with a shadow only for shadow-enabled sprites.
+    // }
+    pub(super) fn hard_hat_beetle_draw(&mut self, k: usize) {
+        const K_HARD_HAT_BEETLE_DMD: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x0140,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 2,
+                char_flags: 0x0142,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x0140,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 2,
+                char_flags: 0x0144,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize).min(1) * 2;
+        self.sprite_draw_multiple(k, &K_HARD_HAT_BEETLE_DMD[base..base + 2], Some(&mut info));
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            self.sprite_draw_shadow_custom(k, &mut info, 10);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_1B_Arrow(int k) {  // 86b754
+    //   Runtime for enemy arrows, including embedded / ricochet states.
+    // }
+    pub(super) fn sprite_1_b_arrow(&mut self, k: usize) {
+        const K_ENEMY_ARROW_XVEL: [u8; 8] = [0, 0, 16, 16, 0, 0, 0xf0, 0xf0];
+        const K_ENEMY_ARROW_YVEL: [u8; 8] = [16, 16, 0, 0, 0xf0, 0xf0, 0, 0];
+        const K_ENEMY_ARROW_DIRS: [u8; 4] = [0, 2, 1, 3];
+
+        self.enemy_arrow_draw(k);
+        if self.sprite_return_if_paused(k) {
+            return;
+        }
+        if self.ram[SPRITE_STATE + k] == 9 {
+            let mut j = self.ram[SPRITE_DELAY_MAIN + k];
+            if j != 0 {
+                j = j.wrapping_sub(1);
+                if j == 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                } else if j >= 32 && (j & 1) == 0 {
+                    let idx = (((u16::from(self.ram[FRAME_COUNTER]) << 1) & 4)
+                        | u16::from(self.ram[SPRITE_D + k])) as usize;
+                    self.ram[SPRITE_X_VEL + k] = K_ENEMY_ARROW_XVEL[idx];
+                    self.ram[SPRITE_Y_VEL + k] = K_ENEMY_ARROW_YVEL[idx];
+                    self.sprite_move_xy(k);
+                }
+                return;
+            }
+            self.sprite_check_damage_to_link_same_layer(k);
+            if self.ram[SPRITE_E + k] == 0 && self.sprite_check_tile_collision(k) != 0 {
+                if self.ram[SPRITE_A + k] != 0 {
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x5);
+                    self.sprite_schedule_for_breakage(k);
+                    self.sprite_place_weapon_tink(k);
+                } else {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    self.ram[SPRITE_A + k] = 2;
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x8);
+                }
+            } else {
+                self.sprite_move_xy(k);
+            }
+        } else {
+            if self.ram[SPRITE_AI_STATE + k] == 0 {
+                self.sprite_apply_ricochet(k);
+                self.ram[SPRITE_Z_VEL + k] = 24;
+                self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_HIT_TIMER + k] = 0;
+            }
+            self.ram[SPRITE_D + k] =
+                K_ENEMY_ARROW_DIRS[((self.ram[SPRITE_DELAY_MAIN + k] >> 3) & 3) as usize];
+            self.sprite_move_z(k);
+            self.sprite_move_xy(k);
+            self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+            if sign8(self.ram[SPRITE_Z + k]) {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void EnemyArrow_Draw(int k) {  // 86b867
+    //   Two 8x8 arrow tiles selected by direction and arrow type.
+    // }
+    pub(super) fn enemy_arrow_draw(&mut self, k: usize) {
+        const K_ENEMY_ARROW_DRAW_X: [i16; 8] = [-8, 0, 0, 8, 0, 0, 0, 0];
+        const K_ENEMY_ARROW_DRAW_Y: [i16; 8] = [0, 0, 0, 0, -8, 0, 0, 8];
+        const K_ENEMY_ARROW_DRAW_CHAR: [u8; 32] = [
+            0x3a, 0x3d, 0x3d, 0x3a, 0x2a, 0x2b, 0x2b, 0x2a, 0x7c, 0x6c, 0x6c, 0x7c, 0x7b, 0x6b,
+            0x6b, 0x7b, 0x3a, 0x3b, 0x3b, 0x3a, 0x2a, 0x3c, 0x3c, 0x2a, 0x81, 0x80, 0x80, 0x81,
+            0x91, 0x90, 0x90, 0x91,
+        ];
+        const K_ENEMY_ARROW_DRAW_FLAGS: [u8; 32] = [
+            8, 8, 0x48, 0x48, 8, 8, 0x88, 0x88, 9, 0x49, 9, 0x49, 9, 0x89, 9, 0x89, 8, 0x88, 0xc8,
+            0x48, 8, 8, 0x88, 0x88, 0x49, 0x49, 9, 9, 0x89, 0x89, 9, 9,
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let r6 = (self.ram[SPRITE_D + k] as usize) * 2;
+        let r7 = (self.ram[SPRITE_A + k] as usize) * 8;
+        for i in (0..2).rev() {
+            let j = r6 + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_ENEMY_ARROW_DRAW_X[j] as u16),
+                y.wrapping_add(K_ENEMY_ARROW_DRAW_Y[j] as u16),
+                K_ENEMY_ARROW_DRAW_CHAR[j + r7],
+                K_ENEMY_ARROW_DRAW_FLAGS[j + r7] | flags,
+                0,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Octorock_Draw(int k) {  // 86d54a
+    //   Optional mouth tile followed by the canonical large body tile.
+    // }
+    pub(super) fn octorock_draw(&mut self, k: usize) {
+        const K_OCTOROCK_DRAW_X: [i8; 9] = [8, 0, 4, 8, 0, 4, 9, -1, 4];
+        const K_OCTOROCK_DRAW_Y: [i8; 9] = [6, 6, 9, 6, 6, 9, 6, 6, 9];
+        const K_OCTOROCK_DRAW_CHAR: [u8; 9] =
+            [0xbb, 0xbb, 0xba, 0xab, 0xab, 0xaa, 0xa9, 0xa9, 0xb9];
+        const K_OCTOROCK_DRAW_FLAGS: [u8; 9] =
+            [0x65, 0x25, 0x25, 0x65, 0x25, 0x25, 0x65, 0x25, 0x25];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        if self.ram[SPRITE_D + k] != 3 {
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let j = (self.ram[SPRITE_C + k] as usize) * 3 + self.ram[SPRITE_D + k] as usize;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_OCTOROCK_DRAW_X[j] as i16 as u16),
+                y.wrapping_add(K_OCTOROCK_DRAW_Y[j] as i16 as u16),
+                K_OCTOROCK_DRAW_CHAR[j],
+                K_OCTOROCK_DRAW_FLAGS[j] | flags,
+                0,
+            );
+        }
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_sub(1);
+        self.sprite_prep_and_draw_single_large_no_prep(k, &mut info);
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // uint8 FluteBoy_Draw(int k) {  // 8dcfd9
+    //   Four-tile body draw; returns whether the prepped coordinate was offscreen.
+    // }
+    pub(super) fn flute_boy_draw(&mut self, k: usize) -> u8 {
+        const K_FLUTE_BOY_DMD: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x0abe,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0aa8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x0abe,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0abf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0aa8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x0abe,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0aa8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x0abe,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0abf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0aa8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+        ];
+        self.oam_allocate_from_region_b(0x10);
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base =
+            (self.ram[SPRITE_D + k] as usize) * 8 + (self.ram[SPRITE_GRAPHICS + k] as usize) * 4;
+        self.sprite_draw_multiple(k, &K_FLUTE_BOY_DMD[base..base + 4], Some(&mut info));
+        ((info.x | info.y) >> 8) as u8
+    }
+
+    // -----------------------------------------------------------------------
+    // void FluteAardvark_Draw(int k) {  // 8dd040
+    //   Two deferred large tiles selected by sprite_graphics.
+    // }
+    pub(super) fn flute_aardvark_draw(&mut self, k: usize) {
+        const K_FLUTE_AARDVARK_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: -16,
+                char_flags: 0x06e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x06c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -16,
+                char_flags: 0x06e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x06ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -16,
+                char_flags: 0x06e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x06ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -16,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00dc,
+                ext: 2,
+            },
+        ];
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &K_FLUTE_AARDVARK_DMD[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void DustCloud_Draw(int k) {  // 8dd120
+    //   Four cloud tiles selected by sprite_graphics.
+    // }
+    pub(super) fn dust_cloud_draw(&mut self, k: usize) {
+        const K_DUST_CLOUD_DMD: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: 0,
+                y: -3,
+                char_flags: 0x008b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 0,
+                char_flags: 0x009b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 0,
+                char_flags: 0xc08b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 3,
+                char_flags: 0xc09b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 5,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 7,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x8086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 0,
+                char_flags: 0x8086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -9,
+                y: 0,
+                char_flags: 0x8086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0x8086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0xc086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 0,
+                char_flags: 0xc086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -9,
+                y: 0,
+                char_flags: 0xc086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0xc086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 7,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+        ];
+        self.ram[SPRITE_OAM_FLAGS + k] = 0x14;
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 4;
+        self.sprite_draw_multiple(k, &K_DUST_CLOUD_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_DustCloud(int k) {  // 85f2b2
+    pub(super) fn sprite_dust_cloud(&mut self, k: usize) {
+        const K_DUST_CLOUD_GFX: [u8; 9] = [0, 1, 2, 3, 4, 5, 1, 0, 0xff];
+        self.dust_cloud_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            return;
+        }
+        self.ram[SPRITE_DELAY_MAIN + k] = 5;
+        let a = self.ram[SPRITE_A + k] as usize;
+        if !sign8(K_DUST_CLOUD_GFX[a]) {
+            self.ram[SPRITE_GRAPHICS + k] = K_DUST_CLOUD_GFX[a];
+            self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+        } else {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Landmine_Draw(int k) {  // 9d810c
+    //   Two 8x8 tiles unless the sprite engine is in the high-slot phase.
+    // }
+    pub(super) fn landmine_draw(&mut self, k: usize) {
+        const K_LANDMINE_DMD: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x0070,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x4070,
+                ext: 0,
+            },
+        ];
+        self.oam_allocate_from_region_b(8);
+        if self.ram[SPRITE_CHR_HALFSLOT_STATE] >= 3 {
+            return;
+        }
+        self.sprite_draw_multiple(k, &K_LANDMINE_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Armos_Draw(int k) {  // 85b7ef
+    //   Two large stacked tiles plus a common shadow.
+    // }
+    pub(super) fn armos_draw(&mut self, k: usize) {
+        const K_ARMOS_DMD: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: -16,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e0,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple(k, &K_ARMOS_DMD, Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ArmosKnight_Draw(int k) {  // 85a274
+    //   Four body tiles, plus the ground shadow when standing.
+    // }
+    pub(super) fn armos_knight_draw(&mut self, k: usize) {
+        const K_ARMOS_KNIGHT_DRAW_X: [i8; 24] = [
+            -8, 8, -8, 8, -10, 10, -10, 10, -10, 10, -10, 10, -12, 12, -12, 12, -14, 14, -14, 14,
+            -16, 24, -16, 24,
+        ];
+        const K_ARMOS_KNIGHT_DRAW_Y: [i8; 24] = [
+            -8, -8, 8, 8, -10, -10, 10, 10, -10, -10, 10, 10, -12, -12, 12, 12, -14, -14, 14, 14,
+            -16, -16, 24, 24,
+        ];
+        const K_ARMOS_KNIGHT_DRAW_CHAR: [u8; 24] = [
+            0xc0, 0xc2, 0xe0, 0xe2, 0xc0, 0xc2, 0xe0, 0xe2, 0xc4, 0xc4, 0xc4, 0xc4, 0xc6, 0xc6,
+            0xc6, 0xc6, 0xc8, 0xc8, 0xc8, 0xc8, 0xd8, 0xd8, 0xd8, 0xd8,
+        ];
+        const K_ARMOS_KNIGHT_DRAW_FLAGS: [u8; 24] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0xc0, 0x80, 0x40, 0, 0xc0, 0x80, 0x40, 0, 0xc0, 0x80,
+            0x40, 0, 0xc0, 0x80,
+        ];
+        const K_ARMOS_KNIGHT_DRAW_BIG: [u8; 24] = [
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0,
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        if self.ram[SPRITE_A + k] == 0 && self.frame_control_view().submodule() != 7 {
+            self.oam_allocate_defer_to_player(k);
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = self.ram[SPRITE_GRAPHICS + k] as usize;
+        for i in (0..4).rev() {
+            let j = g * 4 + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_ARMOS_KNIGHT_DRAW_X[j] as i16 as u16),
+                y.wrapping_add(K_ARMOS_KNIGHT_DRAW_Y[j] as i16 as u16),
+                K_ARMOS_KNIGHT_DRAW_CHAR[j],
+                K_ARMOS_KNIGHT_DRAW_FLAGS[j] | flags,
+                K_ARMOS_KNIGHT_DRAW_BIG[j],
+            );
+            oam += 4;
+        }
+        if g != 0 {
+            return;
+        }
+        if self.ram[SPRITE_A + k] != 0 {
+            let spr_idx = 76 + k * 2;
+            write_le_u16(&mut self.ram, OAM_CUR_PTR, 0x800 + (spr_idx as u16) * 4);
+            write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, 0x0a20 + spr_idx as u16);
+        }
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let z = (self.ram[SPRITE_Z + k].min(32)) >> 3;
+        let y = self
+            .sprite_get_y(k)
+            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+        self.set_oam_helper0_at_for_draw(
+            oam + 16,
+            x.wrapping_sub(8).wrapping_add(z as u16),
+            y.wrapping_add(12),
+            0xe4,
+            0x25,
+            2,
+        );
+        self.set_oam_helper0_at_for_draw(
+            oam + 20,
+            x.wrapping_add(8).wrapping_sub(z as u16),
+            y.wrapping_add(12),
+            0xe4,
+            0x65,
+            2,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void Boulder_Draw(int k) {  // 9dd185
+    //   Four large rotating tiles plus large shadow.
+    // }
+    pub(super) fn boulder_draw(&mut self, k: usize) {
+        const K_BOULDER_DMD: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x01cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x01ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x01ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x01ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x41ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x41cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x41ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x41ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0xc1ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0xc1ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0xc1ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc1cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x81ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x81ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x81cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x81ce,
+                ext: 2,
+            },
+        ];
+        let base = (((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3) as usize) * 4;
+        self.sprite_draw_multiple(k, &K_BOULDER_DMD[base..base + 4], None);
+        self.sprite_draw_large_shadow2(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_DrawLargeShadow2(int k) {  // 9dd1af
+    //   Clamp z-derived animation and delegate to SpriteDraw_BigShadow.
+    // }
+    pub(super) fn sprite_draw_large_shadow2(&mut self, k: usize) {
+        let z = (self.ram[SPRITE_Z + k] >> 3).min(4);
+        self.sprite_draw_big_shadow(k, z as i32);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Flame_Draw(int k) {  // 9ec35c
+    //   Two flame tiles selected by sprite_graphics.
+    // }
+    pub(super) fn flame_draw(&mut self, k: usize) {
+        const K_FLAME_DMD: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x018e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x018e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x418e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x418e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x41a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x41a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x01a4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -6,
+                char_flags: 0x01a5,
+                ext: 0,
+            },
+        ];
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 2;
+        self.sprite_draw_multiple(k, &K_FLAME_DMD[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SeekerEnergyBall_Draw(int k) {  // 9edc3e
+    //   Four small orb tiles toggled by subtype animation.
+    // }
+    pub(super) fn seeker_energy_ball_draw(&mut self, k: usize) {
+        const K_ENERGY_BALL_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 4,
+                y: -3,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 4,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 11,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 4,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -1,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: -1,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 9,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 9,
+                char_flags: 0x00ce,
+                ext: 0,
+            },
+        ];
+        let base = (((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1) as usize) * 4;
+        self.sprite_draw_multiple(k, &K_ENERGY_BALL_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Wizzbeam_Draw(int k) {  // 8dbe68
+    //   Two small tiles selected by sprite_D.
+    // }
+    pub(super) fn wizzbeam_draw(&mut self, k: usize) {
+        const K_WIZZBEAM_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00c5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x80c5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x40c5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0xc0c5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40d2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00d2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0xc0d2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x80d2,
+                ext: 0,
+            },
+        ];
+        let base = (self.ram[SPRITE_D + k] as usize) * 2;
+        self.sprite_draw_multiple(k, &K_WIZZBEAM_DMD[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Freezor_Draw(int k) {  // 8dbfa6
+    //   Four/eight-tile ice body selected by sprite_graphics.
+    // }
+    pub(super) fn freezor_draw(&mut self, k: usize) {
+        const K_FREEZOR_DMD0: [DrawMultipleData; 28] = [
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x00ab,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 11,
+                char_flags: 0x40ab,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x00ba,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 11,
+                char_flags: 0x00bb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x40bb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 11,
+                char_flags: 0x40ba,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 2,
+                char_flags: 0x00ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 2,
+                char_flags: 0x40ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 10,
+                char_flags: 0x00be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 10,
+                char_flags: 0x40be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00af,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40af,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 12,
+                char_flags: 0x00bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 12,
+                char_flags: 0x40bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00aa,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40aa,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00aa,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40aa,
+                ext: 0,
+            },
+        ];
+        const K_FREEZOR_DMD1: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 0,
+                char_flags: 0x00ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 10,
+                y: 0,
+                char_flags: 0x40ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 8,
+                char_flags: 0x00be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 10,
+                y: 8,
+                char_flags: 0x40be,
+                ext: 0,
+            },
+        ];
+        if self.ram[SPRITE_GRAPHICS + k] != 7 {
+            let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 4;
+            self.sprite_draw_multiple(k, &K_FREEZOR_DMD0[base..base + 4], None);
+        } else {
+            self.sprite_draw_multiple(k, &K_FREEZOR_DMD1, None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Ropa_Draw(int k) {  // 869ee5
+    //   Three body tiles plus common shadow.
+    // }
+    pub(super) fn ropa_draw(&mut self, k: usize) {
+        const K_ROPA_DMD: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0026,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0027,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0036,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0037,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4027,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4026,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4037,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4036,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = ((self.ram[SPRITE_GRAPHICS + k] as usize) * 3).min(K_ROPA_DMD.len() - 3);
+        self.sprite_draw_multiple(k, &K_ROPA_DMD[base..base + 3], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Zazak_Draw(int k) {  // 8dc0a6
+    //   Three body tiles, head-char patch, and common shadow.
+    // }
+    pub(super) fn zazak_draw(&mut self, k: usize) {
+        const K_ZAZAK_CHAR: [u8; 8] = [0x82, 0x82, 0x80, 0x84, 0x88, 0x88, 0x86, 0x84];
+        const K_ZAZAK_FLAGS: [u8; 8] = [0x40, 0, 0, 0, 0x40, 0, 0, 0];
+        const K_ZAZAK_DMD: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00a1,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 1,
+                char_flags: 0x40a1,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 1,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 1,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 1,
+                char_flags: 0x40a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x400c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x400c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 3;
+        self.sprite_draw_multiple(k, &K_ZAZAK_DMD[base..base + 3], Some(&mut info));
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            return;
+        }
+        let i = (self.ram[SPRITE_HEAD_DIR + k] as usize)
+            + if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0 {
+                0
+            } else {
+                4
+            };
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.ram[oam + 2] = K_ZAZAK_CHAR[i];
+        self.ram[oam + 3] = (self.ram[oam + 3] & !0x40) | K_ZAZAK_FLAGS[i];
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Leever_Draw(int k) {  // 86ce45
+    //   Variable one/four tile body selected by sprite_graphics.
+    // }
+    pub(super) fn leever_draw(&mut self, k: usize) {
+        const K_LEEVER_DRAW_NUM: [u8; 14] = [1, 1, 1, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1];
+        const K_LEEVER_DRAW_X: [i8; 56] = [
+            2, 6, 6, 6, 0, 8, 8, 8, 0, 8, 8, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 0, 0, 8, 0, 0, 0, 8, 0,
+            0, 0, 8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        const K_LEEVER_DRAW_Y: [i8; 56] = [
+            8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 5, 5, 8, 8, 5, 5, 8, 8, 2, 2, 8, 8, 1, 1, 8, 8, 0,
+            0, 8, 8, -1, -1, 8, 8, 8, -2, -2, 0, 8, -2, -2, 0, 8, -2, -2, 0, 8, -2, -2, 0, 8, -2,
+            -2, 0,
+        ];
+        const K_LEEVER_DRAW_CHAR: [u8; 56] = [
+            0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x38, 0x38, 0x38, 0x38, 8, 9, 0x28,
+            0x28, 8, 9, 0xd9, 0xd9, 8, 8, 0xd8, 0xd8, 8, 8, 0xda, 0xda, 6, 6, 0xd9, 0xd9, 0x26,
+            0x26, 0xd8, 0xd8, 0x6c, 6, 6, 0, 0x6c, 0x26, 0x26, 0, 0x6c, 6, 6, 0, 0x6c, 0x26, 0x26,
+            0, 0x6c, 8, 8, 0,
+        ];
+        const K_LEEVER_DRAW_FLAGS: [u8; 56] = [
+            1, 0x41, 0x41, 0x41, 1, 0x41, 0x41, 0x41, 1, 0x41, 0x41, 0x41, 1, 1, 1, 0x41, 1, 1, 0,
+            0x40, 1, 1, 0, 0x40, 1, 1, 0, 0x40, 1, 1, 0, 0x40, 0, 1, 0, 0x40, 6, 0x41, 0x41, 0, 6,
+            0x41, 0x41, 0, 6, 1, 1, 0, 6, 1, 1, 0, 6, 1, 1, 0,
+        ];
+        const K_LEEVER_DRAW_BIG: [u8; 56] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2,
+            2, 0, 0, 2, 2, 0, 0, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2, 2, 0,
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let d = (self.ram[SPRITE_GRAPHICS + k] as usize).min(13);
+        for i in (0..=K_LEEVER_DRAW_NUM[d] as usize).rev() {
+            let j = d * 4 + i;
+            let charnum = K_LEEVER_DRAW_CHAR[j];
+            let mut f = flags;
+            if charnum >= 0x60 || charnum == 0x28 || charnum == 0x38 {
+                f &= 0xf0;
+            }
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_LEEVER_DRAW_X[j] as i16 as u16),
+                y.wrapping_add(K_LEEVER_DRAW_Y[j] as i16 as u16),
+                charnum,
+                K_LEEVER_DRAW_FLAGS[j] | f,
+                K_LEEVER_DRAW_BIG[j],
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Pengator_Draw(int k) {  // 9ea415
+    //   Two body tiles, optional foot tiles, then common shadow.
+    // }
+    pub(super) fn pengator_draw(&mut self, k: usize) {
+        const K_PENGATOR_DMD0: [DrawMultipleData; 40] = [
+            DrawMultipleData {
+                x: -1,
+                y: -8,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -7,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -6,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: -4,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -8,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: -6,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: -4,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x4080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -1,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x4084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+        ];
+        const K_PENGATOR_DMD1: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x00b5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 16,
+                char_flags: 0x40b5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00a5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x40a5,
+                ext: 0,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let gfx = self.ram[SPRITE_GRAPHICS + k] as usize;
+        let base = (gfx * 2).min(K_PENGATOR_DMD0.len() - 2);
+        self.sprite_draw_multiple(k, &K_PENGATOR_DMD0[base..base + 2], Some(&mut info));
+        let extra = if gfx == 14 {
+            Some(0usize)
+        } else if gfx == 19 {
+            Some(2usize)
+        } else {
+            None
+        };
+        if let Some(extra_base) = extra {
+            let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+            write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+            let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+            write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+            self.sprite_draw_multiple(
+                k,
+                &K_PENGATOR_DMD1[extra_base..extra_base + 2],
+                Some(&mut info),
+            );
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpikeRoller_Draw(int k) {  // 858ee3
+    //   Four or eight repeated roller tiles selected by sprite_graphics.
+    // }
+    pub(super) fn spike_roller_draw(&mut self, k: usize) {
+        const K_SPIKE_ROLLER_DRAW_X: [u8; 32] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60,
+            0x70, 0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70,
+        ];
+        const K_SPIKE_ROLLER_DRAW_Y: [u8; 32] = [
+            0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60,
+            0x70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        const K_SPIKE_ROLLER_DRAW_CHAR: [u8; 32] = [
+            0x8e, 0x9e, 0x9e, 0x9e, 0x9e, 0x9e, 0x9e, 0x8e, 0x8e, 0x9e, 0x9e, 0x9e, 0x9e, 0x9e,
+            0x9e, 0x8e, 0x88, 0x89, 0x89, 0x89, 0x89, 0x89, 0x89, 0x88, 0x88, 0x89, 0x89, 0x89,
+            0x89, 0x89, 0x89, 0x88,
+        ];
+        const K_SPIKE_ROLLER_DRAW_FLAGS: [u8; 32] = [
+            0, 0, 0, 0x80, 0, 0, 0, 0x80, 0x40, 0x40, 0x40, 0xc0, 0x40, 0x40, 0x40, 0xc0, 0, 0, 0,
+            0x40, 0, 0, 0, 0x40, 0x80, 0x80, 0x80, 0xc0, 0x80, 0x80, 0x80, 0xc0,
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = self.ram[SPRITE_GRAPHICS + k] as usize;
+        let mut chr = K_SPIKE_ROLLER_DRAW_CHAR[(g * 8).min(K_SPIKE_ROLLER_DRAW_CHAR.len() - 1)];
+        let max_i = if self.ram[SPRITE_AI_STATE + k] != 0 {
+            7
+        } else {
+            3
+        };
+        for i in (0..=max_i).rev() {
+            let j = (g * 8 + i).min(K_SPIKE_ROLLER_DRAW_CHAR.len() - 1);
+            let charnum = if chr != 0 {
+                chr
+            } else {
+                K_SPIKE_ROLLER_DRAW_CHAR[j]
+            };
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_SPIKE_ROLLER_DRAW_X[j] as u16),
+                y.wrapping_add(K_SPIKE_ROLLER_DRAW_Y[j] as u16),
+                charnum,
+                K_SPIKE_ROLLER_DRAW_FLAGS[j] | flags,
+                2,
+            );
+            chr = 0;
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MedallionTablet_Draw(int k) {  // 8dd1e2
+    //   Four deferred tablet tiles selected by sprite_graphics.
+    // }
+    pub(super) fn medallion_tablet_draw(&mut self, k: usize) {
+        const K_MEDALLION_TABLET_DMD: [DrawMultipleData; 20] = [
+            DrawMultipleData {
+                x: -8,
+                y: -16,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -16,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -13,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -13,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -4,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -4,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+        ];
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &K_MEDALLION_TABLET_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_1C_Statue(int k) {  // 86c0e8
+    //   Movable statue collision, Link drag interaction, and switch sensing.
+    // }
+    pub(super) fn sprite_1_c_statue(&mut self, k: usize) {
+        const K_MOVABLE_STATUE_DIR: [u8; 4] = [4, 6, 0, 2];
+        const K_MOVABLE_STATUE_JOYPAD: [u8; 4] = [1, 2, 4, 8];
+        const K_MOVABLE_STATUE_XVEL: [u8; 4] = [0xf0, 16, 0, 0];
+        const K_MOVABLE_STATUE_YVEL: [u8; 4] = [0, 0, 0xf0, 16];
+
+        if self.ram[SPRITE_D + k] != 0 {
+            self.ram[SPRITE_D + k] = 0;
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.ram[PLAYER_DEFENSE_FLAGS] = 0;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            self.ram[SPRITE_D + k] = 1;
+            self.ram[PLAYER_DEFENSE_FLAGS] = 129;
+            self.ram[LINK_SPEED_SETTING] = 8;
+        }
+        self.movable_statue_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.statue_block_sprites(k);
+        self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = 0;
+        if self.statue_check_for_switch(k) {
+            self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = 1;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_get16_bit_coords(k);
+        self.sprite_check_tile_collision2(k);
+        self.sprite_zero_velocity_xy(k);
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[SPRITE_DELAY_MAIN + k] = 7;
+            self.sprite_repel_dash();
+            if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+                self.sprite_nullify_hookshot_drag();
+                return;
+            }
+            let j = self.sprite_direction_to_face_link(k, None) as usize;
+            self.ram[SPRITE_X_VEL + k] = K_MOVABLE_STATUE_XVEL[j];
+            self.ram[SPRITE_Y_VEL + k] = K_MOVABLE_STATUE_YVEL[j];
+        } else {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_DELAY_AUX1 + k] = 13;
+            }
+            let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
+            let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+            let link_x = self.player_state_view().x();
+            let link_y = self.player_state_view().y();
+            if cur_x.wrapping_sub(link_x).wrapping_add(16) < 35
+                && cur_y.wrapping_sub(link_y).wrapping_add(12) < 36
+            {
+                let j = self.sprite_direction_to_face_link(k, None) as usize;
+                if self.ram[LINK_DIRECTION_FACING] == K_MOVABLE_STATUE_DIR[j]
+                    && self.ram[LINK_IS_RUNNING] == 0
+                {
+                    self.ram[LINK_IS_NEAR_MOVEABLE_STATUE] = 1;
+                    self.ram[SPRITE_A + k] = 1;
+                    if (self.ram[LINK_GRABBING_WALL] & 2) == 0
+                        || (K_MOVABLE_STATUE_JOYPAD[j] & self.ram[JOYPAD1H_LAST]) == 0
+                        || (self.ram[LINK_X_VEL] | self.ram[LINK_Y_VEL]) == 0
+                    {
+                        return;
+                    }
+                    let j = j ^ 1;
+                    self.ram[SPRITE_X_VEL + k] = K_MOVABLE_STATUE_XVEL[j];
+                    self.ram[SPRITE_Y_VEL + k] = K_MOVABLE_STATUE_YVEL[j];
+                } else {
+                    if self.ram[SPRITE_A + k] != 0 {
+                        self.ram[SPRITE_A + k] = 0;
+                        self.ram[LINK_SPEED_SETTING] = 0;
+                        self.ram[LINK_GRABBING_WALL] = 0;
+                        self.ram[LINK_IS_NEAR_MOVEABLE_STATUE] = 0;
+                        self.ram[LINK_CANT_CHANGE_DIRECTION] &= !1;
+                    }
+                    return;
+                }
+            } else {
+                if self.ram[SPRITE_A + k] != 0 {
+                    self.ram[SPRITE_A + k] = 0;
+                    self.ram[LINK_SPEED_SETTING] = 0;
+                    self.ram[LINK_GRABBING_WALL] = 0;
+                    self.ram[LINK_IS_NEAR_MOVEABLE_STATUE] = 0;
+                    self.ram[LINK_CANT_CHANGE_DIRECTION] &= !1;
+                }
+                return;
+            }
+        }
+        if (self.ram[LINK_GRABBING_WALL] & 2) == 0 {
+            self.sprite_nullify_hookshot_drag();
+        }
+        if (self.ram[SPRITE_WALLCOLL + k] & 15) == 0 && self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+            self.ram[SPRITE_DELAY_AUX4 + k] = 8;
+        }
+    }
+
+    // bool Statue_CheckForSwitch(int k) {  // 86c203
+    //   Four-corner switch-tile probe.
+    // }
+    pub(super) fn statue_check_for_switch(&mut self, k: usize) -> bool {
+        const K_MOVABLE_STATUE_SWITCH_X: [u8; 4] = [3, 12, 3, 12];
+        const K_MOVABLE_STATUE_SWITCH_Y: [u8; 4] = [3, 3, 12, 12];
+        for j in (0..4).rev() {
+            let mut x = self
+                .sprite_get_x(k)
+                .wrapping_add(u16::from(K_MOVABLE_STATUE_SWITCH_X[j]));
+            let y = self
+                .sprite_get_y(k)
+                .wrapping_add(u16::from(K_MOVABLE_STATUE_SWITCH_Y[j]));
+            let t = self.GetTileAttribute(self.ram[SPRITE_FLOOR + k], &mut x, y);
+            if t != 0x23 && t != 0x24 && t != 0x25 && t != 0x3b {
+                return false;
+            }
+        }
+        true
+    }
+
+    // -----------------------------------------------------------------------
+    // void MovableStatue_Draw(int k) {  // 86c264
+    //   Three deferred statue tiles.
+    // }
+    pub(super) fn movable_statue_draw(&mut self, k: usize) {
+        const K_MOVABLE_STATUE_DMD: [DrawMultipleData; 3] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x40c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_MOVABLE_STATUE_DMD, None);
+    }
+
+    // void Statue_BlockSprites(int k) {  // 86c277
+    //   Repel overlapping active sprites away from the pushed statue.
+    // }
+    pub(super) fn statue_block_sprites(&mut self, k: usize) {
+        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
+        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        for j in (0..16).rev() {
+            if self.ram[SPRITE_TYPE + j] == 0x1c
+                || j == k
+                || (((j as u8) ^ self.ram[FRAME_COUNTER]) & 1) != 0
+                || self.ram[SPRITE_STATE + j] < 9
+            {
+                continue;
+            }
+            let x = self.sprite_get_x(j);
+            let y = self.sprite_get_y(j);
+            if cur_x.wrapping_sub(x).wrapping_add(12) < 24
+                && cur_y.wrapping_sub(y).wrapping_add(12) < 36
+            {
+                self.ram[SPRITE_F + j] = 4;
+                let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
+                self.ram[SPRITE_Y_RECOIL_DRAW + j] = pt.y;
+                self.ram[SPRITE_X_RECOIL + j] = pt.x;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MovableMantle_Draw(int k) {  // 9afcb3
+    //   Six hand-written OAM tiles; no canonical DrawMultipleData table in C.
+    // }
+    pub(super) fn movable_mantle_draw(&mut self, k: usize) {
+        const K_MOVABLE_MANTLE_X: [u8; 6] = [0, 0x10, 0x20, 0, 0x10, 0x20];
+        const K_MOVABLE_MANTLE_Y: [u8; 6] = [0, 0, 0, 0x10, 0x10, 0x10];
+        const K_MOVABLE_MANTLE_CHAR: [u8; 6] = [0x0c, 0x0e, 0x0c, 0x2c, 0x2e, 0x2c];
+        const K_MOVABLE_MANTLE_FLAGS: [u8; 6] = [0x31, 0x31, 0x71, 0x31, 0x31, 0x71];
+        self.oam_allocate_from_region_b(0x20);
+        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        for i in (0..6).rev() {
+            self.ram[oam] = x.wrapping_add(K_MOVABLE_MANTLE_X[i] as u16) as u8;
+            self.ram[oam + 1] = y.wrapping_add(K_MOVABLE_MANTLE_Y[i] as u16) as u8;
+            self.ram[oam + 2] = K_MOVABLE_MANTLE_CHAR[i];
+            self.ram[oam + 3] = K_MOVABLE_MANTLE_FLAGS[i];
+            oam += 4;
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 5, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_EE_MovableMantle(int k) {  // 85e819
+    pub(super) fn sprite_ee_movable_mantle(&mut self, k: usize) {
+        self.movable_mantle_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if !self.sprite_check_damage_to_link_same_layer(k) {
+            return;
+        }
+        self.sprite_nullify_hookshot_drag();
+        self.sprite_repel_dash();
+
+        if self.ram[FOLLOWER_INDICATOR] != 1
+            || self.ram[LINK_ITEM_TORCH] == 0
+            || self.ram[LINK_IS_RUNNING] != 0
+            || self.ram[SPRITE_G_DRAW + k] == 0x90
+            || sign8(self.ram[LINK_ACTUAL_VEL_X].wrapping_sub(24))
+        {
+            return;
+        }
+
+        self.ram[WHICH_STARTING_POINT] = 4;
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+
+        if (self.ram[SPRITE_SUBTYPE2 + k] & 1) == 0 {
+            self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+        }
+
+        if self.ram[SPRITE_G_DRAW + k] < 8 {
+            return;
+        }
+        if self.ram[SOUND_EFFECT_1_DRAW] == 0 {
+            self.ram[SOUND_EFFECT_1_DRAW] = 34;
+        }
+        self.ram[SPRITE_X_VEL + k] = 2;
+        self.sprite_move_xy(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Fish_Draw(int k) {  // 9d8483
+    //   Two fish body tiles plus three splash tiles at z-adjusted y.
+    // }
+    pub(super) fn fish_draw(&mut self, k: usize) {
+        const K_FISH_DMD: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x045e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x045f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x845e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x845f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x445f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x445e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0xc45f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0xc45e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0461,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0471,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4461,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x4471,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x8471,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x8461,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0xc471,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0xc461,
+                ext: 0,
+            },
+        ];
+        const K_FISH_DMD2: [DrawMultipleData; 9] = [
+            DrawMultipleData {
+                x: -2,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 11,
+                char_flags: 0x0438,
+                ext: 0,
+            },
+        ];
+        if self.ram[SPRITE_GRAPHICS + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+            return;
+        }
+        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
+        write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x.wrapping_add(4));
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k].wrapping_sub(1)) * 2;
+        self.sprite_draw_multiple(k, &K_FISH_DMD[base..base + 2], Some(&mut info));
+        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        let z = self.ram[SPRITE_Z + k];
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y.wrapping_add(z as u16));
+        let j = (z >> 2).min(2) as usize;
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+        self.sprite_draw_multiple(k, &K_FISH_DMD2[j * 3..j * 3 + 3], Some(&mut info));
+        self.sprite_get16_bit_coords(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ChimneySmoke_Draw(int k) {  // 9d8531
+    //   Four smoke tiles selected by low sprite_graphics bit.
+    // }
+    pub(super) fn chimney_smoke_draw(&mut self, k: usize) {
+        const K_CHIMNEY_SMOKE_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x0087,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x0097,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 1,
+                char_flags: 0x0086,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 1,
+                char_flags: 0x0087,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 7,
+                char_flags: 0x0096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0x0097,
+                ext: 0,
+            },
+        ];
+        let base = ((self.ram[SPRITE_GRAPHICS + k] & 1) as usize) * 4;
+        self.sprite_draw_multiple(k, &K_CHIMNEY_SMOKE_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Vulture_Draw(int k) {  // 9ddd5e
+    //   Two large wing/body tiles plus common shadow.
+    // }
+    pub(super) fn vulture_draw(&mut self, k: usize) {
+        const K_VULTURE_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4084,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &K_VULTURE_DMD[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Raven(int k) {  // 9ddd85
+    //   Raven wait, ascend, attack, and flee state machine.
+    // }
+    pub(super) fn sprite_raven(&mut self, k: usize) {
+        const K_RAVEN_ASCEND_TIME: [u8; 2] = [16, 248];
+
+        self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                let r = self.sprite_is_right_of_link(k);
+                self.ram[SPRITE_OAM_FLAGS + k] =
+                    (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | r.a.wrapping_mul(0x40);
+                let x = i32::from(self.player_state_view().x())
+                    - i32::from(read_le_u16(&self.ram, CUR_SPRITE_X));
+                let y = i32::from(self.player_state_view().y())
+                    - i32::from(read_le_u16(&self.ram, CUR_SPRITE_Y));
+                if ((x + 0x50 + i32::from(x >= 0)) as u16) < 0x00a0
+                    && ((y + 0x58 + i32::from(y >= 0)) as u16) < 0x00a0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 24;
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    let j = usize::from(self.ram[SPRITE_A + k]);
+                    self.ram[SPRITE_DELAY_MAIN + k] = K_RAVEN_ASCEND_TIME[j];
+                    self.sprite_apply_speed_towards_link(k, 32);
+                }
+                self.ram[SPRITE_Z + k] = self.ram[SPRITE_Z + k].wrapping_add(1);
+                self.ram[SPRITE_GRAPHICS + k] =
+                    ((self.ram[FRAME_COUNTER] >> 1) & 1).wrapping_add(1);
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0
+                    && !(self.ram[IS_IN_DARK_WORLD_DRAW] != 0 && self.ram[SPRITE_A + k] != 0)
+                {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+                self.raven_fly(k, false);
+            }
+            3 => {
+                self.raven_fly(k, true);
+            }
+            _ => {}
+        }
+    }
+
+    fn raven_fly(&mut self, k: usize, fleeing: bool) {
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 1) == 0 {
+            let mut pt = self.sprite_project_speed_towards_link(k, if fleeing { 48 } else { 32 });
+            if fleeing {
+                pt.x = pt.x.wrapping_neg();
+                pt.y = pt.y.wrapping_neg();
+            }
+            let dx = self.ram[SPRITE_X_VEL + k].wrapping_sub(pt.x);
+            if dx != 0 {
+                self.ram[SPRITE_X_VEL + k] =
+                    self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(dx) { 1 } else { 0xff });
+            }
+            let dy = self.ram[SPRITE_Y_VEL + k].wrapping_sub(pt.y);
+            if dy != 0 {
+                self.ram[SPRITE_Y_VEL + k] =
+                    self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(dy) { 1 } else { 0xff });
+            }
+        }
+        self.ram[SPRITE_GRAPHICS + k] = ((self.ram[FRAME_COUNTER] >> 1) & 1).wrapping_add(1);
+        let j = (self.ram[SPRITE_X_VEL + k] >> 7) & 1;
+        self.ram[SPRITE_OAM_FLAGS + k] =
+            (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | j.wrapping_mul(0x40);
+    }
+
+    // -----------------------------------------------------------------------
+    // void MagicPowderItem_Draw(int k) {  // 85f67b
+    //   Two deferred large tiles.
+    // }
+    pub(super) fn magic_powder_item_draw(&mut self, k: usize) {
+        const K_MAGIC_POWDER_DMD: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04e6,
+                ext: 2,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_MAGIC_POWDER_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void GreenPotionItem_Draw(int k) {  // 85f718
+    //   Bottle body and green price/label tiles.
+    // }
+    pub(super) fn green_potion_item_draw(&mut self, k: usize) {
+        const K_GREEN_POTION_ITEM_DMD: [DrawMultipleData; 3] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x08c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 18,
+                char_flags: 0x0a30,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 18,
+                char_flags: 0x0a22,
+                ext: 0,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_GREEN_POTION_ITEM_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BluePotionItem_Draw(int k) {  // 85f7bd
+    //   Bottle body and blue price/label tiles.
+    // }
+    pub(super) fn blue_potion_item_draw(&mut self, k: usize) {
+        const K_BLUE_POTION_ITEM_DMD: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: 18,
+                char_flags: 0x0a30,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 18,
+                char_flags: 0x0a22,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 18,
+                char_flags: 0x0a31,
+                ext: 0,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_BLUE_POTION_ITEM_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void RedPotionItem_Draw(int k) {  // 85f86d
+    //   Bottle body and red price/label tiles.
+    // }
+    pub(super) fn red_potion_item_draw(&mut self, k: usize) {
+        const K_RED_POTION_ITEM_DMD: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x02c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: 18,
+                char_flags: 0x0a30,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 18,
+                char_flags: 0x0a02,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 18,
+                char_flags: 0x0a31,
+                ext: 0,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_RED_POTION_ITEM_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_E9_PotionShop(int k) {  // 85f633
+    pub(super) fn sprite_e9_potion_shop(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_magic_shop_assistant_main(k),
+            1 => self.sprite_bag_of_powder(k),
+            2 => self.sprite_green_cauldron(k),
+            3 => self.sprite_blue_cauldron(k),
+            4 => self.sprite_red_cauldron(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_F2_MedallionTablet(int k) {  // 86c00d
+    pub(super) fn sprite_f2_medallion_tablet(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.medallion_tablet_main(k),
+            1 => self.sprite_dust_cloud(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BagOfPowder(int k) {  // 85f644
+    pub(super) fn sprite_bag_of_powder(&mut self, k: usize) {
+        self.magic_powder_item_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if !self.sprite_check_damage_to_link_same_layer(k)
+            || (self.ram[FILTERED_JOYPAD_L] & 0x80) == 0
+        {
+            return;
+        }
+        self.link_cancel_dash();
+        self.ram[ITEM_RECEIPT_METHOD] = 0;
+        self.link_receive_item(0x0d, 0);
+        self.ram[SPRITE_STATE + k] = 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_GreenCauldron(int k) {  // 85f68e
+    pub(super) fn sprite_green_cauldron(&mut self, k: usize) {
+        self.green_potion_item_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.potion_cauldron_purchase(k, 60, 0x2f);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BlueCauldron(int k) {  // 85f72b
+    pub(super) fn sprite_blue_cauldron(&mut self, k: usize) {
+        self.blue_potion_item_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.potion_cauldron_purchase(k, 160, 0x30);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_RedCauldron(int k) {  // 85f7d0
+    pub(super) fn sprite_red_cauldron(&mut self, k: usize) {
+        self.red_potion_item_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.potion_cauldron_purchase(k, 120, 0x2e);
+    }
+
+    fn potion_cauldron_purchase(&mut self, k: usize, price: u16, item: u8) {
+        self.sprite_behave_as_barrier(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            return;
+        }
+        if !self.potion_cauldron_check_bottles() {
+            if self.sprite_show_message_on_contact(k, 0x4f) & 0x100 != 0 {
+                self.potion_cauldron_go_beep(k);
+            }
+            return;
+        }
+        if !self.sprite_check_damage_to_link_same_layer(k)
+            || (self.ram[FILTERED_JOYPAD_L] & 0x80) == 0
+        {
+            return;
+        }
+        if read_le_u16(&self.ram, LINK_RUPEES_GOAL) < price {
+            self.sprite_show_message_unconditional(0x17c);
+            self.potion_cauldron_go_beep(k);
+            return;
+        }
+        if self.sprite_find_empty_bottle() < 0 {
+            self.sprite_show_message_unconditional(0x50);
+            self.potion_cauldron_go_beep(k);
+            return;
+        }
+        self.sprite_sfx_queue_sfx3_with_pan(k, 0x1d);
+        self.ram[SPRITE_DELAY_MAIN + k] = 64;
+        let rupees = read_le_u16(&self.ram, LINK_RUPEES_GOAL).wrapping_sub(price);
+        write_le_u16(&mut self.ram, LINK_RUPEES_GOAL, rupees);
+        self.ram[ITEM_RECEIPT_METHOD] = 0;
+        self.link_receive_item(item, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_MagicShopAssistant_Main(int k) {  // 85f893
+    pub(super) fn sprite_magic_shop_assistant_main(&mut self, k: usize) {
+        self.shopkeeper_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.ram[LINK_HEARTS_FILLER] = 160;
+            self.ram[SPRITE_AI_STATE + k] = 0;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 5 & 1;
+        let msg = if self.ram[LINK_BOTTLE_INFO] >= 2
+            || self.ram[LINK_BOTTLE_INFO + 1] >= 2
+            || self.ram[LINK_BOTTLE_INFO + 2] >= 2
+            || self.ram[LINK_BOTTLE_INFO + 3] >= 2
+            || self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW] == 0
+        {
+            0x4e
+        } else {
+            0x4d
+        };
+        if self.sprite_show_solicited_message(k, msg) & 0x100 != 0 {
+            self.ram[SPRITE_AI_STATE + k] = 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MedallionTablet_Main(int k) {  // 85f30c
+    pub(super) fn medallion_tablet_main(&mut self, k: usize) {
+        self.medallion_tablet_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[LINK_POSITION_MODE] &= !0x20;
+        self.ram[SPRITE_A + k] = 0;
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.sprite_repel_dash();
+            self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+        }
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[OVERWORLD_SCREEN_INDEX] != 3 {
+                    self.bombos_tablet(k);
+                } else {
+                    self.ether_tablet(k);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 128;
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 240;
+                } else {
+                    let delay = self.ram[SPRITE_DELAY_MAIN + k];
+                    if delay == 0x20 || delay == 0x40 || delay == 0x60 {
+                        self.ram[SPRITE_GRAPHICS + k] =
+                            self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+                    }
+                    if (self.ram[FRAME_COUNTER] & 7) == 0 {
+                        self.sprite_spawn_dust_cloud(k);
+                    }
+                }
+            }
+            3 => {
+                self.ram[SPRITE_GRAPHICS + k] = 4;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BombosTablet(int k) {  // 85f355
+    pub(super) fn bombos_tablet(&mut self, k: usize) {
+        const MSG: [u16; 2] = [0x10d, 0x10f];
+        if self.ram[LINK_DIRECTION_FACING] != 0 || self.sprite_direction_to_face_link(k, None) != 2
+        {
+            return;
+        }
+        if read_le_u16(&self.ram, CUR_SPRITE_Y).wrapping_add(16) < self.player_state_view().y() {
+            return;
+        }
+        self.medallion_tablet_activate(k, &MSG, true);
+    }
+
+    // -----------------------------------------------------------------------
+    // void EtherTablet(int k) {  // 85f3c4
+    pub(super) fn ether_tablet(&mut self, k: usize) {
+        const MSG: [u16; 2] = [0x10d, 0x10e];
+        if self.ram[LINK_DIRECTION_FACING] != 0 || self.sprite_direction_to_face_link(k, None) != 2
+        {
+            return;
+        }
+        if self.ram[SPRITE_Y_LO + k].wrapping_add(16) < self.ram[LINK_Y_COORD] {
+            return;
+        }
+        self.medallion_tablet_activate(k, &MSG, false);
+    }
+
+    fn medallion_tablet_activate(&mut self, k: usize, msg: &[u16; 2], bombos: bool) {
+        if (self.ram[FILTERED_JOYPAD_H] & 0x80) != 0 && self.ram[LINK_SWORD_TYPE] == 2 {
+            return;
+        }
+        let j = if self.ram[HUD_CUR_ITEM] == K_HUD_ITEM_BOOK_MUDORA_DRAW
+            && (self.ram[FILTERED_JOYPAD_H] & 0x40) != 0
+        {
+            1usize
+        } else if (self.ram[FILTERED_JOYPAD_L] & 0x80) != 0 {
+            0usize
+        } else {
+            return;
+        };
+        if j != 0 {
+            self.ram[PLAYER_HANDLER_TIMER] = 0;
+            self.ram[LINK_POSITION_MODE] = 32;
+            self.ram[SOUND_EFFECT_1_DRAW] = 0;
+            if !sign8(self.ram[LINK_SWORD_TYPE]) && self.ram[LINK_SWORD_TYPE] >= 2 {
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                if bombos {
+                    self.bombos_tablet_start_cutscene();
+                } else {
+                    self.ether_tablet_start_cutscene();
+                }
+                self.ram[SPRITE_DELAY_MAIN + k] = 64;
+            }
+        }
+        self.sprite_show_message_unconditional(msg[j]);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_PullSwitch_bounce(int k) {  // 85d6c2
+    pub(super) fn sprite_pull_switch_bounce(&mut self, k: usize) {
+        if self.ram[SPRITE_TYPE + k] == 5 || self.ram[SPRITE_TYPE + k] == 7 {
+            self.pull_switch_facing_up(k);
+        } else {
+            self.pull_switch_facing_down(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void PullSwitch_FacingUp(int k) {  // 85d6d4
+    pub(super) fn pull_switch_facing_up(&mut self, k: usize) {
+        const TAB1: [u8; 10] = [8, 24, 4, 4, 4, 4, 4, 4, 2, 10];
+        const TAB0: [u8; 10] = [6, 7, 8, 8, 8, 8, 8, 9, 9, 9];
+
+        self.pull_switch_handle_up_pulling(k);
+        let mut j = self.ram[SPRITE_GRAPHICS + k];
+        if j != 0 && j != 11 {
+            self.ram[LINK_PULL_ACTION_STATE] = TAB0[usize::from(j - 1)];
+            let sprite_y = self.sprite_get_y(k);
+            let sprite_x = self.sprite_get_x(k);
+            self.player_state_view_mut()
+                .set_y(sprite_y.wrapping_sub(19));
+            self.player_state_view_mut().set_x(sprite_x);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                j = j.wrapping_add(1);
+                self.ram[SPRITE_GRAPHICS + k] = j;
+                if j == 11 {
+                    self.ram[SOUND_EFFECT_2] = 0x1b;
+                    self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = 1;
+                }
+                self.ram[SPRITE_DELAY_MAIN + k] = TAB1[usize::from(j - 2)];
+            }
+        }
+        if self.ram[SPRITE_TYPE + k] != 7 {
+            self.bad_pull_down_switch_draw(k);
+        } else {
+            self.bad_pull_up_switch_draw(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void PullSwitch_HandleUpPulling(int k) {  // 85d743
+    pub(super) fn pull_switch_handle_up_pulling(&mut self, k: usize) {
+        if !self.sprite_check_damage_to_link_same_layer(k) {
+            return;
+        }
+        self.ram[LINK_ACTUAL_VEL_Y] = 0;
+        self.ram[LINK_ACTUAL_VEL_X] = 0;
+        self.sprite_repel_dash();
+        self.ram[PLAYER_DEFENSE_FLAGS] = 0;
+        let y = (self.player_state_view().y() as u8).wrapping_sub(self.ram[SPRITE_Y_LO + k]);
+        if !sign8(y.wrapping_sub(2)) {
+            let sprite_y = self.sprite_get_y(k);
+            self.player_state_view_mut().set_y(sprite_y.wrapping_add(9));
+        } else if sign8(y.wrapping_sub(244)) {
+            self.ram[PLAYER_POSE_DRAW_COUNTER] = self.ram[PLAYER_POSE_DRAW_COUNTER].wrapping_add(1);
+            if self.ram[JOYPAD1L_LAST] & 0x80 != 0
+                && (self.ram[JOYPAD1H_LAST] & 3) == 0
+                && self.ram[SPRITE_GRAPHICS + k] == 0
+            {
+                self.ram[SPRITE_GRAPHICS + k] = 1;
+                self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+            }
+            let sprite_y = self.sprite_get_y(k);
+            self.player_state_view_mut()
+                .set_y(sprite_y.wrapping_sub(21));
+        } else if sign8(
+            (self.player_state_view().x() as u8).wrapping_sub(self.ram[SPRITE_X_LO + k]),
+        ) {
+            let sprite_x = self.sprite_get_x(k);
+            self.player_state_view_mut()
+                .set_x(sprite_x.wrapping_sub(16));
+        } else {
+            let sprite_x = self.sprite_get_x(k);
+            self.player_state_view_mut()
+                .set_x(sprite_x.wrapping_add(14));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void PullSwitch_FacingDown(int k) {  // 85d8b5
+    pub(super) fn pull_switch_facing_down(&mut self, k: usize) {
+        const TAB1: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
+        const TAB0: [u8; 12] = [1, 1, 2, 2, 3, 3, 1, 1, 4, 4, 5, 5];
+        const YOFFS: [u8; 12] = [9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14];
+
+        self.pull_switch_handle_down_pulling(k);
+        let mut j = self.ram[SPRITE_GRAPHICS + k];
+        if j != 0 && j != 13 {
+            self.ram[LINK_PULL_ACTION_STATE] = TAB0[usize::from(j - 1)];
+            let sprite_y = self.sprite_get_y(k);
+            let sprite_x = self.sprite_get_x(k);
+            write_le_u16(
+                &mut self.ram,
+                LINK_Y_COORD,
+                sprite_y.wrapping_add(u16::from(YOFFS[usize::from(j - 1)])),
+            );
+            self.player_state_view_mut().set_x(sprite_x);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                j = j.wrapping_add(1);
+                self.ram[SPRITE_GRAPHICS + k] = j;
+                if j == 13 {
+                    if self.ram[SPRITE_TYPE + k] == 6 {
+                        self.ram[ACTIVATE_BOMB_TRAP_OVERLORD_DRAW] = 1;
+                        self.ram[SOUND_EFFECT_1_DRAW] = 0x3c;
+                    } else {
+                        self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = 1;
+                        self.ram[SOUND_EFFECT_2] = 0x1b;
+                    }
+                }
+                self.ram[SPRITE_DELAY_MAIN + k] = TAB1[usize::from(j - 2)];
+            }
+        }
+        self.good_pull_switch_draw(k);
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void PullSwitch_HandleDownPulling(int k) {  // 85d999
+    pub(super) fn pull_switch_handle_down_pulling(&mut self, k: usize) {
+        if !self.sprite_check_damage_to_link_same_layer(k) {
+            return;
+        }
+        self.ram[LINK_ACTUAL_VEL_Y] = 0;
+        self.ram[LINK_ACTUAL_VEL_X] = 0;
+        self.sprite_repel_dash();
+        self.ram[PLAYER_DEFENSE_FLAGS] = 0;
+        let y = (self.player_state_view().y() as u8).wrapping_sub(self.ram[SPRITE_Y_LO + k]);
+        if !sign8(y.wrapping_sub(2)) {
+            self.ram[PLAYER_POSE_DRAW_COUNTER] = self.ram[PLAYER_POSE_DRAW_COUNTER].wrapping_add(1);
+            if self.ram[JOYPAD1L_LAST] & 0x80 != 0 && (self.ram[JOYPAD1H_LAST] & 3) == 0 {
+                self.ram[LINK_PULL_ACTION_STATE] = self.ram[LINK_PULL_ACTION_STATE].wrapping_add(1);
+                if (self.ram[JOYPAD1H_LAST] & 4) != 0 && self.ram[SPRITE_GRAPHICS + k] == 0 {
+                    self.ram[SPRITE_GRAPHICS + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 12;
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+                }
+            }
+            let sprite_y = self.sprite_get_y(k);
+            self.player_state_view_mut().set_y(sprite_y.wrapping_add(9));
+        } else if sign8(y.wrapping_sub(244)) {
+            let sprite_y = self.sprite_get_y(k);
+            self.player_state_view_mut()
+                .set_y(sprite_y.wrapping_sub(21));
+        } else if sign8(
+            (self.player_state_view().x() as u8).wrapping_sub(self.ram[SPRITE_X_LO + k]),
+        ) {
+            let sprite_x = self.sprite_get_x(k);
+            self.player_state_view_mut()
+                .set_x(sprite_x.wrapping_sub(16));
+        } else {
+            let sprite_x = self.sprite_get_x(k);
+            self.player_state_view_mut()
+                .set_x(sprite_x.wrapping_add(14));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BadPullDownSwitch_Draw(int k) {  // 85d7f9
+    //   Five OAM entries, including the animated center pull segment.
+    // }
+    pub(super) fn bad_pull_down_switch_draw(&mut self, k: usize) {
+        const K_BAD_PULL_DOWN_SWITCH_X: [i8; 5] = [-4, 12, 0, -4, 4];
+        const K_BAD_PULL_DOWN_SWITCH_Y: [i8; 5] = [-3, -3, 0, 5, 5];
+        const K_BAD_PULL_DOWN_SWITCH_CHAR: [u8; 5] = [0xd2, 0xd2, 0xc4, 0xe4, 0xe4];
+        const K_BAD_PULL_DOWN_SWITCH_FLAGS: [u8; 5] = [0x40, 0, 0, 0x40, 0];
+        const K_BAD_PULL_DOWN_SWITCH_BIG: [u8; 5] = [0, 0, 2, 2, 2];
+        const K_BAD_PULL_SWITCH_TAB5: [u8; 6] = [0, 1, 2, 3, 4, 5];
+        const K_BAD_PULL_SWITCH_TAB4: [u8; 12] = [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
+        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        self.oam_allocate_defer_to_player(k);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = (self.ram[SPRITE_GRAPHICS + k] as usize).min(K_BAD_PULL_SWITCH_TAB4.len() - 1);
+        let yoff = K_BAD_PULL_SWITCH_TAB5[K_BAD_PULL_SWITCH_TAB4[g] as usize];
+        for i in (0..5).rev() {
+            let y_delta =
+                (K_BAD_PULL_DOWN_SWITCH_Y[i] as i16) - if i == 2 { yoff as i16 } else { 0 };
+            self.set_oam_plain_at_for_draw(
+                oam,
+                x.wrapping_add(K_BAD_PULL_DOWN_SWITCH_X[i] as i16 as u16) as u8,
+                y.wrapping_add(y_delta as u16) as u8,
+                K_BAD_PULL_DOWN_SWITCH_CHAR[i],
+                K_BAD_PULL_DOWN_SWITCH_FLAGS[i] | 0x21,
+                K_BAD_PULL_DOWN_SWITCH_BIG[i],
+            );
+            oam += 4;
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 4, 0xff);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BadPullUpSwitch_Draw(int k) {  // 85d858
+    //   Two large switch tiles with animated top offset.
+    // }
+    pub(super) fn bad_pull_up_switch_draw(&mut self, k: usize) {
+        const K_BAD_PULL_UP_SWITCH_TAB2: [u8; 2] = [0xa2, 0xa4];
+        const K_BAD_PULL_SWITCH_TAB5: [u8; 6] = [0, 1, 2, 3, 4, 5];
+        const K_BAD_PULL_SWITCH_TAB4: [u8; 12] = [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        self.oam_allocate_defer_to_player(k);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = (self.ram[SPRITE_GRAPHICS + k] as usize).min(K_BAD_PULL_SWITCH_TAB4.len() - 1);
+        let yoff = K_BAD_PULL_SWITCH_TAB5[K_BAD_PULL_SWITCH_TAB4[g] as usize];
+        for i in (0..2).rev() {
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x,
+                y.wrapping_sub(if i == 0 { yoff as u16 } else { 0 }),
+                K_BAD_PULL_UP_SWITCH_TAB2[i],
+                flags,
+                2,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void GoodPullSwitch_Draw(int k) {  // 85d953
+    //   Two large switch tiles whose spacing follows sprite_graphics.
+    // }
+    pub(super) fn good_pull_switch_draw(&mut self, k: usize) {
+        const K_GOOD_PULL_SWITCH_TAB2: [u8; 14] = [1, 1, 2, 3, 2, 3, 4, 5, 6, 7, 6, 7, 7, 7];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        self.oam_allocate_defer_to_player(k);
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let t = K_GOOD_PULL_SWITCH_TAB2
+            [(self.ram[SPRITE_GRAPHICS + k] as usize).min(K_GOOD_PULL_SWITCH_TAB2.len() - 1)];
+        self.set_oam_helper0_at_for_draw(oam, x, y.wrapping_sub(1), 0xee, flags, 2);
+        self.set_oam_helper0_at_for_draw(
+            oam + 4,
+            x,
+            y.wrapping_sub(1).wrapping_add(t as u16),
+            0xce,
+            flags,
+            2,
+        );
+        self.sprite_correct_oam_entries_for_draw(k, 1, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BugNetKid_Draw(int k) {  // 8dd47b
+    //   Six deferred tiles selected by sprite_graphics.
+    // }
+    pub(super) fn bug_net_kid_draw(&mut self, k: usize) {
+        const K_BUG_NET_KID_DMD: [DrawMultipleData; 18] = [
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x0027,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 6,
+                char_flags: 0x040a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 6,
+                char_flags: 0x440a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 14,
+                char_flags: 0x840a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 14,
+                char_flags: 0xc40a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 6,
+                char_flags: 0x040a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 6,
+                char_flags: 0x440a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 14,
+                char_flags: 0x840a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 14,
+                char_flags: 0xc40a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x002e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x002e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 7,
+                char_flags: 0x040a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 7,
+                char_flags: 0x440a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 14,
+                char_flags: 0x840a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 14,
+                char_flags: 0xc40a,
+                ext: 2,
+            },
+        ];
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 6;
+        self.sprite_draw_multiple_player_deferred(k, &K_BUG_NET_KID_DMD[base..base + 6], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Bomber_Draw(int k) {  // 8dd56c
+    //   Two body tiles selected by sprite_graphics plus common shadow.
+    // }
+    pub(super) fn bomber_draw(&mut self, k: usize) {
+        const K_BOMBER_DMD: [DrawMultipleData; 22] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 2;
+        self.sprite_draw_multiple(k, &K_BOMBER_DMD[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_93_Bumper(int k) {  // 9ea982
+    pub(super) fn sprite_93_bumper(&mut self, k: usize) {
+        const VELS: [i8; 4] = [0, 2, -2, 0];
+
+        self.bumper_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_check_tile_collision(k);
+        if self.ram[LINK_CAPE_MODE] == 0 && self.sprite_check_damage_to_link_same_layer(k) {
+            self.link_cancel_dash();
+            self.ram[SPRITE_DELAY_MAIN + k] = 32;
+            let pt = self.sprite_project_speed_towards_link(k, 0x30);
+            self.ram[LINK_ACTUAL_VEL_Y] =
+                pt.y.wrapping_add(VELS[usize::from((self.ram[JOYPAD1H_LAST] >> 2) & 3)] as u8);
+            self.ram[LINK_ACTUAL_VEL_X] =
+                pt.x.wrapping_add(VELS[usize::from(self.ram[JOYPAD1H_LAST] & 3)] as u8);
+            self.ram[LINK_INCAPACITATED_TIMER] = 20;
+            self.link_reset_swimming_state();
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
+        }
+        for j in (0..16).rev() {
+            if ((((j as u8) ^ self.ram[FRAME_COUNTER]) & 3) | self.ram[SPRITE_Z + j]) != 0 {
+                continue;
+            }
+            if self.ram[SPRITE_STATE + j] < 9
+                || ((self.ram[SPRITE_FLAGS3 + j] | self.ram[SPRITE_FLAGS4 + j]) & 0x40) != 0
+            {
+                continue;
+            }
+            let x = self.sprite_get_x(j);
+            let y = self.sprite_get_y(j);
+            let dx = read_le_u16(&self.ram, CUR_SPRITE_X)
+                .wrapping_sub(x)
+                .wrapping_add(16);
+            let dy = read_le_u16(&self.ram, CUR_SPRITE_Y)
+                .wrapping_sub(y)
+                .wrapping_add(16);
+            if dx < 32 && dy < 32 {
+                self.ram[SPRITE_F + j] = 15;
+                let pt = self.sprite_project_speed_towards_location(k, x, y, 0x40);
+                self.ram[SPRITE_Y_RECOIL_DRAW + j] = pt.y;
+                self.ram[SPRITE_X_RECOIL + j] = pt.x;
+                self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Bumper_Draw(int k) {  // 9eaa8b
+    //   Four large tiles toggled by delay timer.
+    // }
+    pub(super) fn bumper_draw(&mut self, k: usize) {
+        const K_BUMPER_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x00ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x40ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x80ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc0ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: -7,
+                char_flags: 0x00ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -7,
+                char_flags: 0x40ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 7,
+                char_flags: 0x80ec,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0xc0ec,
+                ext: 2,
+            },
+        ];
+        let base = (((self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 1) as usize) * 4;
+        self.sprite_draw_multiple(k, &K_BUMPER_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void FakeSword_Draw(int k) {  // 85eee6
+    //   Sprite_DrawMultiplePlayerDeferred(k, kFakeSword_Dmd, 2, NULL);
+    // }
+    pub(super) fn fake_sword_draw(&mut self, k: usize) {
+        const K_FAKE_SWORD_DMD: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00f4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x00f5,
+                ext: 0,
+            },
+        ];
+        self.sprite_draw_multiple_player_deferred(k, &K_FAKE_SWORD_DMD, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_E7_Mushroom(int k) {  // 85ee78
+    pub(super) fn sprite_e7_mushroom(&mut self, k: usize) {
+        self.sprite_draw_single_large(k);
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+
+        if self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & K_FEATURES0_MISC_BUG_FIXES_DRAW != 0
+            && self.frame_control_view().submodule() != 0
+        {
+            return;
+        }
+
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[SPRITE_STATE + k] = 0;
+            self.ram[ITEM_RECEIPT_METHOD] = 0;
+            self.link_receive_item(0x29, 0);
+        } else if (self.ram[FRAME_COUNTER] & 0x1f) == 0 {
+            self.ram[SPRITE_OAM_FLAGS + k] ^= 0x40;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_E8_FakeSword(int k) {  // 85eeaf
+    pub(super) fn sprite_e8_fake_sword(&mut self, k: usize) {
+        self.fake_sword_draw(k);
+        if self.sprite_return_if_paused(k) {
+            return;
+        }
+        if self.ram[SPRITE_UNK3_DRAW + k] == 3 {
+            if self.ram[SPRITE_C + k] == 0 {
+                self.ram[SPRITE_C + k] = 1;
+                self.sprite_show_message_unconditional(0x6f);
+            }
+        } else {
+            self.sprite_move_xy(k);
+            self.thrown_sprite_tile_and_sprite_interaction(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Aginah(int k) {  // 85f0ea
+    pub(super) fn sprite_aginah(&mut self, k: usize) {
+        let msg = if (self.ram[SRAM_PROGRESS_FLAGS] & 0x20) == 0 {
+            self.ram[SRAM_PROGRESS_FLAGS] |= 0x20;
+            0x125
+        } else if self.ram[LINK_SWORD_TYPE] >= 2 {
+            0x128
+        } else if (self.ram[LINK_WHICH_PENDANTS] & 7) == 7 {
+            0x126
+        } else if (self.ram[LINK_WHICH_PENDANTS] & 2) != 0 {
+            0x129
+        } else if self.ram[LINK_ITEM_BOOK] != 0 {
+            0x127
+        } else {
+            self.ram[SRAM_PROGRESS_FLAGS] |= 0x20;
+            0x125
+        };
+        self.sprite_show_solicited_message(k, msg);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 5) & 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Sahasrahla(int k) {  // 85f14d
+    pub(super) fn sprite_sahasrahla(&mut self, k: usize) {
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => self.sasha_idle(k),
+            1 => {
+                self.sprite_show_message_unconditional(0x33);
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[SAVEGAME_MAP_ICONS_INDICATOR] = 3;
+            }
+            2 => {
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(0x4b, 0);
+                self.ram[SPRITE_AI_STATE + k] = 3;
+                self.ram[SAVEGAME_MAP_ICONS_INDICATOR] = 3;
+            }
+            3 => {
+                self.sprite_show_message_unconditional(0x37);
+                self.ram[SPRITE_AI_STATE + k] = 0;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_16_Elder_bounce(int k) {  // 86c08a
+    //   Dispatcher for Sahasrahla / Aginah variants.
+    // }
+    pub(super) fn sprite_16_elder_bounce(&mut self, k: usize) {
+        self.elder_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_sahasrahla(k),
+            1 => self.sprite_aginah(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Waterfall(int k) {  // 9af5b8
+    pub(super) fn waterfall(&mut self, k: usize) {
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            if self.ram[OVERWORLD_SCREEN_INDEX] == 0x43 {
+                self.ancilla_add_gt_cutscene();
+            } else {
+                self.ancilla_add_waterfall_splash();
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_37_Waterfall(int k) {  // 86c03a
+    pub(super) fn sprite_37_waterfall(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.waterfall(k),
+            1 => self.sprite_bat_crash(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BatCrash(int k) {  // 9af5d9
+    pub(super) fn sprite_bat_crash(&mut self, k: usize) {
+        const XPOS: [u16; 4] = [0x07dc, 0x07f0, 0x0820, 0x0818];
+        const YPOS: [u16; 4] = [0x062e, 0x0636, 0x0630, 0x05e0];
+        const DELAY: [u8; 5] = [4, 3, 4, 6, 0];
+
+        self.retreat_bat_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.bat_crash_draw_hardcoded_garbage(k);
+        write_le_u16(&mut self.ram, BG1_Y_OFFSET, 0);
+        if self.ram[SPRITE_DELAY_AUX3_DRAW + k] != 0 {
+            if self.ram[SPRITE_DELAY_AUX3_DRAW + k] == 1 {
+                self.ram[SOUND_EFFECT_AMBIENT] = 5;
+            }
+            let offs = if (self.ram[SPRITE_DELAY_AUX3_DRAW + k] & 1) != 0 {
+                1u16
+            } else {
+                (-1i16) as u16
+            };
+            write_le_u16(&mut self.ram, BG1_Y_OFFSET, offs);
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1) & 3;
+            if self.ram[SPRITE_GRAPHICS + k] == 0 && self.ram[SPRITE_AI_STATE + k] < 2 {
+                self.sprite_sfx_queue_sfx2_with_pan(k, 3);
+            }
+            self.ram[SPRITE_DELAY_MAIN + k] = DELAY[usize::from(self.ram[SPRITE_D + k])];
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                let j = usize::from(self.ram[SPRITE_A + k]);
+                if XPOS[j] < read_le_u16(&self.ram, CUR_SPRITE_X) {
+                    if j >= 2 {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_AUX1_DRAW + k] = 208;
+                    }
+                    self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k].wrapping_add(1);
+                }
+                self.retreat_bat_update_pos(k, j, &YPOS);
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k].wrapping_add(1);
+                    self.ram[SPRITE_X_LO + k] = 232;
+                    self.ram[SPRITE_X_HI + k] = 7;
+                    self.ram[SPRITE_Y_LO + k] = 224;
+                    self.ram[SPRITE_Y_HI + k] = 5;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 64;
+                    self.ram[SPRITE_DELAY_AUX1_DRAW + k] = 45;
+                } else {
+                    if (self.ram[FRAME_COUNTER] & 3) == 0 {
+                        self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_sub(1);
+                    }
+                    let j = usize::from(self.ram[SPRITE_A + k]);
+                    self.retreat_bat_update_pos(k, j, &YPOS);
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0 {
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                    self.ram[SPRITE_DELAY_AUX1_DRAW + k] = 96;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+                if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 9 {
+                    self.bat_crash_spawn_debris(k);
+                    self.create_pyramid_hole_for_draw();
+                }
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                    self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn retreat_bat_update_pos(&mut self, k: usize, j: usize, ypos: &[u16; 4]) {
+        if (self.ram[FRAME_COUNTER] & 7) == 0 {
+            let delta = if ypos[j] >= read_le_u16(&self.ram, CUR_SPRITE_Y) {
+                1u8
+            } else {
+                (-1i8) as u8
+            };
+            self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(delta);
+        }
+        if (self.ram[FRAME_COUNTER] & 15) == 0 {
+            self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_add(1);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BatCrash_SpawnDebris(int k) {  // 9af7e5
+    pub(super) fn bat_crash_spawn_debris(&mut self, k: usize) {
+        const X: [i8; 30] = [
+            -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32,
+            -8, 0, 8, 16, 24, 32,
+        ];
+        const Y: [i8; 30] = [
+            0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x10, 0x10, 0x10, 0x10,
+            0x10, 0x10,
+        ];
+        const XVEL: [i8; 30] = [
+            -30, -25, -8, 8, 25, 30, -50, -45, -20, 20, 45, 50, -50, -35, -25, 25, 35, 50, -45,
+            -50, -60, 60, 50, 45, -30, -35, -40, 40, 35, 30,
+        ];
+        const YVEL: [i8; 30] = [
+            2, 5, 10, 10, 5, 2, 5, 20, 30, 30, 20, 5, 10, 30, 40, 40, 30, 10, -20, -40, -60, -60,
+            -40, -20, -10, -20, -40, -40, -20, -10,
+        ];
+
+        for j in (0..30).rev() {
+            self.garnish_spawn_pyramid_debris(X[j], Y[j], XVEL[j], YVEL[j]);
+        }
+        self.ram[SPRITE_DELAY_AUX3_DRAW + k] = 32;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Overworld_DrawWoodenDoor(uint16 pos, bool unlocked) {  // 9bc952
+    pub(super) fn overworld_draw_wooden_door(&mut self, pos: u16, unlocked: bool) {
+        self.overworld_draw_map16_persist_for_draw(pos, if unlocked { 0x0da5 } else { 0x0da4 });
+        self.overworld_draw_map16_persist_for_draw(
+            pos.wrapping_add(2),
+            if unlocked { 0x0da7 } else { 0x0da6 },
+        );
+        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_ChickenLady(int k) {  // 9afed3
+    pub(super) fn sprite_chicken_lady(&mut self, k: usize) {
+        self.ram[SPRITE_D + k] = 1;
+        self.lady_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+            write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x17d);
+            self.sprite_show_message_minimal_c();
+        }
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 4) & 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D4_Landmine(int k) {  // 9d8099
+    pub(super) fn sprite_d4_landmine(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [4, 2, 8, 2];
+
+        self.landmine_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if !self.landmine_check_detonation_from_hammer(k) {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_OAM_FLAGS + k] = 4;
+                if self.sprite_check_damage_to_link(k) {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                }
+                return;
+            }
+            if self.ram[SPRITE_DELAY_MAIN + k] != 1 {
+                let idx = usize::from((self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 3);
+                self.ram[SPRITE_OAM_FLAGS + k] = OAM_FLAGS[idx];
+                return;
+            }
+        }
+        self.ram[SPRITE_STATE + k] = 0;
+        let j = self.sprite_spawn_bomb(k);
+        if j >= 0 {
+            let j = j as usize;
+            self.ram[SPRITE_STATE + j] = 6;
+            self.ram[SPRITE_C + j] = 2;
+            self.ram[SPRITE_OAM_FLAGS + j] = 2;
+            self.ram[SPRITE_FLAGS4 + j] = 9;
+            self.ram[SPRITE_DELAY_AUX1_DRAW + j] = 31;
+            self.ram[SPRITE_FLAGS2 + j] = 3;
+            self.ram[SOUND_EFFECT_1_DRAW] = self.sprite_calculate_sfx_pan(k) | 12;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // bool Landmine_CheckDetonationFromHammer(int k) {  // 84ea81
+    pub(super) fn landmine_check_detonation_from_hammer(&mut self, k: usize) -> bool {
+        if (self.ram[LINK_ITEM_IN_HAND] & 10) == 0 || self.ram[PLAYER_OAM_Y_OFFSET] == 0x80 {
+            return false;
+        }
+        let mut hb = SpriteHitBox {
+            r0_xlo: 0,
+            r8_xhi: 0,
+            r1_ylo: 0,
+            r9_yhi: 0,
+            r2: 0,
+            r3: 0,
+            r4_spr_xlo: 0,
+            r10_spr_xhi: 0,
+            r5_spr_ylo: 0,
+            r11_spr_yhi: 0,
+            r6_spr_xsize: 0,
+            r7_spr_ysize: 0,
+        };
+        self.player_setup_action_hit_box(&mut hb);
+        self.sprite_setup_hit_box(k, &mut hb);
+        self.check_if_hit_boxes_overlap(&hb)
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_CF_Swamola(int k) {  // 9d9cb0
+    pub(super) fn sprite_cf_swamola(&mut self, k: usize) {
+        const TARGET_DIR: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        const TARGET_X: [i8; 9] = [0, 0, 32, 32, 32, 0, -32, -32, -32];
+        const TARGET_Y: [i8; 9] = [0, -32, -32, 0, 32, 32, 32, 0, -32];
+
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if sign8(self.ram[SPRITE_AI_STATE + k]) {
+                self.sprite_swamola_ripples(k);
+                return;
+            }
+            self.swamola_draw(k);
+        }
+        self.sprite_get16_bit_coords(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.sprite_check_damage_to_and_from_link(k);
+        let old_vel = self.ram[SPRITE_Y_VEL + k];
+        self.ram[SPRITE_Y_VEL + k] =
+            self.ram[SPRITE_Y_VEL + k].wrapping_add(self.ram[SPRITE_Z_VEL + k]);
+        self.sprite_move_xy(k);
+        self.ram[SPRITE_Y_VEL + k] = old_vel;
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let j = TARGET_DIR[usize::from(self.get_random_number() & 7)];
+                    if j == self.ram[SPRITE_D + k] {
+                        return;
+                    }
+                    let t = (u16::from(self.ram[SPRITE_B_DRAW + k]) << 8)
+                        | u16::from(self.ram[SPRITE_A + k]);
+                    let t = t.wrapping_add_signed(i16::from(TARGET_X[usize::from(j)]));
+                    self.ram[SWAMOLA_TARGET_X_LO_DRAW + k] = t as u8;
+                    self.ram[SWAMOLA_TARGET_X_HI_DRAW + k] = (t >> 8) as u8;
+                    let t = (u16::from(self.ram[SPRITE_HEAD_DIR + k]) << 8)
+                        | u16::from(self.ram[SPRITE_C_DRAW + k]);
+                    let t = t.wrapping_add_signed(i16::from(TARGET_Y[usize::from(j)]));
+                    self.ram[SWAMOLA_TARGET_Y_LO_DRAW + k] = t as u8;
+                    self.ram[SWAMOLA_TARGET_Y_HI_DRAW + k] = (t >> 8) as u8;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                    self.ram[SPRITE_Z_VEL + k] = (-15i8) as u8;
+                    self.swamola_spawn_ripples(k);
+                }
+            }
+            1 => {
+                if (self.ram[SPRITE_SUBTYPE2 + k] & 3) == 0 {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(1);
+                    if self.ram[SPRITE_Z_VEL + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 2;
+                    }
+                    let pt = self.swamola_project_velocity_towards_target(k);
+                    self.sprite_approach_target_speed(k, pt.x, pt.y);
+                }
+            }
+            2 => {
+                const Z_ACCEL: [i8; 2] = [2, -2];
+                const Z_VEL_TARGET: [i8; 2] = [12, -12];
+                let j = usize::from(self.ram[SPRITE_G_DRAW + k] & 1);
+                self.ram[SPRITE_Z_VEL + k] =
+                    self.ram[SPRITE_Z_VEL + k].wrapping_add(Z_ACCEL[j] as u8);
+                if self.ram[SPRITE_Z_VEL + k] == Z_VEL_TARGET[j] as u8 {
+                    self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+                }
+                let x = u16::from(self.ram[SWAMOLA_TARGET_X_LO_DRAW + k])
+                    | (u16::from(self.ram[SWAMOLA_TARGET_X_HI_DRAW + k]) << 8);
+                let y = u16::from(self.ram[SWAMOLA_TARGET_Y_LO_DRAW + k])
+                    | (u16::from(self.ram[SWAMOLA_TARGET_Y_HI_DRAW + k]) << 8);
+                if read_le_u16(&self.ram, CUR_SPRITE_X)
+                    .wrapping_sub(x)
+                    .wrapping_add(8)
+                    < 16
+                    && read_le_u16(&self.ram, CUR_SPRITE_Y)
+                        .wrapping_sub(y)
+                        .wrapping_add(8)
+                        < 16
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                }
+                let pt = self.swamola_project_velocity_towards_target(k);
+                self.ram[SPRITE_X_VEL + k] = pt.x;
+                self.ram[SPRITE_Y_VEL + k] = pt.y;
+            }
+            3 => {
+                if (self.ram[SPRITE_SUBTYPE2 + k] & 3) == 0 {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(1);
+                    if self.ram[SPRITE_Z_VEL + k] == 16 {
+                        self.ram[SPRITE_AI_STATE + k] = 4;
+                        self.swamola_spawn_ripples(k);
+                        self.ram[SPRITE_Y_HI + k] = 128;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                    }
+                    self.sprite_approach_target_speed(k, 0, 0);
+                }
+            }
+            4 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let j = TARGET_DIR[usize::from(self.get_random_number() & 7)];
+                    self.ram[SPRITE_D + k] = j;
+                    let x = (u16::from(self.ram[SPRITE_B_DRAW + k]) << 8)
+                        | u16::from(self.ram[SPRITE_A + k]);
+                    self.sprite_set_x(
+                        k,
+                        x.wrapping_add_signed(i16::from(TARGET_X[usize::from(j)])),
+                    );
+                    let y = (u16::from(self.ram[SPRITE_HEAD_DIR + k]) << 8)
+                        | u16::from(self.ram[SPRITE_C_DRAW + k]);
+                    self.sprite_set_y(
+                        k,
+                        y.wrapping_add_signed(i16::from(TARGET_Y[usize::from(j)])),
+                    );
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                    self.ram[SPRITE_Z_VEL + k] = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ProjectSpeedRet Swamola_ProjectVelocityTowardsTarget(int k) {  // 9d9e13
+    pub(super) fn swamola_project_velocity_towards_target(&mut self, k: usize) -> ProjectSpeedRet {
+        let x = u16::from(self.ram[SWAMOLA_TARGET_X_LO_DRAW + k])
+            | (u16::from(self.ram[SWAMOLA_TARGET_X_HI_DRAW + k]) << 8);
+        let y = u16::from(self.ram[SWAMOLA_TARGET_Y_LO_DRAW + k])
+            | (u16::from(self.ram[SWAMOLA_TARGET_Y_HI_DRAW + k]) << 8);
+        self.sprite_project_speed_towards_location(k, x, y, 15)
+    }
+
+    // -----------------------------------------------------------------------
+    // void Swamola_SpawnRipples(int k) {  // 9d9eaa
+    pub(super) fn swamola_spawn_ripples(&mut self, k: usize) {
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0xcf, &mut info);
+        if j >= 0 {
+            let j = j as usize;
+            self.sprite_set_spawned_coordinates(j, &info);
+            self.ram[SPRITE_AI_STATE + j] = 128;
+            self.ram[SPRITE_DELAY_MAIN + j] = 32;
+            self.ram[SPRITE_OAM_FLAGS + j] = 4;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + j] = 4;
+            self.ram[SPRITE_FLAGS2 + j] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Swamola_Ripples(int k) {  // 9d9ece
+    pub(super) fn sprite_swamola_ripples(&mut self, k: usize) {
+        self.swamola_ripples_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SwamolaRipples_Draw(int k) {  // 9d9f1d
+    pub(super) fn swamola_ripples_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40d9,
+                ext: 0,
+            },
+        ];
+        self.oam_allocate_from_region_b(8);
+        let base = usize::from((self.ram[SPRITE_DELAY_MAIN + k] >> 2) & 3) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Swamola_Draw(int k) {  // 9d9f64
+    pub(super) fn swamola_draw(&mut self, k: usize) {
+        const GFX: [u8; 16] = [7, 6, 5, 4, 3, 4, 5, 6, 7, 6, 5, 4, 3, 4, 5, 6];
+        const GFX2: [u8; 4] = [0, 0, 1, 2];
+        const FLAGS: [u8; 16] = [
+            0xc0, 0xc0, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40,
+        ];
+        const HIST_OFFS: [u8; 4] = [8, 16, 22, 26];
+
+        let j = usize::from(Self::sprite_convert_velocity_to_angle(
+            self.ram[SPRITE_X_VEL + k],
+            self.ram[SPRITE_Y_VEL + k].wrapping_add(self.ram[SPRITE_Z_VEL + k]),
+        ));
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 63) | FLAGS[j];
+        self.sprite_draw_single_large(k);
+
+        let hist = usize::from(self.ram[SPRITE_SUBTYPE2 + k] & 0x1f) + k * 32;
+        self.ram[SWAMOLA_X_LO_DRAW + hist] = self.ram[SPRITE_X_LO + k];
+        self.ram[SWAMOLA_X_HI_DRAW + hist] = self.ram[SPRITE_X_HI + k];
+        self.ram[SWAMOLA_Y_LO_DRAW + hist] = self.ram[SPRITE_Y_LO + k];
+        self.ram[SWAMOLA_Y_HI_DRAW + hist] = self.ram[SPRITE_Y_HI + k];
+
+        let (mut oam_step, mut ext_step): (i16, i16) = if sign8(self.ram[SPRITE_Y_VEL + k]) {
+            (5 * 4, 5)
+        } else {
+            (0, 0)
+        };
+        let delta: i16 = if sign8(self.ram[SPRITE_Y_VEL + k]) {
+            -1
+        } else {
+            1
+        };
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(
+            &mut self.ram,
+            OAM_CUR_PTR,
+            cur.wrapping_add_signed(oam_step),
+        );
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(
+            &mut self.ram,
+            OAM_EXT_CUR_PTR,
+            ext.wrapping_add_signed(ext_step),
+        );
+
+        for i in 0..4 {
+            self.ram[SPRITE_GRAPHICS + k] = GFX2[i];
+            let j =
+                usize::from(self.ram[SPRITE_SUBTYPE2 + k].wrapping_sub(HIST_OFFS[i]) & 31) + k * 32;
+            let x = u16::from(self.ram[SWAMOLA_X_LO_DRAW + j])
+                | (u16::from(self.ram[SWAMOLA_X_HI_DRAW + j]) << 8);
+            let y = u16::from(self.ram[SWAMOLA_Y_LO_DRAW + j])
+                | (u16::from(self.ram[SWAMOLA_Y_HI_DRAW + j]) << 8);
+            write_le_u16(&mut self.ram, CUR_SPRITE_X, x);
+            write_le_u16(&mut self.ram, CUR_SPRITE_Y, y);
+            oam_step = delta * 4;
+            ext_step = delta;
+            let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+            write_le_u16(
+                &mut self.ram,
+                OAM_CUR_PTR,
+                cur.wrapping_add_signed(oam_step),
+            );
+            let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+            write_le_u16(
+                &mut self.ram,
+                OAM_EXT_CUR_PTR,
+                ext.wrapping_add_signed(ext_step),
+            );
+            self.sprite_draw_single_large(k);
+        }
+        self.ram[SPRITE_DRAW_SCRATCH_Y_OR_FLAGS] = 4;
+    }
+
+    // -----------------------------------------------------------------------
+    // void WallMaster_Draw(int k) {  // 9eafe4
+    pub(super) fn wall_master_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x01a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 0,
+                char_flags: 0x01aa,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x01ba,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x01a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x01ab,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 0,
+                char_flags: 0x01af,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 16,
+                char_flags: 0x01bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x01ad,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &D[base..base + 4], None);
+        self.sprite_draw_large_shadow2(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Zol_Draw(int k) {  // 9eb1c5
+    pub(super) fn zol_draw(&mut self, k: usize) {
+        if (self.ram[SPRITE_OAM_FLAGS + k] & 1) == 0 && self.ram[SPRITE_CHR_HALFSLOT_STATE] >= 3 {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_AUX4 + k] != 0 {
+            self.oam_allocate_from_region_b(8);
+        }
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+            return;
+        }
+        let gfx = self.ram[SPRITE_GRAPHICS + k];
+        if gfx < 4 {
+            const OAM_FLAGS: [u8; 4] = [0, 0, 0x40, 0x40];
+            let bak1 = self.ram[SPRITE_OAM_FLAGS + k];
+            self.ram[SPRITE_OAM_FLAGS + k] = bak1 ^ OAM_FLAGS[usize::from(gfx)];
+            self.ram[SPRITE_GRAPHICS + k] =
+                gfx.wrapping_add(((self.ram[SPRITE_OAM_FLAGS + k] & 1) ^ 1) << 2);
+            self.sprite_draw_single_large(k);
+            self.ram[SPRITE_GRAPHICS + k] = gfx;
+            self.ram[SPRITE_OAM_FLAGS + k] = bak1;
+        } else {
+            const D: [DrawMultipleData; 8] = [
+                DrawMultipleData {
+                    x: 0,
+                    y: 8,
+                    char_flags: 0x036c,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 8,
+                    y: 8,
+                    char_flags: 0x036d,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 0,
+                    y: 8,
+                    char_flags: 0x0060,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 8,
+                    y: 8,
+                    char_flags: 0x0070,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 0,
+                    y: 8,
+                    char_flags: 0x4070,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 8,
+                    y: 8,
+                    char_flags: 0x4060,
+                    ext: 0,
+                },
+                DrawMultipleData {
+                    x: 0,
+                    y: 0,
+                    char_flags: 0x0040,
+                    ext: 2,
+                },
+                DrawMultipleData {
+                    x: 0,
+                    y: 0,
+                    char_flags: 0x0040,
+                    ext: 2,
+                },
+            ];
+            let base = usize::from(gfx.wrapping_sub(4)) * 2;
+            self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Zoro(int k) {  // 9e9bd0
+    pub(super) fn zoro(&mut self, k: usize) {
+        const FLUTE_BOY_ANIMAL_XVEL: [i8; 4] = [16, -16, 0, 0];
+
+        if self.ram[SPRITE_C_DRAW + k] == 0 {
+            self.ram[SPRITE_C_DRAW + k] = self.ram[SPRITE_C_DRAW + k].wrapping_add(1);
+            if self.sprite_is_below_link(k).a != 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+                return;
+            }
+        }
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 1;
+        self.ram[SPRITE_X_VEL + k] =
+            FLUTE_BOY_ANIMAL_XVEL[usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1)] as u8;
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 && self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        if (self.ram[SPRITE_SUBTYPE2 + k] & 3) != 0 {
+            return;
+        }
+        let j = self.garnish_alloc();
+        if j < 0 {
+            return;
+        }
+        let j = j as usize;
+        self.ram[GARNISH_TYPE_DRAW + j] = 6;
+        self.ram[GARNISH_ACTIVE_DRAW] = 6;
+        self.garnish_set_x(j, self.sprite_get_x(k));
+        self.garnish_set_y(j, self.sprite_get_y(k).wrapping_add(16));
+        self.ram[GARNISH_COUNTDOWN_DRAW + j] = 10;
+        self.ram[GARNISH_SPRITE_DRAW + j] = k as u8;
+        self.ram[GARNISH_FLOOR_DRAW + j] = self.ram[SPRITE_FLOOR + k];
+    }
+
+    // -----------------------------------------------------------------------
+    // void Wizzrobe_Draw(int k) {  // 8dbe06
+    pub(super) fn wizzrobe_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00b2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x00b3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple(k, &D[base..base + 3], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Wizzrobe_FireBeam(int k) {  // 9e9e15
+    pub(super) fn wizzrobe_fire_beam(&mut self, k: usize) {
+        const BEAM_XYVEL: [i8; 6] = [32, -32, 0, 0, 32, -32];
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0x9b, &mut info);
+        if j >= 0 {
+            let j = j as usize;
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
+            self.ram[SPRITE_C_DRAW + j] = 1;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + j] = 1;
+            self.sprite_set_x(j, info.r0_x.wrapping_add(4));
+            self.sprite_set_y(j, info.r2_y);
+            let i = usize::from(self.ram[SPRITE_D + k]);
+            self.ram[SPRITE_X_VEL + j] = BEAM_XYVEL[i] as u8;
+            self.ram[SPRITE_Y_VEL + j] = BEAM_XYVEL[i + 2] as u8;
+            self.ram[SPRITE_DEFL_BITS + j] = 0x48;
+            self.ram[SPRITE_OAM_FLAGS + j] = 2;
+            self.ram[SPRITE_FLAGS5 + j] = if self.ram[LINK_SHIELD_TYPE] == 3 {
+                0x20
+            } else {
+                0
+            };
+            self.ram[SPRITE_FLAGS4 + j] = 0x14;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_StalfosBone(int k) {  // 9e8fdf
+    pub(super) fn sprite_stalfos_bone(&mut self, k: usize) {
+        self.stalfos_bone_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_check_damage_to_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 && self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+            self.sprite_place_weapon_tink(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void StalfosBone_Draw(int k) {  // 9e9040
+    pub(super) fn stalfos_bone_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: -4,
+                y: -2,
+                char_flags: 0x802f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 2,
+                char_flags: 0x402f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 2,
+                char_flags: 0x002f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -2,
+                char_flags: 0xc02f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -4,
+                char_flags: 0x403f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 4,
+                char_flags: 0x803f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -4,
+                char_flags: 0x003f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 4,
+                char_flags: 0xc03f,
+                ext: 0,
+            },
+        ];
+        let base = usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 3) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Stalfos_ThrowBone(int k) {  // 9e9379
+    pub(super) fn stalfos_throw_bone(&mut self, k: usize) {
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(k, 0xa7, &mut info);
+        if j >= 0 {
+            let j = j as usize;
+            self.ram[SPRITE_A + j] = 1;
+            self.sprite_set_spawned_coordinates(j, &info);
+            self.sprite_apply_speed_towards_link(j, 32);
+            self.ram[SPRITE_FLAGS2 + j] = 0x21;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + j] = 33;
+            self.ram[SPRITE_FLAGS3 + j] |= 0x40;
+            self.ram[SPRITE_DEFL_BITS + j] = 0x48;
+            self.ram[SPRITE_DELAY_MAIN + j] = 16;
+            self.ram[SPRITE_FLAGS4 + j] = 0x14;
+            self.ram[SPRITE_OAM_FLAGS + j] = 7;
+            self.ram[SPRITE_BUMP_DAMAGE + j] = 32;
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x02);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Stalfos_Draw(int k) {  // 8dc21c
+    pub(super) fn stalfos_draw(&mut self, k: usize) {
+        const CH: [u8; 4] = [2, 2, 0, 4];
+        const FLAGS: [u8; 4] = [0x70, 0x30, 0x30, 0x30];
+        const D: [DrawMultipleData; 36] = [
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x4006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x4006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x4006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x4006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 5,
+                char_flags: 0x002e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0024,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 5,
+                char_flags: 0x402e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4024,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x400e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -8,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -8,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] != 0 {
+            self.sprite_prep_oam_coord(k, &mut info);
+            return;
+        }
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple(k, &D[base..base + 3], Some(&mut info));
+        if self.ram[SPRITE_GRAPHICS + k] < 8 && self.ram[SPRITE_PAUSE + k] == 0 {
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let i = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+            self.ram[oam + 2] = CH[i];
+            self.ram[oam + 3] = (self.ram[oam + 3] & !0x70) | FLAGS[i];
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void StalfosKnight_Draw(int k) {  // 9eae04
+    pub(super) fn stalfos_knight_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 35] = [
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0061,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x0062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 16,
+                char_flags: 0x0074,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 16,
+                char_flags: 0x4074,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -7,
+                char_flags: 0x0064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 1,
+                char_flags: 0x0061,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 1,
+                char_flags: 0x0062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 16,
+                char_flags: 0x0065,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 16,
+                char_flags: 0x4065,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0048,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x0049,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x004b,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x004c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x004c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x0068,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0069,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0069,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0069,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0069,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -7,
+                char_flags: 0x4064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 1,
+                char_flags: 0x4062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 1,
+                char_flags: 0x4061,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 16,
+                char_flags: 0x0065,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 16,
+                char_flags: 0x4065,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x4064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x4062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x4061,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 16,
+                char_flags: 0x0074,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 16,
+                char_flags: 0x4074,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x4049,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x4048,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x404c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x404b,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x404b,
+                ext: 2,
+            },
+        ];
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        self.sprite_draw_stalfos_knight_head(k, &info);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 5;
+        self.sprite_draw_multiple_with_info(k, &D[base..base + 5], tuple);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_sub(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_sub(1));
+        let mut shadow_info = SpritePrepOamCoordsRet {
+            x: info.x,
+            y: info.y,
+            r4: info.r4,
+            flags: info.flags,
+        };
+        self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Trident_Draw(int k) {  // 9d9c1c
+    pub(super) fn trident_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 50] = [
+            DrawMultipleData {
+                x: 10,
+                y: -10,
+                char_flags: 0x0864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -15,
+                char_flags: 0x0864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -20,
+                char_flags: 0x0864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: -25,
+                char_flags: 0x0864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -18,
+                y: -38,
+                char_flags: 0x0844,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -4,
+                char_flags: 0x0865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -11,
+                char_flags: 0x0865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -18,
+                char_flags: 0x0865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -25,
+                char_flags: 0x0865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -40,
+                char_flags: 0x0862,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -9,
+                char_flags: 0x4864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -14,
+                char_flags: 0x4864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: -20,
+                char_flags: 0x4864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: -26,
+                char_flags: 0x4864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -37,
+                char_flags: 0x4844,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -10,
+                y: -20,
+                char_flags: 0x4874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -20,
+                char_flags: 0x4874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -20,
+                char_flags: 0x4874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: -20,
+                char_flags: 0x4874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 18,
+                y: -23,
+                char_flags: 0x4860,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -10,
+                y: -30,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -24,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -18,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -12,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0xc844,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -32,
+                char_flags: 0x8865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -25,
+                char_flags: 0x8865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -18,
+                char_flags: 0x8865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -11,
+                char_flags: 0x8865,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -5,
+                char_flags: 0x8862,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: -30,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -25,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -19,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -13,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: -9,
+                char_flags: 0x8844,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 14,
+                y: -20,
+                char_flags: 0x0874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -20,
+                char_flags: 0x0874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -20,
+                char_flags: 0x0874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: -20,
+                char_flags: 0x0874,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -21,
+                y: -23,
+                char_flags: 0x0860,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: -30,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -25,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -19,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -13,
+                char_flags: 0x8864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -16,
+                y: -9,
+                char_flags: 0x8844,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -10,
+                y: -30,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -24,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -24,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -24,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -24,
+                char_flags: 0xc864,
+                ext: 0,
+            },
+        ];
+        const X: [i8; 5] = [24, -16, 0, 16, -8];
+        const Y: [i8; 5] = [4, 4, 16, 21, 19];
+
+        let g = self.ram[SPRITE_G_DRAW + k];
+        if g == 0 {
+            return;
+        }
+        let j = if g == 9 {
+            3
+        } else if g >= 9 {
+            4
+        } else {
+            usize::from(self.ram[SPRITE_D + k])
+        };
+        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X).wrapping_add_signed(i16::from(X[j]));
+        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y).wrapping_add_signed(i16::from(Y[j]));
+        write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, cur_y);
+        let bak = self.ram[SPRITE_OBJ_PRIO + k];
+        self.ram[SPRITE_OBJ_PRIO + k] &= !0x0f;
+        let base = usize::from(g.wrapping_sub(1)) * 5;
+        self.sprite_draw_multiple(k, &D[base..base + 5], None);
+        self.ram[SPRITE_OBJ_PRIO + k] = bak;
+        self.sprite_get16_bit_coords(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void TutorialSoldier_Draw(int k) {  // 85d64b
+    pub(super) fn tutorial_soldier_draw(&mut self, k: usize) {
+        const X: [i16; 20] = [
+            4, 0, -6, -6, 2, 0, 0, -7, -7, -7, 0, 0, 0x0f, 0x0f, 0x0f, 6, 0x0e, -4, 4, 0,
+        ];
+        const Y: [i16; 20] = [
+            0, -10, -4, 12, 12, 0, -9, -11, -3, 5, 0, -9, -11, -3, 5, -11, 5, 0, 0, -9,
+        ];
+        const CH: [u8; 20] = [
+            0x46, 0x40, 0, 0x28, 0x29, 0x4e, 0x42, 0x39, 0x2a, 0x3a, 0x4e, 0x42, 0x39, 0x2a, 0x3a,
+            0x26, 0x38, 0x64, 0x64, 0x44,
+        ];
+        const FLAGS: [u8; 20] = [
+            0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0x40, 0, 0x40, 0,
+        ];
+        const BIG: [u8; 20] = [2, 2, 2, 0, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 0, 2, 2, 2];
+
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let d = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 5;
+        for i in (0..5).rev() {
+            let j = d + i;
+            let mut flags = FLAGS[j] | info_flags;
+            if CH[j] < 0x40 {
+                flags = (flags & 0xf1) | 8;
+            }
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add_signed(X[j]),
+                y.wrapping_add_signed(Y[j]),
+                CH[j],
+                flags,
+                BIG[j],
+            );
+            oam += 4;
+        }
+        let mut info = SpritePrepOamCoordsRet {
+            x,
+            y,
+            r4: 0,
+            flags: info_flags,
+        };
+        self.sprite_draw_shadow_custom(k, &mut info, 12);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D3_Stal(int k) {  // 9d8129
+    pub(super) fn sprite_d3_stal(&mut self, k: usize) {
+        const STAL_GFX: [u8; 5] = [2, 2, 1, 0, 1];
+
+        if self.ram[SPRITE_CHR_HALFSLOT_STATE] < 3 {
+            if self.ram[SPRITE_AI_STATE + k] == 0 {
+                self.oam_allocate_from_region_b(4);
+            }
+            self.stal_draw(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 1;
+                if self.sprite_check_damage_to_link_same_layer(k) {
+                    self.sprite_nullify_hookshot_drag();
+                    self.sprite_repel_dash();
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                        self.ram[SPRITE_DELAY_MAIN + k] = 64;
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+                    }
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    let delay = self.ram[SPRITE_DELAY_MAIN + k].wrapping_sub(1);
+                    if delay != 0 {
+                        self.ram[SPRITE_HIT_TIMER + k] = delay | 64;
+                    } else {
+                        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 0;
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_HIT_TIMER + k] = 0;
+                        self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                        self.ram[SPRITE_FLAGS2 + k] &= !0x80;
+                    }
+                }
+            }
+            1 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                self.sprite_move_xyz(k);
+                self.sprite_check_tile_collision(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                    self.ram[SPRITE_Z_VEL + k] = 16;
+                    self.sprite_apply_speed_towards_link(k, 12);
+                }
+                if (self.ram[FRAME_COUNTER] & 3) == 0 {
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    if self.ram[SPRITE_SUBTYPE2 + k] == 5 {
+                        self.ram[SPRITE_SUBTYPE2 + k] = 0;
+                    }
+                }
+                self.ram[SPRITE_GRAPHICS + k] = STAL_GFX[self.ram[SPRITE_SUBTYPE2 + k] as usize];
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Stal_Draw(int k) {  // 9d820c
+    pub(super) fn stal_draw(&mut self, k: usize) {
+        const STAL_DMD: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 11,
+                char_flags: 0x0070,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 12,
+                char_flags: 0x0070,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 13,
+                char_flags: 0x0070,
+                ext: 0,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let n = if self.ram[SPRITE_AI_STATE + k] != 0 {
+            2
+        } else {
+            1
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &STAL_DMD[base..base + n], Some(&mut info));
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.sprite_draw_shadow_custom(k, &mut info, 10);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D1_BunnyBeam(int k) {  // 9d858b
+    pub(super) fn sprite_d1_bunny_beam(&mut self, k: usize) {
+        if self.ram[PLAYER_IS_INDOORS] != 0 {
+            self.sprite_bunny_beam(k);
+        } else {
+            self.sprite_chimney(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Chimney(int k) {  // 9d858f
+    pub(super) fn sprite_chimney(&mut self, k: usize) {
+        self.ram[SPRITE_FLAGS3 + k] = 64;
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 64;
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                return;
+            }
+            self.ram[SPRITE_DELAY_MAIN + k] = 67;
+            let mut info = SpriteSpawnInfo::default();
+            let j = self.sprite_spawn_dynamically(k, 0xd1, &mut info);
+            if j < 0 {
+                return;
+            }
+            let j = j as usize;
+            self.sprite_set_spawned_coordinates(j, &info);
+            let t = u16::from(info.r0_x as u8).wrapping_add(8);
+            self.ram[SPRITE_X_LO + j] = t as u8;
+            self.ram[SPRITE_Y_LO + j] = (info.r2_y as u8)
+                .wrapping_add(4)
+                .wrapping_add((t >> 8) as u8);
+            self.ram[SPRITE_OAM_FLAGS + j] = 4;
+            self.ram[SPRITE_AI_STATE + j] = 4;
+            self.ram[SPRITE_FLAGS2 + j] = 67;
+            self.ram[SPRITE_FLAGS3 + j] = 67;
+            self.ram[SPRITE_X_VEL + j] = (-4i8) as u8;
+            self.ram[SPRITE_Y_VEL + j] = (-6i8) as u8;
+        } else {
+            self.ram[SPRITE_OBJ_PRIO + k] = 0x30;
+            self.chimney_smoke_draw(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.sprite_move_xy(k);
+            self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+            if (self.ram[SPRITE_SUBTYPE2 + k] & 7) == 0 {
+                let j = self.ram[SPRITE_D + k] & 1;
+                self.ram[SPRITE_X_VEL + k] =
+                    self.ram[SPRITE_X_VEL + k].wrapping_add(if j != 0 { (-1i8) as u8 } else { 1 });
+                let target = if j != 0 { (-4i8) as u8 } else { 4 };
+                if self.ram[SPRITE_X_VEL + k] == target {
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k].wrapping_add(1);
+                }
+            }
+            if (self.ram[SPRITE_SUBTYPE2 + k] & 31) == 0 {
+                self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BunnyBeam(int k) {  // 9d85e0
+    pub(super) fn sprite_bunny_beam(&mut self, k: usize) {
+        const RABBIT_BEAM_GFX: [u8; 6] = [0xd7, 0xd7, 0xd7, 0x91, 0x91, 0x91];
+
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            if self.sprite_check_tile_collision(k) == 0 {
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_DELAY_MAIN + k] = 128;
+            }
+            return;
+        }
+
+        self.sprite_draw_antfairy(k);
+        if self.ram[SPRITE_PAUSE + k] == 0 {
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let charnum = RABBIT_BEAM_GFX[self.ram[SPRITE_GRAPHICS + k] as usize];
+            for i in 0..5 {
+                let pos = oam + i * 4;
+                self.ram[pos + 2] = charnum;
+                self.ram[pos + 3] = (self.ram[pos + 3] & 0xf0) | 2;
+            }
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_BUMP_DAMAGE + k] = 0x30;
+            if self.sprite_check_damage_to_link(k) {
+                self.ram[SPRITE_STATE + k] = 0;
+                write_le_u16(&mut self.ram, LINK_TIMER_TEMPBUNNY, 256);
+            }
+            if self.ram[LINK_IS_ON_LOWER_LEVEL] == self.ram[SPRITE_FLOOR + k] {
+                self.sprite_apply_speed_towards_link(k, 16);
+            }
+            self.sprite_move_xy(k);
+            if self.sprite_check_tile_collision(k) != 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_spawn_poof_garnish(k);
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x15);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D0_Lynel(int k) {  // 9d866a
+    pub(super) fn sprite_d0_lynel(&mut self, k: usize) {
+        const ATTACK_GFX: [u8; 4] = [5, 2, 8, 10];
+        const GFX: [u8; 8] = [3, 0, 6, 9, 4, 1, 7, 10];
+
+        self.lynel_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_D + k] = self.sprite_direction_to_face_link(k, None);
+        self.sprite_check_damage_to_and_from_link(k);
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                const XTARGET: [i8; 4] = [-96, 96, 0, 0];
+                const YTARGET: [i8; 4] = [8, 8, -96, 112];
+
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let j = usize::from(self.ram[SPRITE_D + k]);
+                    let x = self
+                        .player_state_view()
+                        .x()
+                        .wrapping_add(XTARGET[j] as i16 as u16);
+                    self.ram[SPRITE_A + k] = x as u8;
+                    self.ram[SPRITE_B_DRAW + k] = (x >> 8) as u8;
+                    let y = self
+                        .player_state_view()
+                        .y()
+                        .wrapping_add(YTARGET[j] as i16 as u16);
+                    self.ram[SPRITE_C_DRAW + k] = y as u8;
+                    self.ram[SPRITE_E + k] = (y >> 8) as u8;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 80;
+                }
+                let idx = usize::from((self.ram[SPRITE_SUBTYPE2 + k] & 4) | self.ram[SPRITE_D + k]);
+                self.ram[SPRITE_GRAPHICS + k] = GFX[idx];
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0 {
+                        let x = u16::from(self.ram[SPRITE_A + k])
+                            | (u16::from(self.ram[SPRITE_B_DRAW + k]) << 8);
+                        let y = u16::from(self.ram[SPRITE_C_DRAW + k])
+                            | (u16::from(self.ram[SPRITE_E + k]) << 8);
+                        if x.wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_X))
+                            .wrapping_add(5)
+                            < 10
+                            && y.wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_Y))
+                                .wrapping_add(5)
+                                < 10
+                        {
+                            self.lynel_increment_state(k);
+                            return;
+                        }
+                        let pt = self.sprite_project_speed_towards_location(k, x, y, 24);
+                        self.ram[SPRITE_X_VEL + k] = pt.x;
+                        self.ram[SPRITE_Y_VEL + k] = pt.y;
+                    }
+                    self.sprite_move_xy(k);
+                    if self.sprite_check_tile_collision(k) != 0 {
+                        self.lynel_increment_state(k);
+                        return;
+                    }
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    let idx =
+                        usize::from((self.ram[SPRITE_SUBTYPE2 + k] & 4) | self.ram[SPRITE_D + k]);
+                    self.ram[SPRITE_GRAPHICS + k] = GFX[idx];
+                } else {
+                    self.lynel_increment_state(k);
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = (self.get_random_number() & 15) + 16;
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    return;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 16 {
+                    let j = self.sprite_spawn_fire_phlegm(k);
+                    if j >= 0 && self.ram[LINK_SHIELD_TYPE] != 3 {
+                        self.ram[SPRITE_FLAGS5 + j as usize] = 0;
+                    }
+                }
+                self.ram[SPRITE_GRAPHICS + k] = ATTACK_GFX[self.ram[SPRITE_D + k] as usize];
+                self.sprite_check_tile_collision(k);
+            }
+            _ => {}
+        }
+    }
+
+    fn lynel_increment_state(&mut self, k: usize) {
+        self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+        self.ram[SPRITE_DELAY_MAIN + k] = 32;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_E4_SmallKey(int k) {  // 86d032
+    pub(super) fn sprite_e4_small_key(&mut self, k: usize) {
+        let idx = usize::from(self.ram[SPRITE_DIE_ACTION + k]);
+        if (read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) & (K_ABSORB_BIG_KEY_DRAW[idx] << 8))
+            != 0
+        {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        self.sprite_draw_ripple_if_in_water(k);
+        if self.sprite_draw_absorbable_transient(k, false) {
+            return;
+        }
+        self.sprite_absorbable_main(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_HeartContainer(int k) {  // 85ef47
+    pub(super) fn sprite_heart_container(&mut self, k: usize) {
+        if self.ram[CUR_PALACE_INDEX_X2] == 26 {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_G_DRAW + k];
+        if self.ram[SPRITE_G_DRAW + k] == 0 {
+            self.DecodeAnimatedSpriteTile_variable(3);
+            self.sprite_get16_bit_coords(k);
+            self.ram[SPRITE_G_DRAW + k] = 1;
+        }
+
+        if self.ram[DUNGEON_ROOM_INDEX2] == 6 && self.ram[SPRITE_Z + k] == 0 {
+            self.sprite_draw_water_ripple_with_oam_adjust(k);
+        }
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+        self.sprite_move_z(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_Z_VEL + k]) >> 2;
+            if self.ram[DUNGEON_ROOM_INDEX2] == 6 && self.ram[SPRITE_SUBTYPE + k] == 0 {
+                self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(2);
+                self.ram[SPRITE_SUBTYPE + k] = 1;
+                self.sprite_spawn_water_splash(k);
+            }
+        }
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        if !self.sprite_check_damage_to_link_same_layer(k) {
+            return;
+        }
+        self.ram[SPRITE_STATE + k] = 0;
+        if self.ram[SPRITE_A + k] != 0 {
+            self.ram[ITEM_RECEIPT_METHOD] = 2;
+            self.link_receive_item(0x3e, 0);
+            let bits = read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) | 0x8000;
+            write_le_u16(&mut self.ram, DUNG_SAVEGAME_STATE_BITS, bits);
+            return;
+        }
+        self.link_cancel_dash();
+        self.ram[ITEM_RECEIPT_METHOD] = 0;
+        self.link_receive_item(0x26, 0);
+        self.heart_upgrade_set_obtained_flag(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_HeartPiece(int k) {  // 85f020
+    pub(super) fn sprite_heart_piece(&mut self, k: usize) {
+        const K_HEART_PIECE_MSG: [u16; 4] = [0x158, 0x155, 0x156, 0x157];
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            self.heart_upgrade_check_if_already_obtained(k);
+            if self.ram[SPRITE_STATE + k] == 0 {
+                return;
+            }
+        }
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+
+        if (self.sprite_check_tile_collision(k) & 3) != 0 {
+            self.ram[SPRITE_X_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_X_VEL + k]);
+        }
+
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+        self.sprite_move_z(k);
+        self.sprite_move_xy(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = ((self.ram[SPRITE_Z_VEL + k] ^ 255) & 248) >> 1;
+            self.ram[SPRITE_X_VEL + k] = (self.ram[SPRITE_X_VEL + k] as i8 >> 1) as u8;
+        }
+
+        if self.ram[SPRITE_DELAY_AUX4 + k] != 0 || !self.sprite_check_damage_to_link_same_layer(k) {
+            return;
+        }
+
+        self.ram[LINK_HEART_PIECES] = self.ram[LINK_HEART_PIECES].wrapping_add(1) & 3;
+        if self.ram[LINK_HEART_PIECES] == 0 {
+            self.link_cancel_dash();
+            self.ram[ITEM_RECEIPT_METHOD] = 0;
+            self.link_receive_item(0x26, 0);
+        } else {
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x2d);
+            self.sprite_show_message_unconditional(
+                K_HEART_PIECE_MSG[usize::from(self.ram[LINK_HEART_PIECES])],
+            );
+        }
+        self.ram[SPRITE_STATE + k] = 0;
+        self.heart_upgrade_set_obtained_flag(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D8_Heart(int k) {  // 86cec0
+    pub(super) fn sprite_d8_heart(&mut self, k: usize) {
+        if self.sprite_draw_absorbable_transient(k, true) {
+            return;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_check_absorption_by_player(k);
+
+        if self.ram[SPRITE_STATE + k] == 0
+            && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & K_FEATURES0_MISC_BUG_FIXES_DRAW) != 0
+        {
+            return;
+        }
+
+        if self.sprite_handle_dragging_by_ancilla(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_move_z(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] &= !0x40;
+        if !sign8(self.ram[SPRITE_X_VEL + k]) {
+            self.ram[SPRITE_OAM_FLAGS + k] |= 0x40;
+        }
+        match self.ram[SPRITE_AI_STATE + k].min(3) {
+            0 => {
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_DELAY_MAIN + k] = 18;
+                self.ram[SPRITE_Z_VEL + k] = 20;
+                self.ram[SPRITE_GRAPHICS + k] = 1;
+                self.ram[SPRITE_D + k] = 0;
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+                } else {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_Z_VEL + k] = 253;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let j = usize::from(self.ram[SPRITE_D + k] & 1);
+                    self.ram[SPRITE_X_VEL + k] =
+                        self.ram[SPRITE_X_VEL + k].wrapping_add(K_HEART_REFILL_ACCEL_X[j] as u8);
+                    if self.ram[SPRITE_X_VEL + k] == K_HEART_REFILL_VEL_TARGET[j] as u8 {
+                        self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                    }
+                }
+            }
+            _ => {
+                self.ram[SPRITE_Z_VEL + k] = 0;
+                self.ram[SPRITE_X_VEL + k] = 0;
+                self.ram[SPRITE_Y_VEL + k] = 0;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_E3_Fairy(int k) {  // 86cf94
+    pub(super) fn sprite_e3_fairy(&mut self, k: usize) {
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 1;
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            if self.ram[PLAYER_IS_INDOORS] == 0 {
+                self.ram[SPRITE_OBJ_PRIO + k] = 48;
+            }
+            if self.sprite_draw_absorbable_transient(k, true) {
+                return;
+            }
+        }
+        self.fairy_check_if_touchable(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
+                    if self.sprite_check_damage_to_link(k) {
+                        self.sprite_handle_absorption_by_player(k);
+                    } else if (self.sprite_check_damage_from_link(k)
+                        & K_CHECK_DAMAGE_FROM_PLAYER_NE_DRAW)
+                        != 0
+                    {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.sprite_show_message_unconditional(0xc9);
+                        return;
+                    }
+                }
+                if self.ram[SPRITE_STATE + k] == 0
+                    && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW)
+                        & K_FEATURES0_MISC_BUG_FIXES_DRAW)
+                        != 0
+                {
+                    return;
+                }
+                if self.sprite_handle_dragging_by_ancilla(k) {
+                    return;
+                }
+                self.faerie_handle_movement(k);
+            }
+            1 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 {
+                    let j = self.sprite_find_empty_bottle();
+                    if j >= 0 {
+                        self.ram[LINK_BOTTLE_INFO + j as usize] = 6;
+                        self.hud_refresh_icon();
+                        self.ram[SPRITE_STATE + k] = 0;
+                        return;
+                    }
+                    self.sprite_show_message_unconditional(0xca);
+                }
+                self.ram[SPRITE_DELAY_AUX4 + k] = 48;
+                self.ram[SPRITE_AI_STATE + k] = 0;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_D9_GreenRupee(int k) {  // 86d04a
+    pub(super) fn sprite_d9_green_rupee(&mut self, k: usize) {
+        self.sprite_draw_ripple_if_in_water(k);
+        if self.sprite_draw_absorbable_transient(k, true) {
+            return;
+        }
+        self.sprite_absorbable_main(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Absorbable_Main(int k) {  // 86d051
+    pub(super) fn sprite_absorbable_main(&mut self, k: usize) {
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_z(k);
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_DELAY_AUX3_DRAW + k] == 0 {
+            let _ = self.sprite_check_tile_collision2(k);
+            self.sprite_bounce_off_wall(k);
+        }
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_X_VEL + k] = (self.ram[SPRITE_X_VEL + k] as i8 >> 1) as u8;
+            self.ram[SPRITE_Y_VEL + k] = (self.ram[SPRITE_Y_VEL + k] as i8 >> 1) as u8;
+            let t = (0u8).wrapping_sub(self.ram[SPRITE_Z_VEL + k]) >> 1;
+            if t < 9 {
+                self.ram[SPRITE_Z_VEL + k] = 0;
+                self.ram[SPRITE_X_VEL + k] = 0;
+                self.ram[SPRITE_Y_VEL + k] = 0;
+            } else {
+                self.ram[SPRITE_Z_VEL + k] = t;
+                if self.ram[SPRITE_I_DRAW + k] == 8 || self.ram[SPRITE_I_DRAW + k] == 9 {
+                    self.ram[SPRITE_Z_VEL + k] = 0;
+                    let j = self.sprite_spawn_small_splash(k);
+                    if j >= 0 && (self.ram[SPRITE_FLAGS3 + k] & 0x20) != 0 {
+                        let j = j as usize;
+                        self.sprite_set_x(j, self.sprite_get_x(j).wrapping_sub(4));
+                        self.sprite_set_y(j, self.sprite_get_y(j).wrapping_sub(4));
+                    }
+                } else if self.ram[SPRITE_TYPE + k] >= 0xe4 && self.ram[PLAYER_IS_INDOORS] != 0 {
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 5);
+                }
+            }
+        }
+        if self.sprite_handle_dragging_by_ancilla(k) {
+            return;
+        }
+        self.sprite_check_absorption_by_player(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Gibo_Draw(int k) {  // 9dcf5e
+    //   Optional single-large nucleus plus four segment tiles.
+    // }
+    pub(super) fn gibo_draw(&mut self, k: usize) {
+        const K_GIBO_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+        const K_GIBO_OAM_FLAGS2: [u8; 2] = [11, 7];
+        const K_GIBO_DMD: [DrawMultipleData; 32] = [
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x408f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 12,
+                char_flags: 0x408e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x409f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 12,
+                char_flags: 0x409e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: -3,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -3,
+                char_flags: 0x409f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 11,
+                char_flags: 0x409e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 3,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: -3,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -3,
+                char_flags: 0x408f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 11,
+                char_flags: 0x408e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 3,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -4,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: -4,
+                char_flags: 0x008f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 12,
+                char_flags: 0x008e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -4,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: -4,
+                char_flags: 0x009f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 12,
+                char_flags: 0x009e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 4,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -3,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -3,
+                char_flags: 0x009f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 11,
+                char_flags: 0x009e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 3,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -3,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -3,
+                char_flags: 0x008f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 11,
+                char_flags: 0x008e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 3,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_A + k] == 0 {
+            let bak0 = self.ram[SPRITE_FLAGS2 + k];
+            self.ram[SPRITE_FLAGS2 + k] = 1;
+            let bak1 = self.ram[SPRITE_OAM_FLAGS + k];
+            self.ram[SPRITE_OAM_FLAGS + k] = K_GIBO_OAM_FLAGS
+                [((self.ram[SPRITE_ANIM_CLOCK_DRAW + k] >> 2) & 3) as usize]
+                | K_GIBO_OAM_FLAGS2[((self.ram[SPRITE_DELAY_AUX1_DRAW + k] >> 2) & 1) as usize];
+            self.sprite_draw_single_large(k);
+            self.ram[SPRITE_OAM_FLAGS + k] = bak1;
+            self.ram[SPRITE_FLAGS2 + k] = bak0;
+        }
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+        let base =
+            (usize::from(self.ram[SPRITE_SUBTYPE2 + k]) + usize::from(self.ram[SPRITE_D + k])) * 4;
+        self.sprite_draw_multiple(k, &K_GIBO_DMD[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void LaserEye_Draw(int k) {  // 9ea708
+    //   Three tiles selected by direction and active beam blink state.
+    // }
+    pub(super) fn laser_eye_draw(&mut self, k: usize) {
+        const K_LASER_EYE_DMD: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: 8,
+                y: -4,
+                char_flags: 0x40c8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 12,
+                char_flags: 0xc0c8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -4,
+                char_flags: 0x40c9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x40d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 12,
+                char_flags: 0xc0c9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00c8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00d8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 12,
+                char_flags: 0x80c8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00c9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00d9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 12,
+                char_flags: 0x80c9,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00d6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x00d7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 8,
+                char_flags: 0x40d6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00c6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x00c7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 8,
+                char_flags: 0x40c6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x80d6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x80d7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 0,
+                char_flags: 0xc0d6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x80c6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x80c7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 0,
+                char_flags: 0xc0c6,
+                ext: 0,
+            },
+        ];
+        if self.ram[SPRITE_HEAD_DIR + k] != 0 {
+            self.ram[SPRITE_GRAPHICS + k] = u8::from(self.ram[SPRITE_DELAY_AUX4 + k] == 0);
+        }
+        self.ram[SPRITE_OBJ_PRIO + k] = 0x30;
+        let base = (usize::from(self.ram[SPRITE_GRAPHICS + k])
+            + usize::from(self.ram[SPRITE_D + k]) * 2)
+            * 3;
+        self.sprite_draw_multiple(k, &K_LASER_EYE_DMD[base..base + 3], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Gibdo_Draw(int k) {  // 9ebb20
+    //   Sprite_DrawMultiple(k, &kGibdo_Dmd[sprite_graphics[k] * 2], 2, &info);
+    //   if (!sprite_pause[k]) SpriteDraw_Shadow(k, &info);
+    // }
+    pub(super) fn gibdo_draw(&mut self, k: usize) {
+        const K_GIBDO_DMD: [DrawMultipleData; 24] = [
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &K_GIBDO_DMD[base..base + 2], Some(&mut info));
+        if self.ram[SPRITE_PAUSE + k] == 0 {
+            self.sprite_draw_shadow_custom(k, &mut info, 10);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void FireBat_Draw(int k) {  // 9d8ca9
+    //   Two large tiles sharing one animation char with per-frame flips.
+    // }
+    pub(super) fn fire_bat_draw(&mut self, k: usize) {
+        const K_FIREBAT_DRAW_X: [i8; 2] = [-8, 8];
+        const K_FIREBAT_DRAW_CHAR: [u8; 7] = [0x88, 0x88, 0x8a, 0x8c, 0x68, 0xaa, 0xa8];
+        const K_FIREBAT_DRAW_FLAGS: [u8; 14] = [
+            0, 0xc0, 0x80, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40,
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = self.ram[SPRITE_GRAPHICS + k] as usize;
+        for i in (0..2).rev() {
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                x.wrapping_add(K_FIREBAT_DRAW_X[i] as i16 as u16),
+                y,
+                K_FIREBAT_DRAW_CHAR[g],
+                K_FIREBAT_DRAW_FLAGS[g * 2 + i] | flags,
+                2,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void FirePhlegm_Draw(int k) {  // 9e9443
+    //   Sprite_DrawMultiple(k, &kFirePhlegm_Dmd[sprite_D[k] * 4 +
+    //                       sprite_graphics[k] * 2], 2, NULL);
+    // }
+    pub(super) fn fire_phlegm_draw(&mut self, k: usize) {
+        const K_FIRE_PHLEGM_DMD: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x80c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x80c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0xc0c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0xc0c2,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00d4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40d4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x40d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x80d4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x80d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0xc0d4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0xc0d3,
+                ext: 0,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_D + k]) * 4
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &K_FIRE_PHLEGM_DMD[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void FlyingTile_Draw(int k) {  // 9ebcca
+    //   Four-tile tile plus normal sprite shadow.
+    // }
+    pub(super) fn flying_tile_draw(&mut self, k: usize) {
+        const K_FLYING_TILE_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x80d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc0d3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x80c3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc0c3,
+                ext: 0,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &K_FLYING_TILE_DMD[base..base + 4], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Bully_Draw(int k) {  // 9eed9e
+    //   Sprite_DrawMultiplePlayerDeferred(k, &kBully_Dmd[sprite_D[k] * 4 +
+    //                                     sprite_graphics[k] * 2], 2, &info);
+    //   SpriteDraw_Shadow(k, &info);
+    // }
+    pub(super) fn bully_draw(&mut self, k: usize) {
+        const K_BULLY_DMD: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x46e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x46e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x46e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x46c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x06e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x06e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x06e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x06c4,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_D + k]) * 4
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &K_BULLY_DMD[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B9_BullyAndPinkBall(int k) {  // 9eeb33
+    pub(super) fn sprite_b9_bully_and_pink_ball(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_pink_ball(k),
+            1 => self.pink_ball_distress(k),
+            2 => self.sprite_bully(k),
+            // C Sprite_B9_BullyAndPinkBall asserts for all other subtypes.
+            _ => panic!("Sprite_B9_BullyAndPinkBall invalid subtype"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B6_Kiki(int k) {  // 9ee2ef
+    pub(super) fn sprite_b6_kiki(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.kiki_lying_inwait(k),
+            1 => self.kiki_offer_entrance_service(k),
+            2 => self.kiki_offer_initial_service(k),
+            3 => self.kiki_flee(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B7_BlindMaiden(int k) {  // 9ee8b6
+    pub(super) fn sprite_b7_blind_maiden(&mut self, k: usize) {
+        self.crystal_maiden_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_track_body_to_head(k);
+        self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            if self.sprite_show_message_on_contact(k, 0x0122) & 0x100 != 0 {
+                self.ram[SPRITE_AI_STATE + k] = 1;
+            }
+        } else {
+            self.ram[SPRITE_STATE + k] = 0;
+            self.ram[FOLLOWER_INDICATOR] = 6;
+            self.load_follower_graphics();
+            self.sprite_become_follower(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B8_DialogueTester(int k) {  // 9eeae7
+    pub(super) fn sprite_b8_dialogue_tester(&mut self, _k: usize) {
+        // C Sprite_B8_DialogueTester is an assert(0) sprite slot.
+        assert!(false);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_PinkBall(int k) {  // 9eeb40
+    pub(super) fn sprite_pink_ball(&mut self, k: usize) {
+        self.oam_allocate_defer_to_player(k);
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.pink_ball_handle_message(k);
+        self.ram[SPRITE_OAM_FLAGS + k] =
+            (self.ram[SPRITE_OAM_FLAGS + k] & !0x80) | self.ram[SPRITE_HEAD_DIR + k];
+        self.sprite_move_xyz(k);
+        let t = self.sprite_check_tile_collision(k);
+        if t != 0 {
+            if (t & 3) == 0 {
+                self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_neg();
+                if self.ram[SPRITE_E + k] != 0 {
+                    self.ball_guy_play_bounce_noise(k);
+                }
+            } else {
+                self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_neg();
+                if self.ram[SPRITE_E + k] != 0 {
+                    self.ball_guy_play_bounce_noise(k);
+                }
+            }
+        }
+
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_neg() >> 2;
+            if (self.ram[SPRITE_Z_VEL + k] & 0xfc) != 0 {
+                self.ball_guy_play_bounce_noise(k);
+            }
+            self.pink_ball_handle_deceleration(k);
+        }
+        if self.ram[SPRITE_E + k] == 0 {
+            if self.ram[SPRITE_HEAD_DIR + k] == 0 {
+                self.pink_ball_distress(k);
+                self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 3) & 1;
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x3f) == 0 {
+                    let x = (self.player_state_view().x() & 0xff00)
+                        | u16::from(self.get_random_number());
+                    let y = (self.player_state_view().y() & 0xff00)
+                        | u16::from(self.get_random_number());
+                    let pt = self.sprite_project_speed_towards_location(k, x, y, 8);
+                    self.ram[SPRITE_B + k] = pt.x;
+                    self.ram[SPRITE_A + k] = pt.y;
+                    if pt.y != 0 {
+                        self.ram[SPRITE_OAM_FLAGS + k] |= 0x40;
+                        self.ram[SPRITE_OAM_FLAGS + k] ^= (self.ram[SPRITE_X_VEL + k] >> 1) & 0x40;
+                    }
+                }
+                self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_B + k];
+                self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_A + k];
+            } else {
+                self.pink_ball_distress(k);
+                if ((k as u8) ^ self.ram[FRAME_COUNTER]) != 0 {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 2) & 1;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                } else {
+                    self.ram[SPRITE_HEAD_DIR + k] = 0;
+                }
+            }
+        } else if (self.ram[SPRITE_X_VEL + k] | self.ram[SPRITE_Y_VEL + k]) == 0 {
+            self.ram[SPRITE_E + k] = 0;
+        } else {
+            self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 2) & 1;
+            self.ram[SPRITE_HEAD_DIR + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) << 2) & 0x80;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Bully(int k) {  // 9eec7c
+    pub(super) fn sprite_bully(&mut self, k: usize) {
+        self.bully_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.bully_handle_message(k);
+        self.sprite_move_xyz(k);
+        let t = self.sprite_check_tile_collision(k);
+        if t != 0 {
+            if (t & 3) == 0 {
+                self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_neg();
+            } else {
+                self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_neg();
+            }
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 3) & 1;
+                let j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x1f) == 0 {
+                    let pt = self.sprite_project_speed_towards_location(
+                        k,
+                        self.sprite_get_x(j),
+                        self.sprite_get_y(j),
+                        14,
+                    );
+                    self.ram[SPRITE_Y_VEL + k] = pt.y;
+                    self.ram[SPRITE_X_VEL + k] = pt.x;
+                    if pt.x != 0 {
+                        self.ram[SPRITE_D + k] = self.ram[SPRITE_X_VEL + k] >> 7;
+                    }
+                }
+                if self.ram[SPRITE_Z + j] == 0
+                    && self.ram[SPRITE_X_LO + k]
+                        .wrapping_sub(self.ram[SPRITE_X_LO + j])
+                        .wrapping_add(8)
+                        < 16
+                    && self.ram[SPRITE_Y_LO + k]
+                        .wrapping_sub(self.ram[SPRITE_Y_LO + j])
+                        .wrapping_add(8)
+                        < 16
+                {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ball_guy_play_bounce_noise(k);
+                }
+            }
+            1 => {
+                self.ram[SPRITE_AI_STATE + k] = 2;
+                let j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+                self.ram[SPRITE_X_VEL + j] = self.ram[SPRITE_X_VEL + k] << 1;
+                self.ram[SPRITE_Y_VEL + j] = self.ram[SPRITE_Y_VEL + k] << 1;
+                self.ram[SPRITE_X_VEL + k] = 0;
+                self.ram[SPRITE_Y_VEL + k] = 0;
+                self.ram[SPRITE_Z_VEL + j] = self.get_random_number() & 31;
+                self.ram[SPRITE_DELAY_MAIN + k] = 96;
+                self.ram[SPRITE_GRAPHICS + k] = 1;
+                self.ram[SPRITE_E + j] = 1;
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BuzzBlob_Draw(int k) {  // 86d953
+    pub(super) fn buzz_blob_draw(&mut self, k: usize) {
+        const X: [u16; 3] = [0, 8, 0];
+        const Y: [i16; 3] = [-8, -8, 0];
+        const CH: [u8; 18] = [
+            0xf0, 0xf0, 0xe1, 0, 0, 0xce, 0, 0, 0xce, 0xe3, 0xe3, 0xca, 0xe4, 0xe5, 0xcc, 0xe5,
+            0xe4, 0xcc,
+        ];
+        const FL: [u8; 18] = [
+            0, 0x40, 0, 0, 0, 0, 0, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0x40, 0x40, 0x40,
+        ];
+        const EXT: [u8; 3] = [0, 0, 2];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut info = SpritePrepOamCoordsRet {
+            x: info_x,
+            y: info_y,
+            r4: 0,
+            flags: info_flags,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        for i in (0..3).rev() {
+            let ch = CH[g * 3 + i];
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[i]),
+                info_y.wrapping_add(Y[i] as u16),
+                ch,
+                FL[g * 3 + i] | info_flags,
+                EXT[i],
+            );
+            if ch == 0 {
+                self.ram[oam + 1] = 240;
+            }
+            oam += 4;
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Babusu_Draw(int k) {  // 8dbd20
+    pub(super) fn babusu_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 40] = [
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x4380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x4380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x43b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x43b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x43b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x4380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x03b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x03b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x03b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 4,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x8380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x8380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x83b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x83b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x83b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x8380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x03b6,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x03b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x03b7,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0380,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0a4e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a5e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4a4e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4a5e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x0a6c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a6b,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x8a6c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x8a6b,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x8a4e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x8a5e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0xca4e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0xca5e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x4a6c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4a6b,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0xca6c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0xca6b,
+                ext: 2,
+            },
+        ];
+        let g = self.ram[SPRITE_GRAPHICS + k];
+        if g != 0xff {
+            let base = usize::from(g) * 2;
+            self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        } else {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Lady_Draw(int k) {  // 9af92c
+    pub(super) fn lady_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x00e0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x00c0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x00e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x40e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x40e2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2
+            + usize::from(self.ram[SPRITE_D + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void YoungSnitchLady_Draw(int k) {  // 85e37f
+    pub(super) fn young_snitch_lady_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0026,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0026,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0024,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0024,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x4028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2
+            + usize::from(self.ram[SPRITE_D + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_YoungSnitchLady(int k) {  // 85e2f2
+    pub(super) fn sprite_young_snitch_lady(&mut self, k: usize) {
+        self.sprite_old_snitch_lady(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_OldSnitchLady(int k) {  // 85e6aa
+    pub(super) fn sprite_old_snitch_lady(&mut self, k: usize) {
+        const XD: [i8; 2] = [-32, 32];
+        const XVEL: [i8; 4] = [0, 0, -9, 9];
+        const YVEL: [i8; 4] = [-9, 9, 0, 0];
+
+        if self.ram[SPRITE_TYPE + k] == 0x34 {
+            if self.ram[SPRITE_AI_STATE + k] < 2 {
+                self.young_snitch_lady_draw(k);
+            }
+        } else {
+            if self.ram[SPRITE_SUBTYPE + k] != 0 {
+                self.sprite_chicken_lady(k);
+                return;
+            }
+            if self.ram[SPRITE_AI_STATE + k] < 3 {
+                self.lady_draw(k);
+            }
+        }
+
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_AI_STATE + k] < 3 {
+            if self.ram[PLAYER_IS_INDOORS] != 0 {
+                self.sprite_track_body_to_head(k);
+                self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+                self.sprite_show_solicited_message(k, 0x00ad);
+                return;
+            }
+            if self.ram[SPRITE_AI_STATE + k] == 0 && self.sprite_check_damage_to_link_same_layer(k)
+            {
+                self.ram[SPRITE_D + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+                self.ram[SPRITE_DELAY_MAIN + k] = 1;
+            } else if self.sprite_track_body_to_head(k) {
+                self.sprite_move_xy(k);
+            } else {
+                self.ram[SPRITE_DELAY_MAIN + k] = 1;
+            }
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let home_x = u16::from(self.ram[SPRITE_A + k])
+                        | (u16::from(self.ram[SPRITE_B_DRAW + k]) << 8);
+                    let idx = usize::from(self.ram[SPRITE_C_DRAW + k] & 1);
+                    let t = home_x.wrapping_add_signed(i16::from(XD[idx]));
+                    if t == self.sprite_get_x(k) {
+                        let j = self.ram[SPRITE_D + k] ^ 1;
+                        self.ram[SPRITE_HEAD_DIR + k] = j;
+                        self.ram[SPRITE_X_VEL + k] = XVEL[usize::from(j)] as u8;
+                        self.ram[SPRITE_Y_VEL + k] = YVEL[usize::from(j)] as u8;
+                        self.ram[SPRITE_C_DRAW + k] ^= 1;
+                    }
+                }
+                self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 4) & 1;
+                let bak0 = self.ram[SPRITE_FLAGS4 + k];
+                self.ram[SPRITE_FLAGS4 + k] = 3;
+                let j = self.sprite_show_message_on_contact(k, 0x002f);
+                self.ram[SPRITE_FLAGS4 + k] = bak0;
+                if (j & 0x0100) != 0 {
+                    self.ram[SPRITE_D + k] = j as u8;
+                    self.snitch_spawn_guard(k);
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                let idx = usize::from(self.ram[ACTIVE_OVERLORD_INDEX_DRAW]);
+                let ovx = u16::from(self.ram[OVERLORD_X_LO_DRAW + idx])
+                    | (u16::from(self.ram[OVERLORD_X_HI_DRAW + idx]) << 8);
+                let ovy = u16::from(self.ram[OVERLORD_Y_LO_DRAW + idx])
+                    | (u16::from(self.ram[OVERLORD_Y_HI_DRAW + idx]) << 8);
+                if ovy >= self.sprite_get_y(k) {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                    self.ram[SPRITE_FLAGS4 + k] = 2;
+                    let pos = ((ovy.wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_Y))
+                        & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_Y))
+                        * 8)
+                    .wrapping_add(
+                        (ovx >> 3).wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_X))
+                            & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_X),
+                    );
+                    self.overworld_draw_wooden_door(pos, false);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                } else {
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                    let pt = self.sprite_project_speed_towards_location(k, ovx, ovy, 64);
+                    self.ram[SPRITE_X_VEL + k] = pt.x;
+                    self.ram[SPRITE_Y_VEL + k] = pt.y;
+                    self.ram[SPRITE_D + k] = 0;
+                    self.ram[SPRITE_HEAD_DIR + k] = 0;
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 3) & 1;
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let idx = usize::from(self.ram[ACTIVE_OVERLORD_INDEX_DRAW]);
+                    let ovx = u16::from(self.ram[OVERLORD_X_LO_DRAW + idx])
+                        | (u16::from(self.ram[OVERLORD_X_HI_DRAW + idx]) << 8);
+                    let ovy = u16::from(self.ram[OVERLORD_Y_LO_DRAW + idx])
+                        | (u16::from(self.ram[OVERLORD_Y_HI_DRAW + idx]) << 8);
+                    self.sprite_set_x(k, ovx);
+                    self.sprite_set_y(k, ovy);
+                    let pos = ((ovy.wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_Y))
+                        & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_Y))
+                        * 8)
+                    .wrapping_add(
+                        (ovx >> 3).wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_X))
+                            & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_X),
+                    );
+                    self.overworld_draw_wooden_door(pos, true);
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                }
+                self.sprite_move_xy(k);
+            }
+            3 => {
+                self.ram[SPRITE_STATE + k] = 0;
+                self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Cukeman_Draw(int k) {  // 9afb0e
+    pub(super) fn cukeman_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 18] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 0,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 7,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 2,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 1,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 1,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 2,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 0,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 10,
+                y: 0,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 7,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 6,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 0,
+                char_flags: 0x01f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x41f3,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x07e0,
+                ext: 0,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple(k, &D[base..base + 3], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Hokbok_Draw(int k) {  // 9dc77d
+    pub(super) fn hokbok_draw(&mut self, k: usize) {
+        let Some((info_x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut info = SpritePrepOamCoordsRet {
+            x: info_x,
+            y,
+            r4: 0,
+            flags: info_flags,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + 12;
+        let d = self.ram[SPRITE_B_DRAW + k];
+        for i in (0..=self.ram[SPRITE_A + k]).rev() {
+            let ch =
+                (if i == 0 { 0xa2u8 } else { 0xa0u8 }).wrapping_sub(if d < 7 { 0x20 } else { 0 });
+            self.set_oam_helper0_at_for_draw(oam, info_x, y, ch, info_flags, 2);
+            y = y.wrapping_sub(u16::from(d));
+            oam = oam.wrapping_sub(4);
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SnapDragon_Draw(int k) {  // 869e02
+    pub(super) fn snap_dragon_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 32] = [
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x008f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x009f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x008d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x002b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x003b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x0029,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x003c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x003d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00ab,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x003e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x003f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00ad,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00ae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x409f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x408f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x408d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x403b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x402b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x4029,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x4028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x403d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x403c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40ab,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x403f,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x403e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40ae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40ad,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Lynel_Draw(int k) {  // 9d8880
+    pub(super) fn lynel_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 33] = [
+            DrawMultipleData {
+                x: -5,
+                y: -11,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00e5,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: -10,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00e7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: -11,
+                char_flags: 0x00c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00e5,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -11,
+                char_flags: 0x40cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40e5,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40e4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -10,
+                char_flags: 0x40cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40e7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -11,
+                char_flags: 0x40c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40e7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x00ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00ea,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x00ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40ea,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -14,
+                char_flags: 0x00c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x00ed,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x00ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -14,
+                char_flags: 0x00c6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x40ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x40ed,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Goriya_Draw(int k) {  // 9df589
+    pub(super) fn goriya_draw(&mut self, k: usize) {
+        const D2: [DrawMultipleData; 3] = [
+            DrawMultipleData {
+                x: 10,
+                y: 4,
+                char_flags: 0x4077,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 4,
+                char_flags: 0x0077,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x0076,
+                ext: 0,
+            },
+        ];
+        const D: [DrawMultipleData; 32] = [
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x4044,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x0064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x4054,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x4044,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x4074,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x4062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0044,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x4044,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0062,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 8,
+                char_flags: 0x4064,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0046,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x4046,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x0066,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x4056,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0046,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -8,
+                char_flags: 0x4046,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x4075,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 0,
+                char_flags: 0x406a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0046,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x4046,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x006a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 8,
+                char_flags: 0x0075,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -8,
+                char_flags: 0x004e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x006c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -7,
+                char_flags: 0x004e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x006e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -8,
+                char_flags: 0x404e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x406c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -7,
+                char_flags: 0x404e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x406e,
+                ext: 2,
+            },
+        ];
+        const OFFS: [usize; 11] = [0, 4, 8, 12, 16, 20, 24, 26, 28, 30, 32];
+        if self.ram[SPRITE_DELAY_AUX1_DRAW + k] != 0 && self.ram[SPRITE_D + k] != 3 {
+            let d = usize::from(self.ram[SPRITE_D + k]);
+            self.sprite_draw_multiple(k, &D2[d..d + 1], None);
+        }
+
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple(k, &D[OFFS[g]..OFFS[g + 1]], Some(&mut info));
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_sub(1);
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Kyameron_Draw(int k) {  // 9ea158
+    pub(super) fn kyameron_draw(&mut self, k: usize) {
+        const FLAGS: [u8; 12] = [0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0xc0, 0x80];
+        const D: [DrawMultipleData; 28] = [
+            DrawMultipleData {
+                x: 1,
+                y: 8,
+                char_flags: 0x00b4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 8,
+                char_flags: 0x00b5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -3,
+                char_flags: 0x0086,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -13,
+                char_flags: 0x80a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 8,
+                char_flags: 0x00b4,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: 8,
+                char_flags: 0x00b5,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -6,
+                char_flags: 0x0096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -20,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -1,
+                char_flags: 0x0096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -27,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -27,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -27,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: -6,
+                char_flags: 0x01df,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 14,
+                y: -6,
+                char_flags: 0x41df,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 14,
+                char_flags: 0x81df,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 14,
+                y: 14,
+                char_flags: 0xc1df,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: -6,
+                char_flags: 0x0096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 14,
+                y: -6,
+                char_flags: 0x4096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -6,
+                y: 14,
+                char_flags: 0x8096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 14,
+                y: 14,
+                char_flags: 0xc096,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x018d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -4,
+                char_flags: 0x418d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 12,
+                char_flags: 0x818d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 12,
+                char_flags: 0xc18d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x018d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x418d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x818d,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc18d,
+                ext: 0,
+            },
+        ];
+        let j = self.ram[SPRITE_GRAPHICS + k];
+        if j < 12 {
+            let bak = self.ram[SPRITE_OAM_FLAGS + k];
+            self.ram[SPRITE_OAM_FLAGS + k] =
+                (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | FLAGS[usize::from(j)];
+            self.sprite_draw_single_large(k);
+            self.ram[SPRITE_OAM_FLAGS + k] = bak;
+        } else {
+            let base = (usize::from(j) - 12) * 4;
+            self.sprite_draw_multiple(k, &D[base..base + 4], None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Pirogusu_Draw(int k) {  // 9ea93b
+    pub(super) fn pirogusu_draw(&mut self, k: usize) {
+        const FLAGS: [u8; 28] = [
+            0, 0x80, 0x40, 0, 0, 0, 0, 0x80, 0x80, 0xc0, 0x40, 0x40, 0, 0x40, 0x80, 0xc0, 0x40,
+            0xc0, 0, 0x80, 0, 0x40, 0x80, 0xc0, 0x40, 0xc0, 0, 0x80,
+        ];
+        const GFX: [u8; 28] = [
+            0, 0, 1, 1, 2, 3, 4, 3, 2, 3, 4, 3, 5, 5, 5, 5, 7, 7, 7, 7, 6, 6, 6, 6, 8, 8, 8, 8,
+        ];
+        let j = usize::from(self.ram[SPRITE_A + k]);
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | FLAGS[j];
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        if j < 4 {
+            let x = read_le_u16(&self.ram, CUR_SPRITE_X).wrapping_add(4);
+            let y = read_le_u16(&self.ram, CUR_SPRITE_Y).wrapping_add(4);
+            write_le_u16(&mut self.ram, CUR_SPRITE_X, x);
+            write_le_u16(&mut self.ram, CUR_SPRITE_Y, y);
+            self.sprite_draw_single_small(k);
+        } else {
+            self.sprite_draw_single_large(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Hobo_Draw(int k) {  // 84ea60
+    pub(super) fn hobo_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 3,
+                char_flags: 0x00a7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 3,
+                char_flags: 0x00a7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00ab,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 3,
+                char_flags: 0x00a7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 3,
+                char_flags: 0x00a7,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -11,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00ab,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 3,
+                y: 3,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: 3,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_2B_Hobo(int k) {  // 86bdc1
+    pub(super) fn sprite_2_b_hobo(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_hobo_bum(k),
+            1 => self.sprite_hobo_bubble(k),
+            2 => self.sprite_hobo_fire(k),
+            3 => self.sprite_hobo_smoke(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hobo_Bum(int k) {  // 86bdd0
+    pub(super) fn sprite_hobo_bum(&mut self, k: usize) {
+        self.hobo_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_FLAGS4 + k] = 3;
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.link_cancel_dash();
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_FLAGS4 + k] = 7;
+                if self.sprite_check_damage_to_link_same_layer(k)
+                    && (self.ram[FILTERED_JOYPAD_L] & 0x80) != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    let j = usize::from(self.ram[SPRITE_E + k]);
+                    self.ram[SPRITE_DELAY_MAIN + j] = 4;
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                }
+                if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+                    self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 160;
+                    let j = self.hobo_spawn_bubble(k);
+                    self.ram[SPRITE_E + k] = j as u8;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    const GFX: [u8; 7] = [0, 1, 0, 1, 0, 1, 2];
+                    const DELAY: [u8; 7] = [6, 2, 6, 6, 2, 100, 30];
+                    let j = usize::from(self.ram[SPRITE_A + k]);
+                    if j != 7 {
+                        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+                        self.ram[SPRITE_DELAY_MAIN + k] = DELAY[j];
+                        self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+                    } else {
+                        self.sprite_show_message_unconditional(0xd7);
+                        self.ram[SPRITE_AI_STATE + k] = 2;
+                    }
+                }
+            }
+            2 => {
+                self.ram[SPRITE_AI_STATE + k] = 3;
+                self.ram[SPRITE_GRAPHICS + k] = 1;
+                let screen = usize::from(self.ram[OVERWORLD_SCREEN_INDEX]);
+                self.ram[SAVE_OW_EVENT_INFO + screen] |= 0x20;
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(0x16, 0);
+                self.ram[SRAM_PROGRESS_INDICATOR_3_DRAW] |= 1;
+            }
+            3 => {
+                self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 160;
+                    self.hobo_spawn_bubble(k);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hobo_Bubble(int k) {  // 86beb4
+    pub(super) fn sprite_hobo_bubble(&mut self, k: usize) {
+        self.oam_allocate_from_region_c(4);
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = ((self.ram[FRAME_COUNTER] >> 4) & 1) + 2;
+        if self.ram[SPRITE_DELAY_AUX1_DRAW + k] == 0 {
+            self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+            self.sprite_move_z(k);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] < 4 {
+            self.ram[SPRITE_GRAPHICS + k] = 3;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hobo_Fire(int k) {  // 86bf15
+    pub(super) fn sprite_hobo_fire(&mut self, k: usize) {
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 3) & 1;
+        self.ram[SPRITE_OAM_FLAGS + k] &= !0x40;
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.hobo_spawn_smoke(k);
+            self.ram[SPRITE_DELAY_MAIN + k] = 47;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hobo_Smoke(int k) {  // 86bf81
+    pub(super) fn sprite_hobo_smoke(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 64, 128, 192];
+
+        self.ram[SPRITE_GRAPHICS + k] = 6;
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_move_z(k);
+        let flags = OAM_FLAGS[usize::from((self.ram[FRAME_COUNTER] >> 4) & 3)];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | flags;
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_RunningMan(int k) {  // 85e8b2
+    pub(super) fn sprite_running_man(&mut self, k: usize) {
+        const XVEL2: [i8; 2] = [-24, 24];
+        const XVEL: [i8; 4] = [0, 0, -54, 54];
+        const YVEL: [i8; 4] = [-54, 54, 0, 0];
+        const DIR: [i8; 4] = [3, 1, 3, -1];
+        const A: [u8; 4] = [120, 24, 128, 3];
+        const K_PLAYER_STATE_RECOIL_WALL_LOCAL: u8 = 13;
+
+        self.running_man_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_track_body_to_head(k);
+        self.sprite_behave_as_barrier(k);
+        self.ram[SPRITE_SUBTYPE + k] = 255;
+        self.sprite_check_tile_collision(k);
+        let bak0 = self.ram[SPRITE_FLAGS4 + k];
+        self.ram[SPRITE_FLAGS4 + k] = 7;
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[SPRITE_C_DRAW + k] = self.ram[SPRITE_AI_STATE + k];
+            self.ram[SPRITE_AI_STATE + k] = 3;
+        }
+        self.ram[SPRITE_FLAGS4 + k] = bak0;
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.sprite_track_body_to_head(k);
+                let j = self.sprite_direction_to_face_link(k, None);
+                self.ram[SPRITE_HEAD_DIR + k] = j ^ 3;
+                if self.sprite_check_damage_to_link_same_layer(k) {
+                    self.link_cancel_dash();
+                    self.ram[SPRITE_D + k] = j ^ 3;
+                    self.ram[SPRITE_HEAD_DIR + k] = j | 2;
+                    self.ram[SPRITE_AI_STATE + k] = (j & 1) + 1;
+                    self.ram[SPRITE_X_VEL + k] = XVEL2[usize::from(j & 1)] as u8;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                } else {
+                    self.ram[SPRITE_X_VEL + k] = 0;
+                    self.ram[SPRITE_Y_VEL + k] = 0;
+                }
+            }
+            1 | 2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 3) & 1;
+                    self.sprite_move_xy(k);
+                } else {
+                    self.running_boy_spawn_dust_garnish(k);
+                    self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 2) & 1;
+                    let j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+                    self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+                    self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+                    self.sprite_move_xy(k);
+                    if self.ram[SPRITE_A + k] != 0 {
+                        self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_sub(1);
+                    } else if self.ram[SPRITE_AI_STATE + k] == 1 {
+                        self.ram[SPRITE_A + k] = 255;
+                        self.ram[SPRITE_HEAD_DIR + k] = 2;
+                    } else {
+                        let j = usize::from(self.ram[SPRITE_B_DRAW + k]);
+                        self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_add(1);
+                        self.ram[SPRITE_A + k] = A[j];
+                        if sign8(DIR[j] as u8) {
+                            self.ram[SPRITE_AI_STATE + k] = 0;
+                            self.ram[SPRITE_SUBTYPE2 + k] = 0;
+                        } else {
+                            self.ram[SPRITE_HEAD_DIR + k] = DIR[j] as u8;
+                        }
+                    }
+                }
+            }
+            3 => {
+                self.sprite_show_message_unconditional(0x00a6);
+                if self.ram[LINK_PLAYER_HANDLER_STATE] >= K_PLAYER_STATE_RECOIL_WALL_LOCAL {
+                    self.ram[SPRITE_D + k] = self.ram[LINK_PLAYER_HANDLER_STATE];
+                }
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_C_DRAW + k];
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void RunningMan_Draw(int k) {  // 85ea4d
+    pub(super) fn running_man_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x002c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x08ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x002c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x48ee,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x002a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x08ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x002a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x48ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x002e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x08cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x002e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x08ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x402e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x48cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x402e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x48ce,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = (usize::from(self.ram[SPRITE_D + k]) * 4
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2)
+            & 0xf;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Elder_Draw(int k) {  // 85f23a
+    pub(super) fn elder_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Shopkeeper_Draw(int k) {  // 85f91b
+    pub(super) fn shopkeeper_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0c00,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0c10,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0c00,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4c10,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void FluteBoyFather_Draw(int k) {  // 8dc3e1
+    pub(super) fn flute_boy_father_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -6,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void FluteBoyOstrich_Draw(int k) {  // 9e9a4b
+    pub(super) fn flute_boy_ostrich_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x0081,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x0081,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x00a1,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x0081,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x0083,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -7,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -7,
+                char_flags: 0x0081,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 9,
+                char_flags: 0x00a3,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 9,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 18);
+    }
+
+    // -----------------------------------------------------------------------
+    // void OldMountainMan_Draw(int k) {  // 9dff0e
+    pub(super) fn old_mountain_man_draw(&mut self, k: usize) {
+        const D0: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00ae,
+                ext: 2,
+            },
+        ];
+        const D1: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 0,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 1,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 0,
+                char_flags: 0x4120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: 1,
+                char_flags: 0x4120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 9,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+        ];
+        const DMA: [u8; 16] = [
+            0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40,
+            0x60,
+        ];
+        if self.ram[SPRITE_SUBTYPE2 + k] != 2 {
+            let j = usize::from(self.ram[SPRITE_D + k]) * 4
+                + usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+            self.ram[DMA_HEAD_POINTER] = DMA[j];
+            self.ram[DMA_BODY_POINTER] = DMA[j + 1];
+            self.sprite_draw_multiple_player_deferred(k, &D1[j..j + 2], None);
+        } else {
+            self.sprite_draw_multiple_player_deferred(k, &D0, None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void InnKeeper_Draw(int k) {  // 85e3dc
+    pub(super) fn inn_keeper_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_InnKeeper(int k) {  // 85e3af
+    pub(super) fn sprite_inn_keeper(&mut self, k: usize) {
+        self.inn_keeper_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.sprite_show_solicited_message(
+            k,
+            if self.ram[LINK_ITEM_FLIPPERS] != 0 {
+                0x0183
+            } else {
+                0x0182
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Witch(int k) {  // 85e3fb
+    pub(super) fn sprite_witch(&mut self, k: usize) {
+        self.witch_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        let bak0 = self.ram[SPRITE_FLAGS4 + k];
+        self.ram[SPRITE_FLAGS4 + k] = 2;
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.link_cancel_dash();
+        }
+        self.ram[SPRITE_FLAGS4 + k] = bak0;
+        if self.ram[FRAME_COUNTER] == 0 {
+            self.ram[SPRITE_A + k] = (self.get_random_number() & 1) + 2;
+        }
+        let shift = self.ram[SPRITE_A + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> shift) & 7;
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => match self.ram[LINK_ITEM_MUSHROOM] {
+                0 => {
+                    if read_le_u16(&self.ram, SAVE_DUNG_INFO + 0x109 * 2) & 0x80 != 0 {
+                        self.sprite_show_solicited_message(k, 0x004b);
+                    } else {
+                        self.sprite_show_solicited_message(k, 0x004a);
+                    }
+                }
+                1 => {
+                    if self.ram[JOYPAD1H_LAST] & 0x40 == 0 {
+                        self.sprite_show_solicited_message(k, 0x004c);
+                    } else if self.sprite_check_damage_to_link_same_layer(k)
+                        && self.ram[HUD_CUR_ITEM] == K_HUD_ITEM_MUSHROOM_DRAW
+                    {
+                        self.witch_accept_shroom(k);
+                    }
+                }
+                _ => {
+                    self.sprite_show_solicited_message(k, 0x004a);
+                }
+            },
+            1 => {
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(0x18, 0);
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Witch_AcceptShroom(int k) {  // 85e4cf
+    pub(super) fn witch_accept_shroom(&mut self, k: usize) {
+        self.ram[LINK_ITEM_MUSHROOM] = 0;
+        let dung_info = read_le_u16(&self.ram, SAVE_DUNG_INFO + 0x109 * 2) | 0x80;
+        write_le_u16(&mut self.ram, SAVE_DUNG_INFO + 0x109 * 2, dung_info);
+        self.ram[SOUND_EFFECT_1_DRAW] = 0;
+        self.hud_refresh_icon();
+        self.sprite_show_message_unconditional(0x004b);
+        self.sprite_sfx_queue_sfx1_with_pan(k, 0x0d);
+        self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW] = 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Witch_Draw(int k) {  // 85e55d
+    pub(super) fn witch_draw(&mut self, k: usize) {
+        const DATA_A: [(i8, i8, u8, u8); 16] = [
+            (-3, 8, 0xae, 0x00),
+            (-3, 16, 0xbe, 0x00),
+            (-2, 8, 0xae, 0x00),
+            (-2, 16, 0xbe, 0x00),
+            (-1, 8, 0xaf, 0x00),
+            (-1, 16, 0xbf, 0x00),
+            (0, 9, 0xaf, 0x00),
+            (0, 17, 0xbf, 0x00),
+            (1, 10, 0xaf, 0x00),
+            (1, 18, 0xbf, 0x00),
+            (0, 11, 0xaf, 0x00),
+            (0, 18, 0xbf, 0x00),
+            (-1, 10, 0xae, 0x00),
+            (-1, 18, 0xbe, 0x00),
+            (-3, 9, 0xae, 0x00),
+            (-3, 17, 0xbe, 0x00),
+        ];
+        const DATA_B: [(i8, i8, u8, u8); 3] = [
+            (0, -4, 0x80, 0x00),
+            (-11, 15, 0x86, 0x04),
+            (-3, 15, 0x86, 0x44),
+        ];
+        const DATA_C: [(i8, i8, u8, u8); 2] = [(0, 4, 0x84, 0x00), (0, 4, 0x82, 0x00)];
+
+        let Some((_, _, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        self.oam_allocate_defer_to_player(k);
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        let x = self.ram[DUNGMAP_VAR7];
+        let y = self.ram[DUNGMAP_VAR7 + 1];
+
+        for i in 0..2 {
+            let (dx, dy, chr, _fl) = DATA_A[g + i];
+            self.set_oam_plain_at_for_draw(
+                oam + i * 4,
+                x.wrapping_add(dx as u8),
+                y.wrapping_add(dy as u8),
+                chr,
+                flags,
+                0,
+            );
+        }
+        for (i, &(dx, dy, chr, fl)) in DATA_B.iter().enumerate() {
+            self.set_oam_plain_at_for_draw(
+                oam + (i + 2) * 4,
+                x.wrapping_add(dx as u8),
+                y.wrapping_add(dy as u8),
+                chr,
+                flags ^ fl,
+                2,
+            );
+        }
+        let i = usize::from((g as u16).wrapping_sub(6) < 6);
+        let (dx, dy, chr, _fl) = DATA_C[i];
+        self.set_oam_plain_at_for_draw(
+            oam + 5 * 4,
+            x.wrapping_add(dx as u8),
+            y.wrapping_add(dy as u8),
+            chr,
+            flags,
+            2,
+        );
+        self.sprite_correct_oam_entries_for_draw(k, 5, 0xff);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ElderWife_Draw(int k) {  // 85f505
+    pub(super) fn elder_wife_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: -5,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 5,
+                char_flags: 0x0028,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 5,
+                char_flags: 0x4028,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_78_MrsSahasrahla(int k) {  // 86c071
+    pub(super) fn sprite_78_mrs_sahasrahla(&mut self, k: usize) {
+        self.elder_wife_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[LINK_SWORD_TYPE] < 2 {
+                    if self.sprite_show_solicited_message(k, 0x002b) & 0x100 != 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 1;
+                    }
+                } else {
+                    self.sprite_show_solicited_message(k, 0x002e);
+                }
+                self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 4 & 1;
+            }
+            1 => {
+                self.sprite_show_message_unconditional(0x002c);
+                self.ram[SPRITE_AI_STATE + k] = 2;
+            }
+            2 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.sprite_show_message_unconditional(0x002d);
+                } else {
+                    self.sprite_show_message_unconditional(0x002c);
+                }
+            }
+            3 => {
+                self.sprite_show_solicited_message(k, 0x002d);
+                self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 4 & 1;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MiddleAgedMan_Draw(int k) {  // 86bdac
+    pub(super) fn middle_aged_man_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 2] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x00ea,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ec,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BlindHideoutGuy_Draw(int k) {  // 8dc481
+    pub(super) fn blind_hideout_guy_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x400e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x400e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40ca,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2
+            + usize::from(self.ram[SPRITE_D + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_HumanMulti_1(int k) {  // 8dc2d9
+    pub(super) fn sprite_human_multi_1(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_flute_dad(k),
+            1 => self.sprite_thief_hideout_guy(k),
+            2 => self.sprite_blinds_hut_guy(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BlindsHutGuy(int k) {  // 8dc2e6
+    pub(super) fn sprite_blinds_hut_guy(&mut self, k: usize) {
+        self.blind_hideout_guy_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.sprite_track_body_to_head(k);
+        self.ram[SPRITE_HEAD_DIR + k] = 0;
+        let j = self.sprite_show_solicited_message(k, 0x0172);
+        if j & 0x100 != 0 {
+            let dir = j as u8;
+            self.ram[SPRITE_D + k] = dir;
+            self.ram[SPRITE_HEAD_DIR + k] = dir;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_ThiefHideoutGuy(int k) {  // 8dc308
+    pub(super) fn sprite_thief_hideout_guy(&mut self, k: usize) {
+        if self.ram[FRAME_COUNTER] & 3 == 0 {
+            self.ram[SPRITE_GRAPHICS + k] = 2;
+            let dir = self.sprite_direction_to_face_link(k, None);
+            self.ram[SPRITE_HEAD_DIR + k] = if dir == 3 { 2 } else { dir };
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] = 15;
+        self.oam_allocate_defer_to_player(k);
+        self.thief_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.sprite_show_solicited_message(k, 0x0171);
+        self.ram[SPRITE_GRAPHICS + k] = 2;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_FluteDad(int k) {  // 8dc343
+    pub(super) fn sprite_flute_dad(&mut self, k: usize) {
+        self.flute_boy_father_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.ram[SPRITE_GRAPHICS + k] = if self.ram[FRAME_COUNTER] < 48 {
+            2
+        } else {
+            (self.ram[FRAME_COUNTER] >> 7) & 1
+        };
+
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.sprite_show_solicited_message(k, 0x00a3);
+            self.ram[SPRITE_GRAPHICS + k] = 2;
+        } else if self.ram[LINK_ITEM_FLUTE] < 2 {
+            self.sprite_show_solicited_message(k, 0x00a1);
+        } else if self.sprite_show_solicited_message(k, 0x00a4) & 0x100 == 0
+            && self.ram[HUD_CUR_ITEM] == K_HUD_ITEM_FLUTE_DRAW
+            && self.ram[JOYPAD1H_LAST] & 0x40 != 0
+            && self.sprite_check_damage_to_link_same_layer(k)
+        {
+            self.sprite_show_message_unconditional(0x00a2);
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            self.ram[SPRITE_GRAPHICS + k] = 2;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void SweepingLady_Draw(int k) {  // 8dc4eb
+    pub(super) fn sweeping_lady_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: -7,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 5,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_SweepingLady(int k) {  // 8dc4ad
+    pub(super) fn sprite_sweeping_lady(&mut self, k: usize) {
+        self.sweeping_lady_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_show_solicited_message(k, 0x00a5);
+        self.sprite_behave_as_barrier(k);
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 4 & 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_FortuneTeller(int k) {  // 8dc762
+    pub(super) fn sprite_fortune_teller(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => {
+                self.fortune_teller_draw(k);
+                if self.sprite_return_if_inactive(k) {
+                    return;
+                }
+                self.fortune_teller_light_or_dark_world(
+                    k,
+                    ((self.ram[SAVEGAME_IS_DARKWORLD] >> 6) & 1) != 0,
+                );
+            }
+            1 => {
+                if self.sprite_return_if_inactive(k) {
+                    return;
+                }
+                if self.sprite_check_damage_to_link_same_layer(k) {
+                    self.sprite_nullify_hookshot_drag();
+                    self.ram[LINK_SPEED_SETTING] = 0;
+                    self.link_cancel_dash();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void FortuneTeller_LightOrDarkWorld(int k, bool dark_world) {
+    pub(super) fn fortune_teller_light_or_dark_world(&mut self, k: usize, dark_world: bool) {
+        const PRICES: [u8; 4] = [10, 15, 20, 30];
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                let j = self.get_random_number() & 3;
+                self.ram[SPRITE_A + k] = j << 1;
+                if read_le_u16(&self.ram, LINK_RUPEES_GOAL) < u16::from(PRICES[usize::from(j)]) {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                } else {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                }
+            }
+            1 => {
+                self.sprite_show_solicited_message(k, 0x00f2);
+            }
+            2 => {
+                if self.sprite_show_solicited_message(k, 0x00f3) & 0x100 != 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                }
+            }
+            3 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    }
+                    self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 4) & 1;
+                } else {
+                    self.sprite_show_message_unconditional(0x00f5);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                }
+            }
+            4 => {
+                self.fortune_teller_perform_pseudo_science(k);
+            }
+            5 => {
+                if !dark_world {
+                    self.ram[SPRITE_GRAPHICS + k] = 0;
+                }
+                let j = PRICES[usize::from(self.ram[SPRITE_A + k] >> 1)];
+                self.ram[DIALOGUE_NUMBER_DRAW] = (j / 10) | ((j % 10) << 4);
+                self.ram[DIALOGUE_NUMBER_DRAW + 1] = 0;
+                self.sprite_show_message_unconditional(0x00f4);
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            }
+            6 => {
+                let price = u16::from(PRICES[usize::from(self.ram[SPRITE_A + k] >> 1)]);
+                let rupees = read_le_u16(&self.ram, LINK_RUPEES_GOAL).wrapping_sub(price);
+                write_le_u16(&mut self.ram, LINK_RUPEES_GOAL, rupees);
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[LINK_HEARTS_FILLER] = 160;
+                self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+            }
+            7 => {}
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void FortuneTeller_PerformPseudoScience(int k) {  // 8dc849
+    pub(super) fn fortune_teller_perform_pseudo_science(&mut self, k: usize) {
+        const READINGS: [u8; 16] = [
+            0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb,
+            0xfc, 0xfd,
+        ];
+
+        self.ram[SPRITE_GRAPHICS + k] = 0;
+        self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+
+        let mut slots = [0u8; 2];
+        let mut n = 0usize;
+        if self.ram[SAVEGAME_MAP_ICONS_INDICATOR] >= 3 {
+            if self.ram[LINK_ITEM_BOOK] == 0 {
+                slots[n] = 2;
+                n += 1;
+            }
+            if n < 2 && (self.ram[LINK_WHICH_PENDANTS] & 2) == 0 {
+                slots[n] = 1;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_ITEM_MUSHROOM] < 2 {
+                slots[n] = 3;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_ITEM_FLIPPERS] == 0 {
+                slots[n] = 4;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_ITEM_MOON_PEARL] == 0 {
+                slots[n] = 5;
+                n += 1;
+            }
+            if n < 2 && self.ram[SRAM_PROGRESS_INDICATOR] < 3 {
+                slots[n] = 6;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_MAGIC_CONSUMPTION] == 0 {
+                slots[n] = 7;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_ITEM_BOMBOS_MEDALLION_DRAW] == 0 {
+                slots[n] = 8;
+                n += 1;
+            }
+            if n < 2 && (self.ram[SRAM_PROGRESS_INDICATOR_3_DRAW] & 0x10) == 0 {
+                slots[n] = 9;
+                n += 1;
+            }
+            if n < 2 && (self.ram[SRAM_PROGRESS_INDICATOR_3_DRAW] & 0x20) == 0 {
+                slots[n] = 10;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_ITEM_CAPE] == 0 {
+                slots[n] = 11;
+                n += 1;
+            }
+            if n < 2 && (self.ram[SAVE_OW_EVENT_INFO + 0x5b] & 2) == 0 {
+                slots[n] = 12;
+                n += 1;
+            }
+            if n < 2 && self.ram[LINK_SWORD_TYPE] < 4 {
+                slots[n] = 13;
+                n += 1;
+            }
+            if n < 2 {
+                slots[n] = 14;
+                n += 1;
+            }
+            if n < 2 {
+                slots[n] = 15;
+            }
+        }
+
+        self.ram[SRAM_PROGRESS_FLAGS] ^= 0x40;
+        let j = usize::from((self.ram[SRAM_PROGRESS_FLAGS] & 0x40) != 0);
+        self.sprite_show_message_unconditional(u16::from(READINGS[usize::from(slots[j])]));
+    }
+
+    // -----------------------------------------------------------------------
+    // void FortuneTeller_Draw(int k) {  // 8dcb01
+    pub(super) fn fortune_teller_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: 0,
+                y: -48,
+                char_flags: 0x000c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -32,
+                char_flags: 0x002c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -32,
+                char_flags: 0x402c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -48,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -32,
+                char_flags: 0x002a,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -32,
+                char_flags: 0x402a,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -40,
+                char_flags: 0x0066,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -40,
+                char_flags: 0x4066,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -40,
+                char_flags: 0x0066,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -40,
+                char_flags: 0x0068,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -40,
+                char_flags: 0x4068,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -40,
+                char_flags: 0x0068,
+                ext: 2,
+            },
+        ];
+        let j = usize::from((self.ram[SAVEGAME_IS_DARKWORLD] >> 6) & 1) * 2
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.sprite_draw_multiple(k, &D[j * 3..j * 3 + 3], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_MazeGameLady(int k) {  // 8dcb5c
+    pub(super) fn sprite_maze_game_lady(&mut self, k: usize) {
+        self.lady_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_track_body_to_head(k);
+        self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_X_LO + k] < self.ram[LINK_X_COORD] {
+                    let j = self.sprite_show_message_on_contact(k, 0x00cc);
+                    if j & 0x100 != 0 {
+                        let dir = j as u8;
+                        self.ram[SPRITE_D + k] = dir;
+                        self.ram[SPRITE_HEAD_DIR + k] = dir;
+                        self.ram[SPRITE_AI_STATE + k] = 1;
+                        write_le_u16(&mut self.ram, MAZE_GAME_TIMER_LO, 0);
+                        write_le_u16(&mut self.ram, MAZE_GAME_TIMER_HI, 0);
+                        self.ram[SPRITE_A + k] = 0;
+                        self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW] = 0;
+                    }
+                } else {
+                    self.sprite_show_message_on_contact(k, 0x00d0);
+                }
+            }
+            1 => {
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x07);
+                self.ram[SPRITE_AI_STATE + k] = 2;
+            }
+            2 => {
+                self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+                if self.ram[SPRITE_A + k] == 63 {
+                    self.ram[SPRITE_A + k] = 0;
+                    let t = read_le_u16(&self.ram, MAZE_GAME_TIMER_LO).wrapping_add(1);
+                    write_le_u16(&mut self.ram, MAZE_GAME_TIMER_LO, t);
+                    if t == 0 {
+                        let high = read_le_u16(&self.ram, MAZE_GAME_TIMER_HI).wrapping_add(1);
+                        write_le_u16(&mut self.ram, MAZE_GAME_TIMER_HI, high);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_MazeGameGuy(int k) {  // 8dcbf2
+    pub(super) fn sprite_maze_game_guy(&mut self, k: usize) {
+        self.maze_game_guy_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_track_body_to_head(k);
+        self.ram[SPRITE_HEAD_DIR + k] = 0;
+        self.sprite_behave_as_barrier(k);
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 3 & 1;
+        if self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW] != 0 {
+            self.sprite_show_message_on_contact(k, 0x00d0);
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                let elapsed = read_le_u16(&self.ram, MAZE_GAME_TIMER_LO);
+                let elapsed_hi = read_le_u16(&self.ram, MAZE_GAME_TIMER_HI);
+                write_le_u16(&mut self.ram, MAZE_GAME_TIMER_SNAPSHOT_LO, elapsed);
+                write_le_u16(&mut self.ram, MAZE_GAME_TIMER_SNAPSHOT_HI, elapsed_hi);
+                let mut t = elapsed % 6000;
+                let a = t / 600;
+                t %= 600;
+                let b = t / 60;
+                t %= 60;
+                let c = t / 10;
+                t %= 10;
+                self.ram[DIALOGUE_NUMBER_DRAW] = (t | (c << 4)) as u8;
+                self.ram[DIALOGUE_NUMBER_DRAW + 1] = (b | (a << 4)) as u8;
+                let j = self.sprite_show_message_on_contact(k, 0x00cb);
+                if j & 0x100 != 0 {
+                    let dir = j as u8;
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[SAVE_OW_EVENT_INFO + usize::from(self.ram[OVERWORLD_SCREEN_INDEX])]
+                    & 0x40
+                    != 0
+                {
+                    self.sprite_show_message_unconditional(0x00cf);
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                } else if read_le_u16(&self.ram, MAZE_GAME_TIMER_SNAPSHOT_LO) < 16 {
+                    self.sprite_show_message_unconditional(0x00cd);
+                    let dir = self.ram[LINK_PLAYER_HANDLER_STATE];
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                } else {
+                    self.sprite_show_message_unconditional(0x00ce);
+                    let dir = self.ram[LINK_PLAYER_HANDLER_STATE];
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                }
+            }
+            2 => {
+                let j = self.sprite_show_message_on_contact(k, 0x00ce);
+                if j & 0x100 != 0 {
+                    let dir = j as u8;
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                }
+            }
+            3 => {
+                let j = self.sprite_show_solicited_message(k, 0x00cd);
+                if j & 0x100 != 0 {
+                    let dir = j as u8;
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                }
+            }
+            4 => {
+                let j = self.sprite_show_solicited_message(k, 0x00cf);
+                if j & 0x100 != 0 {
+                    let dir = j as u8;
+                    self.ram[SPRITE_D + k] = dir;
+                    self.ram[SPRITE_HEAD_DIR + k] = dir;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MazeGameGuy_Draw(int k) {  // 8dcda7
+    pub(super) fn maze_game_guy_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0000,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x4002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0002,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0020,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2
+            + usize::from(self.ram[SPRITE_D + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void DrinkingGuy_Draw(int k) {  // 9af88c
+    pub(super) fn drinking_guy_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 8,
+                y: 2,
+                char_flags: 0x00ae,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0822,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 0,
+                char_flags: 0x00af,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0822,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0006,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_25_TalkingTree(int k) {  // 86c0d5
+    pub(super) fn sprite_25_talking_tree(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.talking_tree_mouth(k),
+            1 => self.talking_tree_eye(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void TalkingTree_Mouth(int k) {  // 9df956
+    pub(super) fn talking_tree_mouth(&mut self, k: usize) {
+        const GFX2: [u8; 4] = [0, 2, 3, 1];
+        const MSGS2: [u16; 2] = [0x0082, 0x007d];
+        const MSGS: [u16; 4] = [0x007e, 0x007f, 0x0080, 0x0081];
+        const SCREENS: [u8; 4] = [0x58, 0x5d, 0x72, 0x6b];
+        const GFX: [u8; 8] = [1, 2, 3, 1, 3, 1, 2, 3];
+        const DELAY: [u8; 8] = [13, 13, 13, 11, 11, 6, 16, 8];
+
+        self.talking_tree_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_FLAGS4 + k] = 0;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                if self.sprite_check_damage_to_link_same_layer(k) {
+                    self.link_cancel_dash();
+                    self.ram[LINK_INCAPACITATED_TIMER] = 16;
+                    let pt = self.sprite_project_speed_towards_link(k, 48);
+                    self.ram[LINK_ACTUAL_VEL_Y] = pt.y;
+                    self.ram[LINK_ACTUAL_VEL_X] = pt.x;
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                }
+                self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 3;
+            }
+            2 => {
+                self.ram[SPRITE_GRAPHICS + k] =
+                    GFX2[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 1)];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 7 {
+                    self.talking_tree_spawn_bomb(k);
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+            }
+            3 => {
+                self.ram[SPRITE_FLAGS4 + k] = 7;
+                if self.ram[SPRITE_A + k] == 0 {
+                    let j = ((self.ram[SPRITE_X_LO + k] >> 4) & 1) ^ 1;
+                    self.ram[SPRITE_A + k] = j;
+                    if self.sprite_show_solicited_message(k, MSGS2[usize::from(j)]) & 0x100 == 0 {
+                        self.ram[SPRITE_A + k] = 0;
+                    }
+                } else {
+                    let j = SCREENS
+                        .iter()
+                        .rposition(|&screen| screen == self.ram[OVERWORLD_SCREEN_INDEX])
+                        .unwrap_or(0);
+                    self.sprite_show_message_unconditional(MSGS[j]);
+                    self.ram[SPRITE_A + k] = 0;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    let j = self.ram[SPRITE_B + k].wrapping_add(1) & 7;
+                    self.ram[SPRITE_B + k] = j;
+                    self.ram[SPRITE_GRAPHICS + k] = GFX[usize::from(j)];
+                    self.ram[SPRITE_DELAY_MAIN + k] = DELAY[usize::from(j)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void TalkingTree_Draw(int k) {  // 9dfadb
+    pub(super) fn talking_tree_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 12] = [
+            DrawMultipleData {
+                x: 1,
+                y: -1,
+                char_flags: 0x00e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 7,
+                char_flags: 0x00f8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -1,
+                char_flags: 0x40e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0x40f8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -1,
+                char_flags: 0x00e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 7,
+                char_flags: 0x00f8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -1,
+                char_flags: 0x40e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 7,
+                char_flags: 0x40f8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 7,
+                char_flags: 0x00f8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40e8,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 7,
+                char_flags: 0x40f8,
+                ext: 0,
+            },
+        ];
+        let g = self.ram[SPRITE_GRAPHICS + k].wrapping_sub(1);
+        if sign8(g) {
+            return;
+        }
+        let base = usize::from(g) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 4], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void TalkingTree_Eye(int k) {  // 9dfb0a
+    pub(super) fn talking_tree_eye(&mut self, k: usize) {
+        const TYPE1_X: [i8; 2] = [9, -9];
+        const X1: [i8; 5] = [-2, -1, 0, 1, 2];
+        const Y1: [i8; 5] = [-1, 0, 0, 0, -1];
+
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        let mut j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+        let x = u16::from(self.ram[SPRITE_A + k]) | (u16::from(self.ram[SPRITE_B + k]) << 8);
+        let y = u16::from(self.ram[SPRITE_C + k]) | (u16::from(self.ram[SPRITE_E + k]) << 8);
+        self.sprite_set_x(k, x.wrapping_add_signed(i16::from(TYPE1_X[j])));
+        self.sprite_set_y(k, y);
+        let pt = self.sprite_project_speed_towards_link(k, 2);
+        if !sign8(pt.y) {
+            self.ram[SPRITE_D + k] = pt.x.wrapping_add(2);
+        } else if self.ram[SPRITE_D + k] != 2 {
+            self.ram[SPRITE_D + k] = self.ram[SPRITE_D + k]
+                .wrapping_add(if self.ram[SPRITE_D + k] >= 2 { 0xff } else { 1 });
+        }
+        j = usize::from(self.ram[SPRITE_D + k]);
+        self.sprite_set_x(k, x.wrapping_add_signed(i16::from(X1[j])));
+        self.sprite_set_y(k, y.wrapping_add_signed(i16::from(Y1[j])));
+    }
+
+    // -----------------------------------------------------------------------
+    // void DiggingGameGuy_Draw(int k) {  // 9dfe4b
+    pub(super) fn digging_game_guy_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 9] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0a40,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 9,
+                char_flags: 0x0c56,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a42,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0a40,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a42,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a42,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: -7,
+                char_flags: 0x0a40,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 0,
+                char_flags: 0x0a44,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 0,
+                char_flags: 0x0a44,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 3;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Bot_Draw(int k) {  // 85b89a
+    pub(super) fn bot_draw(&mut self, k: usize) {
+        const GFX: [u8; 4] = [0, 1, 0, 1];
+        const FLAGS: [u8; 4] = [0, 0, 0x40, 0x40];
+        let j = usize::from(self.ram[SPRITE_A + k]);
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | FLAGS[j];
+        self.sprite_draw_single_large(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void BombShopEntity_Draw(int k) {  // 9ee2c6
+    pub(super) fn bomb_shop_entity_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a48,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a4c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x04c2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x084e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x084e,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_SUBTYPE2 + k]) * 2
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 1], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B3_PedestalPlaque(int k) {  // 9ee044
+    pub(super) fn sprite_b3_pedestal_plaque(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[FLAG_IS_LINK_IMMOBILIZED] == 0 && self.sprite_check_if_link_is_busy() {
+            return;
+        }
+
+        self.ram[LINK_POSITION_MODE] &= !0x20;
+        if self.ram[OVERWORLD_SCREEN_INDEX] != 48 {
+            if self.ram[LINK_DIRECTION_FACING] != 0
+                || !self.sprite_check_damage_to_link_same_layer(k)
+            {
+                return;
+            }
+            if self.ram[HUD_CUR_ITEM] != K_HUD_ITEM_BOOK_MUDORA_DRAW
+                || (self.ram[FILTERED_JOYPAD_H] & 0x40) == 0
+            {
+                if (self.ram[FILTERED_JOYPAD_L] & 0x80) == 0 {
+                    return;
+                }
+                self.sprite_show_message_unconditional(0x00b6);
+            } else {
+                self.ram[PLAYER_HANDLER_TIMER] = 0;
+                self.ram[LINK_POSITION_MODE] = 32;
+                self.ram[SOUND_EFFECT_1_DRAW] = 0;
+                self.sprite_show_message_unconditional(0x00b7);
+            }
+        } else {
+            if self.ram[LINK_DIRECTION_FACING] != 0
+                || !self.sprite_check_damage_to_link_same_layer(k)
+            {
+                return;
+            }
+            if self.ram[HUD_CUR_ITEM] != K_HUD_ITEM_BOOK_MUDORA_DRAW
+                || (self.ram[FILTERED_JOYPAD_H] & 0x40) == 0
+            {
+                if (self.ram[FILTERED_JOYPAD_L] & 0x80) == 0 {
+                    return;
+                }
+                self.sprite_show_message_unconditional(0x00bc);
+            } else {
+                self.ram[PLAYER_HANDLER_TIMER] = 0;
+                self.ram[LINK_POSITION_MODE] = 32;
+                self.ram[SOUND_EFFECT_1_DRAW] = 0;
+                self.ram[BUTTON_B_FRAMES] = 1;
+                self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] = 0;
+                self.ram[LINK_PLAYER_HANDLER_STATE] = K_PLAYER_STATE_OPENING_DESERT_PALACE_DRAW;
+                self.sprite_show_message_unconditional(0x00bd);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B4_PurpleChest(int k) {  // 9ee0dd
+    pub(super) fn sprite_b4_purple_chest(&mut self, k: usize) {
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            if self.sprite_show_message_on_contact(k, 0x0116) & 0x100 != 0
+                && self.ram[FOLLOWER_INDICATOR] == 0
+            {
+                self.ram[SPRITE_AI_STATE + k] = 1;
+            }
+        } else {
+            self.ram[SPRITE_STATE + k] = 0;
+            self.ram[FOLLOWER_INDICATOR] = 12;
+            self.load_follower_graphics();
+            self.sprite_become_follower(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_B5_BombShop(int k) {  // 9ee111
+    pub(super) fn sprite_b5_bomb_shop(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.sprite_bomb_shop_clerk(k),
+            1 => self.sprite_bomb_shop_bomb(k),
+            2 => self.sprite_bomb_shop_super_bomb(k),
+            3 => self.sprite_bomb_shop_huff(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BombShop_Clerk(int k) {  // 9ee134
+    pub(super) fn sprite_bomb_shop_clerk(&mut self, k: usize) {
+        const GFX: [u8; 8] = [0, 1, 0, 1, 0, 1, 0, 1];
+        const DELAY: [u8; 8] = [255, 32, 255, 24, 15, 24, 255, 15];
+
+        self.bomb_shop_entity_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            let j = usize::from(self.ram[SPRITE_E + k]);
+            self.ram[SPRITE_E + k] = self.ram[SPRITE_E + k].wrapping_add(1) & 7;
+            self.ram[SPRITE_DELAY_MAIN + k] = DELAY[j];
+            self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+            if self.ram[SPRITE_GRAPHICS + k] == 0 {
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x11);
+                self.bomb_shop_clerk_exhalation(k);
+            } else {
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x12);
+            }
+        }
+        let flag = (self.ram[LINK_HAS_CRYSTALS] & 5) == 5
+            && (self.ram[SRAM_PROGRESS_INDICATOR_3_DRAW] & 32) != 0;
+        self.sprite_show_solicited_message(k, if flag { 0x0118 } else { 0x0117 });
+        self.sprite_behave_as_barrier(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BombShop_Bomb(int k) {  // 9ee190
+    pub(super) fn sprite_bomb_shop_bomb(&mut self, k: usize) {
+        self.bomb_shop_entity_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if !self.shop_item_check_for_a_press(k) {
+            return;
+        }
+
+        let upgrade = self.ram[LINK_BOMB_UPGRADES] as usize;
+        if self.ram[LINK_ITEM_BOMBS] != K_MAX_BOMBS_FOR_LEVEL_DRAW[upgrade] {
+            if !self.shop_item_handle_cost(100) {
+                self.sprite_show_message_unconditional(0x017c);
+                self.shop_item_play_beep(k);
+            } else {
+                self.ram[LINK_BOMB_FILLER] = 27;
+                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_show_message_unconditional(0x0119);
+                self.shop_item_handle_receipt(k, 0x28);
+            }
+        } else {
+            self.sprite_show_message_unconditional(0x016e);
+            self.shop_item_play_beep(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BombShop_SuperBomb(int k) {  // 9ee1df
+    pub(super) fn sprite_bomb_shop_super_bomb(&mut self, k: usize) {
+        self.bomb_shop_entity_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if self.shop_item_check_for_a_press(k) {
+            if !self.shop_item_handle_cost(100) {
+                self.sprite_show_message_unconditional(0x017c);
+                self.shop_item_play_beep(k);
+            } else {
+                self.ram[FOLLOWER_INDICATOR] = 13;
+                self.load_follower_graphics();
+                self.sprite_become_follower(k);
+                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_show_message_unconditional(0x011a);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BombShop_Huff(int k) {  // 9ee21a
+    pub(super) fn sprite_bomb_shop_huff(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [4, 0x44, 0xc4, 0x84];
+
+        self.oam_allocate_from_region_c(4);
+        self.sprite_draw_single_small(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] &= 0x30;
+        self.ram[SPRITE_OAM_FLAGS + k] |=
+            OAM_FLAGS[usize::from((self.ram[FRAME_COUNTER] >> 2) & 3)];
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(1);
+        self.sprite_move_z(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_DELAY_MAIN + k] >> 3 & 3;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BB_Shopkeeper(int k) {  // 9eeeef
+    pub(super) fn sprite_bb_shopkeeper(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.shopkeeper_standard_clerk(k),
+            1 => self.chest_game_guy(k),
+            2 => self.nice_thief_with_gift(k),
+            3 => self.mini_chest_game_guy(k),
+            4 => self.lost_woods_chest_game_guy(k),
+            5 | 6 => self.nice_thief_under_rock(k),
+            7 => self.shop_item_red_potion150(k),
+            8 => self.shop_item_fighter_shield(k),
+            9 => self.shop_item_fire_shield(k),
+            10 => self.shop_item_heart(k),
+            11 => self.shop_item_arrows(k),
+            12 => self.shop_item_bombs(k),
+            13 => self.shop_item_bee(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Shopkeeper_StandardClerk(int k) {  // 9eef12
+    pub(super) fn shopkeeper_standard_clerk(&mut self, k: usize) {
+        if self.ram[IS_IN_DARK_WORLD_DRAW] != 0 {
+            self.oam_allocate_defer_to_player(k);
+            self.sprite_draw_single_large(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.ram[SPRITE_OAM_FLAGS + k] =
+                (self.ram[SPRITE_OAM_FLAGS + k] & 63) | ((self.ram[FRAME_COUNTER] << 3) & 64);
+        } else {
+            self.ram[SPRITE_OAM_FLAGS + k] = 7;
+            self.shopkeeper_draw(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 4) & 1;
+        }
+        self.sprite_behave_as_barrier(k);
+        let msg = if self.ram[IS_IN_DARK_WORLD_DRAW] == 0 {
+            0x0165
+        } else {
+            0x015f
+        };
+        self.sprite_show_solicited_message(k, msg);
+        if self.ram[SPRITE_AI_STATE + k] == 0
+            && read_le_u16(&self.ram, CUR_SPRITE_Y).wrapping_add(0x60)
+                >= self.player_state_view().y()
+        {
+            self.sprite_show_message_unconditional(msg);
+            self.ram[SPRITE_AI_STATE + k] = 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void ChestGameGuy(int k) {  // 9eef90
+    pub(super) fn chest_game_guy(&mut self, k: usize) {
+        self.oam_allocate_defer_to_player(k);
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.ram[SPRITE_OAM_FLAGS + k] =
+            (self.ram[SPRITE_OAM_FLAGS + k] & 63) | ((self.ram[FRAME_COUNTER] << 3) & 64);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[MINIGAME_CREDITS_DRAW].wrapping_sub(1) >= 2
+                    && self.sprite_show_solicited_message(k, 0x0160) & 0x100 != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 && self.shop_item_handle_cost(30) {
+                    self.ram[MINIGAME_CREDITS_DRAW] = 2;
+                    self.sprite_show_message_unconditional(0x0164);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                } else {
+                    self.sprite_show_message_unconditional(0x0161);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            2 => {
+                if self.ram[MINIGAME_CREDITS_DRAW] == 0 {
+                    self.sprite_show_solicited_message(k, 0x0163);
+                } else {
+                    self.sprite_show_solicited_message(k, 0x017f);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void NiceThiefWithGift(int k) {  // 9ef038
+    pub(super) fn nice_thief_with_gift(&mut self, k: usize) {
+        self.nice_thief_animate(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.sprite_show_solicited_message(k, 0x0176) & 0x100 != 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) & 0x4000 == 0 {
+                    let bits = read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) | 0x4000;
+                    write_le_u16(&mut self.ram, DUNG_SAVEGAME_STATE_BITS, bits);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.shop_item_handle_receipt(k, 0x46);
+                } else {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            2 => self.ram[SPRITE_AI_STATE + k] = 0,
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void MiniChestGameGuy(int k) {  // 9ef078
+    pub(super) fn mini_chest_game_guy(&mut self, k: usize) {
+        self.ram[SPRITE_D + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+        self.ram[SPRITE_GRAPHICS + k] = 0;
+        self.maze_game_guy_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[MINIGAME_CREDITS_DRAW].wrapping_sub(1) >= 2
+                    && self.sprite_show_solicited_message(k, 0x017e) & 0x100 != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 && self.shop_item_handle_cost(20) {
+                    self.ram[MINIGAME_CREDITS_DRAW] = 1;
+                    self.sprite_show_message_unconditional(0x017f);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                } else {
+                    self.sprite_show_message_unconditional(0x0180);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            2 => {
+                self.sprite_show_solicited_message(
+                    k,
+                    if self.ram[MINIGAME_CREDITS_DRAW] == 0 {
+                        0x0163
+                    } else {
+                        0x017f
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void LostWoodsChestGameGuy(int k) {  // 9ef0f3
+    pub(super) fn lost_woods_chest_game_guy(&mut self, k: usize) {
+        self.nice_thief_animate(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[MINIGAME_CREDITS_DRAW].wrapping_sub(1) >= 2
+                    && self.sprite_show_solicited_message(k, 0x0181) & 0x100 != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 && self.shop_item_handle_cost(100) {
+                    self.ram[MINIGAME_CREDITS_DRAW] = 1;
+                    self.sprite_show_message_unconditional(0x017f);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                } else {
+                    self.sprite_show_message_unconditional(0x0180);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            2 => {
+                self.sprite_show_solicited_message(
+                    k,
+                    if self.ram[MINIGAME_CREDITS_DRAW] == 0 {
+                        0x0163
+                    } else {
+                        0x017f
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void NiceThiefUnderRock(int k) {  // 9ef14f
+    pub(super) fn nice_thief_under_rock(&mut self, k: usize) {
+        self.nice_thief_animate(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.sprite_show_solicited_message(
+            k,
+            if self.ram[SPRITE_SUBTYPE2 + k] == 5 {
+                0x0177
+            } else {
+                0x0178
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BC_Drunkard(int k) {  // 9ef603
+    pub(super) fn sprite_bc_drunkard(&mut self, k: usize) {
+        self.drinking_guy_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if self.get_random_number() == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 32;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = u8::from(self.ram[SPRITE_DELAY_MAIN + k] != 0);
+        if self.sprite_show_solicited_message(k, 0x0175) & 0x100 != 0 {
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_17_Hoarder(int k) {  // 86a86c
+    pub(super) fn sprite_17_hoarder(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.sprite_hoarder_frantic(k);
+        } else {
+            self.sprite_hoarder_covered(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hoarder_Covered(int k) {  // 86a874
+    pub(super) fn sprite_hoarder_covered(&mut self, k: usize) {
+        const GFX: [u8; 4] = [3, 4, 5, 4];
+        const XVEL: [i8; 4] = [-12, 12, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, -12, 12];
+
+        self.covered_rupee_crab_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = 0;
+        let mut pt = PointU8 { x: 0, y: 0 };
+        let dir = self.sprite_direction_to_face_link(k, Some(&mut pt)) as usize;
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0
+            || (pt.y.wrapping_add(0x30) < 0x60 && pt.x.wrapping_add(0x20) < 0x40)
+        {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_DELAY_MAIN + k] = 32;
+            }
+            self.ram[SPRITE_X_VEL + k] = XVEL[dir] as u8;
+            self.ram[SPRITE_Y_VEL + k] = YVEL[dir] as u8;
+            if self.ram[SPRITE_WALLCOLL + k] == 0 {
+                self.sprite_move_xy(k);
+            }
+            self.sprite_check_tile_collision2(k);
+            self.sprite_check_damage_from_link(k);
+            self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+            self.ram[SPRITE_GRAPHICS + k] =
+                GFX[usize::from(self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 3];
+        }
+        if self.ram[SPRITE_TYPE + k] != 0x3e || self.ram[LINK_ITEM_GLOVES] >= 1 {
+            self.sprite_return_if_lifted_permissive(k);
+        }
+        if self.ram[SPRITE_STATE + k] != 9 {
+            self.ram[SPRITE_C + k] = if self.ram[SPRITE_TYPE + k] == 0x17 {
+                2
+            } else {
+                1
+            };
+            self.ram[SPRITE_TYPE + k] = 0xec;
+            self.ram[SPRITE_OAM_FLAGS + k] &= !1;
+            self.ram[SPRITE_GRAPHICS + k] = 0;
+            let mut info = SpriteSpawnInfo::default();
+            let j = self.sprite_spawn_dynamically(k, 0x3e, &mut info);
+            if j >= 0 {
+                let j = j as usize;
+                self.sprite_set_spawned_coordinates(j, &info);
+                self.ram[SPRITE_FLAGS2 + j] &= !0x80;
+                self.ram[SPRITE_DELAY_AUX2_DRAW + j] = 128;
+                self.ram[SPRITE_OAM_FLAGS + j] = 9;
+                self.ram[SPRITE_AI_STATE + j] = 9;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Hoarder_Frantic(int k) {  // 86a91d
+    pub(super) fn sprite_hoarder_frantic(&mut self, k: usize) {
+        const GFX: [u8; 4] = [0, 1, 0, 1];
+        const OAM_FLAGS: [u8; 4] = [0, 0, 0x40, 0];
+        const XVEL: [i8; 4] = [-16, 16, -16, 16];
+        const YVEL: [i8; 4] = [-16, -16, 16, 16];
+
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_from_link(k);
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 {
+            self.sprite_check_damage_to_link(k);
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let mut j = usize::from(self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 3;
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        if self.ram[SPRITE_WALLCOLL + k] != 0 {
+            self.ram[SPRITE_DELAY_AUX4 + k] = 16;
+            j = usize::from(self.get_random_number() & 3);
+            self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+            self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+        } else {
+            self.sprite_move_xy(k);
+        }
+        self.sprite_check_tile_collision2(k);
+        if self.ram[SPRITE_DELAY_AUX4 + k] == 0 && (((k as u8) ^ self.ram[FRAME_COUNTER]) & 31) == 0
+        {
+            let pt = self.sprite_project_speed_towards_link(k, 16);
+            self.ram[SPRITE_Y_VEL + k] = pt.y.wrapping_neg();
+            self.ram[SPRITE_X_VEL + k] = pt.x.wrapping_neg();
+        }
+        if (self.ram[FRAME_COUNTER] & 1) != 0 {
+            return;
+        }
+
+        self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+        let (end, typ) = if self.ram[SPRITE_G_DRAW + k] == 192 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 15;
+            self.ram[SPRITE_STATE + k] = 6;
+            self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(4);
+            (1, 0xd9)
+        } else {
+            if (self.ram[SPRITE_G_DRAW + k] & 15) != 0 {
+                return;
+            }
+            (
+                0,
+                if self.ram[SPRITE_HEAD_DIR + k] == 6 {
+                    0xdb
+                } else {
+                    0xd9
+                },
+            )
+        };
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically_ex(k, typ, &mut info, end);
+        if j >= 0 {
+            let j = j as usize;
+            self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_add(1);
+            self.sprite_set_spawned_coordinates(j, &info);
+            self.sprite_set_x(j, info.r0_x.wrapping_add(8));
+            self.ram[SPRITE_Z_VEL + j] = 32;
+            self.ram[SPRITE_DELAY_AUX4 + j] = 16;
+            let pt = self.sprite_project_speed_towards_link(j, 16);
+            self.ram[SPRITE_Y_VEL + j] = !pt.y;
+            self.ram[SPRITE_X_VEL + j] = !pt.x;
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x30);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_EC_ThrownItem(int k) {  // 86aae0
+    pub(super) fn sprite_ec_thrown_item(&mut self, k: usize) {
+        if self.ram[SPRITE_CHR_HALFSLOT_STATE] < 3 {
+            if self.ram[SORT_SPRITES_SETTING] != 0 && self.ram[SPRITE_FLOOR + k] != 0 {
+                let spr_slot = 0x2c + (k & 3);
+                write_le_u16(&mut self.ram, OAM_CUR_PTR, (0x0800 + spr_slot * 4) as u16);
+                write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, (0x0a20 + spr_slot) as u16);
+            }
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_STATE + k];
+            if self.ram[SPRITE_C_DRAW + k] >= 6 {
+                self.sprite_draw_thrown_item_gigantic(k);
+            } else {
+                self.sprite_draw_single_large(k);
+                let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+                let t = self.ram[PLAYER_IS_INDOORS].wrapping_add(self.ram[IS_IN_DARK_WORLD_DRAW]);
+                let j = usize::from(self.ram[SPRITE_C_DRAW + k]);
+                self.ram[oam + 2] = K_THROWABLE_SCENERY_CHAR[j + if t >= 2 { 6 } else { 0 }];
+                self.ram[oam + 3] = (self.ram[oam + 3] & 0xf0) | K_THROWABLE_SCENERY_FLAGS[j];
+                self.ram[SPRITE_OAM_FLAGS + k] =
+                    (self.ram[SPRITE_OAM_FLAGS + k] & 0xc0) | (self.ram[oam + 3] & 0x0f);
+            }
+        }
+        if self.ram[SPRITE_STATE + k] == 9 {
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.throwable_scenery_interact_with_sprites_and_tiles(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void CoveredRupeeCrab_Draw(int k) {  // 86aa48
+    pub(super) fn covered_rupee_crab_draw(&mut self, k: usize) {
+        const Y: [i8; 12] = [0, 0, 0, -3, 0, -5, 0, -6, 0, -6, 0, -6];
+        const CH: [u8; 12] = [
+            0x44, 0x44, 0xe8, 0x44, 0xe8, 0x44, 0xe6, 0x44, 0xe8, 0x44, 0xe6, 0x44,
+        ];
+        const FL: [u8; 12] = [0, 0x0c, 3, 0x0c, 3, 0x0c, 3, 0x0c, 3, 0x0c, 0x43, 0x0c];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        if self.ram[SPRITE_CHR_HALFSLOT_STATE] >= 3 {
+            return;
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let r7 = if self.ram[SPRITE_TYPE + k] == 0x17 {
+            2
+        } else {
+            0
+        };
+        let r6 = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        for i in (0..2).rev() {
+            let j = i + r6;
+            let ch = CH[j];
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x,
+                info_y.wrapping_add(Y[j] as i16 as u16),
+                ch.wrapping_add(if ch == 0x44 { r7 } else { 0 }),
+                (info_flags & !1) | FL[j],
+                2,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
+    pub(super) fn sprite_28_dark_world_hint_npc(&mut self, k: usize) {
+        self.story_teller_1_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 4) & 1;
+        }
+
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.dark_world_hint_npc_run_state(k, 0x00ff),
+            1 => self.dark_world_hint_npc_run_state(k, 0x0101),
+            2 => self.dark_world_hint_npc_run_state(k, 0x0102),
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    if (self.ram[FRAME_COUNTER] & 0x3f) == 0 {
+                        self.ram[SPRITE_OAM_FLAGS + k] ^= 0x40;
+                    }
+                    if self.get_random_number() == 0 {
+                        self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                    }
+                }
+                self.sprite_show_solicited_message(k, 0x0149);
+            }
+            4 => {
+                self.ram[SPRITE_GRAPHICS + k] = (self.ram[FRAME_COUNTER] >> 1) & 1;
+                self.sprite_move_z(k);
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                }
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k]
+                    .wrapping_add(if self.ram[SPRITE_Z + k] >= 4 { 0xff } else { 1 });
+                self.dark_world_hint_npc_run_state(k, 0x0103);
+            }
+            _ => {}
+        }
+    }
+
+    fn dark_world_hint_npc_run_state(&mut self, k: usize, paid_msg: u16) {
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => self.dark_world_hint_npc_idle(k),
+            1 => {
+                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0
+                    && self.dark_world_hint_npc_handle_payment()
+                {
+                    self.sprite_show_message_unconditional(paid_msg);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                } else {
+                    self.sprite_show_message_unconditional(0x0100);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            2 => self.dark_world_hint_npc_restore_health(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void StoryTeller_1_Draw(int k) {  // 86af1a
+    pub(super) fn story_teller_1_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 10] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a4a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4a6e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a24,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4a24,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0804,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4804,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a6a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a6c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a0e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0a2e,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_SUBTYPE2 + k]) * 2
+            + usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 1], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SmithyFrog_Draw(int k) {  // 86b339
+    pub(super) fn smithy_frog_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 1] = [DrawMultipleData {
+            x: 0,
+            y: 0,
+            char_flags: 0x00c8,
+            ext: 2,
+        }];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SmithySpark_Draw(int k) {  // 86b72c
+    pub(super) fn smithy_spark_draw(&mut self, k: usize) {
+        self.oam_allocate_from_region_b(8);
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: 0,
+                y: 3,
+                char_flags: 0x41aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -1,
+                char_flags: 0x41aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 0,
+                char_flags: 0x0190,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 0,
+                char_flags: 0x4190,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -5,
+                y: -2,
+                char_flags: 0x0191,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: -2,
+                char_flags: 0x0191,
+                ext: 0,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void GerudoMan_Draw(int k) {  // 85ba24
+    pub(super) fn gerudo_man_draw(&mut self, k: usize) {
+        const X: [i8; 18] = [4, 4, 4, 4, 4, 4, -8, 8, 8, -8, 8, 8, -16, 0, 16, -16, 0, 16];
+        const Y: [i8; 18] = [8, 8, 8, 8, 8, 8, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        const CH: [u8; 18] = [
+            0xb8, 0xb8, 0xb8, 0xb8, 0xb8, 0xb8, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa4, 0xa2,
+            0xa0, 0xa0, 0xa2, 0xa4,
+        ];
+        const FL: [u8; 18] = [
+            0, 0, 0, 0x40, 0x40, 0x40, 0, 0x40, 0x40, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0,
+        ];
+        const BIG: [u8; 18] = [0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        for i in (0..3).rev() {
+            let j = g * 3 + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[j] as i16 as u16),
+                info_y.wrapping_add(Y[j] as i16 as u16),
+                CH[j],
+                FL[j] | info_flags,
+                BIG[j],
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Recruit_Draw(int k) {  // 85bd7e
+    pub(super) fn recruit_draw(&mut self, k: usize) {
+        const SOLDIER_CH: [u8; 4] = [0x42, 0x42, 0x40, 0x44];
+        const SOLDIER_FL: [u8; 4] = [0x40, 0, 0, 0];
+        const X: [i16; 8] = [2, 2, -2, -2, 0, 0, 0, 0];
+        const CH: [u8; 8] = [0x8a, 0x8c, 0x8a, 0x8c, 0x86, 0x88, 0x8e, 0xa0];
+        const FL: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0, 0, 0];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut info = SpritePrepOamCoordsRet {
+            x: info_x,
+            y: info_y,
+            r4: 0,
+            flags: info_flags,
+        };
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let hd = usize::from(self.ram[SPRITE_HEAD_DIR + k] & 3);
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            info_x,
+            info_y.wrapping_sub(11),
+            SOLDIER_CH[hd],
+            SOLDIER_FL[hd] | info_flags,
+            2,
+        );
+        let r6 = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.set_oam_helper0_at_for_draw(
+            oam + 4,
+            info_x.wrapping_add(X[r6] as u16),
+            info_y,
+            CH[r6],
+            FL[r6] | info_flags,
+            2,
+        );
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void QuarrelBros_Draw(int k) {  // 85e17f
+    pub(super) fn quarrel_bros_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 0,
+                y: -12,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -11,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x400a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -12,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -11,
+                char_flags: 0x0004,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x400a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -12,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -11,
+                char_flags: 0x0008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x400a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -12,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x000a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -11,
+                char_flags: 0x4008,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 1,
+                char_flags: 0x400a,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2
+            + usize::from(self.ram[SPRITE_D + k]) * 4;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Lumberjacks_Draw(int k) {  // 8dc6ba
+    pub(super) fn lumberjacks_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 33] = [
+            DrawMultipleData {
+                x: -23,
+                y: 5,
+                char_flags: 0x02be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -15,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 17,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 25,
+                y: 5,
+                char_flags: 0x42be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -32,
+                y: -8,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -32,
+                y: 4,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 30,
+                y: -8,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 31,
+                y: 4,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -19,
+                y: 5,
+                char_flags: 0x02be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -11,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 21,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 29,
+                y: 5,
+                char_flags: 0x42be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -31,
+                y: -8,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -32,
+                y: 4,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 31,
+                y: -8,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 31,
+                y: 4,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -19,
+                y: 5,
+                char_flags: 0x02be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -11,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 13,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 21,
+                y: 5,
+                char_flags: 0x02bf,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 29,
+                y: 5,
+                char_flags: 0x42be,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -32,
+                y: -8,
+                char_flags: 0x400e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -32,
+                y: 4,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 32,
+                y: -8,
+                char_flags: 0x000e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 31,
+                y: 4,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 11;
+        self.sprite_draw_multiple(k, &D[base..base + 11], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Lumberjacks(int k) {  // 8dc51b
+    pub(super) fn sprite_lumberjacks(&mut self, k: usize) {
+        const MSG: [u16; 4] = [0x012c, 0x012d, 0x012e, 0x012d];
+
+        self.lumberjacks_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.lumberjack_check_proximity(k, 0) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.link_cancel_dash();
+        }
+        if !self.sprite_check_if_link_is_busy()
+            && self.lumberjack_check_proximity(k, 1)
+            && self.ram[FILTERED_JOYPAD_L] & 0x80 != 0
+        {
+            let msg = usize::from(self.ram[LINK_X_COORD] >= self.ram[SPRITE_X_LO + k])
+                + usize::from(self.ram[LINK_SWORD_TYPE] >= 2) * 2;
+            self.sprite_show_message_unconditional(MSG[msg]);
+        }
+        self.ram[SPRITE_GRAPHICS + k] = self.ram[FRAME_COUNTER] >> 5 & 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void GreatCatfish_Draw(int k) {  // 9de320
+    pub(super) fn great_catfish_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 28] = [
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x008d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x008d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x008d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x009c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x009d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x408d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x409d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x409c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0xc09d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0xc09c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0xc08d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0xc08c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0xc09d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0xc09c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0xc09d,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0xc09c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00bd,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40bd,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40bd,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40bd,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4086,
+                ext: 2,
+            },
+        ];
+        let g = self.ram[SPRITE_GRAPHICS + k];
+        if g != 0 {
+            let base = usize::from(g - 1) * 4;
+            self.sprite_draw_multiple(k, &D[base..base + 4], None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BigFaerie_Draw(int k) {  // 9dc5d0
+    pub(super) fn big_faerie_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00ae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x40ae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -8,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -8,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x00ac,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x40ac,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void FaerieCloud_Draw(int k) {  // 9dc616
+    pub(super) fn faerie_cloud_draw(&mut self, k: usize) {
+        const XY: [u16; 8] = [0xfff4, 0xfffa, 0, 6, 12, 18, 0, 6];
+        if !sign8(self.ram[SPRITE_A + k])
+            && (self.ram[SPRITE_A + k] & self.ram[SPRITE_SUBTYPE2 + k]) == 0
+        {
+            let x = XY[usize::from(self.get_random_number() & 7)];
+            let y = XY[usize::from(self.get_random_number() & 7)];
+            self.sprite_garnish_spawn_sparkle(k, x, y);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_C8_BigFairy(int k) {  // 9dc414
+    pub(super) fn sprite_c8_big_fairy(&mut self, k: usize) {
+        if self.ram[SPRITE_HEAD_DIR + k] != 0 {
+            self.sprite_fairy_cloud(k);
+        } else {
+            self.sprite_big_fairy(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_FairyCloud(int k) {  // 9dc41c
+    pub(super) fn sprite_fairy_cloud(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.faerie_cloud_draw(k);
+        if (self.ram[SPRITE_SUBTYPE2 + k] & 31) == 0 {
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x31);
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_A + k] = 0;
+                self.sprite_apply_speed_towards_link(k, 8);
+                self.sprite_move_xy(k);
+                self.sprite_get16_bit_coords(k);
+                let x = self
+                    .player_state_view()
+                    .x()
+                    .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_X))
+                    .wrapping_add(3);
+                let y = self
+                    .player_state_view()
+                    .y()
+                    .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_Y))
+                    .wrapping_add(11);
+                if x < 6 && y < 6 {
+                    let hearts = read_le_u16(&self.ram, LINK_HEARTS_FILLER).wrapping_add(0x00a0);
+                    write_le_u16(&mut self.ram, LINK_HEARTS_FILLER, hearts);
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[LINK_HEALTH_CURRENT] == self.ram[LINK_HEALTH_CAPACITY] {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_AUX2_DRAW] = 112;
+                }
+            }
+            2 => {
+                if (self.ram[SPRITE_SUBTYPE2 + k] & 15) != 0 || sign8(self.ram[SPRITE_A + k]) {
+                    return;
+                }
+                self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_mul(2).wrapping_add(1);
+                if self.ram[SPRITE_A + k] >= 0x80 {
+                    self.ram[SPRITE_A + k] = 255;
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                    self.ram[SPRITE_STATE + k] = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BigFairy(int k) {  // 9dc4bf
+    pub(super) fn sprite_big_fairy(&mut self, k: usize) {
+        let mut i = self.ram[SPRITE_DELAY_AUX2_DRAW + k];
+        if i != 0 && i < 0x40 {
+            i = i.wrapping_sub(1);
+            if i == 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            if (i & 1) != 0 {
+                return;
+            }
+        }
+        self.big_faerie_draw(k);
+        self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_sub(1);
+        if sign8(self.ram[SPRITE_G_DRAW + k]) {
+            self.ram[SPRITE_G_DRAW + k] = 5;
+            self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1) & 3;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.faerie_cloud_draw(k);
+                self.ram[SPRITE_A + k] = 1;
+                let mut pt = PointU8 { x: 0, y: 0 };
+                self.sprite_direction_to_face_link(k, Some(&mut pt));
+                if pt.x.wrapping_add(0x30) < 0x60 && pt.y.wrapping_add(0x30) < 0x60 {
+                    self.link_cancel_dash();
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x015a);
+                    self.sprite_show_message_minimal_c();
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+                    let mut info = SpriteSpawnInfo::default();
+                    let j = self.sprite_spawn_dynamically(k, 0xc8, &mut info);
+                    assert!(
+                        j >= 0,
+                        "Sprite_BigFairy expected Sprite_SpawnDynamically to succeed"
+                    );
+                    let j = j as usize;
+                    self.sprite_set_spawned_coordinates(j, &info);
+                    self.ram[SPRITE_HEAD_DIR + j] = 1;
+                    self.ram[SPRITE_Y_LO + j] =
+                        self.ram[SPRITE_Y_LO + j].wrapping_sub(self.ram[SPRITE_Z + k]);
+                    self.ram[SPRITE_Z + j] = 0;
+                }
+            }
+            1 => {}
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_AC_Apple(int k) {  // 9ef515
+    pub(super) fn sprite_ac_apple(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.sprite_apple(k);
+            return;
+        }
+        if self.ram[SPRITE_E + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+            let mut n = (self.get_random_number() & 3).wrapping_add(2);
+            loop {
+                self.spawn_apple(k);
+                if n == 0 {
+                    break;
+                }
+                n = n.wrapping_sub(1);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Apple(int k) {  // 9ef57c
+    pub(super) fn sprite_apple(&mut self, k: usize) {
+        if self.ram[SPRITE_A + k] >= 16 || (self.ram[FRAME_COUNTER] & 2) != 0 {
+            self.sprite_draw_single_large(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_A + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        self.sprite_move_xyz(k);
+        if self.sprite_check_damage_to_link(k) {
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x0b);
+            self.ram[LINK_HEARTS_FILLER] = self.ram[LINK_HEARTS_FILLER].wrapping_add(8);
+            self.ram[SPRITE_STATE + k] = 0;
+            return;
+        }
+        if (self.ram[FRAME_COUNTER] & 1) == 0 {
+            self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_sub(1);
+        }
+
+        if !sign8(self.ram[SPRITE_Z + k].wrapping_sub(1)) {
+            self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+            return;
+        }
+        self.ram[SPRITE_Z + k] = 0;
+        let a = if sign8(self.ram[SPRITE_Z_VEL + k]) {
+            self.ram[SPRITE_Z_VEL + k]
+        } else {
+            0
+        };
+        self.ram[SPRITE_Z_VEL + k] = a.wrapping_neg() >> 1;
+        if self.ram[SPRITE_X_VEL + k] != 0 {
+            self.ram[SPRITE_X_VEL + k] =
+                self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(self.ram[SPRITE_X_VEL + k]) {
+                    1
+                } else {
+                    0xff
+                });
+        }
+        if self.ram[SPRITE_Y_VEL + k] != 0 {
+            self.ram[SPRITE_Y_VEL + k] =
+                self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(self.ram[SPRITE_Y_VEL + k]) {
+                    1
+                } else {
+                    0xff
+                });
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void PsychoTrooper_Draw(int k) {  // 85ccd5
+    pub(super) fn psycho_trooper_draw(&mut self, k: usize) {
+        const SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        self.sprite_draw_guard_head(k, &info, 3);
+        self.sprite_draw_bnc_body(k, &info, 2);
+        self.sprite_draw_guard_spear(k, &info, 0);
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info.x,
+                y: info.y,
+                r4: info.r4,
+                flags: info.flags,
+            };
+            self.sprite_draw_shadow_custom(
+                k,
+                &mut shadow_info,
+                SHADOW[usize::from(self.ram[SPRITE_D + k] & 3)],
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void JavelinTrooper_Draw(int k) {  // 85d192
+    pub(super) fn javelin_trooper_draw(&mut self, k: usize) {
+        const SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        self.sprite_draw_guard_head(k, &info, 3);
+        self.sprite_draw_bnc_body(k, &info, 2);
+        if self.ram[SPRITE_GRAPHICS + k] < 20 {
+            self.sprite_draw_guard_spear(k, &info, 0);
+        }
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info.x,
+                y: info.y,
+                r4: info.r4,
+                flags: info.flags,
+            };
+            self.sprite_draw_shadow_custom(
+                k,
+                &mut shadow_info,
+                SHADOW[usize::from(self.ram[SPRITE_D + k] & 3)],
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BushJavelinSoldier_Draw(int k) {  // 85d141
+    pub(super) fn bush_javelin_soldier_draw(&mut self, k: usize) {
+        const SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+        let bak0 = self.ram[SPRITE_GRAPHICS + k];
+        self.ram[SPRITE_GRAPHICS + k] = 0;
+        let bak1 = self.ram[SPRITE_OAM_FLAGS + k];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0xf1) | 2;
+        let bak2 = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, bak2.wrapping_add(8));
+        self.sprite_draw_single_large(k);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, bak2);
+        self.ram[SPRITE_OAM_FLAGS + k] = bak1;
+        self.ram[SPRITE_GRAPHICS + k] = bak0;
+
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        let guard_info = SpritePrepOamCoordsRet {
+            x: tuple.0,
+            y: tuple.1,
+            r4: 0,
+            flags: tuple.2,
+        };
+        self.guard_animate_head(k, 0x10 / 4, &guard_info);
+        self.sprite_draw_bnc_body(k, &info, 0x0c / 4);
+        if self.ram[SPRITE_GRAPHICS + k] < 20 {
+            self.sprite_draw_guard_spear(k, &info, 4 / 4);
+        }
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info.x,
+                y: info.y,
+                r4: info.r4,
+                flags: info.flags,
+            };
+            self.sprite_draw_shadow_custom(
+                k,
+                &mut shadow_info,
+                SHADOW[usize::from(self.ram[SPRITE_D + k] & 3)],
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void ArcherSoldier_Draw(int k) {  // 85d38c
+    pub(super) fn archer_soldier_draw(&mut self, k: usize) {
+        const WEAPON_OAM_OFFS: [u8; 4] = [0, 0, 0, 16];
+        const HEAD_OAM_OFFS: [u8; 4] = [16, 16, 16, 0];
+        const BODY_OAM_OFFS: [u8; 4] = [20, 20, 20, 4];
+        const SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        let guard_info = SpritePrepOamCoordsRet {
+            x: tuple.0,
+            y: tuple.1,
+            r4: 0,
+            flags: tuple.2,
+        };
+        let d = usize::from(self.ram[SPRITE_D + k] & 3);
+        self.guard_animate_head(k, HEAD_OAM_OFFS[d] >> 2, &guard_info);
+        self.guard_animate_body(k, BODY_OAM_OFFS[d] >> 2, &guard_info);
+        self.sprite_draw_archer_weapon(k, i32::from(WEAPON_OAM_OFFS[d] >> 2), &info);
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info.x,
+                y: info.y,
+                r4: info.r4,
+                flags: info.flags,
+            };
+            self.sprite_draw_shadow_custom(k, &mut shadow_info, SHADOW[d]);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_45_HogSpearMan(int k) {  // 85cbe0
+    pub(super) fn sprite_45_hog_spear_man(&mut self, k: usize) {
+        self.guard_handle_all_animation(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.bolt_guard_trigger_chase_theme(k);
+        self.guard_parry_sword_attacks(k);
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        if self.ram[SPRITE_WALLCOLL + k] == 0 {
+            self.sprite_move_xy(k);
+        }
+        self.sprite_check_tile_collision(k);
+        self.sprite_check_damage_to_link(k);
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+            let dir = self.sprite_direction_to_face_link(k, None);
+            self.ram[SPRITE_HEAD_DIR + k] = dir;
+            self.ram[SPRITE_D + k] = dir;
+            self.sprite_apply_speed_towards_link(k, 18);
+            self.guard_apply_speed_in_direction(k);
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.guard_tick_and_update_body(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_44_BluesainBolt(int k) {  // 85cc65
+    pub(super) fn sprite_44_bluesain_bolt(&mut self, k: usize) {
+        self.psycho_trooper_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.bolt_guard_trigger_chase_theme(k);
+        self.guard_parry_sword_attacks(k);
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        if self.ram[SPRITE_WALLCOLL + k] == 0 {
+            self.sprite_move_xy(k);
+        }
+        self.sprite_check_tile_collision(k);
+        self.sprite_check_damage_to_link(k);
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+            let dir = self.sprite_direction_to_face_link(k, None);
+            self.ram[SPRITE_D + k] = dir;
+            self.ram[SPRITE_HEAD_DIR + k] = dir;
+            self.sprite_apply_speed_towards_link(k, 18);
+            self.guard_apply_speed_in_direction(k);
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let j =
+            usize::from(((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 7) | (self.ram[SPRITE_D + k] << 3));
+        self.ram[SPRITE_GRAPHICS + k] = K_FLAIL_TROOPER_GFX[j];
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_49_RedBushGuard(int k) {  // 85d1ac
+    pub(super) fn sprite_49_red_bush_guard(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_AI_STATE + k] == 2 {
+                self.bush_javelin_soldier_draw(k);
+            } else {
+                self.bush_soldier_common_draw(k);
+            }
+        }
+        self.sprite_bush_guard_main(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_47_GreenBushGuard(int k) {  // 85d1bf
+    pub(super) fn sprite_47_green_bush_guard(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_GRAPHICS + k] >= 14 {
+                self.archer_soldier_draw(k);
+            } else {
+                self.bush_soldier_common_draw(k);
+            }
+        }
+        self.sprite_bush_guard_main(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_48_RedJavelinGuard(int k) {  // 85cde1
+    pub(super) fn sprite_48_red_javelin_guard(&mut self, k: usize) {
+        const GFX: [u8; 4] = [12, 0, 18, 8];
+        const DIR_LOCK: [u8; 4] = [3, 2, 0, 1];
+        let bak0 = self.ram[SPRITE_GRAPHICS + k];
+        let j = usize::from(self.ram[SPRITE_D + k] & 3);
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            self.ram[SPRITE_D + k] = DIR_LOCK[j];
+            self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        }
+        self.javelin_trooper_draw(k);
+        self.ram[SPRITE_D + k] = j as u8;
+        self.ram[SPRITE_GRAPHICS + k] = bak0;
+        self.soldier_throwing_common(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_46_BlueArcher(int k) {  // 85cdff
+    pub(super) fn sprite_46_blue_archer(&mut self, k: usize) {
+        const GFX: [u8; 4] = [8, 0, 12, 5];
+        const DIR_LOCK: [u8; 4] = [3, 2, 0, 1];
+        let bak0 = self.ram[SPRITE_GRAPHICS + k];
+        let j = usize::from(self.ram[SPRITE_D + k] & 3);
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            self.ram[SPRITE_D + k] = DIR_LOCK[j];
+            self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        }
+        self.archer_soldier_draw(k);
+        self.ram[SPRITE_D + k] = j as u8;
+        self.ram[SPRITE_GRAPHICS + k] = bak0;
+        self.soldier_throwing_common(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SpikeTrap_Draw(int k) {  // 9ecfff
+    pub(super) fn spike_trap_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x00c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x40c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x80c4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0xc0c4,
+                ext: 2,
+            },
+        ];
+        self.sprite_draw_multiple(k, &D, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ChainBallTrooper_Draw(int k) {  // sprite_main.c:1403
+    pub(super) fn chain_ball_trooper_draw(&mut self, k: usize) {
+        const SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        self.sprite_draw_guard_head(k, &info, 0x18 / 4);
+        self.sprite_draw_bnc_body(k, &info, 0x14 / 4);
+        self.sprite_draw_bnc_flail(k, &info);
+
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(tuple);
+        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+            let mut shadow_info = SpritePrepOamCoordsRet {
+                x: info.x,
+                y: info.y,
+                r4: info.r4,
+                flags: info.flags,
+            };
+            self.sprite_draw_shadow_custom(
+                k,
+                &mut shadow_info,
+                SHADOW[usize::from(self.ram[SPRITE_D + k] & 3)],
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_63_DebirandoPit(int k) {  // 858531
+    pub(super) fn sprite_63_debirando_pit(&mut self, k: usize) {
+        const OPENING_GFX: [u8; 4] = [5, 4, 3, 3];
+        const CLOSING_GFX: [u8; 4] = [3, 3, 4, 5];
+
+        let mut pt = PointU8 { x: 0, y: 0 };
+        self.sprite_direction_to_face_link(k, Some(&mut pt));
+        if pt.y.wrapping_add(0x20) < 0x40 && pt.x.wrapping_add(0x20) < 0x40 {
+            self.oam_allocate_from_region_b(16);
+        }
+
+        self.debirando_pit_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        let j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+        if self.ram[SPRITE_STATE + j] == 6 {
+            self.ram[SPRITE_STATE + k] = self.ram[SPRITE_STATE + j];
+            self.ram[SPRITE_DELAY_MAIN + k] = self.ram[SPRITE_DELAY_MAIN + j];
+            self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(4);
+            return;
+        }
+        if self.ram[SPRITE_GRAPHICS + k] < 3 && self.sprite_check_damage_to_link_same_layer(k) {
+            self.link_cancel_dash();
+            if (self.ram[FILTERED_JOYPAD_L] & 16) == 0 {
+                self.ram[LINK_PREVENT_FROM_MOVING] = 1;
+            }
+            self.sprite_apply_speed_towards_link(k, 16);
+            let v = self.ram[SPRITE_Y_VEL + k];
+            let mag = if sign8(v) { v.wrapping_neg() } else { v };
+            let t = u16::from(mag) + u16::from(self.ram[SPRITE_A + k]);
+            self.ram[SPRITE_A + k] = t as u8;
+            if t >= 256 {
+                write_le_u16(
+                    &mut self.ram,
+                    DRAG_PLAYER_Y,
+                    if sign8(v) { 1 } else { (-1i16) as u16 },
+                );
+            }
+
+            let v = self.ram[SPRITE_X_VEL + k];
+            let mag = if sign8(v) { v.wrapping_neg() } else { v };
+            let t = u16::from(mag) + u16::from(self.ram[SPRITE_B + k]);
+            self.ram[SPRITE_B + k] = t as u8;
+            if t >= 256 {
+                write_le_u16(
+                    &mut self.ram,
+                    DRAG_PLAYER_X,
+                    if sign8(v) { 1 } else { (-1i16) as u16 },
+                );
+            }
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_GRAPHICS + k] = 6;
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 63;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        OPENING_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4)];
+                }
+            }
+            2 => {
+                if (self.ram[FRAME_COUNTER] & 15) == 0 {
+                    self.ram[SPRITE_GRAPHICS + k] = self.ram[SPRITE_GRAPHICS + k].wrapping_add(1);
+                    if self.ram[SPRITE_GRAPHICS + k] >= 3 {
+                        self.ram[SPRITE_GRAPHICS + k] = 0;
+                    }
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 63;
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                }
+            }
+            3 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        CLOSING_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_64_Debirando(int k) {  // 85874d
+    pub(super) fn sprite_64_debirando(&mut self, k: usize) {
+        const EMERGE_GFX: [u8; 2] = [1, 0];
+        const SUBMERGE_GFX: [u8; 2] = [0, 1];
+
+        self.debirando_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 31;
+                }
+            }
+            1 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 128;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        EMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4)];
+                }
+            }
+            2 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 31;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                } else {
+                    if (self.ram[SPRITE_DELAY_MAIN + k] & 31)
+                        | self.ram[SPRITE_G_DRAW + k]
+                        | self.frame_control_view().submodule()
+                        | self.ram[SPRITE_PAUSE + k]
+                        | self.ram[FLAG_UNK1]
+                        == 0
+                    {
+                        let _ = self.sprite_spawn_fireball(k);
+                    }
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    self.ram[SPRITE_GRAPHICS + k] = ((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 1) + 2;
+                }
+            }
+            3 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 223;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        SUBMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 4)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void DebirandoPit_Draw(int k) {  // 8586e4
+    pub(super) fn debirando_pit_draw(&mut self, k: usize) {
+        const X: [i16; 24] = [
+            -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, 0, 8, 0, 8, 0, 8, 0, 8, -8, 8, -8, 8,
+        ];
+        const Y: [i16; 24] = [
+            -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, -8, -8, 8, 8,
+        ];
+        const CH: [u8; 24] = [
+            4, 4, 4, 4, 0x22, 0x22, 0x22, 0x22, 2, 2, 2, 2, 0x29, 0x29, 0x29, 0x29, 0x39, 0x39,
+            0x39, 0x39, 0x2a, 0x2a, 0x2a, 0x2a,
+        ];
+        const FL: [u8; 24] = [
+            0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0,
+            0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0,
+        ];
+        const BIG: [u8; 6] = [2, 2, 2, 0, 0, 2];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        if g == 6 {
+            return;
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let big = BIG[g];
+        for i in (0..4).rev() {
+            let j = g * 4 + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[j] as u16),
+                info_y.wrapping_add(Y[j] as u16),
+                CH[j],
+                FL[j] | info_flags,
+                big,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Debirando_Draw(int k) {  // 858857
+    pub(super) fn debirando_draw(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            return;
+        }
+        const X: [i8; 16] = [0, 8, 0, 8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0];
+        const Y: [i8; 16] = [2, 2, 6, 6, -2, -2, 6, 6, -4, -4, -4, -4, -4, -4, -4, -4];
+        const CH: [u8; 16] = [
+            0, 0, 0xd8, 0xd8, 0, 0, 0xd9, 0xd9, 0, 0, 0, 0, 0x20, 0x20, 0x20, 0x20,
+        ];
+        const FL: [u8; 16] = [1, 0x41, 0, 0x40, 1, 1, 0, 0x40, 1, 1, 1, 1, 1, 1, 1, 1];
+        const BIG: [u8; 16] = [0, 0, 0, 0, 2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let d = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        for i in (0..4).rev() {
+            let j = d + i;
+            let f = FL[j];
+            let flags = (f ^ info_flags) & if (f & 0x0f) == 0 { 0xf0 } else { 0xff };
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[j] as i16 as u16),
+                info_y.wrapping_add(Y[j] as i16 as u16),
+                CH[j],
+                flags,
+                BIG[j],
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_62_MasterSword(int k) {  // 8588c5
+    pub(super) fn sprite_62_master_sword(&mut self, k: usize) {
+        match self.ram[SPRITE_SUBTYPE2 + k] {
+            0 => self.master_sword_main(k),
+            1 => self.sprite_master_sword_light_fountain(k),
+            2 => self.sprite_master_sword_light_beam(k),
+            3 => self.sprite_master_sword_prop(k),
+            4 => self.sprite_master_sword_light_well(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_57_DesertStatue(int k) {  // 85956d
+    pub(super) fn sprite_57_desert_statue(&mut self, k: usize) {
+        const NEXT_D: [u8; 4] = [3, 2, 0, 1];
+        const XV: [i8; 4] = [16, -16, 0, 0];
+        const YV: [i8; 4] = [0, 0, 16, -16];
+
+        self.desert_barrier_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        let dmg = self.sprite_check_damage_to_link_same_layer(k);
+        if dmg {
+            self.sprite_nullify_hookshot_drag();
+            self.sprite_repel_dash();
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 || sign8(self.ram[SPRITE_AI_STATE + k]) {
+            return;
+        }
+
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            if self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] == 0 {
+                return;
+            }
+            self.ram[SPRITE_AI_STATE + k] = self.ram[MESSAGE_OR_SPRITE_STATE_CACHE];
+            self.ram[SPRITE_DELAY_MAIN + k] = 128;
+            self.ram[SOUND_EFFECT_AMBIENT] = 7;
+        }
+
+        if dmg && self.ram[LINK_INCAPACITATED_TIMER] == 0 {
+            self.ram[LINK_INCAPACITATED_TIMER] = 16;
+            self.sprite_apply_speed_towards_link(k, 32);
+        }
+
+        let j = usize::from(self.ram[SPRITE_D + k]);
+        self.ram[SPRITE_X_VEL + k] = XV[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = YV[j] as u8;
+        self.sprite_move_xy(k);
+        if self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_D + k] = NEXT_D[usize::from(self.ram[SPRITE_D + k])];
+        }
+        self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        if (self.ram[SPRITE_SUBTYPE2 + k] & 1) == 0 {
+            self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+            if self.ram[SPRITE_G_DRAW + k] == 130 {
+                self.ram[SPRITE_AI_STATE + k] = 128;
+                self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void DesertBarrier_Draw(int k) {  // 859626
+    pub(super) fn desert_barrier_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x00ae,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x40ae,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+            self.ram[SOUND_EFFECT_2] = 0x1b;
+            self.ram[SOUND_EFFECT_AMBIENT] = 5;
+        }
+        self.ram[CUR_SPRITE_X] =
+            self.ram[CUR_SPRITE_X].wrapping_add((self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 1);
+        let mut pt = PointU8 { x: 0, y: 0 };
+        self.sprite_direction_to_face_link(k, Some(&mut pt));
+        if pt.x.wrapping_add(0x20) < 0x40 && pt.y.wrapping_add(0x20) < 0x40 {
+            self.oam_allocate_from_region_b(16);
+        }
+        self.sprite_draw_multiple(k, &D, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void SageMantle_Draw(int k) {  // 85dc8a
+    pub(super) fn sage_mantle_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 4] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x162c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x562c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x062e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 16,
+                char_flags: 0x462e,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_C + k] == 0 {
+            self.oam_allocate_from_region_b(0x10);
+        }
+        self.sprite_draw_multiple(k, &D, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_DashItem(int k) {  // 85fbf7
+    pub(super) fn sprite_dash_item(&mut self, k: usize) {
+        match self.ram[SPRITE_GRAPHICS + k] {
+            0 => self.sprite_book_of_mudora(k),
+            1 => self.sprite_bonk_key(k),
+            2 => self.sprite_lumberjack_tree(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BonkKey(int k) {  // 85fc04
+    pub(super) fn sprite_bonk_key(&mut self, k: usize) {
+        self.sprite_draw_thin_and_tall(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[SPRITE_AI_STATE + k] = 3;
+        }
+        self.dash_item_move_and_bounce(k, true);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if read_le_u16(&self.ram, CUR_SPRITE_X)
+                    .wrapping_sub(self.player_state_view().x())
+                    .wrapping_add(16)
+                    < 33
+                    && read_le_u16(&self.ram, CUR_SPRITE_Y)
+                        .wrapping_sub(self.player_state_view().y())
+                        .wrapping_add(24)
+                        < 41
+                    && (read_le_u16(&self.ram, BG1_X_OFFSET) | read_le_u16(&self.ram, BG1_Y_OFFSET))
+                        != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_Z_VEL + k] = 32;
+                self.ram[SPRITE_Y_VEL + k] = (-5i8) as u8;
+                self.ram[SOUND_EFFECT_2] = 27;
+                self.ram[SPRITE_AI_STATE + k] = 2;
+            }
+            2 => {
+                if self.ram[SPRITE_Z + k] == 0 {
+                    self.ram[SPRITE_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
+                }
+            }
+            3 => {
+                self.ram[LINK_NUM_KEYS] = self.ram[LINK_NUM_KEYS].wrapping_add(1);
+                self.ram[SPRITE_STATE + k] = 0;
+                let bits = read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS)
+                    | if self.ram[SPRITE_DIE_ACTION + k] != 0 {
+                        0x2000
+                    } else {
+                        0x4000
+                    };
+                write_le_u16(&mut self.ram, DUNG_SAVEGAME_STATE_BITS, bits);
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x2f);
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BookOfMudora(int k) {  // 85fc9e
+    pub(super) fn sprite_book_of_mudora(&mut self, k: usize) {
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[SPRITE_AI_STATE + k] = 3;
+        }
+        self.dash_item_move_and_bounce(k, false);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[LINK_DIRECTION_FACING] == 0
+                    && read_le_u16(&self.ram, CUR_SPRITE_X)
+                        .wrapping_sub(self.player_state_view().x())
+                        .wrapping_add(39)
+                        < 47
+                    && read_le_u16(&self.ram, CUR_SPRITE_Y)
+                        .wrapping_sub(self.player_state_view().y())
+                        .wrapping_add(40)
+                        < 46
+                    && (read_le_u16(&self.ram, BG1_X_OFFSET) | read_le_u16(&self.ram, BG1_Y_OFFSET))
+                        != 0
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_Z_VEL + k] = 32;
+                self.ram[SPRITE_Y_VEL + k] = (-5i8) as u8;
+                self.ram[SOUND_EFFECT_2] = 27;
+                self.ram[SPRITE_AI_STATE + k] = 2;
+            }
+            2 => {
+                if self.ram[SPRITE_Z + k] == 0 {
+                    self.ram[SPRITE_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
+                }
+            }
+            3 => {
+                self.link_cancel_dash();
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(0x1d, 0);
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            _ => {}
+        }
+    }
+
+    fn dash_item_move_and_bounce(&mut self, k: usize, sfx3: bool) {
+        self.sprite_move_xy(k);
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+        self.sprite_move_z(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Y_VEL + k] = 0;
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_Z_VEL + k]) >> 2;
+            if (self.ram[SPRITE_Z_VEL + k] & 254) != 0 {
+                if sfx3 {
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x14);
+                } else {
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_LumberjackTree(int k) {  // 85fd4d
+    pub(super) fn sprite_lumberjack_tree(&mut self, k: usize) {
+        self.ram[SPRITE_FLAGS2 + k] = 0x8f;
+        self.ram[SPRITE_FLAGS4 + k] = 0x47;
+        self.dash_tree_top_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.sprite_repel_dash();
+        }
+        self.sprite_move_xy(k);
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+        self.sprite_move_z(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 0u8.wrapping_sub(self.ram[SPRITE_Z_VEL + k]) >> 2;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_SUBTYPE2 + k] = 0;
+                if read_le_u16(&self.ram, CUR_SPRITE_X)
+                    .wrapping_sub(self.player_state_view().x())
+                    .wrapping_add(24)
+                    < 65
+                    && read_le_u16(&self.ram, CUR_SPRITE_Y)
+                        .wrapping_sub(self.player_state_view().y())
+                        .wrapping_add(32)
+                        < 81
+                    && ((read_le_u16(&self.ram, BG1_X_OFFSET)
+                        | read_le_u16(&self.ram, BG1_Y_OFFSET))
+                        & 0xff)
+                        != 0
+                {
+                    self.ram[SPRITE_Z_VEL + k] = 20;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_Z + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SOUND_EFFECT_2] = 0x1b;
+                    self.ram[SPRITE_X_VEL + k] = (-4i8) as u8;
+                    self.ram[SPRITE_Y_VEL + k] = (-4i8) as u8;
+                    let mut j = self.lumberjack_tree_spawn_leaves(k);
+                    let ju = j as usize;
+                    self.ram[SPRITE_X_VEL + ju] = 5;
+                    self.ram[SPRITE_Y_VEL + ju] = 5;
+                    j = self.lumberjack_tree_spawn_leaves(k);
+                    let ju = j as usize;
+                    self.ram[SPRITE_X_VEL + ju] = 5;
+                    self.ram[SPRITE_Y_VEL + ju] = (-4i8) as u8;
+                    j = self.lumberjack_tree_spawn_leaves(k);
+                    let ju = j as usize;
+                    self.ram[SPRITE_X_VEL + ju] = (-4i8) as u8;
+                    self.ram[SPRITE_Y_VEL + ju] = 4;
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                    if self.ram[SPRITE_SUBTYPE2 + k] == 6 {
+                        self.ram[SPRITE_STATE + k] = 0;
+                    }
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void DashTreeTop_Draw(int k) {  // 85fe6f
+    pub(super) fn dash_tree_top_draw(&mut self, k: usize) {
+        const CHAR_FLAGS: [u16; 16] = [
+            0x3100, 0x3102, 0x7102, 0x7100, 0x3120, 0x3122, 0x7122, 0x7120, 0x3104, 0x3106, 0x7106,
+            0x7104, 0x3124, 0x3126, 0x7126, 0x7124,
+        ];
+        const X: [i8; 16] = [10, 22, 30, 1, 34, 5, 13, 29, 0, 17, 27, 44, 15, 33, 18, 26];
+        const Y: [i8; 16] = [0, 4, 2, 7, 10, 16, 24, 23, 34, 35, 30, 31, 46, 42, 10, 11];
+        const CH: [u8; 6] = [8, 8, 0x28, 0x28, 0x2a, 0x2a];
+        const FL: [u8; 6] = [0x31, 0x71, 0x31, 0x71, 0x31, 0x71];
+        if self.sprite_prep_oam_coord_or_double_ret(k).is_none() {
+            return;
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let x0 = self.ram[DUNGMAP_VAR7].wrapping_sub(0x20);
+        let y0 = self.ram[DUNGMAP_VAR7 + 1].wrapping_sub(0x20);
+        self.ram[DUNGMAP_VAR7] = x0;
+        self.ram[DUNGMAP_VAR7 + 1] = y0;
+        if self.ram[SPRITE_SUBTYPE2 + k] == 0 {
+            for i in 0..16 {
+                self.ram[oam + i * 4] = x0.wrapping_add(((i & 3) as u8) * 0x10);
+                self.ram[oam + i * 4 + 1] = y0.wrapping_add(((i >> 2) as u8) * 0x10);
+                write_le_u16(&mut self.ram, oam + i * 4 + 2, CHAR_FLAGS[i]);
+            }
+        } else {
+            let j = usize::from(self.ram[SPRITE_SUBTYPE2 + k] - 1);
+            for i in (0..16).rev() {
+                self.ram[oam] = x0.wrapping_add(X[i] as u8);
+                self.ram[oam + 1] = y0.wrapping_add(Y[i] as u8);
+                self.ram[oam + 2] = CH[j];
+                self.ram[oam + 3] = FL[j];
+                oam += 4;
+            }
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 15, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_TroughBoy(int k) {  // 85ff66
+    pub(super) fn sprite_trough_boy(&mut self, k: usize) {
+        self.trough_boy_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_behave_as_barrier(k);
+        self.sprite_track_body_to_head(k);
+        self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, None) ^ 3;
+
+        if self.ram[SAVEGAME_MAP_ICONS_INDICATOR] < 3 {
+            if self.sprite_show_solicited_message(k, 0x147) & 0x100 != 0 {
+                self.ram[SAVEGAME_MAP_ICONS_INDICATOR] = 2;
+            }
+        } else {
+            self.sprite_show_solicited_message(k, 0x148);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void TroughBoy_Draw(int k) {  // 85ffdf
+    pub(super) fn trough_boy_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0882,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0882,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4880,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0880,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x0aaa,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_D + k]) * 2;
+        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void RetreatBat_Draw(int k) {  // 9af833
+    pub(super) fn retreat_bat_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 18] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x044b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 5,
+                y: -4,
+                char_flags: 0x045b,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -4,
+                char_flags: 0x0464,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -4,
+                char_flags: 0x0449,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -9,
+                char_flags: 0x046c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -9,
+                char_flags: 0x446c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -7,
+                char_flags: 0x044c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -7,
+                char_flags: 0x444c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -9,
+                char_flags: 0x0444,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -9,
+                char_flags: 0x4444,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0462,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4462,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -7,
+                char_flags: 0x0460,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -7,
+                char_flags: 0x4460,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x044e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x444e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x046e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 16,
+                char_flags: 0x446e,
+                ext: 2,
+            },
+        ];
+        const OFFS: [usize; 20] = [
+            0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 6, 6, 8, 10, 12, 10, 14, 14, 14, 14,
+        ];
+        const COUNT: [usize; 20] = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4];
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, 0x960);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, 0xa78);
+        let j =
+            usize::from(self.ram[SPRITE_D + k]) * 4 + usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.sprite_draw_multiple(k, &D[OFFS[j]..OFFS[j] + COUNT[j]], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void GanonBat_Draw(int k) {  // 9d89eb
+    pub(super) fn ganon_bat_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0560,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4560,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0562,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4562,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x0544,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x4544,
+                ext: 2,
+            },
+        ];
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void EvilBarrier_Draw(int k) {  // 9df249
+    pub(super) fn evil_barrier_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 45] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 3,
+                char_flags: 0x00ca,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 11,
+                char_flags: 0x00da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 3,
+                char_flags: 0x40ca,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -24,
+                y: -2,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -2,
+                char_flags: 0x00e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -2,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: -2,
+                char_flags: 0x40e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 3,
+                char_flags: 0x00cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 11,
+                char_flags: 0x00db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 3,
+                char_flags: 0x40cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 3,
+                char_flags: 0x00cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 11,
+                char_flags: 0x00db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 3,
+                char_flags: 0x40cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -24,
+                y: -2,
+                char_flags: 0x80e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -2,
+                char_flags: 0x80e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -2,
+                char_flags: 0xc0e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: -2,
+                char_flags: 0xc0e6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 3,
+                char_flags: 0x00ca,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 11,
+                char_flags: 0x00da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 3,
+                char_flags: 0x40ca,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40da,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 3,
+                char_flags: 0x00cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -29,
+                y: 11,
+                char_flags: 0x00db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 3,
+                char_flags: 0x40cb,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 37,
+                y: 11,
+                char_flags: 0x40db,
+                ext: 0,
+            },
+        ];
+        let y = read_le_u16(&self.ram, CUR_SPRITE_Y).wrapping_add(8);
+        write_le_u16(&mut self.ram, CUR_SPRITE_Y, y);
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 9;
+        self.sprite_draw_multiple(k, &D[base..base + 9], None);
+        self.sprite_get16_bit_coords(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void ChattyAgahnim_Draw(int k, PrepOamCoordsRet *info) {  // 9dd451
+    pub(super) fn chatty_agahnim_draw(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x0ba2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4ba2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x0ba0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4ba0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x0ba0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4ba2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0b82,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x4b80,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x0ba2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x4ba0,
+                ext: 2,
+            },
+        ];
+        if self.ram[SPRITE_DELAY_AUX4 + k] & 1 != 0 {
+            return;
+        }
+        if self.ram[SPRITE_C + k] == 0 {
+            write_le_u16(&mut self.ram, OAM_CUR_PTR, 0x900);
+            write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, 0xa60);
+        }
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        let mut shadow_info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut shadow_info));
+        self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
+        info.x = shadow_info.x;
+        info.y = shadow_info.y;
+        info.r4 = shadow_info.r4;
+        info.flags = shadow_info.flags;
+    }
+
+    // -----------------------------------------------------------------------
+    // void FaerieQueen_Draw(int k) {  // 86cb26
+    pub(super) fn faerie_queen_draw(&mut self, k: usize) {
+        const X: [u8; 24] = [
+            0, 16, 0, 8, 16, 24, 0, 8, 16, 24, 0, 16, 0, 16, 0, 8, 16, 24, 0, 8, 16, 24, 0, 16,
+        ];
+        const Y: [u8; 24] = [
+            0, 0, 16, 16, 16, 16, 24, 24, 24, 24, 32, 32, 0, 0, 16, 16, 16, 16, 24, 24, 24, 24, 32,
+            32,
+        ];
+        const CH: [u8; 24] = [
+            0xc7, 0xc7, 0xcf, 0xca, 0xca, 0xcf, 0xdf, 0xda, 0xda, 0xdf, 0xcb, 0xcb, 0xcd, 0xcd,
+            0xc9, 0xca, 0xca, 0xc9, 0xd9, 0xda, 0xda, 0xd9, 0xcb, 0xcb,
+        ];
+        const FL: [u8; 24] = [
+            0, 0x40, 0, 0, 0x40, 0x40, 0, 0, 0x40, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0x40, 0x40, 0, 0,
+            0x40, 0x40, 0, 0x40,
+        ];
+        const BIG: [u8; 24] = [
+            2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2,
+        ];
+        const D: [DrawMultipleData; 20] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x40e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x40e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x40e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x00eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 16,
+                char_flags: 0x40eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 32,
+                char_flags: 0x00ed,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 32,
+                char_flags: 0x40ed,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ef,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: 0,
+                char_flags: 0x40ef,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 8,
+                char_flags: 0x00ff,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 24,
+                y: 8,
+                char_flags: 0x40ff,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 0,
+                char_flags: 0x40e9,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 16,
+                char_flags: 0x00eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 16,
+                char_flags: 0x40eb,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 32,
+                char_flags: 0x00ed,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 16,
+                y: 32,
+                char_flags: 0x40ed,
+                ext: 2,
+            },
+        ];
+        if self.ram[SAVEGAME_IS_DARKWORLD] == 0 {
+            let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+            else {
+                return;
+            };
+            let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+            for i in (0..12).rev() {
+                let j = g * 12 + i;
+                self.set_oam_plain_at_for_draw(
+                    oam,
+                    X[j].wrapping_add(info_x as u8),
+                    Y[j].wrapping_add(info_y as u8),
+                    CH[j],
+                    info_flags | FL[j],
+                    BIG[j],
+                );
+                oam += 4;
+            }
+            self.sprite_correct_oam_entries_for_draw(k, 11, 0xff);
+        } else {
+            let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 10;
+            self.sprite_draw_multiple(k, &D[base..base + 10], None);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void CrystalMaiden_Draw(int k) {  // 8dce5f
+    pub(super) fn crystal_maiden_draw(&mut self, k: usize) {
+        const DMA: [u8; 16] = [
+            0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40,
+            0x60,
+        ];
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x0120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x0122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x4120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: -7,
+                char_flags: 0x4120,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 1,
+                y: 3,
+                char_flags: 0x4122,
+                ext: 2,
+            },
+        ];
+        let j =
+            usize::from(self.ram[SPRITE_D + k]) * 2 + usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.ram[DMA_HEAD_POINTER] = DMA[j * 2];
+        self.ram[DMA_BODY_POINTER] = DMA[j * 2 + 1];
+        self.sprite_draw_multiple_player_deferred(k, &D[j * 2..j * 2 + 2], None);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_0F_Octoballoon(int k) {  // 86d6aa
+    pub(super) fn sprite_0_f_octoballoon(&mut self, k: usize) {
+        const Z: [u8; 8] = [16, 17, 18, 19, 20, 19, 18, 17];
+
+        self.ram[SPRITE_Z + k] = Z[usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 7)];
+        self.octoballoon_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 3;
+            if !self.octoballoon_find() {
+                self.ram[SPRITE_STATE + k] = 6;
+                self.ram[SPRITE_HIT_TIMER + k] = 0;
+                self.ram[SPRITE_DELAY_MAIN + k] = 15;
+                return;
+            }
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        if ((k as u8) ^ self.ram[FRAME_COUNTER]) & 15 == 0 {
+            let pt = self.sprite_project_speed_towards_link(k, 4);
+            let dx = self.ram[SPRITE_X_VEL + k].wrapping_sub(pt.x);
+            if dx != 0 {
+                self.ram[SPRITE_X_VEL + k] =
+                    self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(dx) { 1 } else { 0xff });
+            }
+            let dy = self.ram[SPRITE_Y_VEL + k].wrapping_sub(pt.y);
+            if dy != 0 {
+                self.ram[SPRITE_Y_VEL + k] =
+                    self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(dy) { 1 } else { 0xff });
+            }
+        }
+        self.sprite_move_xy(k);
+        if self.sprite_check_damage_to_link(k) {
+            self.octoballoon_recoil_link(k);
+        }
+        self.sprite_check_damage_from_link(k);
+        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_bounce_off_wall(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_10_OctoballoonBaby(int k) {  // 86d853
+    pub(super) fn sprite_10_octoballoon_baby(&mut self, k: usize) {
+        if self.ram[SPRITE_SUBTYPE2 + k] == 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+        if self.ram[SPRITE_SUBTYPE2 + k] >= 64 || (self.ram[SPRITE_SUBTYPE2 + k] & 1) == 0 {
+            self.sprite_draw_single_small(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_sub(1);
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+        self.sprite_move_z(k);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 16;
+        }
+        self.sprite_move_xy(k);
+        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_bounce_off_wall(k);
+        self.sprite_check_damage_to_and_from_link(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_0D_Buzzblob(int k) {  // 86d89a
+    pub(super) fn sprite_0_d_buzzblob(&mut self, k: usize) {
+        const GFX: [u8; 4] = [0, 1, 0, 2];
+        const OBJ_PRIO: [u8; 4] = [10, 2, 8, 2];
+
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            self.ram[SPRITE_OBJ_PRIO + k] = (self.ram[SPRITE_OBJ_PRIO + k] & 0xf1)
+                | OBJ_PRIO[usize::from((self.ram[SPRITE_DELAY_AUX1 + k] >> 1) & 3)];
+        }
+        self.sprite_cukeman(k);
+        self.buzz_blob_draw(k);
+        self.ram[SPRITE_GRAPHICS + k] = GFX[usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3)]
+            + if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+                3
+            } else {
+                0
+            };
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.buzzblob_select_new_direction(k);
+        }
+        if self.ram[SPRITE_DELAY_AUX1 + k] == 0 {
+            self.sprite_move_xy(k);
+        }
+        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_bounce_off_wall(k);
+        self.sprite_check_damage_to_and_from_link(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_08_Octorok(int k) {  // 86d377
+    pub(super) fn sprite_08_octorok(&mut self, k: usize) {
+        const TAB0: [u8; 20] = [0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 1, 1, 0];
+        const TAB1: [u8; 10] = [2, 2, 2, 2, 2, 2, 2, 2, 1, 0];
+        const NEXT_DIR: [u8; 4] = [2, 3, 1, 0];
+        const DIR: [u8; 4] = [3, 2, 0, 1];
+        const XVEL: [i8; 4] = [24, -24, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, 24, -24];
+        const OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+
+        let mut j = self.ram[SPRITE_D + k];
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            self.ram[SPRITE_D + k] = DIR[usize::from(j)];
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40)
+            | OAM_FLAGS[usize::from(j)]
+            | if self.ram[SPRITE_GRAPHICS + k] == 7 {
+                0x40
+            } else {
+                0
+            };
+        self.octorock_draw(k);
+        self.ram[SPRITE_D + k] = j;
+
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_check_damage_to_and_from_link(k);
+        if (self.ram[SPRITE_AI_STATE + k] & 1) == 0 {
+            self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+            self.ram[SPRITE_GRAPHICS + k] =
+                ((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3) | ((self.ram[SPRITE_D + k] & 2) << 1);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_DELAY_MAIN + k] = if self.ram[SPRITE_TYPE + k] == 8 {
+                    60
+                } else {
+                    160
+                };
+            } else {
+                j = self.ram[SPRITE_D + k];
+                self.ram[SPRITE_X_VEL + k] = XVEL[usize::from(j)] as u8;
+                self.ram[SPRITE_Y_VEL + k] = YVEL[usize::from(j)] as u8;
+                if self.sprite_check_tile_collision(k) != 0 {
+                    self.ram[SPRITE_D + k] ^= 1;
+                }
+            }
+            return;
+        }
+
+        self.sprite_zero_velocity_xy(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            self.ram[SPRITE_DELAY_MAIN + k] = (self.get_random_number() & 0x3f).wrapping_add(48);
+            self.ram[SPRITE_D + k] = self.ram[SPRITE_DELAY_MAIN + k] & 3;
+        } else {
+            match self.ram[SPRITE_TYPE + k] {
+                8 => {
+                    j = self.ram[SPRITE_DELAY_MAIN + k];
+                    if j == 28 {
+                        self.octorok_fire_loogie(k);
+                    }
+                    self.ram[SPRITE_C + k] = TAB0[usize::from(j >> 3)];
+                }
+                10 => {
+                    j = self.ram[SPRITE_DELAY_MAIN + k];
+                    if j < 128 {
+                        if (j & 15) == 0 {
+                            self.ram[SPRITE_D + k] = NEXT_DIR[usize::from(self.ram[SPRITE_D + k])];
+                        }
+                        if (j & 15) == 8 {
+                            self.octorok_fire_loogie(k);
+                        }
+                    }
+                    self.ram[SPRITE_C + k] = TAB1[usize::from(j >> 4)];
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_02_StalfosHead(int k) {  // 86ddb7
+    pub(super) fn sprite_02_stalfos_head(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 0, 0, 0x40];
+        const GFX: [u8; 4] = [0, 1, 2, 1];
+
+        self.ram[SPRITE_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            self.oam_allocate_from_region_c(8);
+        }
+        let j = usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3);
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OBJ_PRIO + k] = 0x30;
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        if self.ram[SPRITE_F + k] != 0 {
+            self.sprite_zero_velocity_xy(k);
+        }
+        self.sprite_move_xy(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let (pt_x, pt_y) = if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            if (self.ram[SPRITE_DELAY_MAIN + k] & 1) != 0 {
+                return;
+            }
+            let pt = self.sprite_project_speed_towards_link(k, 16);
+            (pt.x, pt.y)
+        } else {
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) != 0 {
+                return;
+            }
+            let pt = self.sprite_project_speed_towards_link(k, 16);
+            (pt.x.wrapping_neg(), pt.y.wrapping_neg())
+        };
+        let dx = self.ram[SPRITE_X_VEL + k].wrapping_sub(pt_x);
+        if dx != 0 {
+            self.ram[SPRITE_X_VEL + k] =
+                self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(dx) { 1 } else { 0xff });
+        }
+        let dy = self.ram[SPRITE_Y_VEL + k].wrapping_sub(pt_y);
+        if dy != 0 {
+            self.ram[SPRITE_Y_VEL + k] =
+                self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(dy) { 1 } else { 0xff });
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_0C_OctorokStone(int k) {  // 86d5b9
+    pub(super) fn sprite_0_c_octorok_stone(&mut self, k: usize) {
+        if self.ram[SPRITE_STATE + k] == 6 {
+            self.sprite_draw_octorok_stone_crumbling(k);
+            if self.sprite_return_if_paused(k) {
+                return;
+            }
+            if self.ram[SPRITE_DELAY_MAIN + k] == 30 {
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
+            }
+        } else {
+            self.sprite_draw_single_large(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.sprite_check_damage_to_link(k);
+            self.sprite_move_xy(k);
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0
+                && self.sprite_check_tile_collision(k) != 0
+            {
+                self.sprite_func3(k);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_0E_Snapdragon(int k) {  // 869c24
+    pub(super) fn sprite_0_e_snapdragon(&mut self, k: usize) {
+        const DELAY: [u8; 4] = [0x20, 0x30, 0x40, 0x50];
+        const GFX: [u8; 4] = [4, 0, 6, 2];
+        const XVEL: [i8; 8] = [8, -8, 8, -8, 16, -16, 16, -16];
+        const YVEL: [i8; 8] = [8, 8, -8, -8, 16, 16, -16, -16];
+
+        self.ram[SPRITE_GRAPHICS + k] =
+            self.ram[SPRITE_B + k].wrapping_add(GFX[usize::from(self.ram[SPRITE_D + k])]);
+        self.snap_dragon_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_B + k] = 0;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        DELAY[usize::from((self.get_random_number() & 12) >> 2)];
+                    let new_a = self.ram[SPRITE_A + k].wrapping_sub(1);
+                    self.ram[SPRITE_A + k] = new_a;
+                    if sign8(new_a) {
+                        self.ram[SPRITE_A + k] = 3;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 96;
+                        self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
+                        self.ram[SPRITE_D + k] =
+                            self.sprite_is_below_link(k).a * 2 + self.sprite_is_right_of_link(k).a;
+                    } else {
+                        self.ram[SPRITE_D + k] = self.get_random_number() & 3;
+                    }
+                } else if (self.ram[SPRITE_DELAY_MAIN + k] & 0x18) != 0 {
+                    self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                }
+            }
+            1 => {
+                self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                self.sprite_move_xy(k);
+                if self.sprite_check_tile_collision(k) != 0 {
+                    self.ram[SPRITE_D + k] ^= 3;
+                }
+                let j = usize::from(
+                    self.ram[SPRITE_D + k] + if self.ram[SPRITE_C + k] != 0 { 4 } else { 0 },
+                );
+                self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+                self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+                self.sprite_move_z(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(4);
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_C + k] = 0;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 63;
+                    } else {
+                        self.ram[SPRITE_Z_VEL + k] = 20;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_18_MiniMoldorm(int k) {  // 869808
+    pub(super) fn sprite_18_mini_moldorm(&mut self, k: usize) {
+        const XVEL: [i8; 16] = [
+            24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9, 0, 9, 17, 22,
+        ];
+        const YVEL: [i8; 16] = [
+            0, 9, 17, 22, 24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9,
+        ];
+        const NEXT_DIR: [u8; 16] = [8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7];
+
+        self.moldorm_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_F + k] != 0 {
+            self.sprite_prep_mini_moldorm_bounce(k);
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let j = usize::from(self.ram[SPRITE_D + k]);
+        self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+        self.sprite_move_xy(k);
+        if self.sprite_check_tile_collision(k) != 0 {
+            if (self.get_random_number() & 1) != 0 {
+                self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_neg();
+            }
+            self.ram[SPRITE_D + k] = NEXT_DIR[usize::from(self.ram[SPRITE_D + k])];
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_G + k] = self.ram[SPRITE_G + k].wrapping_add(1);
+                    if self.ram[SPRITE_G + k] == 6 {
+                        self.ram[SPRITE_G + k] = 0;
+                        self.ram[SPRITE_AI_STATE + k] = 2;
+                    } else {
+                        self.ram[SPRITE_AI_STATE + k] = 1;
+                    }
+                    self.ram[SPRITE_HEAD_DIR + k] = (self.get_random_number() & 2).wrapping_sub(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 0x1f).wrapping_add(0x20);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 15).wrapping_add(8);
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                } else if (self.ram[SPRITE_DELAY_MAIN + k] & 3) == 0 {
+                    self.ram[SPRITE_D + k] =
+                        self.ram[SPRITE_D + k].wrapping_add(self.ram[SPRITE_HEAD_DIR + k]) & 0x0f;
+                }
+            }
+            2 => {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0 {
+                    self.sprite_apply_speed_towards_link(k, 31);
+                    let d = Self::sprite_convert_velocity_to_angle(
+                        self.ram[SPRITE_X_VEL + k],
+                        self.ram[SPRITE_Y_VEL + k],
+                    )
+                    .wrapping_sub(self.ram[SPRITE_D + k]);
+                    if d == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    } else {
+                        self.ram[SPRITE_D + k] =
+                            self.ram[SPRITE_D + k].wrapping_add(if sign8(d) { 0xff } else { 1 })
+                                & 0x0f;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_11_Hinox(int k) {  // 869f05
+    pub(super) fn sprite_11_hinox(&mut self, k: usize) {
+        const RANDOM_DIRS: [u8; 8] = [2, 3, 3, 2, 0, 1, 1, 0];
+        const WALK_GFX: [u8; 4] = [6, 4, 0, 2];
+        const BOMB_X: [i8; 4] = [8, -8, -13, 13];
+        const BOMB_Y: [i8; 4] = [-11, -11, -16, -16];
+        const BOMB_XVEL: [i8; 4] = [24, -24, 0, 0];
+        const BOMB_YVEL: [i8; 4] = [0, 0, 24, -24];
+        const GFX: [u8; 8] = [11, 10, 8, 9, 7, 5, 1, 3];
+
+        self.hinox_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_F + k] != 0 {
+            self.hinox_face_link(k);
+            self.ram[SPRITE_AI_STATE + k] = 2;
+            self.ram[SPRITE_DELAY_MAIN + k] = 48;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    if (self.get_random_number() & 3) == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 2;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 64;
+                    } else {
+                        self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
+                        if self.ram[SPRITE_C + k] == 4 {
+                            self.ram[SPRITE_C + k] = 0;
+                            self.hinox_face_link(k);
+                        } else {
+                            let idx = usize::from(
+                                self.ram[SPRITE_D + k] * 2 + (self.get_random_number() & 1),
+                            );
+                            self.hinox_set_direction(k, RANDOM_DIRS[idx]);
+                        }
+                    }
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    let new_a = self.ram[SPRITE_A + k].wrapping_sub(1);
+                    self.ram[SPRITE_A + k] = new_a;
+                    if sign8(new_a) {
+                        self.ram[SPRITE_A + k] = 11;
+                        self.ram[SPRITE_SUBTYPE2 + k] =
+                            self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    }
+                    self.sprite_move_xy(k);
+                    if self.sprite_check_tile_collision(k) == 0 {
+                        self.ram[SPRITE_GRAPHICS + k] = WALK_GFX
+                            [usize::from(self.ram[SPRITE_D + k])]
+                            + (self.ram[SPRITE_SUBTYPE2 + k] & 1);
+                        return;
+                    }
+                }
+                self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                self.ram[SPRITE_AI_STATE + k] = 0;
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 2;
+                    return;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] == 32 {
+                    let mut info = SpriteSpawnInfo::default();
+                    let j = self.sprite_spawn_dynamically(k, 0x4a, &mut info);
+                    if j >= 0 {
+                        let j = j as usize;
+                        self.sprite_transmute_to_bomb(j);
+                        self.ram[SPRITE_DELAY_AUX1 + j] = 64;
+                        let i = usize::from(self.ram[SPRITE_D + k]);
+                        self.sprite_set_x(j, info.r0_x.wrapping_add_signed(i16::from(BOMB_X[i])));
+                        self.sprite_set_y(j, info.r2_y.wrapping_add_signed(i16::from(BOMB_Y[i])));
+                        self.ram[SPRITE_X_VEL + j] = BOMB_XVEL[i] as u8;
+                        self.ram[SPRITE_Y_VEL + j] = BOMB_YVEL[i] as u8;
+                        self.ram[SPRITE_Z_VEL + j] = 40;
+                    }
+                } else {
+                    let i = usize::from(
+                        self.ram[SPRITE_D + k]
+                            + if self.ram[SPRITE_DELAY_MAIN + k] < 32 {
+                                4
+                            } else {
+                                0
+                            },
+                    );
+                    self.ram[SPRITE_GRAPHICS + k] = GFX[i];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_13_MiniHelmasaur(int k) {  // 86a409
+    pub(super) fn sprite_13_mini_helmasaur(&mut self, k: usize) {
+        const GFX: [u8; 8] = [3, 4, 3, 4, 2, 2, 5, 5];
+        const OAM_FLAGS: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0x40, 0x40, 0];
+
+        let j =
+            usize::from(((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1) | (self.ram[SPRITE_D + k] << 1));
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+            let mut x = self.ram[SPRITE_X_VEL + k];
+            if sign8(x) {
+                x = x.wrapping_neg();
+            }
+            let mut y = self.ram[SPRITE_Y_VEL + k];
+            if sign8(y) {
+                y = y.wrapping_neg();
+            }
+            self.ram[SPRITE_D + k] = if x >= y {
+                self.ram[SPRITE_X_VEL + k] >> 7
+            } else {
+                (self.ram[SPRITE_Y_VEL + k] >> 7) + 2
+            };
+        }
+        self.sprite_draw_single_large(k);
+        self.helmasaur_hard_hat_beetle_common(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_26_HardhatBeetle(int k) {  // 86a460
+    pub(super) fn sprite_26_hardhat_beetle(&mut self, k: usize) {
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1;
+        self.hard_hat_beetle_draw(k);
+        self.helmasaur_hard_hat_beetle_common(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void HelmasaurHardHatBeetleCommon(int k) {  // 86a46d
+    pub(super) fn helmasaur_hard_hat_beetle_common(&mut self, k: usize) {
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        if (self.ram[SPRITE_WALLCOLL + k] & 15) != 0 {
+            if (self.ram[SPRITE_WALLCOLL + k] & 3) != 0 {
+                self.ram[SPRITE_X_VEL + k] = 0;
+            }
+            self.ram[SPRITE_Y_VEL + k] = 0;
+        } else {
+            self.sprite_move_xy(k);
+        }
+        self.sprite_check_tile_collision(k);
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 31) == 0 {
+            let pt = self.sprite_project_speed_towards_link(k, self.ram[SPRITE_A + k]);
+            self.ram[SPRITE_B + k] = pt.y;
+            self.ram[SPRITE_C + k] = pt.x;
+        }
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & self.ram[SPRITE_AI_STATE + k]) != 0 {
+            return;
+        }
+        let dy = self.ram[SPRITE_Y_VEL + k].wrapping_sub(self.ram[SPRITE_B + k]);
+        self.ram[SPRITE_Y_VEL + k] =
+            self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(dy) { 1 } else { 0xff });
+        let dx = self.ram[SPRITE_X_VEL + k].wrapping_sub(self.ram[SPRITE_C + k]);
+        self.ram[SPRITE_X_VEL + k] =
+            self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(dx) { 1 } else { 0xff });
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_15_Antifairy(int k) {  // 86a50c
+    pub(super) fn sprite_15_antifairy(&mut self, k: usize) {
+        self.sprite_draw_antfairy(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link(k) && self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 16;
+            let t = i16::from(self.ram[LINK_MAGIC_POWER]) - 8;
+            if t < 0 {
+                self.ram[LINK_MAGIC_POWER] = 0;
+            } else {
+                self.ram[SOUND_EFFECT_2] = 0x1d;
+                self.ram[LINK_MAGIC_POWER] = t as u8;
+            }
+        }
+        self.sprite_move_xy(k);
+        self.sprite_bounce_from_tile_collision(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_82_AntifairyCircle(int k) {  // 9ecb97
+    pub(super) fn sprite_82_antifairy_circle(&mut self, k: usize) {
+        const VEL: [i8; 2] = [1, -1];
+        const VEL_TARGET: [u8; 2] = [18, (-18i8) as u8];
+
+        self.sprite_draw_antfairy(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+
+        let j = usize::from(self.ram[SPRITE_A + k] & 1);
+        self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_add(VEL[j] as u8);
+        if self.ram[SPRITE_X_VEL + k] == VEL_TARGET[j] {
+            self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+        }
+
+        let j = usize::from(self.ram[SPRITE_B + k] & 1);
+        self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(VEL[j] as u8);
+        if self.ram[SPRITE_Y_VEL + k] == VEL_TARGET[j] {
+            self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+        }
+
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_X_VEL + k] != 0
+            && self.ram[SPRITE_Y_VEL + k] != 0
+            && self.sprite_check_if_room_is_clear()
+        {
+            self.ram[SPRITE_TYPE + k] = 0x15;
+            self.ram[SPRITE_X_VEL + k] = if sign8(self.ram[SPRITE_X_VEL + k]) {
+                (-16i8) as u8
+            } else {
+                16
+            };
+            self.ram[SPRITE_Y_VEL + k] = if sign8(self.ram[SPRITE_Y_VEL + k]) {
+                (-16i8) as u8
+            } else {
+                16
+            };
+        }
+        self.sprite_check_damage_to_link(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_7E_Firebar_Clockwise(int k) {  // 9ed01a
+    pub(super) fn sprite_7_e_firebar_clockwise(&mut self, k: usize) {
+        const INCR: [i16; 4] = [-2, 2, -1, 1];
+
+        self.firebar_main(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let j = usize::from(self.ram[SPRITE_TYPE + k].wrapping_sub(0x7e))
+            + if self.ram[CUR_PALACE_INDEX_X2] == 18 {
+                2
+            } else {
+                0
+            };
+        let t = ((u16::from(self.ram[SPRITE_A + k]) | (u16::from(self.ram[SPRITE_B + k]) << 8))
+            as i16)
+            .wrapping_add(INCR[j]) as u16
+            & 0x01ff;
+        self.ram[SPRITE_A + k] = t as u8;
+        self.ram[SPRITE_B + k] = (t >> 8) as u8;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Firebar_Main(int k) {  // 9ed049
+    pub(super) fn firebar_main(&mut self, k: usize) {
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.ram[SPRITE_DRAW_SCRATCH_Y_OR_FLAGS] = info_flags;
+        self.ram[DUNGMAP_VAR7] = x as u8;
+        self.ram[DUNGMAP_VAR7 + 1] = y as u8;
+
+        let angle = u16::from(self.ram[SPRITE_A + k]) | (u16::from(self.ram[SPRITE_B + k]) << 8);
+        let sinval = guruguru_bar_sin(angle, 0x40);
+        let cosval = guruguru_bar_sin((angle.wrapping_add(0x80)) & 0x01ff, 0x40);
+        let flags = ((self.ram[SPRITE_SUBTYPE2 + k] << 4) & 0xc0) | info_flags;
+        for i in (0..4usize).rev() {
+            let m = (i + 1) as i16;
+            let xo = i16::from(sinval) * m / 4;
+            let yo = i16::from(cosval) * m / 4;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                x.wrapping_add(xo as u16) as u8,
+                y.wrapping_add(yo as u16) as u8,
+                0x28,
+                flags,
+                2,
+            );
+            oam += 4;
+        }
+        self.sprite_correct_oam_entries_for_draw(k, 3, 0xff);
+
+        if ((((k as u8) ^ self.ram[FRAME_COUNTER]) & 3)
+            | self.frame_control_view().submodule()
+            | self.ram[FLAG_UNK1])
+            != 0
+        {
+            return;
+        }
+
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        for _ in 0..4 {
+            let ext_index = (oam - OAM_BUF) / 4;
+            if self.ram[BYTEWISE_EXTENDED_OAM + ext_index] & 1 == 0 {
+                let ox = self.ram[oam];
+                let oy = self.ram[oam + 1];
+                let link_x = self.player_state_view().x() as u8;
+                let link_y = self.player_state_view().y() as u8;
+                if ox
+                    .wrapping_add(read_le_u16(&self.ram, BG2HOFS_COPY2) as u8)
+                    .wrapping_sub(link_x)
+                    .wrapping_add(12)
+                    < 24
+                    && oy < 0xf0
+                    && oy
+                        .wrapping_add(read_le_u16(&self.ram, BG2VOFS_COPY2) as u8)
+                        .wrapping_sub(link_y)
+                        .wrapping_add(4)
+                        < 16
+                {
+                    self.sprite_attempt_damage_to_link_plus_recoil(k);
+                }
+            }
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_0B_Cucco(int k) {  // 86a5c2
+    pub(super) fn sprite_0_b_cucco(&mut self, k: usize) {
+        if self.ram[SPRITE_X_VEL + k] != 0 {
+            self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40)
+                | if sign8(self.ram[SPRITE_X_VEL + k]) {
+                    0
+                } else {
+                    0x40
+                };
+        }
+
+        self.sprite_draw_single_large(k);
+        if self.ram[SPRITE_HEAD_DIR + k] != 0 {
+            self.ram[SPRITE_TYPE + k] = 0x3d;
+            self.sprite_prep_load_properties(k);
+            self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(1);
+            self.ram[SPRITE_DELAY_MAIN + k] = 48;
+            self.ram[SOUND_EFFECT_1_DRAW] = 21;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 21;
+            return;
+        }
+        if self.ram[SPRITE_STATE + k] == 10 {
+            self.ram[SPRITE_AI_STATE + k] = 3;
+            if self.frame_control_view().submodule() == 0 {
+                self.chicken_incr_subtype2_for_draw(k, 3);
+                self.cucco_draw_panic(k);
+                if (self.ram[FRAME_COUNTER] & 0x0f) == 0 {
+                    self.bawk_bawk_for_draw(k);
+                }
+            }
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_C + k] != 0 {
+            self.ram[SPRITE_OAM_FLAGS + k] |= 0x10;
+            self.sprite_move_xy(k);
+            self.ram[SPRITE_Z + k] = 12;
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 12;
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 7) == 0 {
+                self.sprite_check_damage_to_link(k);
+            }
+            self.chicken_incr_subtype2_for_draw(k, 4);
+        } else {
+            self.ram[SPRITE_HEALTH + k] = 255;
+            if self.ram[SPRITE_B + k] >= 35 {
+                self.cucco_summon_avenger(k);
+            }
+            if self.ram[SPRITE_F + k] != 0 {
+                self.ram[SPRITE_F + k] = 0;
+                if self.ram[SPRITE_B + k] < 35 {
+                    self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                    self.bawk_bawk_for_draw(k);
+                }
+                self.ram[SPRITE_AI_STATE + k] = 2;
+            }
+            self.sprite_check_damage_from_link(k);
+            match self.ram[SPRITE_AI_STATE + k] {
+                0 => self.cucco_calm(k),
+                1 => self.chicken_hopping(k),
+                2 => self.cucco_flee(k),
+                3 => self.cucco_carried(k),
+                _ => {}
+            }
+        }
+    }
+
+    // Local duplicate of private dungeon NPC helper used by the original
+    // top-level Cucco actor.
+    fn chicken_incr_subtype2_for_draw(&mut self, k: usize, j: u8) {
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(j);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 4) & 1;
+        self.sprite_return_if_lifted(k);
+    }
+
+    // Local duplicate of private dungeon NPC helper used by the original
+    // top-level Cucco actor.
+    fn bawk_bawk_for_draw(&mut self, k: usize) {
+        self.sprite_sfx_queue_sfx2_with_pan(k, 0x30);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_01_Vulture_bounce(int k) {  // 869473
+    //   Dormant vulture that begins circling and tracking Link.
+    // }
+    pub(super) fn sprite_01_vulture_bounce(&mut self, k: usize) {
+        const K_VULTURE_GFX: [u8; 4] = [1, 2, 3, 2];
+
+        self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        self.vulture_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                if self.ram[SPRITE_SUBTYPE2 + k] == 160 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_GRAPHICS + k] =
+                    K_VULTURE_GFX[usize::from((self.ram[FRAME_COUNTER] >> 1) & 3)];
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    self.ram[SPRITE_Z + k] = self.ram[SPRITE_Z + k].wrapping_add(1);
+                    return;
+                }
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 1) != 0 {
+                    return;
+                }
+                let pt =
+                    self.sprite_project_speed_towards_link(k, ((k & 0x0f) as u8).wrapping_add(24));
+                self.ram[SPRITE_X_VEL + k] = pt.y.wrapping_neg();
+                self.ram[SPRITE_Y_VEL + k] = pt.x;
+                if pt.xdiff.wrapping_add(0x28) < 0x50 && pt.ydiff.wrapping_add(0x28) < 0x50 {
+                    return;
+                }
+                self.ram[SPRITE_Y_VEL + k] =
+                    self.ram[SPRITE_Y_VEL + k].wrapping_add(((pt.y as i8) >> 2) as u8);
+                self.ram[SPRITE_X_VEL + k] =
+                    self.ram[SPRITE_X_VEL + k].wrapping_add(((pt.x as i8) >> 2) as u8);
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_27_Deadrock(int k) {  // 86948a
+    //   Deadrock walking/petrified state machine.
+    // }
+    pub(super) fn sprite_27_deadrock(&mut self, k: usize) {
+        const K_DEAD_ROCK_GFX: [u8; 9] = [0, 1, 0, 1, 2, 2, 3, 3, 4];
+        const K_DEAD_ROCK_OAM_FLAGS: [u8; 9] = [0x40, 0x40, 0, 0, 0, 0x40, 0, 0x40, 0];
+        const K_DEAD_ROCK_XVEL: [u8; 4] = [32, 0xe0, 0, 0];
+        const K_DEAD_ROCK_YVEL: [u8; 4] = [0, 0, 32, 0xe0];
+
+        let j = if if self.ram[SPRITE_DELAY_AUX2 + k] != 0 {
+            (self.ram[SPRITE_DELAY_AUX2 + k] & 4) != 0
+        } else {
+            self.ram[SPRITE_AI_STATE + k] != 2
+        } {
+            self.ram[SPRITE_A + k]
+        } else {
+            8
+        };
+        let j = usize::from(j);
+        self.ram[SPRITE_GRAPHICS + k] = K_DEAD_ROCK_GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] =
+            (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | K_DEAD_ROCK_OAM_FLAGS[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_F + k] == 0
+            && (self.sprite_check_damage_from_link(k) & K_CHECK_DAMAGE_FROM_PLAYER_CARRY_DRAW) != 0
+            && self.ram[SOUND_EFFECT_1_DRAW] == 0
+        {
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x0b);
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.sprite_repel_dash();
+        }
+        if self.ram[SPRITE_F + k] == 14 {
+            self.ram[SPRITE_AI_STATE + k] = 2;
+            self.ram[SPRITE_DELAY_AUX1 + k] = 255;
+            self.ram[SPRITE_DELAY_AUX2 + k] = 64;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_FLAGS2 + k] &= !0x80;
+                    self.ram[SPRITE_DEFL_BITS + k] &= !4;
+                    self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 31).wrapping_add(32);
+                    let dir = if self.ram[SPRITE_B + k].wrapping_add(1) == 4 {
+                        self.ram[SPRITE_B + k] = 0;
+                        self.sprite_direction_to_face_link(k, None)
+                    } else {
+                        self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                        self.get_random_number() & 3
+                    };
+                    self.deadrock_set_dir(k, dir, &K_DEAD_ROCK_XVEL, &K_DEAD_ROCK_YVEL);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                } else {
+                    self.sprite_move_xy(k);
+                    if self.sprite_check_tile_collision(k) != 0 {
+                        let dir = self.ram[SPRITE_D + k] ^ 1;
+                        self.deadrock_set_dir(k, dir, &K_DEAD_ROCK_XVEL, &K_DEAD_ROCK_YVEL);
+                    } else {
+                        self.ram[SPRITE_SUBTYPE2 + k] =
+                            self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                        self.ram[SPRITE_A + k] = (self.ram[SPRITE_D + k] << 1)
+                            | ((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1);
+                    }
+                }
+            }
+            2 => {
+                self.ram[SPRITE_FLAGS2 + k] |= 0x80;
+                self.ram[SPRITE_DEFL_BITS + k] |= 4;
+                self.ram[SPRITE_FLAGS3 + k] |= 0x40;
+                if (self.ram[FRAME_COUNTER] & 1) == 0 {
+                    if self.ram[SPRITE_DELAY_AUX1 + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                    } else if self.ram[SPRITE_DELAY_AUX1 + k] == 0x20 {
+                        self.ram[SPRITE_DELAY_AUX2 + k] = 0x40;
+                    }
+                } else {
+                    self.ram[SPRITE_DELAY_AUX1 + k] =
+                        self.ram[SPRITE_DELAY_AUX1 + k].wrapping_add(1);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn deadrock_set_dir(&mut self, k: usize, dir: u8, xvel: &[u8; 4], yvel: &[u8; 4]) {
+        self.ram[SPRITE_D + k] = dir;
+        let idx = usize::from(dir);
+        self.ram[SPRITE_X_VEL + k] = xvel[idx];
+        self.ram[SPRITE_Y_VEL + k] = yvel[idx];
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_20_Sluggula(int k) {  // 8695d9
+    pub(super) fn sprite_20_sluggula(&mut self, k: usize) {
+        const GFX: [u8; 8] = [0, 1, 0, 1, 2, 3, 4, 5];
+        const OAM_FLAGS: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0, 0, 0];
+        const XYVEL: [i8; 6] = [16, -16, 0, 0, 16, -16];
+
+        let mut j =
+            usize::from((self.ram[SPRITE_D + k] << 1) | ((self.ram[SPRITE_SUBTYPE2 + k] & 8) >> 3));
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 191) | OAM_FLAGS[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 31).wrapping_add(32);
+                    j = usize::from(self.ram[SPRITE_DELAY_MAIN + k] & 3);
+                    self.ram[SPRITE_D + k] = j as u8;
+                    self.ram[SPRITE_X_VEL + k] = XYVEL[j] as u8;
+                    self.ram[SPRITE_Y_VEL + k] = XYVEL[j + 2] as u8;
+                } else if self.ram[SPRITE_DELAY_MAIN + k] == 16
+                    && (self.get_random_number() & 1) == 0
+                {
+                    self.sluggula_drop_bomb(k);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                }
+                self.sprite_move_xy(k);
+                if self.sprite_check_tile_collision(k) == 0 {
+                    return;
+                }
+                self.ram[SPRITE_D + k] ^= 1;
+                j = usize::from(self.ram[SPRITE_D + k]);
+                self.ram[SPRITE_X_VEL + k] = XYVEL[j] as u8;
+                self.ram[SPRITE_Y_VEL + k] = XYVEL[j + 2] as u8;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_22_Ropa(int k) {  // 869e1f
+    pub(super) fn sprite_22_ropa(&mut self, k: usize) {
+        self.ropa_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.sprite_apply_speed_towards_link(k, 16);
+                    self.ram[SPRITE_Z_VEL + k] = (self.get_random_number() & 15).wrapping_add(20);
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+            }
+            1 => {
+                self.sprite_move_xy(k);
+                if self.sprite_check_tile_collision(k) != 0 {
+                    self.sprite_zero_velocity_xy(k);
+                }
+                self.sprite_move_z(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_19_Poe(int k) {  // 869688
+    pub(super) fn sprite_19_poe(&mut self, k: usize) {
+        const ACCEL: [i8; 4] = [1, -1, 2, -2];
+        const ZVEL_TARGET: [i8; 2] = [8, -8];
+        const XVEL_TARGET: [i8; 4] = [16, -16, 28, -28];
+        const OAM_FLAGS: [u8; 2] = [0x40, 0];
+        const YVEL: [i8; 2] = [8, -8];
+
+        let mut j = usize::from(self.ram[SPRITE_X_VEL + k] >> 7);
+        self.ram[SPRITE_D + k] = j as u8;
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        if self.ram[SPRITE_E + k] == 0 {
+            self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        }
+        self.poe_draw(k);
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_sub(1);
+        self.sprite_draw_single_large(k);
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(1);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        if self.ram[SPRITE_E + k] != 0 {
+            self.ram[SPRITE_Z + k] = self.ram[SPRITE_Z + k].wrapping_add(1);
+            if self.ram[SPRITE_Z + k] == 12 {
+                self.ram[SPRITE_E + k] = 0;
+            }
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.sprite_move_xy(k);
+        if (self.ram[FRAME_COUNTER] & 1) == 0 {
+            j = usize::from(self.ram[SPRITE_G + k] & 1);
+            self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(ACCEL[j] as u8);
+            if self.ram[SPRITE_Z_VEL + k] == ZVEL_TARGET[j] as u8 {
+                self.ram[SPRITE_G + k] = self.ram[SPRITE_G + k].wrapping_add(1);
+            }
+        }
+        self.sprite_move_z(k);
+        self.ram[SPRITE_Y_VEL + k] = 0;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    if (self.get_random_number() & 12) == 0 {
+                        self.ram[SPRITE_HEAD_DIR + k] = self.sprite_is_below_link(k).a;
+                    } else {
+                        self.ram[SPRITE_HEAD_DIR + k] = self.get_random_number() & 1;
+                    }
+                }
+            }
+            1 => {
+                if (self.ram[FRAME_COUNTER] & 1) == 0 {
+                    j = usize::from(
+                        (self.ram[SPRITE_ANIM_CLOCK_DRAW + k] & 1)
+                            + self.ram[IS_IN_DARK_WORLD_DRAW] * 2,
+                    );
+                    self.ram[SPRITE_X_VEL + k] =
+                        self.ram[SPRITE_X_VEL + k].wrapping_add(ACCEL[j] as u8);
+                    if self.ram[SPRITE_X_VEL + k] == XVEL_TARGET[j] as u8 {
+                        self.ram[SPRITE_ANIM_CLOCK_DRAW + k] =
+                            self.ram[SPRITE_ANIM_CLOCK_DRAW + k].wrapping_add(1);
+                        self.ram[SPRITE_AI_STATE + k] = 0;
+                        self.ram[SPRITE_DELAY_MAIN + k] =
+                            (self.get_random_number() & 31).wrapping_add(16);
+                    }
+                }
+                self.ram[SPRITE_Y_VEL + k] = YVEL[usize::from(self.ram[SPRITE_HEAD_DIR + k])] as u8;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_2E_FluteKid(int k) {  // 86af3b
+    pub(super) fn sprite_2_e_flute_kid(&mut self, k: usize) {
+        match self.ram[SPRITE_HEAD_DIR + k] {
+            0 => match self.ram[SPRITE_SUBTYPE2 + k] {
+                0 => self.flute_kid_human(k),
+                1 => self.sprite_flute_kid_stumpy(k),
+                _ => {}
+            },
+            1 => self.sprite_flute_kid_quaver(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_1E_CrystalSwitch(int k) {  // 86b8d0
+    pub(super) fn sprite_1_e_crystal_switch(&mut self, k: usize) {
+        const CRYSTAL_SWITCH_PAL: [u8; 2] = [2, 4];
+
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x0e)
+            | CRYSTAL_SWITCH_PAL[usize::from(self.ram[ORANGE_BLUE_BARRIER_STATE] & 1)];
+        self.oam_allocate_defer_to_player(k);
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.sprite_repel_dash();
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            let sparkle_y = u16::from(self.get_random_number() & 7);
+            self.sprite_garnish_spawn_sparkle(k, u16::from(self.ram[FRAME_COUNTER] & 7), sparkle_y);
+            self.ram[SPRITE_DELAY_MAIN + k] = 31;
+        }
+        if self.ram[SPRITE_F + k] == 0 {
+            if sign8(self.ram[BUTTON_B_FRAMES].wrapping_sub(9)) {
+                self.sprite_check_damage_from_link(k);
+            }
+        } else {
+            let old = self.ram[SPRITE_F + k];
+            self.ram[SPRITE_F + k] = old.wrapping_sub(1);
+            if old == 11 {
+                self.ram[ORANGE_BLUE_BARRIER_STATE] ^= 1;
+                self.frame_control_view_mut().set_submodule(22);
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_1F_SickKid(int k) {  // 86b94c
+    pub(super) fn sprite_1_f_sick_kid(&mut self, k: usize) {
+        const GFX: [i8; 8] = [0, 1, 0, 1, 0, 1, 2, -1];
+        const DELAY: [u8; 7] = [8, 12, 8, 12, 8, 96, 16];
+
+        self.bug_net_kid_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.sprite_check_if_link_is_busy()
+                    || !self.sprite_check_damage_to_link_same_layer(k)
+                {
+                    return;
+                }
+                let bottles = self.ram[LINK_BOTTLE_INFO]
+                    | self.ram[LINK_BOTTLE_INFO + 1]
+                    | self.ram[LINK_BOTTLE_INFO + 2]
+                    | self.ram[LINK_BOTTLE_INFO + 3];
+                if bottles < 2 {
+                    self.sprite_show_solicited_message(k, 0x104);
+                } else {
+                    self.ram[FLAG_IS_LINK_IMMOBILIZED] =
+                        self.ram[FLAG_IS_LINK_IMMOBILIZED].wrapping_add(1);
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    return;
+                }
+                let j = usize::from(self.ram[SPRITE_A + k]);
+                if GFX[j] >= 0 {
+                    self.ram[SPRITE_GRAPHICS + k] = GFX[j] as u8;
+                    self.ram[SPRITE_DELAY_MAIN + k] = DELAY[j];
+                    self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+                } else {
+                    self.sprite_show_message_unconditional(0x105);
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                }
+            }
+            2 => {
+                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.link_receive_item(0x21, 0);
+                self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+                self.ram[SPRITE_AI_STATE + k] = 3;
+            }
+            3 => {
+                self.ram[SPRITE_GRAPHICS + k] = 1;
+                self.sprite_show_solicited_message(k, 0x106);
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_21_WaterSwitch(int k) {  // 86b9fa
+    pub(super) fn sprite_21_water_switch(&mut self, k: usize) {
+        self.push_switch_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_C + k] != 0 {
+                    self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_sub(1);
+                    if self.ram[SPRITE_B + k] == 0 {
+                        self.ram[SPRITE_AI_STATE + k] = 1;
+                    }
+                    if (self.ram[FRAME_COUNTER] & 3) == 0 {
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+                    }
+                } else {
+                    self.ram[SPRITE_B + k] = 48;
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    const DELAY: [u8; 10] = [40, 6, 3, 3, 3, 5, 1, 1, 3, 12];
+                    const DIR: [u8; 10] = [0, 1, 2, 3, 4, 5, 5, 6, 7, 6];
+                    self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_add(1);
+                    let j = usize::from(self.ram[SPRITE_A + k]);
+                    if j == 10 {
+                        self.ram[SPRITE_AI_STATE + k] = 2;
+                        self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] =
+                            self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE].wrapping_add(1);
+                        self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
+                    } else {
+                        self.ram[SPRITE_DELAY_MAIN + k] = DELAY[j];
+                        self.ram[SPRITE_D + k] = DIR[j];
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+                    }
+                }
+            }
+            2 => {}
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_33_RupeePull(int k) {  // 86c017
+    pub(super) fn sprite_33_rupee_pull(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 1;
+            self.ram[SPRITE_A + k] = 1;
+        } else if self.ram[SPRITE_A + k] != 0 {
+            self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
+            if (self.ram[LINK_STATE_BITS] & 1) != 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+                self.rupee_pull_spawn_prize(k);
+                self.sprite_spawn_poof_garnish(k);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_14_ThievesTownGrate(int k) {  // 86c01c
+    pub(super) fn sprite_14_thieves_town_grate(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_check_if_link_is_busy() {
+            return;
+        }
+        if self.sprite_check_damage_to_link_same_layer(k) {
+            self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 1;
+            self.ram[SPRITE_A + k] = 1;
+        } else {
+            if self.ram[SPRITE_A + k] == 0 {
+                return;
+            }
+            self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
+            if (self.ram[LINK_STATE_BITS] & 1) == 0 {
+                return;
+            }
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
+            self.open_gargoyles_domain_for_draw();
+            let j = self.sprite_spawn_dust_cloud(k);
+            if j >= 0 {
+                let j = j as usize;
+                self.sprite_set_x(j, self.sprite_get_x(k));
+                self.sprite_set_y(j, self.sprite_get_y(k));
+            }
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_2D_TelepathicTile(int k) {  // 86c0b2
+    pub(super) fn sprite_2_d_telepathic_tile(&mut self, _k: usize) {
+        // C Sprite_2D_TelepathicTile is an assert(0) sprite slot.
+        assert!(false);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_38_EyeStatue(int k) {  // 86c03f
+    pub(super) fn sprite_38_eye_statue(&mut self, k: usize) {
+        if self.ram[SPRITE_B + k] == 0 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            if self.sprite_direction_to_face_link(k, None) == 2
+                && self.ram[SPRITE_UNK2_DRAW + k] == 9
+            {
+                self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] =
+                    self.ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE].wrapping_add(1);
+                self.ram[SPRITE_B + k] = 1;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6D_Rat(int k) {  // 85a8b0
+    pub(super) fn sprite_6_d_rat(&mut self, k: usize) {
+        const TAB0: [u8; 16] = [0, 0, 3, 3, 1, 2, 4, 5, 1, 2, 4, 5, 0, 0, 3, 3];
+        const TAB1: [u8; 16] = [
+            0, 0x40, 0, 0x40, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x80, 0xc0, 0x80, 0xc0,
+        ];
+        const TAB2: [u8; 8] = [10, 11, 6, 7, 2, 3, 14, 15];
+        const TAB4: [u8; 8] = [8, 9, 4, 5, 0, 1, 12, 13];
+        const XVEL: [i8; 4] = [24, -24, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, 24, -24];
+        const TAB3: [u8; 4] = [2, 3, 1, 0];
+
+        let mut j = usize::from(self.ram[SPRITE_A + k]);
+        self.ram[SPRITE_GRAPHICS + k] = TAB0[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | TAB1[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        let _ = self.sprite_check_tile_collision(k);
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                if self.ram[IS_IN_DARK_WORLD_DRAW] == 0 {
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x17);
+                }
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[SPRITE_DELAY_MAIN + k] = 80;
+            }
+            j = usize::from(self.ram[SPRITE_D + k]);
+            if self.ram[SPRITE_WALLCOLL + k] != 0 {
+                self.ram[SPRITE_D + k] = TAB3[j];
+                j = usize::from(self.ram[SPRITE_D + k]);
+            }
+            self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+            self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+            self.ram[SPRITE_A + k] = TAB4
+                [usize::from(self.ram[SPRITE_D + k] * 2 + ((self.ram[FRAME_COUNTER] >> 2) & 1))];
+        } else {
+            self.sprite_zero_velocity_xy(k);
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                let a = self.get_random_number();
+                self.ram[SPRITE_D + k] = a & 3;
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_DELAY_MAIN + k] = (a & 0x7f).wrapping_add(0x40);
+            }
+            self.ram[SPRITE_A + k] = TAB2
+                [usize::from(self.ram[SPRITE_D + k] * 2 + ((self.ram[FRAME_COUNTER] >> 3) & 1))];
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6E_Rope(int k) {  // 85a973
+    pub(super) fn sprite_6_e_rope(&mut self, k: usize) {
+        let mut j = usize::from(self.ram[SPRITE_A + k]);
+        self.ram[SPRITE_GRAPHICS + k] = K_SPRITE_ROPE_GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] =
+            (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | K_SPRITE_ROPE_FLAGS[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_E + k] != 0 {
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            self.ram[oam + 3] |= 0x30;
+
+            let old_z = self.ram[SPRITE_Z + k];
+            self.sprite_move_z(k);
+            if !sign8(self.ram[SPRITE_Z_VEL + k].wrapping_sub(0xc0)) {
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+            }
+            if !sign8(old_z ^ self.ram[SPRITE_Z + k]) || !sign8(self.ram[SPRITE_Z + k]) {
+                return;
+            }
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 0;
+            self.ram[SPRITE_E + k] = 0;
+            self.ram[SPRITE_FLAGS3 + k] &= !0x10;
+        } else {
+            self.ram[SPRITE_FLAGS2 + k] = 0;
+            if self.sprite_return_if_recoiling(k) {
+                return;
+            }
+            self.sprite_check_damage_to_and_from_link(k);
+            self.sprite_move_xy(k);
+            let _ = self.sprite_check_tile_collision(k);
+            if self.ram[SPRITE_AI_STATE + k] != 0 {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                }
+                j = usize::from(self.ram[SPRITE_D + k]);
+                if self.ram[SPRITE_WALLCOLL + k] != 0 {
+                    self.ram[SPRITE_D + k] = K_SPRITE_ROPE_TAB0[j];
+                    j = usize::from(self.ram[SPRITE_D + k]);
+                }
+
+                j += usize::from(self.ram[SPRITE_G + k]);
+                self.ram[SPRITE_X_VEL + k] = K_SPRITE_ROPE_XVEL[j] as u8;
+                self.ram[SPRITE_Y_VEL + k] = K_SPRITE_ROPE_YVEL[j] as u8;
+
+                let mut i = self.ram[FRAME_COUNTER];
+                if j < 4 {
+                    i >>= 1;
+                }
+
+                self.ram[SPRITE_A + k] =
+                    K_SPRITE_ROPE_TAB1[usize::from(self.ram[SPRITE_D + k] * 2 + ((i >> 1) & 1))];
+            } else {
+                self.sprite_zero_velocity_xy(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_G + k] = 0;
+                    let a = self.get_random_number();
+                    self.ram[SPRITE_D + k] = a & 3;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = (a & 0x7f).wrapping_add(0x40);
+
+                    let mut pt = PointU8 { x: 0, y: 0 };
+                    let dir = self.sprite_direction_to_face_link(k, Some(&mut pt));
+                    if pt.y.wrapping_add(0x10) < 0x20 || pt.x.wrapping_add(0x18) < 0x20 {
+                        self.ram[SPRITE_G + k] = 4;
+                        self.ram[SPRITE_D + k] = dir;
+                    }
+                }
+                self.ram[SPRITE_A + k] = K_SPRITE_ROPE_TAB1[usize::from(
+                    self.ram[SPRITE_D + k] * 2 + ((self.ram[FRAME_COUNTER] >> 3) & 1),
+                )];
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6F_Keese(int k) {  // 85aa8b
+    pub(super) fn sprite_6_f_keese(&mut self, k: usize) {
+        const TAB1: [i8; 2] = [1, -1];
+        const TAB0: [i8; 4] = [2, 10, 6, 14];
+        const TAB2: [i8; 16] = [
+            0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
+        ];
+        const TAB3: [i8; 16] = [
+            -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
+        ];
+
+        self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[SPRITE_DELAY_MAIN + k] = 64;
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                self.sprite_zero_velocity_xy(k);
+            } else {
+                if (self.ram[SPRITE_DELAY_MAIN + k] & 7) == 0 {
+                    self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k]
+                        .wrapping_add(TAB1[usize::from(self.ram[SPRITE_B + k] & 1)] as u8);
+                    if (self.get_random_number() & 3) == 0 {
+                        self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                    }
+                }
+                let j = usize::from(self.ram[SPRITE_A + k] & 0x0f);
+                self.ram[SPRITE_X_VEL + k] = TAB2[j] as u8;
+                self.ram[SPRITE_Y_VEL + k] = TAB3[j] as u8;
+                self.ram[SPRITE_GRAPHICS + k] = ((self.ram[FRAME_COUNTER] >> 2) & 1) + 1;
+            }
+        } else {
+            if ((((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) | self.ram[SPRITE_DELAY_MAIN + k]) != 0
+            {
+                return;
+            }
+
+            let mut pt = PointU8 { x: 0, y: 0 };
+            let dir = self.sprite_direction_to_face_link(k, Some(&mut pt));
+            if pt.y.wrapping_add(0x28) >= 0x50 || pt.x.wrapping_add(0x28) >= 0x50 {
+                return;
+            }
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
+            self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+            self.ram[SPRITE_DELAY_MAIN + k] = 64;
+            self.ram[SPRITE_B + k] = 64;
+            self.ram[SPRITE_A + k] = TAB0[usize::from(dir)] as u8;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6B_CannonTrooper(int k) {  // sprite_main.c:1418
+    pub(super) fn sprite_6_b_cannon_trooper(&mut self, k: usize) {
+        if self.ram[SPRITE_C_DRAW + k] != 0 {
+            self.sprite_cannonball(k);
+            return;
+        }
+        // C Sprite_6B_CannonTrooper asserts when this slot is not a cannonball.
+        assert!(false);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Cannonball(int k) {  // 85ab54
+    pub(super) fn sprite_cannonball(&mut self, k: usize) {
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 30 {
+            self.sprite_spawn_poof_garnish(k);
+        } else if self.ram[SPRITE_DELAY_MAIN + k] == 0 && self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+            self.ram[SPRITE_X_LO + k] = self.ram[SPRITE_X_LO + k].wrapping_add(4);
+            self.ram[SPRITE_Y_LO + k] = self.ram[SPRITE_Y_LO + k].wrapping_add(4);
+            self.sprite_place_rupulse_spark_2(k);
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x05);
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6C_MirrorPortal(int k) {  // 85af75
+    pub(super) fn sprite_6_c_mirror_portal(&mut self, k: usize) {
+        const WARP_VORTEX_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+        if self.ram[SAVEGAME_IS_DARKWORLD] != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        } else {
+            if self.ram[OVERWORLD_SCREEN_INDEX] >= 0x80 {
+                return;
+            }
+
+            if self.frame_control_view().submodule() != 0x23
+                && self.ram[SPRITE_CHR_HALFSLOT_STATE] < 3
+            {
+                self.sprite_draw_single_large(k);
+            }
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            let j = usize::from((self.ram[FRAME_COUNTER] >> 2) & 3);
+            self.ram[SPRITE_OAM_FLAGS + k] =
+                (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | WARP_VORTEX_FLAGS[j];
+            if self.sprite_check_if_link_is_busy() {
+                return;
+            }
+            if self.sprite_check_damage_to_link_same_layer(k) {
+                if self.ram[SPRITE_A + k] != 0
+                    && (self.ram[LINK_DISABLE_SPRITE_DAMAGE] | self.ram[COUNTDOWN_FOR_BLINK]) == 0
+                    && self.ram[FLAG_IS_LINK_IMMOBILIZED] == 0
+                {
+                    self.frame_control_view_mut().set_submodule(0x23);
+                    self.ram[LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE] = 1;
+                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.ram[LINK_ACTUAL_VEL_Y] = 0;
+                    self.ram[LINK_ACTUAL_VEL_X] = 0;
+                    self.ram[LINK_PLAYER_HANDLER_STATE] = 20;
+                    self.ram[LAST_LIGHT_VS_DARK_WORLD] = self.ram[OVERWORLD_SCREEN_INDEX] & 0x40;
+                    self.ram[SPRITE_STATE + k] = 0;
+                }
+            } else {
+                self.ram[SPRITE_A + k] = 1;
+            }
+        }
+        self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+        if self.ram[SPRITE_B + k] == 0 {
+            self.ram[SPRITE_A + k] = 1;
+        }
+        self.ram[SPRITE_X_LO + k] = self.ram[BIRD_TRAVEL_X_LO + 15];
+        self.ram[SPRITE_X_HI + k] = self.ram[BIRD_TRAVEL_X_HI + 15];
+        let t = u16::from(self.ram[BIRD_TRAVEL_Y_LO + 15])
+            | (u16::from(self.ram[BIRD_TRAVEL_Y_HI + 15]) << 8);
+        let t = t.wrapping_add(8);
+        self.ram[SPRITE_Y_LO + k] = t as u8;
+        self.ram[SPRITE_Y_HI + k] = (t >> 8) as u8;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_BA_Whirlpool(int k) {  // 9eee5a
+    pub(super) fn sprite_ba_whirlpool(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+        if self.ram[OVERWORLD_SCREEN_INDEX] == 0x1b {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            let x = read_le_u16(&self.ram, CUR_SPRITE_X)
+                .wrapping_sub(self.player_state_view().x())
+                .wrapping_add(0x40);
+            let y = read_le_u16(&self.ram, CUR_SPRITE_Y)
+                .wrapping_sub(self.player_state_view().y())
+                .wrapping_add(0x0f);
+            if x < 0x51 && y < 0x12 {
+                self.frame_control_view_mut().set_submodule(35);
+                self.ram[LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE] = 1;
+                self.frame_control_view_mut().set_subsubmodule(0);
+                self.ram[LINK_ACTUAL_VEL_Y] = 0;
+                self.ram[LINK_ACTUAL_VEL_X] = 0;
+                self.ram[LINK_PLAYER_HANDLER_STATE] = 20;
+                self.ram[LAST_LIGHT_VS_DARK_WORLD] = self.ram[OVERWORLD_SCREEN_INDEX] & 0x40;
+            }
+        } else {
+            let j = usize::from((self.ram[FRAME_COUNTER] >> 3) & 3);
+            self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | OAM_FLAGS[j];
+            self.oam_allocate_from_region_b(4);
+            let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X).wrapping_sub(5);
+            write_le_u16(&mut self.ram, CUR_SPRITE_X, cur_x);
+            self.sprite_draw_single_large(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            if self.sprite_check_damage_to_link_same_layer(k) {
+                if self.ram[SPRITE_A + k] == 0 {
+                    self.frame_control_view_mut().set_submodule(46);
+                    self.frame_control_view_mut().set_subsubmodule(0);
+                }
+            } else {
+                self.ram[SPRITE_A + k] = 0;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_6A_BallNChain(int k) {  // 85b01b
+    pub(super) fn sprite_6_a_ball_n_chain(&mut self, k: usize) {
+        self.chain_ball_trooper_draw(k);
+        if self.ram[SPRITE_AI_STATE + k] < 2 {
+            self.ram[DUNGMAP_VAR8 + 1] = 0x80;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.guard_parry_sword_attacks(k);
+
+        let mut t = (u16::from(self.ram[SPRITE_B + k]) << 8) | u16::from(self.ram[SPRITE_A + k]);
+        t = t.wrapping_add(u16::from(
+            K_CHAIN_BALL_TROOPER_TAB1[usize::from(self.ram[SPRITE_AI_STATE + k])],
+        ));
+        self.ram[SPRITE_A + k] = t as u8;
+        self.ram[SPRITE_B + k] = ((t >> 8) & 1) as u8;
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_move_xy(k);
+        self.sprite_check_damage_to_link(k);
+
+        let mut pt = PointU8 { x: 0, y: 0 };
+        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x0f) == 0 {
+            self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, Some(&mut pt));
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x0f) == 0 {
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_HEAD_DIR + k];
+                    if pt.y.wrapping_add(0x40) < 0x68 && pt.x.wrapping_add(0x30) < 0x60 {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_MAIN + k] = 24;
+                        return;
+                    }
+                    self.sprite_apply_speed_towards_link(k, 8);
+                }
+                self.ball_n_chain_animate(k);
+            }
+            1 => {
+                self.sprite_zero_velocity_xy(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                }
+            }
+            2 => {
+                let attack_idx =
+                    usize::from(((self.ram[SPRITE_A + k] >> 7) & 1) + self.ram[SPRITE_B + k] * 2);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0
+                    && self.ram[SPRITE_HEAD_DIR + k] == K_FLAIL_TROOPER_ATTACK_DIR[attack_idx]
+                {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 31;
+                }
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                self.ball_n_chain_animate(k);
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x0f) == 0 {
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 6);
+                }
+            }
+            3 => {
+                self.sprite_zero_velocity_xy(k);
+                let t = self.ram[SPRITE_DELAY_AUX2_DRAW + k];
+                if t == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    self.ball_n_chain_animate(k);
+                } else if t >= 0x10 {
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    self.ball_n_chain_animate(k);
+                    if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 0x0f) == 0 {
+                        self.sprite_sfx_queue_sfx3_with_pan(k, 6);
+                    }
+                } else {
+                    self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                    self.ball_n_chain_animate(k);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BallNChain_Animate(int k) {  // 85b0ab
+    pub(super) fn ball_n_chain_animate(&mut self, k: usize) {
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        let j =
+            usize::from(self.ram[SPRITE_D + k] * 8 + ((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 7));
+        self.ram[SPRITE_GRAPHICS + k] = K_FLAIL_TROOPER_GFX[j];
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_5D_Roller_VerticalDownFirst(int k) {  // 858dde
+    pub(super) fn sprite_5_d_roller_vertical_down_first(&mut self, k: usize) {
+        const XYVEL: [i8; 6] = [-16, 16, 0, 0, -16, 16];
+
+        self.ram[SPRITE_GRAPHICS + k] =
+            ((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 1) | (self.ram[SPRITE_D + k] & 2);
+        self.spike_roller_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 112;
+            self.ram[SPRITE_D + k] ^= 1;
+        }
+        let j = usize::from(self.ram[SPRITE_D + k]);
+        self.ram[SPRITE_X_VEL + k] = XYVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = XYVEL[j + 2] as u8;
+        self.sprite_move_xy(k);
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_50_Cannonball(int k) {  // 85b648
+    pub(super) fn sprite_50_cannonball(&mut self, k: usize) {
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            self.sprite_draw_single_large(k);
+        } else {
+            self.sprite_draw_big_cannonball(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 1;
+        self.sprite_move_xy(k);
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 0 && self.sprite_check_tile_collision(k) != 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 16;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_51_ArmosStatue(int k) {  // 85b703
+    pub(super) fn sprite_51_armos_statue(&mut self, k: usize) {
+        self.armos_draw(k);
+        if self.ram[SPRITE_F + k] != 0 {
+            self.sprite_zero_velocity_xy(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_z(k);
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 0;
+            self.sprite_zero_velocity_xy(k);
+        }
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            self.ram[SPRITE_FLAGS3 + k] |= 0x40;
+            if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                self.ram[SPRITE_FLAGS2 + k] &= !0x80;
+                self.ram[SPRITE_FLAGS3 + k] &= !0x40;
+                self.ram[SPRITE_OAM_FLAGS + k] = 0x0b;
+            } else {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) == 0
+                    && self
+                        .player_state_view()
+                        .x()
+                        .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_X))
+                        .wrapping_add(31)
+                        < 62
+                    && self
+                        .player_state_view()
+                        .y()
+                        .wrapping_add(8)
+                        .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_Y))
+                        .wrapping_add(48)
+                        < 88
+                    && self.ram[SPRITE_DELAY_MAIN + k] == 0
+                {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 48;
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
+                }
+                if self.sprite_check_damage_to_link_same_layer(k) {
+                    self.sprite_nullify_hookshot_drag();
+                    self.sprite_repel_dash();
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    self.ram[SPRITE_OAM_FLAGS + k] ^= (self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 0x0e;
+                }
+            }
+        } else {
+            self.sprite_check_damage_to_and_from_link(k);
+            if self.sprite_return_if_recoiling(k) {
+                return;
+            }
+            self.sprite_move_xy(k);
+            let _ = self.sprite_check_tile_collision(k);
+            if (self.ram[SPRITE_DELAY_MAIN + k] | self.ram[SPRITE_Z + k]) == 0 {
+                self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                self.ram[SPRITE_Z_VEL + k] = 16;
+                self.sprite_apply_speed_towards_link(k, 12);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_4E_Popo(int k) {  // 85b80a
+    pub(super) fn sprite_4_e_popo(&mut self, k: usize) {
+        const K_SPRITE_KEESE_TAB2: [i8; 16] = [
+            0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
+        ];
+        const K_SPRITE_KEESE_TAB3: [i8; 16] = [
+            -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
+        ];
+
+        self.bot_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_A + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 4) & 3;
+        self.sprite_check_damage_to_and_from_link(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 105;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 63).wrapping_add(128);
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    let j = usize::from(self.get_random_number() & 15);
+                    self.ram[SPRITE_X_VEL + k] = ((i16::from(K_SPRITE_KEESE_TAB2[j])) << 2) as u8;
+                    self.ram[SPRITE_Y_VEL + k] = ((i16::from(K_SPRITE_KEESE_TAB3[j])) << 2) as u8;
+                }
+            }
+            2 => {
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                    if (((k as u8) ^ self.ram[FRAME_COUNTER]) & self.ram[SPRITE_B + k]) != 0 {
+                        let _ = self.sprite_check_tile_collision(k);
+                        return;
+                    }
+                    self.sprite_move_xy(k);
+                    if self.ram[SPRITE_WALLCOLL + k] == 0 {
+                        let _ = self.sprite_check_tile_collision(k);
+                        return;
+                    }
+                }
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[SPRITE_DELAY_MAIN + k] = 80;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_4D_Toppo(int k) {  // 85ba85
+    pub(super) fn sprite_4_d_toppo(&mut self, k: usize) {
+        const X_OFFS: [i8; 4] = [-32, 32, 0, 0];
+        const Y_OFFS: [i8; 4] = [0, 0, -32, 32];
+
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+            self.toppo_draw(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                    let j = usize::from(self.get_random_number() & 3);
+                    let x = u16::from(self.ram[SPRITE_A + k])
+                        | (u16::from(self.ram[SPRITE_B + k]) << 8);
+                    let y = u16::from(self.ram[SPRITE_C + k])
+                        | (u16::from(self.ram[SPRITE_HEAD_DIR + k]) << 8);
+                    self.sprite_set_x(k, x.wrapping_add(X_OFFS[j] as i16 as u16));
+                    self.sprite_set_y(k, y.wrapping_add(Y_OFFS[j] as i16 as u16));
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_DELAY_MAIN + k] >> 2) & 1;
+                    self.toppo_verify_tile(k);
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.ram[SPRITE_Z_VEL + k] = 64;
+                }
+                self.ram[SPRITE_GRAPHICS + k] = 2;
+                self.toppo_verify_tile(k);
+            }
+            3 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                self.sprite_move_z(k);
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_Z + k] = 0;
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                    self.toppo_verify_tile(k);
+                }
+            }
+            4 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_DELAY_MAIN + k] >> 2) & 1;
+                }
+                self.toppo_verify_tile(k);
+            }
+            5 => self.toppo_flustered(k),
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Toppo_VerifyTile(int k) {  // 85bb72
+    pub(super) fn toppo_verify_tile(&mut self, k: usize) {
+        let mut x = self.sprite_get_x(k);
+        let y = self.sprite_get_y(k);
+        if self.GetTileAttribute(0, &mut x, y) != 0x40 {
+            self.ram[SPRITE_AI_STATE + k] = 5;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Toppo_Draw(int k) {  // 85bbff
+    pub(super) fn toppo_draw(&mut self, k: usize) {
+        const X: [i8; 15] = [0, 8, 8, 0, 8, 8, 0, 0, 8, 0, 0, 0, 0, 0, 0];
+        const Y: [i8; 15] = [8, 8, 8, 8, 8, 8, 0, 8, 8, 0, 0, 0, 0, 0, 0];
+        const CH: [u8; 15] = [
+            0xc8, 0xc8, 0xc8, 0xca, 0xca, 0xca, 0xc0, 0xc8, 0xc8, 0xc2, 0xc2, 0xc2, 0xc2, 0xc2,
+            0xc2,
+        ];
+        const FLAGS: [u8; 15] = [
+            0, 0x40, 0x40, 0, 0x40, 0x40, 0, 0, 0x40, 0, 0, 0, 0x40, 0x40, 0x40,
+        ];
+        const BIG: [u8; 15] = [0, 0, 0, 0, 0, 0, 2, 0, 0, 2, 2, 2, 2, 2, 2];
+
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        let ybase = self
+            .sprite_get_y(k)
+            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+        for i in (0..=2).rev() {
+            let j = i + g * 3;
+            let big = BIG[j];
+            let mut flags = FLAGS[j] | info_flags;
+            if big == 0 {
+                flags = (flags & !0x0f) | 2;
+            }
+            let base_y = if big != 0 { info_y } else { ybase };
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[j] as i16 as u16),
+                base_y.wrapping_add(Y[j] as i16 as u16),
+                CH[j],
+                flags,
+                big,
+            );
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Toppo_Flustered(int k) {  // 9df3d4
+    pub(super) fn toppo_flustered(&mut self, k: usize) {
+        self.ram[SPRITE_FLAGS2 + k] = 130;
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 130;
+        self.ram[SPRITE_FLAGS3 + k] = 73;
+        if self.ram[SPRITE_SUBTYPE + k] == 0 {
+            if self.sprite_check_damage_to_link(k) {
+                write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x174);
+                self.sprite_show_message_minimal_c();
+                self.ram[SPRITE_SUBTYPE + k] = 1;
+            }
+        } else if self.ram[SPRITE_SUBTYPE + k] < 16 {
+            self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(1);
+        } else if self.ram[SPRITE_SUBTYPE + k] == 16 {
+            self.ram[SPRITE_FLAGS5 + k] = 0;
+            self.ram[SPRITE_STATE + k] = 6;
+            self.ram[SPRITE_DELAY_MAIN + k] = 15;
+            self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_add(4);
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x15);
+            let mut info = SpriteSpawnInfo::default();
+            let j = self.sprite_spawn_dynamically(k, 0x4d, &mut info);
+            if j >= 0 {
+                let j = j as usize;
+                self.sprite_set_spawned_coordinates(j, &info);
+                self.force_prize_drop(j, 6, 6);
+            }
+            self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(1);
+        }
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] = ((self.ram[SPRITE_SUBTYPE2 + k] & 4) >> 2) + 3;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_4B_GreenKnifeGuard(int k) {  // 85bca2
+    pub(super) fn sprite_4_b_green_knife_guard(&mut self, k: usize) {
+        self.ram[SPRITE_GRAPHICS + k] = K_SPRITE_RECRUIT_GFX[usize::from(
+            self.ram[SPRITE_D + k].wrapping_add((self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 4),
+        )];
+        self.recruit_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        let _ = self.sprite_check_tile_collision(k);
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.green_knife_guard_moving(k);
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+            return;
+        }
+
+        self.ram[SPRITE_DELAY_MAIN + k] = (self.get_random_number() & 0x3f).wrapping_add(0x30);
+        self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+        self.ram[SPRITE_D + k] = self.ram[SPRITE_HEAD_DIR + k];
+        let mut pt = PointU8 { x: 0, y: 0 };
+        let mut j = self.ram[SPRITE_D + k];
+        if j == self.sprite_direction_to_face_link(k, Some(&mut pt))
+            && (pt.x.wrapping_add(0x10) < 0x20 || pt.y.wrapping_add(0x10) < 0x20)
+        {
+            j = j.wrapping_add(4);
+            self.ram[SPRITE_DELAY_MAIN + k] = 128;
+        }
+        self.ram[SPRITE_X_VEL + k] = K_SPRITE_RECRUIT_XVEL[usize::from(j)];
+        self.ram[SPRITE_Y_VEL + k] = K_SPRITE_RECRUIT_YVEL[usize::from(j)];
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_4C_Geldman(int k) {  // 85b8b3
+    pub(super) fn sprite_4_c_geldman(&mut self, k: usize) {
+        const EMERGE_GFX: [u8; 8] = [3, 2, 0, 0, 0, 0, 0, 0];
+        const PURSUE_GFX: [u8; 2] = [4, 5];
+        const SUBMERGE_GFX: [u8; 5] = [0, 1, 2, 3, 3];
+
+        if self.ram[SPRITE_AI_STATE + k] < 2 {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+        } else {
+            self.gerudo_man_draw(k);
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 1;
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_X_LO + k] = self.ram[SPRITE_A + k];
+                    self.ram[SPRITE_X_HI + k] = self.ram[SPRITE_B + k];
+                    self.ram[SPRITE_Y_LO + k] = self.ram[SPRITE_C + k];
+                    self.ram[SPRITE_Y_HI + k] = self.ram[SPRITE_HEAD_DIR + k];
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 7) == 0
+                    && self
+                        .player_state_view()
+                        .x()
+                        .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_X))
+                        .wrapping_add(0x30)
+                        < 0x60
+                    && self
+                        .player_state_view()
+                        .y()
+                        .wrapping_sub(read_le_u16(&self.ram, CUR_SPRITE_Y))
+                        .wrapping_add(0x30)
+                        < 0x60
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 31;
+                }
+            }
+            2 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 96;
+                    self.sprite_apply_speed_towards_link(k, 16);
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        EMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 2)];
+                }
+            }
+            3 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = 0;
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 8;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        PURSUE_GFX[usize::from((self.ram[SPRITE_DELAY_MAIN + k] >> 2) & 1)];
+                    self.sprite_check_damage_to_and_from_link(k);
+                    self.sprite_move_xy(k);
+                }
+            }
+            4 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 16;
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        SUBMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 1)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_66_WallCannonVerticalLeft(int k) {  // 858090
+    pub(super) fn sprite_66_wall_cannon_vertical_left(&mut self, k: usize) {
+        const XVEL: [i8; 4] = [0, 0, -16, 16];
+        const YVEL: [i8; 4] = [-16, 16, 0, 0];
+        const GFX: [u8; 4] = [0, 0, 2, 2];
+        const OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0x80];
+        const SPAWN_X: [i8; 4] = [8, -8, 0, 0];
+        const SPAWN_Y: [i8; 4] = [0, 0, 8, -8];
+        const SPAWN_XVEL: [i8; 4] = [24, -24, 0, 0];
+        const SPAWN_YVEL: [i8; 4] = [0, 0, 24, -24];
+
+        let mut j = usize::from(self.ram[SPRITE_D + k]);
+        self.ram[SPRITE_GRAPHICS + k] =
+            GFX[j] + u8::from(self.ram[SPRITE_DELAY_AUX2_DRAW + k] != 0);
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = 128;
+            self.ram[SPRITE_A + k] ^= 1;
+        }
+        j = usize::from(self.ram[SPRITE_A + k]);
+        self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+        self.sprite_move_xy(k);
+
+        if ((((k as u8) << 2).wrapping_add(self.ram[FRAME_COUNTER])) & 31) == 0 {
+            self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 16;
+        }
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] != 1 || self.ram[SPRITE_PAUSE + k] != 0 {
+            return;
+        }
+        let mut info = SpriteSpawnInfo::default();
+        let spawned = self.sprite_spawn_dynamically_ex(k, 0x6b, &mut info, 13);
+        if spawned >= 0 {
+            let j = spawned as usize;
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x07);
+            self.ram[SPRITE_C_DRAW + j] = 1;
+            self.ram[SPRITE_GRAPHICS + j] = 1;
+            let i = usize::from(self.ram[SPRITE_D + k]);
+            self.sprite_set_x(j, info.r0_x.wrapping_add_signed(i16::from(SPAWN_X[i])));
+            self.sprite_set_y(j, info.r2_y.wrapping_add_signed(i16::from(SPAWN_Y[i])));
+            self.ram[SPRITE_X_VEL + j] = SPAWN_XVEL[i] as u8;
+            self.ram[SPRITE_Y_VEL + j] = SPAWN_YVEL[i] as u8;
+            self.ram[SPRITE_FLAGS2 + j] = (self.ram[SPRITE_FLAGS2 + j] & 0xf0) | 1;
+            self.ram[SPRITE_FLAGS3 + j] |= 0x47;
+            self.ram[SPRITE_DEFL_BITS + j] |= 0x44;
+            self.ram[SPRITE_DELAY_MAIN + j] = 32;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_5B_Spark_Clockwise(int k) {  // 85933f
+    pub(super) fn sprite_5_b_spark_clockwise(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
+        const DIRECTIONS: [u8; 8] = [1, 3, 2, 0, 7, 5, 6, 4];
+        const SOLDIER_B_XVEL: [i8; 8] = [1, 1, -1, -1, -1, -1, 1, 1];
+        const SOLDIER_B_YVEL: [i8; 8] = [-1, 1, 1, -1, -1, 1, 1, -1];
+        const SOLDIER_B_XVEL2: [i8; 8] = [8, 0, -8, 0, -8, 0, 8, 0];
+        const SOLDIER_B_YVEL2: [i8; 8] = [0, 8, 0, -8, 0, 8, 0, -8];
+        const SOLDIER_B_MASK2: [u8; 8] = [1, 4, 2, 8, 2, 4, 1, 8];
+        const SOLDIER_B_MASK: [u8; 8] = [8, 1, 4, 2, 8, 2, 4, 1];
+        const SOLDIER_B_NEXTB2: [u8; 8] = [1, 2, 3, 0, 5, 6, 7, 4];
+        const SOLDIER_B_NEXTB: [u8; 8] = [3, 0, 1, 2, 7, 4, 5, 6];
+
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if (self.ram[FRAME_COUNTER] & 1) == 0 {
+            self.ram[SPRITE_OAM_FLAGS + k] ^= 6;
+        }
+        if self.ram[SPRITE_AI_STATE + k] == 0 {
+            self.ram[SPRITE_AI_STATE + k] = 1;
+            self.ram[SPRITE_X_VEL + k] = 1;
+            self.ram[SPRITE_Y_VEL + k] = 1;
+            let mut coll = self.sprite_check_tile_collision(k);
+            self.ram[SPRITE_X_VEL + k] = (-1i8) as u8;
+            self.ram[SPRITE_Y_VEL + k] = (-1i8) as u8;
+            coll |= self.sprite_check_tile_collision(k);
+            let j = if coll < 4 {
+                if (coll & 1) != 0 {
+                    0
+                } else {
+                    1
+                }
+            } else if (coll & 4) != 0 {
+                2
+            } else {
+                3
+            };
+            self.ram[SPRITE_D + k] =
+                DIRECTIONS[usize::from(u8::from(self.ram[SPRITE_TYPE + k] != 0x5c) * 4 + j)];
+        }
+
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f)
+            | OAM_FLAGS[usize::from((self.ram[FRAME_COUNTER] >> 2) & 3)];
+        self.sprite_move_xy(k);
+        self.sprite_check_damage_to_link(k);
+        let mut j = usize::from(self.ram[SPRITE_D + k]);
+        self.ram[SPRITE_X_VEL + k] = SOLDIER_B_XVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = SOLDIER_B_YVEL[j] as u8;
+        let _ = self.sprite_check_tile_collision(k);
+
+        j = usize::from(self.ram[SPRITE_D + k]);
+        if self.ram[SPRITE_DELAY_AUX2_DRAW + k] != 0 {
+            if self.ram[SPRITE_DELAY_AUX2_DRAW + k] == 6 {
+                j = usize::from(SOLDIER_B_NEXTB[j]);
+            }
+        } else if (self.ram[SPRITE_WALLCOLL + k] & SOLDIER_B_MASK[j]) == 0 {
+            self.ram[SPRITE_DELAY_AUX2_DRAW + k] = 10;
+        }
+        if (self.ram[SPRITE_WALLCOLL + k] & SOLDIER_B_MASK2[j]) != 0 {
+            j = usize::from(SOLDIER_B_NEXTB2[j]);
+        }
+        self.ram[SPRITE_D + k] = j as u8;
+        self.ram[SPRITE_X_VEL + k] = (SOLDIER_B_XVEL2[j] * 2) as u8;
+        self.ram[SPRITE_Y_VEL + k] = (SOLDIER_B_YVEL2[j] * 2) as u8;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_59_LostWoodsBird(int k) {  // 85940e
+    pub(super) fn sprite_59_lost_woods_bird(&mut self, k: usize) {
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            return;
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40)
+            | if sign8(self.ram[SPRITE_X_VEL + k]) {
+                0
+            } else {
+                0x40
+            };
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_move_z(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_GRAPHICS + k] = 0;
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+                if sign8(self.ram[SPRITE_Z_VEL + k].wrapping_sub(0xf1)) {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_add(2);
+                if !sign8(self.ram[SPRITE_Z_VEL + k].wrapping_sub(0x10)) {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+                self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                self.ram[SPRITE_GRAPHICS + k] = (self.ram[SPRITE_SUBTYPE2 + k] >> 1) & 1;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_5A_LostWoodsSquirrel(int k) {  // 859468
+    pub(super) fn sprite_5_a_lost_woods_squirrel(&mut self, k: usize) {
+        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
+            return;
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40)
+            | if sign8(self.ram[SPRITE_X_VEL + k]) {
+                0
+            } else {
+                0x40
+            };
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        self.sprite_move_xy(k);
+        self.sprite_move_z(k);
+        self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(2);
+        if sign8(self.ram[SPRITE_Z + k]) {
+            self.ram[SPRITE_Z + k] = 0;
+            self.ram[SPRITE_Z_VEL + k] = 16;
+            self.ram[SPRITE_DELAY_MAIN + k] = 12;
+        }
+        self.ram[SPRITE_GRAPHICS + k] = u8::from(self.ram[SPRITE_DELAY_MAIN + k] != 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_58_Crab(int k) {  // 8594b5
+    pub(super) fn sprite_58_crab(&mut self, k: usize) {
+        const XVEL: [i8; 4] = [28, -28, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, 12, -12];
+
+        self.crab_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        if self.sprite_check_tile_collision(k) != 0 || self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.ram[SPRITE_DELAY_MAIN + k] = (self.get_random_number() & 63).wrapping_add(32);
+            self.ram[SPRITE_D + k] = self.ram[SPRITE_DELAY_MAIN + k] & 3;
+        }
+        let j = self.ram[SPRITE_D + k];
+        self.ram[SPRITE_X_VEL + k] = XVEL[usize::from(j & 3)] as u8;
+        self.ram[SPRITE_Y_VEL + k] = YVEL[usize::from(j & 3)] as u8;
+        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.ram[SPRITE_GRAPHICS + k] =
+            (self.ram[SPRITE_SUBTYPE2 + k] >> if j < 2 { 1 } else { 3 }) & 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_80_Firesnake(int k) {  // 9ed1d1
+    pub(super) fn sprite_80_firesnake(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
+        const XVEL: [i8; 4] = [24, -24, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, 24, -24];
+        const ZAZAK_DIR2: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
+
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f)
+            | OAM_FLAGS[usize::from((self.ram[FRAME_COUNTER] >> 2) & 3)];
+        if self.ram[SPRITE_A + k] != 0 {
+            self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.firesnake_spawn_fireball(k);
+        if self.ram[SPRITE_WALLCOLL + k] == 0 {
+            self.sprite_move_xy(k);
+        }
+        if self.sprite_check_tile_collision(k) != 0 {
+            let j = usize::from(self.ram[SPRITE_D + k] * 2 + (self.get_random_number() & 1));
+            self.ram[SPRITE_D + k] = ZAZAK_DIR2[j];
+        }
+        let j = usize::from(self.ram[SPRITE_D + k] & 3);
+        self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+        self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_87_KodongoFire(int k) {  // 9ec274
+    pub(super) fn sprite_87_kodongo_fire(&mut self, k: usize) {
+        const OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+        const GFX: [u8; 32] = [
+            5, 4, 3, 1, 2, 0, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1,
+            2, 3, 0,
+        ];
+
+        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+            self.sprite_draw_single_large(k);
+            if self.sprite_return_if_inactive(k) {
+                return;
+            }
+            self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f)
+                | OAM_FLAGS[usize::from((self.ram[FRAME_COUNTER] >> 2) & 3)];
+            if !self.sprite_check_damage_to_link(k) {
+                self.sprite_move_xy(k);
+                if self.sprite_check_tile_collision(k) == 0 {
+                    return;
+                }
+            }
+            self.ram[SPRITE_DELAY_MAIN + k] = 127;
+            self.ram[SPRITE_OAM_FLAGS + k] &= 63;
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x2a);
+        } else {
+            let carried = (self.sprite_check_damage_from_link(k)
+                & K_CHECK_DAMAGE_FROM_PLAYER_CARRY_DRAW)
+                != 0;
+            let mut extinguish = false;
+            if carried {
+                self.ram[SPRITE_DELAY_MAIN + k] = self.ram[SPRITE_DELAY_MAIN + k].wrapping_sub(1);
+                extinguish = self.ram[SPRITE_DELAY_MAIN + k] == 0;
+            }
+            if extinguish || self.ram[SPRITE_DELAY_MAIN + k] == 1 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+            self.ram[SPRITE_GRAPHICS + k] = GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+            self.flame_draw(k);
+            self.sprite_check_damage_to_link(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_7C_GreenStalfos(int k) {  // 9ed299
+    pub(super) fn sprite_7_c_green_stalfos(&mut self, k: usize) {
+        const DIR: [u8; 4] = [4, 6, 0, 2];
+        const OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+        const GFX: [u8; 4] = [0, 0, 1, 2];
+
+        let mut j = usize::from(self.ram[SPRITE_D + k] & 3);
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | OAM_FLAGS[j];
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.sprite_draw_single_large(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        j = usize::from(self.sprite_direction_to_face_link(k, None) & 3);
+        if DIR[j] != self.ram[LINK_DIRECTION_FACING] {
+            self.ram[SPRITE_A + k] = 0;
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 7) == 0 {
+                let vel = self.ram[SPRITE_B_DRAW + k];
+                if vel != 4 {
+                    self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_add(1);
+                }
+                self.sprite_apply_speed_towards_link(k, vel);
+                self.ram[SPRITE_D + k] = self.sprite_is_right_of_link(k).a;
+            }
+        } else {
+            self.ram[SPRITE_A + k] = 1;
+            if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 15) == 0 {
+                let vel = self.ram[SPRITE_B_DRAW + k];
+                if vel != 0 {
+                    self.ram[SPRITE_B_DRAW + k] = self.ram[SPRITE_B_DRAW + k].wrapping_sub(1);
+                }
+                self.sprite_apply_speed_towards_link(k, vel);
+                self.ram[SPRITE_D + k] = self.sprite_is_right_of_link(k).a;
+            }
+        }
+        self.sprite_move_xy(k);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_71_Leever(int k) {  // 86cba2
+    pub(super) fn sprite_71_leever(&mut self, k: usize) {
+        const EMERGE_GFX: [u8; 16] = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 1, 2, 1, 0, 0];
+        const ATTACK_GFX: [u8; 4] = [9, 10, 11, 12];
+        const ATTACK_SPD: [u8; 2] = [12, 8];
+        const SUBMERGE_GFX: [u8; 16] = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 1, 2, 1, 0, 0];
+
+        if self.ram[SPRITE_AI_STATE + k] != 0 {
+            self.leever_draw(k);
+        } else {
+            let mut info = SpritePrepOamCoordsRet {
+                x: 0,
+                y: 0,
+                r4: 0,
+                flags: 0,
+            };
+            self.sprite_prep_oam_coord(k, &mut info);
+        }
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            self.ram[SPRITE_STATE + k] = 8;
+        }
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                } else {
+                    self.sprite_apply_speed_towards_link(k, 16);
+                    self.sprite_move_xy(k);
+                    self.sprite_check_tile_collision2(k);
+                }
+            }
+            1 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 63).wrapping_add(160);
+                    self.sprite_zero_velocity_xy(k);
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        EMERGE_GFX[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3)];
+                }
+            }
+            2 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                } else {
+                    if (self.ram[SPRITE_SUBTYPE2 + k] & 7) == 0 {
+                        self.sprite_apply_speed_towards_link(
+                            k,
+                            ATTACK_SPD[usize::from(self.ram[SPRITE_A + k])],
+                        );
+                    }
+                    self.sprite_move_xy(k);
+                    if self.sprite_check_tile_collision(k) != 0 {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    } else {
+                        self.ram[SPRITE_SUBTYPE2 + k] =
+                            self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                        self.ram[SPRITE_GRAPHICS + k] =
+                            ATTACK_GFX[usize::from((self.ram[SPRITE_SUBTYPE2 + k] >> 2) & 3)];
+                    }
+                }
+            }
+            3 => {
+                self.ram[SPRITE_IGNORE_PROJECTILE_DRAW + k] = self.ram[SPRITE_DELAY_MAIN + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        (self.get_random_number() & 31).wrapping_add(64);
+                } else {
+                    self.ram[SPRITE_GRAPHICS + k] =
+                        SUBMERGE_GFX[usize::from((self.ram[SPRITE_DELAY_MAIN + k] >> 3) ^ 15)];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_1D_FluteQuest(int k) {  // 86c2e5
+    pub(super) fn sprite_1_d_flute_quest(&mut self, k: usize) {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.ram[OVERWORLD_SCREEN_INDEX] == 0x18 {
+            if self.ram[LINK_ITEM_FLUTE] == 3 {
+                self.ram[SPRITE_STATE + k] = 0;
+            }
+        } else if (self.ram[LINK_ITEM_FLUTE] & 2) != 0 {
+            self.ram[SPRITE_STATE + k] = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_12_Moblin(int k) {  // 8698e4
+    pub(super) fn sprite_12_moblin(&mut self, k: usize) {
+        const XVEL: [i8; 4] = [16, -16, 0, 0];
+        const YVEL: [i8; 4] = [0, 0, 16, -16];
+        const DELAY: [u8; 4] = [0x10, 0x20, 0x30, 0x40];
+        const GFX2: [u8; 8] = [11, 10, 8, 9, 7, 5, 0, 2];
+        const DIRS: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
+        const GFX: [u8; 4] = [6, 4, 0, 2];
+
+        self.moblin_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return;
+        }
+        self.sprite_check_damage_to_and_from_link(k);
+        self.sprite_move_xy(k);
+        let _ = self.sprite_check_tile_collision(k);
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] =
+                        DELAY[usize::from(self.get_random_number() & 3)];
+                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.ram[SPRITE_D + k] = self.ram[SPRITE_HEAD_DIR + k];
+                    let j = usize::from(self.ram[SPRITE_HEAD_DIR + k]);
+                    self.ram[SPRITE_X_VEL + k] = XVEL[j] as u8;
+                    self.ram[SPRITE_Y_VEL + k] = YVEL[j] as u8;
+                }
+            }
+            1 => {
+                self.ram[SPRITE_GRAPHICS + k] =
+                    (self.ram[SPRITE_SUBTYPE2 + k] & 1) + GFX[usize::from(self.ram[SPRITE_D + k])];
+                if self.ram[SPRITE_WALLCOLL + k] == 0 {
+                    if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+                        let new_e = self.ram[SPRITE_E + k].wrapping_sub(1);
+                        self.ram[SPRITE_E + k] = new_e;
+                        if sign8(new_e) {
+                            self.ram[SPRITE_E + k] = 11;
+                            self.ram[SPRITE_SUBTYPE2 + k] =
+                                self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+                        }
+                        return;
+                    }
+                    if self.ram[SPRITE_D + k] == self.sprite_direction_to_face_link(k, None) {
+                        self.ram[SPRITE_AI_STATE + k] =
+                            self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                        self.ram[SPRITE_DELAY_MAIN + k] = 32;
+                        self.sprite_zero_velocity_xy(k);
+                        self.ram[SPRITE_Z_VEL + k] = 0;
+                        return;
+                    }
+                    self.ram[SPRITE_DELAY_MAIN + k] = 0x10;
+                } else {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 0x0c;
+                }
+                let dir_idx =
+                    usize::from((self.ram[SPRITE_D + k] << 1) | (self.get_random_number() & 1));
+                self.ram[SPRITE_HEAD_DIR + k] = DIRS[dir_idx];
+                self.ram[SPRITE_AI_STATE + k] = 0;
+                self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
+                if self.ram[SPRITE_C + k] == 4 {
+                    self.ram[SPRITE_C + k] = 0;
+                    self.ram[SPRITE_HEAD_DIR + k] = self.sprite_direction_to_face_link(k, None);
+                }
+                self.sprite_zero_velocity_xy(k);
+                self.ram[SPRITE_Z_VEL + k] = 0;
+            }
+            2 => {
+                let mut j = self.ram[SPRITE_D + k];
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                }
+                if self.ram[SPRITE_DELAY_MAIN + k] < 16 {
+                    if self.ram[SPRITE_DELAY_MAIN + k] == 15 {
+                        self.moblin_materialize_spear(k);
+                        self.ram[SPRITE_DELAY_AUX1 + k] = 32;
+                    }
+                    j = j.wrapping_add(4);
+                }
+                self.ram[SPRITE_GRAPHICS + k] = GFX2[usize::from(j)];
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_Cukeman(int k) {  // 9afa0c
+    pub(super) fn sprite_cukeman(&mut self, k: usize) {
+        if self.ram[SPRITE_HEAD_DIR + k] == 0 {
+            return;
+        }
+
+        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
+        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        let link_x = self.player_state_view().x();
+        let link_y = self.player_state_view().y();
+        if self.ram[SPRITE_STATE + k] == 9
+            && (self.frame_control_view().submodule() | self.ram[FLAG_UNK1]) == 0
+            && cur_x.wrapping_sub(link_x).wrapping_add(0x18) < 0x30
+            && link_y.wrapping_sub(cur_y).wrapping_add(0x20) < 0x30
+            && (self.ram[FILTERED_JOYPAD_L] & 0x80) != 0
+        {
+            let subtype = self.ram[SPRITE_SUBTYPE + k];
+            write_le_u16(
+                &mut self.ram,
+                DIALOGUE_MESSAGE_INDEX,
+                0x017a + u16::from(subtype & 1),
+            );
+            self.ram[SPRITE_SUBTYPE + k] = subtype.wrapping_add(1);
+            self.sprite_show_message_minimal_c();
+        }
+
+        let old = self.ram[SPRITE_OAM_FLAGS + k] & 0xf0;
+        self.ram[SPRITE_OAM_FLAGS + k] = old | 8;
+        self.cukeman_draw(k);
+        self.ram[SPRITE_OAM_FLAGS + k] = old | 0x0d;
+        self.oam_allocate_from_region_a(0x10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Octoballoon_Draw(int k) {  // 86d784
+    pub(super) fn octoballoon_draw(&mut self, k: usize) {
+        const X: [i8; 12] = [-4, 4, -4, 4, -8, 8, -8, 8, -4, 4, -4, 4];
+        const Y: [i8; 12] = [-4, -4, 4, 4, -8, -8, 8, 8, -4, -4, 4, 4];
+        const CH: [u8; 12] = [
+            0x8c, 0x8c, 0x9c, 0x9c, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86,
+        ];
+        const FL: [u8; 12] = [0, 0x40, 0, 0x40, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0];
+        let mut d = 0usize;
+        if self.ram[SPRITE_STATE + k] == 6 {
+            if self.ram[SPRITE_DELAY_MAIN + k] == 6 && self.frame_control_view().submodule() == 0 {
+                self.octoballoon_form_babby(k);
+            }
+            d = usize::from((self.ram[SPRITE_DELAY_MAIN + k] >> 1) & 4) + 4;
+        }
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut info = SpritePrepOamCoordsRet {
+            x: info_x,
+            y: info_y,
+            r4: 0,
+            flags: info_flags,
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        for i in (0..4).rev() {
+            let j = d + i;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[j] as i16 as u16),
+                info_y.wrapping_add(Y[j] as i16 as u16),
+                CH[j],
+                FL[j] | info_flags,
+                2,
+            );
+            oam += 4;
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // void Kholdstare_Draw(int k) {  // 8dd98f
+    pub(super) fn kholdstare_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 16] = [
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: -7,
+                char_flags: 0x0080,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -7,
+                char_flags: 0x0082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 7,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: -7,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: -7,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -7,
+                y: 7,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 7,
+                y: 7,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: -8,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: -8,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 8,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 8,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+        ];
+        const X: [i8; 16] = [8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2, 0, 2, 4, 7];
+        const Y: [i8; 16] = [0, 2, 4, 7, 8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2];
+        const CH: [u8; 16] = [
+            0xac, 0xac, 0xaa, 0x8c, 0x8c, 0x8c, 0xaa, 0xac, 0xac, 0xaa, 0xaa, 0x8c, 0x8c, 0x8c,
+            0xaa, 0xac,
+        ];
+        const FL: [u8; 16] = [
+            0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xc0, 0xc0,
+        ];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let j = usize::from(self.ram[SPRITE_A + k]);
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            info_x.wrapping_add(X[j] as i16 as u16),
+            info_y.wrapping_add(Y[j] as i16 as u16),
+            CH[j],
+            FL[j] | info_flags,
+            2,
+        );
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple_with_info(k, &D[base..base + 4], (info_x, info_y, info_flags));
+    }
+
+    // -----------------------------------------------------------------------
+    // void Octoballoon_RecoilLink(int k) {  // 86d72b
+    pub(super) fn octoballoon_recoil_link(&mut self, k: usize) {
+        if self.ram[LINK_INCAPACITATED_TIMER] == 0 {
+            self.ram[LINK_INCAPACITATED_TIMER] = 4;
+            self.sprite_apply_recoil_to_link(k, 16);
+            self.sprite_invert_speed_xy(k);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void BatCrash_DrawHardcodedGarbage(int k) {  // 9af750
+    pub(super) fn bat_crash_draw_hardcoded_garbage(&mut self, _k: usize) {
+        const OAMS: [(i8, i8, u8, u8); 8] = [
+            (104, -105, 0x57, 0x01),
+            (120, -105, 0x57, 0x01),
+            (-120, -105, 0x57, 0x01),
+            (104, -89, 0x57, 0x01),
+            (120, -89, 0x57, 0x01),
+            (-120, -89, 0x57, 0x01),
+            (101, -112, 0x57, 0x01),
+            (-117, -112, 0x57, 0x01),
+        ];
+        let mut oam = OAM_BUF + 76 * 4;
+        for &(x, y, ch, fl) in &OAMS {
+            self.ram[oam] = x as u8;
+            self.ram[oam + 1] = y as u8;
+            self.ram[oam + 2] = ch;
+            self.ram[oam + 3] = fl;
+            oam += 4;
+        }
+        for i in 0..9 {
+            self.ram[BYTEWISE_EXTENDED_OAM + 76 + i] = 2;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Moldorm_Draw(int k) {  // 9df822
+    pub(super) fn moldorm_draw(&mut self, k: usize) {
+        const X: [i8; 16] = [11, 10, 9, 6, 3, 0, -2, -3, -4, -3, -2, 1, 4, 7, 9, 10];
+        const Y: [i8; 16] = [4, 6, 9, 10, 11, 10, 9, 6, 3, 0, -2, -3, -4, -3, -2, 1];
+        const CH: [u8; 3] = [0x5d, 0x62, 0x60];
+        const XY: [i8; 3] = [4, 0, 0];
+        const BIG: [u8; 3] = [0, 2, 2];
+        const GET_OFFS: [u8; 3] = [21, 26, 0];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let mut base = self.ram[SPRITE_D + k].wrapping_sub(1);
+        for _ in (0..2).rev() {
+            let idx = usize::from(base & 0x0f);
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[idx] as i16 as u16),
+                info_y.wrapping_add(Y[idx] as i16 as u16),
+                0x4d,
+                info_flags,
+                0,
+            );
+            oam += 4;
+            base = base.wrapping_add(2);
+        }
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(8));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(2));
+
+        let j = (usize::from(self.ram[SPRITE_SUBTYPE2 + k] & 0x1f)) + k * 32;
+        self.ram[MOLDORM_X_LO_DRAW + j] = self.ram[SPRITE_X_LO + k];
+        self.ram[MOLDORM_X_HI_DRAW + j] = self.ram[SPRITE_X_HI + k];
+        self.ram[MOLDORM_Y_LO_DRAW + j] = self.ram[SPRITE_Y_LO + k];
+        self.ram[MOLDORM_Y_HI_DRAW + j] = self.ram[SPRITE_Y_HI + k];
+
+        for i in (0..3).rev() {
+            let j = usize::from(self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(GET_OFFS[i]) & 0x1f)
+                + k * 32;
+            let x = (u16::from(self.ram[MOLDORM_X_LO_DRAW + j])
+                | (u16::from(self.ram[MOLDORM_X_HI_DRAW + j]) << 8))
+                .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2))
+                .wrapping_add(XY[i] as i16 as u16);
+            let y = (u16::from(self.ram[MOLDORM_Y_LO_DRAW + j])
+                | (u16::from(self.ram[MOLDORM_Y_HI_DRAW + j]) << 8))
+                .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2))
+                .wrapping_add(XY[i] as i16 as u16);
+            self.set_oam_helper0_at_for_draw(oam, x, y, CH[i], info_flags, BIG[i]);
+            oam += 4;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // void Sprite_54_Lanmolas(int k) {  // 85a3a2
+    pub(super) fn sprite_54_lanmolas(&mut self, k: usize) {
+        const RAND_B: [u8; 8] = [0x58, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0x98];
+        const RAND_C: [u8; 8] = [0x68, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xa8, 0x80];
+        const ZVEL: [i8; 2] = [2, -2];
+        const DESERT_BARRIER_XV: [u8; 2] = [16, (-16i8) as u8];
+
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        self.lanmola_draw(k);
+        if self.sprite_return_if_paused(k) {
+            return;
+        }
+
+        match self.ram[SPRITE_AI_STATE + k] {
+            0 => {
+                if (self.ram[SPRITE_DELAY_MAIN + k] | self.ram[SPRITE_PAUSE + k]) == 0 {
+                    self.ram[SPRITE_DELAY_MAIN + k] = 127;
+                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x35);
+                }
+            }
+            1 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.lanmola_spawn_shrapnel(k);
+                    self.ram[SOUND_EFFECT_AMBIENT] = 0x13;
+                    self.ram[SPRITE_B_DRAW + k] = RAND_B[usize::from(self.get_random_number() & 7)];
+                    self.ram[SPRITE_C_DRAW + k] = RAND_C[usize::from(self.get_random_number() & 7)];
+                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.ram[SPRITE_Z_VEL + k] = 24;
+                    self.ram[SPRITE_ANIM_CLOCK_DRAW + k] = 0;
+                    self.ram[SPRITE_G_DRAW + k] = 0;
+                    self.lanmola_store_burrow_anchor(k);
+                }
+            }
+            2 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                self.sprite_move_z(k);
+                if self.ram[SPRITE_ANIM_CLOCK_DRAW + k] == 0 {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+                    if self.ram[SPRITE_Z_VEL + k] == 0 {
+                        self.ram[SPRITE_ANIM_CLOCK_DRAW + k] =
+                            self.ram[SPRITE_ANIM_CLOCK_DRAW + k].wrapping_add(1);
+                    }
+                } else if (self.ram[FRAME_COUNTER] & 1) == 0 {
+                    let j = usize::from(self.ram[SPRITE_G_DRAW + k] & 1);
+                    self.ram[SPRITE_Z_VEL + k] =
+                        self.ram[SPRITE_Z_VEL + k].wrapping_add(ZVEL[j] as u8);
+                    if self.ram[SPRITE_Z_VEL + k] == DESERT_BARRIER_XV[j] {
+                        self.ram[SPRITE_G_DRAW + k] = self.ram[SPRITE_G_DRAW + k].wrapping_add(1);
+                    }
+                }
+
+                let x = self.sprite_get_x(k);
+                let y = self.sprite_get_y(k);
+                let x2 = (u16::from(self.ram[SPRITE_X_HI + k]) << 8)
+                    | u16::from(self.ram[SPRITE_B_DRAW + k]);
+                let y2 = (u16::from(self.ram[SPRITE_Y_HI + k]) << 8)
+                    | u16::from(self.ram[SPRITE_C_DRAW + k]);
+                if x.wrapping_sub(x2).wrapping_add(2) < 4 && y.wrapping_sub(y2).wrapping_add(2) < 4
+                {
+                    self.ram[SPRITE_AI_STATE + k] = 3;
+                }
+                let pt = self.sprite_project_speed_towards_location(k, x2, y2, 10);
+                self.ram[SPRITE_Y_VEL + k] = pt.y;
+                self.ram[SPRITE_X_VEL + k] = pt.x;
+                self.sprite_move_xy(k);
+            }
+            3 => {
+                self.sprite_check_damage_to_and_from_link(k);
+                self.sprite_move_xy(k);
+                self.sprite_move_z(k);
+                if !sign8(self.ram[SPRITE_Z_VEL + k].wrapping_add(20)) {
+                    self.ram[SPRITE_Z_VEL + k] = self.ram[SPRITE_Z_VEL + k].wrapping_sub(1);
+                }
+                if sign8(self.ram[SPRITE_Z + k]) {
+                    self.ram[SPRITE_AI_STATE + k] = 4;
+                    self.ram[SPRITE_DELAY_MAIN + k] = 128;
+                    self.lanmola_store_burrow_anchor(k);
+                }
+            }
+            4 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.ram[SPRITE_X_LO + k] = RAND_B[usize::from(self.get_random_number() & 7)];
+                    self.ram[SPRITE_Y_LO + k] = RAND_C[usize::from(self.get_random_number() & 7)];
+                }
+            }
+            5 => {
+                if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+                    self.ram[SPRITE_STATE + k] = 0;
+                    if self.sprite_check_if_screen_is_clear() {
+                        let mut info = SpriteSpawnInfo::default();
+                        let j = self.sprite_spawn_dynamically(k, 0xea, &mut info);
+                        debug_assert!(j >= 0);
+                        if j >= 0 {
+                            let j = j as usize;
+                            self.sprite_set_spawned_coordinates(j, &info);
+                            self.ram[SPRITE_Z_VEL + j] = 32;
+                            self.ram[SPRITE_A + j] = 3;
+                        }
+                    }
+                }
+
+                let delay = self.ram[SPRITE_DELAY_MAIN + k];
+                if (32..160).contains(&delay) && (delay & 15) == 0 {
+                    let i = usize::from(
+                        self.ram[SPRITE_SUBTYPE2 + k]
+                            .wrapping_sub(self.ram[GARNISH_Y_LO_DRAW + k].wrapping_mul(8))
+                            & 0x3f,
+                    ) + k * 0x40;
+                    let xlo = self.ram[MOLDORM_X_LO_DRAW + i].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+                    let ylo = self.ram[MOLDORM_Y_LO_DRAW + i]
+                        .wrapping_sub(self.ram[BEAMOS_X_HI_DRAW + i])
+                        .wrapping_sub(self.ram[BG2VOFS_COPY2]);
+                    let mut info = SpriteSpawnInfo::default();
+                    let j = self.sprite_spawn_dynamically(k, 0x00, &mut info);
+                    if j >= 0 {
+                        let j = j as usize;
+                        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 11;
+                        self.ram[SPRITE_STATE + j] = 4;
+                        self.ram[SPRITE_DELAY_MAIN + j] = 31;
+                        self.ram[SPRITE_A + j] = 31;
+                        self.sprite_set_x(
+                            j,
+                            read_le_u16(&self.ram, BG2HOFS_COPY2).wrapping_add(u16::from(xlo)),
+                        );
+                        self.sprite_set_y(
+                            j,
+                            read_le_u16(&self.ram, BG2VOFS_COPY2).wrapping_add(u16::from(ylo)),
+                        );
+                        self.ram[SPRITE_FLAGS2 + j] = 3;
+                        self.ram[SPRITE_OAM_FLAGS + j] = 0x0c;
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
+                        if !sign8(self.ram[GARNISH_Y_LO_DRAW + k]) {
+                            self.ram[GARNISH_Y_LO_DRAW + k] =
+                                self.ram[GARNISH_Y_LO_DRAW + k].wrapping_sub(1);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn lanmola_store_burrow_anchor(&mut self, k: usize) {
+        self.ram[SPRITE_D + k] = self.ram[SPRITE_X_LO + k];
+        self.ram[SPRITE_WALLCOLL + k] = self.ram[SPRITE_Y_LO + k];
+        self.ram[SPRITE_DELAY_AUX1_DRAW + k] = 74;
+    }
+
+    // -----------------------------------------------------------------------
+    // void Lanmola_Draw(int k) {  // 85a64a
+    pub(super) fn lanmola_draw(&mut self, k: usize) {
+        const SPR_OFFS: [u8; 4] = [76, 60, 44, 28];
+        const CHAR1: [u8; 16] = [
+            0xc4, 0xe2, 0xc2, 0xe0, 0xc0, 0xe0, 0xc2, 0xe2, 0xc4, 0xe2, 0xc2, 0xe0, 0xc0, 0xe0,
+            0xc2, 0xe2,
+        ];
+        const CHAR0: [u8; 16] = [
+            0xcc, 0xe4, 0xca, 0xe6, 0xc8, 0xe6, 0xca, 0xe4, 0xcc, 0xe4, 0xca, 0xe6, 0xc8, 0xe6,
+            0xca, 0xe4,
+        ];
+        const FLAGS: [u8; 16] = [
+            0xc0, 0xc0, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40,
+        ];
+
+        let spr_offs = usize::from(SPR_OFFS[k]);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, (0x800 + spr_offs * 4) as u16);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, (0x0a20 + spr_offs) as u16);
+
+        self.ram[SPRITE_GRAPHICS + k] = Self::sprite_convert_velocity_to_angle(
+            self.ram[SPRITE_X_VEL + k],
+            self.ram[SPRITE_Y_VEL + k].wrapping_sub(self.ram[SPRITE_Z_VEL + k]),
+        );
+        let mut r2 = self.ram[SPRITE_SUBTYPE2 + k];
+        let mut r5 = r2;
+        let j = k * 64 + usize::from(r2);
+        self.ram[MOLDORM_X_LO_DRAW + j] = self.ram[SPRITE_X_LO + k];
+        self.ram[MOLDORM_Y_LO_DRAW + j] = self.ram[SPRITE_Y_LO + k];
+        self.ram[BEAMOS_X_HI_DRAW + j] = self.ram[SPRITE_Z + k];
+        self.ram[BEAMOS_Y_HI_DRAW + j] = self.ram[SPRITE_GRAPHICS + k];
+        if self.ram[SPRITE_STATE + k] == 9
+            && (self.frame_control_view().submodule() | self.ram[FLAG_UNK1]) == 0
+        {
+            self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1) & 63;
+        }
+
+        let r3 = self.ram[SPRITE_OAM_FLAGS + k] | self.ram[SPRITE_OBJ_PRIO + k];
+        let n = self.ram[GARNISH_Y_LO_DRAW + k];
+        if sign8(n) {
+            return;
+        }
+
+        let reverse = sign8(self.ram[SPRITE_Y_VEL + k]);
+        let mut oam =
+            read_le_u16(&self.ram, OAM_CUR_PTR) as usize + if reverse { 7 * 4 } else { 0 };
+        let oam_step: isize = if reverse { -4 } else { 4 };
+        let mut i = n;
+        loop {
+            let hist = usize::from(r2) + k * 64;
+            r2 = r2.wrapping_sub(8) & 63;
+            self.ram[oam] =
+                self.ram[MOLDORM_X_LO_DRAW + hist].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+            if !sign8(self.ram[BEAMOS_X_HI_DRAW + hist]) {
+                self.ram[oam + 1] = self.ram[MOLDORM_Y_LO_DRAW + hist]
+                    .wrapping_sub(self.ram[BEAMOS_X_HI_DRAW + hist])
+                    .wrapping_sub(self.ram[BG2VOFS_COPY2]);
+            }
+            let dir = usize::from(self.ram[BEAMOS_Y_HI_DRAW + hist]);
+            self.ram[oam + 2] = if n != 7 || i != 0 {
+                if n == i {
+                    CHAR1[dir]
+                } else {
+                    0xc6
+                }
+            } else {
+                CHAR0[dir]
+            };
+            self.ram[oam + 3] = FLAGS[dir] | r3;
+            self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = 2;
+            oam = (oam as isize + oam_step) as usize;
+            i = i.wrapping_sub(1);
+            if sign8(i) {
+                break;
+            }
+        }
+
+        oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + 8 * 4;
+        i = n;
+        loop {
+            let hist = usize::from(r5) + k * 64;
+            r5 = r5.wrapping_sub(8) & 63;
+            self.ram[oam] =
+                self.ram[MOLDORM_X_LO_DRAW + hist].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+            if !sign8(self.ram[BEAMOS_X_HI_DRAW + hist]) {
+                self.ram[oam + 1] = self.ram[MOLDORM_Y_LO_DRAW + hist]
+                    .wrapping_add(10)
+                    .wrapping_sub(self.ram[BG2VOFS_COPY2]);
+            }
+            self.ram[oam + 2] = 0x6c;
+            self.ram[oam + 3] = 0x34;
+            self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = 2;
+            oam += 4;
+            i = i.wrapping_sub(1);
+            if sign8(i) {
+                break;
+            }
+        }
+
+        if self.ram[SPRITE_AI_STATE + k] == 1 {
+            const IDX2: [u8; 16] = [4, 5, 4, 5, 4, 5, 4, 5, 4, 3, 2, 2, 1, 1, 0, 0];
+            const CHAR2: [u8; 6] = [0xee, 0xee, 0xec, 0xec, 0xce, 0xce];
+            const FLAGS2: [u8; 6] = [0, 0x40, 0, 0x40, 0, 0x40];
+            self.oam_allocate_from_region_b(4);
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let j = usize::from(IDX2[usize::from(self.ram[SPRITE_DELAY_MAIN + k] >> 3).min(15)]);
+            self.set_oam_plain_at_for_draw(
+                oam,
+                self.ram[SPRITE_X_LO + k].wrapping_sub(self.ram[BG2HOFS_COPY2]),
+                self.ram[SPRITE_Y_LO + k].wrapping_sub(self.ram[BG2VOFS_COPY2]),
+                CHAR2[j],
+                FLAGS2[j] | 0x31,
+                2,
+            );
+        } else if self.ram[SPRITE_AI_STATE + k] != 5 && self.ram[SPRITE_DELAY_AUX1_DRAW + k] != 0 {
+            const X4: [i8; 8] = [-8, 8, -10, 10, -16, 16, -24, 32];
+            const Y4: [i8; 8] = [0, 0, -1, -1, -1, -1, 3, 3];
+            const CHAR4: [u8; 8] = [0xe8, 0xe8, 0xe8, 0xe8, 0xea, 0xea, 0xea, 0xea];
+            const FLAGS4: [u8; 8] = [0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40];
+            const BIG4: [u8; 8] = [2, 2, 2, 2, 2, 2, 0, 0];
+
+            if (((self.ram[SPRITE_Y_VEL + k] >> 6) ^ self.ram[SPRITE_AI_STATE + k]) & 2) != 0 {
+                self.oam_allocate_from_region_b(8);
+            } else {
+                self.oam_allocate_from_region_c(8);
+            }
+            let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            let r6 = usize::from((((self.ram[SPRITE_DELAY_AUX1_DRAW + k] >> 2) & 3) ^ 3) * 2);
+            let x = self.ram[SPRITE_D + k].wrapping_sub(self.ram[BG2HOFS_COPY2]);
+            let y = self.ram[SPRITE_WALLCOLL + k].wrapping_sub(self.ram[BG2VOFS_COPY2]);
+            for i in (0..=1).rev() {
+                let j = i + r6;
+                self.set_oam_plain_at_for_draw(
+                    oam,
+                    x.wrapping_add(X4[j] as u8),
+                    y.wrapping_add(Y4[j] as u8),
+                    CHAR4[j],
+                    FLAGS4[j] | 0x31,
+                    BIG4[j],
+                );
+                oam += 4;
+            }
+        }
+    }
+
+    pub(super) fn eyegore_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 48] = [
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x009c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x409c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x009c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x409c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x009c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x409c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -3,
+                char_flags: 0x008c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -3,
+                char_flags: 0x408c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 13,
+                char_flags: 0x00bc,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 5,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -3,
+                char_flags: 0x008c,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -3,
+                char_flags: 0x408c,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 5,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 13,
+                char_flags: 0x40bc,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -3,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -3,
+                char_flags: 0x00aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -4,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -3,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -3,
+                char_flags: 0x40aa,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 4,
+                char_flags: 0x40a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -4,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -4,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 4,
+                char_flags: 0x009e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 4,
+                char_flags: 0x409e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -3,
+                char_flags: 0x008e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: -3,
+                char_flags: 0x408e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 13,
+                char_flags: 0x00bd,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 5,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: -3,
+                char_flags: 0x008e,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: -3,
+                char_flags: 0x408e,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 5,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 13,
+                char_flags: 0x40bd,
+                ext: 0,
+            },
+        ];
+
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 4;
+        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        if self.ram[SPRITE_PAUSE + k] == 0 {
+            self.sprite_draw_shadow_custom(k, &mut info, 14);
+        }
+    }
+
+    pub(super) fn bomb_trooper_draw(&mut self, k: usize) {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet { x, y, r4: 0, flags };
+        self.sprite_draw_guard_head(k, &info, 2);
+        self.sprite_draw_bnc_body(k, &info, 1);
+        if self.ram[SPRITE_GRAPHICS + k] < 20 {
+            const ARM_X: [i8; 8] = [-1, 1, 2, 0, 9, 9, -8, -8];
+            const ARM_Y: [i8; 8] = [-12, -12, -12, -12, -16, -14, -12, -14];
+            let j = ((usize::from(self.ram[SPRITE_D + k]) * 2)
+                | usize::from(self.ram[SPRITE_SUBTYPE2 + k]))
+                & 7;
+            let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info.x.wrapping_add(ARM_X[j] as i16 as u16),
+                info.y.wrapping_add(ARM_Y[j] as i16 as u16),
+                0x6e,
+                (info.flags & 0x30) | 0x8,
+                2,
+            );
+        }
+        let mut shadow_info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
+    }
+
+    pub(super) fn pikit_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 8] = [
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40cc,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ce,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ce,
+                ext: 2,
+            },
+        ];
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet { x, y, r4: 0, flags };
+        let mut shadow_info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        self.sprite_draw_pikit_tongue(k, &info);
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.ram[TMP_COUNTER_DRAW] = self.ram[oam];
+        self.ram[SPRITE_DRAW_SCRATCH_Y_OR_FLAGS] = self.ram[oam + 1];
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, (oam as u16).wrapping_add(24));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(6));
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], Some(&mut shadow_info));
+        let bak = self.ram[SPRITE_FLAGS2 + k];
+        self.ram[SPRITE_FLAGS2 + k] = self.ram[SPRITE_FLAGS2 + k].wrapping_sub(6);
+        self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
+        self.ram[SPRITE_FLAGS2 + k] = bak;
+        self.sprite_draw_pikit_loot(k, &info);
+    }
+
+    pub(super) fn chain_chomp_draw(&mut self, k: usize) {
+        const GFX: [u8; 16] = [0, 1, 2, 3, 3, 3, 2, 1, 0, 0, 0, 4, 4, 4, 0, 0];
+        const OAM_FLAGS: [u8; 16] = [
+            0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40,
+        ];
+
+        let j = usize::from(self.ram[SPRITE_D + k] & 0x0f);
+        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
+        self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0x3f) | OAM_FLAGS[j];
+        self.sprite_draw_single_large(k);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + 4;
+        let flags = self.ram[SPRITE_OAM_FLAGS + k] ^ self.ram[SPRITE_OBJ_PRIO + k];
+        let r8 = u16::from(self.ram[SPRITE_DELAY_AUX1_DRAW + k] & 1) + 4;
+        let mut pos = k * 8;
+        for _ in (0..6).rev() {
+            let x = read_le_u16(&self.ram, CHAINCHOMP_X_HIST_DRAW + pos * 2)
+                .wrapping_add(r8)
+                .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2));
+            let y = read_le_u16(&self.ram, CHAINCHOMP_Y_HIST_DRAW + pos * 2)
+                .wrapping_add(r8)
+                .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+            self.set_oam_helper0_at_for_draw(oam, x, y, 0x8b, (flags & 0xf0) | 0x0d, 0);
+            pos += 1;
+            oam += 4;
+        }
+    }
+
+    pub(super) fn moblin_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 48] = [
+            DrawMultipleData {
+                x: -2,
+                y: 3,
+                char_flags: 0x8091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 11,
+                char_flags: 0x8090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x008a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 7,
+                char_flags: 0x8091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: 15,
+                char_flags: 0x8090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x408a,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: -5,
+                char_flags: 0x0090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 3,
+                char_flags: 0x0091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a0,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: -8,
+                char_flags: 0x0090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: 0,
+                char_flags: 0x0091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -4,
+                y: 8,
+                char_flags: 0x0080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x0081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -9,
+                y: 6,
+                char_flags: 0x0080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -1,
+                y: 6,
+                char_flags: 0x0081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 12,
+                y: 8,
+                char_flags: 0x4080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 4,
+                y: 8,
+                char_flags: 0x4081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a6,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 17,
+                y: 6,
+                char_flags: 0x4080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 9,
+                y: 6,
+                char_flags: 0x4081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -8,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a4,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: -5,
+                char_flags: 0x8091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: -3,
+                y: 3,
+                char_flags: 0x8090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -10,
+                char_flags: 0x0086,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: -11,
+                char_flags: 0x0090,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 11,
+                y: -3,
+                char_flags: 0x0091,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0084,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x4082,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -2,
+                y: -3,
+                char_flags: 0x0080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 6,
+                y: -3,
+                char_flags: 0x0081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x0088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x00a2,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 10,
+                y: -3,
+                char_flags: 0x4080,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 2,
+                y: -3,
+                char_flags: 0x4081,
+                ext: 0,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: -9,
+                char_flags: 0x4088,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 0,
+                y: 0,
+                char_flags: 0x40a2,
+                ext: 2,
+            },
+        ];
+        const OBJ_OFFS: [u8; 12] = [2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
+        const HEAD_CHAR: [u8; 4] = [0x88, 0x88, 0x86, 0x84];
+        const HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let gfx = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        self.sprite_draw_multiple(k, &D[gfx * 4..gfx * 4 + 4], Some(&mut info));
+        if self.ram[SPRITE_PAUSE + k] != 0 {
+            return;
+        }
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        if self.ram[SPRITE_DELAY_AUX1_DRAW + k] != 0 {
+            for _ in 0..4 {
+                let ext_index = (oam - OAM_BUF) / 4;
+                if self.ram[BYTEWISE_EXTENDED_OAM + ext_index] & 2 == 0 {
+                    self.ram[oam + 1] = 0xf0;
+                }
+                oam += 4;
+            }
+        }
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize
+            + usize::from(OBJ_OFFS[gfx.min(OBJ_OFFS.len() - 1)]) * 4;
+        let j = usize::from(self.ram[SPRITE_HEAD_DIR + k] & 3);
+        self.ram[oam + 2] = HEAD_CHAR[j];
+        self.ram[oam + 3] = (self.ram[oam + 3] & !0x40) | HEAD_FLAGS[j];
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    pub(super) fn altar_zelda_draw_body(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        const X_OFFS: [u8; 16] = [4, 4, 3, 3, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+        self.oam_allocate_from_region_a(8);
+        let z = self.ram[SPRITE_Z + k].min(31);
+        let xoffs = u16::from(X_OFFS[usize::from(z >> 1)]);
+        let y = self
+            .sprite_get_y(k)
+            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        self.set_oam_helper0_at_for_draw(
+            oam,
+            info.x.wrapping_add(xoffs),
+            y.wrapping_add(7),
+            0x6c,
+            0x24,
+            2,
+        );
+        self.set_oam_helper0_at_for_draw(
+            oam + 4,
+            info.x.wrapping_sub(xoffs),
+            y.wrapping_add(7),
+            0x6c,
+            0x24,
+            2,
+        );
+    }
+
+    pub(super) fn tektite_draw(&mut self, k: usize) {
+        const D: [DrawMultipleData; 6] = [
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40c8,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ca,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: -8,
+                y: 0,
+                char_flags: 0x00ea,
+                ext: 2,
+            },
+            DrawMultipleData {
+                x: 8,
+                y: 0,
+                char_flags: 0x40ea,
+                ext: 2,
+            },
+        ];
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        let base = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        self.sprite_draw_multiple(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    pub(super) fn archery_game_draw_prize(&mut self, k: usize) {
+        const X: [i8; 5] = [-8, -8, 0, 8, 16];
+        const Y: [i8; 5] = [-24, -16, -20, -20, -20];
+        const CHAR: [u8; 3] = [0x0b, 0x1b, 0xb6];
+        const FLAGS: [u8; 5] = [0x38, 0x38, 0x34, 0x35, 0x35];
+        const CHAR3: [u8; 6] = [0x12, 0x32, 0x31, 3, 0x22, 0x33];
+        const CHAR4: [u8; 6] = [0x7c, 0x7c, 0x22, 2, 0x12, 0x33];
+        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+        else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + 4;
+        let b = usize::from(self.ram[SPRITE_B_DRAW + k]).wrapping_sub(1);
+        for i in (0..5).rev() {
+            let charnum = if i == 4 {
+                CHAR4[b]
+            } else if i == 3 {
+                CHAR3[b]
+            } else {
+                CHAR[i]
+            };
+            let flags = FLAGS[i] & if charnum < 0x7c { 0xff } else { 0xfe };
+            self.set_oam_plain_at_for_draw(
+                oam,
+                info_x.wrapping_add(X[i] as i16 as u16) as u8,
+                info_y.wrapping_add(Y[i] as i16 as u16) as u8,
+                charnum,
+                flags,
+                0,
+            );
+            oam += 4;
+        }
+        self.sprite_draw_distress_custom(info_x, info_y, self.ram[FRAME_COUNTER]);
+    }
+
+    pub(super) fn bush_soldier_common_draw(&mut self, k: usize) {
+        const Y: [i8; 14] = [8, 8, 8, 8, 2, 8, 0, 8, -3, 8, -3, 8, -3, 8];
+        const CHAR: [u8; 14] = [
+            0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x40, 0x20, 0x40, 0x20, 0x42, 0x20, 0x42, 0x20,
+        ];
+        const FLAGS: [u8; 14] = [9, 3, 0x49, 0x43, 9, 3, 0x49, 0x43, 9, 3, 0x49, 0x43, 9, 3];
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]) * 2;
+        for i in (0..2).rev() {
+            let j = g + i;
+            let mut flags = FLAGS[j] | 0x20;
+            if i == 0 {
+                flags = (flags & !0x0e) | info_flags;
+            }
+            self.set_oam_helper0_at_for_draw(
+                oam,
+                info_x,
+                info_y.wrapping_add(Y[j] as i16 as u16),
+                CHAR[j],
+                flags,
+                2,
+            );
+            oam += 4;
+        }
+    }
+
+    pub(super) fn archery_game_guy_draw(&mut self, k: usize) {
+        const X: [i8; 15] = [0, 0, 0, 0, 0, -5, 0, -1, -1, 0, 0, 0, 0, 1, 1];
+        const Y: [i8; 15] = [
+            0, -10, -10, 0, -10, -3, 0, -10, -10, 0, -10, -10, 0, -10, -10,
+        ];
+        const CHAR: [u8; 15] = [0x26, 6, 6, 8, 6, 0x3a, 0x26, 6, 6, 0x26, 6, 6, 0x26, 6, 6];
+        const FLAGS: [u8; 15] = [8, 6, 6, 8, 6, 8, 8, 6, 6, 8, 6, 6, 8, 6, 6];
+        const BIG: [u8; 15] = [2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+        self.oam_allocate_defer_to_player(k);
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let g = usize::from(self.ram[SPRITE_GRAPHICS + k]);
+        for i in (0..3).rev() {
+            let j = g * 3 + i;
+            self.set_oam_plain_at_for_draw(
+                oam,
+                info.x.wrapping_add(X[j] as i16 as u16) as u8,
+                info.y.wrapping_add(Y[j] as i16 as u16) as u8,
+                CHAR[j],
+                FLAGS[j] | info.flags,
+                BIG[j],
+            );
+            oam += 4;
+        }
+        self.sprite_draw_shadow_custom(k, &mut info, 10);
+    }
+
+    pub(super) fn push_switch_draw(&mut self, k: usize) {
+        const OAM: [(i8, i8, u8, u8); 40] = [
+            (4, 20, 0xdc, 0x20),
+            (4, 12, 0xdd, 0x20),
+            (4, 12, 0xdd, 0x20),
+            (4, 12, 0xdd, 0x20),
+            (0, 0, 0xca, 0x20),
+            (3, 12, 0xdd, 0x20),
+            (3, 20, 0xdc, 0x20),
+            (3, 20, 0xdc, 0x20),
+            (3, 20, 0xdc, 0x20),
+            (0, 0, 0xca, 0x20),
+            (-8, 8, 0xea, 0x20),
+            (0, 8, 0xeb, 0x20),
+            (-8, 16, 0xfa, 0x20),
+            (0, 16, 0xfb, 0x20),
+            (0, 0, 0xca, 0x20),
+            (-12, 4, 0xcc, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (0, 0, 0xca, 0x20),
+            (-10, 4, 0xcc, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (0, 0, 0xca, 0x20),
+            (-8, 4, 0xcc, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (0, 0, 0xca, 0x20),
+            (4, 3, 0xe2, 0x20),
+            (-6, 4, 0xcc, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (0, 0, 0xca, 0x20),
+            (4, 3, 0xf1, 0x20),
+            (-6, 4, 0xcc, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (-4, 4, 0xcd, 0x20),
+            (0, 0, 0xca, 0x20),
+        ];
+        const WH: [u8; 16] = [
+            8, 6, 0x10, 0x10, 0x10, 8, 0x10, 8, 0x10, 8, 0x10, 8, 0x10, 3, 0x10, 8,
+        ];
+        self.oam_allocate_defer_to_player(k);
+        let Some((_info_x, _info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+        else {
+            return;
+        };
+        let flags = if self.ram[PALETTE_SWAP_FLAG] != 0 {
+            self.ram[SPRITE_OAM_FLAGS + k] | 0x0e
+        } else {
+            self.ram[SPRITE_OAM_FLAGS + k] & !0x0e
+        };
+        self.ram[SPRITE_OAM_FLAGS + k] = flags;
+        let r1 = (self.ram[SPRITE_B_DRAW + k] >> 2) & 3;
+        let cur = read_le_u16(&self.ram, OAM_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_CUR_PTR, cur.wrapping_add(4));
+        let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR);
+        write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, ext.wrapping_add(1));
+        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let base = usize::from(self.ram[SPRITE_D + k]) * 5;
+        let base_x = self.ram[DUNGMAP_VAR7];
+        let base_y = self.ram[DUNGMAP_VAR7 + 1];
+        let xv = base_x.wrapping_sub(r1);
+        let yv = base_y.wrapping_sub(r1 >> 1);
+        for i in 0..5 {
+            let (x, y, ch, fl) = OAM[base + i];
+            let add_x = if i == 4 { base_x } else { xv };
+            let add_y = if i == 4 { base_y } else { yv };
+            self.set_oam_plain_at_for_draw(
+                oam + i * 4,
+                (x as u8).wrapping_add(add_x),
+                (y as u8).wrapping_add(add_y),
+                ch,
+                fl | flags,
+                if i == 4 { 2 } else { 0 },
+            );
+        }
+        let big = read_le_u16(&self.ram, OAM_EXT_CUR_PTR) as usize;
+        self.ram[big] = 0;
+        self.ram[big + 1] = 0;
+        self.ram[big + 2] = 0;
+        self.ram[big + 3] = 0;
+        self.ram[big + 4] = 2;
+        self.sprite_correct_oam_entries_for_draw(k, 4, 0xff);
+
+        if self.ram[SPRITE_FLOOR + k] == self.ram[LINK_IS_ON_LOWER_LEVEL] {
+            self.ram[SPRITE_C + k] = 0;
+            let d = usize::from(self.ram[SPRITE_D + k]);
+            let hitbox_base = d * 4;
+            let x = self
+                .sprite_get_x(k)
+                .wrapping_add_signed(i16::from(OAM[hitbox_base].0));
+            let y = self
+                .sprite_get_y(k)
+                .wrapping_add_signed(i16::from(OAM[hitbox_base].1));
+            let mut hb = SpriteHitBox {
+                r0_xlo: 0,
+                r8_xhi: 0,
+                r1_ylo: 0,
+                r9_yhi: 0,
+                r2: 0,
+                r3: 0,
+                r4_spr_xlo: x as u8,
+                r10_spr_xhi: (x >> 8) as u8,
+                r5_spr_ylo: y as u8,
+                r11_spr_yhi: (y >> 8) as u8,
+                r6_spr_xsize: WH[d * 2],
+                r7_spr_ysize: WH[d * 2 + 1],
+            };
+            self.link_setup_hit_box(&mut hb);
+            if self.check_if_hit_boxes_overlap(&hb) {
+                let old_y = self.sprite_get_y(k);
+                self.sprite_set_y(k, old_y.wrapping_add(19));
+                let new_dir = self.sprite_direction_to_face_link(k, None);
+                self.sprite_set_y(k, old_y);
+                if new_dir == 0 && self.ram[LINK_DIRECTION_FACING] == 4 {
+                    self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
+                }
+            } else if !self.sprite_check_damage_to_link_same_layer(k) {
+                return;
+            }
+            self.sprite_nullify_hookshot_drag();
+            self.ram[LINK_SPEED_SETTING] = 0;
+            self.sprite_repel_dash();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Local helper adapters with `_for_draw` suffix. Each names the canonical
+    // helper or split-module bridge it represents.
+    // -----------------------------------------------------------------------
+
+    /// Mirrors `SetOamHelper0` (sprite.h:50) but the canonical `set_oam_helper0_at`
+    /// in zelda_rtl.rs is module-private, so route the call through the same
+    /// implementation via the public `set_oam_helper0_at` (which the round-2
+    /// agents proved is visible from sibling sprite_main_* modules).
+    fn set_oam_helper0_at_for_draw(
+        &mut self,
+        oam: usize,
+        x: u16,
+        y: u16,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        self.set_oam_helper0_at(oam, x, y, charnum, flags, big);
+    }
+
+    /// Mirrors `SetOamPlain` (sprite.h:66) — writes x/y/charnum/flags + a
+    /// raw big byte directly into the OAM buffer at a byte address.
+    fn set_oam_plain_at_for_draw(
+        &mut self,
+        oam: usize,
+        x: u8,
+        y: u8,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        self.ram[oam] = x;
+        self.ram[oam + 1] = y;
+        self.ram[oam + 2] = charnum;
+        self.ram[oam + 3] = flags;
+        let ext_index = (oam - OAM_BUF) / 4;
+        self.ram[BYTEWISE_EXTENDED_OAM + ext_index] = big;
+    }
+
+    /// Rewired to canonical Sprite_CorrectOamEntries port.
+    fn sprite_correct_oam_entries_for_draw(&mut self, k: usize, count: u8, mask: u8) {
+        self.sprite_correct_oam_entries(k, count as i32, mask);
+    }
+
+    /// OpenGargoylesDomain (overworld.c:3527) — local bridge for
+    /// `Sprite_14_ThievesTownGrate`; keeps the canonical overworld function
+    /// name unclaimed until that module is ported.
+    fn open_gargoyles_domain_for_draw(&mut self) {
+        self.overworld_draw_map16_persist_for_draw(0x0d3e, 0x0e1b);
+        self.overworld_draw_map16_persist_for_draw(0x0d40, 0x0e1c);
+        self.overworld_draw_map16_persist_for_draw(0x0dbe, 0x0e1d);
+        self.overworld_draw_map16_persist_for_draw(0x0dc0, 0x0e1e);
+        self.overworld_draw_map16_persist_for_draw(0x0e3e, 0x0e1f);
+        self.overworld_draw_map16_persist_for_draw(0x0e40, 0x0e20);
+        self.ram[SAVE_OW_EVENT_INFO + 0x58] |= 0x20;
+        self.ram[SOUND_EFFECT_2] = 0x1b;
+        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    }
+
+    /// CreatePyramidHole (overworld.c:3539) — local bridge for
+    /// `Sprite_BatCrash`; keeps the canonical overworld function name
+    /// unclaimed until that module is ported.
+    fn create_pyramid_hole_for_draw(&mut self) {
+        self.overworld_draw_map16_persist_for_draw(0x03bc, 0x0e3f);
+        self.overworld_draw_map16_persist_for_draw(0x03be, 0x0e40);
+        self.overworld_draw_map16_persist_for_draw(0x03c0, 0x0e41);
+        self.overworld_draw_map16_persist_for_draw(0x043c, 0x0e42);
+        self.overworld_draw_map16_persist_for_draw(0x043e, 0x0e43);
+        self.overworld_draw_map16_persist_for_draw(0x0440, 0x0e44);
+        self.overworld_draw_map16_persist_for_draw(0x04bc, 0x0e45);
+        self.overworld_draw_map16_persist_for_draw(0x04be, 0x0e46);
+        self.overworld_draw_map16_persist_for_draw(0x04c0, 0x0e47);
+        write_le_u16(&mut self.ram, SOUND_EFFECT_AMBIENT, 0x3515);
+        self.ram[SAVE_OW_EVENT_INFO + 0x5b] |= 0x20;
+        self.ram[SOUND_EFFECT_2] = 3;
+        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    }
+
+    fn overworld_draw_map16_persist_for_draw(&mut self, pos: u16, value: u16) {
+        write_le_u16(&mut self.ram, DUNG_BG2 + ((pos >> 1) as usize) * 2, value);
+        self.overworld_draw_map16_for_draw(pos, value);
+    }
+
+    fn overworld_draw_map16_for_draw(&mut self, pos: u16, value: u16) {
+        let vram_pos = overworld_find_map16_vram_address_for_draw(pos);
+        let upload = read_le_u16(&self.ram, VRAM_UPLOAD_OFFSET) as usize;
+        let dst = VRAM_UPLOAD_DATA + upload;
+        let src = value as usize * 4;
+        let tile0 = self.asset_u16(70, src);
+        let tile1 = self.asset_u16(70, src + 1);
+        let tile2 = self.asset_u16(70, src + 2);
+        let tile3 = self.asset_u16(70, src + 3);
+        write_le_u16(&mut self.ram, dst, vram_pos.swap_bytes());
+        write_le_u16(&mut self.ram, dst + 2, 0x0300);
+        write_le_u16(&mut self.ram, dst + 4, tile0);
+        write_le_u16(&mut self.ram, dst + 6, tile1);
+        write_le_u16(
+            &mut self.ram,
+            dst + 8,
+            vram_pos.wrapping_add(0x20).swap_bytes(),
+        );
+        write_le_u16(&mut self.ram, dst + 10, 0x0300);
+        write_le_u16(&mut self.ram, dst + 12, tile2);
+        write_le_u16(&mut self.ram, dst + 14, tile3);
+        write_le_u16(&mut self.ram, dst + 16, 0xffff);
+        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, (upload + 16) as u16);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Free helpers (module-local) ported from sprite_main.c inline statics.
+// ---------------------------------------------------------------------------
+
+fn overworld_find_map16_vram_address_for_draw(addr: u16) -> u16 {
+    (if addr & 0x3f >= 0x20 { 0x0400 } else { 0 })
+        + (if addr & 0x0fff >= 0x0800 { 0x0800 } else { 0 })
+        + (addr & 0x001f)
+        + ((addr & 0x0780) >> 1)
+}
+
+/// `ChainBallMult` (sprite_main.c:1397) — saturating fixed-point multiply
+/// used by SpriteDraw_BNCFlail.
+fn chain_ball_mult(a: u16, b: u8) -> u8 {
+    chain_ball_mult_draw(a, b)
+}
+
+fn chain_ball_mult_draw(a: u16, b: u8) -> u8 {
+    if a >= 256 {
+        return b;
+    }
+    let p = (a as u32) * (b as u32);
+    ((p >> 8) as u8).wrapping_add(((p >> 7) & 1) as u8)
+}
+
+/// `GuruguruBarMult` (sprite_main.c:1438) — same fixed-point helper as
+/// ChainBallMult, named separately in the C source.
+fn guruguru_bar_mult(a: u16, b: u8) -> u8 {
+    chain_ball_mult_draw(a, b)
+}
+
+/// `GuruguruBarSin` (sprite_main.c:1445) — table lookup plus signed quadrant.
+fn guruguru_bar_sin(a: u16, b: u8) -> i8 {
+    let t = guruguru_bar_mult(K_SINUS_LOOKUP_TABLE[(a & 0xff) as usize], b);
+    if (a & 0x100) != 0 {
+        (0i8).wrapping_sub(t as i8)
+    } else {
+        t as i8
+    }
+}
+
+/// `ArrgiMult` (sprite_main.c:1450) — same fixed-point helper as
+/// ChainBallMult, named separately in the C source.
+fn arrgi_mult(a: u16, b: u8) -> u8 {
+    chain_ball_mult_draw(a, b)
+}
+
+/// `ArrgiSin` (sprite_main.c:1457) — table lookup plus signed quadrant.
+pub(super) fn arrgi_sin(a: u16, b: u8) -> i8 {
+    let t = arrgi_mult(K_SINUS_LOOKUP_TABLE[(a & 0xff) as usize], b);
+    if (a & 0x100) != 0 {
+        (0i8).wrapping_sub(t as i8)
+    } else {
+        t as i8
+    }
+}
+
+/// `HelmasaurMult` (sprite_main.c:1462) — same fixed-point helper as
+/// ChainBallMult, named separately in the C source.
+fn helmasaur_mult(a: u16, b: u8) -> u8 {
+    chain_ball_mult_draw(a, b)
+}
+
+/// `HelmasaurSin` (sprite_main.c:1469) — table lookup plus signed quadrant.
+fn helmasaur_sin(a: u16, b: u8) -> i8 {
+    let t = helmasaur_mult(K_SINUS_LOOKUP_TABLE[(a & 0xff) as usize], b);
+    if (a & 0x100) != 0 {
+        (0i8).wrapping_sub(t as i8)
+    } else {
+        t as i8
+    }
+}
+
+/// `ChainChomp_OneMult` (sprite_main.c:1514) — signed input, integer-complement
+/// negative branch. The C return type is `int`, not uint8 wrapping.
+fn chain_chomp_one_mult(a: u8, b: u8) -> i32 {
+    let at = if sign8(a) { 0u8.wrapping_sub(a) } else { a };
+    let prod = (((at as u16) * (b as u16)) >> 8) as u8;
+    if sign8(a) {
+        !(prod as i32)
+    } else {
+        prod as i32
+    }
+}
+
+/// `TrinexxMult` (sprite_main.c:1520) — signed fixed-point multiply used by
+/// SpriteDraw_TrinexxRockHeadAndBody.
+fn trinexx_mult(a: u8, b: u8) -> u8 {
+    trinexx_mult_draw(a, b)
+}
+
+fn trinexx_mult_draw(a: u8, b: u8) -> u8 {
+    let at = if sign8(a) { 0u8.wrapping_sub(a) } else { a };
+    let p = (at as u32) * (b as u32);
+    let res = ((p >> 8) as u8).wrapping_add(((p >> 7) & 1) as u8);
+    if sign8(a) {
+        0u8.wrapping_sub(res)
+    } else {
+        res
+    }
+}
+
+/// `TrinexxHeadMult` (sprite_main.c:1527) — same fixed-point helper as
+/// ChainBallMult, named separately in the C source.
+fn trinexx_head_mult(a: u16, b: u8) -> u8 {
+    chain_ball_mult_draw(a, b)
+}
+
+/// `TrinexxHeadSin` (sprite_main.c:1534) — table lookup plus signed quadrant.
+pub(super) fn trinexx_head_sin(a: u16, b: u8) -> i8 {
+    let t = trinexx_head_mult(K_SINUS_LOOKUP_TABLE[(a & 0xff) as usize], b);
+    if (a & 0x100) != 0 {
+        (0i8).wrapping_sub(t as i8)
+    } else {
+        t as i8
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_state() -> ZeldaState {
+        ZeldaState::new()
+    }
+
+    #[test]
+    fn altar_zelda_warp_clamps_subdmd_index_via_delay_main_shift() {
+        // sprite_delay_main[k] >> 2 picks which 2-entry slice; the call
+        // should land without panicking even when shift would otherwise
+        // overrun the table (we clamp at the high end).
+        let mut s = fresh_state();
+        let k = 4;
+        s.ram[SPRITE_DELAY_MAIN + k] = 0xff;
+        // The function performs an OAM allocation; ensure it returns
+        // without trashing state we care about.
+        let oam_cur_before = read_le_u16(&s.ram, OAM_CUR_PTR);
+        s.sprite_draw_altar_zelda_warp(k);
+        // OAM cursor should have moved (the alloc/draw advanced it).
+        assert_ne!(read_le_u16(&s.ram, OAM_CUR_PTR), oam_cur_before);
+    }
+
+    #[test]
+    fn antfairy_cycles_graphics_at_six_and_zeroes_low_bit_subtype2() {
+        // Antfairy: increment sprite_subtype2; if (subtype2 & 1) | submodule_index
+        // | flag_unk1 is 0, bump sprite_graphics, wrapping 6 -> 0.
+        // (sprite_main.c:18841 SpriteDraw_Antfairy.)
+        let mut s = fresh_state();
+        let k = 1;
+        // Sprite_DrawMultiple ultimately writes via set_oam_helper0_at which
+        // computes (oam - OAM_BUF) / 4; a fresh state's OAM_CUR_PTR is 0 and
+        // that would underflow. Seed a valid cursor so the OAM write path
+        // succeeds and the subtype/graphics side-effects are observable.
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.ram[SUBMODULE_INDEX] = 0;
+        s.ram[FLAG_UNK1] = 0;
+        s.ram[SPRITE_SUBTYPE2 + k] = 0x10; // odd-mask passes -> ++subtype2 = 0x11 fails (& 1 == 1).
+        s.ram[SPRITE_GRAPHICS + k] = 2;
+        s.sprite_draw_antfairy(k);
+        assert_eq!(s.ram[SPRITE_SUBTYPE2 + k], 0x11);
+        // 0x11 & 1 == 1, so the inner branch did NOT run; graphics stays.
+        assert_eq!(s.ram[SPRITE_GRAPHICS + k], 2);
+
+        // Even-bit case: subtype2 starts at 0x11 -> becomes 0x12, the
+        // condition (subtype2 & 1) | submodule | flag_unk1 == 0; so
+        // graphics increments from 5 -> 6 -> wraps to 0.
+        s.ram[SPRITE_SUBTYPE2 + k] = 0x11;
+        s.ram[SPRITE_GRAPHICS + k] = 5;
+        s.sprite_draw_antfairy(k);
+        assert_eq!(s.ram[SPRITE_SUBTYPE2 + k], 0x12);
+        assert_eq!(s.ram[SPRITE_GRAPHICS + k], 0);
+    }
+
+    #[test]
+    fn moldorm_tail_bumps_oam_ptrs_and_sets_oam_flags() {
+        // SpriteDraw_Moldorm_Tail: oam_cur_ptr += 4; oam_ext_cur_ptr += 1;
+        // sprite_graphics[k]++; sprite_oam_flags[k] = 13.
+        let mut s = fresh_state();
+        let k = 7;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.ram[SPRITE_GRAPHICS + k] = 9;
+        s.sprite_draw_moldorm_tail(k);
+        assert_eq!(read_le_u16(&s.ram, OAM_CUR_PTR), 0x804);
+        assert_eq!(read_le_u16(&s.ram, OAM_EXT_CUR_PTR), 0xa21);
+        assert_eq!(s.ram[SPRITE_GRAPHICS + k], 10);
+        assert_eq!(s.ram[SPRITE_OAM_FLAGS + k], 13);
+    }
+
+    #[test]
+    fn moldorm_segment_c_zeros_graphics_and_advances_oam() {
+        let mut s = fresh_state();
+        let k = 3;
+        s.ram[SPRITE_GRAPHICS + k] = 0x55;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.sprite_draw_moldorm_segment_c(k);
+        assert_eq!(s.ram[SPRITE_GRAPHICS + k], 0);
+        assert_eq!(read_le_u16(&s.ram, OAM_CUR_PTR), 0x810);
+        assert_eq!(read_le_u16(&s.ram, OAM_EXT_CUR_PTR), 0xa24);
+    }
+
+    #[test]
+    fn big_shadow_offsets_cursor_and_refreshes_cur_sprite_y() {
+        // SpriteDraw_BigShadow: cur_sprite_y += sprite_z[k]; oam_cur += 16;
+        // oam_ext += 4; then Sprite_Get16BitCoords overwrites cur_sprite_*.
+        let mut s = fresh_state();
+        let k = 2;
+        s.ram[SPRITE_Z + k] = 8;
+        // Put sprite at a known X/Y so Sprite_Get16BitCoords overwrites the
+        // prior cur_sprite_y bump.
+        s.ram[SPRITE_X_LO + k] = 0x40;
+        s.ram[SPRITE_Y_LO + k] = 0x50;
+        s.ram[SPRITE_X_HI + k] = 0x00;
+        s.ram[SPRITE_Y_HI + k] = 0x01;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.sprite_draw_big_shadow(k, 0);
+        // Cursor + ext both advanced.
+        assert_ne!(read_le_u16(&s.ram, OAM_CUR_PTR), 0x800);
+        // cur_sprite_y == sprite_get_y(k)  (from Sprite_Get16BitCoords).
+        let cy = read_le_u16(&s.ram, CUR_SPRITE_Y);
+        assert_eq!(cy, 0x0150);
+    }
+
+    #[test]
+    fn zirro_bomb_clears_state_when_delay_main_zero() {
+        // SpriteDraw_ZirroBomb: if (!sprite_delay_main[k]) sprite_state[k] = 0;
+        // then call Sprite_DrawMultiple. We verify only the state-side branch.
+        // (sprite_main.c:13246 SpriteDraw_ZirroBomb.)
+        let mut s = fresh_state();
+        let k = 5;
+        // Seed OAM cursors so Sprite_DrawMultiple's set_oam_helper0_at path
+        // doesn't underflow (oam - OAM_BUF) on a fresh-zero cursor.
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.ram[SPRITE_DELAY_MAIN + k] = 0;
+        s.ram[SPRITE_STATE + k] = 9;
+        s.sprite_draw_zirro_bomb(k);
+        assert_eq!(s.ram[SPRITE_STATE + k], 0);
+
+        // With non-zero delay, sprite_state must NOT be cleared.
+        s.ram[SPRITE_DELAY_MAIN + k] = 0x10;
+        s.ram[SPRITE_STATE + k] = 9;
+        s.sprite_draw_zirro_bomb(k);
+        assert_eq!(s.ram[SPRITE_STATE + k], 9);
+    }
+
+    #[test]
+    fn chain_ball_mult_draw_clamps_at_256() {
+        // ChainBallMult returns b when a >= 256; verify both branches.
+        assert_eq!(chain_ball_mult(0x100, 0x42), 0x42);
+        assert_eq!(chain_ball_mult_draw(0x100, 0x42), 0x42);
+        // 200 * 80 = 16000 = 0x3e80 -> p>>8 = 0x3e, p>>7 & 1 =
+        // (16000 >> 7) & 1 = 125 & 1 = 1, so result = 0x3e + 1 = 0x3f.
+        // (Matches C: sprite_main.c:1397 ChainBallMult.)
+        assert_eq!(chain_ball_mult(200, 80), 0x3f);
+        assert_eq!(chain_ball_mult_draw(200, 80), 0x3f);
+    }
+
+    #[test]
+    fn named_fixed_point_mult_aliases_match_chain_ball_mult() {
+        assert_eq!(guruguru_bar_mult(128, 10), chain_ball_mult(128, 10));
+        assert_eq!(arrgi_mult(200, 80), chain_ball_mult(200, 80));
+        assert_eq!(helmasaur_mult(0x100, 0x55), chain_ball_mult(0x100, 0x55));
+        assert_eq!(trinexx_head_mult(0x100, 0x66), chain_ball_mult(0x100, 0x66));
+    }
+
+    #[test]
+    fn named_sin_helpers_flip_sign_on_second_half() {
+        let guruguru = guruguru_bar_sin(0x20, 50);
+        assert_eq!(guruguru_bar_sin(0x120, 50), (0i8).wrapping_sub(guruguru));
+
+        let arrgi = arrgi_sin(0x30, 70);
+        assert_eq!(arrgi_sin(0x130, 70), (0i8).wrapping_sub(arrgi));
+
+        let helmasaur = helmasaur_sin(0x40, 90);
+        assert_eq!(helmasaur_sin(0x140, 90), (0i8).wrapping_sub(helmasaur));
+
+        let trinexx_head = trinexx_head_sin(0x50, 110);
+        assert_eq!(
+            trinexx_head_sin(0x150, 110),
+            (0i8).wrapping_sub(trinexx_head)
+        );
+    }
+
+    #[test]
+    fn chain_chomp_one_mult_returns_integer_complement_for_negative_input() {
+        assert_eq!(chain_chomp_one_mult(0x08, 0x40), 2);
+        assert_eq!(chain_chomp_one_mult(0xf8, 0x40), -3);
+        assert_eq!(chain_chomp_one_mult(0x80, 0), -1);
+    }
+
+    #[test]
+    fn trinexx_mult_draw_handles_signed_input() {
+        // a positive small case: (8 * 0x40) >> 8 = 0x02; round bit 7 of p
+        // (i.e. (8*0x40)>>7 & 1) = 0. So result == 2.
+        assert_eq!(trinexx_mult(8, 0x40), 2);
+        assert_eq!(trinexx_mult_draw(8, 0x40), 2);
+        // a negative case: a = 0xf8 (-8). at = 8. result = 2, sign negated:
+        // 0u8 - 2 == 0xfe.
+        assert_eq!(trinexx_mult(0xf8, 0x40), 0xfe);
+        assert_eq!(trinexx_mult_draw(0xf8, 0x40), 0xfe);
+    }
+
+    #[test]
+    fn pikit_loot_skips_when_sprite_g_zero() {
+        // SpriteDraw_Pikit_Loot returns early if sprite_G[k] == 0.
+        let mut s = fresh_state();
+        let k = 11;
+        s.ram[SPRITE_G_DRAW + k] = 0;
+        // OAM cursor unchanged baseline.
+        let before = read_le_u16(&s.ram, OAM_CUR_PTR);
+        let info = PrepOamCoordsRet::default();
+        s.sprite_draw_pikit_loot(k, &info);
+        assert_eq!(read_le_u16(&s.ram, OAM_CUR_PTR), before);
+    }
+
+    #[test]
+    fn beamos_eyeball_low_d_uses_offset_zero() {
+        // sprite_D < 0x20 → n = 0 → oam_cur_ptr unchanged after the n*4 bump.
+        let mut s = fresh_state();
+        let k = 0;
+        s.ram[SPRITE_D + k] = 0x10;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        let info = PrepOamCoordsRet {
+            x: 0x40,
+            y: 0x40,
+            r4: 0,
+            flags: 0,
+        };
+        s.sprite_draw_beamos_eyeball(k, &info);
+        assert_eq!(read_le_u16(&s.ram, OAM_CUR_PTR), 0x800);
+        assert_eq!(read_le_u16(&s.ram, OAM_EXT_CUR_PTR), 0xa20);
+        // dungmap_var7 holds the X/Y deltas-3/-18 packed low/high.
+        // i = D >> 1 = 8; X[8] = 8, Y[8] = 15 → byte = 8-3 = 5; hi = 15-18 = -3 = 0xfd.
+        assert_eq!(s.ram[DUNGMAP_VAR7], 5);
+        assert_eq!(s.ram[DUNGMAP_VAR7 + 1], 0xfd);
+    }
+
+    #[test]
+    fn beamos_eyeball_high_d_bumps_cursor_by_eight() {
+        let mut s = fresh_state();
+        let k = 0;
+        s.ram[SPRITE_D + k] = 0x20;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        let info = PrepOamCoordsRet {
+            x: 0x40,
+            y: 0x40,
+            r4: 0,
+            flags: 0,
+        };
+        s.sprite_draw_beamos_eyeball(k, &info);
+        // n = 2 → oam_cur += 8, oam_ext += 2.
+        assert_eq!(read_le_u16(&s.ram, OAM_CUR_PTR), 0x808);
+        assert_eq!(read_le_u16(&s.ram, OAM_EXT_CUR_PTR), 0xa22);
+    }
+
+    #[test]
+    fn thrown_item_gigantic_writes_oam_flags_from_table() {
+        // sprite_oam_flags[k] = kThrowableScenery_DrawLarge_OamFlags[sprite_C[k] - 6];
+        // C = 7 → idx = 1 → flags = 0.
+        let mut s = fresh_state();
+        let k = 6;
+        s.ram[SPRITE_C_DRAW + k] = 7;
+        // Force the prep helper to return None by setting BG2HOFS far away.
+        // Then verify the OAM flags were written even though we early-return.
+        write_le_u16(&mut s.ram, BG2HOFS_COPY2, 0x4000);
+        write_le_u16(&mut s.ram, BG2VOFS_COPY2, 0x4000);
+        s.ram[SPRITE_X_LO + k] = 0;
+        s.ram[SPRITE_Y_LO + k] = 0;
+        s.sprite_draw_thrown_item_gigantic(k);
+        assert_eq!(s.ram[SPRITE_OAM_FLAGS + k], 0);
+
+        s.ram[SPRITE_C_DRAW + k] = 6;
+        s.sprite_draw_thrown_item_gigantic(k);
+        assert_eq!(s.ram[SPRITE_OAM_FLAGS + k], 0xc);
+    }
+
+    #[test]
+    fn witch_accept_shroom_sets_room_word_powder_bit() {
+        let mut s = fresh_state();
+        let k = 2;
+        s.ram[LINK_ITEM_MUSHROOM] = 1;
+        s.ram[SAVE_DUNG_INFO + 0x109] = 0;
+        write_le_u16(&mut s.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x0002);
+
+        s.witch_accept_shroom(k);
+
+        assert_eq!(s.ram[LINK_ITEM_MUSHROOM], 0);
+        assert_eq!(read_le_u16(&s.ram, SAVE_DUNG_INFO + 0x109 * 2), 0x0082);
+        assert_eq!(s.ram[SAVE_DUNG_INFO + 0x109], 0);
+    }
+
+    #[test]
+    fn movable_statue_far_from_link_does_not_touch_direction_tmp_counter() {
+        let mut s = fresh_state();
+        let k = 0;
+        write_le_u16(&mut s.ram, OAM_CUR_PTR, 0x800);
+        write_le_u16(&mut s.ram, OAM_EXT_CUR_PTR, 0xa20);
+        s.ram[SPRITE_TYPE + k] = 0x1c;
+        s.ram[SPRITE_STATE + k] = 9;
+        s.ram[SPRITE_FLOOR + k] = 1;
+        s.ram[SPRITE_X_LO + k] = 0x40;
+        s.ram[SPRITE_X_HI + k] = 0x15;
+        s.ram[SPRITE_Y_LO + k] = 0x77;
+        s.ram[SPRITE_Y_HI + k] = 0x08;
+        write_le_u16(&mut s.ram, LINK_X_COORD, 0x14f8);
+        write_le_u16(&mut s.ram, LINK_Y_COORD, 0x08d8);
+        s.ram[LINK_IS_ON_LOWER_LEVEL] = 0;
+        s.ram[LINK_DIRECTION_FACING] = 8;
+        s.ram[TMP_COUNTER_DRAW] = 0x02;
+
+        s.sprite_1_c_statue(k);
+
+        assert_eq!(s.ram[TMP_COUNTER_DRAW], 0x02);
+        assert_eq!(s.ram[LINK_IS_NEAR_MOVEABLE_STATUE], 0);
+    }
+}

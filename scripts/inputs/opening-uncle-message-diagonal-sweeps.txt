@@ -1,0 +1,21 @@
+# Extends the new-game opening route from the existing 28610-frame checkpoint
+# with diagonal D-pad sweeps after Uncle's message dismissal tail.
+# This complements the cardinal opening movement route.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include opening-uncle-message-dismiss-and-move.txt
+
+37000..38200 UP+RIGHT
+38220..39420 DOWN+RIGHT
+39440..40640 DOWN+LEFT
+40660..41860 UP+LEFT
+42000 A
+42080 A
+42160 A
+42240 A
+42320 A
+42400 A
+42600..43800 RIGHT
+43820..45020 LEFT

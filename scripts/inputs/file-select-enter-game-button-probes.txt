@@ -1,0 +1,32 @@
+# Extends the saved-slot gameplay route from the 107000-frame message
+# frontier with non-movement button probes after the message is dismissed.
+# This is intended to cheaply cover "no item/no sword" B/Y/X/L/R handling
+# and make sure ignored buttons stay harmless in the current indoor state.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game.txt
+
+107100 A
+107180 A
+107260 A
+107340 A
+107420 A
+107500 A
+107580 A
+108000 B
+108080 Y
+108160 X
+108240 L
+108320 R
+108500 B+RIGHT
+108580 Y+LEFT
+108660 X+UP
+108740 R+DOWN
+109000..110000 RIGHT
+110020..111020 LEFT
+111200 A
+111280 A
+111360 A
+111440 A

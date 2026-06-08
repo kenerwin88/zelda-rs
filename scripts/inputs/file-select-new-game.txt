@@ -1,0 +1,10 @@
+# Deterministic lockstep input script that leaves attract mode, reaches the
+# file-select screen, then selects the first empty slot.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+1777 START
+2200 A
+2400 A
+2500 START

@@ -1,0 +1,6169 @@
+{
+  "files": [
+    {
+      "path": "us_asm/bced_dt.asm",
+      "size": 7575,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/bged_dt.asm",
+      "size": 372687,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/cgdata.asm",
+      "size": 44780,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/endata.txt",
+      "size": 29036,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_asm/eset",
+      "size": 1208,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_asm/item.txt",
+      "size": 4977,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_asm/li/zel_bgmv.lst",
+      "size": 75136,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_asm/li/zel_ram.lst",
+      "size": 167789,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_asm/li/zel_ram.lst.BAK",
+      "size": 163542,
+      "suffix": ".bak",
+      "text": false
+    },
+    {
+      "path": "us_asm/li/zel_sindt.lst",
+      "size": 36365,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_asm/li/zlabel.lst",
+      "size": 4247,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_asm/li/zlabel.lst.BAK",
+      "size": 4249,
+      "suffix": ".bak",
+      "text": false
+    },
+    {
+      "path": "us_asm/li/zlff.lst",
+      "size": 1,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_asm/msg.DAT",
+      "size": 224449,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_asm/msgtbl.TBL",
+      "size": 4740,
+      "suffix": ".tbl",
+      "text": true
+    },
+    {
+      "path": "us_asm/sato2",
+      "size": 1199,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_asm/sfz.sdm",
+      "size": 2067,
+      "suffix": ".sdm",
+      "text": true
+    },
+    {
+      "path": "us_asm/sfz0.sdm",
+      "size": 2547,
+      "suffix": ".sdm",
+      "text": true
+    },
+    {
+      "path": "us_asm/smap.CH7",
+      "size": 16384,
+      "suffix": ".ch7",
+      "text": false
+    },
+    {
+      "path": "us_asm/tes.make",
+      "size": 3762,
+      "suffix": ".make",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes.sdm",
+      "size": 2069,
+      "suffix": ".sdm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_char0.asm",
+      "size": 109916,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_init.asm",
+      "size": 279315,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_int0.asm",
+      "size": 4997,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_main.asm",
+      "size": 45640,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_main.cnf",
+      "size": 26048,
+      "suffix": ".cnf",
+      "text": false
+    },
+    {
+      "path": "us_asm/tes_main.hex",
+      "size": 1591156,
+      "suffix": ".hex",
+      "text": false
+    },
+    {
+      "path": "us_asm/tes_main.lnk",
+      "size": 3331340,
+      "suffix": ".lnk",
+      "text": false
+    },
+    {
+      "path": "us_asm/tes_main.map",
+      "size": 5221,
+      "suffix": ".map",
+      "text": true
+    },
+    {
+      "path": "us_asm/tes_main.sym",
+      "size": 1874348,
+      "suffix": ".sym",
+      "text": false
+    },
+    {
+      "path": "us_asm/tl",
+      "size": 391,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_asm/tl_msg0.asm",
+      "size": 22443,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/tl_ram.asm",
+      "size": 11416,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zchr",
+      "size": 474,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel.make",
+      "size": 3762,
+      "suffix": ".make",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel0.bin",
+      "size": 524288,
+      "suffix": ".bin",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel1.bin",
+      "size": 524288,
+      "suffix": ".bin",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_bg30.asm",
+      "size": 84133,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_bg31.asm",
+      "size": 5240,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_bgmv.asm",
+      "size": 27816,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_bgwt.asm",
+      "size": 294853,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_bms1.asm",
+      "size": 119010,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_bms2.asm",
+      "size": 2252,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_char0.asm",
+      "size": 109801,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_char1.asm",
+      "size": 64409,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_char2.asm",
+      "size": 27540,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_char3.asm",
+      "size": 12419,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_code.asm",
+      "size": 18646,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_com1.asm",
+      "size": 5069,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_comn.asm",
+      "size": 109961,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_data0.asm",
+      "size": 136380,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_djdt.asm",
+      "size": 88152,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_dmap.asm",
+      "size": 90418,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_dsub.asm",
+      "size": 8856,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_edmg.asm",
+      "size": 3056,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_edmg.txt",
+      "size": 437,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_end2.asm",
+      "size": 147408,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_end3.asm",
+      "size": 14545,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_ending.asm",
+      "size": 100291,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_endt.asm",
+      "size": 217034,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_endz.asm",
+      "size": 16684,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_endz.txt",
+      "size": 373,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_endz.txt1",
+      "size": 79,
+      "suffix": ".txt1",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_enmy.asm",
+      "size": 534677,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_enmy2.asm",
+      "size": 366508,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_enmy3.asm",
+      "size": 334911,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_enmy4.asm",
+      "size": 272809,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_enmy5.asm",
+      "size": 31048,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_exst.asm",
+      "size": 353507,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_gmap.asm",
+      "size": 68158,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_gnd1.asm",
+      "size": 13793,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_gover.asm",
+      "size": 21958,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_grnd.asm",
+      "size": 110896,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_gsub.asm",
+      "size": 25401,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_init.asm",
+      "size": 279230,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_int0.asm",
+      "size": 4887,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_isub.asm",
+      "size": 255613,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_label.asm",
+      "size": 17552,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_main.asm",
+      "size": 45640,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_main.cnf",
+      "size": 28384,
+      "suffix": ".cnf",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_main.hex",
+      "size": 1591194,
+      "suffix": ".hex",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_main.lnk",
+      "size": 3331383,
+      "suffix": ".lnk",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_main.map",
+      "size": 5373,
+      "suffix": ".map",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_main.map1",
+      "size": 9125,
+      "suffix": ".map1",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_main.sym",
+      "size": 1874373,
+      "suffix": ".sym",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_main1.asm",
+      "size": 45640,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_main1.cnf",
+      "size": 26048,
+      "suffix": ".cnf",
+      "text": false
+    },
+    {
+      "path": "us_asm/zel_make.asm",
+      "size": 281140,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_mjdt.asm",
+      "size": 18349,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_mpd0.asm",
+      "size": 194710,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_mpd1.asm",
+      "size": 100648,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_msge0.asm",
+      "size": 66098,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_msge1.asm",
+      "size": 53067,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_msge2.asm",
+      "size": 198548,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_msge3.asm",
+      "size": 23848,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_mut1.asm",
+      "size": 149494,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_obj_data.asm",
+      "size": 1753,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_obj_grph.asm",
+      "size": 18960,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_obj_poly.asm",
+      "size": 24714,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_play.asm",
+      "size": 356412,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_ply1.asm",
+      "size": 22198,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_pysb.asm",
+      "size": 126790,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_ram.asm",
+      "size": 65630,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_ram1.asm",
+      "size": 65587,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt.asm",
+      "size": 379704,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt0.asm",
+      "size": 175761,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt09.asm",
+      "size": 172147,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt1.asm",
+      "size": 66245,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt19.asm",
+      "size": 64613,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_rmdt9.asm",
+      "size": 372216,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sindt.asm",
+      "size": 11764,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sub0.asm",
+      "size": 21912,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sub1.asm",
+      "size": 5398,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sut0.asm",
+      "size": 67045,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sut1.asm",
+      "size": 67045,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sut2.asm",
+      "size": 67045,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_sut3.asm",
+      "size": 67045,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_title.asm",
+      "size": 163262,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_titleX.asm",
+      "size": 158141,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zel_vma.asm",
+      "size": 47524,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_asm/zl3.ADR",
+      "size": 4460,
+      "suffix": ".adr",
+      "text": false
+    },
+    {
+      "path": "us_asm/zl3.CHR",
+      "size": 278453,
+      "suffix": ".chr",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound0.hex",
+      "size": 148714,
+      "suffix": ".hex",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound0.lst",
+      "size": 54080,
+      "suffix": ".lst",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound1.hex",
+      "size": 35106,
+      "suffix": ".hex",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound1.lst",
+      "size": 12768,
+      "suffix": ".lst",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound2.hex",
+      "size": 23000,
+      "suffix": ".hex",
+      "text": false
+    },
+    {
+      "path": "us_asm/zldsound2.lst",
+      "size": 8368,
+      "suffix": ".lst",
+      "text": false
+    },
+    {
+      "path": "us_char/1g-1n.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/1o-1v.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/1w-2d.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/2e-2l.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/2m-2q.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/2r-2w.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/2x-3b.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/3c-3j.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/3k-3r.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/3s-3z.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/4a-4h.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/4i-4p.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/4q-4s.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/4t-4x.CGX",
+      "size": 17664,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/a-h.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/chr-cnv1.TBL",
+      "size": 211,
+      "suffix": ".tbl",
+      "text": true
+    },
+    {
+      "path": "us_char/chr-cnv4.TBL",
+      "size": 2634,
+      "suffix": ".tbl",
+      "text": true
+    },
+    {
+      "path": "us_char/color-rom-a.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-b.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-c.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-d.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-e.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-f.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-g.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-h.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-i.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-j.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-k.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-l.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-m.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-n.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-o.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/color-rom-p.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_char/i-p.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/q-x.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/y-1f.CGX",
+      "size": 34048,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_char/zl3.ADD",
+      "size": 3568,
+      "suffix": ".add",
+      "text": false
+    },
+    {
+      "path": "us_char/zl3.CGL",
+      "size": 6556,
+      "suffix": ".cgl",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/README",
+      "size": 2496,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/Tmsgtbl.TBL",
+      "size": 4764,
+      "suffix": ".tbl",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/Zlmsgall",
+      "size": 46286,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/Zlmsgall0",
+      "size": 95449,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/allow.dat",
+      "size": 2544,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/frag.c",
+      "size": 27676,
+      "suffix": ".c",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/miru",
+      "size": 102410,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/moji.DAT",
+      "size": 198,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/moji.DAT2",
+      "size": 198,
+      "suffix": ".dat2",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg.DAT",
+      "size": 224125,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg.DAT1",
+      "size": 309770,
+      "suffix": ".dat1",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0000.DAT",
+      "size": 1,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0000.txt",
+      "size": 9,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0001.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0001.txt",
+      "size": 67,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0002.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0002.txt",
+      "size": 67,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0003.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0003.txt",
+      "size": 153,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0004.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0004.txt",
+      "size": 115,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0005.DAT",
+      "size": 26,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0005.txt",
+      "size": 109,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0006.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0006.txt",
+      "size": 69,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0007.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0007.txt",
+      "size": 69,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0008.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0008.txt",
+      "size": 69,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0009.DAT",
+      "size": 8,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0009.txt",
+      "size": 55,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg000a.DAT",
+      "size": 8,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg000a.txt",
+      "size": 55,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg000b.DAT",
+      "size": 9,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg000b.txt",
+      "size": 59,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg000c.DAT",
+      "size": 9,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg000c.txt",
+      "size": 59,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0010.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0010.txt",
+      "size": 189,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0011.DAT",
+      "size": 223,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0011.txt",
+      "size": 725,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0020.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0020.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0021.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0021.txt",
+      "size": 197,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0022.DAT",
+      "size": 82,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0022.txt",
+      "size": 255,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0023.DAT",
+      "size": 90,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0023.txt",
+      "size": 281,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0024.DAT",
+      "size": 31,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0024.txt",
+      "size": 113,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0025.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0025.txt",
+      "size": 227,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0026.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0026.txt",
+      "size": 211,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0032.DAT",
+      "size": 36,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0032.txt",
+      "size": 129,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0033.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0033.txt",
+      "size": 129,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0034.DAT",
+      "size": 408,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0034.txt",
+      "size": 1335,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0035.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0035.txt",
+      "size": 213,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0036.DAT",
+      "size": 57,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0036.txt",
+      "size": 187,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0037.DAT",
+      "size": 141,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0037.txt",
+      "size": 499,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0040.DAT",
+      "size": 34,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0040.txt",
+      "size": 133,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0041.DAT",
+      "size": 328,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0041.txt",
+      "size": 1109,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0042.DAT",
+      "size": 37,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0042.txt",
+      "size": 129,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0043.DAT",
+      "size": 250,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0043.txt",
+      "size": 843,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0044.DAT",
+      "size": 93,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0044.txt",
+      "size": 327,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0045.DAT",
+      "size": 86,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0045.txt",
+      "size": 263,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0046.DAT",
+      "size": 122,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0046.txt",
+      "size": 393,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0047.DAT",
+      "size": 71,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0047.txt",
+      "size": 243,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0048.DAT",
+      "size": 98,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0048.txt",
+      "size": 327,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0049.DAT",
+      "size": 165,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0049.txt",
+      "size": 595,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg004a.DAT",
+      "size": 98,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg004a.txt",
+      "size": 345,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg004b.DAT",
+      "size": 117,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg004b.txt",
+      "size": 401,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg004c.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg004c.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg004d.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg004d.txt",
+      "size": 219,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg004e.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg004e.txt",
+      "size": 155,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0050.DAT",
+      "size": 159,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0050.txt",
+      "size": 525,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0051.DAT",
+      "size": 258,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0051.txt",
+      "size": 849,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0052.DAT",
+      "size": 77,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0052.txt",
+      "size": 265,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0053.DAT",
+      "size": 71,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0053.txt",
+      "size": 217,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0060.DAT",
+      "size": 49,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0060.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0071.DAT",
+      "size": 111,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0071.txt",
+      "size": 365,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0072.DAT",
+      "size": 33,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0072.txt",
+      "size": 111,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0073.DAT",
+      "size": 265,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0073.txt",
+      "size": 903,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0074.DAT",
+      "size": 151,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0074.txt",
+      "size": 483,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0075.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0075.txt",
+      "size": 237,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0076.DAT",
+      "size": 562,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0076.txt",
+      "size": 1897,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0077.DAT",
+      "size": 141,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0077.txt",
+      "size": 457,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0078.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0078.txt",
+      "size": 181,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0079.DAT",
+      "size": 460,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0079.txt",
+      "size": 1467,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg007a.DAT",
+      "size": 738,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg007a.txt",
+      "size": 2417,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0080.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0080.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0081.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0081.txt",
+      "size": 200,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0082.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0082.txt",
+      "size": 168,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0083.DAT",
+      "size": 22,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0083.txt",
+      "size": 81,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0084.DAT",
+      "size": 30,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0084.txt",
+      "size": 117,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0085.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0085.txt",
+      "size": 163,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0086.DAT",
+      "size": 44,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0086.txt",
+      "size": 124,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0087.DAT",
+      "size": 30,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0087.txt",
+      "size": 114,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0088.DAT",
+      "size": 27,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0088.txt",
+      "size": 91,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0089.DAT",
+      "size": 26,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0089.txt",
+      "size": 93,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008a.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008a.txt",
+      "size": 151,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008b.DAT",
+      "size": 39,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008b.txt",
+      "size": 119,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008c.DAT",
+      "size": 14,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008c.txt",
+      "size": 57,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008d.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008d.txt",
+      "size": 215,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008e.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008e.txt",
+      "size": 129,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg008f.DAT",
+      "size": 26,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg008f.txt",
+      "size": 87,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0090.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0090.txt",
+      "size": 209,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0091.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0091.txt",
+      "size": 220,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0093.DAT",
+      "size": 74,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0093.txt",
+      "size": 234,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00a0.DAT",
+      "size": 64,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00a0.txt",
+      "size": 189,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00a1.DAT",
+      "size": 105,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00a1.txt",
+      "size": 339,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00a2.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00a2.txt",
+      "size": 151,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00a3.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00a3.txt",
+      "size": 157,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b1.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b1.txt",
+      "size": 173,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b3.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b3.txt",
+      "size": 195,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b4.DAT",
+      "size": 44,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b4.txt",
+      "size": 143,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b5.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b5.txt",
+      "size": 207,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b6.DAT",
+      "size": 58,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b6.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b7.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b7.txt",
+      "size": 175,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b8.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b8.txt",
+      "size": 197,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00b9.DAT",
+      "size": 73,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00b9.txt",
+      "size": 241,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00ba.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00ba.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00bb.DAT",
+      "size": 75,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00bb.txt",
+      "size": 239,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00bc.DAT",
+      "size": 95,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00bc.txt",
+      "size": 311,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00bd.DAT",
+      "size": 92,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00bd.txt",
+      "size": 293,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00be.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00be.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00bf.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00bf.txt",
+      "size": 231,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c0.DAT",
+      "size": 57,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c0.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c1.DAT",
+      "size": 70,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c1.txt",
+      "size": 239,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c2.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c2.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c3.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c3.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c4.DAT",
+      "size": 81,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c4.txt",
+      "size": 257,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c5.DAT",
+      "size": 76,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c5.txt",
+      "size": 241,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c6.DAT",
+      "size": 92,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c6.txt",
+      "size": 283,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c7.DAT",
+      "size": 85,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c7.txt",
+      "size": 297,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c8.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c8.txt",
+      "size": 161,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00c9.DAT",
+      "size": 83,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00c9.txt",
+      "size": 253,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00ca.DAT",
+      "size": 73,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00ca.txt",
+      "size": 233,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00cb.DAT",
+      "size": 64,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00cb.txt",
+      "size": 211,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00cc.DAT",
+      "size": 53,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00cc.txt",
+      "size": 177,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00cd.DAT",
+      "size": 74,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00cd.txt",
+      "size": 255,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00ce.DAT",
+      "size": 71,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00ce.txt",
+      "size": 237,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00cf.DAT",
+      "size": 101,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00cf.txt",
+      "size": 311,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d0.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d0.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d1.DAT",
+      "size": 201,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d1.txt",
+      "size": 699,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d2.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d2.txt",
+      "size": 217,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d3.DAT",
+      "size": 73,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d3.txt",
+      "size": 241,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d4.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d4.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d5.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d5.txt",
+      "size": 229,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d6.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d6.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d7.DAT",
+      "size": 53,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d7.txt",
+      "size": 187,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00d9.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00d9.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00db.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00db.txt",
+      "size": 223,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00dc.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00dc.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00dd.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00dd.txt",
+      "size": 169,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00de.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00de.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00df.DAT",
+      "size": 91,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00df.txt",
+      "size": 283,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e0.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e0.txt",
+      "size": 211,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e1.DAT",
+      "size": 109,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e1.txt",
+      "size": 365,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e2.DAT",
+      "size": 147,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e2.txt",
+      "size": 519,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e3.DAT",
+      "size": 151,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e3.txt",
+      "size": 489,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e4.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e4.txt",
+      "size": 221,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e5.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e5.txt",
+      "size": 167,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e6.DAT",
+      "size": 94,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e6.txt",
+      "size": 301,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg00e7.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg00e7.txt",
+      "size": 203,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0130.DAT",
+      "size": 203,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0130.txt",
+      "size": 655,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0131.DAT",
+      "size": 36,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0131.txt",
+      "size": 95,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0132.DAT",
+      "size": 96,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0132.txt",
+      "size": 299,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0133.DAT",
+      "size": 33,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0133.txt",
+      "size": 127,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0140.DAT",
+      "size": 123,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0140.txt",
+      "size": 371,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0141.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0141.txt",
+      "size": 171,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0142.DAT",
+      "size": 46,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0142.txt",
+      "size": 157,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0143.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0143.txt",
+      "size": 163,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0144.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0144.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0145.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0145.txt",
+      "size": 123,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0146.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0146.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0147.DAT",
+      "size": 52,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0147.txt",
+      "size": 169,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0148.DAT",
+      "size": 35,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0148.txt",
+      "size": 125,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0149.DAT",
+      "size": 77,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0149.txt",
+      "size": 235,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014a.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014a.txt",
+      "size": 167,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014b.DAT",
+      "size": 81,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014b.txt",
+      "size": 265,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014c.DAT",
+      "size": 77,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014c.txt",
+      "size": 221,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014d.DAT",
+      "size": 95,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014d.txt",
+      "size": 327,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014e.DAT",
+      "size": 96,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014e.txt",
+      "size": 329,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg014f.DAT",
+      "size": 138,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg014f.txt",
+      "size": 445,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0150.DAT",
+      "size": 257,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0150.txt",
+      "size": 885,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0151.DAT",
+      "size": 29,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0151.txt",
+      "size": 103,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0152.DAT",
+      "size": 185,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0152.txt",
+      "size": 661,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0153.DAT",
+      "size": 78,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0153.txt",
+      "size": 283,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0154.DAT",
+      "size": 227,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0154.txt",
+      "size": 757,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0160.DAT",
+      "size": 190,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0160.txt",
+      "size": 641,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0161.DAT",
+      "size": 142,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0161.txt",
+      "size": 473,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0162.DAT",
+      "size": 108,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0162.txt",
+      "size": 373,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0170.DAT",
+      "size": 138,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0170.txt",
+      "size": 455,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0171.DAT",
+      "size": 143,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0171.txt",
+      "size": 453,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0172.DAT",
+      "size": 161,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0172.txt",
+      "size": 495,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0173.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0173.txt",
+      "size": 121,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0180.DAT",
+      "size": 58,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0180.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01a0.DAT",
+      "size": 257,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01a0.txt",
+      "size": 819,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01b0.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01b0.txt",
+      "size": 189,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c0.DAT",
+      "size": 44,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c0.txt",
+      "size": 139,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c1.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c1.txt",
+      "size": 153,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c2.DAT",
+      "size": 46,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c2.txt",
+      "size": 133,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c3.DAT",
+      "size": 14,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c3.txt",
+      "size": 49,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c4.DAT",
+      "size": 27,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c4.txt",
+      "size": 77,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c5.DAT",
+      "size": 19,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c5.txt",
+      "size": 59,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c6.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c6.txt",
+      "size": 139,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c7.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c7.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c8.DAT",
+      "size": 32,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c8.txt",
+      "size": 121,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg01c9.DAT",
+      "size": 25,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg01c9.txt",
+      "size": 75,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0230.DAT",
+      "size": 92,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0230.txt",
+      "size": 297,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0231.DAT",
+      "size": 53,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0231.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0240.DAT",
+      "size": 125,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0240.txt",
+      "size": 419,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0241.DAT",
+      "size": 179,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0241.txt",
+      "size": 603,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0242.DAT",
+      "size": 47,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0242.txt",
+      "size": 119,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0243.DAT",
+      "size": 104,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0243.txt",
+      "size": 335,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0244.DAT",
+      "size": 115,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0244.txt",
+      "size": 381,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0246.DAT",
+      "size": 140,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0246.txt",
+      "size": 427,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0247.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0247.txt",
+      "size": 209,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0248.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0248.txt",
+      "size": 245,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0249.DAT",
+      "size": 35,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0249.txt",
+      "size": 95,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg024a.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg024a.txt",
+      "size": 175,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg024b.DAT",
+      "size": 72,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg024b.txt",
+      "size": 239,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg024c.DAT",
+      "size": 102,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg024c.txt",
+      "size": 345,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg024e.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg024e.txt",
+      "size": 215,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg024f.DAT",
+      "size": 114,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg024f.txt",
+      "size": 383,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0250.DAT",
+      "size": 100,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0250.txt",
+      "size": 331,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0252.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0252.txt",
+      "size": 233,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0253.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0253.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0254.DAT",
+      "size": 83,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0254.txt",
+      "size": 285,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0255.DAT",
+      "size": 121,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0255.txt",
+      "size": 403,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0256.DAT",
+      "size": 64,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0256.txt",
+      "size": 183,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0340.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0340.txt",
+      "size": 207,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0341.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0341.txt",
+      "size": 213,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0342.DAT",
+      "size": 52,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0342.txt",
+      "size": 171,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0350.DAT",
+      "size": 40,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0350.txt",
+      "size": 143,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0351.DAT",
+      "size": 71,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0351.txt",
+      "size": 233,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0352.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0352.txt",
+      "size": 177,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0353.DAT",
+      "size": 40,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0353.txt",
+      "size": 137,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0354.DAT",
+      "size": 31,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0354.txt",
+      "size": 127,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0355.DAT",
+      "size": 49,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0355.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0360.DAT",
+      "size": 200,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0360.txt",
+      "size": 641,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0361.DAT",
+      "size": 89,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0361.txt",
+      "size": 259,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0362.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0362.txt",
+      "size": 213,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0363.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0363.txt",
+      "size": 141,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0364.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0364.txt",
+      "size": 183,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0365.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0365.txt",
+      "size": 243,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0370.DAT",
+      "size": 51,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0370.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0380.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0380.txt",
+      "size": 239,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0381.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0381.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0382.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0382.txt",
+      "size": 159,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0384.DAT",
+      "size": 40,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0384.txt",
+      "size": 125,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0385.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0385.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0386.DAT",
+      "size": 52,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0386.txt",
+      "size": 157,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0388.DAT",
+      "size": 32,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0388.txt",
+      "size": 97,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038a.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038a.txt",
+      "size": 223,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038b.DAT",
+      "size": 115,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038b.txt",
+      "size": 357,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038c.DAT",
+      "size": 189,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038c.txt",
+      "size": 621,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038d.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038d.txt",
+      "size": 129,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038e.DAT",
+      "size": 15,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038e.txt",
+      "size": 71,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg038f.DAT",
+      "size": 53,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg038f.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0390.DAT",
+      "size": 225,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0390.txt",
+      "size": 783,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0391.DAT",
+      "size": 35,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0391.txt",
+      "size": 103,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0392.DAT",
+      "size": 40,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0392.txt",
+      "size": 123,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0393.DAT",
+      "size": 46,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0393.txt",
+      "size": 143,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0394.DAT",
+      "size": 221,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0394.txt",
+      "size": 683,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a0.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a0.txt",
+      "size": 135,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a1.DAT",
+      "size": 58,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a1.txt",
+      "size": 187,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a2.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a2.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a3.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a3.txt",
+      "size": 181,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a4.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a4.txt",
+      "size": 181,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a5.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a5.txt",
+      "size": 219,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a6.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a6.txt",
+      "size": 183,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03a7.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03a7.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b0.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b0.txt",
+      "size": 221,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b1.DAT",
+      "size": 113,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b1.txt",
+      "size": 377,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b2.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b2.txt",
+      "size": 195,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b3.DAT",
+      "size": 65,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b3.txt",
+      "size": 225,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b5.DAT",
+      "size": 47,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b5.txt",
+      "size": 167,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b6.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b6.txt",
+      "size": 221,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b7.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b7.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b8.DAT",
+      "size": 14,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b8.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03b9.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03b9.txt",
+      "size": 163,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03ba.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03ba.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03bb.DAT",
+      "size": 58,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03bb.txt",
+      "size": 203,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03bc.DAT",
+      "size": 64,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03bc.txt",
+      "size": 199,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d0.DAT",
+      "size": 95,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d0.txt",
+      "size": 301,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d1.DAT",
+      "size": 138,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d1.txt",
+      "size": 465,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d2.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d2.txt",
+      "size": 187,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d3.DAT",
+      "size": 240,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d3.txt",
+      "size": 747,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d4.DAT",
+      "size": 120,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d4.txt",
+      "size": 395,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03d5.DAT",
+      "size": 114,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03d5.txt",
+      "size": 389,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03e0.DAT",
+      "size": 85,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03e0.txt",
+      "size": 273,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03e1.DAT",
+      "size": 190,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03e1.txt",
+      "size": 557,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03e2.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03e2.txt",
+      "size": 117,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f0.DAT",
+      "size": 18,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f0.txt",
+      "size": 66,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f1.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f1.txt",
+      "size": 188,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f2.DAT",
+      "size": 152,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f2.txt",
+      "size": 509,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f3.DAT",
+      "size": 53,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f3.txt",
+      "size": 180,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f4.DAT",
+      "size": 33,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f4.txt",
+      "size": 103,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg03f5.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg03f5.txt",
+      "size": 194,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0400.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0400.txt",
+      "size": 111,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0401.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0401.txt",
+      "size": 149,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0402.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0402.txt",
+      "size": 151,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0410.DAT",
+      "size": 135,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0410.txt",
+      "size": 415,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0411.DAT",
+      "size": 152,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0411.txt",
+      "size": 451,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0420.DAT",
+      "size": 399,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0420.txt",
+      "size": 1419,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0421.DAT",
+      "size": 100,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0421.txt",
+      "size": 325,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0422.DAT",
+      "size": 81,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0422.txt",
+      "size": 295,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0423.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0423.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0430.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0430.txt",
+      "size": 221,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0440.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0440.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0441.DAT",
+      "size": 87,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0441.txt",
+      "size": 265,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0442.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0442.txt",
+      "size": 101,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0443.DAT",
+      "size": 75,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0443.txt",
+      "size": 249,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0450.DAT",
+      "size": 110,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0450.txt",
+      "size": 381,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0451.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0451.txt",
+      "size": 125,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0453.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0453.txt",
+      "size": 147,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0454.DAT",
+      "size": 120,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0454.txt",
+      "size": 405,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0455.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0455.txt",
+      "size": 169,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0456.DAT",
+      "size": 64,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0456.txt",
+      "size": 181,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0457.DAT",
+      "size": 35,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0457.txt",
+      "size": 125,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0460.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0460.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0461.DAT",
+      "size": 20,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0461.txt",
+      "size": 57,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0462.DAT",
+      "size": 35,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0462.txt",
+      "size": 111,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0480.DAT",
+      "size": 322,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0480.txt",
+      "size": 1083,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0481.DAT",
+      "size": 104,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0481.txt",
+      "size": 367,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0482.DAT",
+      "size": 66,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0482.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0483.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0483.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0484.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0484.txt",
+      "size": 227,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0490.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0490.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0491.DAT",
+      "size": 49,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0491.txt",
+      "size": 167,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04a0.DAT",
+      "size": 59,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04a0.txt",
+      "size": 201,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04a1.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04a1.txt",
+      "size": 165,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04a2.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04a2.txt",
+      "size": 205,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04b0.DAT",
+      "size": 63,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04b0.txt",
+      "size": 213,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04b1.DAT",
+      "size": 56,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04b1.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04b2.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04b2.txt",
+      "size": 171,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c0.DAT",
+      "size": 477,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c0.txt",
+      "size": 1667,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c1.DAT",
+      "size": 577,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c1.txt",
+      "size": 1959,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c2.DAT",
+      "size": 410,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c2.txt",
+      "size": 1413,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c3.DAT",
+      "size": 339,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c3.txt",
+      "size": 1155,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c4.DAT",
+      "size": 451,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c4.txt",
+      "size": 1507,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c5.DAT",
+      "size": 382,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c5.txt",
+      "size": 1209,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c6.DAT",
+      "size": 403,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c6.txt",
+      "size": 1317,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c7.DAT",
+      "size": 39,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c7.txt",
+      "size": 143,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c8.DAT",
+      "size": 38,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c8.txt",
+      "size": 163,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04c9.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04c9.txt",
+      "size": 171,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04ca.DAT",
+      "size": 467,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04ca.txt",
+      "size": 1515,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04d0.DAT",
+      "size": 122,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04d0.txt",
+      "size": 389,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04d1.DAT",
+      "size": 196,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04d1.txt",
+      "size": 657,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04d2.DAT",
+      "size": 79,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04d2.txt",
+      "size": 249,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04d3.DAT",
+      "size": 105,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04d3.txt",
+      "size": 313,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04d4.DAT",
+      "size": 130,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04d4.txt",
+      "size": 455,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04e0.DAT",
+      "size": 86,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04e0.txt",
+      "size": 311,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04e1.DAT",
+      "size": 111,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04e1.txt",
+      "size": 383,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04e2.DAT",
+      "size": 193,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04e2.txt",
+      "size": 637,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04e3.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04e3.txt",
+      "size": 181,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04e4.DAT",
+      "size": 72,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04e4.txt",
+      "size": 237,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04f0.DAT",
+      "size": 145,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04f0.txt",
+      "size": 495,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg04f1.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg04f1.txt",
+      "size": 207,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0500.DAT",
+      "size": 406,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0500.txt",
+      "size": 1359,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0510.DAT",
+      "size": 80,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0510.txt",
+      "size": 285,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0511.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0511.txt",
+      "size": 35,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0512.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0512.txt",
+      "size": 35,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0513.DAT",
+      "size": 38,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0513.txt",
+      "size": 131,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0514.DAT",
+      "size": 52,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0514.txt",
+      "size": 195,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0515.DAT",
+      "size": 178,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0515.txt",
+      "size": 651,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0516.DAT",
+      "size": 10,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0516.txt",
+      "size": 47,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0517.DAT",
+      "size": 12,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0517.txt",
+      "size": 45,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0518.DAT",
+      "size": 15,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0518.txt",
+      "size": 53,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0519.DAT",
+      "size": 13,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0519.txt",
+      "size": 49,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg051a.DAT",
+      "size": 27,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg051a.txt",
+      "size": 97,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0520.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0520.txt",
+      "size": 113,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0521.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0521.txt",
+      "size": 113,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0522.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0522.txt",
+      "size": 113,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0523.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0523.txt",
+      "size": 177,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0524.DAT",
+      "size": 46,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0524.txt",
+      "size": 179,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0530.DAT",
+      "size": 54,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0530.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0540.DAT",
+      "size": 233,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0540.txt",
+      "size": 739,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0541.DAT",
+      "size": 43,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0541.txt",
+      "size": 163,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0542.DAT",
+      "size": 246,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0542.txt",
+      "size": 765,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0543.DAT",
+      "size": 44,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0543.txt",
+      "size": 139,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0550.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0550.txt",
+      "size": 195,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0551.DAT",
+      "size": 98,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0551.txt",
+      "size": 335,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0552.DAT",
+      "size": 58,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0552.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0553.DAT",
+      "size": 34,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0553.txt",
+      "size": 127,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0554.DAT",
+      "size": 33,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0554.txt",
+      "size": 119,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0555.DAT",
+      "size": 37,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0555.txt",
+      "size": 99,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0556.DAT",
+      "size": 68,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0556.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0557.DAT",
+      "size": 36,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0557.txt",
+      "size": 131,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0558.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0558.txt",
+      "size": 173,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0559.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0559.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055a.DAT",
+      "size": 48,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055a.txt",
+      "size": 173,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055b.DAT",
+      "size": 69,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055b.txt",
+      "size": 231,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055c.DAT",
+      "size": 55,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055c.txt",
+      "size": 183,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055d.DAT",
+      "size": 30,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055d.txt",
+      "size": 113,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055e.DAT",
+      "size": 61,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055e.txt",
+      "size": 185,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg055f.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg055f.txt",
+      "size": 143,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0560.DAT",
+      "size": 199,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0560.txt",
+      "size": 667,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0561.DAT",
+      "size": 75,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0561.txt",
+      "size": 233,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0570.DAT",
+      "size": 125,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0570.txt",
+      "size": 415,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0571.DAT",
+      "size": 110,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0571.txt",
+      "size": 367,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0580.DAT",
+      "size": 881,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0580.txt",
+      "size": 4365,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg0590.DAT",
+      "size": 24,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg0590.txt",
+      "size": 63,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05a0.DAT",
+      "size": 125,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05a0.txt",
+      "size": 427,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b0.DAT",
+      "size": 67,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b0.txt",
+      "size": 193,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b1.DAT",
+      "size": 60,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b1.txt",
+      "size": 187,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b2.DAT",
+      "size": 62,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b2.txt",
+      "size": 191,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b3.DAT",
+      "size": 72,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b3.txt",
+      "size": 255,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b4.DAT",
+      "size": 30,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b4.txt",
+      "size": 105,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b5.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b5.txt",
+      "size": 133,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b6.DAT",
+      "size": 42,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b6.txt",
+      "size": 123,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05b7.DAT",
+      "size": 200,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05b7.txt",
+      "size": 649,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05c0.DAT",
+      "size": 94,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05c0.txt",
+      "size": 327,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05c1.DAT",
+      "size": 27,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05c1.txt",
+      "size": 91,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05c2.DAT",
+      "size": 50,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05c2.txt",
+      "size": 145,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05c3.DAT",
+      "size": 96,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05c3.txt",
+      "size": 331,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05d0.DAT",
+      "size": 238,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05d0.txt",
+      "size": 773,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05d1.DAT",
+      "size": 199,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05d1.txt",
+      "size": 627,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05e0.DAT",
+      "size": 45,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05e0.txt",
+      "size": 141,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05e1.DAT",
+      "size": 71,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05e1.txt",
+      "size": 211,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05e2.DAT",
+      "size": 27,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05e2.txt",
+      "size": 101,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f4.DAT",
+      "size": 172,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f4.txt",
+      "size": 557,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f5.DAT",
+      "size": 79,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f5.txt",
+      "size": 251,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f6.DAT",
+      "size": 36,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f6.txt",
+      "size": 131,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f7.DAT",
+      "size": 41,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f7.txt",
+      "size": 127,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f8.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f8.txt",
+      "size": 105,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msg05f9.DAT",
+      "size": 75,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msg05f9.txt",
+      "size": 237,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/msgall.dat",
+      "size": 166674,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msgall.dat.BAK",
+      "size": 166674,
+      "suffix": ".bak",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msgcat",
+      "size": 24576,
+      "suffix": "<none>",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/msgtbl.TBL",
+      "size": 4764,
+      "suffix": ".tbl",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/shi.lis",
+      "size": 297,
+      "suffix": ".lis",
+      "text": false
+    },
+    {
+      "path": "us_msg/bun/yama00.txt",
+      "size": 3927,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama01.txt",
+      "size": 5123,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama02.txt",
+      "size": 3381,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama03.txt",
+      "size": 2785,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama04.txt",
+      "size": 3999,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama05.txt",
+      "size": 2871,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama06.txt",
+      "size": 3335,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/yama0a.txt",
+      "size": 3821,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/zlff.lst",
+      "size": 1,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_msg/bun/zlpr5",
+      "size": 71,
+      "suffix": "<none>",
+      "text": true
+    },
+    {
+      "path": "us_msg/fnt/moji-A.CGX",
+      "size": 17664,
+      "suffix": ".cgx",
+      "text": false
+    },
+    {
+      "path": "us_msg/fnt/moji-A.DAT",
+      "size": 4096,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_msg/fnt/moji_fnt.DAT",
+      "size": 17920,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAP.DAT",
+      "size": 28,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAP1.DAT",
+      "size": 189090,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAP2.DAT",
+      "size": 97328,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAP3.DAT",
+      "size": 12027,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAPDAT1.DAT",
+      "size": 66503,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAPDAT2.DAT",
+      "size": 66503,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAPDAT3.DAT",
+      "size": 66503,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAPDAT4.DAT",
+      "size": 66503,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/MAPDAT5.DAT",
+      "size": 122756,
+      "suffix": ".dat",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-a.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-b.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-c.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-d.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-e.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-f.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-g.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-h.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-i.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-j.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-k.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-l.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-m.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-n.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-o.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/color-rom-p.COL",
+      "size": 1024,
+      "suffix": ".col",
+      "text": false
+    },
+    {
+      "path": "us_scr/m-1.SCR",
+      "size": 8960,
+      "suffix": ".scr",
+      "text": false
+    },
+    {
+      "path": "us_scr/m-2.SCR",
+      "size": 8960,
+      "suffix": ".scr",
+      "text": false
+    },
+    {
+      "path": "us_scr/zel.lst",
+      "size": 43,
+      "suffix": ".lst",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_endz.asm",
+      "size": 25,
+      "suffix": ".asm",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_mpd0.txt",
+      "size": 1820,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_mpd01.txt",
+      "size": 3800,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_mpd1.txt",
+      "size": 1202,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_mpd11.txt",
+      "size": 2118,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_sut0.txt",
+      "size": 542,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_sut1.txt",
+      "size": 542,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_sut2.txt",
+      "size": 542,
+      "suffix": ".txt",
+      "text": true
+    },
+    {
+      "path": "us_scr/zel_sut3.txt",
+      "size": 542,
+      "suffix": ".txt",
+      "text": true
+    }
+  ],
+  "summary": {
+    "crosswalk_rows": 1130,
+    "files": 1026,
+    "linker_map_modules": 130,
+    "rust_ram_constants": 1888,
+    "source_root": "../NES_Ver2",
+    "source_symbols": 5219,
+    "text_files": 529
+  }
+}

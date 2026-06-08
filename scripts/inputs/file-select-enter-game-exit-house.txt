@@ -1,0 +1,20 @@
+# Extends the saved-slot gameplay route from the 107000-frame message frontier
+# and drives Link toward the south exit after dismissing the active message.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+include file-select-enter-game.txt
+
+107100 A
+107180 A
+107260 A
+107340 A
+107420 A
+107520..111000 DOWN
+111040..111720 RIGHT
+111760..112440 LEFT
+112500..116500 DOWN
+116600 A
+116680 A
+116760 A

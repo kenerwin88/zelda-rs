@@ -1,0 +1,153 @@
+# zelda3-rs
+
+Rust port of [zelda3](https://github.com/snesrev/zelda3) — a reverse-engineered
+re-implementation of *The Legend of Zelda: A Link to the Past* in C, ported
+faithfully to Rust.
+
+The original C project is expected next to this checkout as `../zelda3` by
+default and remains the ground truth for parity work.
+
+This repository does not include a ROM, generated game assets, or packaged
+binaries. Builders must provide their own legally obtained USA ROM when running
+asset generation, lockstep, replay, or oracle commands.
+
+## Status
+
+See [PROGRESS.md](PROGRESS.md) for what's built, what's stubbed, and where to
+pick up next session.
+
+See [docs/PORTING_MAP.md](docs/PORTING_MAP.md) for the C-to-Rust module/function
+ledger used to work through the remaining port systematically.
+
+See [GOALS.md](GOALS.md) for the rewrite plan and the approach (hybrid:
+faithful port first to keep the byte-for-byte verification oracle working,
+then refactor toward idiomatic Rust once each piece is verified green).
+
+## Quick start
+
+```bash
+cargo test --workspace
+cargo build --release           # builds zelda3-bin and embeds generated assets
+./target/release/zelda3         # standalone playable binary, no ROM needed at runtime
+./target/release/zelda3 <path-to-zelda3.sfc>
+./target/release/zelda3 --lockstep <path-to-zelda3.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--trace-state]
+```
+
+## Generated Assets
+
+The playable binary embeds the split files under `generated/zelda3_assets/`.
+That directory is gitignored, so every builder must provide their own USA ROM
+when creating the binary.
+
+Generate the assets explicitly:
+
+```bash
+python3 scripts/extract_assets.py --rom /path/to/zelda3.sfc
+cargo build -p zelda3-bin --release
+```
+
+Or let Cargo generate them during the binary build:
+
+```bash
+ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
+```
+
+The extractor writes:
+
+```text
+generated/zelda3_assets/
+  manifest.json
+  asset_signature.bin
+  asset_key_signature.bin
+  assets/
+    000-kSoundBank_intro.bin
+    001-kSoundBank_indoor.bin
+    ...
+    164-kSomeTileAttr.bin
+  images/
+    057-kLinkGraphics.png
+    064-kSprGfx.png
+    065-kBgGfx.png
+    066-kOverworldMapGfx.png
+    ...
+```
+
+Cargo repacks those split files into a temporary internal asset blob under
+`target/` while compiling, then embeds that blob in the executable. The generated
+folder itself intentionally does not contain `zelda3_assets.dat`. The `.bin`
+files are the exact runtime assets; the PNG files are human-inspectable previews
+for graphics assets and are not used by the runtime.
+
+The extractor writes a manifest with the source ROM SHA-1, per-asset sizes, and
+per-asset SHA-1 values, plus the generated preview image list. It delegates
+extraction to the original C checkout's `assets/restool.py`; set
+`ZELDA3_C_SOURCE=/path/to/zelda3` if that checkout is not at
+`../zelda3`.
+
+## Automatic Parity
+
+Run the combined behavior/render/audio oracle driver:
+
+```bash
+python3 scripts/full_parity.py --rom /path/to/zelda3.sfc
+```
+
+The default driver runs the Rust lockstep behavior/render comparison and the
+translated C engine audio oracle under `../zelda3`.
+Override the C checkout with `ZELDA3_C_REPO=/path/to/zelda3`, `--c-repo`, or
+`--c-bin`.
+
+For optional external-emulator checks, pass `--with-bsnes` or `--with-mesen`.
+On macOS arm64, `--with-bsnes` will download the bsnes libretro core into
+`external/bsnes-libretro/local/` if no core is found. You can override with
+`BSNES_LIBRETRO_CORE=/path/to/bsnes_libretro.dylib`, `--bsnes-core`, or
+`--no-install-bsnes`. The Mesen2 runner expects the local app under
+`external/mesen2-oracle/local/` unless `--mesen-runner` is supplied.
+
+The C audio oracle can also run directly:
+
+```bash
+python3 scripts/compare_c_audio.py --frames 120
+```
+
+The no-argument binary path uses embedded generated assets and does not read a
+ROM at runtime. Explicit ROM, replay, and oracle commands still load the ROM and
+look for `zelda3_assets.dat` next to the ROM or in the current working directory
+so parity work can keep comparing against original-ROM behavior.
+
+## License
+
+This project is licensed under the MIT license. See [LICENSE.txt](LICENSE.txt).
+
+## macOS Distribution Signing
+
+Build a signed macOS zip with:
+
+```bash
+scripts/package_macos.sh
+```
+
+By default this uses ad-hoc signing (`SIGN_IDENTITY=-`), which is useful for
+local verification but does not identify a trusted developer to other Macs. For
+real distribution outside the Mac App Store, install a Developer ID Application
+certificate and pass its identity:
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  scripts/package_macos.sh
+```
+
+To submit the signed zip to Apple's notary service, first store notarytool
+credentials in Keychain, then pass that profile name:
+
+```bash
+xcrun notarytool store-credentials zelda3-notary
+
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE=zelda3-notary \
+  scripts/package_macos.sh
+```
+
+The script writes `dist/zelda3-macos-<arch>/zelda3` and
+`dist/zelda3-macos-<arch>.zip`, verifies the code signature, and notarizes the
+zip when `NOTARY_PROFILE` is set.

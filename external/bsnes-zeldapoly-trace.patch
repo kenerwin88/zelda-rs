@@ -1,0 +1,171 @@
+From ef26c8f836f9d29e12b1155c6738af1b2043b69c Mon Sep 17 00:00:00 2001
+From: Ken Erwin <ken@devopslibrary.com>
+Date: Tue, 2 Jun 2026 11:16:07 -0400
+Subject: [PATCH] debug: add Zelda poly trace probes
+
+---
+ bsnes/sfc/cpu/cpu.cpp         | 29 +++++++++++++++++++++++++++++
+ bsnes/sfc/cpu/memory.cpp      | 18 ++++++++++++++++++
+ bsnes/sfc/cpu/timing.cpp      |  6 ++++++
+ bsnes/sfc/ppu-fast/object.cpp |  9 +++++++++
+ bsnes/sfc/ppu-fast/ppu.cpp    | 30 ++++++++++++++++++++++++++++++
+ 5 files changed, 92 insertions(+)
+
+diff --git a/bsnes/sfc/cpu/cpu.cpp b/bsnes/sfc/cpu/cpu.cpp
+index b6fec16..2b74c35 100644
+--- a/bsnes/sfc/cpu/cpu.cpp
++++ b/bsnes/sfc/cpu/cpu.cpp
+@@ -3,6 +3,14 @@
+ namespace SuperFamicom {
+ 
+ CPU cpu;
++
++static uint zeldaPolyTraceFrame = 0;
++
++static auto traceZeldaPolyEnabled() -> bool {
++  static bool enabled = getenv("BSNES_TRACE_ZELDA_POLY") != nullptr;
++  return enabled;
++}
++
+ #include "dma.cpp"
+ #include "memory.cpp"
+ #include "io.cpp"
+@@ -32,6 +40,27 @@ auto CPU::Enter() -> void {
+ }
+ 
+ auto CPU::main() -> void {
++  if(traceZeldaPolyEnabled() && !status.interruptPending) {
++    const char* tag = nullptr;
++    switch((uint)r.pc.d) {
++    case 0x8080c9: tag = "pc Interrupt_NMI"; break;
++    case 0x80822d: tag = "pc NMI_SwitchThread"; break;
++    case 0x8082d8: tag = "pc Interrupt_IRQ"; break;
++    case 0x80831f: tag = "pc IRQ_SwitchThread"; break;
++    case 0x809347: tag = "pc NMI_UpdateIRQGFX"; break;
++    case 0x89f825: tag = "pc Poly_BeginRaster"; break;
++    case 0x89f835: tag = "pc Poly_ClearDidRunStep"; break;
++    case 0x89f837: tag = "pc Poly_SetUploadFlag"; break;
++    case 0x8cc404: tag = "pc Intro_HandleAllTriforceAnimations"; break;
++    case 0x8cc435: tag = "pc Intro_AnimateTriforce"; break;
++    case 0x8cc448: tag = "pc Intro_RunStep"; break;
++    }
++    if(tag) {
++      fprintf(stderr, "bsnes-poly frame=%u v=%03u h=%04u cpu=%u pc=%06x sp=%04x %s\n",
++        zeldaPolyTraceFrame, vcounter(), hcounter(), counter.cpu, (uint)r.pc.d, (uint)r.s.w, tag);
++    }
++  }
++
+   if(r.wai) return instructionWait();
+   if(r.stp) return instructionStop();
+   if(!status.interruptPending) return instruction();
+diff --git a/bsnes/sfc/cpu/memory.cpp b/bsnes/sfc/cpu/memory.cpp
+index c63de17..b86957a 100644
+--- a/bsnes/sfc/cpu/memory.cpp
++++ b/bsnes/sfc/cpu/memory.cpp
+@@ -78,6 +78,24 @@ auto CPU::write(uint address, uint8 data) -> void {
+   }
+ 
+   status.irqLock = 0;
++
++  if(traceZeldaPolyEnabled()) {
++    auto bank = address >> 16;
++    auto lo = address & 0xffff;
++    auto isWRAMMirror = ((bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) && lo <= 0x1fff) || bank == 0x7e || bank == 0x7f;
++    auto isIntroState = isWRAMMirror && (
++      lo == 0x1e00 || lo == 0x1e01 || lo == 0x1e0a ||
++      (lo >= 0x1e28 && lo <= 0x1e67) ||
++      lo == 0x1f00 || lo == 0x1f02 || lo == 0x1f04 || lo == 0x1f05 ||
++      lo == 0x1f0a || lo == 0x1f0b || lo == 0x1f0c
++    );
++    auto isTimingIO = (bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) && (lo == 0x4200 || lo == 0x4209 || lo == 0x420a || lo == 0x420b);
++    if(isIntroState || isTimingIO) {
++      fprintf(stderr, "bsnes-poly frame=%u v=%03u h=%04u cpu=%u pc=%06x sp=%04x write addr=%06x data=%02x\n",
++        zeldaPolyTraceFrame, vcounter(), hcounter(), counter.cpu, (uint)r.pc.d, (uint)r.s.w, address, data);
++    }
++  }
++
+   bus.write(address, r.mdr = data);
+ }
+ 
+diff --git a/bsnes/sfc/cpu/timing.cpp b/bsnes/sfc/cpu/timing.cpp
+index dfc8b7a..689b04d 100644
+--- a/bsnes/sfc/cpu/timing.cpp
++++ b/bsnes/sfc/cpu/timing.cpp
+@@ -101,6 +101,12 @@ auto CPU::scanline() -> void {
+   synchronizeCoprocessors();
+ 
+   if(vcounter() == 0) {
++    if(traceZeldaPolyEnabled()) {
++      fprintf(stderr, "bsnes-poly frame=%u v=%03u h=%04u cpu=%u scanline-start\n",
++        zeldaPolyTraceFrame, vcounter(), hcounter(), counter.cpu);
++    }
++    zeldaPolyTraceFrame++;
++
+     //HDMA setup triggers once every frame
+     status.hdmaSetupPosition = (version == 1 ? 12 + 8 - dmaCounter() : 12 + dmaCounter());
+     status.hdmaSetupTriggered = false;
+diff --git a/bsnes/sfc/ppu-fast/object.cpp b/bsnes/sfc/ppu-fast/object.cpp
+index c0456cf..b426a8f 100644
+--- a/bsnes/sfc/ppu-fast/object.cpp
++++ b/bsnes/sfc/ppu-fast/object.cpp
+@@ -111,6 +111,15 @@ auto PPU::Line::renderObject(PPU::IO::Object& self) -> void {
+         color += tile.data >> shift +  7 & 2;
+         color += tile.data >> shift + 14 & 4;
+         color += tile.data >> shift + 21 & 8;
++        if(getenv("BSNES_TRACE_ZELDA_POLY") != nullptr
++        && ((this->y == 220 && tileX == 10) || (this->y == 218 && tileX == 11)
++        || (this->y == 0 && tileX == 127) || (this->y == 1 && tileX == 127)
++        || (this->y == 211 && tileX == 11) || (this->y == 210 && tileX == 11))) {
++          fprintf(stderr,
++            "bsnes-obj-pixel line=%u x=%u tile_slot=%u tile_x=%u tile_y=%u data=%08x shift=%u color=%u palette=%u final=%04x\n",
++            this->y, tileX, n, tile.x, tile.y, tile.data, shift, color, tile.palette,
++            cgram[tile.palette + color]);
++        }
+         if(color) {
+           palette[tileX] = tile.palette + color;
+           priority[tileX] = self.priority[tile.priority];
+diff --git a/bsnes/sfc/ppu-fast/ppu.cpp b/bsnes/sfc/ppu-fast/ppu.cpp
+index 718a633..9de158a 100644
+--- a/bsnes/sfc/ppu-fast/ppu.cpp
++++ b/bsnes/sfc/ppu-fast/ppu.cpp
+@@ -137,7 +137,37 @@ auto PPU::scanline() -> void {
+ }
+ 
+ auto PPU::refresh() -> void {
++  static uint zeldaPolyVideoTraceFrame = 0;
+   if(system.frameCounter == 0 && !system.runAhead) {
++    if(getenv("BSNES_TRACE_ZELDA_POLY") != nullptr) {
++      uint checksum = 2166136261u;
++      for(uint n : range(0x400)) checksum = (checksum ^ vram[0x5800 + n]) * 16777619u;
++      fprintf(stderr,
++        "bsnes-video frame=%u v=%03u h=%04u objtile=%04x/%04x objsize=%02x first=%02x vram5800=%08x words=%04x,%04x,%04x,%04x topwords=%04x,%04x,%04x,%04x top2=%04x,%04x,%04x,%04x top3=%04x,%04x obj0=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj1=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj18=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj22=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj29=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj32=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj34=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj41=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj44=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj50=(%03x,%03u,%02x,%u,%u,%u,%u,%u) obj54=(%03x,%03u,%02x,%u,%u,%u,%u,%u) cgram80=%04x cgram81=%04x cgram82=%04x\n",
++        zeldaPolyVideoTraceFrame, vcounter(), hcounter(), io.obj.tiledataAddress, io.obj.nameselect,
++        io.obj.baseSize, io.obj.first, checksum, vram[0x5800], vram[0x5801], vram[0x5802], vram[0x5803],
++        vram[0x5947], vram[0x594f], vram[0x5ba7], vram[0x5baf],
++        vram[0x5ac7], vram[0x5acf], vram[0x5ec7], vram[0x5ecf],
++        vram[0x5b37], vram[0x5b3f],
++        objects[0].x, objects[0].y, objects[0].character, objects[0].nameselect, objects[0].palette, objects[0].priority, objects[0].hflip, objects[0].vflip,
++        objects[1].x, objects[1].y, objects[1].character, objects[1].nameselect, objects[1].palette, objects[1].priority, objects[1].hflip, objects[1].vflip,
++        objects[18].x, objects[18].y, objects[18].character, objects[18].nameselect, objects[18].palette, objects[18].priority, objects[18].hflip, objects[18].vflip,
++        objects[22].x, objects[22].y, objects[22].character, objects[22].nameselect, objects[22].palette, objects[22].priority, objects[22].hflip, objects[22].vflip,
++        objects[29].x, objects[29].y, objects[29].character, objects[29].nameselect, objects[29].palette, objects[29].priority, objects[29].hflip, objects[29].vflip,
++        objects[32].x, objects[32].y, objects[32].character, objects[32].nameselect, objects[32].palette, objects[32].priority, objects[32].hflip, objects[32].vflip,
++        objects[34].x, objects[34].y, objects[34].character, objects[34].nameselect, objects[34].palette, objects[34].priority, objects[34].hflip, objects[34].vflip,
++        objects[41].x, objects[41].y, objects[41].character, objects[41].nameselect, objects[41].palette, objects[41].priority, objects[41].hflip, objects[41].vflip,
++        objects[44].x, objects[44].y, objects[44].character, objects[44].nameselect, objects[44].palette, objects[44].priority, objects[44].hflip, objects[44].vflip,
++        objects[50].x, objects[50].y, objects[50].character, objects[50].nameselect, objects[50].palette, objects[50].priority, objects[50].hflip, objects[50].vflip,
++        objects[54].x, objects[54].y, objects[54].character, objects[54].nameselect, objects[54].palette, objects[54].priority, objects[54].hflip, objects[54].vflip,
++        cgram[0x80], cgram[0x81], cgram[0x82]);
++      fprintf(stderr,
++        "bsnes-probe frame=%u vram5b44=%04x/%04x obj51=(%03x,%03u,%02x,%u,%u,%u,%u,%u) cgramd2=%04x\n",
++        zeldaPolyVideoTraceFrame, vram[0x5b44], vram[0x5b4c],
++        objects[51].x, objects[51].y, objects[51].character, objects[51].nameselect, objects[51].palette, objects[51].priority, objects[51].hflip, objects[51].vflip,
++        cgram[0xd2]);
++    }
++    zeldaPolyVideoTraceFrame++;
+     auto output = this->output;
+     uint pitch, width, height;
+     if(!hd()) {
+-- 
+2.50.1 (Apple Git-155)
+

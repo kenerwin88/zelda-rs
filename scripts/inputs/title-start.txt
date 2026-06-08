@@ -1,0 +1,9 @@
+# Deterministic lockstep input script.
+#
+# Format: <frame-or-inclusive-range> <buttons>
+# Buttons can be combined with +, comma, or |. Accepted names:
+# B Y SELECT START UP DOWN LEFT RIGHT A X L R NONE
+#
+# Press Start once the attract module reaches an interruptible story state
+# (`attract_state=5`, `INIDISP=0f`) so the skip-to-file-select branch runs.
+1777 START

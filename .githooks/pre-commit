@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+echo "pre-commit: checking RAM readability guardrails"
+python3 scripts/check_ram_readability.py
+
+echo "pre-commit: building release replay binary"
+cargo build -p zelda3-bin --release
+
+snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/zelda3-pre-commit-sram.XXXXXX")"
+sram_dat_exists=0
+sram_bak_exists=0
+if [ -f saves/sram.dat ]; then
+  cp saves/sram.dat "$snapshot_dir/sram.dat"
+  sram_dat_exists=1
+fi
+if [ -f saves/sram.bak ]; then
+  cp saves/sram.bak "$snapshot_dir/sram.bak"
+  sram_bak_exists=1
+fi
+restore_sram() {
+  if [ "$sram_dat_exists" -eq 1 ]; then
+    cp "$snapshot_dir/sram.dat" saves/sram.dat
+  else
+    rm -f saves/sram.dat
+  fi
+  if [ "$sram_bak_exists" -eq 1 ]; then
+    cp "$snapshot_dir/sram.bak" saves/sram.bak
+  else
+    rm -f saves/sram.bak
+  fi
+  rm -rf "$snapshot_dir"
+}
+trap restore_sram EXIT HUP INT TERM
+
+echo "pre-commit: running C/R standard replay parity gate"
+python3 scripts/test_standard_replay_parity.py --skip-final-frame
+restore_sram
+trap - EXIT HUP INT TERM
+
+echo "pre-commit: skipping full-route render-hash sweep"
+echo "pre-commit: run scripts/test_standard_replay_parity.py --render-hash-chunked manually for release-grade render parity"

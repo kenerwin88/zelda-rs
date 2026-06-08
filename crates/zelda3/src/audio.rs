@@ -1,0 +1,1368 @@
+// Methods ported from zelda3/src/audio.c and included inside ZeldaState.
+
+use super::*;
+use crate::config::{config_value_path, K_MSU_ENABLED_MSU_DELUXE, K_MSU_ENABLED_OPUZ};
+use opus::{Channels, Decoder as OpusDecoder};
+use std::fs;
+
+const MSU_STATE_IDLE: u8 = 0;
+const MSU_STATE_FINISHED_PLAYING: u8 = 1;
+const MSU_STATE_RESUMING: u8 = 2;
+const MSU_STATE_PLAYING: u8 = 3;
+
+const OVERWORLD_AREA_INDEX_AUDIO: usize = 0x040a;
+const MSU_RESUME_INFO_ALT: usize = 0x1db20;
+const MSU_RESUME_INFO: usize = 0x1db60;
+const MSU_VOLUME: usize = 0x0654;
+
+const K_MSU_TRACKS_WITH_REPEAT: [u8; 48] = [
+    1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
+    1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+];
+
+const K_IS_MUSIC_OW_OR_DUNGEON: [u8; 32] = [
+    0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 2, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 0, 0, 0, 0,
+];
+
+const K_MSU_DELUXE_OW_SONGS: [u8; 160] = [
+    37, 37, 42, 38, 38, 38, 38, 39, 37, 37, 42, 38, 38, 38, 38, 41, 42, 42, 42, 42, 42, 42, 40, 40,
+    43, 43, 42, 47, 47, 42, 45, 45, 43, 43, 43, 47, 47, 42, 45, 45, 112, 112, 48, 42, 42, 42, 42,
+    45, 44, 44, 48, 48, 48, 46, 46, 46, 44, 44, 44, 48, 48, 46, 46, 46, 49, 49, 51, 50, 50, 50, 50,
+    50, 49, 49, 51, 50, 50, 50, 50, 51, 51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 51, 56, 56, 51, 54,
+    54, 52, 52, 52, 56, 56, 51, 54, 54, 58, 52, 57, 51, 51, 51, 51, 54, 53, 53, 57, 57, 57, 55, 55,
+    110, 53, 53, 57, 57, 57, 55, 55, 110, 37, 41, 41, 42, 42, 42, 42, 42, 42, 41, 41, 42, 42, 42,
+    42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
+];
+
+const K_MSU_DELUXE_ENTRANCE_SONGS: [u8; 133] = [
+    59, 59, 60, 61, 61, 61, 62, 62, 63, 64, 64, 64, 105, 65, 65, 66, 66, 62, 67, 62, 62, 68, 62,
+    62, 68, 68, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 69, 70, 71, 72, 73, 73, 73, 106, 102, 74,
+    62, 62, 75, 75, 76, 77, 78, 68, 79, 80, 81, 62, 62, 62, 82, 75, 242, 59, 59, 76, 242, 242, 242,
+    96, 83, 99, 59, 242, 242, 242, 84, 95, 104, 62, 85, 62, 62, 86, 242, 67, 103, 83, 83, 87, 76,
+    88, 81, 98, 81, 88, 83, 89, 75, 97, 90, 91, 91, 100, 92, 93, 92, 242, 93, 107, 62, 75, 62, 67,
+    62, 242, 242, 242, 73, 73, 73, 73, 102, 114, 81, 76, 62, 67, 62, 61, 94, 62, 103,
+];
+
+const K_VOLUME_TRANSITION_TARGET: [u8; 4] = [0, 64, 255, 255];
+const K_VOLUME_TRANSITION_STEP: [u8; 4] = [7, 3, 3, 24];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct MsuPlayerResumeInfo {
+    tag: u32,
+    offset: u32,
+    samples_until_repeat: u32,
+    range_cur: u16,
+    range_repeat: u16,
+    initial_packet_bytes: u64,
+    orig_track: u8,
+    actual_track: u8,
+}
+
+pub(super) struct MsuPlayer {
+    buffer_size: u32,
+    buffer_pos: u32,
+    preskip: u32,
+    samples_until_repeat: u32,
+    total_samples_in_file: u32,
+    repeat_position: u32,
+    cur_file_offs: u32,
+    resume_info: MsuPlayerResumeInfo,
+    enabled: u8,
+    state: u8,
+    volume: f32,
+    volume_step: f32,
+    volume_target: f32,
+    range_cur: u16,
+    range_repeat: u16,
+    has_file: bool,
+    has_opus: bool,
+    opus_decoder: Option<OpusDecoder>,
+    pcm_data: Vec<i16>,
+    opuz_data: Vec<u8>,
+    buffer: [i16; 960 * 2],
+}
+
+impl Clone for MsuPlayer {
+    fn clone(&self) -> Self {
+        Self {
+            buffer_size: self.buffer_size,
+            buffer_pos: self.buffer_pos,
+            preskip: self.preskip,
+            samples_until_repeat: self.samples_until_repeat,
+            total_samples_in_file: self.total_samples_in_file,
+            repeat_position: self.repeat_position,
+            cur_file_offs: self.cur_file_offs,
+            resume_info: self.resume_info,
+            enabled: self.enabled,
+            state: self.state,
+            volume: self.volume,
+            volume_step: self.volume_step,
+            volume_target: self.volume_target,
+            range_cur: self.range_cur,
+            range_repeat: self.range_repeat,
+            has_file: self.has_file,
+            has_opus: self.has_opus,
+            opus_decoder: None,
+            pcm_data: self.pcm_data.clone(),
+            opuz_data: self.opuz_data.clone(),
+            buffer: self.buffer,
+        }
+    }
+}
+
+impl Default for MsuPlayer {
+    fn default() -> Self {
+        Self {
+            buffer_size: 0,
+            buffer_pos: 0,
+            preskip: 0,
+            samples_until_repeat: 0,
+            total_samples_in_file: 0,
+            repeat_position: 0,
+            cur_file_offs: 0,
+            resume_info: MsuPlayerResumeInfo::default(),
+            enabled: 0,
+            state: MSU_STATE_IDLE,
+            volume: 0.0,
+            volume_step: 0.0,
+            volume_target: 0.0,
+            range_cur: 0,
+            range_repeat: 0,
+            has_file: false,
+            has_opus: false,
+            opus_decoder: None,
+            pcm_data: Vec::new(),
+            opuz_data: Vec::new(),
+            buffer: [0; 960 * 2],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpuzPacketStatus {
+    Decoded(u32),
+    FinishedPlaying,
+    ReadError,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ApuWriteEnt {
+    ports: [u8; 4],
+}
+
+pub(super) struct AudioState {
+    spc_player: *mut crate::spc_player::SpcPlayer,
+    msu_player: MsuPlayer,
+    apu_write_ents: [ApuWriteEnt; 16],
+    apu_write: ApuWriteEnt,
+    apu_write_ent_pos: u8,
+    apu_write_count: u8,
+    apu_total_write: u8,
+    input_ports: [u8; 4],
+    port_to_snes: [u8; 4],
+    spc_ram: [u8; 0x10000],
+    volume_transition_step_float: [f32; 4],
+    volume_transition_target_float: [f32; 4],
+    config_audio_freq: u32,
+    config_msuvolume: u8,
+    config_resume_msu: bool,
+    config_msu_path: Option<String>,
+}
+
+impl Default for AudioState {
+    fn default() -> Self {
+        let spc_player = crate::spc_player::spc_player_create();
+        crate::spc_player::spc_player_initialize(spc_player);
+        Self {
+            spc_player,
+            msu_player: MsuPlayer::default(),
+            apu_write_ents: [ApuWriteEnt::default(); 16],
+            apu_write: ApuWriteEnt::default(),
+            apu_write_ent_pos: 0,
+            apu_write_count: 0,
+            apu_total_write: 0,
+            input_ports: [0; 4],
+            port_to_snes: [0; 4],
+            spc_ram: [0; 0x10000],
+            volume_transition_step_float: [0.0; 4],
+            volume_transition_target_float: [0.0; 4],
+            config_audio_freq: 0,
+            config_msuvolume: 100,
+            config_resume_msu: false,
+            config_msu_path: None,
+        }
+    }
+}
+
+impl Clone for AudioState {
+    fn clone(&self) -> Self {
+        Self {
+            spc_player: crate::spc_player::spc_player_clone(self.spc_player),
+            msu_player: self.msu_player.clone(),
+            apu_write_ents: self.apu_write_ents,
+            apu_write: self.apu_write,
+            apu_write_ent_pos: self.apu_write_ent_pos,
+            apu_write_count: self.apu_write_count,
+            apu_total_write: self.apu_total_write,
+            input_ports: self.input_ports,
+            port_to_snes: self.port_to_snes,
+            spc_ram: self.spc_ram,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path.clone(),
+        }
+    }
+}
+
+impl Drop for AudioState {
+    fn drop(&mut self) {
+        crate::spc_player::spc_player_destroy(self.spc_player);
+        self.spc_player = std::ptr::null_mut();
+    }
+}
+
+impl ZeldaState {
+    fn remap_msu_deluxe_track(&self, mp: &MsuPlayer, track: u8) -> u8 {
+        if mp.enabled & K_MSU_ENABLED_MSU_DELUXE == 0
+            || track as usize >= K_IS_MUSIC_OW_OR_DUNGEON.len()
+        {
+            return track;
+        }
+        match K_IS_MUSIC_OW_OR_DUNGEON[track as usize] {
+            1 => {
+                let area = read_le_u16(&self.ram, OVERWORLD_AREA_INDEX_AUDIO) as usize & 0xff;
+                if area < K_MSU_DELUXE_OW_SONGS.len() {
+                    K_MSU_DELUXE_OW_SONGS[area]
+                } else {
+                    track
+                }
+            }
+            2 => {
+                let entrance = self.ram[WHICH_ENTRANCE] as usize;
+                if entrance >= K_MSU_DELUXE_ENTRANCE_SONGS.len()
+                    || K_MSU_DELUXE_ENTRANCE_SONGS[entrance] == 242
+                {
+                    track
+                } else {
+                    K_MSU_DELUXE_ENTRANCE_SONGS[entrance]
+                }
+            }
+            _ => track,
+        }
+    }
+
+    pub fn zelda_is_playing_music_track(&self, track: u8) -> bool {
+        let mp = &self.audio.msu_player;
+        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+            self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
+        } else {
+            track == self.ram[CURRENT_MUSIC_CONTROL]
+        }
+    }
+
+    pub fn zelda_is_playing_music_track_with_bug(&self, track: u8) -> bool {
+        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+        let mp = &self.audio.msu_player;
+        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+            self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
+        } else if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+            track == self.ram[CURRENT_MUSIC_CONTROL]
+        } else {
+            track == self.ram[LAST_MUSIC_CONTROL]
+        }
+    }
+
+    pub fn zelda_get_entrance_music_track(&self, i: i32) -> u8 {
+        let mut rv = self
+            .assets
+            .as_ref()
+            .and_then(|assets| assets.asset(27))
+            .and_then(|asset| asset.get(i as usize))
+            .copied()
+            .unwrap_or(0);
+        let mp = &self.audio.msu_player;
+        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+            let entrance = self.ram[WHICH_ENTRANCE] as usize;
+            if rv == 242
+                && entrance < K_MSU_DELUXE_ENTRANCE_SONGS.len()
+                && K_MSU_DELUXE_ENTRANCE_SONGS[entrance] != 242
+            {
+                rv = 16;
+            }
+        }
+        rv
+    }
+
+    pub fn zelda_play_msu_audio_track(&mut self, music_ctrl: u8) {
+        if self.audio.msu_player.enabled == 0 {
+            self.audio.msu_player.resume_info.tag = 0;
+            self.zelda_apu_write(0x2140, music_ctrl);
+            return;
+        }
+        if music_ctrl & 0xf0 != 0xf0 {
+            self.msu_player_open(music_ctrl as i32, false);
+        } else if (0xf1..=0xf3).contains(&music_ctrl) {
+            let i = (music_ctrl - 0xf1) as usize;
+            self.audio.msu_player.volume_target = self.audio.volume_transition_target_float[i];
+            self.audio.msu_player.volume_step = self.audio.volume_transition_step_float[i];
+        }
+        if self.audio.msu_player.state == 0 {
+            self.zelda_apu_write(0x2140, music_ctrl);
+        } else {
+            self.zelda_apu_write(0x2140, 0xf0);
+        }
+    }
+
+    fn msu_player_close_file(mp: &mut MsuPlayer) {
+        mp.has_file = false;
+        mp.has_opus = false;
+        mp.opus_decoder = None;
+        mp.pcm_data.clear();
+        mp.opuz_data.clear();
+        if mp.state != MSU_STATE_FINISHED_PLAYING {
+            mp.state = MSU_STATE_IDLE;
+        }
+        mp.resume_info = MsuPlayerResumeInfo::default();
+    }
+
+    fn msu_player_open(&mut self, orig_track: i32, resume_from_snapshot: bool) {
+        let actual_track = {
+            let mp = &self.audio.msu_player;
+            self.remap_msu_deluxe_track(mp, orig_track as u8)
+        };
+
+        let resume = if !resume_from_snapshot {
+            let mut resume = MsuPlayerResumeInfo::default();
+            if self.frame_control_view().main_module() == 9
+                && actual_track
+                    == Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO_ALT).actual_track
+                && self.audio.config_resume_msu
+            {
+                resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO_ALT);
+            }
+            if self.audio.msu_player.state >= MSU_STATE_RESUMING {
+                Self::write_msu_resume_info(
+                    &mut self.ram,
+                    MSU_RESUME_INFO_ALT,
+                    self.audio.msu_player.resume_info,
+                );
+            }
+            resume
+        } else {
+            Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO)
+        };
+
+        let volume_target = self.audio.volume_transition_target_float[3];
+        let volume_step = self.audio.volume_transition_step_float[3];
+        let config_msu_path = self.audio.config_msu_path.clone();
+        let mp = &mut self.audio.msu_player;
+        mp.volume_target = volume_target;
+        mp.volume_step = volume_step;
+        mp.state = MSU_STATE_IDLE;
+        Self::msu_player_close_file(mp);
+        if actual_track == 0 {
+            return;
+        }
+
+        let ext = if mp.enabled & K_MSU_ENABLED_OPUZ != 0 {
+            "opuz"
+        } else {
+            "pcm"
+        };
+        let prefix = config_msu_path.as_deref().unwrap_or("");
+        let fname = format!("{prefix}{actual_track}.{ext}");
+        let Ok(bytes) = fs::read(config_value_path(&fname)) else {
+            Self::msu_player_close_file(mp);
+            return;
+        };
+        if bytes.len() < 8 {
+            Self::msu_player_close_file(mp);
+            return;
+        }
+
+        let Some(file_tag) = read_le_u32(&bytes, 0) else {
+            Self::msu_player_close_file(mp);
+            return;
+        };
+        let Some(repeat_position) = read_le_u32(&bytes, 4) else {
+            Self::msu_player_close_file(mp);
+            return;
+        };
+        mp.repeat_position = repeat_position;
+        mp.state = if resume.actual_track == actual_track && resume.tag == file_tag {
+            MSU_STATE_RESUMING
+        } else {
+            MSU_STATE_PLAYING
+        };
+        if mp.state == MSU_STATE_RESUMING {
+            mp.resume_info = resume;
+        } else {
+            mp.resume_info.orig_track = orig_track as u8;
+            mp.resume_info.actual_track = actual_track;
+            mp.resume_info.tag = file_tag;
+            mp.resume_info.range_cur = 8;
+        }
+        mp.cur_file_offs = mp.resume_info.offset;
+        mp.samples_until_repeat = mp.resume_info.samples_until_repeat;
+        mp.range_cur = mp.resume_info.range_cur;
+        mp.range_repeat = mp.resume_info.range_repeat;
+        mp.buffer_size = 0;
+        mp.buffer_pos = 0;
+        mp.preskip = 0;
+
+        const MSU1_TAG: u32 =
+            (b'1' as u32) << 24 | (b'U' as u32) << 16 | (b'S' as u32) << 8 | b'M' as u32;
+        const OPUZ_TAG: u32 =
+            (b'Z' as u32) << 24 | (b'U' as u32) << 16 | (b'P' as u32) << 8 | b'O' as u32;
+        if file_tag == OPUZ_TAG {
+            let Ok(decoder) = OpusDecoder::new(48_000, Channels::Stereo) else {
+                Self::msu_player_close_file(mp);
+                return;
+            };
+            mp.opuz_data = bytes;
+            mp.opus_decoder = Some(decoder);
+            mp.has_file = true;
+            mp.has_opus = true;
+        } else if file_tag == MSU1_TAG {
+            let sample_frames = ((bytes.len() - 8) / 4) as u32;
+            mp.total_samples_in_file = sample_frames;
+            mp.samples_until_repeat = sample_frames.wrapping_sub(mp.cur_file_offs);
+            mp.pcm_data.clear();
+            mp.pcm_data.reserve(sample_frames as usize * 2);
+            for chunk in bytes[8..8 + sample_frames as usize * 4].chunks_exact(2) {
+                mp.pcm_data.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+            mp.has_file = true;
+            mp.has_opus = false;
+        } else {
+            Self::msu_player_close_file(mp);
+        }
+    }
+
+    fn msu_player_prepare_opuz_packet(mp: &mut MsuPlayer) -> OpuzPacketStatus {
+        if mp.opus_decoder.is_none() {
+            let Ok(decoder) = OpusDecoder::new(48_000, Channels::Stereo) else {
+                return OpuzPacketStatus::ReadError;
+            };
+            mp.opus_decoder = Some(decoder);
+        }
+
+        loop {
+            if mp.samples_until_repeat == 0 {
+                if mp.range_cur == 0 {
+                    return OpuzPacketStatus::FinishedPlaying;
+                }
+                if let Some(decoder) = &mut mp.opus_decoder {
+                    if decoder.reset_state().is_err() {
+                        return OpuzPacketStatus::ReadError;
+                    }
+                }
+                let range_offset = mp.range_cur as usize;
+                let Some(range_header) = mp.opuz_data.get(range_offset..range_offset + 10) else {
+                    return OpuzPacketStatus::ReadError;
+                };
+                let Some(file_offs) = read_le_u32(range_header, 0) else {
+                    return OpuzPacketStatus::ReadError;
+                };
+                if file_offs & 0xf000_0000 != 0 {
+                    return OpuzPacketStatus::ReadError;
+                }
+                let Some(samples_until_repeat) = read_le_u32(range_header, 4) else {
+                    return OpuzPacketStatus::ReadError;
+                };
+                let preskip = u16::from_le_bytes([range_header[8], range_header[9]]);
+                mp.samples_until_repeat = samples_until_repeat;
+                mp.preskip = (preskip & 0x3fff) as u32;
+                if preskip & 0x4000 != 0 {
+                    mp.range_repeat = mp.range_cur;
+                }
+                mp.range_cur = if preskip & 0x8000 != 0 {
+                    mp.range_repeat
+                } else {
+                    mp.range_cur.wrapping_add(10)
+                };
+                mp.cur_file_offs = file_offs;
+                mp.resume_info.range_repeat = mp.range_repeat;
+                mp.resume_info.range_cur = mp.range_cur;
+            }
+            if mp.samples_until_repeat == 0 {
+                return OpuzPacketStatus::ReadError;
+            }
+
+            let packet_offset = mp.cur_file_offs as usize;
+            let Some(packet_header) = mp.opuz_data.get(packet_offset..packet_offset + 2) else {
+                return OpuzPacketStatus::ReadError;
+            };
+            let packet_header = u16::from_le_bytes([packet_header[0], packet_header[1]]);
+            let size = (packet_header & 0x7fff) as usize;
+            if size > 1275 {
+                return OpuzPacketStatus::ReadError;
+            }
+            let n = usize::from((packet_header >> 15) != 0);
+            let packet_end = packet_offset.saturating_add(2).saturating_add(size);
+            if packet_end > mp.opuz_data.len() {
+                return OpuzPacketStatus::ReadError;
+            }
+
+            let mut initial_file_data = [0; 8];
+            let initial_len = (2 + size).min(initial_file_data.len());
+            initial_file_data[..initial_len]
+                .copy_from_slice(&mp.opuz_data[packet_offset..packet_offset + initial_len]);
+            let initial_file_data = u64::from_le_bytes(initial_file_data);
+            if mp.state == MSU_STATE_RESUMING {
+                mp.state = MSU_STATE_PLAYING;
+                if mp.resume_info.initial_packet_bytes != initial_file_data {
+                    return OpuzPacketStatus::ReadError;
+                }
+            }
+            mp.resume_info.initial_packet_bytes = initial_file_data;
+            mp.resume_info.samples_until_repeat = mp.samples_until_repeat.wrapping_add(mp.preskip);
+            mp.resume_info.offset = mp.cur_file_offs;
+            mp.cur_file_offs = mp.cur_file_offs.wrapping_add(2 + size as u32);
+
+            let mut packet = Vec::with_capacity(size + n);
+            if n != 0 {
+                packet.push(0xfc);
+            }
+            packet.extend_from_slice(&mp.opuz_data[packet_offset + 2..packet_end]);
+
+            let Some(decoder) = &mut mp.opus_decoder else {
+                return OpuzPacketStatus::ReadError;
+            };
+            let Ok(r) = decoder.decode(&packet, &mut mp.buffer, false) else {
+                return OpuzPacketStatus::ReadError;
+            };
+            if r == 0 {
+                return OpuzPacketStatus::ReadError;
+            }
+            let r = r as u32;
+            if r > mp.preskip {
+                return OpuzPacketStatus::Decoded(r);
+            }
+            mp.preskip = mp.preskip.wrapping_sub(r);
+        }
+    }
+
+    fn mix_to_buffer_with_volume(dst: &mut [i16], src: &[i16], n: usize, volume: f32) {
+        for i in 0..n {
+            let left = i * 2;
+            let right = left + 1;
+            if right >= dst.len() || right >= src.len() {
+                break;
+            }
+            if volume == 1.0 {
+                dst[left] = dst[left].wrapping_add(src[left]);
+                dst[right] = dst[right].wrapping_add(src[right]);
+            } else {
+                let vol = (65536.0 * volume) as i32;
+                dst[left] = dst[left].wrapping_add(((src[left] as i32 * vol) >> 16) as i16);
+                dst[right] = dst[right].wrapping_add(((src[right] as i32 * vol) >> 16) as i16);
+            }
+        }
+    }
+
+    fn mix_to_buffer_with_volume_ramp(
+        dst: &mut [i16],
+        src: &[i16],
+        n: usize,
+        volume: f32,
+        volume_step: f32,
+        _ideal_target: f32,
+    ) {
+        let mut vol = (volume * 281474976710656.0) as i64;
+        let step = (volume_step * 281474976710656.0) as i64;
+        for i in 0..n {
+            let left = i * 2;
+            let right = left + 1;
+            if right >= dst.len() || right >= src.len() {
+                break;
+            }
+            let v = (vol >> 32) as i32;
+            dst[left] = dst[left].wrapping_add(((src[left] as i32 * v) >> 16) as i16);
+            dst[right] = dst[right].wrapping_add(((src[right] as i32 * v) >> 16) as i16);
+            vol = vol.wrapping_add(step);
+        }
+    }
+
+    fn mix_to_buffer(mp: &mut MsuPlayer, dst: &mut [i16], src: &[i16], mut n: u32) {
+        if mp.volume != mp.volume_target {
+            let step = if mp.volume < mp.volume_target {
+                mp.volume_step
+            } else {
+                -mp.volume_step
+            };
+            let mut new_vol = mp.volume + step * n as f32;
+            let mut curn = n;
+            if if step >= 0.0 {
+                new_vol >= mp.volume_target
+            } else {
+                new_vol < mp.volume_target
+            } {
+                let maxn = ((mp.volume_target - mp.volume) / step) as u32;
+                curn = maxn.min(curn);
+                new_vol = mp.volume_target;
+            }
+            let vol = mp.volume;
+            mp.volume = new_vol;
+            Self::mix_to_buffer_with_volume_ramp(dst, src, curn as usize, vol, step, new_vol);
+            let skip = curn as usize * 2;
+            if skip >= dst.len() || skip >= src.len() {
+                return;
+            }
+            n -= curn;
+            Self::mix_to_buffer_with_volume(&mut dst[skip..], &src[skip..], n as usize, mp.volume);
+        } else {
+            Self::mix_to_buffer_with_volume(dst, src, n as usize, mp.volume);
+        }
+    }
+
+    pub fn msu_player_mix(&mut self, audio_buffer: &mut [i16], mut audio_samples: i32) {
+        let mut audio_offset = 0usize;
+        while audio_samples != 0 {
+            let remaining = self
+                .audio
+                .msu_player
+                .buffer_size
+                .saturating_sub(self.audio.msu_player.buffer_pos);
+            if remaining == 0 {
+                if self.audio.msu_player.has_opus {
+                    let orig_track = self.audio.msu_player.resume_info.orig_track;
+                    match Self::msu_player_prepare_opuz_packet(&mut self.audio.msu_player) {
+                        OpuzPacketStatus::FinishedPlaying => {
+                            self.audio.msu_player.state = MSU_STATE_FINISHED_PLAYING;
+                            Self::msu_player_close_file(&mut self.audio.msu_player);
+                        }
+                        OpuzPacketStatus::Decoded(r) => {
+                            let n = r
+                                .saturating_sub(self.audio.msu_player.preskip)
+                                .min(self.audio.msu_player.samples_until_repeat);
+                            self.audio.msu_player.samples_until_repeat =
+                                self.audio.msu_player.samples_until_repeat.wrapping_sub(n);
+                            self.audio.msu_player.buffer_pos = self.audio.msu_player.preskip;
+                            self.audio.msu_player.buffer_size =
+                                self.audio.msu_player.buffer_pos + n;
+                            self.audio.msu_player.preskip = 0;
+                        }
+                        OpuzPacketStatus::ReadError => {
+                            Self::msu_player_close_file(&mut self.audio.msu_player);
+                            self.zelda_apu_write(0x2140, orig_track);
+                            return;
+                        }
+                    }
+                } else if self.audio.msu_player.has_file {
+                    if self.audio.msu_player.samples_until_repeat == 0 {
+                        let actual_track = self.audio.msu_player.resume_info.actual_track as usize;
+                        if actual_track < K_MSU_TRACKS_WITH_REPEAT.len()
+                            && K_MSU_TRACKS_WITH_REPEAT[actual_track] == 0
+                        {
+                            self.audio.msu_player.state = MSU_STATE_FINISHED_PLAYING;
+                            Self::msu_player_close_file(&mut self.audio.msu_player);
+                            return;
+                        }
+                        self.audio.msu_player.samples_until_repeat = self
+                            .audio
+                            .msu_player
+                            .total_samples_in_file
+                            .wrapping_sub(self.audio.msu_player.repeat_position);
+                        if self.audio.msu_player.samples_until_repeat == 0 {
+                            let orig_track = self.audio.msu_player.resume_info.orig_track;
+                            Self::msu_player_close_file(&mut self.audio.msu_player);
+                            self.zelda_apu_write(0x2140, orig_track);
+                            return;
+                        }
+                        self.audio.msu_player.cur_file_offs = self.audio.msu_player.repeat_position;
+                    }
+
+                    let r = 960u32.min(self.audio.msu_player.samples_until_repeat);
+                    let data_start = self.audio.msu_player.cur_file_offs as usize * 2;
+                    let data_end = data_start.saturating_add(r as usize * 2);
+                    if data_end > self.audio.msu_player.pcm_data.len() {
+                        let orig_track = self.audio.msu_player.resume_info.orig_track;
+                        Self::msu_player_close_file(&mut self.audio.msu_player);
+                        self.zelda_apu_write(0x2140, orig_track);
+                        return;
+                    }
+                    let source = self.audio.msu_player.pcm_data[data_start..data_end].to_vec();
+                    self.audio.msu_player.buffer[..source.len()].copy_from_slice(&source);
+                    self.audio.msu_player.resume_info.offset = self.audio.msu_player.cur_file_offs;
+                    self.audio.msu_player.cur_file_offs =
+                        self.audio.msu_player.cur_file_offs.wrapping_add(r);
+                    let n = r
+                        .saturating_sub(self.audio.msu_player.preskip)
+                        .min(self.audio.msu_player.samples_until_repeat);
+                    self.audio.msu_player.samples_until_repeat =
+                        self.audio.msu_player.samples_until_repeat.wrapping_sub(n);
+                    self.audio.msu_player.buffer_pos = self.audio.msu_player.preskip;
+                    self.audio.msu_player.buffer_size = self.audio.msu_player.buffer_pos + n;
+                    self.audio.msu_player.preskip = 0;
+                } else if self.audio.msu_player.state == MSU_STATE_FINISHED_PLAYING {
+                    Self::msu_player_close_file(&mut self.audio.msu_player);
+                    return;
+                } else {
+                    break;
+                }
+            }
+            let remaining = self
+                .audio
+                .msu_player
+                .buffer_size
+                .saturating_sub(self.audio.msu_player.buffer_pos);
+            let nr = (audio_samples as u32).min(remaining);
+            let buffer_pos = self.audio.msu_player.buffer_pos as usize * 2;
+            let end = buffer_pos + nr as usize * 2;
+            let source = self.audio.msu_player.buffer[buffer_pos..end].to_vec();
+            self.audio.msu_player.buffer_pos += nr;
+            let dst_end = audio_offset.saturating_add(nr as usize * 2);
+            if dst_end > audio_buffer.len() {
+                return;
+            }
+            Self::mix_to_buffer(
+                &mut self.audio.msu_player,
+                &mut audio_buffer[audio_offset..],
+                &source,
+                nr,
+            );
+            audio_samples -= nr as i32;
+            audio_offset = dst_end;
+        }
+    }
+
+    pub fn zelda_apu_write(&mut self, adr: u32, val: u8) {
+        self.audio.apu_write.ports[(adr as usize) & 3] = val;
+    }
+
+    pub fn zelda_debug_apu_write_ports(&self) -> [u8; 4] {
+        self.audio.apu_write.ports
+    }
+
+    pub fn zelda_audio_route_debug_json(&self) -> String {
+        let pending_pos = self
+            .audio
+            .apu_write_ent_pos
+            .wrapping_sub(self.audio.apu_write_count)
+            & 0xf;
+        let pending = self.audio.apu_write_ents[pending_pos as usize].ports;
+        let mut out = format!(
+            "\"queue\":{{\"pos\":{},\"count\":{},\"total\":{},\"write\":[{},{},{},{}],\"pending\":[{},{},{},{}],\"input\":[{},{},{},{}]",
+            self.audio.apu_write_ent_pos,
+            self.audio.apu_write_count,
+            self.audio.apu_total_write,
+            self.audio.apu_write.ports[0],
+            self.audio.apu_write.ports[1],
+            self.audio.apu_write.ports[2],
+            self.audio.apu_write.ports[3],
+            pending[0],
+            pending[1],
+            pending[2],
+            pending[3],
+            self.audio.input_ports[0],
+            self.audio.input_ports[1],
+            self.audio.input_ports[2],
+            self.audio.input_ports[3],
+        );
+        if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
+            out.push_str(&format!(
+                ",\"spc_in\":[{},{},{},{}],\"spc_out\":[{},{},{},{}],\"timer\":{},\"main_tempo_accum\":{},\"block_count\":{},\"key_on\":{},\"key_off\":{},\"current_bit\":{},\"port1_active\":{},\"port2_active\":{},\"port3_active\":{}",
+                player.input_ports[0],
+                player.input_ports[1],
+                player.input_ports[2],
+                player.input_ports[3],
+                player.port_to_snes[0],
+                player.port_to_snes[1],
+                player.port_to_snes[2],
+                player.port_to_snes[3],
+                player.timer_cycles,
+                player.main_tempo_accum,
+                player.block_count,
+                player.key_ON,
+                player.key_OFF,
+                player.current_bit,
+                player.port1_active,
+                player.port2_active,
+                player.port3_active,
+            ));
+            out.push_str(&format!(
+                ",\"is_chan_on\":{},\"vol_dirty\":{},\"ch7_sfx\":{},\"ch7_sfx_ptr\":{},\"ch7_pattern\":{},\"ch7_ticks\":{},\"ch7_keyoff_ticks\":{}",
+                player.is_chan_on,
+                player.vol_dirty,
+                player.channel[7].sfx_which_sound,
+                player.channel[7].sfx_sound_ptr,
+                player.channel[7].pattern_order_ptr_for_chan,
+                player.channel[7].note_ticks_left,
+                player.channel[7].note_keyoff_ticks_left,
+            ));
+        }
+        out.push('}');
+        out
+    }
+
+    pub fn zelda_audio_dsp_hash(&self) -> u32 {
+        let mut hash = 2166136261u32;
+        for byte in crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player) {
+            hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+        }
+        hash
+    }
+
+    pub fn zelda_push_apu_state(&mut self) {
+        let pos = (self.audio.apu_write_ent_pos & 0xf) as usize;
+        self.audio.apu_write_ents[pos] = self.audio.apu_write;
+        self.audio.apu_write_ent_pos = self.audio.apu_write_ent_pos.wrapping_add(1);
+        if self.audio.apu_write_count < 16 {
+            self.audio.apu_write_count += 1;
+        }
+        self.audio.apu_total_write = self.audio.apu_total_write.wrapping_add(1);
+    }
+
+    fn zelda_pop_apu_state(&mut self) {
+        if self.audio.apu_write_count != 0 {
+            let pos = self
+                .audio
+                .apu_write_ent_pos
+                .wrapping_sub(self.audio.apu_write_count)
+                & 0xf;
+            self.audio.input_ports = self.audio.apu_write_ents[pos as usize].ports;
+            if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+                player.input_ports = self.audio.input_ports;
+            }
+            self.audio.apu_write_count -= 1;
+        }
+    }
+
+    pub fn zelda_discard_unused_audio_frames(&mut self) {
+        if self.audio.apu_write_count != 0 {
+            let pos = self
+                .audio
+                .apu_write_ent_pos
+                .wrapping_sub(self.audio.apu_write_count)
+                & 0xf;
+            if self.audio.input_ports == self.audio.apu_write_ents[pos as usize].ports {
+                if self.audio.apu_total_write >= 16 {
+                    self.audio.apu_total_write = 14;
+                    self.audio.apu_write_count -= 1;
+                }
+                return;
+            }
+        }
+        self.audio.apu_total_write = 0;
+    }
+
+    fn zelda_reset_apu_queue(&mut self) {
+        self.audio.apu_write_ent_pos = 0;
+        self.audio.apu_total_write = 0;
+        self.audio.apu_write_count = 0;
+    }
+
+    pub fn zelda_read_apui00(&self) -> u8 {
+        self.ram[RAM_APUI00]
+    }
+
+    pub fn zelda_apu_read(&self, adr: u32) -> u8 {
+        if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
+            player.port_to_snes[(adr as usize) & 3]
+        } else {
+            self.audio.port_to_snes[(adr as usize) & 3]
+        }
+    }
+
+    pub fn zelda_render_audio(&mut self, audio_buffer: &mut [i16], samples: i32, channels: i32) {
+        self.zelda_pop_apu_state();
+        let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
+        if samples > 0 && channels > 0 {
+            if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+                crate::spc_player::spc_player_generate_samples(player);
+                crate::spc_player::dsp_get_samples(
+                    player.dsp,
+                    audio_buffer,
+                    samples as usize,
+                    channels as usize,
+                );
+            } else {
+                for value in audio_buffer.iter_mut().take(count) {
+                    *value = 0;
+                }
+            }
+        }
+        if self.audio.msu_player.has_file && channels == 2 {
+            self.msu_player_mix(audio_buffer, samples);
+        }
+    }
+
+    pub fn zelda_render_audio_trace_dsp(
+        &mut self,
+        audio_buffer: &mut [i16],
+        samples: i32,
+        channels: i32,
+    ) -> Vec<(u8, u8, i32, u8)> {
+        self.zelda_pop_apu_state();
+        let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
+        let mut writes = Vec::new();
+        if samples > 0 && channels > 0 {
+            if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+                let mut hist = crate::spc_player::DspRegWriteHistory::default();
+                player.reg_write_history = &mut hist;
+                crate::spc_player::spc_player_generate_samples(player);
+                player.reg_write_history = std::ptr::null_mut();
+                writes.reserve(hist.count);
+                for i in 0..hist.count {
+                    writes.push((
+                        hist.addr[i],
+                        hist.val[i],
+                        hist.sample_offset[i],
+                        hist.timer_cycles[i],
+                    ));
+                }
+                crate::spc_player::dsp_get_samples(
+                    player.dsp,
+                    audio_buffer,
+                    samples as usize,
+                    channels as usize,
+                );
+            } else {
+                for value in audio_buffer.iter_mut().take(count) {
+                    *value = 0;
+                }
+            }
+        }
+        if self.audio.msu_player.has_file && channels == 2 {
+            self.msu_player_mix(audio_buffer, samples);
+        }
+        writes
+    }
+
+    pub fn zelda_set_rom_startup_audio_phase(&mut self, enabled: bool) {
+        let phase = if enabled { 72 } else { 0 };
+        self.zelda_set_spc_startup_phase(phase, 0);
+    }
+
+    pub fn zelda_set_spc_startup_phase(&mut self, sfx_timer_accum: u8, timer_cycles: u8) {
+        if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+            player.sfx_timer_accum = sfx_timer_accum;
+            player.timer_cycles = timer_cycles.min(64);
+            player.ram[0x0043] = sfx_timer_accum;
+        }
+        self.audio.spc_ram[0x0043] = sfx_timer_accum;
+    }
+
+    pub fn zelda_is_music_playing(&self) -> bool {
+        if self.audio.msu_player.state != MSU_STATE_IDLE {
+            self.audio.msu_player.state != MSU_STATE_FINISHED_PLAYING
+        } else {
+            self.zelda_apu_read(0x2140) != 0
+        }
+    }
+
+    pub fn zelda_restore_music_after_load_locked(&mut self, is_reset: bool) {
+        crate::spc_player::spc_player_copy_variables_from_ram(self.audio.spc_player);
+        if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+            player.timer_cycles = 0;
+            player
+                .input_ports
+                .copy_from_slice(&player.ram[0x410..0x414]);
+            self.audio.input_ports = player.input_ports;
+            self.audio
+                .apu_write
+                .ports
+                .copy_from_slice(&player.input_ports);
+        } else {
+            self.audio
+                .apu_write
+                .ports
+                .copy_from_slice(&self.audio.spc_ram[0x410..0x414]);
+        }
+        if is_reset {
+            self.audio.port_to_snes = [0; 4];
+            crate::spc_player::spc_player_initialize(self.audio.spc_player);
+        }
+        if self.audio.msu_player.enabled != 0 {
+            self.audio.msu_player.volume = 0.0;
+            let resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO);
+            let track = if self.ram[CURRENT_MUSIC_CONTROL] == 0xf1 {
+                resume.orig_track
+            } else {
+                self.ram[CURRENT_MUSIC_CONTROL]
+            };
+            self.msu_player_open(track as i32, true);
+            if (0xf1..=0xf3).contains(&self.ram[LAST_MUSIC_CONTROL]) {
+                let i = (self.ram[LAST_MUSIC_CONTROL] - 0xf1) as usize;
+                let target = K_VOLUME_TRANSITION_TARGET[i];
+                if target != self.ram[MSU_VOLUME] {
+                    let f = self.audio.volume_transition_target_float[3] * (1.0 / 255.0);
+                    self.audio.msu_player.volume = self.ram[MSU_VOLUME] as f32 * f;
+                    self.audio.msu_player.volume_target = target as f32 * f;
+                    self.audio.msu_player.volume_step = self.audio.volume_transition_step_float[i];
+                }
+            }
+            if self.audio.msu_player.state != 0 {
+                self.zelda_apu_write(0x2140, 0xf0);
+            }
+        }
+        self.zelda_reset_apu_queue();
+    }
+
+    pub fn zelda_save_music_state_to_ram_locked(&mut self) {
+        crate::spc_player::spc_player_copy_variables_to_ram(self.audio.spc_player);
+        if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+            player.ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
+            self.audio.spc_ram = player.ram;
+        } else {
+            self.audio.spc_ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
+        }
+        self.ram[MSU_VOLUME] = (self.audio.msu_player.volume * 255.0) as u8;
+        Self::write_msu_resume_info(
+            &mut self.ram,
+            MSU_RESUME_INFO,
+            self.audio.msu_player.resume_info,
+        );
+    }
+
+    pub fn zelda_enable_msu(&mut self, enable: u8) {
+        self.audio.msu_player.volume = 1.0;
+        self.audio.msu_player.enabled = enable;
+        let volscale = self.audio.config_msuvolume as f32 * (1.0 / 255.0 / 100.0);
+        let freq = if self.audio.config_audio_freq == 0 {
+            1.0
+        } else {
+            self.audio.config_audio_freq as f32
+        };
+        let stepscale = self.audio.config_msuvolume as f32 * (60.0 / 256.0 / 100.0) / freq;
+        for i in 0..K_VOLUME_TRANSITION_STEP.len() {
+            self.audio.volume_transition_step_float[i] =
+                K_VOLUME_TRANSITION_STEP[i] as f32 * stepscale;
+            self.audio.volume_transition_target_float[i] =
+                K_VOLUME_TRANSITION_TARGET[i] as f32 * volscale;
+        }
+    }
+
+    pub fn zelda_configure_audio(
+        &mut self,
+        audio_freq: u32,
+        msuvolume: u8,
+        resume_msu: bool,
+        msu_path: Option<String>,
+    ) {
+        self.audio.config_audio_freq = audio_freq;
+        self.audio.config_msuvolume = msuvolume;
+        self.audio.config_resume_msu = resume_msu;
+        self.audio.config_msu_path = msu_path;
+    }
+
+    pub fn load_song_bank(&mut self, p: &[u8]) {
+        let len = p.len().min(self.audio.spc_ram.len());
+        self.audio.spc_ram[..len].copy_from_slice(&p[..len]);
+        if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+            crate::spc_player::spc_player_upload(player, p.as_ptr());
+        }
+    }
+
+    pub fn zelda_audio_debug_summary(&self) -> String {
+        crate::spc_player::spc_player_debug_summary(self.audio.spc_player)
+    }
+
+    pub fn zelda_debug_full_apu_from_spc(&self) -> snes::apu::ApuState {
+        let mut apu = snes::apu::ApuState::new();
+        apu.reset();
+        let spc_ram = crate::spc_player::spc_player_save_ram(self.audio.spc_player);
+        apu.ram.copy_from_slice(&spc_ram);
+        apu.rom_readable = false;
+        apu.spc.pc = 0x800;
+        apu
+    }
+
+    pub(super) fn save_audio_apu_ram_c_saveload(&self) -> [u8; 0x10000] {
+        crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+    }
+
+    pub(super) fn load_audio_apu_ram_c_saveload(&mut self, data: &[u8]) {
+        let len = data.len().min(self.audio.spc_ram.len());
+        self.audio.spc_ram[..len].copy_from_slice(&data[..len]);
+        if len < self.audio.spc_ram.len() {
+            self.audio.spc_ram[len..].fill(0);
+        }
+        crate::spc_player::spc_player_load_ram(self.audio.spc_player, &self.audio.spc_ram);
+    }
+
+    pub(super) fn save_audio_dsp_c_saveload(&self) -> Vec<u8> {
+        crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player)
+    }
+
+    pub(super) fn load_audio_dsp_c_saveload(&mut self, data: &[u8]) -> Result<(), String> {
+        crate::spc_player::spc_player_load_dsp_c_saveload(self.audio.spc_player, data)
+    }
+
+    fn read_msu_resume_info(ram: &[u8], offset: usize) -> MsuPlayerResumeInfo {
+        if offset + 28 > ram.len() {
+            return MsuPlayerResumeInfo::default();
+        }
+        MsuPlayerResumeInfo {
+            tag: read_le_u32(ram, offset).unwrap_or(0),
+            offset: read_le_u32(ram, offset + 4).unwrap_or(0),
+            samples_until_repeat: read_le_u32(ram, offset + 8).unwrap_or(0),
+            range_cur: read_le_u16(ram, offset + 12),
+            range_repeat: read_le_u16(ram, offset + 14),
+            initial_packet_bytes: read_le_u64(ram, offset + 16).unwrap_or(0),
+            orig_track: ram[offset + 24],
+            actual_track: ram[offset + 25],
+        }
+    }
+
+    fn write_msu_resume_info(ram: &mut [u8], offset: usize, info: MsuPlayerResumeInfo) {
+        if offset + 28 > ram.len() {
+            return;
+        }
+        write_le_u32(ram, offset, info.tag);
+        write_le_u32(ram, offset + 4, info.offset);
+        write_le_u32(ram, offset + 8, info.samples_until_repeat);
+        write_le_u16(ram, offset + 12, info.range_cur);
+        write_le_u16(ram, offset + 14, info.range_repeat);
+        write_le_u64(ram, offset + 16, info.initial_packet_bytes);
+        ram[offset + 24] = info.orig_track;
+        ram[offset + 25] = info.actual_track;
+    }
+}
+
+fn read_le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    let slice = bytes.get(offset..offset + 4)?;
+    Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+}
+
+fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
+    let slice = bytes.get(offset..offset + 8)?;
+    Some(u64::from_le_bytes([
+        slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
+    ]))
+}
+
+fn write_le_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_le_u64(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msu1_header(repeat_position: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"MSU1");
+        bytes.extend_from_slice(&repeat_position.to_le_bytes());
+        bytes
+    }
+
+    fn opuz_header(repeat_position: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"OPUZ");
+        bytes.extend_from_slice(&repeat_position.to_le_bytes());
+        bytes
+    }
+
+    fn unique_temp_msu_dir() -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("zelda3-rs-msu-test-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn resume_info(tag: u32, actual_track: u8) -> MsuPlayerResumeInfo {
+        MsuPlayerResumeInfo {
+            tag,
+            offset: 0x1122_3344,
+            samples_until_repeat: 0x5566_7788,
+            range_cur: 0x99aa,
+            range_repeat: 0xbbcc,
+            initial_packet_bytes: 0x1122_3344_5566_7788,
+            orig_track: 5,
+            actual_track,
+        }
+    }
+
+    #[test]
+    fn msu_open_saves_active_resume_info_to_alt_slot_like_c() {
+        let mut state = ZeldaState::new();
+        state.audio.msu_player.enabled = 1;
+        state.audio.msu_player.state = MSU_STATE_PLAYING;
+        state.audio.msu_player.resume_info = resume_info(0x1234_5678, 5);
+
+        state.msu_player_open(5, false);
+
+        assert_eq!(
+            ZeldaState::read_msu_resume_info(&state.ram, MSU_RESUME_INFO_ALT),
+            resume_info(0x1234_5678, 5)
+        );
+        assert_eq!(state.audio.msu_player.state, MSU_STATE_IDLE);
+    }
+
+    #[test]
+    fn audio_config_feeds_msu_volume_and_resume_settings() {
+        let mut state = ZeldaState::new();
+        state.zelda_configure_audio(48_000, 77, true, Some("msu/".to_string()));
+        state.zelda_enable_msu(1);
+
+        assert_eq!(state.audio.config_audio_freq, 48_000);
+        assert_eq!(state.audio.config_msuvolume, 77);
+        assert!(state.audio.config_resume_msu);
+        assert_eq!(state.audio.config_msu_path.as_deref(), Some("msu/"));
+        let expected = 255.0 * 77.0 * (1.0 / 255.0 / 100.0);
+        assert!((state.audio.volume_transition_target_float[3] - expected).abs() < 0.00001);
+    }
+
+    #[test]
+    fn msu_open_and_mix_pcm_matches_c_streaming_path() {
+        let dir = unique_temp_msu_dir();
+        let path = dir.join("5.pcm");
+        let mut bytes = msu1_header(0);
+        for sample in [1000i16, -1000, 2000, -2000] {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(&path, bytes).unwrap();
+
+        let mut state = ZeldaState::new();
+        state.zelda_configure_audio(
+            44_100,
+            100,
+            false,
+            Some(format!("{}/", dir.to_string_lossy())),
+        );
+        state.zelda_enable_msu(1);
+        state.msu_player_open(5, false);
+
+        assert!(state.audio.msu_player.has_file);
+        assert_eq!(state.audio.msu_player.state, MSU_STATE_PLAYING);
+        assert_eq!(state.audio.msu_player.total_samples_in_file, 2);
+        assert_eq!(state.audio.msu_player.samples_until_repeat, 2);
+
+        let mut audio = [0i16; 4];
+        state.msu_player_mix(&mut audio, 2);
+
+        assert_eq!(audio, [1000, -1000, 2000, -2000]);
+        assert_eq!(state.audio.msu_player.resume_info.offset, 0);
+        assert_eq!(state.audio.msu_player.cur_file_offs, 2);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn msu_open_opuz_keeps_file_and_resume_state_until_mix_like_c() {
+        let dir = unique_temp_msu_dir();
+        let path = dir.join("5.opuz");
+        fs::write(&path, opuz_header(0)).unwrap();
+
+        let mut state = ZeldaState::new();
+        state.zelda_configure_audio(
+            48_000,
+            100,
+            false,
+            Some(format!("{}/", dir.to_string_lossy())),
+        );
+        state.zelda_enable_msu(K_MSU_ENABLED_OPUZ);
+        state.msu_player_open(5, false);
+
+        assert!(state.audio.msu_player.has_file);
+        assert!(state.audio.msu_player.has_opus);
+        assert_eq!(state.audio.msu_player.state, MSU_STATE_PLAYING);
+        assert_eq!(state.audio.msu_player.resume_info.orig_track, 5);
+        assert_eq!(state.audio.msu_player.resume_info.actual_track, 5);
+        assert_eq!(state.audio.msu_player.range_cur, 8);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn opuz_packet_range_header_updates_resume_cursors_before_decoder_boundary() {
+        let dir = unique_temp_msu_dir();
+        let path = dir.join("5.opuz");
+        let mut encoder = opus::Encoder::new(48_000, Channels::Stereo, opus::Application::Audio)
+            .expect("create opus encoder");
+        let pcm = [0i16; 960 * 2];
+        let mut packet = [0u8; 1275];
+        let packet_len = encoder
+            .encode(&pcm, &mut packet)
+            .expect("encode opus packet");
+        let mut bytes = opuz_header(0);
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(&960u32.to_le_bytes());
+        bytes.extend_from_slice(&0x4003u16.to_le_bytes());
+        bytes.extend_from_slice(&(packet_len as u16).to_le_bytes());
+        bytes.extend_from_slice(&packet[..packet_len]);
+        fs::write(&path, bytes).unwrap();
+
+        let mut state = ZeldaState::new();
+        state.zelda_configure_audio(
+            48_000,
+            100,
+            false,
+            Some(format!("{}/", dir.to_string_lossy())),
+        );
+        state.zelda_enable_msu(K_MSU_ENABLED_OPUZ);
+        state.msu_player_open(5, false);
+
+        assert_eq!(
+            ZeldaState::msu_player_prepare_opuz_packet(&mut state.audio.msu_player),
+            OpuzPacketStatus::Decoded(960)
+        );
+        assert_eq!(state.audio.msu_player.samples_until_repeat, 960);
+        assert_eq!(state.audio.msu_player.preskip, 3);
+        assert_eq!(state.audio.msu_player.range_repeat, 8);
+        assert_eq!(state.audio.msu_player.range_cur, 18);
+        assert_eq!(state.audio.msu_player.resume_info.range_repeat, 8);
+        assert_eq!(state.audio.msu_player.resume_info.range_cur, 18);
+        assert_eq!(state.audio.msu_player.resume_info.offset, 18);
+        assert_eq!(state.audio.msu_player.resume_info.samples_until_repeat, 963);
+        assert_eq!(state.audio.msu_player.resume_info.initial_packet_bytes, {
+            let mut initial = [0; 8];
+            let initial_len = (2 + packet_len).min(initial.len());
+            let mut encoded = Vec::with_capacity(2 + packet_len);
+            encoded.extend_from_slice(&(packet_len as u16).to_le_bytes());
+            encoded.extend_from_slice(&packet[..packet_len]);
+            initial[..initial_len].copy_from_slice(&encoded[..initial_len]);
+            u64::from_le_bytes(initial)
+        });
+        assert_eq!(state.audio.msu_player.cur_file_offs, 20 + packet_len as u32);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn msu_pcm_non_repeating_track_finishes_like_c() {
+        let dir = unique_temp_msu_dir();
+        let path = dir.join("1.pcm");
+        let mut bytes = msu1_header(0);
+        for sample in [321i16, -321, 654, -654] {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(&path, bytes).unwrap();
+
+        let mut state = ZeldaState::new();
+        state.zelda_configure_audio(
+            44_100,
+            100,
+            false,
+            Some(format!("{}/", dir.to_string_lossy())),
+        );
+        state.zelda_enable_msu(1);
+        state.msu_player_open(1, false);
+
+        let mut audio = [0i16; 8];
+        state.msu_player_mix(&mut audio, 4);
+
+        assert_eq!(&audio[..4], &[321, -321, 654, -654]);
+        assert_eq!(state.audio.msu_player.state, MSU_STATE_FINISHED_PLAYING);
+        assert!(!state.audio.msu_player.has_file);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir(dir);
+    }
+}

@@ -1,0 +1,2567 @@
+//! APU/SPC/DSP register surface. Port of `zelda3/snes/apu.c`,
+//! `zelda3/snes/spc.c`, and the Rust-side `zelda3/snes/dsp.c` audio core.
+
+const BOOT_ROM: [u8; 0x40] = [
+    0xcd, 0xef, 0xbd, 0xe8, 0x00, 0xc6, 0x1d, 0xd0, 0xfc, 0x8f, 0xaa, 0xf4, 0x8f, 0xbb, 0xf5, 0x78,
+    0xcc, 0xf4, 0xd0, 0xfb, 0x2f, 0x19, 0xeb, 0xf4, 0xd0, 0xfc, 0x7e, 0xf4, 0xd0, 0x0b, 0xe4, 0xf5,
+    0xcb, 0xf4, 0xd7, 0x00, 0xfc, 0xd0, 0xf3, 0xab, 0x01, 0x10, 0xef, 0x7e, 0xf4, 0x10, 0xeb, 0xba,
+    0xf6, 0xda, 0x00, 0xba, 0xf4, 0xc4, 0xf4, 0xdd, 0x5d, 0xd0, 0xdb, 0x1f, 0x00, 0x00, 0xc0, 0xff,
+];
+
+const SPC_CYCLES_PER_OPCODE: [u8; 256] = [
+    2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 5, 4, 5, 4, 6, 8, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 6, 5, 2, 2, 4, 6,
+    2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 5, 4, 5, 4, 5, 4, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 6, 5, 2, 2, 3, 8,
+    2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 4, 4, 5, 4, 6, 6, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 4, 5, 2, 2, 4, 3,
+    2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 4, 4, 5, 4, 5, 5, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 5, 5, 2, 2, 3, 6,
+    2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 5, 4, 5, 2, 4, 5, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 5, 5, 2, 2, 12,
+    5, 2, 8, 4, 5, 3, 4, 3, 6, 2, 6, 4, 4, 5, 2, 4, 4, 2, 8, 4, 5, 4, 5, 5, 6, 5, 5, 5, 5, 2, 2, 3,
+    4, 2, 8, 4, 5, 4, 5, 4, 7, 2, 5, 6, 4, 5, 2, 4, 9, 2, 8, 4, 5, 5, 6, 6, 7, 4, 5, 5, 5, 2, 2, 6,
+    3, 2, 8, 4, 5, 3, 4, 3, 6, 2, 4, 5, 3, 4, 3, 4, 3, 2, 8, 4, 5, 4, 5, 5, 6, 3, 4, 5, 4, 2, 2, 4,
+    3,
+];
+
+const DSP_RATE_VALUES: [u16; 32] = [
+    0, 2048, 1536, 1280, 1024, 768, 640, 512, 384, 320, 256, 192, 160, 128, 96, 80, 64, 48, 40, 32,
+    24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2, 1,
+];
+
+const DSP_GAUSS_VALUES: [i32; 512] = [
+    0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000,
+    0x000, 0x000, 0x000, 0x001, 0x001, 0x001, 0x001, 0x001, 0x001, 0x001, 0x001, 0x001, 0x001,
+    0x001, 0x002, 0x002, 0x002, 0x002, 0x002, 0x002, 0x002, 0x003, 0x003, 0x003, 0x003, 0x003,
+    0x004, 0x004, 0x004, 0x004, 0x004, 0x005, 0x005, 0x005, 0x005, 0x006, 0x006, 0x006, 0x006,
+    0x007, 0x007, 0x007, 0x008, 0x008, 0x008, 0x009, 0x009, 0x009, 0x00A, 0x00A, 0x00A, 0x00B,
+    0x00B, 0x00B, 0x00C, 0x00C, 0x00D, 0x00D, 0x00E, 0x00E, 0x00F, 0x00F, 0x00F, 0x010, 0x010,
+    0x011, 0x011, 0x012, 0x013, 0x013, 0x014, 0x014, 0x015, 0x015, 0x016, 0x017, 0x017, 0x018,
+    0x018, 0x019, 0x01A, 0x01B, 0x01B, 0x01C, 0x01D, 0x01D, 0x01E, 0x01F, 0x020, 0x020, 0x021,
+    0x022, 0x023, 0x024, 0x024, 0x025, 0x026, 0x027, 0x028, 0x029, 0x02A, 0x02B, 0x02C, 0x02D,
+    0x02E, 0x02F, 0x030, 0x031, 0x032, 0x033, 0x034, 0x035, 0x036, 0x037, 0x038, 0x03A, 0x03B,
+    0x03C, 0x03D, 0x03E, 0x040, 0x041, 0x042, 0x043, 0x045, 0x046, 0x047, 0x049, 0x04A, 0x04C,
+    0x04D, 0x04E, 0x050, 0x051, 0x053, 0x054, 0x056, 0x057, 0x059, 0x05A, 0x05C, 0x05E, 0x05F,
+    0x061, 0x063, 0x064, 0x066, 0x068, 0x06A, 0x06B, 0x06D, 0x06F, 0x071, 0x073, 0x075, 0x076,
+    0x078, 0x07A, 0x07C, 0x07E, 0x080, 0x082, 0x084, 0x086, 0x089, 0x08B, 0x08D, 0x08F, 0x091,
+    0x093, 0x096, 0x098, 0x09A, 0x09C, 0x09F, 0x0A1, 0x0A3, 0x0A6, 0x0A8, 0x0AB, 0x0AD, 0x0AF,
+    0x0B2, 0x0B4, 0x0B7, 0x0BA, 0x0BC, 0x0BF, 0x0C1, 0x0C4, 0x0C7, 0x0C9, 0x0CC, 0x0CF, 0x0D2,
+    0x0D4, 0x0D7, 0x0DA, 0x0DD, 0x0E0, 0x0E3, 0x0E6, 0x0E9, 0x0EC, 0x0EF, 0x0F2, 0x0F5, 0x0F8,
+    0x0FB, 0x0FE, 0x101, 0x104, 0x107, 0x10B, 0x10E, 0x111, 0x114, 0x118, 0x11B, 0x11E, 0x122,
+    0x125, 0x129, 0x12C, 0x130, 0x133, 0x137, 0x13A, 0x13E, 0x141, 0x145, 0x148, 0x14C, 0x150,
+    0x153, 0x157, 0x15B, 0x15F, 0x162, 0x166, 0x16A, 0x16E, 0x172, 0x176, 0x17A, 0x17D, 0x181,
+    0x185, 0x189, 0x18D, 0x191, 0x195, 0x19A, 0x19E, 0x1A2, 0x1A6, 0x1AA, 0x1AE, 0x1B2, 0x1B7,
+    0x1BB, 0x1BF, 0x1C3, 0x1C8, 0x1CC, 0x1D0, 0x1D5, 0x1D9, 0x1DD, 0x1E2, 0x1E6, 0x1EB, 0x1EF,
+    0x1F3, 0x1F8, 0x1FC, 0x201, 0x205, 0x20A, 0x20F, 0x213, 0x218, 0x21C, 0x221, 0x226, 0x22A,
+    0x22F, 0x233, 0x238, 0x23D, 0x241, 0x246, 0x24B, 0x250, 0x254, 0x259, 0x25E, 0x263, 0x267,
+    0x26C, 0x271, 0x276, 0x27B, 0x280, 0x284, 0x289, 0x28E, 0x293, 0x298, 0x29D, 0x2A2, 0x2A6,
+    0x2AB, 0x2B0, 0x2B5, 0x2BA, 0x2BF, 0x2C4, 0x2C9, 0x2CE, 0x2D3, 0x2D8, 0x2DC, 0x2E1, 0x2E6,
+    0x2EB, 0x2F0, 0x2F5, 0x2FA, 0x2FF, 0x304, 0x309, 0x30E, 0x313, 0x318, 0x31D, 0x322, 0x326,
+    0x32B, 0x330, 0x335, 0x33A, 0x33F, 0x344, 0x349, 0x34E, 0x353, 0x357, 0x35C, 0x361, 0x366,
+    0x36B, 0x370, 0x374, 0x379, 0x37E, 0x383, 0x388, 0x38C, 0x391, 0x396, 0x39B, 0x39F, 0x3A4,
+    0x3A9, 0x3AD, 0x3B2, 0x3B7, 0x3BB, 0x3C0, 0x3C5, 0x3C9, 0x3CE, 0x3D2, 0x3D7, 0x3DC, 0x3E0,
+    0x3E5, 0x3E9, 0x3ED, 0x3F2, 0x3F6, 0x3FB, 0x3FF, 0x403, 0x408, 0x40C, 0x410, 0x415, 0x419,
+    0x41D, 0x421, 0x425, 0x42A, 0x42E, 0x432, 0x436, 0x43A, 0x43E, 0x442, 0x446, 0x44A, 0x44E,
+    0x452, 0x455, 0x459, 0x45D, 0x461, 0x465, 0x468, 0x46C, 0x470, 0x473, 0x477, 0x47A, 0x47E,
+    0x481, 0x485, 0x488, 0x48C, 0x48F, 0x492, 0x496, 0x499, 0x49C, 0x49F, 0x4A2, 0x4A6, 0x4A9,
+    0x4AC, 0x4AF, 0x4B2, 0x4B5, 0x4B7, 0x4BA, 0x4BD, 0x4C0, 0x4C3, 0x4C5, 0x4C8, 0x4CB, 0x4CD,
+    0x4D0, 0x4D2, 0x4D5, 0x4D7, 0x4D9, 0x4DC, 0x4DE, 0x4E0, 0x4E3, 0x4E5, 0x4E7, 0x4E9, 0x4EB,
+    0x4ED, 0x4EF, 0x4F1, 0x4F3, 0x4F5, 0x4F6, 0x4F8, 0x4FA, 0x4FB, 0x4FD, 0x4FF, 0x500, 0x502,
+    0x503, 0x504, 0x506, 0x507, 0x508, 0x50A, 0x50B, 0x50C, 0x50D, 0x50E, 0x50F, 0x510, 0x511,
+    0x511, 0x512, 0x513, 0x514, 0x514, 0x515, 0x516, 0x516, 0x517, 0x517, 0x517, 0x518, 0x518,
+    0x518, 0x518, 0x518, 0x519, 0x519,
+];
+
+const DSP_MVOLL: u8 = 0x0c;
+const DSP_EFB: u8 = 0x0d;
+const DSP_FIR0: u8 = 0x0f;
+const DSP_MVOLR: u8 = 0x1c;
+const DSP_EVOLL: u8 = 0x2c;
+const DSP_PMON: u8 = 0x2d;
+const DSP_EVOLR: u8 = 0x3c;
+const DSP_NON: u8 = 0x3d;
+const DSP_KON: u8 = 0x4c;
+const DSP_EON: u8 = 0x4d;
+const DSP_KOF: u8 = 0x5c;
+const DSP_DIR: u8 = 0x5d;
+const DSP_FLG: u8 = 0x6c;
+const DSP_ESA: u8 = 0x6d;
+const DSP_ENDX: u8 = 0x7c;
+const DSP_EDL: u8 = 0x7d;
+const DSP_SAMPLE_BUFFER_LEN: usize = 534 * 2;
+pub const DSP_SAVELOAD_SIZE: usize = 3024;
+pub const SPC_SAVELOAD_SIZE: usize = 15;
+pub const APU_SAVELOAD_PREFIX_SIZE: usize = 65_576;
+
+fn clip_i16(value: i32) -> i32 {
+    value.clamp(-0x8000, 0x7fff)
+}
+
+fn clip_i16_cast(value: i32) -> i32 {
+    value as i16 as i32
+}
+
+fn clip_15(value: i32) -> i16 {
+    (((value & 0x7fff) << 1) as i16 >> 1) as i16
+}
+
+fn dsp_exp_decrease_gain(gain: u16) -> u16 {
+    let step = (((gain as i32 - 1) >> 8) + 1) as i32;
+    (gain as i32 - step) as u16
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct DspChannel {
+    pub pitch: u16,
+    pub pitch_counter: u16,
+    pub pitch_modulation: bool,
+    pub decode_buffer: [i16; 19],
+    pub srcn: u8,
+    pub decode_offset: u16,
+    pub previous_flags: u8,
+    pub old: i16,
+    pub older: i16,
+    pub use_noise: bool,
+    pub adsr_rates: [u16; 4],
+    pub rate_counter: u16,
+    pub adsr_state: u8,
+    pub sustain_level: u16,
+    pub use_gain: bool,
+    pub gain_mode: u8,
+    pub direct_gain: bool,
+    pub gain_value: u16,
+    pub gain: u16,
+    pub key_on: bool,
+    pub key_off: bool,
+    pub sample_out: i16,
+    pub volume_l: i8,
+    pub volume_r: i8,
+    pub echo_enable: bool,
+}
+
+impl Default for DspChannel {
+    fn default() -> Self {
+        Self {
+            pitch: 0,
+            pitch_counter: 0,
+            pitch_modulation: false,
+            decode_buffer: [0; 19],
+            srcn: 0,
+            decode_offset: 0,
+            previous_flags: 0,
+            old: 0,
+            older: 0,
+            use_noise: false,
+            adsr_rates: [0; 4],
+            rate_counter: 0,
+            adsr_state: 0,
+            sustain_level: 0,
+            use_gain: false,
+            gain_mode: 0,
+            direct_gain: false,
+            gain_value: 0,
+            gain: 0,
+            key_on: false,
+            key_off: false,
+            sample_out: 0,
+            volume_l: 0,
+            volume_r: 0,
+            echo_enable: false,
+        }
+    }
+}
+
+impl DspChannel {
+    fn save_c_saveload(&self, out: &mut [u8]) {
+        debug_assert_eq!(out.len(), 86);
+        put_u16(out, 0, self.pitch);
+        put_u16(out, 2, self.pitch_counter);
+        out[4] = self.pitch_modulation as u8;
+        for (i, &value) in self.decode_buffer.iter().enumerate() {
+            put_i16(out, 6 + i * 2, value);
+        }
+        out[44] = self.srcn;
+        put_u16(out, 46, self.decode_offset);
+        out[48] = self.previous_flags;
+        put_i16(out, 50, self.old);
+        put_i16(out, 52, self.older);
+        out[54] = self.use_noise as u8;
+        for (i, &value) in self.adsr_rates.iter().enumerate() {
+            put_u16(out, 56 + i * 2, value);
+        }
+        put_u16(out, 64, self.rate_counter);
+        out[66] = self.adsr_state;
+        put_u16(out, 68, self.sustain_level);
+        out[70] = self.use_gain as u8;
+        out[71] = self.gain_mode;
+        out[72] = self.direct_gain as u8;
+        put_u16(out, 74, self.gain_value);
+        put_u16(out, 76, self.gain);
+        out[78] = self.key_on as u8;
+        out[79] = self.key_off as u8;
+        put_i16(out, 80, self.sample_out);
+        out[82] = self.volume_l as u8;
+        out[83] = self.volume_r as u8;
+        out[84] = self.echo_enable as u8;
+    }
+
+    fn load_c_saveload(&mut self, data: &[u8]) {
+        debug_assert_eq!(data.len(), 86);
+        self.pitch = get_u16(data, 0);
+        self.pitch_counter = get_u16(data, 2);
+        self.pitch_modulation = data[4] != 0;
+        for (i, value) in self.decode_buffer.iter_mut().enumerate() {
+            *value = get_i16(data, 6 + i * 2);
+        }
+        self.srcn = data[44];
+        self.decode_offset = get_u16(data, 46);
+        self.previous_flags = data[48];
+        self.old = get_i16(data, 50);
+        self.older = get_i16(data, 52);
+        self.use_noise = data[54] != 0;
+        for (i, value) in self.adsr_rates.iter_mut().enumerate() {
+            *value = get_u16(data, 56 + i * 2);
+        }
+        self.rate_counter = get_u16(data, 64);
+        self.adsr_state = data[66];
+        self.sustain_level = get_u16(data, 68);
+        self.use_gain = data[70] != 0;
+        self.gain_mode = data[71];
+        self.direct_gain = data[72] != 0;
+        self.gain_value = get_u16(data, 74);
+        self.gain = get_u16(data, 76);
+        self.key_on = data[78] != 0;
+        self.key_off = data[79] != 0;
+        self.sample_out = get_i16(data, 80);
+        self.volume_l = data[82] as i8;
+        self.volume_r = data[83] as i8;
+        self.echo_enable = data[84] != 0;
+    }
+}
+
+fn put_u16(out: &mut [u8], offset: usize, value: u16) {
+    out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_u32(out: &mut [u8], offset: usize, value: u32) {
+    out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_i16(out: &mut [u8], offset: usize, value: i16) {
+    out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn get_u16(data: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes([data[offset], data[offset + 1]])
+}
+
+fn get_u32(data: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ])
+}
+
+fn get_i16(data: &[u8], offset: usize) -> i16 {
+    i16::from_le_bytes([data[offset], data[offset + 1]])
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DspState {
+    pub ram: Vec<u8>,
+    pub channel: [DspChannel; 8],
+    pub dir_page: u16,
+    pub even_cycle: bool,
+    pub mute: bool,
+    pub reset_flag: bool,
+    pub master_volume_l: i8,
+    pub master_volume_r: i8,
+    pub noise_sample: i16,
+    pub noise_rate: u16,
+    pub noise_counter: u16,
+    pub echo_writes: bool,
+    pub echo_volume_l: i8,
+    pub echo_volume_r: i8,
+    pub feedback_volume: i8,
+    pub echo_buffer_adr: u16,
+    pub echo_delay: u16,
+    pub echo_remain: u16,
+    pub echo_buffer_index: u16,
+    pub fir_buffer_index: u8,
+    pub fir_values: [i8; 8],
+    pub fir_buffer_l: [i16; 8],
+    pub fir_buffer_r: [i16; 8],
+    pub sample_buffer: Vec<i16>,
+    pub sample_offset: u16,
+}
+
+impl Default for DspState {
+    fn default() -> Self {
+        let mut dsp = Self {
+            ram: vec![0; 0x80],
+            channel: [DspChannel::default(); 8],
+            dir_page: 0,
+            even_cycle: false,
+            mute: true,
+            reset_flag: true,
+            master_volume_l: 0,
+            master_volume_r: 0,
+            noise_sample: -0x4000,
+            noise_rate: 0,
+            noise_counter: 0,
+            echo_writes: false,
+            echo_volume_l: 0,
+            echo_volume_r: 0,
+            feedback_volume: 0,
+            echo_buffer_adr: 0,
+            echo_delay: 1,
+            echo_remain: 1,
+            echo_buffer_index: 0,
+            fir_buffer_index: 0,
+            fir_values: [0; 8],
+            fir_buffer_l: [0; 8],
+            fir_buffer_r: [0; 8],
+            sample_buffer: vec![0; DSP_SAMPLE_BUFFER_LEN],
+            sample_offset: 0,
+        };
+        dsp.reset();
+        dsp
+    }
+}
+
+impl DspState {
+    pub fn reset(&mut self) {
+        self.ram.fill(0);
+        self.ram[DSP_ENDX as usize] = 0xff;
+        self.channel = [DspChannel::default(); 8];
+        self.dir_page = 0;
+        self.even_cycle = false;
+        self.mute = true;
+        self.reset_flag = true;
+        self.master_volume_l = 0;
+        self.master_volume_r = 0;
+        self.noise_sample = -0x4000;
+        self.noise_rate = 0;
+        self.noise_counter = 0;
+        self.echo_writes = false;
+        self.echo_volume_l = 0;
+        self.echo_volume_r = 0;
+        self.feedback_volume = 0;
+        self.echo_buffer_adr = 0;
+        self.echo_delay = 1;
+        self.echo_remain = 1;
+        self.echo_buffer_index = 0;
+        self.fir_buffer_index = 0;
+        self.fir_values = [0; 8];
+        self.fir_buffer_l = [0; 8];
+        self.fir_buffer_r = [0; 8];
+        self.sample_buffer.fill(0);
+        self.sample_offset = 0;
+    }
+
+    pub fn save_c_saveload(&self) -> Vec<u8> {
+        let mut out = vec![0; DSP_SAVELOAD_SIZE];
+        out[0..0x80].copy_from_slice(&self.ram[..0x80]);
+        for (i, channel) in self.channel.iter().enumerate() {
+            channel.save_c_saveload(&mut out[128 + i * 86..128 + (i + 1) * 86]);
+        }
+        put_u16(&mut out, 816, self.dir_page);
+        out[818] = self.even_cycle as u8;
+        out[819] = self.mute as u8;
+        out[820] = self.reset_flag as u8;
+        out[821] = self.master_volume_l as u8;
+        out[822] = self.master_volume_r as u8;
+        put_i16(&mut out, 824, self.noise_sample);
+        put_u16(&mut out, 826, self.noise_rate);
+        put_u16(&mut out, 828, self.noise_counter);
+        out[830] = self.echo_writes as u8;
+        out[831] = self.echo_volume_l as u8;
+        out[832] = self.echo_volume_r as u8;
+        out[833] = self.feedback_volume as u8;
+        put_u16(&mut out, 834, self.echo_buffer_adr);
+        put_u16(&mut out, 836, self.echo_delay);
+        put_u16(&mut out, 838, self.echo_remain);
+        put_u16(&mut out, 840, self.echo_buffer_index);
+        out[842] = self.fir_buffer_index;
+        for (i, &value) in self.fir_values.iter().enumerate() {
+            out[843 + i] = value as u8;
+        }
+        for (i, &value) in self.fir_buffer_l.iter().enumerate() {
+            put_i16(&mut out, 852 + i * 2, value);
+        }
+        for (i, &value) in self.fir_buffer_r.iter().enumerate() {
+            put_i16(&mut out, 868 + i * 2, value);
+        }
+        for (i, &value) in self
+            .sample_buffer
+            .iter()
+            .take(DSP_SAMPLE_BUFFER_LEN)
+            .enumerate()
+        {
+            put_i16(&mut out, 884 + i * 2, value);
+        }
+        put_u16(&mut out, 3020, self.sample_offset);
+        out
+    }
+
+    pub fn load_c_saveload(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() != DSP_SAVELOAD_SIZE {
+            return Err(format!(
+                "invalid DSP saveload block: expected {DSP_SAVELOAD_SIZE}, got {}",
+                data.len()
+            ));
+        }
+        self.ram[..0x80].copy_from_slice(&data[0..0x80]);
+        for i in 0..8 {
+            self.channel[i].load_c_saveload(&data[128 + i * 86..128 + (i + 1) * 86]);
+        }
+        self.dir_page = get_u16(data, 816);
+        self.even_cycle = data[818] != 0;
+        self.mute = data[819] != 0;
+        self.reset_flag = data[820] != 0;
+        self.master_volume_l = data[821] as i8;
+        self.master_volume_r = data[822] as i8;
+        self.noise_sample = get_i16(data, 824);
+        self.noise_rate = get_u16(data, 826);
+        self.noise_counter = get_u16(data, 828);
+        self.echo_writes = data[830] != 0;
+        self.echo_volume_l = data[831] as i8;
+        self.echo_volume_r = data[832] as i8;
+        self.feedback_volume = data[833] as i8;
+        self.echo_buffer_adr = get_u16(data, 834);
+        self.echo_delay = get_u16(data, 836);
+        self.echo_remain = get_u16(data, 838);
+        self.echo_buffer_index = get_u16(data, 840);
+        self.fir_buffer_index = data[842];
+        for (i, value) in self.fir_values.iter_mut().enumerate() {
+            *value = data[843 + i] as i8;
+        }
+        for (i, value) in self.fir_buffer_l.iter_mut().enumerate() {
+            *value = get_i16(data, 852 + i * 2);
+        }
+        for (i, value) in self.fir_buffer_r.iter_mut().enumerate() {
+            *value = get_i16(data, 868 + i * 2);
+        }
+        if self.sample_buffer.len() != DSP_SAMPLE_BUFFER_LEN {
+            self.sample_buffer.resize(DSP_SAMPLE_BUFFER_LEN, 0);
+        }
+        for (i, value) in self
+            .sample_buffer
+            .iter_mut()
+            .enumerate()
+            .take(DSP_SAMPLE_BUFFER_LEN)
+        {
+            *value = get_i16(data, 884 + i * 2);
+        }
+        self.sample_offset = get_u16(data, 3020);
+        Ok(())
+    }
+
+    pub fn read(&self, adr: u8) -> u8 {
+        self.ram[adr as usize]
+    }
+
+    pub fn write(&mut self, adr: u8, val: u8, apu_ram: &[u8]) {
+        let ch = (adr >> 4) as usize;
+        match adr {
+            0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60 | 0x70 => {
+                self.channel[ch].volume_l = val as i8;
+            }
+            0x01 | 0x11 | 0x21 | 0x31 | 0x41 | 0x51 | 0x61 | 0x71 => {
+                self.channel[ch].volume_r = val as i8;
+            }
+            0x02 | 0x12 | 0x22 | 0x32 | 0x42 | 0x52 | 0x62 | 0x72 => {
+                self.channel[ch].pitch = (self.channel[ch].pitch & 0x3f00) | val as u16;
+            }
+            0x03 | 0x13 | 0x23 | 0x33 | 0x43 | 0x53 | 0x63 | 0x73 => {
+                self.channel[ch].pitch =
+                    ((self.channel[ch].pitch & 0x00ff) | ((val as u16) << 8)) & 0x3fff;
+            }
+            0x04 | 0x14 | 0x24 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 => {
+                self.channel[ch].srcn = val;
+            }
+            0x05 | 0x15 | 0x25 | 0x35 | 0x45 | 0x55 | 0x65 | 0x75 => {
+                self.channel[ch].adsr_rates[0] = DSP_RATE_VALUES[((val & 0x0f) * 2 + 1) as usize];
+                self.channel[ch].adsr_rates[1] =
+                    DSP_RATE_VALUES[(((val & 0x70) >> 4) * 2 + 16) as usize];
+                self.channel[ch].use_gain = val & 0x80 == 0;
+            }
+            0x06 | 0x16 | 0x26 | 0x36 | 0x46 | 0x56 | 0x66 | 0x76 => {
+                self.channel[ch].adsr_rates[2] = DSP_RATE_VALUES[(val & 0x1f) as usize];
+                self.channel[ch].sustain_level = ((((val & 0xe0) >> 5) as u16) + 1) * 0x100;
+            }
+            0x07 | 0x17 | 0x27 | 0x37 | 0x47 | 0x57 | 0x67 | 0x77 => {
+                self.channel[ch].direct_gain = val & 0x80 == 0;
+                if val & 0x80 != 0 {
+                    self.channel[ch].gain_mode = (val & 0x60) >> 5;
+                    self.channel[ch].adsr_rates[3] = DSP_RATE_VALUES[(val & 0x1f) as usize];
+                } else {
+                    self.channel[ch].gain_value = ((val & 0x7f) as u16) * 16;
+                }
+            }
+            DSP_MVOLL => self.master_volume_l = val as i8,
+            DSP_MVOLR => self.master_volume_r = val as i8,
+            DSP_EVOLL => self.echo_volume_l = val as i8,
+            DSP_EVOLR => self.echo_volume_r = val as i8,
+            DSP_KON => {
+                for i in 0..8 {
+                    self.channel[i].key_on = val & (1 << i) != 0;
+                    if self.channel[i].key_on {
+                        self.channel[i].key_on = false;
+                        self.channel[i].previous_flags = 0;
+                        let sample_pointer =
+                            self.dir_page.wrapping_add(4 * self.channel[i].srcn as u16);
+                        self.channel[i].decode_offset = apu_ram[sample_pointer as usize] as u16
+                            | ((apu_ram[sample_pointer.wrapping_add(1) as usize] as u16) << 8);
+                        self.channel[i].decode_buffer = [0; 19];
+                        self.channel[i].gain = 0;
+                        self.channel[i].adsr_state = if self.channel[i].use_gain { 3 } else { 0 };
+                    }
+                }
+            }
+            DSP_KOF => {
+                for i in 0..8 {
+                    self.channel[i].key_off = val & (1 << i) != 0;
+                    if self.channel[i].key_off {
+                        self.channel[i].adsr_state = 4;
+                    }
+                }
+            }
+            DSP_FLG => {
+                self.reset_flag = val & 0x80 != 0;
+                self.mute = val & 0x40 != 0;
+                self.echo_writes = val & 0x20 == 0;
+                self.noise_rate = DSP_RATE_VALUES[(val & 0x1f) as usize];
+            }
+            DSP_ENDX => {
+                self.ram[DSP_ENDX as usize] = 0;
+                return;
+            }
+            DSP_EFB => self.feedback_volume = val as i8,
+            DSP_PMON => {
+                for i in 0..8 {
+                    self.channel[i].pitch_modulation = val & (1 << i) != 0;
+                }
+            }
+            DSP_NON => {
+                for i in 0..8 {
+                    self.channel[i].use_noise = val & (1 << i) != 0;
+                }
+            }
+            DSP_EON => {
+                for i in 0..8 {
+                    self.channel[i].echo_enable = val & (1 << i) != 0;
+                }
+            }
+            DSP_DIR => self.dir_page = (val as u16) << 8,
+            DSP_ESA => self.echo_buffer_adr = (val as u16) << 8,
+            DSP_EDL => {
+                self.echo_delay = ((val & 0x0f) as u16) * 512;
+                if self.echo_delay == 0 {
+                    self.echo_delay = 1;
+                }
+            }
+            DSP_FIR0 | 0x1f | 0x2f | 0x3f | 0x4f | 0x5f | 0x6f | 0x7f => {
+                self.fir_values[ch] = val as i8;
+            }
+            _ => {}
+        }
+        self.ram[adr as usize] = val;
+    }
+
+    pub fn cycle(&mut self, apu_ram: &mut [u8]) {
+        let mut total_l = 0;
+        let mut total_r = 0;
+        for i in 0..8 {
+            self.cycle_channel(apu_ram, i);
+            total_l += (self.channel[i].sample_out as i32 * self.channel[i].volume_l as i32) >> 6;
+            total_r += (self.channel[i].sample_out as i32 * self.channel[i].volume_r as i32) >> 6;
+            total_l = clip_i16(total_l);
+            total_r = clip_i16(total_r);
+        }
+        total_l = (total_l * self.master_volume_l as i32) >> 7;
+        total_r = (total_r * self.master_volume_r as i32) >> 7;
+        total_l = clip_i16(total_l);
+        total_r = clip_i16(total_r);
+        self.handle_echo(apu_ram, &mut total_l, &mut total_r);
+        if self.mute {
+            total_l = 0;
+            total_r = 0;
+        }
+        self.handle_noise();
+        if (self.sample_offset as usize) < 534 {
+            let offset = self.sample_offset as usize * 2;
+            self.sample_buffer[offset] = total_l as i16;
+            self.sample_buffer[offset + 1] = total_r as i16;
+            self.sample_offset += 1;
+        }
+        self.even_cycle = !self.even_cycle;
+    }
+
+    fn handle_echo(&mut self, apu_ram: &mut [u8], output_l: &mut i32, output_r: &mut i32) {
+        let adr = self
+            .echo_buffer_adr
+            .wrapping_add(self.echo_buffer_index.wrapping_mul(4));
+        let adr_usize = adr as usize;
+        let fir_index = self.fir_buffer_index as usize;
+        self.fir_buffer_l[fir_index] = ((apu_ram[adr_usize] as u16
+            | ((apu_ram[(adr.wrapping_add(1)) as usize] as u16) << 8))
+            as i16)
+            >> 1;
+        self.fir_buffer_r[fir_index] = ((apu_ram[(adr.wrapping_add(2)) as usize] as u16
+            | ((apu_ram[(adr.wrapping_add(3)) as usize] as u16) << 8))
+            as i16)
+            >> 1;
+
+        let mut sum_l = 0;
+        let mut sum_r = 0;
+        for i in 0..8 {
+            let idx = (fir_index + i + 1) & 7;
+            sum_l += (self.fir_buffer_l[idx] as i32 * self.fir_values[i] as i32) >> 6;
+            sum_r += (self.fir_buffer_r[idx] as i32 * self.fir_values[i] as i32) >> 6;
+            if i == 6 {
+                sum_l = clip_i16_cast(sum_l);
+                sum_r = clip_i16_cast(sum_r);
+            }
+        }
+        sum_l = clip_i16(sum_l);
+        sum_r = clip_i16(sum_r);
+
+        *output_l = clip_i16(*output_l + ((sum_l * self.echo_volume_l as i32) >> 7));
+        *output_r = clip_i16(*output_r + ((sum_r * self.echo_volume_r as i32) >> 7));
+
+        let mut in_l = 0;
+        let mut in_r = 0;
+        for i in 0..8 {
+            if self.channel[i].echo_enable {
+                in_l += (self.channel[i].sample_out as i32 * self.channel[i].volume_l as i32) >> 6;
+                in_r += (self.channel[i].sample_out as i32 * self.channel[i].volume_r as i32) >> 6;
+                in_l = clip_i16(in_l);
+                in_r = clip_i16(in_r);
+            }
+        }
+        in_l = clip_i16(in_l + ((sum_l * self.feedback_volume as i32) >> 7)) & 0xfffe;
+        in_r = clip_i16(in_r + ((sum_r * self.feedback_volume as i32) >> 7)) & 0xfffe;
+        if self.echo_writes {
+            apu_ram[adr_usize] = in_l as u8;
+            apu_ram[(adr.wrapping_add(1)) as usize] = (in_l >> 8) as u8;
+            apu_ram[(adr.wrapping_add(2)) as usize] = in_r as u8;
+            apu_ram[(adr.wrapping_add(3)) as usize] = (in_r >> 8) as u8;
+        }
+
+        self.fir_buffer_index = (self.fir_buffer_index + 1) & 7;
+        self.echo_buffer_index = self.echo_buffer_index.wrapping_add(1);
+        self.echo_remain = self.echo_remain.wrapping_sub(1);
+        if self.echo_remain == 0 {
+            self.echo_remain = self.echo_delay;
+            self.echo_buffer_index = 0;
+        }
+    }
+
+    fn cycle_channel(&mut self, apu_ram: &mut [u8], ch: usize) {
+        let mut pitch = self.channel[ch].pitch;
+        if ch > 0 && self.channel[ch].pitch_modulation {
+            let factor = (self.channel[ch - 1].sample_out as i32 >> 4) + 0x400;
+            let modulated = ((pitch as i32 * factor) >> 10) as u16;
+            pitch = if modulated > 0x3fff {
+                0x3fff
+            } else {
+                modulated
+            };
+        }
+        let new_counter = self.channel[ch].pitch_counter as u32 + pitch as u32;
+        if new_counter > 0xffff {
+            self.decode_brr(apu_ram, ch);
+        }
+        self.channel[ch].pitch_counter = new_counter as u16;
+
+        let mut sample = if self.channel[ch].use_noise {
+            self.noise_sample
+        } else {
+            self.get_sample(
+                ch,
+                (self.channel[ch].pitch_counter >> 12) as usize,
+                ((self.channel[ch].pitch_counter >> 4) & 0xff) as usize,
+            )
+        };
+
+        if self.reset_flag {
+            self.channel[ch].adsr_state = 4;
+            self.channel[ch].gain = 0;
+        }
+
+        let doing_direct_gain = self.channel[ch].adsr_state != 4
+            && self.channel[ch].use_gain
+            && self.channel[ch].direct_gain;
+        let rate = if self.channel[ch].adsr_state == 4 {
+            0
+        } else {
+            self.channel[ch].adsr_rates[self.channel[ch].adsr_state as usize]
+        };
+        if self.channel[ch].adsr_state != 4 && !doing_direct_gain && rate != 0 {
+            self.channel[ch].rate_counter = self.channel[ch].rate_counter.wrapping_add(1);
+        }
+        if self.channel[ch].adsr_state == 4
+            || (!doing_direct_gain && self.channel[ch].rate_counter >= rate && rate != 0)
+        {
+            if self.channel[ch].adsr_state != 4 {
+                self.channel[ch].rate_counter = 0;
+            }
+            self.handle_gain(ch);
+        }
+        if doing_direct_gain {
+            self.channel[ch].gain = self.channel[ch].gain_value;
+        }
+        self.ram[(ch << 4) | 8] = (self.channel[ch].gain >> 4) as u8;
+        sample = ((sample as i32 * self.channel[ch].gain as i32) >> 11) as i16;
+        self.ram[(ch << 4) | 9] = (sample >> 7) as u8;
+        self.channel[ch].sample_out = sample;
+    }
+
+    fn handle_gain(&mut self, ch: usize) {
+        match self.channel[ch].adsr_state {
+            0 => {
+                let rate = self.channel[ch].adsr_rates[0];
+                self.channel[ch].gain =
+                    self.channel[ch]
+                        .gain
+                        .wrapping_add(if rate == 1 { 1024 } else { 32 });
+                if self.channel[ch].gain >= 0x7e0 {
+                    self.channel[ch].adsr_state = 1;
+                }
+                if self.channel[ch].gain > 0x7ff {
+                    self.channel[ch].gain = 0x7ff;
+                }
+            }
+            1 => {
+                self.channel[ch].gain = dsp_exp_decrease_gain(self.channel[ch].gain);
+                if self.channel[ch].gain < self.channel[ch].sustain_level {
+                    self.channel[ch].adsr_state = 2;
+                }
+            }
+            2 => {
+                self.channel[ch].gain = dsp_exp_decrease_gain(self.channel[ch].gain);
+            }
+            3 => match self.channel[ch].gain_mode {
+                0 => {
+                    self.channel[ch].gain = self.channel[ch].gain.wrapping_sub(32);
+                    if self.channel[ch].gain > 0x7ff {
+                        self.channel[ch].gain = 0;
+                    }
+                }
+                1 => {
+                    self.channel[ch].gain = dsp_exp_decrease_gain(self.channel[ch].gain);
+                }
+                2 => {
+                    self.channel[ch].gain = self.channel[ch].gain.wrapping_add(32);
+                    if self.channel[ch].gain > 0x7ff {
+                        self.channel[ch].gain = 0;
+                    }
+                }
+                3 => {
+                    self.channel[ch].gain = self.channel[ch]
+                        .gain
+                        .wrapping_add(if self.channel[ch].gain < 0x600 { 32 } else { 8 });
+                    if self.channel[ch].gain > 0x7ff {
+                        self.channel[ch].gain = 0;
+                    }
+                }
+                _ => {}
+            },
+            4 => {
+                self.channel[ch].gain = self.channel[ch].gain.wrapping_sub(8);
+                if self.channel[ch].gain > 0x7ff {
+                    self.channel[ch].gain = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn get_sample(&self, ch: usize, sample_num: usize, offset: usize) -> i16 {
+        let news = self.channel[ch].decode_buffer[sample_num + 3] as i32;
+        let olds = self.channel[ch].decode_buffer[sample_num + 2] as i32;
+        let olders = self.channel[ch].decode_buffer[sample_num + 1] as i32;
+        let oldests = self.channel[ch].decode_buffer[sample_num] as i32;
+        let mut out = (DSP_GAUSS_VALUES[0xff - offset] * oldests) >> 10;
+        out += (DSP_GAUSS_VALUES[0x1ff - offset] * olders) >> 10;
+        out += (DSP_GAUSS_VALUES[0x100 + offset] * olds) >> 10;
+        out = clip_i16_cast(out);
+        out += (DSP_GAUSS_VALUES[offset] * news) >> 10;
+        (clip_i16(out) >> 1) as i16
+    }
+
+    fn decode_brr(&mut self, apu_ram: &[u8], ch: usize) {
+        self.channel[ch].decode_buffer[0] = self.channel[ch].decode_buffer[16];
+        self.channel[ch].decode_buffer[1] = self.channel[ch].decode_buffer[17];
+        self.channel[ch].decode_buffer[2] = self.channel[ch].decode_buffer[18];
+        if self.channel[ch].previous_flags == 1 || self.channel[ch].previous_flags == 3 {
+            let sample_pointer = self.dir_page.wrapping_add(4 * self.channel[ch].srcn as u16);
+            self.channel[ch].decode_offset = apu_ram[(sample_pointer.wrapping_add(2)) as usize]
+                as u16
+                | ((apu_ram[(sample_pointer.wrapping_add(3)) as usize] as u16) << 8);
+            if self.channel[ch].previous_flags == 1 {
+                self.channel[ch].adsr_state = 4;
+                self.channel[ch].gain = 0;
+            }
+            self.ram[DSP_ENDX as usize] |= 1 << ch;
+        }
+        let header = apu_ram[self.channel[ch].decode_offset as usize];
+        self.channel[ch].decode_offset = self.channel[ch].decode_offset.wrapping_add(1);
+        let shift = header >> 4;
+        let filter = (header & 0x0c) >> 2;
+        self.channel[ch].previous_flags = header & 3;
+        let mut cur_byte = 0;
+        let mut old = self.channel[ch].old as i32;
+        let mut older = self.channel[ch].older as i32;
+        for i in 0..16 {
+            let mut s;
+            if i & 1 != 0 {
+                s = (cur_byte & 0x0f) as i32;
+            } else {
+                cur_byte = apu_ram[self.channel[ch].decode_offset as usize];
+                self.channel[ch].decode_offset = self.channel[ch].decode_offset.wrapping_add(1);
+                s = (cur_byte >> 4) as i32;
+            }
+            if s > 7 {
+                s -= 16;
+            }
+            if shift <= 0x0c {
+                s = (s << shift) >> 1;
+            } else {
+                s = (s >> 3) << 12;
+            }
+            match filter {
+                1 => s += old + (-old >> 4),
+                2 => s += 2 * old + ((3 * -old) >> 5) - older + (older >> 4),
+                3 => s += 2 * old + ((13 * -old) >> 6) - older + ((3 * older) >> 4),
+                _ => {}
+            }
+            s = clip_i16(s);
+            let clipped = clip_15(s);
+            older = old;
+            old = clipped as i32;
+            self.channel[ch].decode_buffer[i + 3] = clipped;
+        }
+        self.channel[ch].older = older as i16;
+        self.channel[ch].old = old as i16;
+    }
+
+    fn handle_noise(&mut self) {
+        if self.noise_rate != 0 {
+            self.noise_counter = self.noise_counter.wrapping_add(1);
+        }
+        if self.noise_counter >= self.noise_rate && self.noise_rate != 0 {
+            let sample = self.noise_sample as i32;
+            let bit = (sample & 1) ^ ((sample >> 1) & 1);
+            self.noise_sample = clip_15(((sample >> 1) & 0x3fff) | (bit << 14));
+            self.noise_counter = 0;
+        }
+    }
+
+    pub fn get_samples(
+        &mut self,
+        sample_data: &mut [i16],
+        samples_per_frame: usize,
+        num_channels: usize,
+    ) {
+        if samples_per_frame == 0 {
+            self.sample_offset = 0;
+            return;
+        }
+
+        if samples_per_frame == 534 {
+            if num_channels == 1 {
+                for (sample, src) in sample_data
+                    .iter_mut()
+                    .take(samples_per_frame)
+                    .zip(self.sample_buffer.chunks_exact(2))
+                {
+                    *sample = ((src[0] as i32 + src[1] as i32) >> 1) as i16;
+                }
+            } else {
+                let count = samples_per_frame.saturating_mul(2).min(sample_data.len());
+                sample_data[..count].copy_from_slice(&self.sample_buffer[..count]);
+            }
+            self.sample_offset = 0;
+            return;
+        }
+
+        let adder = 534.0f32 / samples_per_frame as f32;
+        let mut location = 0.0f32;
+        if num_channels == 1 {
+            for sample in sample_data.iter_mut().take(samples_per_frame) {
+                let src = ((location as usize).min(533)) * 2;
+                let left = self.sample_buffer[src];
+                let right = self.sample_buffer[src + 1];
+                *sample = ((left as i32 + right as i32) >> 1) as i16;
+                location += adder;
+            }
+        } else {
+            for i in 0..samples_per_frame {
+                let dst = i * 2;
+                if dst + 1 < sample_data.len() {
+                    let src = ((location as usize).min(533)) * 2;
+                    sample_data[dst] = self.sample_buffer[src];
+                    sample_data[dst + 1] = self.sample_buffer[src + 1];
+                }
+                location += adder;
+            }
+        }
+        self.sample_offset = 0;
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct ApuTimer {
+    pub cycles: u8,
+    pub divider: u8,
+    pub target: u8,
+    pub counter: u8,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct SpcState {
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub sp: u8,
+    pub pc: u16,
+    pub c: bool,
+    pub z: bool,
+    pub v: bool,
+    pub n: bool,
+    pub i: bool,
+    pub h: bool,
+    pub p: bool,
+    pub b: bool,
+    pub stopped: bool,
+    pub cycles_used: u8,
+}
+
+impl SpcState {
+    /// Byte layout used by C `spc_saveload`.
+    pub fn save_c_saveload(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(SPC_SAVELOAD_SIZE);
+        out.push(self.a);
+        out.push(self.x);
+        out.push(self.y);
+        out.push(self.sp);
+        out.extend_from_slice(&self.pc.to_le_bytes());
+        out.push(self.c as u8);
+        out.push(self.z as u8);
+        out.push(self.v as u8);
+        out.push(self.n as u8);
+        out.push(self.i as u8);
+        out.push(self.h as u8);
+        out.push(self.p as u8);
+        out.push(self.b as u8);
+        out.push(self.stopped as u8);
+        debug_assert_eq!(out.len(), SPC_SAVELOAD_SIZE);
+        out
+    }
+
+    pub fn load_c_saveload(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() != SPC_SAVELOAD_SIZE {
+            return Err(format!(
+                "invalid SPC saveload size {}, expected {}",
+                data.len(),
+                SPC_SAVELOAD_SIZE
+            ));
+        }
+        self.a = data[0];
+        self.x = data[1];
+        self.y = data[2];
+        self.sp = data[3];
+        self.pc = u16::from_le_bytes([data[4], data[5]]);
+        self.c = data[6] != 0;
+        self.z = data[7] != 0;
+        self.v = data[8] != 0;
+        self.n = data[9] != 0;
+        self.i = data[10] != 0;
+        self.h = data[11] != 0;
+        self.p = data[12] != 0;
+        self.b = data[13] != 0;
+        self.stopped = data[14] != 0;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ApuState {
+    pub ram: Vec<u8>,
+    pub dsp_regs: Vec<u8>,
+    pub dsp: DspState,
+    pub out_ports: [u8; 4],
+    pub in_ports: [u8; 6],
+    pub rom_readable: bool,
+    pub dsp_adr: u8,
+    pub cycles: u32,
+    pub timer: [ApuTimer; 3],
+    pub spc: SpcState,
+    pub cpu_cycles_left: u8,
+    pub dsp_write_history: Vec<(u8, u8)>,
+}
+
+impl Default for ApuState {
+    fn default() -> Self {
+        Self {
+            ram: vec![0; 0x10000],
+            dsp_regs: vec![0; 0x80],
+            dsp: DspState::default(),
+            out_ports: [0; 4],
+            in_ports: [0; 6],
+            rom_readable: true,
+            dsp_adr: 0,
+            cycles: 0,
+            timer: [ApuTimer::default(); 3],
+            spc: SpcState::default(),
+            cpu_cycles_left: 7,
+            dsp_write_history: Vec::new(),
+        }
+    }
+}
+
+impl ApuState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        self.rom_readable = true;
+        self.spc_reset();
+        self.dsp.reset();
+        self.ram.fill(0);
+        self.dsp_regs.clone_from(&self.dsp.ram);
+        self.dsp_adr = 0;
+        self.cycles = 0;
+        self.in_ports = [0; 6];
+        self.out_ports = [0; 4];
+        self.timer = [ApuTimer::default(); 3];
+        self.cpu_cycles_left = 7;
+        self.dsp_write_history.clear();
+    }
+
+    /// Byte layout used by C `apu_saveload` before nested DSP/SPC blocks.
+    ///
+    /// C serializes from `Apu.ram` through `cpuCyclesLeft`, including native
+    /// struct padding before `cycles` and before the trailing history union.
+    pub fn save_c_saveload_prefix(&self) -> Vec<u8> {
+        let mut out = vec![0; APU_SAVELOAD_PREFIX_SIZE];
+        out[..0x10000].copy_from_slice(&self.ram[..0x10000]);
+        out[0x10000] = self.rom_readable as u8;
+        out[0x10001] = self.dsp_adr;
+        put_u32(&mut out, 0x10004, self.cycles);
+        out[0x10008..0x1000e].copy_from_slice(&self.in_ports);
+        out[0x1000e..0x10012].copy_from_slice(&self.out_ports);
+        let mut pos = 0x10012;
+        for timer in &self.timer {
+            out[pos] = timer.cycles;
+            out[pos + 1] = timer.divider;
+            out[pos + 2] = timer.target;
+            out[pos + 3] = timer.counter;
+            out[pos + 4] = timer.enabled as u8;
+            pos += 5;
+        }
+        out[0x10021] = self.cpu_cycles_left;
+        out
+    }
+
+    pub fn load_c_saveload_prefix(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() != APU_SAVELOAD_PREFIX_SIZE {
+            return Err(format!(
+                "invalid APU saveload prefix size {}, expected {}",
+                data.len(),
+                APU_SAVELOAD_PREFIX_SIZE
+            ));
+        }
+        if self.ram.len() != 0x10000 {
+            self.ram.resize(0x10000, 0);
+        }
+        self.ram[..0x10000].copy_from_slice(&data[..0x10000]);
+        self.rom_readable = data[0x10000] != 0;
+        self.dsp_adr = data[0x10001];
+        self.cycles = get_u32(data, 0x10004);
+        self.in_ports.copy_from_slice(&data[0x10008..0x1000e]);
+        self.out_ports.copy_from_slice(&data[0x1000e..0x10012]);
+        let mut pos = 0x10012;
+        for timer in &mut self.timer {
+            timer.cycles = data[pos];
+            timer.divider = data[pos + 1];
+            timer.target = data[pos + 2];
+            timer.counter = data[pos + 3];
+            timer.enabled = data[pos + 4] != 0;
+            pos += 5;
+        }
+        self.cpu_cycles_left = data[0x10021];
+        Ok(())
+    }
+
+    pub fn cycle(&mut self) {
+        if self.cpu_cycles_left == 0 {
+            self.cpu_cycles_left = self.spc_run_opcode();
+        }
+        self.cpu_cycles_left = self.cpu_cycles_left.wrapping_sub(1);
+
+        if self.cycles & 0x1f == 0 {
+            self.dsp.cycle(&mut self.ram);
+        }
+
+        for i in 0..3 {
+            if self.timer[i].cycles == 0 {
+                self.timer[i].cycles = if i == 2 { 16 } else { 128 };
+                if self.timer[i].enabled {
+                    self.timer[i].divider = self.timer[i].divider.wrapping_add(1);
+                    if self.timer[i].divider == self.timer[i].target {
+                        self.timer[i].divider = 0;
+                        self.timer[i].counter = self.timer[i].counter.wrapping_add(1) & 0x0f;
+                    }
+                }
+            }
+            self.timer[i].cycles = self.timer[i].cycles.wrapping_sub(1);
+        }
+
+        self.cycles = self.cycles.wrapping_add(1);
+    }
+
+    fn spc_reset(&mut self) {
+        self.spc = SpcState::default();
+        self.spc.pc = self.spc_read_word(0xfffe, 0xffff);
+    }
+
+    fn spc_run_opcode(&mut self) -> u8 {
+        self.spc.cycles_used = 0;
+        if self.spc.stopped {
+            return 1;
+        }
+        let opcode = self.spc_read_opcode();
+        self.spc.cycles_used = SPC_CYCLES_PER_OPCODE[opcode as usize];
+        self.spc_do_opcode(opcode);
+        self.spc.cycles_used
+    }
+
+    fn spc_read_opcode(&mut self) -> u8 {
+        let ret = self.cpu_read(self.spc.pc);
+        self.spc.pc = self.spc.pc.wrapping_add(1);
+        ret
+    }
+
+    fn spc_read_opcode_word(&mut self) -> u16 {
+        let low = self.spc_read_opcode() as u16;
+        low | ((self.spc_read_opcode() as u16) << 8)
+    }
+
+    fn spc_read_word(&mut self, adrl: u16, adrh: u16) -> u16 {
+        self.cpu_read(adrl) as u16 | ((self.cpu_read(adrh) as u16) << 8)
+    }
+
+    fn spc_write_word(&mut self, adrl: u16, adrh: u16, value: u16) {
+        self.cpu_write(adrl, value as u8);
+        self.cpu_write(adrh, (value >> 8) as u8);
+    }
+
+    fn spc_get_flags(&self) -> u8 {
+        ((self.spc.n as u8) << 7)
+            | ((self.spc.v as u8) << 6)
+            | ((self.spc.p as u8) << 5)
+            | ((self.spc.b as u8) << 4)
+            | ((self.spc.h as u8) << 3)
+            | ((self.spc.i as u8) << 2)
+            | ((self.spc.z as u8) << 1)
+            | self.spc.c as u8
+    }
+
+    fn spc_set_flags(&mut self, val: u8) {
+        self.spc.n = val & 0x80 != 0;
+        self.spc.v = val & 0x40 != 0;
+        self.spc.p = val & 0x20 != 0;
+        self.spc.b = val & 0x10 != 0;
+        self.spc.h = val & 0x08 != 0;
+        self.spc.i = val & 0x04 != 0;
+        self.spc.z = val & 0x02 != 0;
+        self.spc.c = val & 0x01 != 0;
+    }
+
+    fn spc_pull_byte(&mut self) -> u8 {
+        self.spc.sp = self.spc.sp.wrapping_add(1);
+        self.cpu_read(0x100 | self.spc.sp as u16)
+    }
+
+    fn spc_push_byte(&mut self, value: u8) {
+        self.cpu_write(0x100 | self.spc.sp as u16, value);
+        self.spc.sp = self.spc.sp.wrapping_sub(1);
+    }
+
+    fn spc_pull_word(&mut self) -> u16 {
+        let value = self.spc_pull_byte() as u16;
+        value | ((self.spc_pull_byte() as u16) << 8)
+    }
+
+    fn spc_push_word(&mut self, value: u16) {
+        self.spc_push_byte((value >> 8) as u8);
+        self.spc_push_byte(value as u8);
+    }
+
+    fn spc_adr_dp(&mut self) -> u16 {
+        self.spc_read_opcode() as u16 | ((self.spc.p as u16) << 8)
+    }
+
+    fn spc_adr_abs(&mut self) -> u16 {
+        self.spc_read_opcode_word()
+    }
+
+    fn spc_adr_imm(&mut self) -> u16 {
+        let ret = self.spc.pc;
+        self.spc.pc = self.spc.pc.wrapping_add(1);
+        ret
+    }
+
+    fn spc_adr_ind(&self) -> u16 {
+        self.spc.x as u16 | ((self.spc.p as u16) << 8)
+    }
+
+    fn spc_adr_idx(&mut self) -> u16 {
+        let pointer = self.spc_read_opcode().wrapping_add(self.spc.x) as u16;
+        self.spc_read_word(
+            pointer & 0xff | ((self.spc.p as u16) << 8),
+            pointer.wrapping_add(1) & 0xff | ((self.spc.p as u16) << 8),
+        )
+    }
+
+    fn spc_adr_dpx(&mut self) -> u16 {
+        self.spc_read_opcode().wrapping_add(self.spc.x) as u16 | ((self.spc.p as u16) << 8)
+    }
+
+    fn spc_adr_dpy(&mut self) -> u16 {
+        self.spc_read_opcode().wrapping_add(self.spc.y) as u16 | ((self.spc.p as u16) << 8)
+    }
+
+    fn spc_adr_abx(&mut self) -> u16 {
+        self.spc_read_opcode_word().wrapping_add(self.spc.x as u16)
+    }
+
+    fn spc_adr_aby(&mut self) -> u16 {
+        self.spc_read_opcode_word().wrapping_add(self.spc.y as u16)
+    }
+
+    fn spc_adr_idy(&mut self) -> u16 {
+        let pointer = self.spc_read_opcode() as u16;
+        let base = self.spc_read_word(
+            pointer | ((self.spc.p as u16) << 8),
+            pointer.wrapping_add(1) & 0xff | ((self.spc.p as u16) << 8),
+        );
+        base.wrapping_add(self.spc.y as u16)
+    }
+
+    fn spc_adr_dp_word(&mut self) -> (u16, u16) {
+        let adr = self.spc_read_opcode() as u16;
+        let low = adr | ((self.spc.p as u16) << 8);
+        let high = adr.wrapping_add(1) & 0xff | ((self.spc.p as u16) << 8);
+        (low, high)
+    }
+
+    fn spc_adr_dp_dp(&mut self) -> (u16, u16) {
+        let src = self.spc_read_opcode() as u16 | ((self.spc.p as u16) << 8);
+        let dst = self.spc_read_opcode() as u16 | ((self.spc.p as u16) << 8);
+        (dst, src)
+    }
+
+    fn spc_adr_dp_imm(&mut self) -> (u16, u16) {
+        let src = self.spc.pc;
+        self.spc.pc = self.spc.pc.wrapping_add(1);
+        let dst = self.spc_read_opcode() as u16 | ((self.spc.p as u16) << 8);
+        (dst, src)
+    }
+
+    fn spc_adr_ind_ind(&mut self) -> (u16, u16) {
+        let src = self.spc.y as u16 | ((self.spc.p as u16) << 8);
+        let dst = self.spc.x as u16 | ((self.spc.p as u16) << 8);
+        (dst, src)
+    }
+
+    fn spc_adr_ind_p(&mut self) -> u16 {
+        let adr = self.spc.x as u16 | ((self.spc.p as u16) << 8);
+        self.spc.x = self.spc.x.wrapping_add(1);
+        adr
+    }
+
+    fn spc_adr_abs_bit(&mut self) -> (u16, u8) {
+        let adr_bit = self.spc_read_opcode_word();
+        (adr_bit & 0x1fff, (adr_bit >> 13) as u8)
+    }
+
+    fn spc_do_branch(&mut self, rel: u8, check: bool) {
+        if check {
+            self.spc.cycles_used = self.spc.cycles_used.wrapping_add(2);
+            self.spc.pc = self.spc.pc.wrapping_add_signed(rel as i8 as i16);
+        }
+    }
+
+    fn spc_set_zn(&mut self, value: u8) {
+        self.spc.z = value == 0;
+        self.spc.n = value & 0x80 != 0;
+    }
+
+    fn spc_set_zn_word(&mut self, value: u16) {
+        self.spc.z = value == 0;
+        self.spc.n = value & 0x8000 != 0;
+    }
+
+    fn spc_mov_a(&mut self, adr: u16) {
+        self.spc.a = self.cpu_read(adr);
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_mov_x(&mut self, adr: u16) {
+        self.spc.x = self.cpu_read(adr);
+        self.spc_set_zn(self.spc.x);
+    }
+
+    fn spc_mov_y(&mut self, adr: u16) {
+        self.spc.y = self.cpu_read(adr);
+        self.spc_set_zn(self.spc.y);
+    }
+
+    fn spc_movs_a(&mut self, adr: u16) {
+        let _ = self.cpu_read(adr);
+        self.cpu_write(adr, self.spc.a);
+    }
+
+    fn spc_movsx(&mut self, adr: u16) {
+        let _ = self.cpu_read(adr);
+        self.cpu_write(adr, self.spc.x);
+    }
+
+    fn spc_movsy(&mut self, adr: u16) {
+        let _ = self.cpu_read(adr);
+        self.cpu_write(adr, self.spc.y);
+    }
+
+    fn spc_or(&mut self, adr: u16) {
+        self.spc.a |= self.cpu_read(adr);
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_orm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src);
+        let result = self.cpu_read(dst) | value;
+        self.cpu_write(dst, result);
+        self.spc_set_zn(result);
+    }
+
+    fn spc_and(&mut self, adr: u16) {
+        self.spc.a &= self.cpu_read(adr);
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_andm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src);
+        let result = self.cpu_read(dst) & value;
+        self.cpu_write(dst, result);
+        self.spc_set_zn(result);
+    }
+
+    fn spc_eor(&mut self, adr: u16) {
+        self.spc.a ^= self.cpu_read(adr);
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_eorm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src);
+        let result = self.cpu_read(dst) ^ value;
+        self.cpu_write(dst, result);
+        self.spc_set_zn(result);
+    }
+
+    fn spc_cmp_a(&mut self, adr: u16) {
+        let value = self.cpu_read(adr) ^ 0xff;
+        let result = self.spc.a as u16 + value as u16 + 1;
+        self.spc.c = result > 0xff;
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_cmp_x(&mut self, adr: u16) {
+        let value = self.cpu_read(adr) ^ 0xff;
+        let result = self.spc.x as u16 + value as u16 + 1;
+        self.spc.c = result > 0xff;
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_cmp_y(&mut self, adr: u16) {
+        let value = self.cpu_read(adr) ^ 0xff;
+        let result = self.spc.y as u16 + value as u16 + 1;
+        self.spc.c = result > 0xff;
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_cmpm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src) ^ 0xff;
+        let result = self.cpu_read(dst) as u16 + value as u16 + 1;
+        self.spc.c = result > 0xff;
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_adc(&mut self, adr: u16) {
+        let value = self.cpu_read(adr);
+        let result = self.spc.a as u16 + value as u16 + self.spc.c as u16;
+        self.spc.v =
+            (self.spc.a & 0x80) == (value & 0x80) && (value & 0x80) != (result as u8 & 0x80);
+        self.spc.h = ((self.spc.a & 0x0f) + (value & 0x0f) + self.spc.c as u8) > 0x0f;
+        self.spc.c = result > 0xff;
+        self.spc.a = result as u8;
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_adcm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src);
+        let apply_on = self.cpu_read(dst);
+        let result = apply_on as u16 + value as u16 + self.spc.c as u16;
+        self.spc.v = (apply_on & 0x80) == (value & 0x80) && (value & 0x80) != (result as u8 & 0x80);
+        self.spc.h = ((apply_on & 0x0f) + (value & 0x0f) + self.spc.c as u8) > 0x0f;
+        self.spc.c = result > 0xff;
+        self.cpu_write(dst, result as u8);
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_sbc(&mut self, adr: u16) {
+        let value = self.cpu_read(adr) ^ 0xff;
+        let result = self.spc.a as u16 + value as u16 + self.spc.c as u16;
+        self.spc.v =
+            (self.spc.a & 0x80) == (value & 0x80) && (value & 0x80) != (result as u8 & 0x80);
+        self.spc.h = ((self.spc.a & 0x0f) + (value & 0x0f) + self.spc.c as u8) > 0x0f;
+        self.spc.c = result > 0xff;
+        self.spc.a = result as u8;
+        self.spc_set_zn(self.spc.a);
+    }
+
+    fn spc_sbcm(&mut self, dst: u16, src: u16) {
+        let value = self.cpu_read(src) ^ 0xff;
+        let apply_on = self.cpu_read(dst);
+        let result = apply_on as u16 + value as u16 + self.spc.c as u16;
+        self.spc.v = (apply_on & 0x80) == (value & 0x80) && (value & 0x80) != (result as u8 & 0x80);
+        self.spc.h = ((apply_on & 0x0f) + (value & 0x0f) + self.spc.c as u8) > 0x0f;
+        self.spc.c = result > 0xff;
+        self.cpu_write(dst, result as u8);
+        self.spc_set_zn(result as u8);
+    }
+
+    fn spc_asl(&mut self, adr: u16) {
+        let mut val = self.cpu_read(adr);
+        self.spc.c = val & 0x80 != 0;
+        val = val.wrapping_shl(1);
+        self.cpu_write(adr, val);
+        self.spc_set_zn(val);
+    }
+
+    fn spc_lsr(&mut self, adr: u16) {
+        let mut val = self.cpu_read(adr);
+        self.spc.c = val & 1 != 0;
+        val >>= 1;
+        self.cpu_write(adr, val);
+        self.spc_set_zn(val);
+    }
+
+    fn spc_rol(&mut self, adr: u16) {
+        let mut val = self.cpu_read(adr);
+        let new_c = val & 0x80 != 0;
+        val = val.wrapping_shl(1) | self.spc.c as u8;
+        self.spc.c = new_c;
+        self.cpu_write(adr, val);
+        self.spc_set_zn(val);
+    }
+
+    fn spc_ror(&mut self, adr: u16) {
+        let mut val = self.cpu_read(adr);
+        let new_c = val & 1 != 0;
+        val = (val >> 1) | ((self.spc.c as u8) << 7);
+        self.spc.c = new_c;
+        self.cpu_write(adr, val);
+        self.spc_set_zn(val);
+    }
+
+    fn spc_inc(&mut self, adr: u16) {
+        let value = self.cpu_read(adr).wrapping_add(1);
+        self.cpu_write(adr, value);
+        self.spc_set_zn(value);
+    }
+
+    fn spc_dec(&mut self, adr: u16) {
+        let value = self.cpu_read(adr).wrapping_sub(1);
+        self.cpu_write(adr, value);
+        self.spc_set_zn(value);
+    }
+
+    fn spc_do_opcode(&mut self, opcode: u8) {
+        match opcode {
+            0x00 => {}
+            0x01 | 0x11 | 0x21 | 0x31 | 0x41 | 0x51 | 0x61 | 0x71 | 0x81 | 0x91 | 0xa1 | 0xb1
+            | 0xc1 | 0xd1 | 0xe1 | 0xf1 => {
+                self.spc_push_word(self.spc.pc);
+                let adr = 0xffdeu16.wrapping_sub(2 * ((opcode >> 4) as u16));
+                self.spc.pc = self.spc_read_word(adr, adr + 1);
+            }
+            0x02 | 0x22 | 0x42 | 0x62 | 0x82 | 0xa2 | 0xc2 | 0xe2 => {
+                let adr = self.spc_adr_dp();
+                let bit = 1u8 << (opcode >> 5);
+                let value = self.cpu_read(adr) | bit;
+                self.cpu_write(adr, value);
+            }
+            0x03 | 0x23 | 0x43 | 0x63 | 0x83 | 0xa3 | 0xc3 | 0xe3 => {
+                let adr = self.spc_adr_dp();
+                let val = self.cpu_read(adr);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, val & (1 << (opcode >> 5)) != 0);
+            }
+            0x04 => {
+                let adr = self.spc_adr_dp();
+                self.spc_or(adr);
+            }
+            0x05 => {
+                let adr = self.spc_adr_abs();
+                self.spc_or(adr);
+            }
+            0x06 => {
+                let adr = self.spc_adr_ind();
+                self.spc_or(adr);
+            }
+            0x07 => {
+                let adr = self.spc_adr_idx();
+                self.spc_or(adr);
+            }
+            0x08 => {
+                let adr = self.spc_adr_imm();
+                self.spc_or(adr);
+            }
+            0x09 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_orm(dst, src);
+            }
+            0x0a => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c |= (self.cpu_read(adr) >> bit) & 1 != 0;
+            }
+            0x0b => {
+                let adr = self.spc_adr_dp();
+                self.spc_asl(adr);
+            }
+            0x0c => {
+                let adr = self.spc_adr_abs();
+                self.spc_asl(adr);
+            }
+            0x0d => {
+                self.spc_push_byte(self.spc_get_flags());
+            }
+            0x0e => {
+                let adr = self.spc_adr_abs();
+                let val = self.cpu_read(adr);
+                let result = self.spc.a.wrapping_add(val ^ 0xff).wrapping_add(1);
+                self.spc_set_zn(result);
+                self.cpu_write(adr, val | self.spc.a);
+            }
+            0x0f => {
+                self.spc_push_word(self.spc.pc);
+                self.spc_push_byte(self.spc_get_flags());
+                self.spc.i = false;
+                self.spc.b = true;
+                self.spc.pc = self.spc_read_word(0xffde, 0xffdf);
+            }
+            0x10 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, !self.spc.n);
+            }
+            0x12 | 0x32 | 0x52 | 0x72 | 0x92 | 0xb2 | 0xd2 | 0xf2 => {
+                let adr = self.spc_adr_dp();
+                let bit = 1u8 << (opcode >> 5);
+                let value = self.cpu_read(adr) & !bit;
+                self.cpu_write(adr, value);
+            }
+            0x13 | 0x33 | 0x53 | 0x73 | 0x93 | 0xb3 | 0xd3 | 0xf3 => {
+                let adr = self.spc_adr_dp();
+                let val = self.cpu_read(adr);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, val & (1 << (opcode >> 5)) == 0);
+            }
+            0x14 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_or(adr);
+            }
+            0x15 => {
+                let adr = self.spc_adr_abx();
+                self.spc_or(adr);
+            }
+            0x16 => {
+                let adr = self.spc_adr_aby();
+                self.spc_or(adr);
+            }
+            0x17 => {
+                let adr = self.spc_adr_idy();
+                self.spc_or(adr);
+            }
+            0x18 => {
+                let (dst, src) = self.spc_adr_dp_imm();
+                self.spc_orm(dst, src);
+            }
+            0x19 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_orm(dst, src);
+            }
+            0x1a => {
+                let (low, high) = self.spc_adr_dp_word();
+                let value = self.spc_read_word(low, high).wrapping_sub(1);
+                self.spc_set_zn_word(value);
+                self.spc_write_word(low, high, value);
+            }
+            0x1b => {
+                let adr = self.spc_adr_dpx();
+                self.spc_asl(adr);
+            }
+            0x1c => {
+                self.spc.c = self.spc.a & 0x80 != 0;
+                self.spc.a = self.spc.a.wrapping_shl(1);
+                self.spc_set_zn(self.spc.a);
+            }
+            0x1d => {
+                self.spc.x = self.spc.x.wrapping_sub(1);
+                self.spc_set_zn(self.spc.x);
+            }
+            0x1e => {
+                let adr = self.spc_adr_abs();
+                self.spc_cmp_x(adr);
+            }
+            0x1f => {
+                let pointer = self.spc_read_opcode_word();
+                self.spc.pc = self.spc_read_word(
+                    pointer.wrapping_add(self.spc.x as u16),
+                    pointer.wrapping_add(self.spc.x as u16).wrapping_add(1),
+                );
+            }
+            0x20 => self.spc.p = false,
+            0x24 => {
+                let adr = self.spc_adr_dp();
+                self.spc_and(adr);
+            }
+            0x25 => {
+                let adr = self.spc_adr_abs();
+                self.spc_and(adr);
+            }
+            0x26 => {
+                let adr = self.spc_adr_ind();
+                self.spc_and(adr);
+            }
+            0x27 => {
+                let adr = self.spc_adr_idx();
+                self.spc_and(adr);
+            }
+            0x28 => {
+                let adr = self.spc_adr_imm();
+                self.spc_and(adr);
+            }
+            0x29 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_andm(dst, src);
+            }
+            0x2a => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c |= !((self.cpu_read(adr) >> bit) & 1 != 0);
+            }
+            0x2b => {
+                let adr = self.spc_adr_dp();
+                self.spc_rol(adr);
+            }
+            0x2c => {
+                let adr = self.spc_adr_abs();
+                self.spc_rol(adr);
+            }
+            0x2d => self.spc_push_byte(self.spc.a),
+            0x2e => {
+                let adr = self.spc_adr_dp();
+                let val = self.cpu_read(adr) ^ 0xff;
+                let result = self.spc.a.wrapping_add(val).wrapping_add(1);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, result != 0);
+            }
+            0x2f => {
+                let rel = self.spc_read_opcode();
+                self.spc.pc = self.spc.pc.wrapping_add_signed(rel as i8 as i16);
+            }
+            0x30 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, self.spc.n);
+            }
+            0x34 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_and(adr);
+            }
+            0x35 => {
+                let adr = self.spc_adr_abx();
+                self.spc_and(adr);
+            }
+            0x36 => {
+                let adr = self.spc_adr_aby();
+                self.spc_and(adr);
+            }
+            0x37 => {
+                let adr = self.spc_adr_idy();
+                self.spc_and(adr);
+            }
+            0x38 => {
+                let (dst, src) = self.spc_adr_dp_imm();
+                self.spc_andm(dst, src);
+            }
+            0x39 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_andm(dst, src);
+            }
+            0x3a => {
+                let (low, high) = self.spc_adr_dp_word();
+                let value = self.spc_read_word(low, high).wrapping_add(1);
+                self.spc_set_zn_word(value);
+                self.spc_write_word(low, high, value);
+            }
+            0x3b => {
+                let adr = self.spc_adr_dpx();
+                self.spc_rol(adr);
+            }
+            0x3c => {
+                let new_c = self.spc.a & 0x80 != 0;
+                self.spc.a = self.spc.a.wrapping_shl(1) | self.spc.c as u8;
+                self.spc.c = new_c;
+                self.spc_set_zn(self.spc.a);
+            }
+            0x3d => {
+                self.spc.x = self.spc.x.wrapping_add(1);
+                self.spc_set_zn(self.spc.x);
+            }
+            0x3e => {
+                let adr = self.spc_adr_dp();
+                self.spc_cmp_x(adr);
+            }
+            0x3f => {
+                let dst = self.spc_read_opcode_word();
+                self.spc_push_word(self.spc.pc);
+                self.spc.pc = dst;
+            }
+            0x40 => self.spc.p = true,
+            0x44 => {
+                let adr = self.spc_adr_dp();
+                self.spc_eor(adr);
+            }
+            0x45 => {
+                let adr = self.spc_adr_abs();
+                self.spc_eor(adr);
+            }
+            0x46 => {
+                let adr = self.spc_adr_ind();
+                self.spc_eor(adr);
+            }
+            0x47 => {
+                let adr = self.spc_adr_idx();
+                self.spc_eor(adr);
+            }
+            0x48 => {
+                let adr = self.spc_adr_imm();
+                self.spc_eor(adr);
+            }
+            0x49 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_eorm(dst, src);
+            }
+            0x4a => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c &= (self.cpu_read(adr) >> bit) & 1 != 0;
+            }
+            0x4b => {
+                let adr = self.spc_adr_dp();
+                self.spc_lsr(adr);
+            }
+            0x4c => {
+                let adr = self.spc_adr_abs();
+                self.spc_lsr(adr);
+            }
+            0x4d => self.spc_push_byte(self.spc.x),
+            0x4e => {
+                let adr = self.spc_adr_abs();
+                let val = self.cpu_read(adr);
+                let result = self.spc.a.wrapping_add(val ^ 0xff).wrapping_add(1);
+                self.spc_set_zn(result);
+                self.cpu_write(adr, val & !self.spc.a);
+            }
+            0x4f => {
+                let dst = self.spc_read_opcode() as u16;
+                self.spc_push_word(self.spc.pc);
+                self.spc.pc = 0xff00 | dst;
+            }
+            0x50 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, !self.spc.v);
+            }
+            0x54 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_eor(adr);
+            }
+            0x55 => {
+                let adr = self.spc_adr_abx();
+                self.spc_eor(adr);
+            }
+            0x56 => {
+                let adr = self.spc_adr_aby();
+                self.spc_eor(adr);
+            }
+            0x57 => {
+                let adr = self.spc_adr_idy();
+                self.spc_eor(adr);
+            }
+            0x58 => {
+                let (dst, src) = self.spc_adr_dp_imm();
+                self.spc_eorm(dst, src);
+            }
+            0x59 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_eorm(dst, src);
+            }
+            0x5a => {
+                let (low, high) = self.spc_adr_dp_word();
+                let value = self.spc_read_word(low, high) ^ 0xffff;
+                let ya = self.spc.a as u16 | ((self.spc.y as u16) << 8);
+                let result = ya as u32 + value as u32 + 1;
+                self.spc.c = result > 0xffff;
+                self.spc.z = (result as u16) == 0;
+                self.spc.n = result as u16 & 0x8000 != 0;
+            }
+            0x5b => {
+                let adr = self.spc_adr_dpx();
+                self.spc_lsr(adr);
+            }
+            0x5c => {
+                self.spc.c = self.spc.a & 1 != 0;
+                self.spc.a >>= 1;
+                self.spc_set_zn(self.spc.a);
+            }
+            0x5d => {
+                self.spc.x = self.spc.a;
+                self.spc_set_zn(self.spc.x);
+            }
+            0x5e => {
+                let adr = self.spc_adr_abs();
+                self.spc_cmp_y(adr);
+            }
+            0x5f => {
+                self.spc.pc = self.spc_read_opcode_word();
+            }
+            0x60 => self.spc.c = false,
+            0x64 => {
+                let adr = self.spc_adr_dp();
+                self.spc_cmp_a(adr);
+            }
+            0x65 => {
+                let adr = self.spc_adr_abs();
+                self.spc_cmp_a(adr);
+            }
+            0x66 => {
+                let adr = self.spc_adr_ind();
+                self.spc_cmp_a(adr);
+            }
+            0x67 => {
+                let adr = self.spc_adr_idx();
+                self.spc_cmp_a(adr);
+            }
+            0x68 => {
+                let adr = self.spc_adr_imm();
+                self.spc_cmp_a(adr);
+            }
+            0x69 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_cmpm(dst, src);
+            }
+            0x6a => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c &= !((self.cpu_read(adr) >> bit) & 1 != 0);
+            }
+            0x6b => {
+                let adr = self.spc_adr_dp();
+                self.spc_ror(adr);
+            }
+            0x6c => {
+                let adr = self.spc_adr_abs();
+                self.spc_ror(adr);
+            }
+            0x6d => self.spc_push_byte(self.spc.y),
+            0x6e => {
+                let adr = self.spc_adr_dp();
+                let result = self.cpu_read(adr).wrapping_sub(1);
+                self.cpu_write(adr, result);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, result != 0);
+            }
+            0x6f => self.spc.pc = self.spc_pull_word(),
+            0x70 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, self.spc.v);
+            }
+            0x74 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_cmp_a(adr);
+            }
+            0x75 => {
+                let adr = self.spc_adr_abx();
+                self.spc_cmp_a(adr);
+            }
+            0x76 => {
+                let adr = self.spc_adr_aby();
+                self.spc_cmp_a(adr);
+            }
+            0x77 => {
+                let adr = self.spc_adr_idy();
+                self.spc_cmp_a(adr);
+            }
+            0x78 => {
+                let src = self.spc_adr_imm();
+                let dst = self.spc_adr_dp();
+                self.spc_cmpm(dst, src);
+            }
+            0x79 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_cmpm(dst, src);
+            }
+            0x7a => {
+                let (low, high) = self.spc_adr_dp_word();
+                let value = self.spc_read_word(low, high);
+                let ya = self.spc.a as u16 | ((self.spc.y as u16) << 8);
+                let result = ya as u32 + value as u32;
+                self.spc.v = (ya & 0x8000) == (value & 0x8000)
+                    && (value & 0x8000) != (result as u16 & 0x8000);
+                self.spc.h = ((ya & 0x0fff) + (value & 0x0fff) + 1) > 0x0fff;
+                self.spc.c = result > 0xffff;
+                self.spc_set_zn_word(result as u16);
+                self.spc.a = result as u8;
+                self.spc.y = (result >> 8) as u8;
+            }
+            0x7b => {
+                let adr = self.spc_adr_dpx();
+                self.spc_ror(adr);
+            }
+            0x7c => {
+                let new_c = self.spc.a & 1 != 0;
+                self.spc.a = (self.spc.a >> 1) | ((self.spc.c as u8) << 7);
+                self.spc.c = new_c;
+                self.spc_set_zn(self.spc.a);
+            }
+            0x7d => {
+                self.spc.a = self.spc.x;
+                self.spc_set_zn(self.spc.a);
+            }
+            0x7e => {
+                let adr = self.spc_adr_dp();
+                self.spc_cmp_y(adr);
+            }
+            0x7f => {
+                let flags = self.spc_pull_byte();
+                self.spc_set_flags(flags);
+                self.spc.pc = self.spc_pull_word();
+            }
+            0x80 => self.spc.c = true,
+            0x84 => {
+                let adr = self.spc_adr_dp();
+                self.spc_adc(adr);
+            }
+            0x85 => {
+                let adr = self.spc_adr_abs();
+                self.spc_adc(adr);
+            }
+            0x86 => {
+                let adr = self.spc_adr_ind();
+                self.spc_adc(adr);
+            }
+            0x87 => {
+                let adr = self.spc_adr_idx();
+                self.spc_adc(adr);
+            }
+            0x88 => {
+                let adr = self.spc_adr_imm();
+                self.spc_adc(adr);
+            }
+            0x89 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_adcm(dst, src);
+            }
+            0x8a => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c ^= (self.cpu_read(adr) >> bit) & 1 != 0;
+            }
+            0x8b => {
+                let adr = self.spc_adr_dp();
+                self.spc_dec(adr);
+            }
+            0x8c => {
+                let adr = self.spc_adr_abs();
+                self.spc_dec(adr);
+            }
+            0x8d => {
+                let adr = self.spc_adr_imm();
+                self.spc_mov_y(adr);
+            }
+            0x8e => {
+                let flags = self.spc_pull_byte();
+                self.spc_set_flags(flags);
+            }
+            0x8f => {
+                let src = self.spc_adr_imm();
+                let dst = self.spc_adr_dp();
+                let val = self.cpu_read(src);
+                let _ = self.cpu_read(dst);
+                self.cpu_write(dst, val);
+            }
+            0x90 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, !self.spc.c);
+            }
+            0x94 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_adc(adr);
+            }
+            0x95 => {
+                let adr = self.spc_adr_abx();
+                self.spc_adc(adr);
+            }
+            0x96 => {
+                let adr = self.spc_adr_aby();
+                self.spc_adc(adr);
+            }
+            0x97 => {
+                let adr = self.spc_adr_idy();
+                self.spc_adc(adr);
+            }
+            0x98 => {
+                let (dst, src) = self.spc_adr_dp_imm();
+                self.spc_adcm(dst, src);
+            }
+            0x99 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_adcm(dst, src);
+            }
+            0x9a => {
+                let (low, high) = self.spc_adr_dp_word();
+                let value = self.spc_read_word(low, high) ^ 0xffff;
+                let ya = self.spc.a as u16 | ((self.spc.y as u16) << 8);
+                let result = ya as u32 + value as u32 + 1;
+                self.spc.v = (ya & 0x8000) == (value & 0x8000)
+                    && (value & 0x8000) != (result as u16 & 0x8000);
+                self.spc.h = ((ya & 0x0fff) + (value & 0x0fff) + 1) > 0x0fff;
+                self.spc.c = result > 0xffff;
+                self.spc_set_zn_word(result as u16);
+                self.spc.a = result as u8;
+                self.spc.y = (result >> 8) as u8;
+            }
+            0x9b => {
+                let adr = self.spc_adr_dpx();
+                self.spc_dec(adr);
+            }
+            0x9c => {
+                self.spc.a = self.spc.a.wrapping_sub(1);
+                self.spc_set_zn(self.spc.a);
+            }
+            0x9d => {
+                self.spc.x = self.spc.sp;
+                self.spc_set_zn(self.spc.x);
+            }
+            0x9e => {
+                let value = self.spc.a as u16 | ((self.spc.y as u16) << 8);
+                let mut result = 0xffffu16;
+                let mut rem = self.spc.a;
+                if self.spc.x != 0 {
+                    result = value / self.spc.x as u16;
+                    rem = (value % self.spc.x as u16) as u8;
+                }
+                self.spc.v = result > 0xff;
+                self.spc.h = (self.spc.x & 0x0f) <= (self.spc.y & 0x0f);
+                self.spc.a = result as u8;
+                self.spc.y = rem;
+                self.spc_set_zn(self.spc.a);
+            }
+            0x9f => {
+                self.spc.a = (self.spc.a >> 4) | self.spc.a.wrapping_shl(4);
+                self.spc_set_zn(self.spc.a);
+            }
+            0xa0 => self.spc.i = true,
+            0xa4 => {
+                let adr = self.spc_adr_dp();
+                self.spc_sbc(adr);
+            }
+            0xa5 => {
+                let adr = self.spc_adr_abs();
+                self.spc_sbc(adr);
+            }
+            0xa6 => {
+                let adr = self.spc_adr_ind();
+                self.spc_sbc(adr);
+            }
+            0xa7 => {
+                let adr = self.spc_adr_idx();
+                self.spc_sbc(adr);
+            }
+            0xa8 => {
+                let adr = self.spc_adr_imm();
+                self.spc_sbc(adr);
+            }
+            0xa9 => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                self.spc_sbcm(dst, src);
+            }
+            0xaa => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                self.spc.c = (self.cpu_read(adr) >> bit) & 1 != 0;
+            }
+            0xab => {
+                let adr = self.spc_adr_dp();
+                let value = self.cpu_read(adr).wrapping_add(1);
+                self.cpu_write(adr, value);
+                self.spc_set_zn(value);
+            }
+            0xac => {
+                let adr = self.spc_adr_abs();
+                self.spc_inc(adr);
+            }
+            0xad => {
+                let adr = self.spc_adr_imm();
+                self.spc_cmp_y(adr);
+            }
+            0xae => {
+                self.spc.a = self.spc_pull_byte();
+            }
+            0xaf => {
+                let adr = self.spc_adr_ind_p();
+                self.cpu_write(adr, self.spc.a);
+            }
+            0xb0 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, self.spc.c);
+            }
+            0xb4 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_sbc(adr);
+            }
+            0xb5 => {
+                let adr = self.spc_adr_abx();
+                self.spc_sbc(adr);
+            }
+            0xb6 => {
+                let adr = self.spc_adr_aby();
+                self.spc_sbc(adr);
+            }
+            0xb7 => {
+                let adr = self.spc_adr_idy();
+                self.spc_sbc(adr);
+            }
+            0xb8 => {
+                let (dst, src) = self.spc_adr_dp_imm();
+                self.spc_sbcm(dst, src);
+            }
+            0xb9 => {
+                let (dst, src) = self.spc_adr_ind_ind();
+                self.spc_sbcm(dst, src);
+            }
+            0xba => {
+                let (low, high) = self.spc_adr_dp_word();
+                let val = self.spc_read_word(low, high);
+                self.spc.a = val as u8;
+                self.spc.y = (val >> 8) as u8;
+                self.spc_set_zn_word(val);
+            }
+            0xbb => {
+                let adr = self.spc_adr_dpx();
+                self.spc_inc(adr);
+            }
+            0xbc => {
+                self.spc.a = self.spc.a.wrapping_add(1);
+                self.spc_set_zn(self.spc.a);
+            }
+            0xbd => {
+                self.spc.sp = self.spc.x;
+            }
+            0xbe => {
+                if self.spc.a > 0x99 || !self.spc.c {
+                    self.spc.a = self.spc.a.wrapping_sub(0x60);
+                    self.spc.c = false;
+                }
+                if (self.spc.a & 0x0f) > 9 || !self.spc.h {
+                    self.spc.a = self.spc.a.wrapping_sub(6);
+                }
+                self.spc_set_zn(self.spc.a);
+            }
+            0xbf => {
+                let adr = self.spc_adr_ind_p();
+                self.spc.a = self.cpu_read(adr);
+                self.spc_set_zn(self.spc.a);
+            }
+            0xc0 => self.spc.i = false,
+            0xc4 => {
+                let adr = self.spc_adr_dp();
+                self.spc_movs_a(adr);
+            }
+            0xc5 => {
+                let adr = self.spc_adr_abs();
+                self.spc_movs_a(adr);
+            }
+            0xc6 => {
+                let adr = self.spc_adr_ind();
+                self.spc_movs_a(adr);
+            }
+            0xc7 => {
+                let adr = self.spc_adr_idx();
+                self.spc_movs_a(adr);
+            }
+            0xc8 => {
+                let adr = self.spc_adr_imm();
+                self.spc_cmp_x(adr);
+            }
+            0xc9 => {
+                let adr = self.spc_adr_abs();
+                self.spc_movsx(adr);
+            }
+            0xca => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                let result = (self.cpu_read(adr) & !(1 << bit)) | ((self.spc.c as u8) << bit);
+                self.cpu_write(adr, result);
+            }
+            0xcb => {
+                let adr = self.spc_adr_dp();
+                self.spc_movsy(adr);
+            }
+            0xcc => {
+                let adr = self.spc_adr_abs();
+                self.spc_movsy(adr);
+            }
+            0xcd => {
+                let adr = self.spc_adr_imm();
+                self.spc_mov_x(adr);
+            }
+            0xce => {
+                self.spc.x = self.spc_pull_byte();
+            }
+            0xcf => {
+                let result = self.spc.a as u16 * self.spc.y as u16;
+                self.spc.a = result as u8;
+                self.spc.y = (result >> 8) as u8;
+                self.spc_set_zn(self.spc.y);
+            }
+            0xd0 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, !self.spc.z);
+            }
+            0xd4 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_movs_a(adr);
+            }
+            0xd5 => {
+                let adr = self.spc_adr_abx();
+                self.spc_movs_a(adr);
+            }
+            0xd6 => {
+                let adr = self.spc_adr_aby();
+                self.spc_movs_a(adr);
+            }
+            0xd7 => {
+                let adr = self.spc_adr_idy();
+                self.spc_movs_a(adr);
+            }
+            0xd8 => {
+                let adr = self.spc_adr_dp();
+                self.spc_movsx(adr);
+            }
+            0xd9 => {
+                let adr = self.spc_adr_dpy();
+                self.spc_movsx(adr);
+            }
+            0xda => {
+                let (low, high) = self.spc_adr_dp_word();
+                let _ = self.cpu_read(low);
+                self.spc_write_word(low, high, self.spc.a as u16 | ((self.spc.y as u16) << 8));
+            }
+            0xdb => {
+                let adr = self.spc_adr_dpx();
+                self.spc_movsy(adr);
+            }
+            0xdc => {
+                self.spc.y = self.spc.y.wrapping_sub(1);
+                self.spc_set_zn(self.spc.y);
+            }
+            0xdd => {
+                self.spc.a = self.spc.y;
+                self.spc_set_zn(self.spc.a);
+            }
+            0xde => {
+                let adr = self.spc_adr_dpx();
+                let val = self.cpu_read(adr) ^ 0xff;
+                let result = self.spc.a.wrapping_add(val).wrapping_add(1);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, result != 0);
+            }
+            0xdf => {
+                if self.spc.a > 0x99 || self.spc.c {
+                    self.spc.a = self.spc.a.wrapping_add(0x60);
+                    self.spc.c = true;
+                }
+                if (self.spc.a & 0x0f) > 9 || self.spc.h {
+                    self.spc.a = self.spc.a.wrapping_add(6);
+                }
+                self.spc_set_zn(self.spc.a);
+            }
+            0xe0 => {
+                self.spc.v = false;
+                self.spc.h = false;
+            }
+            0xe4 => {
+                let adr = self.spc_adr_dp();
+                self.spc_mov_a(adr);
+            }
+            0xe5 => {
+                let adr = self.spc_adr_abs();
+                self.spc_mov_a(adr);
+            }
+            0xe6 => {
+                let adr = self.spc_adr_ind();
+                self.spc_mov_a(adr);
+            }
+            0xe7 => {
+                let adr = self.spc_adr_idx();
+                self.spc_mov_a(adr);
+            }
+            0xe8 => {
+                let adr = self.spc_adr_imm();
+                self.spc_mov_a(adr);
+            }
+            0xe9 => {
+                let adr = self.spc_adr_abs();
+                self.spc_mov_x(adr);
+            }
+            0xea => {
+                let (adr, bit) = self.spc_adr_abs_bit();
+                let result = self.cpu_read(adr) ^ (1 << bit);
+                self.cpu_write(adr, result);
+            }
+            0xeb => {
+                let adr = self.spc_adr_dp();
+                self.spc_mov_y(adr);
+            }
+            0xec => {
+                let adr = self.spc_adr_abs();
+                self.spc_mov_y(adr);
+            }
+            0xed => self.spc.c = !self.spc.c,
+            0xee => {
+                self.spc.y = self.spc_pull_byte();
+            }
+            0xef => {
+                self.spc.stopped = true;
+            }
+            0xf0 => {
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, self.spc.z);
+            }
+            0xf4 => {
+                let adr = self.spc_adr_dpx();
+                self.spc_mov_a(adr);
+            }
+            0xf5 => {
+                let adr = self.spc_adr_abx();
+                self.spc_mov_a(adr);
+            }
+            0xf6 => {
+                let adr = self.spc_adr_aby();
+                self.spc_mov_a(adr);
+            }
+            0xf7 => {
+                let adr = self.spc_adr_idy();
+                self.spc_mov_a(adr);
+            }
+            0xf8 => {
+                let adr = self.spc_adr_dp();
+                self.spc_mov_x(adr);
+            }
+            0xf9 => {
+                let adr = self.spc_adr_dpy();
+                self.spc_mov_x(adr);
+            }
+            0xfa => {
+                let (dst, src) = self.spc_adr_dp_dp();
+                let val = self.cpu_read(src);
+                self.cpu_write(dst, val);
+            }
+            0xfb => {
+                let adr = self.spc_adr_dpx();
+                self.spc_mov_y(adr);
+            }
+            0xfc => {
+                self.spc.y = self.spc.y.wrapping_add(1);
+                self.spc_set_zn(self.spc.y);
+            }
+            0xfd => {
+                self.spc.y = self.spc.a;
+                self.spc_set_zn(self.spc.y);
+            }
+            0xfe => {
+                self.spc.y = self.spc.y.wrapping_sub(1);
+                let rel = self.spc_read_opcode();
+                self.spc_do_branch(rel, self.spc.y != 0);
+            }
+            0xff => {
+                self.spc.stopped = true;
+            }
+        }
+    }
+
+    pub fn read_snes_port(&self, port: u8) -> u8 {
+        self.out_ports[(port & 3) as usize]
+    }
+
+    pub fn write_snes_port(&mut self, port: u8, val: u8) {
+        self.in_ports[(port & 3) as usize] = val;
+    }
+
+    pub fn cpu_read(&mut self, adr: u16) -> u8 {
+        match adr {
+            0xf0 | 0xf1 | 0xfa | 0xfb | 0xfc => 0,
+            0xf2 => self.dsp_adr,
+            0xf3 => self.dsp.read(self.dsp_adr & 0x7f),
+            0xf4..=0xf9 => self.in_ports[(adr - 0xf4) as usize],
+            0xfd..=0xff => {
+                let i = (adr - 0xfd) as usize;
+                let ret = self.timer[i].counter;
+                self.timer[i].counter = 0;
+                ret
+            }
+            _ if self.rom_readable && adr >= 0xffc0 => BOOT_ROM[(adr - 0xffc0) as usize],
+            _ => self.ram[adr as usize],
+        }
+    }
+
+    pub fn cpu_write(&mut self, adr: u16, val: u8) {
+        match adr {
+            0xf0 => {}
+            0xf1 => {
+                for i in 0..3 {
+                    if !self.timer[i].enabled && val & (1 << i) != 0 {
+                        self.timer[i].divider = 0;
+                        self.timer[i].counter = 0;
+                    }
+                    self.timer[i].enabled = val & (1 << i) != 0;
+                }
+                if val & 0x10 != 0 {
+                    self.in_ports[0] = 0;
+                    self.in_ports[1] = 0;
+                }
+                if val & 0x20 != 0 {
+                    self.in_ports[2] = 0;
+                    self.in_ports[3] = 0;
+                }
+                self.rom_readable = val & 0x80 != 0;
+            }
+            0xf2 => self.dsp_adr = val,
+            0xf3 => {
+                if self.dsp_write_history.len() < 256 {
+                    self.dsp_write_history.push((self.dsp_adr, val));
+                }
+                if self.dsp_adr < 0x80 {
+                    self.dsp.write(self.dsp_adr, val, &self.ram);
+                    self.dsp_regs[self.dsp_adr as usize] = self.dsp.read(self.dsp_adr);
+                }
+            }
+            0xf4..=0xf7 => self.out_ports[(adr - 0xf4) as usize] = val,
+            0xf8..=0xf9 => self.in_ports[(adr - 0xf4) as usize] = val,
+            0xfa..=0xfc => self.timer[(adr - 0xfa) as usize].target = val,
+            _ => {}
+        }
+        self.ram[adr as usize] = val;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boot_rom_is_visible_until_control_clears_it() {
+        let mut apu = ApuState::new();
+        assert_eq!(apu.cpu_read(0xffc0), 0xcd);
+        apu.cpu_write(0xf1, 0);
+        assert_eq!(apu.cpu_read(0xffc0), 0);
+    }
+
+    #[test]
+    fn timers_increment_and_clear_on_read() {
+        let mut apu = ApuState::new();
+        apu.cpu_write(0xfa, 1);
+        apu.cpu_write(0xf1, 1);
+        apu.cycle();
+        assert_eq!(apu.cpu_read(0xfd), 1);
+        assert_eq!(apu.cpu_read(0xfd), 0);
+    }
+
+    #[test]
+    fn dsp_write_records_register_value() {
+        let mut apu = ApuState::new();
+        apu.cpu_write(0xf2, 0x6c);
+        apu.cpu_write(0xf3, 0x80);
+        assert_eq!(apu.cpu_read(0xf3), 0x80);
+        assert_eq!(apu.dsp_write_history, vec![(0x6c, 0x80)]);
+    }
+
+    #[test]
+    fn dsp_c_saveload_layout_roundtrips_saved_fields() {
+        let mut dsp = DspState::default();
+        dsp.ram[0x4c] = 0x80;
+        dsp.channel[3].pitch = 0x1234;
+        dsp.channel[3].decode_buffer[18] = -1234;
+        dsp.channel[3].volume_l = -17;
+        dsp.dir_page = 0x3c00;
+        dsp.master_volume_l = -64;
+        dsp.noise_sample = -0x1234;
+        dsp.echo_buffer_index = 0x4567;
+        dsp.fir_values[7] = -8;
+        dsp.fir_buffer_r[6] = -2222;
+        dsp.sample_buffer[1067] = 12345;
+        dsp.sample_offset = 321;
+
+        let saved = dsp.save_c_saveload();
+        assert_eq!(saved.len(), DSP_SAVELOAD_SIZE);
+        assert_eq!(saved[0x4c], 0x80);
+        assert_eq!(&saved[128 + 3 * 86..128 + 3 * 86 + 2], [0x34, 0x12]);
+        assert_eq!(&saved[3020..3022], &321u16.to_le_bytes());
+
+        let mut loaded = DspState::default();
+        loaded.load_c_saveload(&saved).unwrap();
+        assert_eq!(loaded.ram[0x4c], 0x80);
+        assert_eq!(loaded.channel[3].pitch, 0x1234);
+        assert_eq!(loaded.channel[3].decode_buffer[18], -1234);
+        assert_eq!(loaded.channel[3].volume_l, -17);
+        assert_eq!(loaded.dir_page, 0x3c00);
+        assert_eq!(loaded.master_volume_l, -64);
+        assert_eq!(loaded.noise_sample, -0x1234);
+        assert_eq!(loaded.echo_buffer_index, 0x4567);
+        assert_eq!(loaded.fir_values[7], -8);
+        assert_eq!(loaded.fir_buffer_r[6], -2222);
+        assert_eq!(loaded.sample_buffer[1067], 12345);
+        assert_eq!(loaded.sample_offset, 321);
+    }
+
+    #[test]
+    fn dsp_pitch_modulation_wraps_negative_product_like_c() {
+        let mut dsp = DspState::default();
+        let mut ram = vec![0; 0x10000];
+        dsp.channel[0].sample_out = -0x8000;
+        dsp.channel[1].pitch = 0x1000;
+        dsp.channel[1].pitch_modulation = true;
+
+        dsp.cycle_channel(&mut ram, 1);
+
+        assert_eq!(dsp.channel[1].pitch_counter, 0x3fff);
+    }
+
+    #[test]
+    fn snes_ports_cross_between_cpu_sides() {
+        let mut apu = ApuState::new();
+        apu.cpu_write(0xf4, 0x12);
+        assert_eq!(apu.read_snes_port(0), 0x12);
+        apu.write_snes_port(1, 0x34);
+        assert_eq!(apu.cpu_read(0xf5), 0x34);
+    }
+}

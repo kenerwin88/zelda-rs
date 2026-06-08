@@ -1,0 +1,1183 @@
+kind	source	symbol	status	rust	notes
+module	zelda_rtl.c	*	done	crates/zelda3/src/zelda_rtl.rs	full C-shaped runtime shell, frame/render, save/load, state recorder, language, patch, and SRAM helpers are ported
+function	zelda_rtl.c	zelda_ppu_write	done	crates/zelda3/src/zelda_rtl.rs	C-shaped PPU byte write helper is ported
+function	zelda_rtl.c	zelda_ppu_write_word	done	crates/zelda3/src/zelda_rtl.rs	C-shaped PPU word write helper is ported
+function	zelda_rtl.c	SimpleHdma_GetPtr	done	crates/zelda3/src/zelda_rtl.rs	C-shaped simple HDMA table resolver is ported for runtime renderer state
+function	zelda_rtl.c	SimpleHdma_Init	done	crates/zelda3/src/zelda_rtl.rs	C-shaped simple HDMA channel initialization is ported
+function	zelda_rtl.c	SimpleHdma_DoLine	done	crates/zelda3/src/zelda_rtl.rs	C-shaped simple HDMA per-line transfer is ported
+function	zelda_rtl.c	ConfigurePpuSideSpace	done	crates/zelda3/src/zelda_rtl.rs	C-shaped PPU side-space calculation is ported
+function	zelda_rtl.c	ZeldaDrawPpuFrame	done	crates/zelda3/src/zelda_rtl.rs	C-shaped draw-frame shell, IRQ scroll writes, and simple HDMA line stepping are ported
+function	zelda_rtl.c	HdmaSetup	done	crates/zelda3/src/zelda_rtl.rs	C-shaped HDMA channel register setup helper is ported
+function	zelda_rtl.c	ZeldaInitializationCode	done	crates/zelda3/src/zelda_rtl.rs	C-shaped startup initialization entry is ported
+function	zelda_rtl.c	ClearOamBuffer	done	crates/zelda3/src/zelda_rtl.rs	C-shaped OAM Y clear helper is ported
+function	zelda_rtl.c	ZeldaRunGameLoop	done	crates/zelda3/src/zelda_rtl.rs	C-shaped main game-loop entry is ported
+function	zelda_rtl.c	ZeldaInitialize	done	crates/zelda3/src/zelda_rtl.rs	C-shaped runtime initialization entry is ported
+function	zelda_rtl.c	ZeldaRunPolyLoop	done	crates/zelda3/src/zelda_rtl.rs	C-shaped poly loop dispatcher is ported
+function	zelda_rtl.c	ZeldaRunFrameInternal	done	crates/zelda3/src/zelda_rtl.rs	C-shaped frame skeleton and module/poly/NMI dispatch are ported
+function	zelda_rtl.c	IncrementCrystalCountdown	done	crates/zelda3/src/zelda_rtl.rs	C-shaped crystal countdown carry helper is ported
+function	zelda_rtl.c	ZeldaSetupEmuCallbacks	done	crates/zelda3/src/zelda_rtl.rs	C-shaped emulator callback registration is ported with owned Rust callback slots
+function	zelda_rtl.c	EmuSynchronizeWholeState	done	crates/zelda3/src/zelda_rtl.rs	C-shaped whole-state sync callback dispatch is ported
+function	zelda_rtl.c	EmuSyncMemoryRegion	done	crates/zelda3/src/zelda_rtl.rs	C-shaped RAM-region sync helper is ported against the owned emu memory buffer
+function	zelda_rtl.c	Startup_InitializeMemory	done	crates/zelda3/src/zelda_rtl.rs	C-shaped WRAM/SRAM startup initialization is ported
+function	zelda_rtl.c	ByteArray_AppendVl	done	crates/zelda3/src/zelda_rtl.rs	C-shaped variable-length byte append helper is ported
+function	zelda_rtl.c	saveFunc	done	crates/zelda3/src/zelda_rtl.rs	C-shaped save callback appends bytes into ByteArray
+function	zelda_rtl.c	loadFunc	done	crates/zelda3/src/zelda_rtl.rs	C-shaped load callback copies bytes out of LoadFuncState
+function	zelda_rtl.c	InternalSaveLoad	done	crates/zelda3/src/zelda_rtl.rs	C-shaped save/load sequencing is ported with Rust payload slots for deferred audio, DMA, and PPU state
+function	zelda_rtl.c	ZeldaReset	done	crates/zelda3/src/zelda_rtl.rs	C-shaped runtime reset entry is ported
+function	zelda_rtl.c	LoadSnesState	done	crates/zelda3/src/zelda_rtl.rs	C-shaped state load wrapper and HDMA-table relocation are ported
+function	zelda_rtl.c	SaveSnesState	done	crates/zelda3/src/zelda_rtl.rs	C-shaped state save wrapper and HDMA-table relocation are ported
+function	zelda_rtl.c	StateRecorder_Init	done	crates/zelda3/src/zelda_rtl.rs	C-shaped state recorder zero-initialization is ported
+function	zelda_rtl.c	StateRecorder_RecordCmd	done	crates/zelda3/src/zelda_rtl.rs	C-shaped recorder command and variable-length frame delay encoding is ported
+function	zelda_rtl.c	StateRecorder_Record	done	crates/zelda3/src/zelda_rtl.rs	C-shaped input edge recorder and frame counters are ported
+function	zelda_rtl.c	StateRecorder_RecordPatchByte	done	crates/zelda3/src/zelda_rtl.rs	C-shaped patch-byte command encoding is ported
+function	zelda_rtl.c	ReadFromFile	done	crates/zelda3/src/zelda_rtl.rs	C-shaped exact file read helper is ported over Rust Read
+function	zelda_rtl.c	StateRecorder_Load	done	crates/zelda3/src/zelda_rtl.rs	C-shaped recorder file load, replay setup, and state restore path are ported
+function	zelda_rtl.c	StateRecorder_Save	done	crates/zelda3/src/zelda_rtl.rs	C-shaped recorder header, log, snapshot, and state save layout are ported
+function	zelda_rtl.c	StateRecorder_ClearKeyLog	done	crates/zelda3/src/zelda_rtl.rs	C-shaped key-log clearing, snapshot rebasing, and replay-tail preservation are ported
+function	zelda_rtl.c	StateRecorder_ReadNextReplayState	done	crates/zelda3/src/zelda_rtl.rs	C-shaped replay command stepping, input toggles, and RAM patch application are ported
+function	zelda_rtl.c	StateRecorder_StopReplay	done	crates/zelda3/src/zelda_rtl.rs	C-shaped replay stop and log truncation are ported
+function	zelda_rtl.c	InputStateReadFromFile	done	crates/zelda3/src/zelda_rtl.rs	C-shaped debug-only input-file hook is represented as an inert runtime shell
+function	zelda_rtl.c	ZeldaRunFrame	done	crates/zelda3/src/zelda_rtl.rs	C-shaped top-level frame wrapper is ported with input sanitizing, recorder routing, feature patches, run_what selection, and APU shell
+function	zelda_rtl.c	ZeldaSetLanguage	done	crates/zelda3/src/zelda_rtl.rs	C-shaped language selection is ported against dialogue map assets and stored dialogue/font indices
+function	zelda_rtl.c	SaveLoadSlot	done	crates/zelda3/src/zelda_rtl.rs	C-shaped save/load/replay slot path dispatch is ported
+function	zelda_rtl.c	StateRecoderMultiPatch_Init	done	crates/zelda3/src/zelda_rtl.rs	C-shaped multi-patch initialization is ported
+function	zelda_rtl.c	StateRecoderMultiPatch_Commit	done	crates/zelda3/src/zelda_rtl.rs	C-shaped multi-patch recorder commit is ported
+function	zelda_rtl.c	StateRecoderMultiPatch_Patch	done	crates/zelda3/src/zelda_rtl.rs	C-shaped multi-patch RAM update and sync helper is ported
+function	zelda_rtl.c	PatchCommand	done	crates/zelda3/src/zelda_rtl.rs	C-shaped cheat/debug patch command dispatch is ported
+function	zelda_rtl.c	ZeldaReadSram	done	crates/zelda3/src/zelda_rtl.rs	C-shaped saves/sram.dat read helper is ported
+function	zelda_rtl.c	ZeldaWriteSram	done	crates/zelda3/src/zelda_rtl.rs	C-shaped saves/sram.dat write and backup helper is ported
+module	ending.c	*	done	crates/zelda3/src/ending.rs	full C-shaped intro, triforce, Ganon, credits, sprite-draw, fade, and polyhedral entry points are ported
+function	ending.c	Intro_SetupScreen	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_LoadTextPointersAndPalettes	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadScene_Overworld_PrepGFX	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadScene_Overworld_Overlay	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadScene_Overworld_LoadMap	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_OperateScrollingAndTileMap	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadCoolBackground	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadScene_Dungeon	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Module18_GanonEmerges	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Module19_TriforceRoom	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_InitializeBackgroundSettings	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Polyhedral_InitializeThread	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Module00_Intro	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_Init	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_Init_Continue	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_Clear1kbBlocksOfWRAM	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_InitializeMemory_darken	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	IntroZeldaFadein	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_FadeInBg	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_SwordComingDown	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_WaitPlayer	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	FadeMusicAndResetSRAMMirror	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_InitializeTriforcePolyThread	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_InitGfx_Helper	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	LoadTriforceSpritePalette	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_HandleAllTriforceAnimations	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Scene_AnimateEverySprite	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_AnimateTriforce	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_RunStep	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_AnimOneObj	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_SpriteType_A_0	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_SpriteType_B_0	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_DrawTriangle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_CopySpriteType4ToOam	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	EXIT_0CCA90	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	InitializeSceneSprite_Copyright	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_Copyright	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	InitializeSceneSprite_Sparkle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_Sparkle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_AddObjectsToOamBuffer	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_MoveTriangle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	TriforceRoom_PrepGFXSlotForPoly	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_InitializePolyhedral	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AdvancePolyhedral	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	TriforceRoom_HandlePoly	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_AnimateTheTriangles	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	InitializeSceneSprite_TriforceRoomTriangle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_SpriteType_B_456	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateTriforceRoomTriangle_HandleContracting	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	InitializeSceneSprite_CreditsTriangle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	AnimateSceneSprite_CreditsTriangle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_DisplayLogo	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_SetupSwordAndIntroFlash	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Intro_PeriodicSwordAndIntroFlash	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Module1A_Credits	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadNextScene_Overworld	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_LoadNextScene_Dungeon	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_PrepAndLoadSprites	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_ScrollScene_Overworld	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_ScrollScene_Dungeon	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_HandleSceneFade	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_DrawShadow	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	EndSequence_DrawShadow2	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Ending_Func2	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_ActivateAndRunSprite	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_PreexistingSpriteDraw	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_Single	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_SetShadowProp	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_AddSparkle	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_WalkLinkAwayFromPedestal	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_MoveSquirrel	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_SpriteDraw_CirclingBirds	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_HandleCameraScrollControl	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	EndSequence_32	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_FadeOutFixedCol	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_FadeColorAndBeginAnimating	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_AddNextAttribution	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_AddEndingSequenceText	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_BrightenTriangles	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_StopCreditsScroll	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_FadeAndDisperseTriangles	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_FadeInTheEnd	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	Credits_HangForever	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+function	ending.c	CrystalCutscene_InitializePolyhedral	done	crates/zelda3/src/ending.rs	C-shaped ending.c entry point is ported in the matching Rust module
+module	zelda_cpu_infra.c	*	done	crates/zelda3/src/zelda_cpu_infra.rs	full lockstep/oracle infrastructure is ported with C-shaped helper names
+function	zelda_cpu_infra.c	GetPtr	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped LoROM pointer helper is ported
+function	zelda_cpu_infra.c	GetCartRamPtr	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped cart RAM pointer helper is ported
+function	zelda_cpu_infra.c	MakeSnapshot	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped oracle snapshot capture is ported
+function	zelda_cpu_infra.c	MakeMySnapshot	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped native snapshot capture is ported
+function	zelda_cpu_infra.c	RestoreMySnapshot	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped native snapshot restore is ported
+function	zelda_cpu_infra.c	RestoreSnapshot	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped oracle snapshot restore is ported
+function	zelda_cpu_infra.c	VerifySnapshotsEq	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped snapshot comparison is ported
+function	zelda_cpu_infra.c	RomByte	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped ROM byte pointer helper is ported
+function	zelda_cpu_infra.c	HookedFunctionRts	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped hooked RTS callback is ported
+function	zelda_cpu_infra.c	RunEmulatedFunc	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped debug wrapper for emulated function calls is ported
+function	zelda_cpu_infra.c	RunEmulatedFuncSilent	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped silent emulated function runner is ported
+function	zelda_cpu_infra.c	RunOrigAsmCodeOneLoop	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped opcode loop helper is ported
+function	zelda_cpu_infra.c	RunEmulatedSnesFrame	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped frame runner helper is ported
+function	zelda_cpu_infra.c	EmuSynchronizeWholeState	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped native-to-oracle state sync is ported
+function	zelda_cpu_infra.c	EmuRunFrameWithCompare	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped frame compare entry point is ported
+function	zelda_cpu_infra.c	PatchRomBP	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped breakpoint patch helper is ported
+function	zelda_cpu_infra.c	PatchRomByte	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped byte patch helper is ported
+function	zelda_cpu_infra.c	PatchRomWord	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped word patch helper is ported
+function	zelda_cpu_infra.c	PatchRomArray	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped byte-array patch helper is ported
+function	zelda_cpu_infra.c	PatchRom	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped oracle ROM patch routine is ported
+function	zelda_cpu_infra.c	EmuInitialize	done	crates/zelda3/src/zelda_cpu_infra.rs	C-shaped oracle initializer is ported
+module	types.h	*	seed	crates/zelda3/src/types.rs	MemBlk and little-endian helpers seeded
+module	util.c	*	done	crates/zelda3/src/util.rs	full utility surface ported with C-shaped names plus compatibility wrappers
+function	util.c	NextDelim	done	crates/zelda3/src/util.rs	C-shaped delimiter tokenizer is ported
+function	util.c	ToLower	done	crates/zelda3/src/util.rs	C static helper ported
+function	util.c	StringEqualsNoCase	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	StringStartsWithNoCase	done	crates/zelda3/src/util.rs	C-shaped case-insensitive prefix helper is ported
+function	util.c	ReadWholeFile	done	crates/zelda3/src/util.rs	C-shaped zero-terminated file read helper is ported
+function	util.c	NextLineStripComments	done	crates/zelda3/src/util.rs	C-shaped line parser and comment stripper is ported
+function	util.c	NextPossiblyQuotedString	done	crates/zelda3/src/util.rs	C-shaped quoted token parser is ported
+function	util.c	ReplaceFilenameWithNewPath	done	crates/zelda3/src/util.rs	C-shaped path replacement helper is ported
+function	util.c	SplitKeyValue	done	crates/zelda3/src/util.rs	C-shaped key/value splitter is ported
+function	util.c	SkipPrefix	done	crates/zelda3/src/util.rs	C-shaped prefix skipper is ported
+function	util.c	StrSet	done	crates/zelda3/src/util.rs	string ownership helper ported
+function	util.c	StrFmt	done	crates/zelda3/src/util.rs	C-shaped string formatting helper is ported
+function	util.c	ByteArray_Resize	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	ByteArray_Destroy	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	ByteArray_AppendData	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	ByteArray_AppendByte	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	FindIndexInMemblk	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	BpsDecodeInt	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+function	util.c	crc32	done	crates/zelda3/src/util.rs	covered by zelda3 unit tests
+module	attract.c	*	done	crates/zelda3/src/attract.rs	full attract/story scene cluster is ported with C-shaped entry names
+function	attract.c	Attract_DrawSpriteSet2	done	crates/zelda3/src/attract.rs	C-shaped attract OAM batch writer is ported
+function	attract.c	Attract_ZeldaPrison_Case0	done	crates/zelda3/src/attract.rs	C-shaped Zelda prison case 0 is ported
+function	attract.c	Attract_ZeldaPrison_Case1	done	crates/zelda3/src/attract.rs	C-shaped Zelda prison case 1 is ported
+function	attract.c	Attract_ZeldaPrison_DrawA	done	crates/zelda3/src/attract.rs	C-shaped Zelda prison A draw helper is ported
+function	attract.c	Attract_MaidenWarp_Case0	done	crates/zelda3/src/attract.rs	C-shaped maiden warp case 0 is ported
+function	attract.c	Attract_MaidenWarp_Case1	done	crates/zelda3/src/attract.rs	C-shaped maiden warp case 1 is ported
+function	attract.c	Attract_MaidenWarp_Case2	done	crates/zelda3/src/attract.rs	C-shaped maiden warp case 2 is ported
+function	attract.c	Attract_MaidenWarp_Case3	done	crates/zelda3/src/attract.rs	C-shaped maiden warp case 3 is ported
+function	attract.c	Attract_MaidenWarp_Case4	done	crates/zelda3/src/attract.rs	C-shaped maiden warp case 4 is ported
+function	attract.c	Dungeon_LoadAndDrawEntranceRoom	done	crates/zelda3/src/attract.rs	C-shaped attract entrance-room loader wrapper is ported
+function	attract.c	Dungeon_SaveAndLoadLoadAllPalettes	done	crates/zelda3/src/attract.rs	C-shaped attract palette loader wrapper is ported
+function	attract.c	Module14_Attract	done	crates/zelda3/src/attract.rs	C-shaped attract module dispatcher is ported
+function	attract.c	Attract_Fade	done	crates/zelda3/src/attract.rs	C-shaped attract fade step is ported
+function	attract.c	Attract_InitGraphics	done	crates/zelda3/src/attract.rs	C-shaped attract graphics initialization is ported
+function	attract.c	Attract_FadeInStep	done	crates/zelda3/src/attract.rs	C-shaped attract fade-in substep is ported
+function	attract.c	Attract_FadeInSequence	done	crates/zelda3/src/attract.rs	C-shaped attract fade-in sequence is ported
+function	attract.c	Attract_FadeOutSequence	done	crates/zelda3/src/attract.rs	C-shaped attract fade-out sequence is ported
+function	attract.c	Attract_LoadNewScene	done	crates/zelda3/src/attract.rs	C-shaped attract scene loader dispatch is ported
+function	attract.c	AttractScene_PolkaDots	done	crates/zelda3/src/attract.rs	C-shaped polka-dots scene setup is ported
+function	attract.c	AttractScene_WorldMap	done	crates/zelda3/src/attract.rs	C-shaped world-map scene setup is ported
+function	attract.c	AttractScene_ThroneRoom	done	crates/zelda3/src/attract.rs	C-shaped throne-room scene setup is ported
+function	attract.c	Attract_PrepFinish	done	crates/zelda3/src/attract.rs	C-shaped attract scene finish prep is ported
+function	attract.c	Attract_PrepZeldaPrison	done	crates/zelda3/src/attract.rs	C-shaped Zelda prison scene prep is ported
+function	attract.c	Attract_PrepMaidenWarp	done	crates/zelda3/src/attract.rs	C-shaped maiden warp scene prep is ported
+function	attract.c	AttractScene_EndOfStory	done	crates/zelda3/src/attract.rs	C-shaped end-of-story scene transition is ported
+function	attract.c	Death_Func31	done	crates/zelda3/src/attract.rs	C-shaped attract death/reset helper is ported
+function	attract.c	Attract_EnactStory	done	crates/zelda3/src/attract.rs	C-shaped story enact dispatcher is ported
+function	attract.c	AttractDramatize_PolkaDots	done	crates/zelda3/src/attract.rs	C-shaped polka-dots dramatization is ported
+function	attract.c	AttractDramatize_WorldMap	done	crates/zelda3/src/attract.rs	C-shaped world-map dramatization is ported
+function	attract.c	Attract_ThroneRoom	done	crates/zelda3/src/attract.rs	C-shaped throne-room dramatization is ported
+function	attract.c	AttractDramatize_Prison	done	crates/zelda3/src/attract.rs	C-shaped Zelda prison dramatization is ported
+function	attract.c	AttractDramatize_AgahnimAltar	done	crates/zelda3/src/attract.rs	C-shaped Agahnim altar dramatization is ported
+function	attract.c	Attract_SkipToFileSelect	done	crates/zelda3/src/attract.rs	C-shaped attract skip-to-file-select path is ported
+function	attract.c	Attract_BuildNextImageTileMap	done	crates/zelda3/src/attract.rs	C-shaped legend tilemap builder is ported
+function	attract.c	Attract_ShowTimedTextMessage	done	crates/zelda3/src/attract.rs	C-shaped timed text renderer helper is ported
+function	attract.c	Attract_ControlMapZoom	done	crates/zelda3/src/attract.rs	C-shaped mode-7 zoom table builder is ported
+function	attract.c	Attract_BuildBackgrounds	done	crates/zelda3/src/attract.rs	C-shaped attract background builder is ported
+function	attract.c	Attract_TriggerBGDMA	done	crates/zelda3/src/attract.rs	C-shaped attract VRAM DMA helper is ported
+function	attract.c	Attract_DrawPreloadedSprite	done	crates/zelda3/src/attract.rs	C-shaped preloaded sprite OAM writer is ported
+function	attract.c	Attract_DrawZelda	done	crates/zelda3/src/attract.rs	C-shaped Zelda OAM draw helper is ported
+function	attract.c	Sprite_SimulateSoldier	done	crates/zelda3/src/attract.rs	C-shaped attract soldier simulator is ported
+module	select_file.c	*	done	crates/zelda3/src/select_file.rs	C-shaped select-file, copy-file, erase-file, SRAM validation, and name-entry cluster is ported
+function	select_file.c	Module01_FileSelect	done	crates/zelda3/src/select_file.rs	C-shaped file select module dispatch is ported
+function	select_file.c	SelectFile_Func1	done	crates/zelda3/src/select_file.rs	C-shaped file-select background stripe builder is ported
+function	select_file.c	Module_SelectFile_0	done	crates/zelda3/src/select_file.rs	C-shaped file-select setup path is ported
+function	select_file.c	LoadFileSelectGraphics	done	crates/zelda3/src/select_file.rs	C-shaped file-select graphics loading is ported
+function	select_file.c	Intro_ValidateSram	done	crates/zelda3/src/select_file.rs	C-shaped SRAM validation is ported
+function	select_file.c	Intro_CheckCksum	done	crates/zelda3/src/select_file.rs	C-shaped SRAM checksum helper is ported
+function	select_file.c	FileSelect_ReInitSaveFlagsAndEraseTriforce	done	crates/zelda3/src/select_file.rs	C-shaped save-flag reset and triforce erase entry is ported
+function	select_file.c	FileSelect_EraseTriforce	done	crates/zelda3/src/select_file.rs	C-shaped triforce erase setup is ported
+function	select_file.c	Module_EraseFile_1	done	crates/zelda3/src/select_file.rs	C-shaped file-select tile and stripe upload builder is ported
+function	select_file.c	FileSelect_TriggerStripesAndAdvance	done	crates/zelda3/src/select_file.rs	C-shaped stripe trigger helper is ported
+function	select_file.c	FileSelect_TriggerNameStripesAndAdvance	done	crates/zelda3/src/select_file.rs	C-shaped name stripe trigger helper is ported
+function	select_file.c	FileSelect_Main	done	crates/zelda3/src/select_file.rs	C-shaped main file-select menu logic is ported
+function	select_file.c	SelectFile_Func5_DrawOams	done	crates/zelda3/src/select_file.rs	C-shaped occupied-slot Link preview OAM is ported
+function	select_file.c	SelectFile_Func6_DrawOams2	done	crates/zelda3/src/select_file.rs	C-shaped death counter OAM is ported
+function	select_file.c	SelectFile_Func17	done	crates/zelda3/src/select_file.rs	C-shaped occupied-slot name and health stripe writes are ported
+function	select_file.c	SelectFile_Func16	done	crates/zelda3/src/select_file.rs	C-shaped erase confirmation helper is ported
+function	select_file.c	FileSelect_DrawFairy	done	crates/zelda3/src/select_file.rs	C-shaped fairy cursor OAM helper is ported
+function	select_file.c	Module02_CopyFile	done	crates/zelda3/src/select_file.rs	C-shaped copy-file module dispatch is ported
+function	select_file.c	Module_CopyFile_2	done	crates/zelda3/src/select_file.rs	C-shaped copy-file setup is ported
+function	select_file.c	CopyFile_ChooseSelection	done	crates/zelda3/src/select_file.rs	C-shaped copy source selection state is ported
+function	select_file.c	CopyFile_ChooseTarget	done	crates/zelda3/src/select_file.rs	C-shaped copy target selection state is ported
+function	select_file.c	CopyFile_ConfirmSelection	done	crates/zelda3/src/select_file.rs	C-shaped copy confirmation state is ported
+function	select_file.c	FilePicker_DeleteHeaderStripe	done	crates/zelda3/src/select_file.rs	C-shaped header stripe clear helper is ported
+function	select_file.c	CopyFile_SelectionAndBlinker	done	crates/zelda3/src/select_file.rs	C-shaped copy source cursor logic is ported
+function	select_file.c	CopyFile_TargetSelectionAndBlink	done	crates/zelda3/src/select_file.rs	C-shaped copy target cursor logic is ported
+function	select_file.c	CopyFile_HandleConfirmation	done	crates/zelda3/src/select_file.rs	C-shaped copy confirmation logic is ported
+function	select_file.c	Module03_KILLFile	done	crates/zelda3/src/select_file.rs	C-shaped erase-file module dispatch is ported
+function	select_file.c	KILLFile_SetUp	done	crates/zelda3/src/select_file.rs	C-shaped erase-file setup is ported
+function	select_file.c	KILLFile_HandleSelection	done	crates/zelda3/src/select_file.rs	C-shaped erase-file selection state is ported
+function	select_file.c	KILLFile_HandleConfirmation	done	crates/zelda3/src/select_file.rs	C-shaped erase-file confirmation state is ported
+function	select_file.c	KILLFile_ChooseTarget	done	crates/zelda3/src/select_file.rs	C-shaped erase-file target logic is ported
+function	select_file.c	Module04_NameFile	done	crates/zelda3/src/select_file.rs	C-shaped name-file module dispatch is ported
+function	select_file.c	NameFile_EraseSave	done	crates/zelda3/src/select_file.rs	C-shaped empty-slot SRAM clear and name placeholder setup is ported
+function	select_file.c	Module_NamePlayer_1	done	crates/zelda3/src/select_file.rs	C-shaped name-player tile reset stripe is ported
+function	select_file.c	Module_NamePlayer_2	done	crates/zelda3/src/select_file.rs	C-shaped name-player background upload trigger is ported
+function	select_file.c	NameFile_DoTheNaming	done	crates/zelda3/src/select_file.rs	C-shaped name-entry cursor, character selection, save init, checksum fix, and return logic is ported
+function	select_file.c	NameFile_CheckForScrollInputX	done	crates/zelda3/src/select_file.rs	C-shaped horizontal cursor input helper is ported
+function	select_file.c	NameFile_CheckForScrollInputY	done	crates/zelda3/src/select_file.rs	C-shaped vertical cursor input helper is ported
+function	select_file.c	NameFile_DrawSelectedCharacter	done	crates/zelda3/src/select_file.rs	C-shaped selected-character stripe upload is ported
+function	select_file.c	Intro_FixCksum	done	crates/zelda3/src/select_file.rs	C-shaped save checksum fix is ported
+function	select_file.c	ReturnToFileSelect	done	crates/zelda3/src/select_file.rs	C-shaped return-to-file-select state reset is ported
+module	misc.c	*	done	crates/zelda3/src/misc.rs	C-shaped misc runtime cluster is ported; module routing, load-file setup, torch DMA, item receipt, victory, sound-pan helpers, and message entry points are tracked
+function	misc.c	SrcPtr	done	crates/zelda3/src/misc.rs	C-shaped predefined tile-data pointer helper is ported
+function	misc.c	Ancilla_Sfx2_Near	done	crates/zelda3/src/zelda_rtl.rs	C-shaped ancilla SFX2 panning helper is ported
+function	misc.c	Ancilla_Sfx3_Near	done	crates/zelda3/src/zelda_rtl.rs	C-shaped ancilla SFX3 panning helper is ported
+function	misc.c	LoadDungeonRoomRebuildHUD	done	crates/zelda3/src/misc.rs	C-shaped HUD rebuild and pre-dungeon entry is ported
+function	misc.c	Module_Unknown0	done	crates/zelda3/src/misc.rs	C-shaped unreachable module slot is represented
+function	misc.c	Module_Unknown1	done	crates/zelda3/src/misc.rs	C-shaped unreachable module slot is represented
+function	misc.c	KillAgahnim_LoadMusic	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Init	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func2	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func3	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func4	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func5	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func6	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func7	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func8	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	KillAghanim_Func12	done	crates/zelda3/src/misc.rs	C-shaped Agahnim transition helper is represented
+function	misc.c	Module_MainRouting	done	crates/zelda3/src/zelda_rtl.rs	C-shaped main module router is ported
+function	misc.c	NMI_PrepareSprites	done	crates/zelda3/src/nmi.rs	C-shaped NMI sprite DMA preparation entry is ported
+function	misc.c	Sound_LoadIntroSongBank	done	crates/zelda3/src/misc.rs	C-shaped song-bank loader entry is represented for current audio-deferred runtime
+function	misc.c	LoadOverworldSongs	done	crates/zelda3/src/misc.rs	C-shaped song-bank loader entry is represented for current audio-deferred runtime
+function	misc.c	LoadDungeonSongs	done	crates/zelda3/src/misc.rs	C-shaped song-bank loader entry is represented for current audio-deferred runtime
+function	misc.c	LoadCreditsSongs	done	crates/zelda3/src/misc.rs	C-shaped song-bank loader entry is represented for current audio-deferred runtime
+function	misc.c	Dungeon_LightTorch	done	crates/zelda3/src/misc.rs	C-shaped torch lighting state and DMA upload logic is ported
+function	misc.c	RoomDraw_AdjustTorchLightingChange	done	crates/zelda3/src/misc.rs	C-shaped torch tile-attribute patcher is ported
+function	misc.c	Dungeon_PrepOverlayDma_nextPrep	done	crates/zelda3/src/misc.rs	C-shaped overlay DMA next-prep helper is ported
+function	misc.c	Dungeon_PrepOverlayDma_watergate	done	crates/zelda3/src/misc.rs	C-shaped overlay DMA watergate helper is ported
+function	misc.c	Module05_LoadFile	done	crates/zelda3/src/misc.rs	C-shaped load-file setup is ported, including dungeon palette reload before the message path
+function	misc.c	Module13_BossVictory_Pendant	done	crates/zelda3/src/misc.rs	C-shaped pendant victory module entry is ported
+function	misc.c	BossVictory_Heal	done	crates/zelda3/src/misc.rs	C-shaped boss victory refill state is ported
+function	misc.c	Dungeon_StartVictorySpin	done	crates/zelda3/src/misc.rs	C-shaped victory spin start state is ported
+function	misc.c	Dungeon_RunVictorySpin	done	crates/zelda3/src/misc.rs	C-shaped victory spin run state is ported
+function	misc.c	Dungeon_CloseVictorySpin	done	crates/zelda3/src/misc.rs	C-shaped victory spin close state is ported
+function	misc.c	Module15_MirrorWarpFromAga	done	crates/zelda3/src/misc.rs	C-shaped Agahnim mirror-warp module entry is represented
+function	misc.c	Module16_BossVictory_Crystal	done	crates/zelda3/src/misc.rs	C-shaped crystal victory module entry is ported
+function	misc.c	Module16_04_FadeAndEnd	done	crates/zelda3/src/misc.rs	C-shaped crystal victory fade-and-end state is ported
+function	misc.c	PlaySfx_SetPan	done	crates/zelda3/src/zelda_rtl.rs	C-shaped SFX panning latch helper is ported
+function	misc.c	TriforceRoom_LinkApproachTriforce	done	crates/zelda3/src/misc.rs	C-shaped Triforce approach state is ported
+function	misc.c	AncillaAdd_ItemReceipt	done	crates/zelda3/src/misc.rs	C-shaped item receipt entry is ported through the existing item receipt implementation
+function	misc.c	ItemReceipt_GiveBottledItem	done	crates/zelda3/src/misc.rs	C-shaped bottled-item receipt entry is ported
+function	misc.c	Module17_SaveAndQuit	done	crates/zelda3/src/misc.rs	C-shaped save-and-quit fade entry is represented
+function	misc.c	WallMaster_SendPlayerToLastEntrance	done	crates/zelda3/src/misc.rs	C-shaped WallMaster return-to-entrance setup is ported
+function	misc.c	GetRandomNumber	done	crates/zelda3/src/misc.rs	C-shaped RNG byte update helper is ported
+function	misc.c	Link_CalculateSfxPan	done	crates/zelda3/src/zelda_rtl.rs	C-shaped link-centered pan calculation is ported
+function	misc.c	SpriteSfx_QueueSfx1WithPan	done	crates/zelda3/src/misc.rs	C-shaped sprite SFX1 panning helper is ported
+function	misc.c	SpriteSfx_QueueSfx2WithPan	done	crates/zelda3/src/overlord.rs	C-shaped sprite SFX2 panning helper is ported
+function	misc.c	SpriteSfx_QueueSfx3WithPan	done	crates/zelda3/src/overlord.rs	C-shaped sprite SFX3 panning helper is ported
+function	misc.c	Sprite_CalculateSfxPan	done	crates/zelda3/src/overlord.rs	C-shaped sprite-centered pan calculation is ported
+function	misc.c	CalculateSfxPan	done	crates/zelda3/src/zelda_rtl.rs	C-shaped core pan table helper is ported
+function	misc.c	CalculateSfxPan_Arbitrary	done	crates/zelda3/src/overlord.rs	C-shaped arbitrary torch pan helper is ported
+function	misc.c	Init_LoadDefaultTileAttr	done	crates/zelda3/src/misc.rs	C-shaped default dungeon tile attributes copy is ported
+function	misc.c	Main_ShowTextMessage	done	crates/zelda3/src/misc.rs	C-shaped message module entry is ported
+function	misc.c	HandleItemTileAction_Overworld	done	crates/zelda3/src/misc.rs	C-shaped indoor/outdoor tile-action dispatcher is ported
+function	dungeon.c	ResetThenCacheRoomEntryProperties	partial	crates/zelda3/src/misc.rs	new-game Module_PreDungeon path clears transition flags and caches camera room-entry state
+function	dungeon.c	Module07_15_WarpPad	partial	crates/zelda3/src/dungeon.rs	first dispatch state is wired through ResetTransitionPropsAndAdvance_ResetInterface and covered by the passing gameplay-entry window
+module	player.c	*	partial	crates/zelda3/src/player.rs	Link_Initialize, Link_TuckIntoBed/new-game blanket setup, and the active indoor ground-movement slice are started
+function	player.c	CacheCameraProperties	done	crates/zelda3/src/zelda_rtl.rs	camera, scroll bounds, quadrant, facing, floor, and doorway cached snapshots are ported; existing room-entry call keeps its misc.rs copy
+function	player.c	BitSum4	done	crates/zelda3/src/player.rs	4-bit population count helper is ported
+function	player.c	Dungeon_HandleLayerChange	done	crates/zelda3/src/zelda_rtl.rs	layer mirror, staircase room increment, lower-level flag, ledge flag clear, and visited quadrant save are ported
+function	player.c	CheckAbilityToSwim	done	crates/zelda3/src/player.rs	flipper/bunny swim permission gate sets visibility and indoor/outdoor submodule like the C helper
+function	player.c	PlayerHandler_00_Ground_3	partial	crates/zelda3/src/zelda_rtl.rs	active ground handler branch covers no-item indoor cardinal movement for the opening route
+function	player.c	Link_HandleAPress	partial	crates/zelda3/src/zelda_rtl.rs	active A-press dispatch covers repeated indoor grab/pull probes reached by the opening movement window
+function	player.c	Link_CheckNewAPress	done	crates/zelda3/src/zelda_rtl.rs	new-A press gate and latch side effect are ported
+function	player.c	Link_HandleToss	done	crates/zelda3/src/player.rs	A-button toss gate and throw-state cleanup are ported
+function	player.c	LinkState_Zapped	partial	crates/zelda3/src/player.rs	electrocution timer/state cleanup, mosaic bounce, and gear palette alternation are ported; LoadActualGearPalettes glove-color bugfix remains deferred
+function	player.c	LinkState_ExitingDash	done	crates/zelda3/src/player.rs	stop-dash countdown/reset branch and moving animation tail are ported
+function	player.c	Link_HandleLiftables	partial	crates/zelda3/src/zelda_rtl.rs	active liftable/tile action dispatch includes dungeon liftable ID and glove-action gating for current indoor probes
+function	player.c	Link_APress_PerformBasic	partial	crates/zelda3/src/zelda_rtl.rs	basic A-action dispatcher now routes dash, grab, read, open chest, statue drag, and rupee pull; throw/desert prayer remain deferred
+function	player.c	Link_PerformDash	done	crates/zelda3/src/zelda_rtl.rs	dash start guard, countdown/state/running setup, input/item/drag cleanup, and tagalong timeout side effect are ported
+function	player.c	Link_PerformGrab	partial	crates/zelda3/src/zelda_rtl.rs	active grab setup is ported for the current post-message A-press probes
+function	player.c	Link_PerformRupeePull	done	crates/zelda3/src/zelda_rtl.rs	rupee-pull facing gate, reset chain, grab lock, pull state, velocity clear, and B/Y mask clear are ported
+function	player.c	Link_PerformRead	partial	crates/zelda3/src/zelda_rtl.rs	indoor readable-tile action now routes through dungeon telemessage lookup and Main_ShowTextMessage
+function	player.c	Link_PerformOpenChest	partial	crates/zelda3/src/zelda_rtl.rs	chest-open dispatch, item alternate check, and initial item receipt setup are ported for dungeon chest actions
+function	player.c	PlayerHandler_15_HoldItem	done	crates/zelda3/src/zelda_rtl.rs	empty hold-item handler is represented by the control-handler no-op for state 21
+function	player.c	LinkState_Bunny_recache	done	crates/zelda3/src/player.rs	bunny recache clears transform timers/state, resets swimming, and restores ground state/palettes when moon pearl is present
+function	player.c	Player_ChangeZ	done	crates/zelda3/src/zelda_rtl.rs	Z velocity decrement, falling-at-zero guard, and signed Z clamp are ported
+function	player.c	Link_HandleChangeInZVelocity	done	crates/zelda3/src/zelda_rtl.rs	recoil/turtle-rock Z velocity delta dispatch is ported
+function	player.c	Link_SetToDeepWater	done	crates/zelda3/src/player.rs	deep-water state latch, direction carry, swimming reset, wall release, and speed reset are ported
+function	player.c	Link_SplashUponLanding	done	crates/zelda3/src/player.rs	landing state dispatch for normal, deep-water, and bunny-mirror cases is ported
+function	player.c	Link_ReceiveItem	partial	crates/zelda3/src/zelda_rtl.rs	auxiliary cleanup, receive-item state, hold-item state 21, pose setup, sprite-damage guard, item-receipt ancilla, and dash cancel are ported; rare item SFX and HUD refresh remain deferred
+function	player.c	Link_APress_PullObject	partial	crates/zelda3/src/zelda_rtl.rs	active pull-object state update is ported for the current post-message A-press probes
+function	player.c	Link_PerformStatueDrag	partial	crates/zelda3/src/zelda_rtl.rs	statue-drag wrapper is started for the shared grab dispatch path
+function	player.c	Link_APress_StatueDrag	partial	crates/zelda3/src/zelda_rtl.rs	statue-drag A-press branch is started for the shared grab dispatch path
+function	player.c	Link_HandleDiagonalCollision	partial	crates/zelda3/src/zelda_rtl.rs	active direction-limit entry is ported without the double-layer moving-background branch
+function	player.c	Player_LimitDirections_Inner	partial	crates/zelda3/src/zelda_rtl.rs	active vertical-first direction mask and slope probes are ported for indoor cardinal/diagonal movement
+function	player.c	Link_HandleVelocity	partial	crates/zelda3/src/zelda_rtl.rs	active walking speed, signed velocity, prevent-move guard, pit speed modifier, and position integration path are ported; generic flag-moving swim branch is intentionally deferred pending acceleration parity
+function	player.c	Link_MovePosition	partial	crates/zelda3/src/zelda_rtl.rs	safe-return, somaria-platform guard, subpixel integration, moving-floor, conveyor, and sand-drag tail are ported
+function	player.c	Link_HandleVelocityAndSandDrag	done	crates/zelda3/src/zelda_rtl.rs	drag-player coordinate adjustment and velocity-delta writes are ported
+function	player.c	HandleSwimStrokeAndSubpixels	partial	crates/zelda3/src/zelda_rtl.rs	explicit swimming-state stroke/subpixel helper is ported; generic flag-moving caller remains deferred for current oracle parity
+function	player.c	Player_SomethingWithVelocity_TiredOrSwim	partial	crates/zelda3/src/zelda_rtl.rs	swim/tired subpixel integration, actual velocity packing, moving-floor hook, and sand-drag tail are ported
+function	player.c	Link_HandleMovingFloor	done	crates/zelda3/src/zelda_rtl.rs	moving-floor direction bits and floor-velocity application are ported
+function	player.c	Link_ApplyMovingFloorVelocity	done	crates/zelda3/src/zelda_rtl.rs	moving-floor coordinate offset and orthogonal-direction reset are ported
+function	player.c	Link_ApplyConveyor	done	crates/zelda3/src/zelda_rtl.rs	conveyor eligibility, direction bits, subpixel accumulation, and coordinate updates are ported
+function	player.c	Link_HandleCardinalCollision	partial	crates/zelda3/src/zelda_rtl.rs	cardinal collision now includes diagonal kickback gate, double-layer moving-floor scaffold, pit idle check, slope ordering, tile main handler, and swim moving-floor direction cleanup
+function	player.c	Link_HandleDiagonalKickback	partial	crates/zelda3/src/zelda_rtl.rs	diagonal slope deadlock detection, coordinate rollback, velocity rewrite, and C kickback adjustment tables are ported
+function	player.c	RunSlopeCollisionChecks_VerticalFirst	partial	crates/zelda3/src/zelda_rtl.rs	vertical-first Y/X collision ordering now honors moving-against-diag skip bits
+function	player.c	RunSlopeCollisionChecks_HorizontalFirst	partial	crates/zelda3/src/zelda_rtl.rs	horizontal-first X/Y collision ordering now honors moving-against-diag skip bits
+function	player.c	CheckIfRoomNeedsDoubleLayerCheck	partial	crates/zelda3/src/zelda_rtl.rs	moving-floor lower-layer coordinate offset and related-floor cache writes are ported
+function	player.c	CreateVelocityFromMovingBackground	partial	crates/zelda3/src/zelda_rtl.rs	moving-background coordinate restore and velocity carry-back are ported for double-layer collision checks
+function	player.c	StartMovementCollisionChecks_Y	partial	crates/zelda3/src/zelda_rtl.rs	doorway-aware direction selection and indoor/outdoor dispatch are ported for active movement windows
+function	player.c	StartMovementCollisionChecks_X	partial	crates/zelda3/src/zelda_rtl.rs	doorway-aware direction selection and indoor/outdoor dispatch are ported for active movement windows
+function	player.c	StartMovementCollisionChecks_Y_HandleIndoors	partial	crates/zelda3/src/zelda_rtl.rs	doorway, slope, conveyor, stair, pit, spike, push-timeout, and snap routing are started for indoor Y collision
+function	player.c	StartMovementCollisionChecks_X_HandleIndoors	partial	crates/zelda3/src/zelda_rtl.rs	indoor X collision now runs slope, conveyor, pit, spike, push-timeout, and snap routing after doorway checks
+function	player.c	StartMovementCollisionChecks_Y_HandleOutdoors	partial	crates/zelda3/src/zelda_rtl.rs	outdoor Y collision now handles pit entry, readable/liftable bookkeeping, deep-water entry/exit setup, stairs, spike damage with cape/rebound side effects, and push snaps
+function	player.c	StartMovementCollisionChecks_X_HandleOutdoors	partial	crates/zelda3/src/zelda_rtl.rs	outdoor X collision now handles pit entry, readable/liftable bookkeeping, deep-water entry/exit setup, ledge-blocking snaps, spike damage rebound, misc-bugfix slope gating, and push snaps
+function	player.c	Link_ResetSwimmingState	done	crates/zelda3/src/player.rs	swimming state reset clears countdown/stroke/faster flags and acceleration arrays
+function	player.c	Link_ResetStateAfterDamagingPit	done	crates/zelda3/src/player.rs	post-pit reset restores swimming state, player state, facing history, deep-water flag, damage immunity, and OAM-control flag
+function	player.c	PlayerHandler_04_Swimming	done	crates/zelda3/src/player.rs	swimming handler action-state cleanup, animation cadence, hard-stroke acceleration, countdown, and movement tail dispatch are ported
+function	player.c	Link_HandleSwimMovements	done	crates/zelda3/src/player.rs	swim direction selection, idle acceleration reset, direction-change cleanup, momentum setup, collision, velocity, animation, fallhole, and camera tail are ported
+function	player.c	Link_HandleSwimAccels	done	crates/zelda3/src/player.rs	swim acceleration ramp and max-table snap behavior are ported
+function	player.c	Link_SetTheMaxAccel	done	crates/zelda3/src/player.rs	swim max-accel readiness and inactive-axis reset behavior are ported
+function	player.c	Link_FlagMaxAccels	done	crates/zelda3/src/player.rs	active swim acceleration promotion into max acceleration state is ported
+function	player.c	Link_SetIceMaxAccel	done	crates/zelda3/src/player.rs	flag-moving swim ice max acceleration cap writes are ported
+function	player.c	Link_SetMomentum	done	crates/zelda3/src/player.rs	swim momentum setup for pressed axes, direction latch, and starting max acceleration is ported
+function	player.c	ResetAllAcceleration	done	crates/zelda3/src/player.rs	swim acceleration state arrays var1/3/5/7/9 are cleared like the C helper
+function	player.c	Link_ResetSwordAndItemUsage	done	crates/zelda3/src/player.rs	speed, drag bits, spin delay, B button frames/mask, and direction lock reset are ported
+function	player.c	Link_ForceUnequipCape_quietly	done	crates/zelda3/src/player.rs	quiet cape unequip state reset is ported
+function	player.c	Link_ForceUnequipCape	partial	crates/zelda3/src/player.rs	cape-off SFX and quiet state reset are ported; cape poof ancilla remains deferred
+function	player.c	HaltLinkWhenUsingItems	done	crates/zelda3/src/player.rs	floor/platform item-use halt state writes are ported
+function	player.c	Link_HandleCape_passive_LiftCheck	done	crates/zelda3/src/player.rs	passive cape drain gate for item state and misc-bugfix grab/pull is ported
+function	player.c	Player_CheckHandleCapeStuff	done	crates/zelda3/src/player.rs	cape active-item drain, depletion timer reset, magic decrement, and forced unequip are ported
+function	player.c	CheckYButtonPress	done	crates/zelda3/src/player.rs	Y-button mask/incapacitated/input gate is ported
+function	player.c	LinkCheckMagicCost	done	crates/zelda3/src/player.rs	magic-cost lookup, debit, no-magic SFX, and dialogue dispatch are ported
+function	player.c	Refund_Magic	done	crates/zelda3/src/player.rs	magic refund lookup and misc-bugfix cap at 128 are ported
+function	player.c	Link_ItemReset_FromOverworldThings	done	crates/zelda3/src/player.rs	overworld item reset clears animation/action/grab state and direction lock
+function	player.c	LinkItem_Rod	partial	crates/zelda3/src/player.rs	Y-button/magic gate, rod pose timers, in-hand flag, SFX/debug state, and cleanup are ported; full rod shot ancilla remains deferred
+function	player.c	LinkItem_Hammer	partial	crates/zelda3/src/player.rs	Y-button gate, hammer pose timers, direction lock, item flag, SFX timing, and cleanup are ported; tile hit/star side effects remain deferred
+function	player.c	LinkItem_Bow	partial	crates/zelda3/src/player.rs	bow pose timers, arrow count debit, button cleanup, direction lock, and no-arrow SFX are ported; full arrow ancilla/HUD refresh remain deferred
+function	player.c	LinkItem_Boomerang	partial	crates/zelda3/src/player.rs	boomerang Y-button gate, pose timer, direction lock, in-hand state, and reset path are ported; full boomerang ancilla remains deferred
+function	player.c	Link_ResetBoomerangYStuff	done	crates/zelda3/src/player.rs	boomerang item/timer/button/direction-lock reset helper is ported
+function	player.c	LinkItem_Bombs	partial	crates/zelda3/src/player.rs	bomb Y-button/follower/doorway gate, button cleanup, active-bomb limit selection, and item reset are ported; full bomb ancilla remains deferred
+function	player.c	LinkItem_Book	partial	crates/zelda3/src/player.rs	book Y-button gate, no-tablet SFX, and desert-prayer dispatch are ported
+function	player.c	Link_PerformDesertPrayer	done	crates/zelda3/src/player.rs	desert prayer submodule/module save, animation state, direction lock, ambient SFX, and music control writes are ported
+function	player.c	LinkItem_Lamp	partial	crates/zelda3/src/player.rs	lamp Y-button gate, torch magic debit, input reset, and flame/powder ancilla placeholders are ported; dungeon torch lighting remains deferred
+function	player.c	LinkItem_Powder	partial	crates/zelda3/src/player.rs	powder Y-button/mushroom/magic gate, pose timer table, velocity halt, powder spawn placeholder, and cleanup are ported; tile detect side effect remains deferred
+function	player.c	LinkItem_ShovelAndFlute	done	crates/zelda3/src/player.rs	shovel/flute item dispatch based on flute inventory state is ported
+function	player.c	LinkItem_Shovel	partial	crates/zelda3/src/player.rs	shovel Y-button gate, pose timer table, direction lock, hit/dirt/flute placeholder SFX, and cleanup are ported; tile detect/prize side effects remain deferred
+function	player.c	LinkItem_Flute	partial	crates/zelda3/src/player.rs	flute countdown, Y-button gate, SFX, indoor/dark-world guards, duck/weather-vane placeholders, and pull-sprite clear are ported
+function	player.c	LinkItem_Ether	partial	crates/zelda3/src/player.rs	Ether medallion Y-button/sword/menu/follower gates, magic debit, handler state, spin timers, and SFX are ported; full spell ancilla remains deferred
+function	player.c	LinkState_UsingEther	partial	crates/zelda3/src/player.rs	Ether animation timer/state progression, repeat SFX, spell trigger latch, and recovery state clears are ported; full spell effect remains deferred
+function	player.c	LinkItem_Bombos	partial	crates/zelda3/src/player.rs	Bombos medallion Y-button/sword/menu/follower gates, magic debit, handler state, spin timers, and SFX are ported; full spell ancilla remains deferred
+function	player.c	LinkState_UsingBombos	partial	crates/zelda3/src/player.rs	Bombos animation timer/state progression, repeat SFX, spell trigger latch, and recovery state clears are ported; full spell effect remains deferred
+function	player.c	LinkItem_Quake	partial	crates/zelda3/src/player.rs	Quake medallion Y-button/sword/menu/follower gates, magic debit, handler state, spin timers, jump mirrors, and SFX are ported; full spell ancilla remains deferred
+function	player.c	LinkState_UsingQuake	partial	crates/zelda3/src/player.rs	Quake animation/jump timer progression, spell trigger latch, SFX, and recovery state clears are ported; full spell effect remains deferred
+function	player.c	LinkItem_Mirror	partial	crates/zelda3/src/player.rs	mirror Y-button/follower/doorway/world gates, error message/SFX, button cleanup, and mirror dispatch are ported
+function	player.c	DoSwordInteractionWithTiles_Mirror	partial	crates/zelda3/src/player.rs	outdoor mirror travel save, submodule transition setup, velocity clear, and mirror handler state are ported; indoor room-save path remains deferred
+function	player.c	LinkState_CrossingWorlds	partial	crates/zelda3/src/player.rs	mirror crossing reset, deep-water/flipper branch, mirror retry branch, dash/input cleanup, memorized-tile clear, and final bunny/ground state are ported; mirror-bonk tile probe remains deferred
+function	player.c	HandleFollowersAfterMirroring	partial	crates/zelda3/src/player.rs	follower/super-bomb cleanup, dwarf toggle placeholder, bunny/cape poof state, and cape unequip behavior after mirroring are ported
+function	player.c	LinkItem_Hookshot	partial	crates/zelda3/src/player.rs	hookshot Y-button/doorway/drag gates, acceleration reset, handler state, direction lock, position mode, damage guard, and launch ancilla setup are ported
+function	player.c	LinkState_Hookshotting	partial	crates/zelda3/src/player.rs	hookshot timeout cleanup, no-drag collision hold, basic latch release cleanup, tagalong carry, and handler reset are ported; full pull collision and level-transition side effects remain deferred
+function	player.c	LinkItem_Cape	partial	crates/zelda3/src/player.rs	cape activation gate, no-magic prompt, depletion timers, active drain, and forced unequip are ported; cape poof ancilla remains deferred
+function	player.c	LinkItem_CaneOfSomaria	partial	crates/zelda3/src/player.rs	Y-button/magic gate, Somaria pose timers, refund path, and button cleanup are ported; full Somaria block ancilla remains deferred
+function	player.c	LinkItem_CaneOfByrna	partial	crates/zelda3/src/player.rs	Y-button/magic gate, Byrna pose timers, direction lock, SFX, and cleanup are ported; full Byrna spark ancilla remains deferred
+function	player.c	LinkItem_Net	done	crates/zelda3/src/player.rs	bug-net Y-button gate, direction timer table, pose state, SFX, animation advance, and cleanup are ported
+function	player.c	Link_Initialize	partial	crates/zelda3/src/player.rs	base initialization, misc-bugfix cleanup, and permabunny palette reload are ported
+function	player.c	Link_ResetProperties_A	done	crates/zelda3/src/player.rs	top-level reset property chain is ported through B and C
+function	player.c	Link_ResetProperties_B	done	crates/zelda3/src/player.rs	somaria, spin, fallhole, pickup cache, drag, OAM-control, and pit reset segment is ported
+function	player.c	Link_ResetProperties_C	done	crates/zelda3/src/player.rs	item/action/spin/tile/input/state/cape/hookshot reset segment is ported
+function	player.c	Link_HopInOrOutOfWater_Y	done	crates/zelda3/src/zelda_rtl.rs	Y-axis water hop recoil velocity, Z reset, timer, auxiliary state, electrocute clear, and player state are ported
+function	player.c	Link_HopInOrOutOfWater_X	done	crates/zelda3/src/zelda_rtl.rs	X-axis water hop recoil velocity, timer, auxiliary state, electrocute clear, and player state are ported
+function	player.c	RunLedgeHopTimer	done	crates/zelda3/src/zelda_rtl.rs	timer decrement, running bypass, previous-position restore, and subpixel clearing are ported
+function	player.c	Link_FindValidLandingTile_North	partial	crates/zelda3/src/zelda_rtl.rs	north ledge landing search and recoil setup are started for outdoor Y collision
+function	player.c	Link_FindValidLandingTile_DiagonalNorth	partial	crates/zelda3/src/zelda_rtl.rs	diagonal north ledge recoil setup is started for outdoor Y/X collision
+function	player.c	FlagMovingIntoSlopes_Y	partial	crates/zelda3/src/zelda_rtl.rs	slope Y correction and moving-against-diag flags are ported for outdoor collision
+function	player.c	FlagMovingIntoSlopes_X	partial	crates/zelda3/src/zelda_rtl.rs	slope X correction and moving-against-diag flags are ported for outdoor collision
+function	player.c	HandleNudging	partial	crates/zelda3/src/zelda_rtl.rs	wall-nudge reprobe and perpendicular coordinate rollback are ported for active push/bonk snaps
+function	player.c	TileBehavior_HandleItemAndExecute	partial	crates/zelda3/src/zelda_rtl.rs	item/tool tile behavior now routes through HandleItemTileAction and TileDetect_ExecuteInner
+function	player.c	PushBlock_GetTargetTileFlag	done	crates/zelda3/src/zelda_rtl.rs	dungeon target attribute lookup is ported
+function	player.c	PushBlock_AttemptToPushTheBlock	done	crates/zelda3/src/zelda_rtl.rs	active push-block target clearance checks are ported for the current C call shape
+function	player.c	HandlePushingBonkingSnaps_Y	partial	crates/zelda3/src/zelda_rtl.rs	active Y push/bonk snap path includes swim reset, dash bonk/rebound side effects, signed snap arithmetic, and dragstate updates
+function	player.c	HandlePushingBonkingSnaps_X	partial	crates/zelda3/src/zelda_rtl.rs	active X push/bonk snap path includes swim reset, dash bonk/rebound side effects, snap-on-X arithmetic, nudging, and dragstate updates
+function	player.c	Link_BonkAndSmash	partial	crates/zelda3/src/zelda_rtl.rs	dashable-wall eligibility and noise flag side effects are started; terrain smash spawn remains deferred
+function	player.c	RepelDash	partial	crates/zelda3/src/zelda_rtl.rs	active dash repel path resets swimming state, queues SFX, and applies tile rebound for collision snaps; dash tremor/rumble ancilla remains deferred
+function	player.c	Sprite_RepelDash	done	crates/zelda3/src/zelda_rtl.rs	sprite-triggered dash repel facing dispatch is ported
+function	player.c	Link_CancelDash	done	crates/zelda3/src/zelda_rtl.rs	running dash cancel clears dash ancillae, countdown, speed, running flag, direction lock, and swim accel state
+function	player.c	LinkApplyTileRebound	done	crates/zelda3/src/zelda_rtl.rs	rebound velocities, timers, swim acceleration hints, auxiliary state, movement bits, dash flags, and axis velocity clearing are ported
+function	player.c	Flag67WithDirections	done	crates/zelda3/src/zelda_rtl.rs	actual velocity to cardinal direction bit derivation is ported
+function	player.c	Link_AddInVelocityYFalling	done	crates/zelda3/src/zelda_rtl.rs	signed falling Y snap adjustment from the tile-detect phase is ported
+function	player.c	Link_AddInVelocityY	done	crates/zelda3/src/zelda_rtl.rs	indoor doorway Y movement subtracts signed Y velocity like the C helper
+function	player.c	CalculateSnapScratch_Y	done	crates/zelda3/src/zelda_rtl.rs	doorway Y snap scratch correction adjusts X by signed Y collision phase
+function	player.c	ChangeAxisOfPerpendicularDoorMovement_Y	done	crates/zelda3/src/zelda_rtl.rs	perpendicular doorway Y movement sets direction lock/facing and shifts X along the door axis
+function	player.c	SnapOnX	done	crates/zelda3/src/zelda_rtl.rs	X snap adjustment to tile phase and signed X velocity is ported
+function	player.c	CalculateSnapScratch_X	done	crates/zelda3/src/zelda_rtl.rs	doorway X snap scratch correction adjusts Y by signed X collision phase
+function	player.c	ChangeAxisOfPerpendicularDoorMovement_X	done	crates/zelda3/src/zelda_rtl.rs	perpendicular doorway X movement sets direction lock/facing, shifts Y along the door axis, and returns signed speed
+function	player.c	Link_HandleMovingAnimation_FullLongEntry	partial	crates/zelda3/src/zelda_rtl.rs	active movement animation now includes C-shaped facing selection, doorway diagonal handling, swimming dispatch, and dash dispatch
+function	player.c	Link_HandleMovingAnimation_StartWithDash	partial	crates/zelda3/src/zelda_rtl.rs	walking, pose/drag, bunny, somaria-platform, and flag-moving animation timers are ported
+function	player.c	Link_HandleMovingAnimationSwimming	done	crates/zelda3/src/zelda_rtl.rs	swimming movement-facing update is ported
+function	player.c	Link_HandleMovingAnimation_Dash	done	crates/zelda3/src/zelda_rtl.rs	dash animation delay tables and wrap behavior are ported
+function	player.c	HandleIndoorCameraAndDoors	partial	crates/zelda3/src/zelda_rtl.rs	indoor camera wrapper now routes non-door movement to camera quadrant adjustment and doorway movement to transition helpers
+function	player.c	HandleDoorTransitions	partial	crates/zelda3/src/zelda_rtl.rs	doorway page-delta checks, state clearing, and cardinal transition dispatch are ported; full teleporter/exit edge cases remain deferred in dungeon helpers
+function	player.c	ApplyLinksMovementToCamera	done	crates/zelda3/src/zelda_rtl.rs	page-delta calculation and quadrant camera adjustment dispatch are ported
+function	player.c	Link_CheckForEdgeScreenTransition	done	crates/zelda3/src/zelda_rtl.rs	incapacitated edge-transition guard restores previous coordinates, clears actual velocity, and primes recoil timer
+function	player.c	CacheCameraPropertiesIfOutdoors	done	crates/zelda3/src/zelda_rtl.rs	outdoor-only camera snapshot guard is ported
+function	dungeon.c	AdjustQuadrantAndCamera_right	done	crates/zelda3/src/dungeon.rs	right quadrant toggle, bounds adjustment, and visited-quadrant save are ported
+function	dungeon.c	AdjustQuadrantAndCamera_left	done	crates/zelda3/src/dungeon.rs	left quadrant toggle, bounds adjustment, and visited-quadrant save are ported
+function	dungeon.c	AdjustQuadrantAndCamera_down	done	crates/zelda3/src/dungeon.rs	down quadrant toggle, bounds adjustment, and visited-quadrant save are ported
+function	dungeon.c	AdjustQuadrantAndCamera_up	done	crates/zelda3/src/dungeon.rs	up quadrant toggle, bounds adjustment, and visited-quadrant save are ported
+function	dungeon.c	Dungeon_AdjustQuadrant	done	crates/zelda3/src/dungeon.rs	composite layout/quadrant byte update is ported
+function	dungeon.c	Dungeon_FlagRoomData_Quadrants	done	crates/zelda3/src/dungeon.rs	quadrant visit flag update and current-room save are ported
+function	dungeon.c	Dung_SaveDataForCurrentRoom	done	crates/zelda3/src/dungeon.rs	C-shaped current-room save bits/quadrants store is ported
+function	dungeon.c	DungeonTransition_AdjustCamera_X	done	crates/zelda3/src/dungeon.rs	left/right transition camera target table is ported
+function	dungeon.c	DungeonTransition_AdjustCamera_Y	done	crates/zelda3/src/dungeon.rs	up/down transition camera target table is ported
+function	dungeon.c	HandleEdgeTransition_AdjustCameraBoundaries	partial	crates/zelda3/src/dungeon.rs	cardinal camera boundary selection is ported for player-triggered door transitions
+function	dungeon.c	HandleEdgeTransitionMovementEast_RightBy8	partial	crates/zelda3/src/dungeon.rs	east doorway coordinate offset and transition start are ported
+function	dungeon.c	HandleEdgeTransitionMovementSouth_DownBy16	partial	crates/zelda3/src/dungeon.rs	south doorway coordinate offset and transition start are ported
+function	dungeon.c	Dung_StartInterRoomTrans_Left_Plus	partial	crates/zelda3/src/dungeon.rs	left doorway coordinate offset and transition start are ported
+function	dungeon.c	Dungeon_TryScreenEdgeTransition	partial	crates/zelda3/src/dungeon.rs	edge coordinate thresholds and recoil guard dispatch are ported for dungeon room-edge transitions
+function	dungeon.c	Dungeon_HandleEdgeTransitionMovement	partial	crates/zelda3/src/dungeon.rs	cardinal direction masking and transition-start dispatch are ported for dungeon room-edge transitions
+function	dungeon.c	Dungeon_StartInterRoomTrans_Left	partial	crates/zelda3/src/dungeon.rs	left transition quadrant, bounds, camera target, and basic room/level side effects are ported
+function	dungeon.c	Dungeon_StartInterRoomTrans_Right	partial	crates/zelda3/src/dungeon.rs	right transition quadrant, bounds, camera target, and basic room/level side effects are ported
+function	dungeon.c	Dungeon_StartInterRoomTrans_Up	partial	crates/zelda3/src/dungeon.rs	up transition quadrant, bounds, camera target, and basic room/level side effects are ported
+function	dungeon.c	Dungeon_StartInterRoomTrans_Down	partial	crates/zelda3/src/dungeon.rs	down transition quadrant, bounds, camera target, and basic room/level side effects are ported
+module	overworld.c	*	partial	crates/zelda3/src/overworld.rs	Sprite_LoadGraphicsProperties is started for Module05_LoadFile
+module	hud.c	*	done	crates/zelda3/src/hud.rs	C-shaped HUD cluster is ported and wired; RTA ACE route lockstep reaches 5000 frames
+function	hud.c	Hud_RefreshIcon	done	crates/zelda3/src/hud.rs	C-shaped HUD refresh is ported
+function	hud.c	CheckPalaceItemPosession	done	crates/zelda3/src/hud.rs	C-shaped palace item possession helper is ported
+function	hud.c	Hud_GetItemPosition	done	crates/zelda3/src/hud.rs	C-shaped inventory position helper is ported
+function	hud.c	Hud_GotoPrevItem	done	crates/zelda3/src/hud.rs	C-shaped previous item helper is ported
+function	hud.c	Hud_GotoNextItem	done	crates/zelda3/src/hud.rs	C-shaped next item helper is ported
+function	hud.c	Hud_FloorIndicator	done	crates/zelda3/src/hud.rs	C-shaped floor indicator update is ported
+function	hud.c	Hud_RemoveSuperBombIndicator	done	crates/zelda3/src/hud.rs	C-shaped super bomb indicator clear is ported
+function	hud.c	Hud_SuperBombIndicator	done	crates/zelda3/src/hud.rs	C-shaped super bomb indicator update is ported
+function	hud.c	MaxRupees	done	crates/zelda3/src/hud.rs	C-shaped rupee cap helper is ported
+function	hud.c	Hud_RefillLogic	done	crates/zelda3/src/hud.rs	C-shaped refill tick logic is ported
+function	hud.c	Hud_Module_Run	done	crates/zelda3/src/hud.rs	C-shaped HUD module state machine is ported
+function	hud.c	Hud_ClearTileMap	done	crates/zelda3/src/hud.rs	C-shaped menu tilemap clear is ported
+function	hud.c	Hud_HaveAnyItems	done	crates/zelda3/src/hud.rs	C-shaped inventory presence helper is ported
+function	hud.c	Hud_Init	done	crates/zelda3/src/hud.rs	C-shaped menu initialization is ported
+function	hud.c	Hud_BringMenuDown	done	crates/zelda3/src/hud.rs	C-shaped menu slide-down step is ported
+function	hud.c	Hud_ChooseNextMode	done	crates/zelda3/src/hud.rs	C-shaped menu mode selection is ported
+function	hud.c	Hud_DoWeHaveThisItem	done	crates/zelda3/src/hud.rs	C-shaped item availability helper is ported
+function	hud.c	Hud_EquipPrevItem	done	crates/zelda3/src/hud.rs	C-shaped previous equipped item helper is ported
+function	hud.c	Hud_EquipNextItem	done	crates/zelda3/src/hud.rs	C-shaped next equipped item helper is ported
+function	hud.c	Hud_EquipItemAbove	done	crates/zelda3/src/hud.rs	C-shaped vertical previous item helper is ported
+function	hud.c	Hud_EquipItemBelow	done	crates/zelda3/src/hud.rs	C-shaped vertical next item helper is ported
+function	hud.c	GetCurrentItemButtonIndex	done	crates/zelda3/src/hud.rs	C-shaped current item button index helper is ported
+function	hud.c	GetCurrentItemButtonPtr	done	crates/zelda3/src/hud.rs	C-shaped current item button pointer helper is ported as RAM offset selection
+function	hud.c	Hud_NormalMenu	done	crates/zelda3/src/hud.rs	C-shaped normal menu state is ported
+function	hud.c	Hud_UpdateHud	done	crates/zelda3/src/hud.rs	C-shaped HUD update state is ported
+function	hud.c	Hud_LookupInventoryItem	done	crates/zelda3/src/hud.rs	C-shaped HUD-to-item lookup is ported
+function	hud.c	Hud_UpdateEquippedItem	done	crates/zelda3/src/hud.rs	C-shaped equipped item update is ported
+function	hud.c	Hud_CloseMenu	done	crates/zelda3/src/hud.rs	C-shaped menu close state is ported
+function	hud.c	Hud_GotoBottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu transition is ported
+function	hud.c	Hud_InitBottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu init is ported
+function	hud.c	Hud_ExpandBottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu expansion is ported
+function	hud.c	Hud_BottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu state is ported
+function	hud.c	Hud_DrawItem	done	crates/zelda3/src/hud.rs	C-shaped 2x2 item draw helper is ported
+function	hud.c	Hud_DrawNxN	done	crates/zelda3/src/hud.rs	C-shaped NxN tile draw helper is ported
+function	hud.c	Hud_Copy2x2	done	crates/zelda3/src/hud.rs	C-shaped 2x2 copy helper is ported
+function	hud.c	Hud_DrawBox	done	crates/zelda3/src/hud.rs	C-shaped box draw helper is ported
+function	hud.c	Hud_DrawFlashingCircle	done	crates/zelda3/src/hud.rs	C-shaped flashing circle helper is ported
+function	hud.c	Hud_DrawBottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu renderer is ported
+function	hud.c	Hud_DrawBottleMenu_Update	done	crates/zelda3/src/hud.rs	C-shaped bottle menu update renderer is ported
+function	hud.c	Hud_EraseBottleMenu	done	crates/zelda3/src/hud.rs	C-shaped bottle menu erase is ported
+function	hud.c	Hud_RestoreNormalMenu	done	crates/zelda3/src/hud.rs	C-shaped normal menu restore is ported
+function	hud.c	Hud_SearchForEquippedItem	done	crates/zelda3/src/hud.rs	C-shaped equipped item search is ported
+function	hud.c	Hud_GetIconForItem	done	crates/zelda3/src/hud.rs	C-shaped item icon lookup helper is ported
+function	hud.c	CopyTilesForSwitchLR	done	crates/zelda3/src/hud.rs	C-shaped LR tile copy helper is ported
+function	hud.c	Hud_DrawYButtonItems	done	crates/zelda3/src/hud.rs	C-shaped Y button item grid renderer is ported
+function	hud.c	Hud_DrawAbilityBox	done	crates/zelda3/src/hud.rs	C-shaped ability box renderer is ported
+function	hud.c	Hud_DrawProgressIcons	done	crates/zelda3/src/hud.rs	C-shaped progress icon dispatch is ported
+function	hud.c	Hud_DrawProgressIcons_Pendants	done	crates/zelda3/src/hud.rs	C-shaped pendant progress renderer is ported
+function	hud.c	Hud_DrawProgressIcons_Crystals	done	crates/zelda3/src/hud.rs	C-shaped crystal progress renderer is ported
+function	hud.c	Hud_DrawSelectedYButtonItem	done	crates/zelda3/src/hud.rs	C-shaped selected item renderer is ported
+function	hud.c	Hud_DrawEquipmentBox	done	crates/zelda3/src/hud.rs	C-shaped equipment box renderer is ported
+function	hud.c	Hud_IntToDecimal	done	crates/zelda3/src/hud.rs	C-shaped decimal conversion helper is ported
+function	hud.c	Hud_RefillHealth	done	crates/zelda3/src/hud.rs	C-shaped health refill request helper is ported
+function	hud.c	Hud_AnimateHeartRefill	done	crates/zelda3/src/hud.rs	C-shaped heart refill animation is ported
+function	hud.c	Hud_RefillMagicPower	done	crates/zelda3/src/hud.rs	C-shaped magic refill request helper is ported
+function	hud.c	Hud_RestoreTorchBackground	done	crates/zelda3/src/hud.rs	C-shaped torch background restore is ported
+function	hud.c	Hud_RebuildIndoor	done	crates/zelda3/src/hud.rs	C-shaped indoor HUD rebuild wrapper is ported
+function	hud.c	Hud_UpdateItemBox	done	crates/zelda3/src/hud.rs	C-shaped item box update helper is ported
+function	hud.c	Hud_UpdateHearts_Inner	done	crates/zelda3/src/hud.rs	C-shaped heart tile helper is ported
+function	hud.c	DrawHudComponents	done	crates/zelda3/src/hud.rs	C-shaped HUD component copy helper is ported
+function	hud.c	Hud_Update_Hearts	done	crates/zelda3/src/hud.rs	C-shaped heart meter update is ported
+function	hud.c	Hud_Update_Magic	done	crates/zelda3/src/hud.rs	C-shaped magic meter update is ported
+function	hud.c	Hud_Update_Inventory	done	crates/zelda3/src/hud.rs	C-shaped HUD inventory update is ported
+function	hud.c	Hud_Rebuild	done	crates/zelda3/src/hud.rs	C-shaped HUD rebuild is ported
+function	hud.c	Hud_GetItemBoxPtr	done	crates/zelda3/src/hud.rs	C-shaped item box pointer helper is ported as icon lookup
+function	hud.c	Hud_HandleItemSwitchInputs	done	crates/zelda3/src/hud.rs	C-shaped LR item switch input handler is ported
+function	hud.c	Hud_ReorderItem	done	crates/zelda3/src/hud.rs	C-shaped item reorder helper is ported
+module	dungeon.c	*	partial	crates/zelda3/src/dungeon.rs	room header/floors/object subset/upload scaffold are active
+function	dungeon.c	Dungeon_LoadHeader	done	crates/zelda3/src/dungeon.rs	C-shaped room header load, palette selection, saved room state, door info, and adjacent-door scan are ported
+function	dungeon.c	Dungeon_CheckAdjacentRoomsForOpenDoors	done	crates/zelda3/src/dungeon.rs	C-shaped adjacent-room open-door reconciliation is ported
+function	dungeon.c	Dungeon_LoadAdjacentRoomDoors	done	crates/zelda3/src/dungeon.rs	C-shaped adjacent door list and opened flags load is ported
+function	dungeon.c	SetAndSaveVisitedQuadrantFlags	partial	crates/zelda3/src/dungeon.rs	active Module_PreDungeon room quadrant save state is ported
+function	dungeon.c	Dungeon_LoadAttribute_Selectable	done	crates/zelda3/src/dungeon.rs	C-shaped incremental dungeon attribute loader state machine is ported
+function	dungeon.c	Dungeon_LoadAttributeTable	partial	crates/zelda3/src/dungeon.rs	active tile attribute table load is ported for the gameplay-entry room
+function	dungeon.c	Dungeon_LoadBasicAttribute_full	done	crates/zelda3/src/dungeon.rs	C-shaped BG2 tile attribute table fill loop is ported
+function	dungeon.c	Dungeon_LoadObjectAttribute	partial	crates/zelda3/src/dungeon.rs	active misc-object and chest attribute overrides are ported for room 0x104
+function	dungeon.c	Dungeon_LoadDoorAttribute	done	crates/zelda3/src/dungeon.rs	C-shaped door attribute dispatcher, toggle-door attributes, and door-switch assert are ported
+function	dungeon.c	Dungeon_LoadSingleDoorAttribute	done	crates/zelda3/src/dungeon.rs	C-shaped regular, closed, large, cave, waterfall, and wide door attribute branches are ported
+function	dungeon.c	Door_LoadBlastWallAttr	done	crates/zelda3/src/dungeon.rs	C-shaped blast-wall attribute fill helper is ported
+function	dungeon.c	ChangeDoorToSwitch	done	crates/zelda3/src/dungeon.rs	C-shaped dung_unk5 invariant assert is ported
+function	dungeon.c	Dungeon_FlipCrystalPegAttribute	done	crates/zelda3/src/dungeon.rs	C-shaped orange/blue barrier attr flip loop is ported
+function	dungeon.c	Dungeon_LoadSingleDoorTileAttribute	done	crates/zelda3/src/dungeon.rs	C-shaped toggle floor and toggle palace door tile attributes are ported
+function	dungeon.c	Dung_TagRoutine_0x00	done	crates/zelda3/src/dungeon.rs	C empty room-tag routine is ported
+function	dungeon.c	Dungeon_DetectStaircase	done	crates/zelda3/src/dungeon.rs	C-shaped staircase tile detection and transition setup are ported
+function	dungeon.c	RoomTag_MovingWall_East	done	crates/zelda3/src/dungeon.rs	C-shaped east-moving wall tag routine is ported
+function	dungeon.c	RoomTag_MovingWallShakeItUp	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall shake offset helper is ported
+function	dungeon.c	RoomTag_MovingWall_West	done	crates/zelda3/src/dungeon.rs	C-shaped west-moving wall tag routine is ported
+function	dungeon.c	RoomTag_MovingWallTorchesCheck	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall torch gate helper is ported
+function	dungeon.c	MovingWall_MoveALittle	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall subpixel velocity helper is ported
+function	dungeon.c	RoomTag_AdvanceGiganticWall	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall target advance helper is ported
+function	dungeon.c	Dungeon_CheckForAndIDLiftableTile	partial	crates/zelda3/src/dungeon.rs	indoor liftable tile classification is ported for Link_HandleLiftables action selection
+function	dungeon.c	OpenChestForItem	partial	crates/zelda3/src/dungeon.rs	normal and big dungeon chest lookup, save bits, tile attribute updates, and VRAM upload staging are started
+function	dungeon.c	OpenBigChest	partial	crates/zelda3/src/dungeon.rs	big chest tile and attribute replacement side effects are started
+function	dungeon.c	UsedForStraightInterRoomStaircase	done	crates/zelda3/src/dungeon.rs	C-shaped straight staircase setup helper is ported
+function	dungeon.c	Dungeon_MapVramAddr	done	crates/zelda3/src/dungeon.rs	C-shaped swapped dungeon VRAM address mapper is ported
+function	dungeon.c	Dungeon_LoadEntrance	partial	crates/zelda3/src/dungeon.rs	entrance table state for current attract room
+function	dungeon.c	Dungeon_LoadRoom	partial	crates/zelda3/src/dungeon.rs	dungeon_load_room_stub has header/reset/floor/object subset
+function	dungeon.c	RoomDraw_DrawAllObjects	partial	crates/zelda3/src/dungeon.rs	default layout and three room layers use the C-style live dung_load_ptr_offs; active frontier now matches load_ptr=$0120
+function	dungeon.c	LoadType1ObjectSubtype1	partial	crates/zelda3/src/dungeon.rs	room 51 and room 0x104 active object subset is ported; thin rail helpers 0x22 and 0x69 match C guard/cap behavior; lower-layer line pointer/tile parity still active
+function	dungeon.c	LoadType1ObjectSubtype2	partial	crates/zelda3/src/dungeon.rs	room 0x104 active object subset 0x23, 0x28, and 0x29 is ported
+function	dungeon.c	Object_Fill_Nx1	done	crates/zelda3/src/dungeon.rs	C-shaped single-row fill helper ported
+function	dungeon.c	Object_Draw_5x4	done	crates/zelda3/src/dungeon.rs	C-shaped 5x4 object writer ported
+function	dungeon.c	Object_Draw_4x2_BothBgs	done	crates/zelda3/src/dungeon.rs	C-shaped 4x2 dual-BG object writer ported
+function	dungeon.c	Object_ChestPlatform_Helper	partial	crates/zelda3/src/dungeon.rs	ported as RoomDraw_Chest_platform_row while Rust still passes width explicitly
+function	dungeon.c	Object_Hole	done	crates/zelda3/src/dungeon.rs	C-shaped 4-way hole fill and edge overlay helper ported
+function	dungeon.c	RoomDraw_Downwards4x2VariableSpacing	partial	crates/zelda3/src/dungeon.rs	C loop shape is ported with explicit count in Rust instead of global dung_draw_width_indicator
+table	dungeon.c	kObjectSubtype1Params	done	crates/zelda3/src/dungeon.rs	full 256-entry C table is ported
+table	dungeon.c	kObjectSubtype2Params	done	crates/zelda3/src/dungeon.rs	full 64-entry C table is ported
+table	dungeon.c	kObjectSubtype3Params	done	crates/zelda3/src/dungeon.rs	full 128-entry C table is ported
+function	dungeon.c	RoomData_DrawObject_Door	partial	crates/zelda3/src/dungeon.rs	all four direction dispatches are wired; exotic explosion/large entrance cases remain in follow-up door pass
+function	dungeon.c	RoomDraw_Door_North	partial	crates/zelda3/src/dungeon.rs	C-shaped north door routing is ported except exploding-wall and stair-mask locked branches
+function	dungeon.c	RoomDraw_Door_South	partial	crates/zelda3/src/dungeon.rs	C-shaped south door routing covers toggle, exit, normal, lower shutter, and fallback helper branches
+function	dungeon.c	RoomDraw_Door_West	partial	crates/zelda3/src/dungeon.rs	C-shaped west door routing covers toggle, normal, waterfall, and high-range branches
+function	dungeon.c	RoomDraw_Door_East	partial	crates/zelda3/src/dungeon.rs	C-shaped east door routing covers toggle, normal, and lower-shutter branches
+function	dungeon.c	Door_PrioritizeCurDoor	done	crates/zelda3/src/dungeon.rs	C-shaped current door priority flagging helper is ported
+function	dungeon.c	RoomDraw_NormalRangedDoors_North	done	crates/zelda3/src/dungeon.rs	C-shaped paired lower-door probe and north one-sided shutter dispatch are ported
+function	dungeon.c	RoomDraw_OneSidedShutters_North	done	crates/zelda3/src/dungeon.rs	C-shaped final-type remap and north 4x3 tile draw are ported
+function	dungeon.c	RoomDraw_CheckIfLowerLayerDoors_Y	done	crates/zelda3/src/dungeon.rs	C-shaped south/lower regular2 and waterfall priority routing is ported
+function	dungeon.c	RoomDraw_NormalRangedDoors_West	done	crates/zelda3/src/dungeon.rs	C-shaped paired east-door probe, remap, and west 3x4 tile draw are ported
+function	dungeon.c	RoomDraw_NormalRangedDoors_East	done	crates/zelda3/src/dungeon.rs	C-shaped regular2 priority and east one-sided shutter dispatch are ported
+function	dungeon.c	RoomDraw_OneSidedShutters_East	done	crates/zelda3/src/dungeon.rs	C-shaped east final-type remap and 3x4 tile draw are ported
+function	dungeon.c	RoomDraw_NorthCurtainDoor	done	crates/zelda3/src/dungeon.rs	C-shaped slashable north curtain door draw branch is ported
+function	dungeon.c	RoomDraw_HighRangeDoor_North	done	crates/zelda3/src/dungeon.rs	C-shaped north high-range/lower-layer shutter tile draw and priority handling is ported
+function	dungeon.c	RoomDraw_OneSidedLowerShutters_South	done	crates/zelda3/src/dungeon.rs	C-shaped south lower-layer shutter draw and priority handling is ported
+function	dungeon.c	RoomDraw_HighRangeDoor_West	done	crates/zelda3/src/dungeon.rs	C-shaped west high-range/lower-layer shutter tile draw and priority handling is ported
+function	dungeon.c	RoomDraw_OneSidedLowerShutters_East	done	crates/zelda3/src/dungeon.rs	C-shaped east lower-layer shutter draw and priority handling is ported
+function	dungeon.c	RoomDraw_MakeDoorHighPriority_North	done	crates/zelda3/src/dungeon.rs	C-shaped north door priority sweep is ported
+function	dungeon.c	RoomDraw_MakeDoorHighPriority_South	done	crates/zelda3/src/dungeon.rs	C-shaped south door priority sweep is ported
+function	dungeon.c	RoomDraw_MakeDoorHighPriority_West	done	crates/zelda3/src/dungeon.rs	C-shaped west door priority sweep is ported
+function	dungeon.c	RoomDraw_MakeDoorHighPriority_East	done	crates/zelda3/src/dungeon.rs	C-shaped east door priority sweep is ported
+function	dungeon.c	RoomDraw_MarkLayerToggleDoor	done	crates/zelda3/src/dungeon.rs	C-shaped layer-toggle door position registration is ported
+function	dungeon.c	RoomDraw_FlagDoorsAndGetFinalType	done	crates/zelda3/src/dungeon.rs	C-shaped door slot registration, opened remap, invisible-door state, and carry-style return are ported
+function	dungeon.c	RoomDraw_MakeDoorPartsHighPriority_Y	done	crates/zelda3/src/dungeon.rs	C-shaped vertical door-parts priority helper is ported
+function	dungeon.c	RoomDraw_MakeDoorPartsHighPriority_X	done	crates/zelda3/src/dungeon.rs	C-shaped horizontal door-parts priority helper is ported
+function	dungeon.c	Object_DrawNx3_BothBgs	done	crates/zelda3/src/dungeon.rs	exact two-background Nx3 object draw helper is ported
+function	dungeon.c	Object_BombableFloorHelper	done	crates/zelda3/src/dungeon.rs	misc object registration, replacement tile snapshots, tilemap position, and 2x2 draw are ported
+function	dungeon.c	LoadType1ObjectSubtype3	partial	crates/zelda3/src/dungeon.rs	water faces, cane nodes, prison/cell/chest, stairs, big decors, lamps, Agahnim windows, big chest, pipes, water troughs, floor lights, boss entrance, triforce, and vitreous drawing cases are ported
+function	dungeon.c	RoomData_DrawObject	partial	crates/zelda3/src/dungeon.rs	type1/type2/type3 dispatch, object coordinates, and load pointer advancement are ported with Rust layout slices
+function	dungeon.c	RoomDraw_DrawFloors	partial	crates/zelda3/src/dungeon.rs	BG1/BG2 floor filler selection and quadrant floor draws are ported through Rust room layout lookup
+function	dungeon.c	RoomDraw_FloorChunks	partial	crates/zelda3/src/dungeon.rs	quadrant floor chunk iteration is ported with explicit background base
+function	dungeon.c	RoomDraw_A_Many32x32Blocks	done	crates/zelda3/src/dungeon.rs	4x2 twice per 32x32 block helper is ported
+function	dungeon.c	RoomDraw_1x3_rightwards	done	crates/zelda3/src/dungeon.rs	N-column 1x3 rightward helper is ported
+function	dungeon.c	RoomDraw_CheckIfWallIsMoved	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall save-bit/tag/collision reset helper is ported
+function	dungeon.c	MovingWall_FillReplacementBuffer	done	crates/zelda3/src/dungeon.rs	C-shaped moving wall replacement buffer initialization is ported
+function	dungeon.c	Object_Table_Helper	done	crates/zelda3/src/dungeon.rs	table row edge/fill helper is ported
+function	dungeon.c	DrawWaterThing	done	crates/zelda3/src/dungeon.rs	4x4 water tile copy helper is ported
+function	dungeon.c	RoomDraw_4x4	done	crates/zelda3/src/dungeon.rs	4-column Nx4 wrapper is ported
+function	dungeon.c	RoomDraw_Object_Nx4	done	crates/zelda3/src/dungeon.rs	N-column 4-high object draw helper is ported
+function	dungeon.c	Object_DrawNx4_BothBgs	done	crates/zelda3/src/dungeon.rs	N-column 4-high two-background draw helper is ported
+function	dungeon.c	RoomDraw_Rightwards2x2	done	crates/zelda3/src/dungeon.rs	2x2 rightward object helper is ported
+function	dungeon.c	Object_Draw_3x2	done	crates/zelda3/src/dungeon.rs	3x2 object draw helper is ported
+function	dungeon.c	RoomDraw_WaterHoldingObject	done	crates/zelda3/src/dungeon.rs	N-row 4-wide water-holding object helper is ported
+function	dungeon.c	RoomDraw_SomeBigDecors	done	crates/zelda3/src/dungeon.rs	BG2 eight-row big decor copy helper is ported
+function	dungeon.c	RoomDraw_SingleLampCone	done	crates/zelda3/src/dungeon.rs	12x12 BG1 lamp cone copy helper is ported
+function	dungeon.c	RoomDraw_AgahnimsWindows	done	crates/zelda3/src/dungeon.rs	Agahnim room window and priority tile drawing is ported
+function	dungeon.c	Dungeon_PrepareNextRoomQuadrantUpload	partial	crates/zelda3/src/dungeon.rs	prepare_room_quadrant_upload mirrors the bulk copy shape
+function	dungeon.c	RoomBounds_AddA	done	crates/zelda3/src/dungeon.rs	C-shaped room-bound A increment helper is ported
+function	dungeon.c	RoomBounds_AddB	done	crates/zelda3/src/dungeon.rs	C-shaped room-bound B increment helper is ported
+function	dungeon.c	RoomBounds_SubB	done	crates/zelda3/src/dungeon.rs	C-shaped room-bound B decrement helper is ported
+function	dungeon.c	RoomBounds_SubA	done	crates/zelda3/src/dungeon.rs	C-shaped room-bound A decrement helper is ported
+function	dungeon.c	Dungeon_Store2x2	done	crates/zelda3/src/dungeon.rs	C-shaped tile/attribute/VRAM-upload 2x2 store helper is ported
+function	dungeon.c	Dungeon_MapVramAddrNoSwap	done	crates/zelda3/src/dungeon.rs	C-shaped unswapped dungeon VRAM address mapper is ported
+function	dungeon.c	Dungeon_GetTeleMsg	done	crates/zelda3/src/dungeon.rs	C-shaped dungeon telemessage asset lookup is ported
+function	dungeon.c	Dungeon_IsPitThatHurtsPlayer	done	crates/zelda3/src/dungeon.rs	C-shaped hurting-pit room lookup is ported from asset table
+function	dungeon.c	Door_Up_EntranceDoor	done	crates/zelda3/src/dungeon.rs	C assert-only entrance-door stub is ported as panic
+function	dungeon.c	Door_Down_EntranceDoor	done	crates/zelda3/src/dungeon.rs	C assert-only entrance-door stub is ported as panic
+function	dungeon.c	Door_Left_EntranceDoor	done	crates/zelda3/src/dungeon.rs	C assert-only entrance-door stub is ported as panic
+function	dungeon.c	Door_Right_EntranceDoor	done	crates/zelda3/src/dungeon.rs	C assert-only entrance-door stub is ported as panic
+function	dungeon.c	Door_Draw_Helper4	partial	crates/zelda3/src/dungeon.rs	C-shaped lower-layer door draw helper is ported for existing door table paths
+function	dungeon.c	Dung_TagRoutine_0x22_0x3B	done	crates/zelda3/src/dungeon.rs	C-shaped save-bit overlay trigger helper is ported
+function	dungeon.c	Sprite_HandlePushedBlocks_One	done	crates/zelda3/src/dungeon.rs	C-shaped pushed-block OAM helper is ported
+function	dungeon.c	Object_Draw_DoorLeft_3x4	done	crates/zelda3/src/dungeon.rs	C-shaped left door tile writer is ported
+function	dungeon.c	Object_Draw_DoorRight_3x4	done	crates/zelda3/src/dungeon.rs	C-shaped right door tile writer is ported
+function	dungeon.c	WaterFlood_BuildOneQuadrantForVRAM	done	crates/zelda3/src/dungeon.rs	C-shaped water flood quadrant upload entry is ported with the non-water tag assertion and helper dispatch
+function	dungeon.c	TileMapPrep_NotWaterOnTag	done	crates/zelda3/src/dungeon.rs	C-shaped BG1 quadrant VRAM preparation helper is ported through the shared upload copier
+function	dungeon.c	OrientLampLightCone	done	crates/zelda3/src/dungeon.rs	C-shaped dark-room lamp cone BG1 offset orientation is ported
+function	dungeon.c	SavePalaceDeaths	done	crates/zelda3/src/dungeon.rs	C-shaped palace death counter save/reset helper is ported
+module	tile_detect.c	*	done	crates/zelda3/src/zelda_rtl.rs	full tile probe cluster is ported with C-shaped names and active callers wired
+function	tile_detect.c	TileDetect_Movement_Y	done	crates/zelda3/src/zelda_rtl.rs	vertical movement probe matches C offsets and scratch writes
+function	tile_detect.c	TileDetect_Movement_X	done	crates/zelda3/src/zelda_rtl.rs	horizontal movement probe matches C offsets and scratch writes
+function	tile_detect.c	TileDetect_Movement_VerticalSlopes	done	crates/zelda3/src/zelda_rtl.rs	vertical slope probe matches C offsets
+function	tile_detect.c	TileDetect_Movement_HorizontalSlopes	done	crates/zelda3/src/zelda_rtl.rs	horizontal slope probe matches C offsets
+function	tile_detect.c	Player_TileDetectNearby	done	crates/zelda3/src/zelda_rtl.rs	nearby four-corner probe matches C offsets and scratch writes
+function	tile_detect.c	Hookshot_CheckTileCollision	done	crates/zelda3/src/zelda_rtl.rs	hookshot layer toggle and collision probe are ported
+function	tile_detect.c	Hookshot_CheckSingleLayerTileCollision	done	crates/zelda3/src/zelda_rtl.rs	hookshot single-layer probe is ported
+function	tile_detect.c	HandleNudgingInADoor	done	crates/zelda3/src/zelda_rtl.rs	door nudge probe and coordinate rollback are ported
+function	tile_detect.c	TileCheckForMirrorBonk	done	crates/zelda3/src/zelda_rtl.rs	mirror bonk four-corner probe is ported and wired
+function	tile_detect.c	TileDetect_SwordSwingDeepInDoor	done	crates/zelda3/src/zelda_rtl.rs	sword-in-door probe is ported and wired
+function	player.c	TileDetect_MainHandler	partial	crates/zelda3/src/zelda_rtl.rs	main tile probe now handles item routing plus terrain tail side effects for grass, shallow/deep water, spike triggers, ice sliding, and cactus blink timers
+function	player.c	Link_PermissionForSloshSounds	done	crates/zelda3/src/zelda_rtl.rs	frame-gated slosh sound permission helper is ported for TileDetect_MainHandler terrain sounds
+function	player.c	SearchForByrnaSpark	done	crates/zelda3/src/zelda_rtl.rs	Byrna spark ancilla scan is ported for spike-floor damage immunity
+function	tile_detect.c	Overworld_GetTileAttributeAtLocation	done	crates/zelda3/src/zelda_rtl.rs	outdoor tile probes now map WRAM Map16 through kMap16ToMap8 and kMap8DataToTileAttr
+function	tile_detect.c	TileDetect_ResetState	done	crates/zelda3/src/zelda_rtl.rs	reset clears the full C tile-detect scratch/state set
+function	tile_detect.c	TileDetection_Execute	done	crates/zelda3/src/zelda_rtl.rs	indoor/outdoor tile lookup and inner dispatch are ported
+function	tile_detect.c	TileDetect_ExecuteInner	done	crates/zelda3/src/zelda_rtl.rs	indoor/overworld tile behavior side effects are ported
+module	nmi.c	*	done	crates/zelda3/src/nmi.rs	full NMI update and VRAM upload dispatch cluster is ported with C-shaped entry names
+function	nmi.c	NMI_UploadSubscreenOverlayFormer	done	crates/zelda3/src/nmi.rs	C-shaped former subscreen overlay upload is ported
+function	nmi.c	NMI_UploadSubscreenOverlayLatter	done	crates/zelda3/src/nmi.rs	C-shaped latter subscreen overlay upload is ported
+function	nmi.c	CopyToVram	done	crates/zelda3/src/nmi.rs	C-shaped flat VRAM byte copy helper is ported
+function	nmi.c	CopyToVramVertical	done	crates/zelda3/src/nmi.rs	C-shaped vertical VRAM copy helper is ported
+function	nmi.c	CopyToVramLow	done	crates/zelda3/src/nmi.rs	C-shaped low-byte VRAM copy helper is ported
+function	nmi.c	WritePpuRegisters	done	crates/zelda3/src/zelda_rtl.rs	C-shaped PPU register write landing point is ported
+function	nmi.c	Interrupt_NMI_AudioParts_Locked	done	crates/zelda3/src/nmi.rs	C-shaped NMI audio bookkeeping is ported
+function	nmi.c	Interrupt_NMI	done	crates/zelda3/src/nmi.rs	C-shaped NMI entry dispatcher is ported
+function	nmi.c	NMI_ReadJoypads	done	crates/zelda3/src/nmi.rs	C-shaped joypad bit reversal and edge filter is ported
+function	nmi.c	NMI_DoUpdates	done	crates/zelda3/src/nmi.rs	C-shaped NMI update dispatcher is ported
+function	nmi.c	NMI_UploadTilemap	done	crates/zelda3/src/nmi.rs	C-shaped tilemap upload is ported
+function	nmi.c	NMI_UploadTilemap_doNothing	done	crates/zelda3/src/nmi.rs	C-shaped no-op tilemap subroutine is ported
+function	nmi.c	NMI_UploadBG3Text	done	crates/zelda3/src/nmi.rs	C-shaped BG3 text upload is ported
+function	nmi.c	NMI_UpdateOWScroll	done	crates/zelda3/src/nmi.rs	C-shaped overworld scroll packet upload is ported
+function	nmi.c	NMI_UpdateSubscreenOverlay	done	crates/zelda3/src/nmi.rs	C-shaped subscreen overlay upload is ported
+function	nmi.c	NMI_HandleArbitraryTileMap	done	crates/zelda3/src/nmi.rs	C-shaped arbitrary tilemap uploader is ported
+function	nmi.c	NMI_UpdateBG1Wall	done	crates/zelda3/src/nmi.rs	C-shaped BG1 wall vertical upload is ported
+function	nmi.c	NMI_TileMapNothing	done	crates/zelda3/src/nmi.rs	C-shaped tilemap no-op is ported
+function	nmi.c	NMI_UpdateLoadLightWorldMap	done	crates/zelda3/src/nmi.rs	C-shaped light-world map low-byte upload is ported
+function	nmi.c	NMI_UpdateBG2Left	done	crates/zelda3/src/nmi.rs	C-shaped BG2 left upload is ported
+function	nmi.c	NMI_UpdateBGChar3and4	done	crates/zelda3/src/nmi.rs	C-shaped BG char 3/4 upload is ported
+function	nmi.c	NMI_UpdateBGChar5and6	done	crates/zelda3/src/nmi.rs	C-shaped BG char 5/6 upload is ported
+function	nmi.c	NMI_UpdateBGCharHalf	done	crates/zelda3/src/nmi.rs	C-shaped half BG char upload is ported
+function	nmi.c	NMI_UpdateBGChar0	done	crates/zelda3/src/nmi.rs	C-shaped BG char 0 DMA dispatch is ported
+function	nmi.c	NMI_UpdateBGChar1	done	crates/zelda3/src/nmi.rs	C-shaped BG char 1 DMA dispatch is ported
+function	nmi.c	NMI_UpdateBGChar2	done	crates/zelda3/src/nmi.rs	C-shaped BG char 2 DMA dispatch is ported
+function	nmi.c	NMI_UpdateBGChar3	done	crates/zelda3/src/nmi.rs	C-shaped BG char 3 DMA dispatch is ported
+function	nmi.c	NMI_UpdateObjChar0	done	crates/zelda3/src/nmi.rs	C-shaped object char 0 upload is ported
+function	nmi.c	NMI_UpdateObjChar2	done	crates/zelda3/src/nmi.rs	C-shaped object char 2 DMA dispatch is ported
+function	nmi.c	NMI_UpdateObjChar3	done	crates/zelda3/src/nmi.rs	C-shaped object char 3 DMA dispatch is ported
+function	nmi.c	NMI_RunTileMapUpdateDMA	done	crates/zelda3/src/nmi.rs	C-shaped tilemap update DMA helper is ported
+function	nmi.c	NMI_UploadDarkWorldMap	done	crates/zelda3/src/nmi.rs	C-shaped dark-world map low-byte upload is ported
+function	nmi.c	NMI_UploadGameOverText	done	crates/zelda3/src/nmi.rs	C-shaped game-over text upload is ported
+function	nmi.c	NMI_UpdatePegTiles	done	crates/zelda3/src/nmi.rs	C-shaped peg tile upload is ported
+function	nmi.c	NMI_UpdateStarTiles	done	crates/zelda3/src/nmi.rs	C-shaped star tile upload is ported
+function	nmi.c	HandleStripes14	done	crates/zelda3/src/nmi.rs	C-shaped stripe packet handler is ported
+function	nmi.c	NMI_UpdateIRQGFX	done	crates/zelda3/src/nmi.rs	C-shaped IRQ graphics upload is ported
+table	misc.c	kReceiveItem_Tab1	done	crates/zelda3/src/zelda_rtl.rs	item receipt positioning table is ported for the AncillaAdd_ItemReceipt cluster
+table	misc.c	kReceiveItem_Tab2	done	crates/zelda3/src/zelda_rtl.rs	item receipt positioning table is ported for chest and non-chest item placements
+table	misc.c	kReceiveItem_Tab3	done	crates/zelda3/src/zelda_rtl.rs	item receipt positioning table is ported for chest and non-chest item placements
+module	poly.c	*	done	crates/zelda3/src/zelda_rtl.rs	C-shaped polyhedral raster cluster is ported
+function	poly.c	Poly_Divide	done	crates/zelda3/src/zelda_rtl.rs	C-shaped signed divide helper is ported
+function	poly.c	Poly_RunFrame	done	crates/zelda3/src/zelda_rtl.rs	C-shaped poly frame driver is ported
+function	poly.c	Polyhedral_SetShapePointer	done	crates/zelda3/src/zelda_rtl.rs	C-shaped model pointer setup is ported
+function	poly.c	Polyhedral_SetRotationMatrix	done	crates/zelda3/src/zelda_rtl.rs	C-shaped rotation matrix setup is ported
+function	poly.c	Polyhedral_OperateRotation	done	crates/zelda3/src/zelda_rtl.rs	C-shaped vertex rotation loop is ported
+function	poly.c	Polyhedral_RotatePoint	done	crates/zelda3/src/zelda_rtl.rs	C-shaped point rotation helper is ported
+function	poly.c	Polyhedral_ProjectPoint	done	crates/zelda3/src/zelda_rtl.rs	C-shaped projection helper is ported
+function	poly.c	Polyhedral_DrawPolyhedron	done	crates/zelda3/src/zelda_rtl.rs	C-shaped face dispatch is ported
+function	poly.c	Polyhedral_SetForegroundColor	done	crates/zelda3/src/zelda_rtl.rs	C-shaped foreground color selection is ported
+function	poly.c	Polyhedral_CalculateCrossProduct	done	crates/zelda3/src/zelda_rtl.rs	C-shaped cross product helper is ported
+function	poly.c	Polyhedral_SetColorMask	done	crates/zelda3/src/zelda_rtl.rs	C-shaped color mask helper is ported
+function	poly.c	Polyhedral_EmptyBitMapBuffer	done	crates/zelda3/src/zelda_rtl.rs	C-shaped bitmap clear is ported
+function	poly.c	Polyhedral_DrawFace	done	crates/zelda3/src/zelda_rtl.rs	C-shaped face rasterizer is ported
+function	poly.c	Polyhedral_FillLine	done	crates/zelda3/src/zelda_rtl.rs	C-shaped scanline fill is ported
+function	poly.c	Polyhedral_SetLeft	done	crates/zelda3/src/zelda_rtl.rs	C-shaped left edge walker is ported
+function	poly.c	Polyhedral_SetRight	done	crates/zelda3/src/zelda_rtl.rs	C-shaped right edge walker is ported
+module	player_oam.c	*	done	crates/zelda3/src/player_oam.rs	full table-backed Link OAM C cluster ported with C function names and minimal route implementation removed
+function	player_oam.c	PlayerOam_WantInvokeSword	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	CalculateSwordHitBox	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_Main	done	crates/zelda3/src/player_oam.rs	full table-backed C Link OAM dispatcher ported
+function	player_oam.c	FindMostSignificantBit	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_SetWeaponVRAMOffsets	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_SetEquipmentVRAMOffsets	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_CalculateSwordSparklePosition	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_UnusedWeaponSettings	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_DrawDungeonFallShadow	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_DrawFootObject	done	crates/zelda3/src/player_oam.rs	direct C logic port
+function	player_oam.c	LinkOam_CalculateXOffsetRelativeLink	done	crates/zelda3/src/player_oam.rs	direct C logic port
+table	player_oam.c	kLinkDmaGraphicsIndices	done	crates/zelda3/src/player_oam.rs	mechanically generated from C table
+table	player_oam.c	kLinkSpriteBodys	done	crates/zelda3/src/player_oam.rs	mechanically generated from C table
+function	player.c	Link_Main	done	crates/zelda3/src/zelda_rtl.rs	C frame player entry now copies previous coordinates, clears flag_unk1, dispatches control when mobile, and runs the Somaria/grave tail call
+function	player.c	Link_ControlHandler	done	crates/zelda3/src/zelda_rtl.rs	damage/cape/death handling and C player-state dispatch table are ported
+function	player.c	LinkState_Default	done	crates/zelda3/src/zelda_rtl.rs	outdoor camera cache, bunny transform gate, fallhole reset, auxiliary recoil dispatch, and ground handler dispatch are ported
+function	player.c	HandleLink_From1D	done	crates/zelda3/src/zelda_rtl.rs	auxiliary-state cleanup, electrocution branch, and recoil-state branch are ported
+function	player.c	Link_HandleBunnyTransformation	done	crates/zelda3/src/zelda_rtl.rs	temp-bunny countdown, poof ancilla setup, dash cancel, palette switch, and damage/visibility gates are ported
+function	player.c	LinkState_TemporaryBunny	done	crates/zelda3/src/zelda_rtl.rs	temp-bunny countdown, return-to-Link poof, palette restore, reset, and bunny handler dispatch are ported
+function	player.c	PlayerHandler_17_Bunny	done	crates/zelda3/src/zelda_rtl.rs	bunny camera/fallhole/deep-water/moon-pearl routing is ported
+function	player.c	Link_TempBunny_Func2	done	crates/zelda3/src/zelda_rtl.rs	bunny movement, item dispatch, swim-moving branch, collision, animation, and camera tail are ported
+function	player.c	LinkState_HoldingBigRock	done	crates/zelda3/src/zelda_rtl.rs	big-rock auxiliary cleanup, zapped/recoil branch, incapacitated cleanup, A-press, movement direction, animation, and camera tail are ported
+function	player.c	HandleSomariaAndGraves	done	crates/zelda3/src/zelda_rtl.rs	outdoor hookshot gravestone scan and Somaria block interaction scan are ported
+function	player.c	EtherTablet_StartCutscene	done	crates/zelda3/src/zelda_rtl.rs	Ether tablet cutscene timer, handler state, damage disable, menu block, and spin timer clear are ported
+function	player.c	LinkState_ReceivingEther	done	crates/zelda3/src/zelda_rtl.rs	Ether receipt timer, sword hold, temporary spell spawn coordinates, falling prize, immobilize, and menu unblock are ported
+function	player.c	BombosTablet_StartCutscene	done	crates/zelda3/src/zelda_rtl.rs	Bombos tablet cutscene timer, handler state, damage disable, custom spell flag, and spin timer clear are ported
+function	player.c	LinkState_ReceivingBombos	done	crates/zelda3/src/zelda_rtl.rs	Bombos receipt timer, sword hold, temporary spell spawn coordinates, falling prize, and immobilize are ported
+function	player.c	LinkState_ReadingDesertTablet	done	crates/zelda3/src/zelda_rtl.rs	tablet countdown and desert-prayer transition are ported
+function	player.c	LinkState_Pits	done	crates/zelda3/src/zelda_rtl.rs	pit hover, dash escape, pit-edge steering, fall animation, bunny reset, indoor/outdoor destination handoff, and damage branch are ported
+function	player.c	HandleDungeonLandingFromPit	done	crates/zelda3/src/zelda_rtl.rs	dungeon pit landing OAM, target-Y travel, visibility, animation, speed, submodule, and damage-disable cleanup are ported
+function	player.c	LinkState_Recoil	done	crates/zelda3/src/zelda_rtl.rs	safe-return cache, Z velocity change, deep-water landing branch, recoilmode timer, and recoil timer tail dispatch are ported
+function	player.c	Link_HandleRecoilAndTimer	done	crates/zelda3/src/zelda_rtl.rs	recoil timer decrement, landing cleanup, water/grass/pit probes, direction/collision/movement tail, and camera handling are ported
+function	player.c	LinkState_OnIce	done	crates/zelda3/src/zelda_rtl.rs	C assert-only handler is represented as an unreachable panic
+function	player.c	LinkState_0F	done	crates/zelda3/src/zelda_rtl.rs	C assert-only handler is represented as an unreachable panic
+function	player.c	LinkState_Dashing	done	crates/zelda3/src/zelda_rtl.rs	dash bunny/auxiliary gates, countdown, SFX, follower toggle, dash startup, turn/stop logic, movement, collision, and camera tail are ported
+function	player.c	Link_HandleYItem	done	crates/zelda3/src/player.rs	Y-item gating, special-button item lookup, active-item switching, rod selection, dispatch, and input restore are ported
+function	player.c	LinkItem_Bottle	done	crates/zelda3/src/player.rs	bottle Y-press gate, empty/fail sound, red-potion menu/refill setup, green-potion message setup, and bottle consume are ported
+function	player.c	Link_HandleSwordCooldown	done	crates/zelda3/src/zelda_rtl.rs	sword cooldown decrement, item/position guard, sword swing dispatch, and charged-control dispatch are ported
+function	player.c	HandleSwordSfxAndBeam	done	crates/zelda3/src/zelda_rtl.rs	sword swing reset, full-health beam spawn gate, fire-beam sound table, and spin delay setup are ported
+function	player.c	Link_CheckForSwordSwing	done	crates/zelda3/src/zelda_rtl.rs	new B-press gate, doorway guard, sword timing, sparkle/tile probes, repeated swing restart, and hitbox tail are ported
+function	player.c	HandleSwordControls	done	crates/zelda3/src/zelda_rtl.rs	B-hold spin charge routing, early reset, and charged spin activation are ported
+function	player.c	Player_Sword_SpinAttackJerks_HoldDown	done	crates/zelda3/src/zelda_rtl.rs	spin charge hold, wall tap, charge sparkle, charge sound, and hitbox tail are ported
+function	player.c	Link_APress_LiftCarryThrow	done	crates/zelda3/src/zelda_rtl.rs	lift/carry/throw animation timer progression, halt behavior, state transition, velocity clears, and button cleanup are ported
+function	player.c	Link_PerformThrow	done	crates/zelda3/src/zelda_rtl.rs	throw/lift initiation, sprite-slot guard, liftable attr lookup, throwable terrain spawn handoff, joypad clear, and pickup animation setup are ported
+function	player.c	Link_ActivateSpinAttack	done	crates/zelda3/src/zelda_rtl.rs	spin attack init spark dispatch and victory spin transition are ported
+function	player.c	Link_AnimateVictorySpin	done	crates/zelda3/src/zelda_rtl.rs	spin animation offsets, state/timer setup, button lock, and immediate state dispatch are ported
+function	player.c	LinkState_SpinAttack	done	crates/zelda3/src/zelda_rtl.rs	spin attack auxiliary cleanup, recoil/zap branch, movement/collision tail, timer, SFX, graphics table, and tile probe are ported
+function	player.c	LinkHop_HoppingSouthOW	done	crates/zelda3/src/zelda_rtl.rs	south ledge hop setup, landing tile probe, mirror-Z restore/update, landing cleanup, pit/water handling, and lower-layer reset are ported
+function	player.c	LinkState_HandlingJump	done	crates/zelda3/src/zelda_rtl.rs	jump Z integration, landing water/pit probe, splash/SFX branch, bunny damage guard, scroll/Z/timer cleanup, and mirror updates are ported
+function	player.c	LinkHop_FindTileToLandOnSouth	done	crates/zelda3/src/zelda_rtl.rs	south landing tile scan, deep-water and pit state setup, safe-return update, incapacitated timer, and mirror-Z calculation are ported
+function	player.c	LinkState_HoppingHorizontallyOW	done	crates/zelda3/src/zelda_rtl.rs	horizontal ledge hop direction, velocity clear, ripple clear, and shared jump handler dispatch are ported
+function	player.c	Link_HoppingHorizontally_FindTile_Y	done	crates/zelda3/src/zelda_rtl.rs	horizontal ledge Y landing probe, fallback X/Z velocity adjustment, safe-return/mirror-Z update, and deep-water transition are ported
+function	player.c	Link_HoppingHorizontally_FindTile_X	done	crates/zelda3/src/zelda_rtl.rs	horizontal ledge X landing scan, deep-water transition, fallback X placement, velocity table lookup, and return code are ported
+function	player.c	LinkState_HoppingDiagonallyUpOW	done	crates/zelda3/src/zelda_rtl.rs	diagonal-up ledge hop Z integration, movement, splash/SFX, damage/aux/Z/timer cleanup, and direction unlock are ported
+function	player.c	LinkState_HoppingDiagonallyDownOW	done	crates/zelda3/src/zelda_rtl.rs	diagonal-down ledge direction setup, landing scan, velocity table lookup, lower-layer setup, and shared jump handler dispatch are ported
+function	player.c	LinkHop_FindLandingSpotDiagonallyDown	done	crates/zelda3/src/zelda_rtl.rs	diagonal-down landing scan, deep-water setup, safe-return update, incapacitated timer, and mirror-Z calculation are ported
+function	player.c	Link_HandleRecoiling	done	crates/zelda3/src/zelda_rtl.rs	recoil direction derivation and doorway/diagonal incapacitated helper calls are ported
+function	player.c	Player_HandleIncapacitated_Inner2	done	crates/zelda3/src/zelda_rtl.rs	diagonal recoil reversal and doorway axis suppression are ported
+function	player.c	FindFreeMovingBlockSlot	done	crates/zelda3/src/zelda_rtl.rs	moving-block slot selection and index writes are ported
+function	player.c	InitializePushBlock	done	crates/zelda3/src/zelda_rtl.rs	push-block tilemap-to-world coordinate setup, block arrays, target/subpixel reset, push attempt, replacement state, SFX, and slot clear are ported
+function	player.c	Sprite_Dungeon_DrawSinglePushBlock	done	crates/zelda3/src/zelda_rtl.rs	push-block OAM allocation, screen coordinate calculation, animation char lookup, and OAM write are ported
+function	player.c	HandleLayerOfDestination	done	crates/zelda3/src/zelda_rtl.rs	hole teleporter plane to lower-layer flags is ported
+function	player.c	DungeonPitDoDamage	done	crates/zelda3/src/zelda_rtl.rs	pit damage submodule and health clamp behavior are ported
+function	player.c	Link_TuckIntoBed	done	crates/zelda3/src/player.rs	bed coordinates, asleep state, pose/countdown setup, and blanket ancilla are ported
+function	player.c	LinkState_Sleeping	done	crates/zelda3/src/zelda_rtl.rs	sleep-state snore, wake input, and bed-hop recoil transition are ported
+function	player.c	AncillaAdd_Hookshot	done	crates/zelda3/src/player.rs	hookshot ancilla allocation, timers, hookshot globals, velocity, direction, and XY placement are ported
+function	player.c	LinkState_TreePull	done	crates/zelda3/src/zelda_rtl.rs	tree-pull grab release, pull animation, drag reset, dust spawn, velocity/direction handling, movement, collision, and camera tail are ported
+function	player.c	SomariaBlock_HandlePlayerInteraction	done	crates/zelda3/src/zelda_rtl.rs	Somaria block player collision, push/drag state, dash kick, bounce arc, velocity decay, SFX, and reset behavior are ported
+function	player.c	Gravestone_ActAsBarrier	done	crates/zelda3/src/zelda_rtl.rs	gravestone collision rectangle, Link Y push, dragstate bit, and facing cleanup are ported
+function	player.c	Gravestone_Move	done	crates/zelda3/src/zelda_rtl.rs	gravestone move, barrier interaction, completion cleanup, rock address/counter setup, and map-update handoff are ported
+function	player.c	AncillaAdd_DugUpFlute	done	crates/zelda3/src/player.rs	dug-up flute ancilla allocation, Z velocity, facing X velocity, and fixed XY placement are ported
+function	player.c	AncillaAdd_CaneOfByrnaInitSpark	done	crates/zelda3/src/player.rs	existing Byrna spark cleanup, spark allocation, damage disable, timer, and arr3 setup are ported
+function	player.c	AncillaAdd_ShovelDirt	done	crates/zelda3/src/player.rs	shovel dirt ancilla allocation, item-to-link clear, timer, and Link XY placement are ported
+function	player.c	ResetSomeThingsAfterDeath	done	crates/zelda3/src/zelda_rtl.rs	death reset clears movement, water/conveyor, damage, palette, visibility, ancilla interactives, and reset property chain
+function	player.c	SpawnHammerWaterSplash	done	crates/zelda3/src/zelda_rtl.rs	hammer splash guard, facing offset, indoor/outdoor water tile check, small splash spawn, XY placement, floor, and Z clear are ported
+function	player.c	DiggingGameGuy_AttemptPrizeSpawn	done	crates/zelda3/src/zelda_rtl.rs	dig counter, Y guard, random prize table, heart-piece gate, dynamic sprite spawn, velocities, stun/delay, aligned XY, floor, and SFX are ported
+function	overlord.c	Overlord_GetX	done	crates/zelda3/src/overlord.rs	C-shaped overlord X getter is ported
+function	overlord.c	Overlord_GetY	done	crates/zelda3/src/overlord.rs	C-shaped overlord Y getter is ported
+function	overlord.c	Overlord_SpawnBoulder	done	crates/zelda3/src/overlord.rs	C-shaped outdoor boulder spawner is ported
+function	overlord.c	Overlord_Main	done	crates/zelda3/src/overlord.rs	C-shaped overlord main entry is ported
+function	overlord.c	Overlord_ExecuteAll	done	crates/zelda3/src/overlord.rs	C-shaped overlord slot dispatcher loop is ported
+function	overlord.c	Overlord_ExecuteSingle	done	crates/zelda3/src/overlord.rs	C-shaped overlord active check and handler dispatch is ported
+function	overlord.c	Overlord19_ArmosCoordinator_bounce	done	crates/zelda3/src/overlord.rs	C-shaped Armos coordinator state machine is ported
+function	overlord.c	Overlord18_InvisibleStalfos	done	crates/zelda3/src/overlord.rs	C-shaped invisible stalfos trap spawner is ported
+function	overlord.c	Overlord_StalfosFactory	done	crates/zelda3/src/overlord.rs	C assert-only unused stalfos factory is ported
+function	overlord.c	Overlord_SetX	done	crates/zelda3/src/overlord.rs	C-shaped overlord X setter is ported
+function	overlord.c	Overlord_SetY	done	crates/zelda3/src/overlord.rs	C-shaped overlord Y setter is ported
+function	overlord.c	ArmosMult	done	crates/zelda3/src/overlord.rs	C-shaped Armos sine multiplier helper is ported
+function	overlord.c	ArmosSin	done	crates/zelda3/src/overlord.rs	C-shaped Armos sine helper is ported
+function	overlord.c	Overlord17_PotTrap	done	crates/zelda3/src/overlord.rs	C-shaped pot trap trigger is ported
+function	overlord.c	Overlord16_ZoroSpawner	done	crates/zelda3/src/overlord.rs	C-shaped zoro trap spawner is ported
+function	overlord.c	Overlord15_WizzrobeSpawner	done	crates/zelda3/src/overlord.rs	C-shaped wizzrobe trap spawner is ported
+function	overlord.c	Overlord14_TileRoom	done	crates/zelda3/src/overlord.rs	C-shaped flying tile room state machine is ported
+function	overlord.c	TileRoom_SpawnTile	done	crates/zelda3/src/overlord.rs	C-shaped flying tile sprite setup is ported
+function	overlord.c	Overlord10_PirogusuSpawner_left	done	crates/zelda3/src/overlord.rs	C-shaped pirogusu spawner is ported
+function	overlord.c	Overlord0A_FallingSquare	done	crates/zelda3/src/overlord.rs	C-shaped falling square path state machine is ported
+function	overlord.c	SpawnFallingTile	done	crates/zelda3/src/overlord.rs	C-shaped falling tile garnish setup is ported
+function	overlord.c	Overlord09_WallmasterSpawner	done	crates/zelda3/src/overlord.rs	C-shaped wallmaster spawner is ported
+function	overlord.c	Overlord08_BlobSpawner	done	crates/zelda3/src/overlord.rs	C-shaped blob spawner is ported
+function	overlord.c	Overlord07_MovingFloor	done	crates/zelda3/src/overlord.rs	C-shaped moving floor overlord state machine is ported
+function	overlord.c	Sprite_Overlord_PlayFallingSfx	done	crates/zelda3/src/overlord.rs	C-shaped falling SFX helper is ported
+function	overlord.c	Overlord05_FallingStalfos	done	crates/zelda3/src/overlord.rs	C-shaped falling stalfos trap spawner is ported
+function	overlord.c	Overlord06_BadSwitchSnake	done	crates/zelda3/src/overlord.rs	C-shaped bad switch snake and bomb trap spawner is ported
+function	overlord.c	Overlord02_FullRoomCannons	done	crates/zelda3/src/overlord.rs	C-shaped full-room cannon factory is ported
+function	overlord.c	Overlord03_VerticalCannon	done	crates/zelda3/src/overlord.rs	C-shaped vertical cannon factory is ported
+function	overlord.c	Overlord_SpawnCannonBall	done	crates/zelda3/src/overlord.rs	C-shaped cannonball spawn setup is ported
+function	overlord.c	Overlord01_PositionTarget	done	crates/zelda3/src/overlord.rs	C-shaped position target helper is ported
+function	overlord.c	Overlord_CheckIfActive	done	crates/zelda3/src/overlord.rs	C-shaped active-range cleanup is ported
+function	overlord.c	ArmosCoordinator_RotateKnights	done	crates/zelda3/src/overlord.rs	C-shaped Armos knight rotation state advance is ported
+function	overlord.c	ArmosCoordinator_Rotate	done	crates/zelda3/src/overlord.rs	C-shaped Armos coordinator rotation math is ported
+function	overlord.c	ArmosCoordinator_CheckKnights	done	crates/zelda3/src/overlord.rs	C-shaped Armos knight readiness check is ported
+function	overlord.c	ArmosCoordinator_DisableCoercion	done	crates/zelda3/src/overlord.rs	C-shaped Armos coercion reset is ported
+function	tagalong.c	Tagalong_IsFollowing	done	crates/zelda3/src/tagalong.rs	C-shaped follower active-mode gate is ported
+function	tagalong.c	Follower_ValidateMessageFreedom	done	crates/zelda3/src/tagalong.rs	C-shaped follower message freedom gate is ported
+function	tagalong.c	Follower_MoveTowardsLink	done	crates/zelda3/src/tagalong.rs	C-shaped follower trail catch-up helper is ported
+function	tagalong.c	Follower_CheckBlindTrigger	done	crates/zelda3/src/tagalong.rs	C-shaped Blind maiden trigger proximity check is ported
+function	tagalong.c	Follower_Initialize	done	crates/zelda3/src/tagalong.rs	C-shaped follower initialization is ported
+function	tagalong.c	Sprite_BecomeFollower	done	crates/zelda3/src/tagalong.rs	C-shaped sprite-to-follower handoff is ported
+function	tagalong.c	Follower_Main	done	crates/zelda3/src/tagalong.rs	C-shaped follower main dispatcher is ported
+function	tagalong.c	Follower_NoTimedMessage	done	crates/zelda3/src/tagalong.rs	C-shaped follower drop/game-mode branch is ported
+function	tagalong.c	Follower_CheckGameMode	done	crates/zelda3/src/tagalong.rs	C-shaped follower movement recorder and type dispatcher is ported
+function	tagalong.c	Follower_BasicMover	done	crates/zelda3/src/tagalong.rs	C-shaped basic follower mover is ported
+function	tagalong.c	Follower_NotFollowing	done	crates/zelda3/src/tagalong.rs	C-shaped dropped-follower handling is ported
+function	tagalong.c	Follower_OldMan	done	crates/zelda3/src/tagalong.rs	C-shaped old man follower mover is ported
+function	tagalong.c	Follower_OldManUnused	done	crates/zelda3/src/tagalong.rs	C-shaped old man detached state is ported
+function	tagalong.c	Follower_DoLayers	done	crates/zelda3/src/tagalong.rs	C-shaped detached follower layer draw helper is ported
+function	tagalong.c	Follower_CheckProximityToLink	done	crates/zelda3/src/tagalong.rs	C-shaped follower reacquire proximity check is ported
+function	tagalong.c	Follower_HandleTrigger	done	crates/zelda3/src/tagalong.rs	C-shaped follower room/screen trigger scan is ported
+function	tagalong.c	Tagalong_Draw	done	crates/zelda3/src/tagalong.rs	C-shaped follower draw entry is ported
+function	tagalong.c	SetOam_Follower	done	crates/zelda3/src/tagalong.rs	C-shaped follower OAM writer is ported
+function	tagalong.c	Follower_AnimateMovement_preserved	done	crates/zelda3/src/tagalong.rs	C-shaped follower animation and OAM layout is ported
+function	tagalong.c	Follower_CheckForTrigger	done	crates/zelda3/src/tagalong.rs	C-shaped follower trigger rectangle check is ported
+function	tagalong.c	Follower_Disable	done	crates/zelda3/src/tagalong.rs	C-shaped follower disable helper is ported
+function	tagalong.c	Blind_SpawnFromMaiden	done	crates/zelda3/src/tagalong.rs	C-shaped Blind spawn from maiden helper is ported
+function	tagalong.c	Kiki_RevertToSprite	done	crates/zelda3/src/tagalong.rs	C-shaped Kiki follower revert helper is ported
+function	tagalong.c	Kiki_SpawnHandlerMonke	done	crates/zelda3/src/tagalong.rs	C-shaped Kiki sprite spawn setup is ported
+function	tagalong.c	Kiki_SpawnHandler_A	done	crates/zelda3/src/tagalong.rs	C-shaped Kiki trigger spawn A is ported
+function	tagalong.c	Kiki_SpawnHandler_B	done	crates/zelda3/src/tagalong.rs	C-shaped Kiki trigger spawn B is ported
+module	audio.c	*	deferred		audio is outside current oracle comparison
+module	spc_player.c	*	deferred		audio is outside current oracle comparison
+module	opengl.c	*	deferred		frontend milestone
+module	glsl_shader.c	*	deferred		frontend milestone
+module	config.c	*	done	crates/zelda3/src/config.rs	C-shaped config, keyboard map, gamepad map, INI section, include, and feature flag parsing is ported
+function	config.c	KeyMapHash_Add	done	crates/zelda3/src/config.rs	C-shaped keyboard hash insertion helper is ported
+function	config.c	KeyMapHash_Find	done	crates/zelda3/src/config.rs	C-shaped keyboard hash lookup helper is ported
+function	config.c	FindCmdForSdlKey	done	crates/zelda3/src/config.rs	C-shaped SDL key/modifier command lookup is ported
+function	config.c	ParseKeyArray	done	crates/zelda3/src/config.rs	C-shaped comma-delimited keyboard binding parser is ported
+function	config.c	CountBits32	done	crates/zelda3/src/config.rs	C-shaped bit count helper is ported
+function	config.c	GamepadMap_Add	done	crates/zelda3/src/config.rs	C-shaped gamepad map insertion with modifier ordering is ported
+function	config.c	FindCmdForGamepadButton	done	crates/zelda3/src/config.rs	C-shaped gamepad command lookup is ported
+function	config.c	ParseGamepadButtonName	done	crates/zelda3/src/config.rs	C-shaped gamepad button-name parser is ported
+function	config.c	ParseGamepadArray	done	crates/zelda3/src/config.rs	C-shaped comma-delimited gamepad binding parser is ported
+function	config.c	RegisterDefaultKeys	done	crates/zelda3/src/config.rs	C-shaped default keyboard/gamepad registration is ported
+function	config.c	GetIniSection	done	crates/zelda3/src/config.rs	C-shaped INI section matcher is ported
+function	config.c	ParseBool	done	crates/zelda3/src/config.rs	C-shaped boolean parser is ported and covered by unit tests
+function	config.c	ParseBoolBit	done	crates/zelda3/src/config.rs	C-shaped feature bit parser is ported
+function	config.c	HandleIniConfig	done	crates/zelda3/src/config.rs	C-shaped config key dispatcher is ported
+function	config.c	ParseOneConfigFile	done	crates/zelda3/src/config.rs	C-shaped single-file parser with include handling is ported
+function	config.c	ParseConfigFile	done	crates/zelda3/src/config.rs	C-shaped config entrypoint and default registration is ported
+module	main.c	*	deferred		zelda3-bin replaces the C program entry for now
+module	load_gfx.c	*	done	crates/zelda3/src/load_gfx.rs	graphics loading, palette filtering, VRAM staging, mirror/spotlight HDMA, dungeon peg buffers, and screen flash paths are ported
+table	load_gfx.c	kMainTilesets	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kAuxTilesets	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kSpriteTilesets	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kDecodeAnimatedSpriteTile_Tab	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kOwBgPalInfo	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kOwSprPalInfo	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kGraphicsHalfSlotPacks	done	crates/zelda3/src/zelda_rtl.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kGraphicsLoadSp6	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+table	load_gfx.c	kMirrorWarp_LoadNext_NmiLoad	done	crates/zelda3/src/load_gfx.rs	ported for load_gfx runtime behavior
+function	load_gfx.c	LoadItemAnimationGfxOne	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	GetCompSpritePtr	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	ApplyPaletteFilter_bounce	done	crates/zelda3/src/load_gfx.rs	C-named load_gfx entry delegates to the shared palette filter implementation
+function	load_gfx.c	PaletteFilter_Range	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_IncrCountdown	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	snes_divide	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	EraseTileMaps_normal	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecompAndUpload2bpp	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	RecoverPegGFXFromMapping	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadOverworldMapPalette	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	EraseTileMaps_triforce	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	EraseTileMaps_dungeonmap	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	EraseTileMaps	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	EnableForceBlank	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadItemGFXIntoWRAM4BPPBuffer	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecompressSwordGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecompressShieldGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecompressAnimatedDungeonTiles	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecompressAnimatedOverworldTiles	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadItemGFX_Auxiliary	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadFollowerGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	WriteTo4BPPBuffer_at_7F4000	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	DecodeAnimatedSpriteTile_variable	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Expand3To4High	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadTransAuxGFX	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadTransAuxGFX_sprite	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Gfx_LoadSpritesInner	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	ReloadPreviouslyLoadedSheets	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Attract_DecompressStoryGFX	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	AnimateMirrorWarp	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	AnimateMirrorWarp_DecompressNewTileSets	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Graphics_IncrementalVRAMUpload	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PrepTransAuxGfx	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Do3To4High16Bit	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Do3To4Low16Bit	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadNewSpriteGFXSet	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	InitializeTilesets	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadDefaultGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Attract_LoadBG3GFX	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Graphics_LoadChrHalfSlot	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	TransferFontToVRAM	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Do3To4High	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Do3To4Low	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadSpriteGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadBackgroundGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadCommonSprites	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Decomp_spr	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Decomp_bg	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Decompress	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	ResetHUDPalettes4and5	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilterHistory	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_WishPonds	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_Crystal	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_WishPonds_Inner	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_RestoreSP5F	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_SP5F	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	KholdstareShell_PaletteFiltering	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	AgahnimWarpShadowFilter	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_FadeIntroOneStep	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_FadeIntro2	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_RestoreAdditive	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_RestoreSubtractive	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_InitializeWhiteFilter	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	MirrorWarp_RunAnimationSubmodules	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_BlindingWhite	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_StartBlindingWhite	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_BlindingWhiteTriforce	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_WhirlpoolBlue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_IsolateWhirlpoolBlue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_WhirlpoolRestoreBlue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_WhirlpoolRestoreRedGreen	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_RestoreBGSubstractiveStrict	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	PaletteFilter_RestoreBGAdditiveStrict	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Trinexx_FlashShellPalette_Red	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Trinexx_UnflashShellPalette_Red	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Trinexx_FlashShellPalette_Blue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Trinexx_UnflashShellPalette_Blue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	IrisSpotlight_close	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Spotlight_open	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	SpotlightInternal	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	IrisSpotlight_ConfigureTable	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	IrisSpotlight_ResetTable	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	IrisSpotlight_CalculateCircleValue	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	AdjustWaterHDMAWindow	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	AdjustWaterHDMAWindow_X	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	FloodDam_PrepFloodHDMA	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	ResetStarTileGraphics	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Dungeon_RestoreStarTileChr	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LinkZap_HandleMosaic	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Player_SetCustomMosaicLevel	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Module07_16_UpdatePegs_Step1	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Module07_16_UpdatePegs_Step2	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Dungeon_UpdatePegGFXBuffer	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Dungeon_HandleTranslucencyAndPalette	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Overworld_LoadAllPalettes	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Dungeon_LoadPalettes	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Overworld_LoadPalettesInner	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	OverworldLoadScreensPaletteSet	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Overworld_LoadAreaPalettesEx	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	SpecialOverworld_CopyPalettesToCache	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Overworld_CopyPalettesToCache	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Overworld_LoadPalettes	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_BgAndFixedColor_Black	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_SetBgAndFixedColor	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	SetBackdropcolorBlack	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_SetOwBgColor	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_SpecialOw	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_GetOwBgColor	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_AssertTranslucencySwap	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_SetTranslucencySwap	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_RevertTranslucencySwap	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadActualGearPalettes	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_ElectroThemedGear	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadGearPalettes_bunny	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadGearPalettes	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	LoadGearPalette	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Filter_Majorly_Whiten_Bg	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Filter_Majorly_Whiten_Color	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Restore_BG_From_Flash	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Restore_Coldata	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Restore_BG_And_HUD	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_Sp0L	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_SpriteMain	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_Sp5L	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_Sp6L	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_Sword	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_Shield	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_SpriteEnvironment	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_SpriteEnvironment_Dungeon	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_MiscSprite_Outdoors	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_DungeonMapSprite	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_LinkArmorAndGloves	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_UpdateGlovesColor	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_DungeonMapBG	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_HUD	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_DungeonSet	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_OWBG3	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_OWBGMain	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_OWBG1	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_Load_OWBG2	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadSingle	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadMultiple	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadMultiple_Arbitrary	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadForFileSelect	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadForFileSelect_Armor	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadForFileSelect_Sword	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadForFileSelect_Shield	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	Palette_LoadAgahnim	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+function	load_gfx.c	HandleScreenFlash	done	crates/zelda3/src/load_gfx.rs	ported with C name and load_gfx ownership
+module	messaging.c	*	partial	crates/zelda3/src/messaging.rs	C-named messaging surface, text rendering, save/load menu, game over, overworld map sprites, and menu choices are ported; dungeon-map drawing cluster remains partial
+function	messaging.c	GetDungmapFloorLayout	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GetOtherDungmapInfo	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungMap_4	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module_Messaging_6	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	OverworldMap_SetupHdma	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GetLightOverworldTilemap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	SaveGameFile	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	TransferMode7Characters	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_Interface	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module_Messaging_0	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RunInterface	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_05_DesertPrayer	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_04_RedPotion	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_08_GreenPotion	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_09_BluePotion	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_0B_SaveMenu	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module1B_SpawnSelect	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	CleanUpAndPrepDesertPrayerHDMA	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DesertPrayer_InitializeIrisHDMA	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DesertPrayer_BuildIrisHDMATable	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DesertHDMA_CalculateIrisShapeLine	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Animate_GAMEOVER_Letters	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOverText_SweepLeft	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOverText_UnfurlRight	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module12_GameOver	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_AdvanceImmediately	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_Func1	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_DelayBeforeIris	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_IrisWipe	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_SplatAndFade	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_Func6	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_Func4	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Animate_GAMEOVER_Letters_bounce	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_Finalize_GAMEOVR	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_SaveAndOrContinue	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_Func15	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_AnimateChoiceFairy	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_InitializeRevivalFairy	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RevivalFairy_Main_bounce	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_RiseALittle	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_Restore0D	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_Restore0E	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	GameOver_ResituateLink	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_0A_FluteMenu	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	FluteMenu_HandleSelection	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	FluteMenu_LoadSelectedScreen	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Overworld_LoadOverlayAndMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	FluteMenu_FadeInAndQuack	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	BirdTravel_Finish_Doit	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Messaging_OverworldMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_FadeOut	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_LoadLightWorldMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_LoadDarkWorldMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_LoadSpriteGFX	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_Brighten	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DidPressButtonForMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_PlayerControl	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_RestoreGraphics	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Attract_SetUpConclusionHDMA	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_ExitMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_SetUpHDMA	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_FillTilemapWithEF	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_HandleSprites	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_CalculateOamCoordinates	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WorldMap_AddSprite	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	OverworldMap_CheckForPendant	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	OverworldMap_CheckForCrystal	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_03_DungeonMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_03_01_DrawMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_03_01_00_PrepMapGraphics	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_03_01_01_DrawLEVEL	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Module0E_03_01_02_DrawFloorsBackdrop	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungeonMap_BuildFloorListBoxes	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	Module0E_03_01_03_DrawRooms	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungeonMap_DrawBorderForRooms	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawFloorNumbersByRoom	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawDungeonLayout	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawSingleRowOfRooms	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawRoomMarkers	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_HandleInputAndSprites	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	WantExitDungeonMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungeonMap_HandleInput	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungeonMap_HandleMovementInput	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_HandleFloorSelect	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_ScrollFloors	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawSprites	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawLinkPointing	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawBlinkingIndicator	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawLocationMarker	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawFloorNumberObjects	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawFloorBlinker	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawBossIcon	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_DrawBossIconByFloor	partial	crates/zelda3/src/messaging.rs	dungeon-map drawing/input body still needs exact C logic
+function	messaging.c	DungeonMap_RecoverGFX	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	ToggleStarTilesAndAdvance	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_InitializeGameOverLetters	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	CopySaveToWRAM	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_PostDeathSaveOptions	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_Initialize	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_Initialize_initModuleStateLoop	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_InitVwfState	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_DecodeCmd	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_LoadCharacterBuffer	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_WritePlayerName	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_FilterPlayerNameCharacters	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_Render	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Border	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_BorderIncremental	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_CharacterTilemap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_MessageCharacters	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Finish	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	VWF_RenderSingle	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Choose2LowOr3	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_ChooseItem	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_FindYItem_Previous	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_FindYItem_Next	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_DrawSelectedYItem	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Choose2HiOr3	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Choose3	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Choose1Or2	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Draw_Scroll	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_SetDefaultWindowPosition	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_DrawBorderInitialize	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_DrawBorderRow	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_BuildCharacterTilemap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	RenderText_Refresh	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Text_GenerateMessagePointers	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungMap_LightenUpMap	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungMap_Backup	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungMap_FadeMapToBlack	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DungMap_RestoreOld	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_PlayerSwoon	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	Death_PrepFaint	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
+function	messaging.c	DisplaySelectMenu	done	crates/zelda3/src/messaging.rs	ported with C name and messaging ownership
