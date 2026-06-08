@@ -2863,8 +2863,12 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_quake_spell(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_STEP + k] = 0;
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
+            {
+                let mut quake = self.ancilla_slot_view_mut(k);
+                quake.set_step(0);
+                quake.set_item_to_link(0);
+                quake.set_timer(2);
+            }
             self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 13;
             self.ram[SOUND_EFFECT_1] = 0x35;
             for i in 0..5 {
@@ -2875,7 +2879,6 @@ impl ZeldaState {
                 self.ram[QUAKE_ARR1 + i] = 1;
             }
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
-            self.ancilla_slot_view_mut(k).set_timer(2);
             let quake_var1 = self.player_state_view().y().wrapping_add(26);
             let quake_var2 = self.player_state_view().x().wrapping_add(8);
             write_le_u16(&mut self.ram, QUAKE_VAR1, quake_var1);
@@ -2886,13 +2889,16 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_ether_spell(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
-            self.ram[ANCILLA_ARR25 + k] = 0;
-            self.ram[ANCILLA_STEP + k] = 0;
+            {
+                let mut ether = self.ancilla_slot_view_mut(k);
+                ether.set_item_to_link(0);
+                ether.set_arr25(0);
+                ether.set_step(0);
+                ether.set_aux_timer(2);
+                ether.set_arr3(3);
+                ether.set_y_velocity(127);
+            }
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
-            self.ram[ANCILLA_AUX_TIMER + k] = 2;
-            self.ram[ANCILLA_ARR3 + k] = 3;
-            self.ancilla_slot_view_mut(k).set_y_velocity(127);
             self.ram[ETHER_VAR2] = 40;
             self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
             self.ram[ETHER_VAR1] = 0x40;
@@ -2919,10 +2925,9 @@ impl ZeldaState {
             return;
         }
 
-        if self.ram[ANCILLA_STEP + k] != 0 {
+        if self.ancilla_slot_view(k).step() != 0 {
             let flag = if self.ram[STEP_COUNTER_FOR_SPIN_ATTACK] == 0 {
-                self.ram[ANCILLA_ARR4 + k] = self.ram[ANCILLA_ARR4 + k].wrapping_add(1);
-                self.ram[ANCILLA_ARR4 + k] & 4 == 0
+                self.ancilla_slot_view_mut(k).advance_arr4() & 4 == 0
             } else {
                 self.ram[STEP_COUNTER_FOR_SPIN_ATTACK] == 11
             };
@@ -2935,17 +2940,14 @@ impl ZeldaState {
             }
         }
 
-        if self.ram[ANCILLA_STEP + k] == 2 {
-            self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-            if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
-                self.ram[ANCILLA_AUX_TIMER + k] = 2;
-                self.ram[ANCILLA_ITEM_TO_LINK + k] =
-                    self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-                if self.ram[ANCILLA_ITEM_TO_LINK + k] == 2 {
-                    self.ram[ANCILLA_ITEM_TO_LINK + k] =
-                        self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_sub(1);
-                    self.ancilla_slot_view_mut(k).set_x_velocity(16);
-                    self.ram[ANCILLA_STEP + k] = 3;
+        if self.ancilla_slot_view(k).step() == 2 {
+            if sign8(self.ancilla_slot_view_mut(k).tick_aux_timer()) {
+                let mut ether = self.ancilla_slot_view_mut(k);
+                ether.set_aux_timer(2);
+                if ether.advance_item_to_link() == 2 {
+                    ether.retreat_item_to_link();
+                    ether.set_x_velocity(16);
+                    ether.set_step(3);
                 }
             }
             self.ancilla_slot_view_mut(k).add_x_velocity(1);
@@ -2953,30 +2955,30 @@ impl ZeldaState {
             return;
         }
 
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
-            self.ram[ANCILLA_AUX_TIMER + k] = 2;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] ^= 1;
+        if sign8(self.ancilla_slot_view_mut(k).tick_aux_timer()) {
+            let mut ether = self.ancilla_slot_view_mut(k);
+            ether.set_aux_timer(2);
+            ether.toggle_item_to_link_bit0();
         }
-        if self.ram[ANCILLA_STEP + k] == 0 {
-            self.ether_spell_handle_lightning_stroke(k);
-        } else if self.ram[ANCILLA_STEP + k] == 1 {
-            self.ether_spell_handle_orb_pulse(k);
-        } else if self.ram[ANCILLA_STEP + k] == 3 {
-            self.ether_spell_handle_radial_spin(k);
-        } else if self.ram[ANCILLA_STEP + k] == 4 {
-            self.ram[ETHER_VAR1] = self.ram[ETHER_VAR1].wrapping_sub(1);
-            if self.ram[ETHER_VAR1] == 0 {
-                self.ram[ANCILLA_STEP + k] = 5;
+        match self.ancilla_slot_view(k).step() {
+            0 => self.ether_spell_handle_lightning_stroke(k),
+            1 => self.ether_spell_handle_orb_pulse(k),
+            3 => self.ether_spell_handle_radial_spin(k),
+            4 => {
+                self.ram[ETHER_VAR1] = self.ram[ETHER_VAR1].wrapping_sub(1);
+                if self.ram[ETHER_VAR1] == 0 {
+                    self.ancilla_slot_view_mut(k).set_step(5);
+                }
+                self.ether_spell_handle_radial_spin(k);
             }
-            self.ether_spell_handle_radial_spin(k);
-        } else {
-            let mut vel = self.ancilla_slot_view(k).x_velocity().wrapping_add(0x10);
-            if sign8(vel) {
-                vel = 0x7f;
+            _ => {
+                let mut vel = self.ancilla_slot_view(k).x_velocity().wrapping_add(0x10);
+                if sign8(vel) {
+                    vel = 0x7f;
+                }
+                self.ancilla_slot_view_mut(k).set_x_velocity(vel);
+                self.ether_spell_handle_radial_spin(k);
             }
-            self.ancilla_slot_view_mut(k).set_x_velocity(vel);
-            self.ether_spell_handle_radial_spin(k);
         }
     }
 
@@ -2986,42 +2988,39 @@ impl ZeldaState {
 
         if self.ram[ETHER_Y_ADJUSTED] != (y & 0xf0) as u8 {
             self.ram[ETHER_Y_ADJUSTED] = (y & 0xf0) as u8;
-            self.ram[ANCILLA_ARR25 + k] = self.ram[ANCILLA_ARR25 + k].wrapping_add(1);
+            self.ancilla_slot_view_mut(k).advance_arr25();
         }
         if y < 0xe000
             && read_le_u16(&self.ram, ETHER_Y2) < 0xe000
             && read_le_u16(&self.ram, ETHER_Y2) <= y
         {
-            self.ram[ANCILLA_STEP + k] = 1;
+            self.ancilla_slot_view_mut(k).set_step(1);
         }
         self.ancilla_draw_ether_blitz(k);
     }
 
     fn ether_spell_handle_orb_pulse(&mut self, k: usize) {
-        if !sign8(self.ram[ANCILLA_ARR25 + k]) {
-            self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
-            if !sign8(self.ram[ANCILLA_ARR3 + k]) {
+        if !sign8(self.ancilla_slot_view(k).arr25()) {
+            if !sign8(self.ancilla_slot_view_mut(k).tick_arr3()) {
                 self.ancilla_draw_ether_blitz(k);
                 return;
             }
-            self.ram[ANCILLA_ARR3 + k] = 3;
-            self.ram[ANCILLA_ARR25 + k] = self.ram[ANCILLA_ARR25 + k].wrapping_sub(1);
-            if !sign8(self.ram[ANCILLA_ARR25 + k]) {
+            self.ancilla_slot_view_mut(k).set_arr3(3);
+            if !sign8(self.ancilla_slot_view_mut(k).retreat_arr25()) {
                 self.ancilla_draw_ether_blitz(k);
                 return;
             }
-            self.ram[ANCILLA_ARR3 + k] = 9;
+            self.ancilla_slot_view_mut(k).set_arr3(9);
         }
-        self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
-        if sign8(self.ram[ANCILLA_ARR3 + k]) {
-            self.ram[ANCILLA_STEP + k] = 2;
+        if sign8(self.ancilla_slot_view_mut(k).tick_arr3()) {
             {
                 let mut ether = self.ancilla_slot_view_mut(k);
+                ether.set_step(2);
                 ether.set_y_velocity(0);
                 ether.set_x_velocity(16);
+                ether.set_item_to_link(0);
+                ether.set_aux_timer(2);
             }
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-            self.ram[ANCILLA_AUX_TIMER + k] = 2;
             if self.ram[STEP_COUNTER_FOR_SPIN_ATTACK] != 0 {
                 self.medallion_check_sprite_damage(k);
             }
@@ -3031,7 +3030,7 @@ impl ZeldaState {
     }
 
     fn ether_spell_handle_radial_spin(&mut self, k: usize) {
-        if self.ram[ANCILLA_STEP + k] == 4 {
+        if self.ancilla_slot_view(k).step() == 4 {
             if self.ram[FRAME_COUNTER] & 7 == 0 {
                 self.ram[SOUND_EFFECT_2] = 0x2a;
             } else if self.ram[FRAME_COUNTER] & 7 == 4 {
@@ -3040,17 +3039,17 @@ impl ZeldaState {
                 self.ram[SOUND_EFFECT_2] = 0x6a;
             }
         } else {
-            self.ram[ANCILLA_X_LO + k] = self.ram[ETHER_VAR2];
-            self.ram[ANCILLA_X_HI + k] = 0;
+            let radius = self.ram[ETHER_VAR2];
+            self.ancilla_slot_view_mut(k).set_x(u16::from(radius));
             self.ancilla_move_x(k);
-            self.ram[ETHER_VAR2] = self.ram[ANCILLA_X_LO + k];
+            self.ram[ETHER_VAR2] = self.ancilla_slot_view(k).x() as u8;
             if self.ram[ETHER_VAR2] == 0x40 {
-                self.ram[ANCILLA_STEP + k] = 4;
+                self.ancilla_slot_view_mut(k).set_step(4);
             }
         }
 
-        let sb = self.ram[ANCILLA_STEP + k];
-        let sa = self.ram[ANCILLA_ITEM_TO_LINK + k] as usize;
+        let sb = self.ancilla_slot_view(k).step();
+        let sa = self.ancilla_slot_view(k).item_to_link() as usize;
         let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
         for i in (0..=7).rev() {
             if sb != 2 && sb != 5 {
@@ -3073,7 +3072,7 @@ impl ZeldaState {
             }
         }
 
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).clear();
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 1;
         self.ram[SPIN_ATTACK_SOUND_LATCH] = 0;
         self.ram[STATE_FOR_SPIN_ATTACK] = 0;

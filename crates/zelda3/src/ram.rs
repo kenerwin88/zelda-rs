@@ -82,6 +82,11 @@ pub(crate) mod semantic {
     const ANCILLA_ITEM_TO_LINK: usize = 0x0c5e;
     const ANCILLA_TIMER: usize = 0x0c68;
     const ANCILLA_DIRECTION: usize = 0x0c72;
+    const ANCILLA_STEP: usize = 0x0c54;
+    const ANCILLA_AUX_TIMER: usize = 0x03b1;
+    const ANCILLA_ARR3: usize = 0x039f;
+    const ANCILLA_ARR4: usize = 0x0bf0;
+    const ANCILLA_ARR25: usize = 0x0746;
 
     pub(crate) struct FrameControlView<'a> {
         ram: &'a [u8],
@@ -595,6 +600,22 @@ pub(crate) mod semantic {
         pub(crate) fn direction(&self) -> u8 {
             byte(self.ram, ANCILLA_DIRECTION + self.slot)
         }
+
+        pub(crate) fn step(&self) -> u8 {
+            byte(self.ram, ANCILLA_STEP + self.slot)
+        }
+
+        pub(crate) fn aux_timer(&self) -> u8 {
+            byte(self.ram, ANCILLA_AUX_TIMER + self.slot)
+        }
+
+        pub(crate) fn arr3(&self) -> u8 {
+            byte(self.ram, ANCILLA_ARR3 + self.slot)
+        }
+
+        pub(crate) fn arr25(&self) -> u8 {
+            byte(self.ram, ANCILLA_ARR25 + self.slot)
+        }
     }
 
     pub(crate) struct AncillaSlotViewMut<'a> {
@@ -711,12 +732,70 @@ pub(crate) mod semantic {
             value
         }
 
+        pub(crate) fn retreat_item_to_link(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ITEM_TO_LINK + self.slot].wrapping_sub(1);
+            self.set_item_to_link(value);
+            value
+        }
+
+        pub(crate) fn toggle_item_to_link_bit0(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ITEM_TO_LINK + self.slot] ^ 1;
+            self.set_item_to_link(value);
+            value
+        }
+
         pub(crate) fn set_timer(&mut self, value: u8) {
             self.ram[ANCILLA_TIMER + self.slot] = value;
         }
 
         pub(crate) fn set_direction(&mut self, value: u8) {
             self.ram[ANCILLA_DIRECTION + self.slot] = value;
+        }
+
+        pub(crate) fn set_step(&mut self, value: u8) {
+            self.ram[ANCILLA_STEP + self.slot] = value;
+        }
+
+        pub(crate) fn set_aux_timer(&mut self, value: u8) {
+            self.ram[ANCILLA_AUX_TIMER + self.slot] = value;
+        }
+
+        pub(crate) fn tick_aux_timer(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_AUX_TIMER + self.slot].wrapping_sub(1);
+            self.set_aux_timer(value);
+            value
+        }
+
+        pub(crate) fn set_arr3(&mut self, value: u8) {
+            self.ram[ANCILLA_ARR3 + self.slot] = value;
+        }
+
+        pub(crate) fn tick_arr3(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ARR3 + self.slot].wrapping_sub(1);
+            self.set_arr3(value);
+            value
+        }
+
+        pub(crate) fn set_arr25(&mut self, value: u8) {
+            self.ram[ANCILLA_ARR25 + self.slot] = value;
+        }
+
+        pub(crate) fn advance_arr25(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ARR25 + self.slot].wrapping_add(1);
+            self.set_arr25(value);
+            value
+        }
+
+        pub(crate) fn retreat_arr25(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ARR25 + self.slot].wrapping_sub(1);
+            self.set_arr25(value);
+            value
+        }
+
+        pub(crate) fn advance_arr4(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ARR4 + self.slot].wrapping_add(1);
+            self.ram[ANCILLA_ARR4 + self.slot] = value;
+            value
         }
     }
 
