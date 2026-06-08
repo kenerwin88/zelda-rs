@@ -7869,12 +7869,12 @@ impl ZeldaState {
                     let mut ancilla = self.ancilla_slot_view_mut(k);
                     ancilla.set_y_velocity(0);
                     ancilla.set_x_velocity(if t & 1 != 0 { 16 } else { (-16i8) as u8 });
-                    self.ram[ANCILLA_DIR + k] = if t & 1 != 0 { 3 } else { 2 };
+                    ancilla.set_direction(if t & 1 != 0 { 3 } else { 2 });
                 } else {
                     let mut ancilla = self.ancilla_slot_view_mut(k);
                     ancilla.set_x_velocity(0);
                     ancilla.set_y_velocity(if t & 8 != 0 { (-16i8) as u8 } else { 16 });
-                    self.ram[ANCILLA_DIR + k] = if t & 8 != 0 { 0 } else { 1 };
+                    ancilla.set_direction(if t & 8 != 0 { 0 } else { 1 });
                 }
                 if self.ram[LINK_ACTUAL_VEL_Y] == 0 || self.ram[LINK_ACTUAL_VEL_X] == 0 {
                     if !self.ancilla_check_tile_collision_class2(k) {
@@ -7901,9 +7901,9 @@ impl ZeldaState {
             self.link_cancel_dash();
             self.ancilla_sfx3_pan(k, 0x32);
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
-            self.ram[ANCILLA_DIR + k] = j as u8;
             {
                 let mut ancilla = self.ancilla_slot_view_mut(k);
+                ancilla.set_direction(j as u8);
                 ancilla.set_y_velocity(SOMARIA_BLOCK_YVEL[j]);
                 ancilla.set_x_velocity(SOMARIA_BLOCK_XVEL[j]);
                 ancilla.set_z_velocity(48);
