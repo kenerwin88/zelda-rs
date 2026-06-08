@@ -3612,14 +3612,14 @@ impl ZeldaState {
         let Some(k) = self.ancilla_add_simple(a, y) else {
             return;
         };
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
         {
             let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_item_to_link(0);
             ancilla.set_y_velocity((-8i8) as u8);
             ancilla.set_x_velocity(8);
+            ancilla.set_aux_timer(7);
+            ancilla.set_step(255);
         }
-        self.ram[ANCILLA_AUX_TIMER + k] = 7;
-        self.ram[ANCILLA_STEP + k] = 255;
         self.ancilla_set_xy(
             k,
             self.player_state_view().x().wrapping_add(16),
