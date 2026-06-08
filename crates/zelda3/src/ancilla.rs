@@ -3703,10 +3703,10 @@ impl ZeldaState {
         let Some(k) = self.ancilla_add_ancilla(a, y) else {
             return 0;
         };
-        self.ram[ANCILLA_AUX_TIMER + k] = 0;
         self.ram[ANCILLA_K + k] = 0;
         {
             let mut boomerang = self.ancilla_slot_view_mut(k);
+            boomerang.set_aux_timer(0);
             boomerang.set_item_to_link(0);
             boomerang.set_z(0);
         }
@@ -3714,8 +3714,11 @@ impl ZeldaState {
         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 1;
         let mut j = self.ram[LINK_ITEM_BOOMERANG].wrapping_sub(1) as usize;
         self.ram[ANCILLA_G + k] = j as u8;
-        self.ram[ANCILLA_STEP + k] = BOOMERANG_TAB1[j];
-        self.ram[ANCILLA_ARR3 + k] = BOOMERANG_TAB2[j];
+        {
+            let mut boomerang = self.ancilla_slot_view_mut(k);
+            boomerang.set_step(BOOMERANG_TAB1[j]);
+            boomerang.set_arr3(BOOMERANG_TAB2[j]);
+        }
 
         let s = self.ram[ANCILLA_G + k] as usize * 2
             + if self.ram[JOYPAD1H_LAST] & 0x0c != 0 && self.ram[JOYPAD1H_LAST] & 3 != 0 {
