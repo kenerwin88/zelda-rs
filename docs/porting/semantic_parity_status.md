@@ -21,10 +21,11 @@ This file records the current implementation status for
   halving, and applying projected speed, plus early ancilla spawn velocity and
   Z writes for rod shots, arrows, sword beams, falling prizes, blast-wall
   fireballs, dug-up flute setup, boomerangs, bombs, snoring, hit stars, bird
-  setup, ice-rod shots/sparkles, and Somaria block movement setup. Current
-  sprite coordinate latching and local attract/ending coordinate helpers now
-  delegate through those paths, so new call sites can migrate without
-  reintroducing raw lo/hi/subpixel byte packing.
+  setup, ice-rod shots/sparkles, Somaria block movement setup, boomerang
+  return acceleration, bomb bounce response, revival/duck Z setup, and Ether
+  spell velocity transitions. Current sprite coordinate latching and local
+  attract/ending coordinate helpers now delegate through those paths, so new
+  call sites can migrate without reintroducing raw lo/hi/subpixel byte packing.
 
 ## Graduated Subsystems
 

@@ -1360,22 +1360,22 @@ impl ZeldaState {
                     } else {
                         4
                     };
-                    if self.ram[ANCILLA_Y_VEL + k] != 0 {
-                        self.ram[ANCILLA_Y_VEL + k] = if sign8(self.ram[ANCILLA_Y_VEL + k]) {
-                            qq
-                        } else {
-                            (-(qq as i8)) as u8
-                        };
+                    let y_velocity = self.ancilla_slot_view(k).y_velocity();
+                    if y_velocity != 0 {
+                        self.ancilla_slot_view_mut(k)
+                            .set_y_velocity(if sign8(y_velocity) {
+                                qq
+                            } else {
+                                (-(qq as i8)) as u8
+                            });
                     }
-                    if self.ram[ANCILLA_X_VEL + k] != 0 {
-                        self.ram[ANCILLA_X_VEL + k] = if sign8(self.ram[ANCILLA_X_VEL + k]) {
-                            4
-                        } else {
-                            (-4i8) as u8
-                        };
+                    let x_velocity = self.ancilla_slot_view(k).x_velocity();
+                    if x_velocity != 0 {
+                        self.ancilla_slot_view_mut(k)
+                            .set_x_velocity(if sign8(x_velocity) { 4 } else { (-4i8) as u8 });
                     }
                     if self.ram[ANCILLA_DIR + k] == 1 && self.ram[ANCILLA_Z + k] != 0 {
-                        self.ram[ANCILLA_Y_VEL + k] = (-4i8) as u8;
+                        self.ancilla_slot_view_mut(k).set_y_velocity((-4i8) as u8);
                         self.ram[ANCILLA_L + k] = 2;
                     }
                 }
@@ -1620,20 +1620,23 @@ impl ZeldaState {
             self.player_state_view_mut().set_y(link_y.wrapping_add(8));
             let mut pt = self.ancilla_project_speed_towards_player(k, self.ram[ANCILLA_H + k]);
             self.boomerang_cheat_when_no_ones_looking(k, &mut pt);
-            self.ram[ANCILLA_X_VEL + k] = pt.x;
-            self.ram[ANCILLA_Y_VEL + k] = pt.y;
+            {
+                let mut boomerang = self.ancilla_slot_view_mut(k);
+                boomerang.set_x_velocity(pt.x);
+                boomerang.set_y_velocity(pt.y);
+            }
             copy_le_u16(&mut self.ram, LINK_Y_COORD, ANCILLA_A + k);
         }
 
-        if self.ram[ANCILLA_Y_VEL + k] != 0 {
-            self.ram[ANCILLA_Y_VEL + k] =
-                self.ram[ANCILLA_Y_VEL + k].wrapping_add(self.ram[ANCILLA_K + k]);
+        if self.ancilla_slot_view(k).y_velocity() != 0 {
+            let acceleration = self.ram[ANCILLA_K + k];
+            self.ancilla_slot_view_mut(k).add_y_velocity(acceleration);
         }
         self.ancilla_move_y(k);
 
-        if self.ram[ANCILLA_X_VEL + k] != 0 {
-            self.ram[ANCILLA_X_VEL + k] =
-                self.ram[ANCILLA_X_VEL + k].wrapping_add(self.ram[ANCILLA_K + k]);
+        if self.ancilla_slot_view(k).x_velocity() != 0 {
+            let acceleration = self.ram[ANCILLA_K + k];
+            self.ancilla_slot_view_mut(k).add_x_velocity(acceleration);
         }
         self.ancilla_move_x(k);
         if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
@@ -2361,8 +2364,11 @@ impl ZeldaState {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
             self.ram[ANCILLA_TIMER + k] = 0x78;
             self.ram[ANCILLA_L + k] = 0;
-            self.ram[ANCILLA_Z_VEL + k] = 0;
-            self.ram[ANCILLA_Z + k] = 0;
+            {
+                let mut duck = self.ancilla_slot_view_mut(k);
+                duck.set_z_velocity(0);
+                duck.set_z(0);
+            }
             self.ram[ANCILLA_STEP + k] = 0;
             self.add_bird_common(k);
         }
@@ -2583,7 +2589,7 @@ impl ZeldaState {
 
         self.ram[ANCILLA_ARR3 + k] = 64;
         self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_Z_VEL + k] = 8;
+        self.ancilla_slot_view_mut(k).set_z_velocity(8);
         self.ram[ANCILLA_L + k] = 0;
         self.ram[ANCILLA_G + k] = 5;
         self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
@@ -2593,10 +2599,10 @@ impl ZeldaState {
             self.player_state_view().x(),
             self.player_state_view().y(),
         );
-        self.ram[ANCILLA_Z + k] = 0;
+        self.ancilla_slot_view_mut(k).set_z(0);
         k += 1;
 
-        self.ram[ANCILLA_Z + k] = 0;
+        self.ancilla_slot_view_mut(k).set_z(0);
         self.ram[ANCILLA_ARR3 + k] = 240;
         self.ram[ANCILLA_STEP + k] = 0;
         self.ram[ANCILLA_K + k] = 0;
@@ -2860,7 +2866,7 @@ impl ZeldaState {
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
             self.ram[ANCILLA_AUX_TIMER + k] = 2;
             self.ram[ANCILLA_ARR3 + k] = 3;
-            self.ram[ANCILLA_Y_VEL + k] = 127;
+            self.ancilla_slot_view_mut(k).set_y_velocity(127);
             self.ram[ETHER_VAR2] = 40;
             self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
             self.ram[ETHER_VAR1] = 0x40;
@@ -2912,11 +2918,11 @@ impl ZeldaState {
                 if self.ram[ANCILLA_ITEM_TO_LINK + k] == 2 {
                     self.ram[ANCILLA_ITEM_TO_LINK + k] =
                         self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_sub(1);
-                    self.ram[ANCILLA_X_VEL + k] = 16;
+                    self.ancilla_slot_view_mut(k).set_x_velocity(16);
                     self.ram[ANCILLA_STEP + k] = 3;
                 }
             }
-            self.ram[ANCILLA_X_VEL + k] = self.ram[ANCILLA_X_VEL + k].wrapping_add(1);
+            self.ancilla_slot_view_mut(k).add_x_velocity(1);
             self.ether_spell_handle_radial_spin(k);
             return;
         }
@@ -2939,11 +2945,11 @@ impl ZeldaState {
             }
             self.ether_spell_handle_radial_spin(k);
         } else {
-            let mut vel = self.ram[ANCILLA_X_VEL + k].wrapping_add(0x10);
+            let mut vel = self.ancilla_slot_view(k).x_velocity().wrapping_add(0x10);
             if sign8(vel) {
                 vel = 0x7f;
             }
-            self.ram[ANCILLA_X_VEL + k] = vel;
+            self.ancilla_slot_view_mut(k).set_x_velocity(vel);
             self.ether_spell_handle_radial_spin(k);
         }
     }
@@ -2983,8 +2989,11 @@ impl ZeldaState {
         self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
         if sign8(self.ram[ANCILLA_ARR3 + k]) {
             self.ram[ANCILLA_STEP + k] = 2;
-            self.ram[ANCILLA_Y_VEL + k] = 0;
-            self.ram[ANCILLA_X_VEL + k] = 16;
+            {
+                let mut ether = self.ancilla_slot_view_mut(k);
+                ether.set_y_velocity(0);
+                ether.set_x_velocity(16);
+            }
             self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
             self.ram[ANCILLA_AUX_TIMER + k] = 2;
             if self.ram[STEP_COUNTER_FOR_SPIN_ATTACK] != 0 {
