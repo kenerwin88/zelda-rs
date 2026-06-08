@@ -2368,8 +2368,11 @@ impl ZeldaState {
         write_le_u16(&mut self.ram, BOOMERANG_TEMP_X, temp_x);
         write_le_u16(&mut self.ram, BOOMERANG_TEMP_Y, temp_y);
         if let Some(k) = self.ancilla_add_ancilla(6, 1) {
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
-            self.ram[ANCILLA_ARR3 + k] = 1;
+            {
+                let mut wall_clink = self.ancilla_slot_view_mut(k);
+                wall_clink.set_item_to_link(0);
+                wall_clink.set_arr3(1);
+            }
             let j =
                 (BOOMERANG_WALL_HIT_TAB0[self.ram[HOOKSHOT_EFFECT_INDEX] as usize] >> 1) as usize;
             self.ancilla_set_xy(
@@ -2398,8 +2401,8 @@ impl ZeldaState {
                 let mut duck = self.ancilla_slot_view_mut(k);
                 duck.set_z_velocity(0);
                 duck.set_z(0);
+                duck.set_step(0);
             }
-            self.ram[ANCILLA_STEP + k] = 0;
             self.add_bird_common(k);
         }
     }
@@ -2652,15 +2655,18 @@ impl ZeldaState {
     pub(super) fn ancilla_add_bunny_poof(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
             self.ram[LINK_VISIBILITY_STATUS] = 0x0c;
-            self.ram[ANCILLA_STEP + k] = 0;
             self.ram[SOUND_EFFECT_1] = self.link_calculate_sfx_pan()
                 | if self.ram[LINK_IS_BUNNY_MIRROR] == 0 {
                     0x14
                 } else {
                     0x15
                 };
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
-            self.ram[ANCILLA_AUX_TIMER + k] = 7;
+            {
+                let mut poof = self.ancilla_slot_view_mut(k);
+                poof.set_step(0);
+                poof.set_item_to_link(0);
+                poof.set_aux_timer(7);
+            }
             self.ancilla_set_xy(
                 k,
                 self.player_state_view().x(),
@@ -2680,9 +2686,12 @@ impl ZeldaState {
                 0x15
             };
 
-        self.ancilla_slot_view_mut(k).set_item_to_link(0);
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_AUX_TIMER + k] = 7;
+        {
+            let mut poof = self.ancilla_slot_view_mut(k);
+            poof.set_item_to_link(0);
+            poof.set_step(0);
+            poof.set_aux_timer(7);
+        }
         self.ram[TAGALONG_APPEARANCE_NONE_FLAG_ANCILLA] = 1;
         let j = self.ram[TAGALONG_DATA_INDEX_ANCILLA] as usize;
         let x = self.ram[TAGALONG_X_LO_ANCILLA + j] as u16
@@ -2708,9 +2717,10 @@ impl ZeldaState {
     pub(super) fn ancilla_add_victory_spin(&mut self) {
         if self.ram[LINK_SWORD_TYPE].wrapping_add(1) & 0xfe != 0 {
             if let Some(k) = self.ancilla_add_ancilla(0x3b, 0) {
-                self.ancilla_slot_view_mut(k).set_item_to_link(0);
-                self.ram[ANCILLA_ARR3 + k] = 1;
-                self.ram[ANCILLA_AUX_TIMER + k] = 34;
+                let mut spin = self.ancilla_slot_view_mut(k);
+                spin.set_item_to_link(0);
+                spin.set_arr3(1);
+                spin.set_aux_timer(34);
             }
         }
     }
@@ -2726,8 +2736,8 @@ impl ZeldaState {
                 let mut powder = self.ancilla_slot_view_mut(k);
                 powder.set_item_to_link(0);
                 powder.set_z(0);
+                powder.set_aux_timer(1);
             }
-            self.ram[ANCILLA_AUX_TIMER + k] = 1;
             self.ram[LINK_DMA_VAR5] = 80;
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ancilla_slot_view_mut(k).set_direction(j as u8);
@@ -2764,8 +2774,11 @@ impl ZeldaState {
         const WALL_TAP_SPARK_X: [i8; 4] = [11, 10, -12, 29];
         const WALL_TAP_SPARK_Y: [i8; 4] = [-4, 32, 17, 17];
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ancilla_slot_view_mut(k).set_item_to_link(5);
-            self.ram[ANCILLA_AUX_TIMER + k] = 1;
+            {
+                let mut spark = self.ancilla_slot_view_mut(k);
+                spark.set_item_to_link(5);
+                spark.set_aux_timer(1);
+            }
             let i = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ancilla_set_xy(
                 k,
@@ -2783,11 +2796,11 @@ impl ZeldaState {
         const LAMP_FLAME_X: [i8; 4] = [0, 0, -20, 18];
         const LAMP_FLAME_Y: [i8; 4] = [-16, 24, 4, 4];
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_AUX_TIMER + k] = 0;
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             {
                 let mut flame = self.ancilla_slot_view_mut(k);
                 flame.set_item_to_link(0);
+                flame.set_aux_timer(0);
                 flame.set_timer(23);
                 flame.set_direction(j as u8);
             }
@@ -2806,9 +2819,12 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_ms_cutscene(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
-            self.ram[ANCILLA_AUX_TIMER + k] = 2;
-            self.ancilla_slot_view_mut(k).set_timer(64);
+            {
+                let mut cutscene = self.ancilla_slot_view_mut(k);
+                cutscene.set_item_to_link(0);
+                cutscene.set_aux_timer(2);
+                cutscene.set_timer(64);
+            }
             self.ancilla_set_xy(
                 k,
                 self.player_state_view().x().wrapping_add(8),
@@ -2855,8 +2871,11 @@ impl ZeldaState {
         const HOOKSHOT_WALL_HIT_Y: [i8; 8] = [0, 8, 8, 8, 4, 8, 12, 8];
 
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ancilla_slot_view_mut(k).set_item_to_link(0);
-            self.ram[ANCILLA_ARR3 + k] = 1;
+            {
+                let mut wall_clink = self.ancilla_slot_view_mut(k);
+                wall_clink.set_item_to_link(0);
+                wall_clink.set_arr3(1);
+            }
             let j = self.ancilla_slot_view(kin).direction() as usize;
             self.ancilla_set_xy(
                 k,
