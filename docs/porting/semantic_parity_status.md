@@ -14,6 +14,9 @@ This file records the current implementation status for
 - Typed RAM views provide the source-address-backed extraction layer for frame
   control, player state, world/camera state, sprite slots, ancilla slots, and
   overworld Map16 load state.
+- Mutable typed slot views now back the central sprite/ancilla coordinate
+  setters and a small set of hookshot/dynamic-spawn slot writes, so new call
+  sites can migrate without reintroducing raw lo/hi byte packing.
 
 ## Graduated Subsystems
 

@@ -40,8 +40,8 @@ use crate::ram::player::{
     LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS,
 };
 use crate::ram::semantic::{
-    AncillaSlotView, FrameControlView, FrameControlViewMut, PlayerStateView, PlayerStateViewMut,
-    SpriteSlotView, WorldStateView,
+    AncillaSlotView, AncillaSlotViewMut, FrameControlView, FrameControlViewMut, PlayerStateView,
+    PlayerStateViewMut, SpriteSlotView, SpriteSlotViewMut, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1843,8 +1843,16 @@ impl ZeldaState {
         SpriteSlotView::new(&self.ram, slot)
     }
 
+    pub(crate) fn sprite_slot_view_mut(&mut self, slot: usize) -> SpriteSlotViewMut<'_> {
+        SpriteSlotViewMut::new(&mut self.ram, slot)
+    }
+
     pub(crate) fn ancilla_slot_view(&self, slot: usize) -> AncillaSlotView<'_> {
         AncillaSlotView::new(&self.ram, slot)
+    }
+
+    pub(crate) fn ancilla_slot_view_mut(&mut self, slot: usize) -> AncillaSlotViewMut<'_> {
+        AncillaSlotViewMut::new(&mut self.ram, slot)
     }
 
     pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {

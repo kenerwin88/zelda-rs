@@ -609,13 +609,11 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_set_x(&mut self, k: usize, x: u16) {
-        self.ram[SPRITE_X_LO + k] = x as u8;
-        self.ram[SPRITE_X_HI + k] = (x >> 8) as u8;
+        self.sprite_slot_view_mut(k).set_x(x);
     }
 
     pub(super) fn sprite_set_y(&mut self, k: usize, y: u16) {
-        self.ram[SPRITE_Y_LO + k] = y as u8;
-        self.ram[SPRITE_Y_HI + k] = (y >> 8) as u8;
+        self.sprite_slot_view_mut(k).set_y(y);
     }
 
     // void SpriteAddXY(int k, int xv, int yv) {

@@ -374,6 +374,51 @@ pub(crate) mod semantic {
         }
     }
 
+    pub(crate) struct SpriteSlotViewMut<'a> {
+        ram: &'a mut [u8],
+        slot: usize,
+    }
+
+    impl<'a> SpriteSlotViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
+            Self { ram, slot }
+        }
+
+        pub(crate) fn set_sprite_type(&mut self, value: u8) {
+            self.ram[SPRITE_TYPE + self.slot] = value;
+        }
+
+        pub(crate) fn set_state(&mut self, value: u8) {
+            self.ram[SPRITE_STATE + self.slot] = value;
+        }
+
+        pub(crate) fn set_x(&mut self, value: u16) {
+            write_position(
+                self.ram,
+                SPRITE_X_LO + self.slot,
+                SPRITE_X_HI + self.slot,
+                value,
+            );
+        }
+
+        pub(crate) fn set_y(&mut self, value: u16) {
+            write_position(
+                self.ram,
+                SPRITE_Y_LO + self.slot,
+                SPRITE_Y_HI + self.slot,
+                value,
+            );
+        }
+
+        pub(crate) fn set_x_velocity(&mut self, value: u8) {
+            self.ram[SPRITE_X_VELOCITY + self.slot] = value;
+        }
+
+        pub(crate) fn set_y_velocity(&mut self, value: u8) {
+            self.ram[SPRITE_Y_VELOCITY + self.slot] = value;
+        }
+    }
+
     pub(crate) struct AncillaSlotView<'a> {
         ram: &'a [u8],
         slot: usize,
@@ -425,6 +470,59 @@ pub(crate) mod semantic {
         }
     }
 
+    pub(crate) struct AncillaSlotViewMut<'a> {
+        ram: &'a mut [u8],
+        slot: usize,
+    }
+
+    impl<'a> AncillaSlotViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
+            Self { ram, slot }
+        }
+
+        pub(crate) fn set_ancilla_type(&mut self, value: u8) {
+            self.ram[ANCILLA_TYPE + self.slot] = value;
+        }
+
+        pub(crate) fn set_x(&mut self, value: u16) {
+            write_position(
+                self.ram,
+                ANCILLA_X_LO + self.slot,
+                ANCILLA_X_HI + self.slot,
+                value,
+            );
+        }
+
+        pub(crate) fn set_y(&mut self, value: u16) {
+            write_position(
+                self.ram,
+                ANCILLA_Y_LO + self.slot,
+                ANCILLA_Y_HI + self.slot,
+                value,
+            );
+        }
+
+        pub(crate) fn set_x_velocity(&mut self, value: u8) {
+            self.ram[ANCILLA_X_VELOCITY + self.slot] = value;
+        }
+
+        pub(crate) fn set_y_velocity(&mut self, value: u8) {
+            self.ram[ANCILLA_Y_VELOCITY + self.slot] = value;
+        }
+
+        pub(crate) fn set_item_to_link(&mut self, value: u8) {
+            self.ram[ANCILLA_ITEM_TO_LINK + self.slot] = value;
+        }
+
+        pub(crate) fn set_timer(&mut self, value: u8) {
+            self.ram[ANCILLA_TIMER + self.slot] = value;
+        }
+
+        pub(crate) fn set_direction(&mut self, value: u8) {
+            self.ram[ANCILLA_DIRECTION + self.slot] = value;
+        }
+    }
+
     fn byte(ram: &[u8], offset: usize) -> u8 {
         ram.get(offset).copied().unwrap_or(0)
     }
@@ -439,6 +537,11 @@ pub(crate) mod semantic {
 
     fn packed_position(ram: &[u8], low_offset: usize, high_offset: usize) -> u16 {
         u16::from(byte(ram, low_offset)) | (u16::from(byte(ram, high_offset)) << 8)
+    }
+
+    fn write_position(ram: &mut [u8], low_offset: usize, high_offset: usize, value: u16) {
+        ram[low_offset] = value as u8;
+        ram[high_offset] = (value >> 8) as u8;
     }
 }
 

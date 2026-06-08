@@ -5994,7 +5994,6 @@ impl ZeldaState {
 
         let k = self.ancilla_add_simple(a, y)?;
         self.ram[ANCILLA_AUX_TIMER + k] = 3;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
         self.ram[ANCILLA_STEP + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
         self.ram[RELATED_TO_HOOKSHOT] = 0;
@@ -6002,11 +6001,15 @@ impl ZeldaState {
         self.ram[ANCILLA_K + k] = 0;
         self.ram[ANCILLA_G + k] = 0xff;
         self.ram[ANCILLA_ARR1 + k] = 0;
-        self.ram[ANCILLA_TIMER + k] = 0;
         let dir = self.ram[LINK_DIRECTION_FACING] >> 1;
-        self.ram[ANCILLA_DIR + k] = dir;
-        self.ram[ANCILLA_X_VEL + k] = HOOKSHOT_X_VEL[dir as usize];
-        self.ram[ANCILLA_Y_VEL + k] = HOOKSHOT_Y_VEL[dir as usize];
+        {
+            let mut hookshot = self.ancilla_slot_view_mut(k);
+            hookshot.set_item_to_link(0);
+            hookshot.set_timer(0);
+            hookshot.set_direction(dir);
+            hookshot.set_x_velocity(HOOKSHOT_X_VEL[dir as usize]);
+            hookshot.set_y_velocity(HOOKSHOT_Y_VEL[dir as usize]);
+        }
         let x = self
             .player_state_view()
             .x()
@@ -8305,8 +8308,11 @@ impl ZeldaState {
         if j >= 0 {
             let j = j as usize;
             let i = usize::from(self.ram[LINK_DIRECTION_FACING] != 4);
-            self.ram[SPRITE_X_VEL + j] = DIGGING_GAME_XVEL[i];
-            self.ram[SPRITE_Y_VEL + j] = 0;
+            {
+                let mut sprite = self.sprite_slot_view_mut(j);
+                sprite.set_x_velocity(DIGGING_GAME_XVEL[i]);
+                sprite.set_y_velocity(0);
+            }
             self.ram[SPRITE_Z_VEL + j] = 24;
             self.ram[SPRITE_STUNNED + j] = 255;
             self.ram[SPRITE_DELAY_AUX4 + j] = 48;
@@ -8329,8 +8335,11 @@ impl ZeldaState {
 
     fn sprite_spawn_dynamically_for_player(&mut self, _k: u8, what: u8) -> Option<usize> {
         let j = (0..16).rev().find(|&j| self.ram[SPRITE_STATE + j] == 0)?;
-        self.ram[SPRITE_STATE + j] = 9;
-        self.ram[SPRITE_TYPE + j] = what;
+        {
+            let mut sprite = self.sprite_slot_view_mut(j);
+            sprite.set_state(9);
+            sprite.set_sprite_type(what);
+        }
         Some(j)
     }
 
