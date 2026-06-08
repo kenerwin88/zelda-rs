@@ -7852,15 +7852,17 @@ impl ZeldaState {
             }
 
             if self.ram[LINK_IS_RUNNING] == 0 || self.ram[LINK_DASH_CTR] == 64 {
-                self.ram[ANCILLA_X_VEL + k] = 0;
-                self.ram[ANCILLA_Y_VEL + k] = 0;
                 let t = self.ram[JOYPAD1H_LAST] & 0x0f;
                 self.ram[ANCILLA_ARR3 + k] = t;
                 if t & 3 != 0 {
-                    self.ram[ANCILLA_X_VEL + k] = if t & 1 != 0 { 16 } else { (-16i8) as u8 };
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
+                    ancilla.set_y_velocity(0);
+                    ancilla.set_x_velocity(if t & 1 != 0 { 16 } else { (-16i8) as u8 });
                     self.ram[ANCILLA_DIR + k] = if t & 1 != 0 { 3 } else { 2 };
                 } else {
-                    self.ram[ANCILLA_Y_VEL + k] = if t & 8 != 0 { (-16i8) as u8 } else { 16 };
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
+                    ancilla.set_x_velocity(0);
+                    ancilla.set_y_velocity(if t & 8 != 0 { (-16i8) as u8 } else { 16 });
                     self.ram[ANCILLA_DIR + k] = if t & 8 != 0 { 0 } else { 1 };
                 }
                 if self.ram[LINK_ACTUAL_VEL_Y] == 0 || self.ram[LINK_ACTUAL_VEL_X] == 0 {
@@ -7889,14 +7891,17 @@ impl ZeldaState {
             self.ancilla_sfx3_pan(k, 0x32);
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ram[ANCILLA_DIR + k] = j as u8;
-            self.ram[ANCILLA_Y_VEL + k] = SOMARIA_BLOCK_YVEL[j];
-            self.ram[ANCILLA_X_VEL + k] = SOMARIA_BLOCK_XVEL[j];
-            self.ram[ANCILLA_Z_VEL + k] = 48;
+            {
+                let mut ancilla = self.ancilla_slot_view_mut(k);
+                ancilla.set_y_velocity(SOMARIA_BLOCK_YVEL[j]);
+                ancilla.set_x_velocity(SOMARIA_BLOCK_XVEL[j]);
+                ancilla.set_z_velocity(48);
+                ancilla.set_z(0);
+            }
             self.ram[ANCILLA_H + k] = 1;
-            self.ram[ANCILLA_Z + k] = 0;
         }
 
-        self.ram[ANCILLA_Z_VEL + k] = self.ram[ANCILLA_Z_VEL + k].wrapping_sub(2);
+        self.ancilla_slot_view_mut(k).add_z_velocity((-2i8) as u8);
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
         self.ancilla_move_z(k);
@@ -7905,7 +7910,7 @@ impl ZeldaState {
         }
 
         self.ancilla_sfx2_pan(k, 0x21);
-        self.ram[ANCILLA_Z + k] = 0;
+        self.ancilla_slot_view_mut(k).set_z(0);
         let j = self.ram[ANCILLA_H + k];
         self.ram[ANCILLA_H + k] = self.ram[ANCILLA_H + k].wrapping_add(1);
         if j == 3 {
@@ -7913,9 +7918,12 @@ impl ZeldaState {
             self.ram[ANCILLA_H + k] = 0;
         } else {
             const SOMARIA_BLOCK_ZVEL: [u8; 4] = [48, 24, 16, 8];
-            self.ram[ANCILLA_Z_VEL + k] = SOMARIA_BLOCK_ZVEL[j.wrapping_sub(1) as usize];
-            self.ram[ANCILLA_Y_VEL + k] = ((self.ram[ANCILLA_Y_VEL + k] as i8) / 2) as u8;
-            self.ram[ANCILLA_X_VEL + k] = ((self.ram[ANCILLA_X_VEL + k] as i8) / 2) as u8;
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            let y_velocity = ((ancilla.y_velocity() as i8) / 2) as u8;
+            let x_velocity = ((ancilla.x_velocity() as i8) / 2) as u8;
+            ancilla.set_z_velocity(SOMARIA_BLOCK_ZVEL[j.wrapping_sub(1) as usize]);
+            ancilla.set_y_velocity(y_velocity);
+            ancilla.set_x_velocity(x_velocity);
         }
     }
 
