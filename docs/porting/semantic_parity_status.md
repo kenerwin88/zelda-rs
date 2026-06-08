@@ -16,10 +16,12 @@ This file records the current implementation status for
   overworld Map16 load state.
 - Mutable typed slot views now back the central sprite/ancilla coordinate
   getters, setters, movement helpers, sprite spawn-coordinate writes, and a
-  small set of hookshot/dynamic-spawn slot writes. Current-sprite coordinate
-  latching and local attract/ending coordinate helpers now delegate through
-  those paths, so new call sites can migrate without reintroducing raw
-  lo/hi/subpixel byte packing.
+  small set of hookshot/dynamic-spawn slot writes. They also back canonical
+  sprite velocity helpers for target-speed approach, inversion, wall bounce,
+  halving, and applying projected speed. Current-sprite coordinate latching and
+  local attract/ending coordinate helpers now delegate through those paths, so
+  new call sites can migrate without reintroducing raw lo/hi/subpixel byte
+  packing.
 
 ## Graduated Subsystems
 

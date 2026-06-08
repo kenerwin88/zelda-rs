@@ -849,15 +849,14 @@ impl ZeldaState {
     //     sprite_y_vel[k] += sign8(sprite_y_vel[k] - y) ? 1 : -1;
     // }
     pub(super) fn sprite_approach_target_speed(&mut self, k: usize, x: u8, y: u8) {
-        let x_diff = self.ram[SPRITE_X_VEL + k].wrapping_sub(x);
+        let mut sprite = self.sprite_slot_view_mut(k);
+        let x_diff = sprite.x_velocity().wrapping_sub(x);
         if x_diff != 0 {
-            self.ram[SPRITE_X_VEL + k] =
-                self.ram[SPRITE_X_VEL + k].wrapping_add(if sign8(x_diff) { 1 } else { 0xff });
+            sprite.add_x_velocity(if sign8(x_diff) { 1 } else { 0xff });
         }
-        let y_diff = self.ram[SPRITE_Y_VEL + k].wrapping_sub(y);
+        let y_diff = sprite.y_velocity().wrapping_sub(y);
         if y_diff != 0 {
-            self.ram[SPRITE_Y_VEL + k] =
-                self.ram[SPRITE_Y_VEL + k].wrapping_add(if sign8(y_diff) { 1 } else { 0xff });
+            sprite.add_y_velocity(if sign8(y_diff) { 1 } else { 0xff });
         }
     }
 
@@ -3386,8 +3385,9 @@ impl ZeldaState {
     //   sprite_y_vel[k] = (int8)sprite_y_vel[k] >> 1;
     // }
     pub(super) fn sprite_halve_speed_xy(&mut self, k: usize) {
-        self.ram[SPRITE_X_VEL + k] = ((self.ram[SPRITE_X_VEL + k] as i8) >> 1) as u8;
-        self.ram[SPRITE_Y_VEL + k] = ((self.ram[SPRITE_Y_VEL + k] as i8) >> 1) as u8;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.halve_x_velocity();
+        sprite.halve_y_velocity();
     }
 
     // void Sprite_ApplyRicochet(int k) {  // 86e229
@@ -3679,8 +3679,9 @@ impl ZeldaState {
     //   sprite_y_vel[k] = -sprite_y_vel[k];
     // }
     pub(super) fn sprite_invert_xy_speeds(&mut self, k: usize) {
-        self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_neg();
-        self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_neg();
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.negate_x_velocity();
+        sprite.negate_y_velocity();
     }
 
     // void Sprite_BounceOffWall(int k) {  // 86d9c0
@@ -3691,10 +3692,10 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_bounce_off_wall(&mut self, k: usize) {
         if (self.ram[SPRITE_WALLCOLL + k] & 3) != 0 {
-            self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_neg();
+            self.sprite_slot_view_mut(k).negate_x_velocity();
         }
         if (self.ram[SPRITE_WALLCOLL + k] & 12) != 0 {
-            self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_neg();
+            self.sprite_slot_view_mut(k).negate_y_velocity();
         }
     }
 
@@ -3703,8 +3704,9 @@ impl ZeldaState {
     //   sprite_y_vel[k] = -sprite_y_vel[k];
     // }
     pub(super) fn sprite_invert_speed_xy(&mut self, k: usize) {
-        self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_neg();
-        self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_neg();
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.negate_x_velocity();
+        sprite.negate_y_velocity();
     }
 
     // void Sprite_MoveZ(int k) {
@@ -3723,8 +3725,9 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_apply_speed_towards_link(&mut self, k: usize, vel: u8) {
         let pt = self.sprite_project_speed_towards_link(k, vel);
-        self.ram[SPRITE_X_VEL + k] = pt.x;
-        self.ram[SPRITE_Y_VEL + k] = pt.y;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_x_velocity(pt.x);
+        sprite.set_y_velocity(pt.y);
     }
 
     // void Sprite_SetSpawnedCoordinates(int k, SpriteSpawnInfo *info) {

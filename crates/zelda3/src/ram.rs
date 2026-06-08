@@ -448,6 +448,44 @@ pub(crate) mod semantic {
             self.ram[SPRITE_Y_VELOCITY + self.slot] = value;
         }
 
+        pub(crate) fn x_velocity(&self) -> u8 {
+            self.ram[SPRITE_X_VELOCITY + self.slot]
+        }
+
+        pub(crate) fn y_velocity(&self) -> u8 {
+            self.ram[SPRITE_Y_VELOCITY + self.slot]
+        }
+
+        pub(crate) fn add_x_velocity(&mut self, value: u8) {
+            self.ram[SPRITE_X_VELOCITY + self.slot] =
+                self.ram[SPRITE_X_VELOCITY + self.slot].wrapping_add(value);
+        }
+
+        pub(crate) fn add_y_velocity(&mut self, value: u8) {
+            self.ram[SPRITE_Y_VELOCITY + self.slot] =
+                self.ram[SPRITE_Y_VELOCITY + self.slot].wrapping_add(value);
+        }
+
+        pub(crate) fn negate_x_velocity(&mut self) {
+            self.ram[SPRITE_X_VELOCITY + self.slot] =
+                self.ram[SPRITE_X_VELOCITY + self.slot].wrapping_neg();
+        }
+
+        pub(crate) fn negate_y_velocity(&mut self) {
+            self.ram[SPRITE_Y_VELOCITY + self.slot] =
+                self.ram[SPRITE_Y_VELOCITY + self.slot].wrapping_neg();
+        }
+
+        pub(crate) fn halve_x_velocity(&mut self) {
+            self.ram[SPRITE_X_VELOCITY + self.slot] =
+                ((self.ram[SPRITE_X_VELOCITY + self.slot] as i8) >> 1) as u8;
+        }
+
+        pub(crate) fn halve_y_velocity(&mut self) {
+            self.ram[SPRITE_Y_VELOCITY + self.slot] =
+                ((self.ram[SPRITE_Y_VELOCITY + self.slot] as i8) >> 1) as u8;
+        }
+
         pub(crate) fn set_z(&mut self, value: u8) {
             self.ram[SPRITE_Z + self.slot] = value;
         }
