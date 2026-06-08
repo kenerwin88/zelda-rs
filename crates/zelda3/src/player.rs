@@ -5911,12 +5911,12 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_cane_of_byrna_init_spark(&mut self, ty: u8, limit: u8) {
         for k in (0..5).rev() {
-            if self.ram[ANCILLA_TYPE + k] == 0x31 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+            if self.ancilla_slot_view(k).ancilla_type() == 0x31 {
+                self.ancilla_slot_view_mut(k).set_ancilla_type(0);
             }
         }
         if let Some(k) = self.ancilla_add_simple(ty, limit) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_AUX_TIMER + k] = 9;
             self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 1;
             self.ram[ANCILLA_ARR3 + k] = 2;
@@ -5925,8 +5925,9 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_shovel_dirt(&mut self, ty: u8, limit: u8) {
         if let Some(k) = self.ancilla_add_simple(ty, limit) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-            self.ram[ANCILLA_TIMER + k] = 20;
+            let mut dirt = self.ancilla_slot_view_mut(k);
+            dirt.set_item_to_link(0);
+            dirt.set_timer(20);
             self.ancilla_set_xy(
                 k,
                 self.player_state_view().x(),
