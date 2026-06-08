@@ -1568,7 +1568,7 @@ impl ZeldaState {
     }
 
     fn boomerang_terminate(&mut self, k: usize) {
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).clear();
         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
         if self.ram[LINK_ITEM_IN_HAND] & 0x80 != 0 {
             self.ram[LINK_ITEM_IN_HAND] = 0;
@@ -1585,7 +1585,7 @@ impl ZeldaState {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 
         for j in (0..=4).rev() {
-            if self.ram[ANCILLA_TYPE + j] == 0x22 {
+            if self.ancilla_slot_view(j).ancilla_type() == 0x22 {
                 self.boomerang_draw(k);
                 return;
             }
@@ -1630,7 +1630,7 @@ impl ZeldaState {
             self.ancilla_add_sword_charge_sparkle(k);
         }
 
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] != 0 {
+        if self.ancilla_slot_view(k).item_to_link() != 0 {
             if self.ram[ANCILLA_K + k] != 0 {
                 self.ram[ANCILLA_K + k] = self.ram[ANCILLA_K + k].wrapping_add(1);
             }
@@ -1663,20 +1663,21 @@ impl ZeldaState {
             && self.ram[FRAME_COUNTER] >= 140
             && self.ram[FRAME_COUNTER] <= 210
         {
+            let boomerang = self.ancilla_slot_view(k);
             eprintln!(
                 "R boomerang-tick fc={} k={} x={:04x} y={:04x} xv={:02x} yv={:02x} step={:02x} aux={:02x} item={:02x} K={:02x} H={:02x} dir={:02x} arr23={:02x} link={:04x}/{:04x} hook={:02x}",
                 self.ram[FRAME_COUNTER],
                 k,
                 self.ancilla_get_x(k),
                 self.ancilla_get_y(k),
-                self.ram[ANCILLA_X_VEL + k],
-                self.ram[ANCILLA_Y_VEL + k],
+                boomerang.x_velocity(),
+                boomerang.y_velocity(),
                 self.ram[ANCILLA_STEP + k],
                 self.ram[ANCILLA_AUX_TIMER + k],
-                self.ram[ANCILLA_ITEM_TO_LINK + k],
+                boomerang.item_to_link(),
                 self.ram[ANCILLA_K + k],
                 self.ram[ANCILLA_H + k],
-                self.ram[ANCILLA_DIR + k],
+                boomerang.direction(),
                 self.ram[ANCILLA_ARR23 + k],
                 self.player_state_view().x(),
                 self.player_state_view().y(),
@@ -1684,13 +1685,14 @@ impl ZeldaState {
             );
         }
         let hit_spr = self.ancilla_check_sprite_collision(k);
-        let trace_pre_item = self.ram[ANCILLA_ITEM_TO_LINK + k];
+        let trace_pre_item = self.ancilla_slot_view(k).item_to_link();
         let trace_pre_step = self.ram[ANCILLA_STEP + k];
         let trace_pre_k = self.ram[ANCILLA_K + k];
 
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] == 0 {
+        if self.ancilla_slot_view(k).item_to_link() == 0 {
             if hit_spr.is_some() {
-                self.ram[ANCILLA_ITEM_TO_LINK + k] ^= 1;
+                let item_to_link = self.ancilla_slot_view(k).item_to_link() ^ 1;
+                self.ancilla_slot_view_mut(k).set_item_to_link(item_to_link);
                 if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                     && k == 4
                     && self.ram[FRAME_COUNTER] >= 130
@@ -1701,7 +1703,7 @@ impl ZeldaState {
                         self.ram[FRAME_COUNTER],
                         hit_spr.unwrap(),
                         trace_pre_item,
-                        self.ram[ANCILLA_ITEM_TO_LINK + k],
+                        item_to_link,
                         trace_pre_step,
                         self.ram[ANCILLA_STEP + k],
                         trace_pre_k,
@@ -1720,7 +1722,8 @@ impl ZeldaState {
                         5
                     },
                 );
-                self.ram[ANCILLA_ITEM_TO_LINK + k] ^= 1;
+                let item_to_link = self.ancilla_slot_view(k).item_to_link() ^ 1;
+                self.ancilla_slot_view_mut(k).set_item_to_link(item_to_link);
                 if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                     && k == 4
                     && self.ram[FRAME_COUNTER] >= 130
@@ -1731,7 +1734,7 @@ impl ZeldaState {
                         self.ram[FRAME_COUNTER],
                         self.ram[ANCILLA_TILE_ATTR_PLAYER + k],
                         trace_pre_item,
-                        self.ram[ANCILLA_ITEM_TO_LINK + k],
+                        item_to_link,
                         trace_pre_step,
                         self.ram[ANCILLA_STEP + k],
                         trace_pre_k,
@@ -1746,7 +1749,8 @@ impl ZeldaState {
                     self.ram[ANCILLA_STEP + k] = self.ram[ANCILLA_STEP + k].wrapping_sub(1);
                 }
                 if reached_edge || self.ram[ANCILLA_STEP + k] == 0 {
-                    self.ram[ANCILLA_ITEM_TO_LINK + k] ^= 1;
+                    let item_to_link = self.ancilla_slot_view(k).item_to_link() ^ 1;
+                    self.ancilla_slot_view_mut(k).set_item_to_link(item_to_link);
                     if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                         && k == 4
                         && self.ram[FRAME_COUNTER] >= 130
@@ -1756,7 +1760,7 @@ impl ZeldaState {
                             "R boomerang-branch fc={} reason=edge-step pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
                             self.ram[FRAME_COUNTER],
                             trace_pre_item,
-                            self.ram[ANCILLA_ITEM_TO_LINK + k],
+                            item_to_link,
                             trace_pre_step,
                             self.ram[ANCILLA_STEP + k],
                             trace_pre_k,
@@ -1776,7 +1780,7 @@ impl ZeldaState {
                             "R boomerang-branch fc={} reason=outbound pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
                             self.ram[FRAME_COUNTER],
                             trace_pre_item,
-                            self.ram[ANCILLA_ITEM_TO_LINK + k],
+                            self.ancilla_slot_view(k).item_to_link(),
                             trace_pre_step,
                             self.ram[ANCILLA_STEP + k],
                             trace_pre_k,
@@ -1794,7 +1798,7 @@ impl ZeldaState {
                         "R boomerang-branch fc={} reason=outbound pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
                         self.ram[FRAME_COUNTER],
                         trace_pre_item,
-                        self.ram[ANCILLA_ITEM_TO_LINK + k],
+                        self.ancilla_slot_view(k).item_to_link(),
                         trace_pre_step,
                         self.ram[ANCILLA_STEP + k],
                         trace_pre_k,
@@ -1916,7 +1920,7 @@ impl ZeldaState {
         const BOOMERANG_DRAW_TAB0: [u8; 2] = [3, 2];
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
 
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] != 0 {
+        if self.ancilla_slot_view(k).item_to_link() != 0 {
             self.ram[ANCILLA_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
             const TAGALONG_LAYER_BITS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
             let priority =
@@ -2357,7 +2361,7 @@ impl ZeldaState {
         write_le_u16(&mut self.ram, BOOMERANG_TEMP_X, temp_x);
         write_le_u16(&mut self.ram, BOOMERANG_TEMP_Y, temp_y);
         if let Some(k) = self.ancilla_add_ancilla(6, 1) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_ARR3 + k] = 1;
             let j =
                 (BOOMERANG_WALL_HIT_TAB0[self.ram[HOOKSHOT_EFFECT_INDEX] as usize] >> 1) as usize;
@@ -3691,9 +3695,12 @@ impl ZeldaState {
             return 0;
         };
         self.ram[ANCILLA_AUX_TIMER + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
         self.ram[ANCILLA_K + k] = 0;
-        self.ancilla_slot_view_mut(k).set_z(0);
+        {
+            let mut boomerang = self.ancilla_slot_view_mut(k);
+            boomerang.set_item_to_link(0);
+            boomerang.set_z(0);
+        }
         self.ram[ANCILLA_L + k] = self.ram[ANCILLA_NUMSPR + k];
         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 1;
         let mut j = self.ram[LINK_ITEM_BOOMERANG].wrapping_sub(1) as usize;
@@ -3721,7 +3728,7 @@ impl ZeldaState {
             let y_velocity = if r1 & 8 != 0 { (-(r0 as i8)) as u8 } else { r0 };
             self.ancilla_slot_view_mut(k).set_y_velocity(y_velocity);
             let i = if sign8(y_velocity) { 0 } else { 1 };
-            self.ram[ANCILLA_DIR + k] = i;
+            self.ancilla_slot_view_mut(k).set_direction(i);
             self.ram[HOOKSHOT_EFFECT_INDEX] = BOOMERANG_TAB3[i as usize];
         }
         self.ram[ANCILLA_S_PLAYER + k] = 0;
@@ -3733,7 +3740,7 @@ impl ZeldaState {
             let x_velocity = if r1 & 2 != 0 { (-(r0 as i8)) as u8 } else { r0 };
             self.ancilla_slot_view_mut(k).set_x_velocity(x_velocity);
             let i = if sign8(x_velocity) { 2 } else { 3 };
-            self.ram[ANCILLA_DIR + k] = i;
+            self.ancilla_slot_view_mut(k).set_direction(i);
             self.ram[HOOKSHOT_EFFECT_INDEX] |= BOOMERANG_TAB3[i as usize];
         }
 
@@ -3772,7 +3779,7 @@ impl ZeldaState {
                 );
             }
         } else {
-            self.ram[ANCILLA_TYPE + k] = 0;
+            self.ancilla_slot_view_mut(k).clear();
             self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
             self.ram[SOUND_EFFECT_1] = self.ancilla_calculate_sfx_pan(k)
                 | if self.ram[ANCILLA_TILE_ATTR_PLAYER + k] != 0xf0 {
@@ -3787,21 +3794,22 @@ impl ZeldaState {
             && self.ram[FRAME_COUNTER] >= 140
             && self.ram[FRAME_COUNTER] <= 210
         {
+            let boomerang = self.ancilla_slot_view(k);
             eprintln!(
                 "R boomerang-add fc={} k={} s={} type=0x{:02x} x={:04x} y={:04x} xv={:02x} yv={:02x} step={:02x} aux={:02x} item={:02x} K={:02x} dir={:02x} arr23={:02x} link={:04x}/{:04x} joy={:02x} bframes={:02x}",
                 self.ram[FRAME_COUNTER],
                 k,
                 s,
-                self.ram[ANCILLA_TYPE + k],
+                boomerang.ancilla_type(),
                 self.ancilla_get_x(k),
                 self.ancilla_get_y(k),
-                self.ram[ANCILLA_X_VEL + k],
-                self.ram[ANCILLA_Y_VEL + k],
+                boomerang.x_velocity(),
+                boomerang.y_velocity(),
                 self.ram[ANCILLA_STEP + k],
                 self.ram[ANCILLA_AUX_TIMER + k],
-                self.ram[ANCILLA_ITEM_TO_LINK + k],
+                boomerang.item_to_link(),
                 self.ram[ANCILLA_K + k],
-                self.ram[ANCILLA_DIR + k],
+                boomerang.direction(),
                 self.ram[ANCILLA_ARR23 + k],
                 self.player_state_view().x(),
                 self.player_state_view().y(),
