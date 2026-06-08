@@ -1343,12 +1343,11 @@ impl ZeldaState {
             return;
         }
         let j = j as usize;
-        let t = info.r0_x.wrapping_add(8);
-        self.ram[SPRITE_X_LO + j] = t as u8;
-        self.ram[SPRITE_X_HI + j] = (t >> 8) as u8;
-        let t = info.r2_y.wrapping_add(4);
-        self.ram[SPRITE_Y_LO + j] = t as u8;
-        self.ram[SPRITE_Y_HI + j] = (t >> 8) as u8;
+        {
+            let mut sprite = self.sprite_slot_view_mut(j);
+            sprite.set_x(info.r0_x.wrapping_add(8));
+            sprite.set_y(info.r2_y.wrapping_add(4));
+        }
         self.ram[SPRITE_D + j] = r15;
         let idx = r15 as usize & 63;
         self.ram[SPRITE_X_VEL + j] = K_SPAWN_PROBE_XVEL[idx] as u8;

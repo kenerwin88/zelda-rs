@@ -1153,10 +1153,7 @@ impl ZeldaState {
     }
 
     fn sprite_get_16_bit_coords(&mut self, k: usize) {
-        let x = self.ram[SPRITE_X_LO + k] as u16 | ((self.ram[SPRITE_X_HI + k] as u16) << 8);
-        let y = self.ram[SPRITE_Y_LO + k] as u16 | ((self.ram[SPRITE_Y_HI + k] as u16) << 8);
-        write_le_u16(&mut self.ram, CUR_SPRITE_X, x);
-        write_le_u16(&mut self.ram, CUR_SPRITE_Y, y);
+        self.sprite_get16_bit_coords(k);
     }
 
     pub(super) fn sprite_draw_shadow_custom_attract(
@@ -1165,8 +1162,9 @@ impl ZeldaState {
         poc: (u16, u16, u8),
         y_offset: u8,
     ) {
-        let sprite_y = self.ram[SPRITE_Y_LO + k] as u16 | ((self.ram[SPRITE_Y_HI + k] as u16) << 8);
-        let y = sprite_y
+        let y = self
+            .sprite_slot_view(k)
+            .y()
             .wrapping_add(y_offset as u16)
             .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
         if y.wrapping_add(0x10) >= 0x100 {

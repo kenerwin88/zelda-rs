@@ -3106,8 +3106,8 @@ impl ZeldaState {
     //   cur_sprite_y = sprite_y_lo[k] | sprite_y_hi[k] << 8;
     // }
     pub(super) fn sprite_get16_bit_coords(&mut self, k: usize) {
-        let x = u16::from(self.ram[SPRITE_X_LO + k]) | (u16::from(self.ram[SPRITE_X_HI + k]) << 8);
-        let y = u16::from(self.ram[SPRITE_Y_LO + k]) | (u16::from(self.ram[SPRITE_Y_HI + k]) << 8);
+        let x = self.sprite_get_x(k);
+        let y = self.sprite_get_y(k);
         write_le_u16(&mut self.ram, CUR_SPRITE_X, x);
         write_le_u16(&mut self.ram, CUR_SPRITE_Y, y);
     }
