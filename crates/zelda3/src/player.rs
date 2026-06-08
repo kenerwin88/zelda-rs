@@ -680,8 +680,8 @@ impl ZeldaState {
             return;
         }
         for i in (0..=4).rev() {
-            if self.ram[ANCILLA_TYPE + i] == 0x1e {
-                self.ram[ANCILLA_TYPE + i] = 0;
+            if self.ancilla_slot_view(i).ancilla_type() == 0x1e {
+                self.ancilla_slot_view_mut(i).set_ancilla_type(0);
             }
         }
         self.ram[LINK_COUNTDOWN_FOR_DASH] = 0;
@@ -4428,7 +4428,7 @@ impl ZeldaState {
                     self.hud_refresh_icon();
                 }
             } else {
-                self.ram[ANCILLA_TYPE + k] = 0;
+                self.ancilla_slot_view_mut(k).set_ancilla_type(0);
                 self.ancilla_sfx2_near(60);
             }
         }
@@ -4540,8 +4540,8 @@ impl ZeldaState {
                         self.ram[LINK_POSITION_MODE] = 0;
                         self.link_reset_boomerang_y_stuff();
                         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
-                        if self.ram[ANCILLA_TYPE] == 5 {
-                            self.ram[ANCILLA_TYPE] = 0;
+                        if self.ancilla_slot_view(0).ancilla_type() == 5 {
+                            self.ancilla_slot_view_mut(0).set_ancilla_type(0);
                         }
                     }
                     action = 1;
@@ -4714,7 +4714,9 @@ impl ZeldaState {
         if self.ram[LINK_POSITION_MODE] & 8 != 0 {
             return false;
         }
-        (0..=4).rev().any(|i| self.ram[ANCILLA_TYPE + i] == 0x31)
+        (0..=4)
+            .rev()
+            .any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x31)
     }
 
     pub(super) fn link_permission_for_slosh_sounds(&self) -> bool {
@@ -5148,7 +5150,7 @@ impl ZeldaState {
         {
             return;
         }
-        if (0..5).any(|i| self.ram[ANCILLA_TYPE + i] == 0x27) {
+        if (0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x27) {
             return;
         }
         if self.ram[LINK_ITEM_FLUTE] == 2 {
@@ -5757,7 +5759,7 @@ impl ZeldaState {
             }
 
             let mut did_charge_magic = false;
-            if !(0..5).any(|i| self.ram[ANCILLA_TYPE + i] == 0x2c) {
+            if !(0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x2c) {
                 if !self.link_check_magic_cost(4) {
                     if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
                         self.ram[BUTTON_MASK_B_Y] &= !0x40;
@@ -5959,7 +5961,7 @@ impl ZeldaState {
             return;
         }
 
-        if self.ram[ANCILLA_TYPE] | self.ram[ANCILLA_TYPE + 1] | self.ram[ANCILLA_TYPE + 2] != 0 {
+        if (0..3).any(|i| self.ancilla_slot_view(i).ancilla_type() != 0) {
             return;
         }
         if !self.link_check_magic_cost(1) {
@@ -6160,11 +6162,11 @@ impl ZeldaState {
             } else if self.ram[LINK_DISABLE_SPRITE_DAMAGE] == 0 {
                 let dmg = self.ram[LINK_GIVE_DAMAGE];
                 self.ram[LINK_GIVE_DAMAGE] = 0;
-                if self.ram[ANCILLA_TYPE] == 5
+                if self.ancilla_slot_view(0).ancilla_type() == 5
                     && self.ram[PLAYER_HANDLER_TIMER] == 0
                     && self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] != 0
                 {
-                    self.ram[ANCILLA_TYPE] = 0;
+                    self.ancilla_slot_view_mut(0).set_ancilla_type(0);
                     self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
                 }
                 if self.ram[COUNTDOWN_FOR_BLINK] == 0 {
@@ -6304,8 +6306,8 @@ impl ZeldaState {
             self.ram[LINK_STATE_BITS] = preserved_lift_bit;
 
             for i in 0..5 {
-                if matches!(self.ram[ANCILLA_TYPE + i], 0x30 | 0x31) {
-                    self.ram[ANCILLA_TYPE + i] = 0;
+                if matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31) {
+                    self.ancilla_slot_view_mut(i).set_ancilla_type(0);
                 }
             }
             self.link_cancel_dash();
@@ -6497,13 +6499,13 @@ impl ZeldaState {
     pub(super) fn handle_somaria_and_graves(&mut self) {
         if self.ram[PLAYER_IS_INDOORS] == 0 && self.ram[LINK_SOMETHING_WITH_HOOKSHOT] != 0 {
             for i in (0..5).rev() {
-                if self.ram[ANCILLA_TYPE + i] == 0x24 {
+                if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
                     self.gravestone_move(i);
                 }
             }
         }
         for i in (0..5).rev() {
-            if self.ram[ANCILLA_TYPE + i] == 0x2c {
+            if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
                 self.somaria_block_handle_player_interaction(i);
                 return;
             }
@@ -6715,8 +6717,8 @@ impl ZeldaState {
         self.cache_camera_properties_if_outdoors();
         if self.ram[LINK_AUXILIARY_STATE] != 0 {
             for i in (0..5).rev() {
-                if matches!(self.ram[ANCILLA_TYPE + i], 0x2a | 0x2b) {
-                    self.ram[ANCILLA_TYPE + i] = 0;
+                if matches!(self.ancilla_slot_view(i).ancilla_type(), 0x2a | 0x2b) {
+                    self.ancilla_slot_view_mut(i).set_ancilla_type(0);
                 }
             }
             self.ram[LINK_Z_COORD + 1] = 0;
@@ -7413,7 +7415,9 @@ impl ZeldaState {
         if health < self.ram[LINK_HEALTH_CURRENT]
             && self.ram[LINK_SWORD_TYPE].wrapping_add(1) & 0xfe != 0
             && self.ram[LINK_SWORD_TYPE] >= 2
-            && !(0..5).rev().any(|i| self.ram[ANCILLA_TYPE + i] == 0x31)
+            && !(0..5)
+                .rev()
+                .any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x31)
         {
             self.add_sword_beam(0);
         }
@@ -7511,7 +7515,7 @@ impl ZeldaState {
                     }
                     if (0..5)
                         .rev()
-                        .any(|i| matches!(self.ram[ANCILLA_TYPE + i], 0x30 | 0x31))
+                        .any(|i| matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31))
                     {
                         return;
                     }
