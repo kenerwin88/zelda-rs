@@ -5891,13 +5891,17 @@ impl ZeldaState {
             return;
         };
         self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_Z + k] = 0;
-        self.ram[ANCILLA_Z_VEL + k] = 24;
-        self.ram[ANCILLA_X_VEL + k] = if self.ram[LINK_DIRECTION_FACING] == 4 {
+        let x_velocity = if self.ram[LINK_DIRECTION_FACING] == 4 {
             (-8i8) as u8
         } else {
             8
         };
+        {
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_z(0);
+            ancilla.set_z_velocity(24);
+            ancilla.set_x_velocity(x_velocity);
+        }
         self.DecodeAnimatedSpriteTile_variable(12);
         self.ancilla_set_xy(k, 0x0490, 0x0a8a);
     }

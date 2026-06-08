@@ -637,6 +637,14 @@ pub(crate) mod semantic {
             self.ram[ANCILLA_Y_VELOCITY + self.slot] = value;
         }
 
+        pub(crate) fn set_z_velocity(&mut self, value: u8) {
+            self.ram[ANCILLA_Z_VELOCITY + self.slot] = value;
+        }
+
+        pub(crate) fn set_z(&mut self, value: u8) {
+            self.ram[ANCILLA_Z + self.slot] = value;
+        }
+
         pub(crate) fn move_x(&mut self) {
             move_axis24(
                 self.ram,

@@ -736,12 +736,14 @@ impl ZeldaState {
                     .wrapping_add(FIRE_ROD_Y[i] as i16 as u16),
             );
             if type_ != 1 {
-                self.ram[ANCILLA_X_VEL + j] = FIRE_ROD_XVEL[i] as u8;
-                self.ram[ANCILLA_Y_VEL + j] = FIRE_ROD_YVEL[i] as u8;
+                let mut ancilla = self.ancilla_slot_view_mut(j);
+                ancilla.set_x_velocity(FIRE_ROD_XVEL[i] as u8);
+                ancilla.set_y_velocity(FIRE_ROD_YVEL[i] as u8);
             } else {
                 i += self.ram[LINK_SWORD_TYPE].wrapping_sub(2) as usize * 4;
-                self.ram[ANCILLA_X_VEL + j] = K_FIRE_ROD_XVEL2[i] as u8;
-                self.ram[ANCILLA_Y_VEL + j] = K_FIRE_ROD_YVEL2[i] as u8;
+                let mut ancilla = self.ancilla_slot_view_mut(j);
+                ancilla.set_x_velocity(K_FIRE_ROD_XVEL2[i] as u8);
+                ancilla.set_y_velocity(K_FIRE_ROD_YVEL2[i] as u8);
             }
             self.ram[ANCILLA_FLOOR + j] = self.ram[LINK_IS_ON_LOWER_LEVEL];
             self.ram[ANCILLA_FLOOR2 + j] = self.ram[LINK_IS_ON_LOWER_LEVEL_MIRROR];
@@ -775,11 +777,14 @@ impl ZeldaState {
             self.DecodeAnimatedSpriteTile_variable(K_RECEIVE_ITEM_GFX[item_type as usize]);
         }
 
-        self.ram[ANCILLA_Z_VEL + k] = (-48i8) as u8;
-        self.ram[ANCILLA_Y_VEL + k] = 0;
-        self.ram[ANCILLA_X_VEL + k] = 0;
+        {
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_z_velocity((-48i8) as u8);
+            ancilla.set_y_velocity(0);
+            ancilla.set_x_velocity(0);
+            ancilla.set_z(FALLING_ITEM_Z[item_idx as usize]);
+        }
         self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_Z + k] = FALLING_ITEM_Z[item_idx as usize];
         self.ram[ANCILLA_AUX_TIMER + k] = 9;
         self.ram[ANCILLA_ARR3 + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
@@ -841,8 +846,11 @@ impl ZeldaState {
         self.ram[SWORDBEAM_VAR2] = 14;
         j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
         self.ram[ANCILLA_DIR + k] = j as u8;
-        self.ram[ANCILLA_Y_VEL + k] = SWORD_BEAM_YVEL[j] as u8;
-        self.ram[ANCILLA_X_VEL + k] = SWORD_BEAM_XVEL[j] as u8;
+        {
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_y_velocity(SWORD_BEAM_YVEL[j] as u8);
+            ancilla.set_x_velocity(SWORD_BEAM_XVEL[j] as u8);
+        }
         self.ram[ANCILLA_S_PLAYER + k] = SWORD_BEAM_S[j] as u8;
 
         let swordbeam_temp_y = self.player_state_view().y().wrapping_add(12);
@@ -1024,8 +1032,11 @@ impl ZeldaState {
                 self.ram[BLASTWALL_VAR12 + k] = 16;
                 let j = (self.ram[FRAME_COUNTER] & 15) as usize;
                 let velocity = BLAST_WALL_FIREBALL_VELOCITY[j];
-                self.ram[ANCILLA_Y_VEL + k] = velocity.y as u8;
-                self.ram[ANCILLA_X_VEL + k] = velocity.x as u8;
+                {
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
+                    ancilla.set_y_velocity(velocity.y as u8);
+                    ancilla.set_x_velocity(velocity.x as u8);
+                }
                 self.ancilla_set_xy(
                     k,
                     read_le_u16(&self.ram, BLASTWALL_VAR11 + r4 * 2).wrapping_add(16),
@@ -1066,8 +1077,11 @@ impl ZeldaState {
             self.ram[ANCILLA_ITEM_TO_LINK + k] = 8;
             let j = (ax >> 1) as usize;
             self.ram[ANCILLA_DIR + k] = j as u8 | 4;
-            self.ram[ANCILLA_Y_VEL + k] = SHOOT_BOW_YVEL[j] as u8;
-            self.ram[ANCILLA_X_VEL + k] = SHOOT_BOW_XVEL[j] as u8;
+            {
+                let mut ancilla = self.ancilla_slot_view_mut(k);
+                ancilla.set_y_velocity(SHOOT_BOW_YVEL[j] as u8);
+                ancilla.set_x_velocity(SHOOT_BOW_XVEL[j] as u8);
+            }
             self.ancilla_set_xy(
                 k,
                 xcoord.wrapping_add(SHOOT_BOW_X[j] as i16 as u16),
