@@ -19,10 +19,9 @@ Install the local hooks when you have the parity dependencies available:
 scripts/install_hooks.sh
 ```
 
-The pre-commit hook runs the standard replay parity gate. It expects the C
-checkout at `../zelda3` by default and a legally obtained USA ROM at
-`../zelda3/zelda3.sfc`. The hook is intentionally heavier than CI because it
-checks behavior that GitHub runners cannot verify without private ROM material.
+The pre-commit hook runs the standard replay parity gate. By default it expects
+the C checkout at `../zelda3` and a USA ROM at `../zelda3/zelda3.sfc`. This is
+heavier than CI because GitHub runners do not have the ROM or local C checkout.
 
 ## Checks
 
@@ -47,7 +46,7 @@ local parity gate:
 
 - Prefer source-backed names and WRAM aliases over invented labels.
 - Keep parity fixtures in their documented locations.
-- Do not commit ROMs, generated asset packs, local emulator installs, packaged
+- Do not commit ROMs, generated asset packs, emulator installs, packaged
   binaries, or local trace captures.
 - Keep the C checkout as the oracle for behavior until a subsystem is explicitly
   verified and refactored.

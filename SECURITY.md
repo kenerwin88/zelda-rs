@@ -1,12 +1,10 @@
 # Security Policy
 
-This is a game-porting and parity repository. Please do not report gameplay
-parity bugs as security vulnerabilities.
+This is a game-porting and parity repository. Gameplay parity bugs belong in
+normal issues, not security reports.
 
-Report security issues privately when they involve executable packaging,
-repository automation, unsafe file handling, or dependencies in a way that could
-affect users running local builds.
+Use private reporting for problems in packaging, repository automation, file
+handling, or dependencies that could affect people running local builds.
 
 Do not attach copyrighted ROMs, generated proprietary assets, personal save
 files, private traces, or credentials to public issues.
-

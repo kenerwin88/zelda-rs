@@ -1,11 +1,11 @@
 # zelda3-rs
 
-Rust port of [zelda3](https://github.com/snesrev/zelda3) — a reverse-engineered
-re-implementation of *The Legend of Zelda: A Link to the Past* in C, ported
-faithfully to Rust.
+Rust port of [zelda3](https://github.com/snesrev/zelda3) -- a
+reverse-engineered re-implementation of *The Legend of Zelda: A Link to the
+Past* in C.
 
 The original C project is expected next to this checkout as `../zelda3` by
-default and remains the ground truth for parity work.
+default. Parity scripts compare Rust against that checkout.
 
 This repository does not include a ROM, generated game assets, or packaged
 binaries. Builders must provide their own legally obtained USA ROM when running
@@ -42,9 +42,9 @@ ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
 ./target/release/zelda3 --lockstep <path-to-zelda3.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--trace-state]
 ```
 
-The CI workflow only runs ROM-free package checks. It does not build
-`zelda3-bin`, generate assets, or run oracle parity because those commands
-require private local ROM material and the original C checkout.
+CI runs only the ROM-free package checks. It does not build `zelda3-bin`,
+generate assets, or run oracle parity; those commands need a local ROM and the
+C checkout.
 
 ## Generated Assets
 
@@ -85,11 +85,10 @@ generated/zelda3_assets/
     ...
 ```
 
-Cargo repacks those split files into a temporary internal asset blob under
-`target/` while compiling, then embeds that blob in the executable. The generated
-folder itself intentionally does not contain `zelda3_assets.dat`. The `.bin`
-files are the exact runtime assets; the PNG files are human-inspectable previews
-for graphics assets and are not used by the runtime.
+Cargo repacks those split files into a temporary asset blob under `target/`
+while compiling, then embeds that blob in the executable. The generated folder
+does not contain `zelda3_assets.dat`. The `.bin` files are the runtime assets;
+the PNG files are previews for graphics assets and are not used by the runtime.
 
 The extractor writes a manifest with the source ROM SHA-1, per-asset sizes, and
 per-asset SHA-1 values, plus the generated preview image list. It delegates
@@ -144,14 +143,13 @@ options when your local layout differs.
 
 ## Fixtures
 
-The repository tracks two non-ROM binary fixtures needed for deterministic
-parity checks:
+The repository tracks two non-ROM binary fixtures used by parity checks:
 
 - `saves/zelda3-combined-route.sav`
 - `scripts/inputs/tas-us-full-completion-smv.sram`
 
-See [docs/fixtures.md](docs/fixtures.md) for provenance and the list of
-local-only artifacts that must stay out of git.
+See [docs/fixtures.md](docs/fixtures.md) for what those files are and which
+local build artifacts should stay out of git.
 
 ## License
 

@@ -1,8 +1,8 @@
 //! Asset helpers for generated Zelda 3 runtime asset files.
 //!
-//! The generated asset pack is intentionally kept outside git. Builders provide
-//! an original ROM, `scripts/extract_assets.py` creates `generated/zelda3_assets/`,
-//! and `zelda3-bin` embeds the split files into the standalone executable.
+//! Asset packs stay outside git. Builders provide an original ROM,
+//! `scripts/extract_assets.py` creates `generated/zelda3_assets/`, and
+//! `zelda3-bin` embeds the split files into the standalone executable.
 
 #![allow(dead_code)]
 
