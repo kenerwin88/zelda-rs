@@ -3894,12 +3894,16 @@ impl ZeldaState {
             self.ram[LINK_PICKING_THROW_STATE] = 0;
             self.ram[LINK_DIRECTION_FACING] = 0;
             self.ram[LINK_ANIMATION_STEPS] = 0;
-            self.ram[ANCILLA_Z_VEL + k] = 20;
-            self.ram[ANCILLA_Y_VEL + k] = (-40i8) as u8;
-            self.ram[ANCILLA_X_VEL + k] = 0;
-            self.ram[ANCILLA_Z + k] = 0;
-            self.ram[ANCILLA_TIMER + k] = 16;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = self.ram[LINK_RECEIVEITEM_INDEX];
+            let receive_item = self.ram[LINK_RECEIVEITEM_INDEX];
+            {
+                let mut item = self.ancilla_slot_view_mut(k);
+                item.set_z_velocity(20);
+                item.set_y_velocity((-40i8) as u8);
+                item.set_x_velocity(0);
+                item.set_z(0);
+                item.set_timer(16);
+                item.set_item_to_link(receive_item);
+            }
             self.ancilla_set_xy(
                 k,
                 self.player_state_view().x().wrapping_add(
@@ -3917,14 +3921,17 @@ impl ZeldaState {
             return;
         }
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_DIR + k] = 2;
-            self.ram[ANCILLA_ARR3 + k] = 3;
-            self.ram[ANCILLA_STEP + k] = 0;
-            self.ram[ANCILLA_AUX_TIMER + k] = 32;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 116;
-            self.ram[ANCILLA_Z_VEL + k] = 0;
+            {
+                let mut duck = self.ancilla_slot_view_mut(k);
+                duck.set_direction(2);
+                duck.set_arr3(3);
+                duck.set_step(0);
+                duck.set_aux_timer(32);
+                duck.set_item_to_link(116);
+                duck.set_z_velocity(0);
+                duck.set_z(0);
+            }
             self.ram[ANCILLA_L + k] = 0;
-            self.ram[ANCILLA_Z + k] = 0;
             self.ram[ANCILLA_S_PLAYER + k] = 0;
             self.ancilla_set_xy(k, 0x0200, 0x0788);
         }
@@ -3943,10 +3950,13 @@ impl ZeldaState {
             return;
         };
 
-        self.ram[ANCILLA_AUX_TIMER + k] = 10;
+        {
+            let mut weather_vane = self.ancilla_slot_view_mut(k);
+            weather_vane.set_aux_timer(10);
+            weather_vane.set_step(0);
+            weather_vane.set_arr3(0);
+        }
         self.ram[ANCILLA_G + k] = 128;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_ARR3 + k] = 0;
         self.ram[SOUND_EFFECT_1] = 0;
         self.ram[MUSIC_CONTROL] = 0xf2;
         self.ram[SOUND_EFFECT_AMBIENT] = 0x17;
@@ -3973,11 +3983,14 @@ impl ZeldaState {
             return -1;
         };
         self.ram[ANCILLA_R_PLAYER + k] = 0;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_ARR25 + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_ARR3 + k] = K_BOMB_TAB0[1];
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 1;
+        {
+            let mut explosion = self.ancilla_slot_view_mut(k);
+            explosion.set_step(0);
+            explosion.set_arr25(0);
+            explosion.set_arr3(K_BOMB_TAB0[1]);
+            explosion.set_item_to_link(1);
+        }
         let j = self.ram[TAGALONG_DATA_INDEX_ANCILLA] as usize;
         let y = self.ram[TAGALONG_Y_LO_ANCILLA + j] as u16
             | ((self.ram[TAGALONG_Y_HI_ANCILLA + j] as u16) << 8);
@@ -4007,24 +4020,28 @@ impl ZeldaState {
         }
 
         self.ancilla_sfx3_near(0x2a);
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_Y_VEL + k] = 0;
-        self.ram[ANCILLA_X_VEL + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-        self.ram[ANCILLA_AUX_TIMER + k] = 0;
-        self.ram[ANCILLA_ARR3 + k] = 0;
+        {
+            let mut block = self.ancilla_slot_view_mut(k);
+            block.set_step(0);
+            block.set_y_velocity(0);
+            block.set_x_velocity(0);
+            block.set_item_to_link(0);
+            block.set_aux_timer(0);
+            block.set_arr3(0);
+            block.set_timer(18);
+            block.set_z(0);
+        }
         self.ram[ANCILLA_ARR1 + k] = 0;
         self.ram[ANCILLA_H + k] = 0;
         self.ram[ANCILLA_G + k] = 12;
-        self.ram[ANCILLA_TIMER + k] = 18;
         self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_Z + k] = 0;
         self.ram[ANCILLA_K + k] = 0;
         self.ram[ANCILLA_R_PLAYER + k] = 0;
         self.ram[ANCILLA_ARR4 + k] = 0;
         self.ram[ANCILLA_S_PLAYER + k] = 9;
         self.ram[ANCILLA_T_PLAYER + k] = 0;
-        self.ram[ANCILLA_DIR + k] = self.ram[LINK_DIRECTION_FACING] >> 1;
+        let direction = self.ram[LINK_DIRECTION_FACING] >> 1;
+        self.ancilla_slot_view_mut(k).set_direction(direction);
         if self.ancilla_check_initial_tile_collision_class2(k) {
             self.ancilla_set_xy(
                 k,
