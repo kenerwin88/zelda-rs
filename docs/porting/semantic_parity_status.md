@@ -15,8 +15,9 @@ This file records the current implementation status for
   control, player state, world/camera state, sprite slots, ancilla slots, and
   overworld Map16 load state.
 - Mutable typed slot views now back the central sprite/ancilla coordinate
-  setters and a small set of hookshot/dynamic-spawn slot writes, so new call
-  sites can migrate without reintroducing raw lo/hi byte packing.
+  getters, setters, movement helpers, sprite spawn-coordinate writes, and a
+  small set of hookshot/dynamic-spawn slot writes, so new call sites can
+  migrate without reintroducing raw lo/hi/subpixel byte packing.
 
 ## Graduated Subsystems
 

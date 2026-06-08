@@ -3954,11 +3954,11 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_get_y(&self, k: usize) -> u16 {
-        u16::from(self.ram[ANCILLA_Y_LO + k]) | (u16::from(self.ram[ANCILLA_Y_HI + k]) << 8)
+        self.ancilla_slot_view(k).y()
     }
 
     pub(super) fn ancilla_get_x(&self, k: usize) -> u16 {
-        u16::from(self.ram[ANCILLA_X_LO + k]) | (u16::from(self.ram[ANCILLA_X_HI + k]) << 8)
+        self.ancilla_slot_view(k).x()
     }
 
     fn ancilla_project_reflexive_speed_onto_sprite(
@@ -4057,34 +4057,15 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_move_x(&mut self, k: usize) {
-        let pos = self.ram[ANCILLA_X_SUBPIXEL + k] as u32
-            | ((self.ram[ANCILLA_X_LO + k] as u32) << 8)
-            | ((self.ram[ANCILLA_X_HI + k] as u32) << 16);
-        let delta = ((self.ram[ANCILLA_X_VEL + k] as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.ram[ANCILLA_X_SUBPIXEL + k] = moved as u8;
-        self.ram[ANCILLA_X_LO + k] = (moved >> 8) as u8;
-        self.ram[ANCILLA_X_HI + k] = (moved >> 16) as u8;
+        self.ancilla_slot_view_mut(k).move_x();
     }
 
     pub(super) fn ancilla_move_y(&mut self, k: usize) {
-        let pos = self.ram[ANCILLA_Y_SUBPIXEL + k] as u32
-            | ((self.ram[ANCILLA_Y_LO + k] as u32) << 8)
-            | ((self.ram[ANCILLA_Y_HI + k] as u32) << 16);
-        let delta = ((self.ram[ANCILLA_Y_VEL + k] as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.ram[ANCILLA_Y_SUBPIXEL + k] = moved as u8;
-        self.ram[ANCILLA_Y_LO + k] = (moved >> 8) as u8;
-        self.ram[ANCILLA_Y_HI + k] = (moved >> 16) as u8;
+        self.ancilla_slot_view_mut(k).move_y();
     }
 
     pub(super) fn ancilla_move_z(&mut self, k: usize) {
-        let pos = self.ram[ANCILLA_Z_SUBPIXEL_PLAYER + k] as u32
-            | ((self.ram[ANCILLA_Z + k] as u32) << 8);
-        let delta = ((self.ram[ANCILLA_Z_VEL + k] as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.ram[ANCILLA_Z_SUBPIXEL_PLAYER + k] = moved as u8;
-        self.ram[ANCILLA_Z + k] = (moved >> 8) as u8;
+        self.ancilla_slot_view_mut(k).move_z();
     }
 
     fn ancilla02_fire_rod_shot(&mut self, k: usize) {

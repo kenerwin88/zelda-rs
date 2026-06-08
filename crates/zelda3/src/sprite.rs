@@ -637,11 +637,11 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_get_x(&self, k: usize) -> u16 {
-        u16::from(self.ram[SPRITE_X_LO + k]) | (u16::from(self.ram[SPRITE_X_HI + k]) << 8)
+        self.sprite_slot_view(k).x()
     }
 
     pub(super) fn sprite_get_y(&self, k: usize) -> u16 {
-        u16::from(self.ram[SPRITE_Y_LO + k]) | (u16::from(self.ram[SPRITE_Y_HI + k]) << 8)
+        self.sprite_slot_view(k).y()
     }
 
     pub(super) fn sprite_is_right_of_location(&self, k: usize, x: u16) -> PairU8 {
@@ -2324,31 +2324,11 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_move_x(&mut self, k: usize) {
-        if self.ram[SPRITE_X_VEL + k] == 0 {
-            return;
-        }
-        let pos = self.ram[SPRITE_X_SUBPIXEL + k] as u32
-            | ((self.ram[SPRITE_X_LO + k] as u32) << 8)
-            | ((self.ram[SPRITE_X_HI + k] as u32) << 16);
-        let delta = ((self.ram[SPRITE_X_VEL + k] as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.ram[SPRITE_X_SUBPIXEL + k] = moved as u8;
-        self.ram[SPRITE_X_LO + k] = (moved >> 8) as u8;
-        self.ram[SPRITE_X_HI + k] = (moved >> 16) as u8;
+        self.sprite_slot_view_mut(k).move_x();
     }
 
     pub(super) fn sprite_move_y(&mut self, k: usize) {
-        if self.ram[SPRITE_Y_VEL + k] == 0 {
-            return;
-        }
-        let pos = self.ram[SPRITE_Y_SUBPIXEL + k] as u32
-            | ((self.ram[SPRITE_Y_LO + k] as u32) << 8)
-            | ((self.ram[SPRITE_Y_HI + k] as u32) << 16);
-        let delta = ((self.ram[SPRITE_Y_VEL + k] as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.ram[SPRITE_Y_SUBPIXEL + k] = moved as u8;
-        self.ram[SPRITE_Y_LO + k] = (moved >> 8) as u8;
-        self.ram[SPRITE_Y_HI + k] = (moved >> 16) as u8;
+        self.sprite_slot_view_mut(k).move_y();
     }
 
     pub(super) fn sprite_draw_shadow(&mut self, k: usize, x: u16) {
@@ -3733,12 +3713,7 @@ impl ZeldaState {
     //   sprite_z[k] = z >> 8;
     // }
     pub(super) fn sprite_move_z(&mut self, k: usize) {
-        let pos =
-            (u16::from(self.ram[SPRITE_Z + k]) << 8) | u16::from(self.ram[SPRITE_Z_SUBPOS + k]);
-        let delta = ((self.ram[SPRITE_Z_VEL + k] as i8 as i32) << 4) as u16;
-        let z = pos.wrapping_add(delta);
-        self.ram[SPRITE_Z_SUBPOS + k] = z as u8;
-        self.ram[SPRITE_Z + k] = (z >> 8) as u8;
+        self.sprite_slot_view_mut(k).move_z();
     }
 
     // void Sprite_ApplySpeedTowardsLink(int k, uint8 vel) {
@@ -3760,11 +3735,10 @@ impl ZeldaState {
     //   sprite_z[k] = info->r4_z;
     // }
     pub(super) fn sprite_set_spawned_coordinates(&mut self, k: usize, info: &SpriteSpawnInfo) {
-        self.ram[SPRITE_X_LO + k] = info.r0_x as u8;
-        self.ram[SPRITE_X_HI + k] = (info.r0_x >> 8) as u8;
-        self.ram[SPRITE_Y_LO + k] = info.r2_y as u8;
-        self.ram[SPRITE_Y_HI + k] = (info.r2_y >> 8) as u8;
-        self.ram[SPRITE_Z + k] = info.r4_z;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_x(info.r0_x);
+        sprite.set_y(info.r2_y);
+        sprite.set_z(info.r4_z);
     }
 
     pub(super) fn sprite_explode_spawn_ea(&mut self, k: usize) {

@@ -57,17 +57,27 @@ pub(crate) mod semantic {
     const SPRITE_X_HI: usize = 0x0d30;
     const SPRITE_Y_VELOCITY: usize = 0x0d40;
     const SPRITE_X_VELOCITY: usize = 0x0d50;
+    const SPRITE_Y_SUBPIXEL: usize = 0x0d60;
+    const SPRITE_X_SUBPIXEL: usize = 0x0d70;
     const SPRITE_AI_STATE: usize = 0x0d80;
     const SPRITE_DELAY_MAIN: usize = 0x0df0;
     const SPRITE_HEALTH: usize = 0x0e50;
     const SPRITE_HIT_TIMER: usize = 0x0ef0;
+    const SPRITE_Z: usize = 0x0f70;
+    const SPRITE_Z_VELOCITY: usize = 0x0f80;
+    const SPRITE_Z_SUBPIXEL: usize = 0x0f90;
 
+    const ANCILLA_Z_VELOCITY: usize = 0x0294;
+    const ANCILLA_Z: usize = 0x029e;
+    const ANCILLA_Z_SUBPIXEL_PLAYER: usize = 0x02a8;
     const ANCILLA_Y_LO: usize = 0x0bfa;
     const ANCILLA_X_LO: usize = 0x0c04;
     const ANCILLA_Y_HI: usize = 0x0c0e;
     const ANCILLA_X_HI: usize = 0x0c18;
     const ANCILLA_Y_VELOCITY: usize = 0x0c22;
     const ANCILLA_X_VELOCITY: usize = 0x0c2c;
+    const ANCILLA_Y_SUBPIXEL: usize = 0x0c36;
+    const ANCILLA_X_SUBPIXEL: usize = 0x0c40;
     const ANCILLA_TYPE: usize = 0x0c4a;
     const ANCILLA_ITEM_TO_LINK: usize = 0x0c5e;
     const ANCILLA_TIMER: usize = 0x0c68;
@@ -357,6 +367,26 @@ pub(crate) mod semantic {
             byte(self.ram, SPRITE_Y_VELOCITY + self.slot)
         }
 
+        pub(crate) fn z_velocity(&self) -> u8 {
+            byte(self.ram, SPRITE_Z_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn x_subpixel(&self) -> u8 {
+            byte(self.ram, SPRITE_X_SUBPIXEL + self.slot)
+        }
+
+        pub(crate) fn y_subpixel(&self) -> u8 {
+            byte(self.ram, SPRITE_Y_SUBPIXEL + self.slot)
+        }
+
+        pub(crate) fn z(&self) -> u8 {
+            byte(self.ram, SPRITE_Z + self.slot)
+        }
+
+        pub(crate) fn z_subpixel(&self) -> u8 {
+            byte(self.ram, SPRITE_Z_SUBPIXEL + self.slot)
+        }
+
         pub(crate) fn ai_state(&self) -> u8 {
             byte(self.ram, SPRITE_AI_STATE + self.slot)
         }
@@ -417,6 +447,45 @@ pub(crate) mod semantic {
         pub(crate) fn set_y_velocity(&mut self, value: u8) {
             self.ram[SPRITE_Y_VELOCITY + self.slot] = value;
         }
+
+        pub(crate) fn set_z(&mut self, value: u8) {
+            self.ram[SPRITE_Z + self.slot] = value;
+        }
+
+        pub(crate) fn move_x(&mut self) {
+            if self.ram[SPRITE_X_VELOCITY + self.slot] == 0 {
+                return;
+            }
+            move_axis24(
+                self.ram,
+                SPRITE_X_SUBPIXEL + self.slot,
+                SPRITE_X_LO + self.slot,
+                SPRITE_X_HI + self.slot,
+                SPRITE_X_VELOCITY + self.slot,
+            );
+        }
+
+        pub(crate) fn move_y(&mut self) {
+            if self.ram[SPRITE_Y_VELOCITY + self.slot] == 0 {
+                return;
+            }
+            move_axis24(
+                self.ram,
+                SPRITE_Y_SUBPIXEL + self.slot,
+                SPRITE_Y_LO + self.slot,
+                SPRITE_Y_HI + self.slot,
+                SPRITE_Y_VELOCITY + self.slot,
+            );
+        }
+
+        pub(crate) fn move_z(&mut self) {
+            move_axis16(
+                self.ram,
+                SPRITE_Z_SUBPIXEL + self.slot,
+                SPRITE_Z + self.slot,
+                SPRITE_Z_VELOCITY + self.slot,
+            );
+        }
     }
 
     pub(crate) struct AncillaSlotView<'a> {
@@ -455,6 +524,26 @@ pub(crate) mod semantic {
 
         pub(crate) fn y_velocity(&self) -> u8 {
             byte(self.ram, ANCILLA_Y_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn z_velocity(&self) -> u8 {
+            byte(self.ram, ANCILLA_Z_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn x_subpixel(&self) -> u8 {
+            byte(self.ram, ANCILLA_X_SUBPIXEL + self.slot)
+        }
+
+        pub(crate) fn y_subpixel(&self) -> u8 {
+            byte(self.ram, ANCILLA_Y_SUBPIXEL + self.slot)
+        }
+
+        pub(crate) fn z(&self) -> u8 {
+            byte(self.ram, ANCILLA_Z + self.slot)
+        }
+
+        pub(crate) fn z_subpixel(&self) -> u8 {
+            byte(self.ram, ANCILLA_Z_SUBPIXEL_PLAYER + self.slot)
         }
 
         pub(crate) fn item_to_link(&self) -> u8 {
@@ -510,6 +599,35 @@ pub(crate) mod semantic {
             self.ram[ANCILLA_Y_VELOCITY + self.slot] = value;
         }
 
+        pub(crate) fn move_x(&mut self) {
+            move_axis24(
+                self.ram,
+                ANCILLA_X_SUBPIXEL + self.slot,
+                ANCILLA_X_LO + self.slot,
+                ANCILLA_X_HI + self.slot,
+                ANCILLA_X_VELOCITY + self.slot,
+            );
+        }
+
+        pub(crate) fn move_y(&mut self) {
+            move_axis24(
+                self.ram,
+                ANCILLA_Y_SUBPIXEL + self.slot,
+                ANCILLA_Y_LO + self.slot,
+                ANCILLA_Y_HI + self.slot,
+                ANCILLA_Y_VELOCITY + self.slot,
+            );
+        }
+
+        pub(crate) fn move_z(&mut self) {
+            move_axis16(
+                self.ram,
+                ANCILLA_Z_SUBPIXEL_PLAYER + self.slot,
+                ANCILLA_Z + self.slot,
+                ANCILLA_Z_VELOCITY + self.slot,
+            );
+        }
+
         pub(crate) fn set_item_to_link(&mut self, value: u8) {
             self.ram[ANCILLA_ITEM_TO_LINK + self.slot] = value;
         }
@@ -542,6 +660,31 @@ pub(crate) mod semantic {
     fn write_position(ram: &mut [u8], low_offset: usize, high_offset: usize, value: u16) {
         ram[low_offset] = value as u8;
         ram[high_offset] = (value >> 8) as u8;
+    }
+
+    fn move_axis24(
+        ram: &mut [u8],
+        subpixel_offset: usize,
+        low_offset: usize,
+        high_offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos = u32::from(ram[subpixel_offset])
+            | (u32::from(ram[low_offset]) << 8)
+            | (u32::from(ram[high_offset]) << 16);
+        let delta = ((ram[velocity_offset] as i8 as i32) << 4) as u32;
+        let moved = pos.wrapping_add(delta);
+        ram[subpixel_offset] = moved as u8;
+        ram[low_offset] = (moved >> 8) as u8;
+        ram[high_offset] = (moved >> 16) as u8;
+    }
+
+    fn move_axis16(ram: &mut [u8], subpixel_offset: usize, offset: usize, velocity_offset: usize) {
+        let pos = (u16::from(ram[offset]) << 8) | u16::from(ram[subpixel_offset]);
+        let delta = ((ram[velocity_offset] as i8 as i32) << 4) as u16;
+        let moved = pos.wrapping_add(delta);
+        ram[subpixel_offset] = moved as u8;
+        ram[offset] = (moved >> 8) as u8;
     }
 }
 
