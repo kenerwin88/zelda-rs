@@ -2385,7 +2385,7 @@ impl ZeldaState {
             return;
         }
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_TIMER + k] = 0x78;
+            self.ancilla_slot_view_mut(k).set_timer(0x78);
             self.ram[ANCILLA_L + k] = 0;
             {
                 let mut duck = self.ancilla_slot_view_mut(k);
@@ -2419,15 +2419,13 @@ impl ZeldaState {
             self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
             if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
                 self.ram[ANCILLA_AUX_TIMER + k] = 1;
-                self.ram[ANCILLA_ITEM_TO_LINK + k] =
-                    self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-                if self.ram[ANCILLA_ITEM_TO_LINK + k] == 17 {
+                if self.ancilla_slot_view_mut(k).advance_item_to_link() == 17 {
                     self.byrna_windup_spark_transmute_to_normal(k);
                     return;
                 }
             }
         }
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] == 0 {
+        if self.ancilla_slot_view(k).item_to_link() == 0 {
             return;
         }
 
@@ -2452,7 +2450,7 @@ impl ZeldaState {
         );
         let (x, y) = self.ancilla_prep_oam_coord(k);
 
-        let a = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_sub(1) & 0x0f;
+        let a = self.ancilla_slot_view(k).item_to_link().wrapping_sub(1) & 0x0f;
         let mut j = 0usize;
         if a != 0 {
             j = 4 * if a != 15 { ((a & 1) + 1) as usize } else { 3 };
@@ -2480,7 +2478,7 @@ impl ZeldaState {
             0x34, 0x33, 0x32, 0x31, 0x16, 0x15, 0x14, 0x13, 0x2a, 0x29, 0x28, 0x27, 0x10, 0x0f,
             0x0e, 0x0d,
         ];
-        self.ram[ANCILLA_TYPE + k] = 0x31;
+        self.ancilla_slot_view_mut(k).set_ancilla_type(0x31);
         let j = (self.ram[LINK_DIRECTION_FACING] << 1) as usize;
         self.ram[SWORDBEAM_ARR] = CANE_SPARK_TRANSMUTE_TAB[j];
         self.ram[SWORDBEAM_ARR + 1] = CANE_SPARK_TRANSMUTE_TAB[j + 1];
@@ -2488,12 +2486,12 @@ impl ZeldaState {
         self.ram[SWORDBEAM_ARR + 3] = CANE_SPARK_TRANSMUTE_TAB[j + 3];
         self.ram[ANCILLA_AUX_TIMER + k] = 0x17;
         self.ram[ANCILLA_G + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+        self.ancilla_slot_view_mut(k).set_item_to_link(0);
         self.ram[ANCILLA_ARR3 + k] = 8;
         self.ram[ANCILLA_STEP + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
         self.ram[ANCILLA_ARR1 + k] = 2;
-        self.ram[ANCILLA_TIMER + k] = 21;
+        self.ancilla_slot_view_mut(k).set_timer(21);
         self.ram[SWORDBEAM_VAR2] = 20;
         self.ancilla_sfx3_near(0x30);
         self.ancilla31_byrna_spark(k);
@@ -2531,9 +2529,7 @@ impl ZeldaState {
                 }
             }
             if self.ram[ANCILLA_STEP + k] != 3 {
-                self.ram[ANCILLA_ITEM_TO_LINK + k] =
-                    self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-                let a = self.ram[ANCILLA_ITEM_TO_LINK + k];
+                let a = self.ancilla_slot_view_mut(k).advance_item_to_link();
                 self.ram[ANCILLA_STEP + k] = if a >= 4 {
                     3
                 } else if a == 2 {
@@ -2563,8 +2559,8 @@ impl ZeldaState {
         let swordbeam_temp_x = self.player_state_view().x().wrapping_add(8);
         write_le_u16(&mut self.ram, SWORDBEAM_TEMP_Y, swordbeam_temp_y);
         write_le_u16(&mut self.ram, SWORDBEAM_TEMP_X, swordbeam_temp_x);
-        if self.ram[ANCILLA_TIMER + k] == 0 {
-            self.ram[ANCILLA_TIMER + k] = 21;
+        if self.ancilla_slot_view(k).timer() == 0 {
+            self.ancilla_slot_view_mut(k).set_timer(21);
             self.ancilla_sfx3_near(0x30);
         }
         let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
@@ -2590,7 +2586,7 @@ impl ZeldaState {
                 pt.x.wrapping_add(read_le_u16(&self.ram, BG2HOFS_COPY2)),
                 pt.y.wrapping_add(read_le_u16(&self.ram, BG2VOFS_COPY2)),
             );
-            self.ram[ANCILLA_DIR + k] = 0;
+            self.ancilla_slot_view_mut(k).set_direction(0);
             self.ancilla_check_sprite_collision(k);
             oam += 4;
             if i == 0 {
@@ -2602,7 +2598,7 @@ impl ZeldaState {
 
     fn kill_byrna_spark(&mut self, k: usize) {
         self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 0;
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).clear();
         self.ram[LINK_GIVE_DAMAGE] = 0;
     }
 
@@ -2615,7 +2611,7 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_z_velocity(8);
         self.ram[ANCILLA_L + k] = 0;
         self.ram[ANCILLA_G + k] = 5;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+        self.ancilla_slot_view_mut(k).set_item_to_link(0);
         self.ram[ANCILLA_K + k] = 0;
         self.ancilla_set_xy(
             k,
@@ -2631,13 +2627,13 @@ impl ZeldaState {
         self.ram[ANCILLA_K + k] = 0;
         k += 1;
 
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 2;
+        self.ancilla_slot_view_mut(k).set_item_to_link(2);
         self.ram[ANCILLA_AUX_TIMER + k] = 3;
         self.ram[ANCILLA_ARR3 + k] = 8;
         self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_DIR + k] = 3;
+        self.ancilla_slot_view_mut(k).set_direction(3);
         self.ram[ANCILLA_ARR25 + k] =
-            K_MAGIC_POWDER_TAB0[30 + self.ram[ANCILLA_ITEM_TO_LINK + k] as usize];
+            K_MAGIC_POWDER_TAB0[30 + self.ancilla_slot_view(k).item_to_link() as usize];
 
         self.ancilla_set_xy(
             k,
@@ -2656,7 +2652,7 @@ impl ZeldaState {
                 } else {
                     0x15
                 };
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_AUX_TIMER + k] = 7;
             self.ancilla_set_xy(
                 k,
@@ -2677,7 +2673,7 @@ impl ZeldaState {
                 0x15
             };
 
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+        self.ancilla_slot_view_mut(k).set_item_to_link(0);
         self.ram[ANCILLA_STEP + k] = 0;
         self.ram[ANCILLA_AUX_TIMER + k] = 7;
         self.ram[TAGALONG_APPEARANCE_NONE_FLAG_ANCILLA] = 1;
@@ -2694,8 +2690,9 @@ impl ZeldaState {
             return;
         }
         if let Some(k) = self.ancilla_add_ancilla(0x3f, 4) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-            self.ram[ANCILLA_TIMER + k] = 7;
+            let mut poof = self.ancilla_slot_view_mut(k);
+            poof.set_item_to_link(0);
+            poof.set_timer(7);
             self.ram[SOUND_EFFECT_1] = self.link_calculate_sfx_pan() | 21;
             self.ancilla_set_xy(k, x, y.wrapping_sub(2));
         }
@@ -2704,7 +2701,7 @@ impl ZeldaState {
     pub(super) fn ancilla_add_victory_spin(&mut self) {
         if self.ram[LINK_SWORD_TYPE].wrapping_add(1) & 0xfe != 0 {
             if let Some(k) = self.ancilla_add_ancilla(0x3b, 0) {
-                self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+                self.ancilla_slot_view_mut(k).set_item_to_link(0);
                 self.ram[ANCILLA_ARR3 + k] = 1;
                 self.ram[ANCILLA_AUX_TIMER + k] = 34;
             }
@@ -2718,12 +2715,15 @@ impl ZeldaState {
         const MAGIC_POWER_Y1: [i8; 4] = [1, 40, 22, 22];
 
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-            self.ram[ANCILLA_Z + k] = 0;
+            {
+                let mut powder = self.ancilla_slot_view_mut(k);
+                powder.set_item_to_link(0);
+                powder.set_z(0);
+            }
             self.ram[ANCILLA_AUX_TIMER + k] = 1;
             self.ram[LINK_DMA_VAR5] = 80;
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
-            self.ram[ANCILLA_DIR + k] = j as u8;
+            self.ancilla_slot_view_mut(k).set_direction(j as u8);
             self.ram[ANCILLA_ARR25 + k] = K_MAGIC_POWDER_TAB0[j * 10];
             self.ancilla_set_xy(
                 k,
@@ -2737,7 +2737,7 @@ impl ZeldaState {
             self.ancilla_check_tile_collision(k);
             self.ram[DUNGEON_TORCH_ATTR] = self.ram[ANCILLA_TILE_ATTR_PLAYER + k];
             if self.ram[CURRENT_ITEM_ACTIVE] == 9 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+                self.ancilla_slot_view_mut(k).clear();
                 return;
             }
             self.ram[SOUND_EFFECT_1] = self.link_calculate_sfx_pan() | 0x0d;
@@ -2757,7 +2757,7 @@ impl ZeldaState {
         const WALL_TAP_SPARK_X: [i8; 4] = [11, 10, -12, 29];
         const WALL_TAP_SPARK_Y: [i8; 4] = [-4, 32, 17, 17];
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 5;
+            self.ancilla_slot_view_mut(k).set_item_to_link(5);
             self.ram[ANCILLA_AUX_TIMER + k] = 1;
             let i = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ancilla_set_xy(
@@ -2776,11 +2776,14 @@ impl ZeldaState {
         const LAMP_FLAME_X: [i8; 4] = [0, 0, -20, 18];
         const LAMP_FLAME_Y: [i8; 4] = [-16, 24, 4, 4];
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
             self.ram[ANCILLA_AUX_TIMER + k] = 0;
-            self.ram[ANCILLA_TIMER + k] = 23;
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
-            self.ram[ANCILLA_DIR + k] = j as u8;
+            {
+                let mut flame = self.ancilla_slot_view_mut(k);
+                flame.set_item_to_link(0);
+                flame.set_timer(23);
+                flame.set_direction(j as u8);
+            }
             self.ancilla_set_xy(
                 k,
                 self.player_state_view()
@@ -2796,9 +2799,9 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_ms_cutscene(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_AUX_TIMER + k] = 2;
-            self.ram[ANCILLA_TIMER + k] = 64;
+            self.ancilla_slot_view_mut(k).set_timer(64);
             self.ancilla_set_xy(
                 k,
                 self.player_state_view().x().wrapping_add(8),
@@ -2815,11 +2818,11 @@ impl ZeldaState {
             return;
         }
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 16;
+            self.ancilla_slot_view_mut(k).set_item_to_link(16);
             self.ram[ANCILLA_L + k] = 0;
             let mut j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             j = ADD_DASH_TREMOR_DIR[j] as usize;
-            self.ram[ANCILLA_DIR + k] = j as u8;
+            self.ancilla_slot_view_mut(k).set_direction(j as u8);
             let y = self
                 .player_state_view()
                 .y()
@@ -2845,9 +2848,9 @@ impl ZeldaState {
         const HOOKSHOT_WALL_HIT_Y: [i8; 8] = [0, 8, 8, 8, 4, 8, 12, 8];
 
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_ARR3 + k] = 1;
-            let j = self.ram[ANCILLA_DIR + kin] as usize;
+            let j = self.ancilla_slot_view(kin).direction() as usize;
             self.ancilla_set_xy(
                 k,
                 self.ancilla_get_x(kin)
@@ -2861,7 +2864,7 @@ impl ZeldaState {
     pub(super) fn ancilla_add_quake_spell(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
             self.ram[ANCILLA_STEP + k] = 0;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 13;
             self.ram[SOUND_EFFECT_1] = 0x35;
             for i in 0..5 {
@@ -2872,7 +2875,7 @@ impl ZeldaState {
                 self.ram[QUAKE_ARR1 + i] = 1;
             }
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
-            self.ram[ANCILLA_TIMER + k] = 2;
+            self.ancilla_slot_view_mut(k).set_timer(2);
             let quake_var1 = self.player_state_view().y().wrapping_add(26);
             let quake_var2 = self.player_state_view().x().wrapping_add(8);
             write_le_u16(&mut self.ram, QUAKE_VAR1, quake_var1);
@@ -2883,7 +2886,7 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_ether_spell(&mut self, a: u8, y: u8) {
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_ARR25 + k] = 0;
             self.ram[ANCILLA_STEP + k] = 0;
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
