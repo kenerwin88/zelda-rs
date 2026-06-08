@@ -36,15 +36,18 @@ then refactor toward idiomatic Rust once each piece is verified green).
 cargo fmt --all -- --check
 cargo check -p snes -p zelda3 -p platform -p renderer -p assets
 cargo test -p snes -p zelda3 -p platform -p renderer -p assets
+python3 scripts/create_ci_assets.py --out-dir "$PWD/target/ci-assets/zelda3_assets"
+ZELDA3_ASSETS_DIR="$PWD/target/ci-assets/zelda3_assets" cargo check -p zelda3-bin
 ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
 ./target/release/zelda3         # standalone playable binary, no ROM needed at runtime
 ./target/release/zelda3 <path-to-zelda3.sfc>
 ./target/release/zelda3 --lockstep <path-to-zelda3.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--trace-state]
 ```
 
-CI runs only the ROM-free package checks. It does not build `zelda3-bin`,
-generate assets, or run oracle parity; those commands need a local ROM and the
-C checkout.
+CI runs ROM-free package checks and builds `zelda3-bin` against generated
+placeholder assets. Those placeholder assets only prove the binary build and
+smoke path; playable asset generation and oracle parity still need a local ROM
+and the C checkout.
 
 ## Generated Assets
 
@@ -89,6 +92,17 @@ Cargo repacks those split files into a temporary asset blob under `target/`
 while compiling, then embeds that blob in the executable. The generated folder
 does not contain `zelda3_assets.dat`. The `.bin` files are the runtime assets;
 the PNG files are previews for graphics assets and are not used by the runtime.
+
+For CI or fresh-clone build checks without a ROM, create placeholder assets:
+
+```bash
+python3 scripts/create_ci_assets.py --out-dir "$PWD/target/ci-assets/zelda3_assets"
+ZELDA3_ASSETS_DIR="$PWD/target/ci-assets/zelda3_assets" cargo check -p zelda3-bin
+ZELDA3_ASSETS_DIR="$PWD/target/ci-assets/zelda3_assets" cargo run -p zelda3-bin -- --standalone-smoke 2
+```
+
+These files are zero-filled fixtures for build coverage. They are not playable
+assets and should stay under `target/`.
 
 The extractor writes a manifest with the source ROM SHA-1, per-asset sizes, and
 per-asset SHA-1 values, plus the generated preview image list. It delegates

@@ -32,6 +32,19 @@ jobs:
       - name: Test ROM-free packages
         run: cargo test -p snes -p zelda3 -p platform -p renderer -p assets
 
+      - name: Create placeholder binary assets
+        run: python3 scripts/create_ci_assets.py --out-dir "$GITHUB_WORKSPACE/target/ci-assets/zelda3_assets"
+
+      - name: Check ROM-free binary package
+        run: cargo check -p zelda3-bin
+        env:
+          ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
+
+      - name: Smoke ROM-free binary package
+        run: cargo run -p zelda3-bin -- --standalone-smoke 2
+        env:
+          ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
+
       - name: Check Python scripts
         run: python3 -m py_compile scripts/*.py
 
