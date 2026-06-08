@@ -629,7 +629,7 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_blanket(&mut self, a: u8) {
         let k = 0;
-        self.ram[ANCILLA_TYPE + k] = a;
+        self.ancilla_slot_view_mut(k).set_ancilla_type(a);
         self.ram[ANCILLA_NUMSPR + k] = K_ANCILLA_PFLAGS[a as usize];
         self.ram[ANCILLA_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
         self.ram[ANCILLA_FLOOR2 + k] = self.ram[LINK_IS_ON_LOWER_LEVEL_MIRROR];
@@ -644,7 +644,7 @@ impl ZeldaState {
             self.ram[LINK_CANT_CHANGE_DIRECTION] |= 1;
             self.ram[LINK_DIRECTION] = 0;
             self.ram[LINK_DIRECTION_LAST] = 0;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            self.ancilla_slot_view_mut(k).set_item_to_link(0);
             self.ram[ANCILLA_AUX_TIMER + k] = 7;
             let x = self.player_state_view().x();
             let y = self.player_state_view().y().wrapping_add(4);
@@ -664,11 +664,11 @@ impl ZeldaState {
         const SHOVEL_HIT_STARS_X2: [i8; 6] = [-3, 19, 2, 13, -6, 22];
 
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
             self.ram[ANCILLA_AUX_TIMER + k] = 2;
             self.ram[ANCILLA_ARR3 + k] = 1;
             {
                 let mut ancilla = self.ancilla_slot_view_mut(k);
+                ancilla.set_item_to_link(0);
                 ancilla.set_y_velocity(0);
                 ancilla.set_x_velocity(0);
             }
@@ -718,15 +718,18 @@ impl ZeldaState {
             self.ancilla_sfx2_near(0x0e);
         }
 
-        self.ram[ANCILLA_TYPE + j] = type_;
         self.ram[ANCILLA_NUMSPR + j] = K_ANCILLA_PFLAGS[type_ as usize];
-        self.ram[ANCILLA_TIMER + j] = 3;
         self.ram[ANCILLA_STEP + j] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + j] = 0;
         self.ram[ANCILLA_OBJPRIO + j] = 0;
         self.ram[ANCILLA_U + j] = 0;
         let mut i = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
-        self.ram[ANCILLA_DIR + j] = i as u8;
+        {
+            let mut ancilla = self.ancilla_slot_view_mut(j);
+            ancilla.set_ancilla_type(type_);
+            ancilla.set_timer(3);
+            ancilla.set_item_to_link(0);
+            ancilla.set_direction(i as u8);
+        }
 
         if self.ancilla_check_initial_tile_a(j) < 0 {
             self.ancilla_set_xy(
@@ -751,12 +754,13 @@ impl ZeldaState {
             self.ram[ANCILLA_FLOOR + j] = self.ram[LINK_IS_ON_LOWER_LEVEL];
             self.ram[ANCILLA_FLOOR2 + j] = self.ram[LINK_IS_ON_LOWER_LEVEL_MIRROR];
         } else if type_ == 1 {
-            self.ram[ANCILLA_TYPE + j] = 4;
-            self.ram[ANCILLA_TIMER + j] = 7;
+            let mut ancilla = self.ancilla_slot_view_mut(j);
+            ancilla.set_ancilla_type(4);
+            ancilla.set_timer(7);
             self.ram[ANCILLA_NUMSPR + j] = 16;
         } else {
             self.ram[ANCILLA_STEP + j] = 1;
-            self.ram[ANCILLA_TIMER + j] = 31;
+            self.ancilla_slot_view_mut(j).set_timer(31);
             self.ram[ANCILLA_NUMSPR + j] = 8;
             j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ancilla_sfx2_pan(j, 0x2a);
@@ -775,13 +779,13 @@ impl ZeldaState {
             return -1;
         };
         let item_type = FALLING_ITEM_TYPE[item_idx as usize];
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = item_type;
         if item_type == 0x10 || item_type == 0x0f {
             self.DecodeAnimatedSpriteTile_variable(K_RECEIVE_ITEM_GFX[item_type as usize]);
         }
 
         {
             let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_item_to_link(item_type);
             ancilla.set_z_velocity((-48i8) as u8);
             ancilla.set_y_velocity(0);
             ancilla.set_x_velocity(0);
@@ -840,7 +844,6 @@ impl ZeldaState {
         self.ram[SWORDBEAM_ARR + 3] = SWORD_BEAM_TAB[j + 3];
         self.ram[SWORDBEAM_VAR1] = SWORD_BEAM_TAB[j + 3];
         self.ram[ANCILLA_AUX_TIMER + k] = 2;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0x4c;
         self.ram[ANCILLA_ARR3 + k] = 8;
         self.ram[ANCILLA_STEP + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
@@ -848,9 +851,10 @@ impl ZeldaState {
         self.ram[ANCILLA_ARR1 + k] = 0;
         self.ram[SWORDBEAM_VAR2] = 14;
         j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
-        self.ram[ANCILLA_DIR + k] = j as u8;
         {
             let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_item_to_link(0x4c);
+            ancilla.set_direction(j as u8);
             ancilla.set_y_velocity(SWORD_BEAM_YVEL[j] as u8);
             ancilla.set_x_velocity(SWORD_BEAM_XVEL[j] as u8);
         }
@@ -868,8 +872,9 @@ impl ZeldaState {
                 swordbeam_temp_y.wrapping_add(SWORD_BEAM_Y[j] as i16 as u16),
             );
             self.ram[SOUND_EFFECT_2] = 1 | self.ancilla_calculate_sfx_pan(k);
-            self.ram[ANCILLA_TYPE + k] = 4;
-            self.ram[ANCILLA_TIMER + k] = 7;
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_ancilla_type(4);
+            ancilla.set_timer(7);
             self.ram[ANCILLA_NUMSPR + k] = 16;
         }
     }
