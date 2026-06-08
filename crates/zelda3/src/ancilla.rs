@@ -990,10 +990,10 @@ impl ZeldaState {
         const ADD_DASHING_DUST_X: [i8; 4] = [4, 4, 6, 0];
         const ADD_DASHING_DUST_Y: [i8; 4] = [20, 4, 16, 16];
         if let Some(k) = self.ancilla_add_simple(a, y) {
-            self.ram[ANCILLA_STEP + k] = flag;
             let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             {
                 let mut dust = self.ancilla_slot_view_mut(k);
+                dust.set_step(flag);
                 dust.set_item_to_link(0);
                 dust.set_timer(3);
                 dust.set_direction(j as u8);
@@ -1168,8 +1168,11 @@ impl ZeldaState {
             ancilla.set_x_velocity(56);
             ancilla.set_item_to_link(0);
         }
-        self.ram[ANCILLA_AUX_TIMER + k] = 1;
-        self.ram[ANCILLA_ARR3 + k] = 3;
+        {
+            let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_aux_timer(1);
+            ancilla.set_arr3(3);
+        }
         self.ram[ANCILLA_K + k] = 0;
         self.ram[ANCILLA_G + k] = 0;
 
