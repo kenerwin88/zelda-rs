@@ -3122,8 +3122,11 @@ impl ZeldaState {
         self.ram[BOMBOS_ARR7] = 0x10;
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 11;
         self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+        {
+            let mut bombos = self.ancilla_slot_view_mut(k);
+            bombos.set_step(0);
+            bombos.set_item_to_link(0);
+        }
         self.ancilla_sfx2_near(0x2a);
 
         let mut t = self.asset_u8(72, self.ram[FRAME_COUNTER] as usize);
@@ -3190,7 +3193,7 @@ impl ZeldaState {
                 self.bombos_spell_control_blasting(k);
                 return;
             }
-            let mut i = self.ram[ANCILLA_STEP + k] as i32;
+            let mut i = self.ancilla_slot_view(k).step() as i32;
             loop {
                 self.ancilla_draw_bombos_blast(i as usize);
                 i -= 1;
@@ -3202,8 +3205,8 @@ impl ZeldaState {
     }
 
     fn bombos_spell_control_fire_columns(&mut self, k: usize) {
-        let sa = self.ram[ANCILLA_ITEM_TO_LINK + k];
-        let mut sb = self.ram[ANCILLA_STEP + k];
+        let sa = self.ancilla_slot_view(k).item_to_link();
+        let mut sb = self.ancilla_slot_view(k).step();
 
         let mut i = sb as i32;
         loop {
@@ -3286,11 +3289,11 @@ impl ZeldaState {
         if self.ram[BOMBOS_ARR7] >= 0x80 {
             self.ram[BOMBOS_VAR4] = 1;
         }
-        self.ram[ANCILLA_STEP + k] = sb;
+        self.ancilla_slot_view_mut(k).set_step(sb);
     }
 
     fn bombos_spell_finish_fire_columns(&mut self, kk: usize) {
-        let mut k = self.ram[ANCILLA_STEP + kk] as i32;
+        let mut k = self.ancilla_slot_view(kk).step() as i32;
         loop {
             let uk = k as usize;
             let arr1 = self.ram[BOMBOS_ARR1 + uk].wrapping_sub(1);
@@ -3315,11 +3318,11 @@ impl ZeldaState {
         }
         self.ram[BOMBOS_VAR4] = 2;
         self.medallion_check_sprite_damage(kk);
-        self.ram[ANCILLA_STEP + kk] = 0;
+        self.ancilla_slot_view_mut(kk).set_step(0);
     }
 
     fn bombos_spell_control_blasting(&mut self, kk: usize) {
-        let mut k = self.ram[ANCILLA_STEP + kk] as i32;
+        let mut k = self.ancilla_slot_view(kk).step() as i32;
         let mut sb = k;
         while k >= 0 {
             let uk = k as usize;
@@ -3370,7 +3373,7 @@ impl ZeldaState {
 
         for j in (0..=15).rev() {
             if self.ram[BOMBOS_ARR3 + j] != 8 {
-                self.ram[ANCILLA_STEP + kk] = sb as u8;
+                self.ancilla_slot_view_mut(kk).set_step(sb as u8);
                 let var3 = self.ram[BOMBOS_VAR3].wrapping_sub(1);
                 self.ram[BOMBOS_VAR3] = var3;
                 if var3 == 0 {
@@ -3380,7 +3383,7 @@ impl ZeldaState {
                 return;
             }
         }
-        self.ram[ANCILLA_TYPE + kk] = 0;
+        self.ancilla_slot_view_mut(kk).clear();
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 1;
         self.ram[SPIN_ATTACK_SOUND_LATCH] = 0;
         self.ram[STATE_FOR_SPIN_ATTACK] = 0;
