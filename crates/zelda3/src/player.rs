@@ -5588,7 +5588,9 @@ impl ZeldaState {
         self.ram[LINK_GIVE_DAMAGE] = 0;
         self.ram[LINK_AUXILIARY_STATE] = 0;
         self.ram[LINK_INCAPACITATED_TIMER] = 0;
-        let hookshot = (0..=4).rev().find(|&i| self.ram[ANCILLA_TYPE + i] == 0x1f);
+        let hookshot = (0..=4)
+            .rev()
+            .find(|&i| self.ancilla_slot_view(i).ancilla_type() == 0x1f);
         let Some(_k) = hookshot else {
             self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] =
                 self.ram[LINK_DELAY_TIMER_SPIN_ATTACK].wrapping_sub(1);
@@ -5619,15 +5621,16 @@ impl ZeldaState {
         self.ram[PLAYER_ON_SOMARIA_PLATFORM] = 0;
 
         let hei = self.ram[HOOKSHOT_EFFECT_INDEX] as usize;
-        self.ram[ANCILLA_ITEM_TO_LINK + hei] = self.ram[ANCILLA_ITEM_TO_LINK + hei].wrapping_sub(1);
-        if (self.ram[ANCILLA_ITEM_TO_LINK + hei] as i8) < 0 {
-            self.ram[ANCILLA_ITEM_TO_LINK + hei] = 0;
+        let item_to_link = self.ancilla_slot_view(hei).item_to_link().wrapping_sub(1);
+        self.ancilla_slot_view_mut(hei)
+            .set_item_to_link(item_to_link);
+        if (item_to_link as i8) < 0 {
+            self.ancilla_slot_view_mut(hei).set_item_to_link(0);
         } else {
-            let dir = self.ram[ANCILLA_DIR + hei] as usize;
-            let x =
-                self.ram[ANCILLA_X_LO + hei] as u16 | ((self.ram[ANCILLA_X_HI + hei] as u16) << 8);
-            let y =
-                self.ram[ANCILLA_Y_LO + hei] as u16 | ((self.ram[ANCILLA_Y_HI + hei] as u16) << 8);
+            let hookshot = self.ancilla_slot_view(hei);
+            let dir = hookshot.direction() as usize;
+            let x = hookshot.x();
+            let y = hookshot.y();
             let target_y = y.wrapping_add(HOOKSHOT_ARR_A[dir] as i16 as u16);
             let target_x = x.wrapping_add(HOOKSHOT_ARR_B[dir] as i16 as u16);
             self.ram[LINK_ACTUAL_VEL_X] = 0;
@@ -5646,7 +5649,7 @@ impl ZeldaState {
             }
         }
 
-        self.ram[ANCILLA_TYPE + hei] = 0;
+        self.ancilla_slot_view_mut(hei).set_ancilla_type(0);
         self.ram[TAGALONG_VAR7] = self.ram[TAGALONG_VAR1];
         self.finish_hookshot_state_without_button_clamp();
 
@@ -7786,7 +7789,7 @@ impl ZeldaState {
         if self.frame_control_view().submodule() != 0 {
             return;
         }
-        self.ram[ANCILLA_Y_VEL + k] = (-8i8) as u8;
+        self.ancilla_slot_view_mut(k).set_y_velocity((-8i8) as u8);
         self.ancilla_move_y(k);
 
         self.gravestone_act_as_barrier(k);
@@ -7797,7 +7800,7 @@ impl ZeldaState {
             return;
         }
 
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).set_ancilla_type(0);
         self.ram[LINK_SOMETHING_WITH_HOOKSHOT] = 0;
         self.ram[PLAYER_DEFENSE_FLAGS] &= !4;
         self.ram[SCRATCH_0] = self.ram[DOOR_DEBRIS_Y + k];
@@ -7822,7 +7825,10 @@ impl ZeldaState {
         if self.ram[ANCILLA_H + k] == 0 {
             if self.ram[LINK_AUXILIARY_STATE] != 0
                 || self.ram[LINK_STATE_BITS] & 1 != 0
-                || (self.ram[ANCILLA_Z + k] != 0 && self.ram[ANCILLA_Z + k] != 0xff)
+                || {
+                    let z = self.ancilla_slot_view(k).z();
+                    z != 0 && z != 0xff
+                }
                 || self.ram[ANCILLA_K + k] != 0
                 || self.ram[ANCILLA_L + k] != 0
             {
@@ -7905,7 +7911,8 @@ impl ZeldaState {
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
         self.ancilla_move_z(k);
-        if self.ram[ANCILLA_Z + k] != 0 && self.ram[ANCILLA_Z + k] < 252 {
+        let z = self.ancilla_slot_view(k).z();
+        if z != 0 && z < 252 {
             return;
         }
 

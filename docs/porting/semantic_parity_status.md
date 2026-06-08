@@ -25,7 +25,9 @@ This file records the current implementation status for
   return acceleration, bomb bounce response, revival/duck Z setup, and Ether
   spell velocity transitions. They also cover flute Z bounces, weather-vane
   debris slot velocity/Z replay, and liftable thrown-object velocity/Z
-  settling. Current sprite coordinate latching and local attract/ending
+  settling, plus player hookshot drag lookup/countdown, gravestone slot
+  movement cleanup, and Somaria block Z checks. Current sprite coordinate
+  latching and local attract/ending
   coordinate helpers now delegate through those paths, so new call sites can
   migrate without reintroducing raw lo/hi/subpixel byte packing.
 
