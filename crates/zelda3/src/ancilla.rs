@@ -3637,7 +3637,7 @@ impl ZeldaState {
             return;
         };
         if self.ram[LINK_ITEM_BOMBS] == 0 {
-            self.ram[ANCILLA_TYPE + k] = 0;
+            self.ancilla_slot_view_mut(k).clear();
             return;
         }
 
@@ -3647,19 +3647,23 @@ impl ZeldaState {
         }
 
         self.ram[ANCILLA_R_PLAYER + k] = 0;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
         self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_ARR3 + k] = K_BOMB_TAB0[0];
-        self.ram[ANCILLA_ARR25 + k] = 0;
-        self.ram[ANCILLA_ARR26 + k] = 7;
-        self.ancilla_slot_view_mut(k).set_z(0);
-        self.ram[ANCILLA_TIMER + k] = 8;
-        self.ram[ANCILLA_DIR + k] = self.ram[LINK_DIRECTION_FACING] >> 1;
+        let direction = self.ram[LINK_DIRECTION_FACING] >> 1;
+        {
+            let mut bomb = self.ancilla_slot_view_mut(k);
+            bomb.set_step(0);
+            bomb.set_item_to_link(0);
+            bomb.set_arr3(K_BOMB_TAB0[0]);
+            bomb.set_arr25(0);
+            bomb.set_arr26(7);
+            bomb.set_z(0);
+            bomb.set_timer(8);
+            bomb.set_direction(direction);
+        }
         self.ram[ANCILLA_T_PLAYER + k] = 0;
         self.ram[ANCILLA_ARR23 + k] = 0;
         self.ram[ANCILLA_ARR22 + k] = 0;
-        let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
+        let j = direction as usize;
         if self.ancilla_check_initial_tile_collision_class2(k) {
             self.ancilla_set_xy(
                 k,

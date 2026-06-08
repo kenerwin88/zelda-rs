@@ -87,6 +87,7 @@ pub(crate) mod semantic {
     const ANCILLA_ARR3: usize = 0x039f;
     const ANCILLA_ARR4: usize = 0x0bf0;
     const ANCILLA_ARR25: usize = 0x0746;
+    const ANCILLA_ARR26: usize = 0x0741;
 
     pub(crate) struct FrameControlView<'a> {
         ram: &'a [u8],
@@ -778,6 +779,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_arr25(&mut self, value: u8) {
             self.ram[ANCILLA_ARR25 + self.slot] = value;
+        }
+
+        pub(crate) fn set_arr26(&mut self, value: u8) {
+            self.ram[ANCILLA_ARR26 + self.slot] = value;
         }
 
         pub(crate) fn advance_arr25(&mut self) -> u8 {
