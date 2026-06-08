@@ -185,11 +185,55 @@ const K_BOMBOS_BLASTS_TAB: [u8; 72] = [
     0x7e, 0xcb, 0x12, 0xd0, 0x70, 0xa6, 0x46, 0xbf, 0x40, 0x50, 0x7e, 0x8c, 0x2d, 0x61, 0xac, 0x88,
     0x20, 0x6a, 0x72, 0x5f, 0xd2, 0x28, 0x52, 0x80,
 ];
+
+#[derive(Clone, Copy)]
+struct SignedOffset {
+    y: i8,
+    x: i8,
+}
+
+#[derive(Clone, Copy)]
+struct UnsignedOffset {
+    y: u16,
+    x: u16,
+}
+
+#[derive(Clone, Copy)]
+struct OamTileAttrs {
+    char: u8,
+    flags: u8,
+}
+
+#[derive(Clone, Copy)]
+struct QuakeBoltSprite {
+    x: i8,
+    y: i8,
+    flags: u8,
+}
+
+macro_rules! quake_bolt_sprites {
+    ($($x:literal, $y:literal, $flags:literal),+ $(,)?) => {
+        [$(QuakeBoltSprite { x: $x, y: $y, flags: $flags as u8 },)+]
+    };
+}
+
+macro_rules! signed_offsets {
+    ($($y:literal, $x:literal),+ $(,)?) => {
+        [$(SignedOffset { y: $y, x: $x },)+]
+    };
+}
+
+macro_rules! oam_tile_attrs {
+    ($($char:literal, $flags:literal),+ $(,)?) => {
+        [$(OamTileAttrs { char: $char, flags: $flags },)+]
+    };
+}
+
 const K_QUAKE_TAB1: [u8; 5] = [0x17, 0x16, 0x17, 0x16, 0x10];
 const K_QUAKE_DRAW_GROUND_BOLTS_CHAR: [u8; 15] = [
     0x40, 0x42, 0x44, 0x46, 0x48, 0x4a, 0x4c, 0x4e, 0x60, 0x62, 0x64, 0x66, 0x68, 0x6a, 0x63,
 ];
-const K_QUAKE_ITEMS: [i16; 453] = [
+const QUAKE_INITIAL_BOLT_SPRITES: [QuakeBoltSprite; 151] = quake_bolt_sprites![
     0, -16, 0, 0, -16, 1, 0, -16, 2, 0, -16, 3, 0, -16, 67, 0, -16, 66, 0, -16, 65, 0, -16, 64, 0,
     -16, 64, 14, -8, 132, 29, -8, 68, 13, -7, 132, 31, -7, 68, 47, -4, 132, 49, -11, 6, 63, -5, 68,
     47, -4, 132, 36, -17, 8, 49, -11, 6, 63, -5, 68, 78, 4, 8, 22, -31, 8, 36, -17, 8, 78, 4, 8,
@@ -212,7 +256,7 @@ const K_QUAKE_ITEMS: [i16; 453] = [
     8, -38, 85, 72, 19, 85, 8, -52, 99, 72, 33, 101, 8, -52, 99, 72, 33, 101, 8, -66, 113, 72, 47,
     115, 8, -66, 113, 72, 47, 115, 8,
 ];
-const K_QUAKE_ITEMS2: [i16; 312] = [
+const QUAKE_SPREAD_BOLT_SPRITES: [QuakeBoltSprite; 104] = quake_bolt_sprites![
     -96, 112, 32, -96, 112, 33, -96, 112, 102, -96, 112, 34, -96, 112, 35, -96, 112, 99, -96, 112,
     98, -96, 112, 38, -96, 112, 39, -86, 124, 40, -86, 124, 40, -72, -117, 40, -72, -117, 40, -59,
     -102, 161, -59, -102, 161, -44, -116, 104, -44, -116, 104, -29, 126, 104, -29, 126, 104, -19,
@@ -230,12 +274,12 @@ const K_QUAKE_ITEMS2: [i16; 312] = [
     -102, -39, 41, 95, -52, 105, -102, -39, 41, 96, -36, 233, -102, -24, 233, 96, -36, 233, -102,
     -24, 233, -123, -14, 41, -115, -14, 46, 49, -12, 40,
 ];
-const K_QUAKE_ITEM_POS: [u8; 64] = [
+const QUAKE_INITIAL_BOLT_FRAME_RANGES: [u8; 64] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 17, 21, 25, 30, 36, 42, 48, 53, 57, 60, 62, 64, 65, 66,
     67, 68, 69, 70, 71, 72, 74, 77, 81, 85, 88, 91, 94, 97, 100, 103, 107, 111, 114, 116, 118, 119,
     120, 121, 122, 123, 124, 125, 126, 128, 130, 132, 134, 137, 141, 145, 149, 151,
 ];
-const K_QUAKE_ITEM_POS2: [u8; 56] = [
+const QUAKE_SPREAD_BOLT_FRAME_RANGES: [u8; 56] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 19, 20, 21, 22, 23, 24, 26, 28, 30, 33, 37, 41,
     45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 57, 59, 62, 66, 70, 72, 73, 74, 75, 76, 78, 80, 82, 84,
     87, 91, 95, 99, 101, 104,
@@ -609,7 +653,14 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_hit_stars(&mut self, a: u8, y: u8) {
-        const SHOVEL_HIT_STARS_XY: [i8; 12] = [21, -11, 21, 11, 3, -6, 21, 5, 16, -14, 16, 14];
+        const SHOVEL_HIT_STARS_OFFSET: [SignedOffset; 6] = [
+            SignedOffset { y: 21, x: -11 },
+            SignedOffset { y: 21, x: 11 },
+            SignedOffset { y: 3, x: -6 },
+            SignedOffset { y: 21, x: 5 },
+            SignedOffset { y: 16, x: -14 },
+            SignedOffset { y: 16, x: 14 },
+        ];
         const SHOVEL_HIT_STARS_X2: [i8; 6] = [-3, 19, 2, 13, -6, 22];
 
         if let Some(k) = self.ancilla_add_ancilla(a, y) {
@@ -637,10 +688,11 @@ impl ZeldaState {
             let t = link_x.wrapping_add(SHOVEL_HIT_STARS_X2[j] as i16 as u16);
             self.ram[ANCILLA_A + k] = t as u8;
             self.ram[ANCILLA_B + k] = (t >> 8) as u8;
+            let offset = SHOVEL_HIT_STARS_OFFSET[j];
             self.ancilla_set_xy(
                 k,
-                link_x.wrapping_add(SHOVEL_HIT_STARS_XY[j * 2 + 1] as i16 as u16),
-                link_y.wrapping_add(SHOVEL_HIT_STARS_XY[j * 2] as i16 as u16),
+                link_x.wrapping_add(offset.x as i16 as u16),
+                link_y.wrapping_add(offset.y as i16 as u16),
             );
         }
     }
@@ -946,9 +998,23 @@ impl ZeldaState {
     }
 
     fn ancilla_add_blast_wall_fireball(&mut self, _a: u8, _y: u8, r4: usize) {
-        const BLAST_WALL_XY: [i8; 32] = [
-            -64, 0, -22, 42, -38, 38, -42, 22, 0, 64, 22, 42, 38, 38, 42, 22, 64, 0, 22, -42, 38,
-            -38, 42, -22, 0, -64, -22, -42, -38, -38, -42, -22,
+        const BLAST_WALL_FIREBALL_VELOCITY: [SignedOffset; 16] = [
+            SignedOffset { y: -64, x: 0 },
+            SignedOffset { y: -22, x: 42 },
+            SignedOffset { y: -38, x: 38 },
+            SignedOffset { y: -42, x: 22 },
+            SignedOffset { y: 0, x: 64 },
+            SignedOffset { y: 22, x: 42 },
+            SignedOffset { y: 38, x: 38 },
+            SignedOffset { y: 42, x: 22 },
+            SignedOffset { y: 64, x: 0 },
+            SignedOffset { y: 22, x: -42 },
+            SignedOffset { y: 38, x: -38 },
+            SignedOffset { y: 42, x: -22 },
+            SignedOffset { y: 0, x: -64 },
+            SignedOffset { y: -22, x: -42 },
+            SignedOffset { y: -38, x: -38 },
+            SignedOffset { y: -42, x: -22 },
         ];
 
         for k in (5..=10).rev() {
@@ -957,8 +1023,9 @@ impl ZeldaState {
                 self.ram[ANCILLA_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
                 self.ram[BLASTWALL_VAR12 + k] = 16;
                 let j = (self.ram[FRAME_COUNTER] & 15) as usize;
-                self.ram[ANCILLA_Y_VEL + k] = BLAST_WALL_XY[j * 2] as u8;
-                self.ram[ANCILLA_X_VEL + k] = BLAST_WALL_XY[j * 2 + 1] as u8;
+                let velocity = BLAST_WALL_FIREBALL_VELOCITY[j];
+                self.ram[ANCILLA_Y_VEL + k] = velocity.y as u8;
+                self.ram[ANCILLA_X_VEL + k] = velocity.x as u8;
                 self.ancilla_set_xy(
                     k,
                     read_le_u16(&self.ram, BLASTWALL_VAR11 + r4 * 2).wrapping_add(16),
@@ -1794,7 +1861,12 @@ impl ZeldaState {
 
     fn boomerang_draw(&mut self, k: usize) {
         const BOOMERANG_FLAGS: [u8; 8] = [0xa4, 0xe4, 0x64, 0x24, 0xa2, 0xe2, 0x62, 0x22];
-        const BOOMERANG_DRAW_XY: [i8; 8] = [2, -2, 2, 2, -2, 2, -2, -2];
+        const BOOMERANG_DRAW_OFFSET: [SignedOffset; 4] = [
+            SignedOffset { y: 2, x: -2 },
+            SignedOffset { y: 2, x: 2 },
+            SignedOffset { y: -2, x: 2 },
+            SignedOffset { y: -2, x: -2 },
+        ];
         const BOOMERANG_DRAW_OAM_IDX: [u16; 2] = [0x180, 0xd0];
         const BOOMERANG_DRAW_TAB0: [u8; 2] = [3, 2];
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
@@ -1826,8 +1898,9 @@ impl ZeldaState {
         }
 
         let j = self.ram[ANCILLA_ARR1 + k] as usize;
-        let x = info_x.wrapping_add(BOOMERANG_DRAW_XY[j * 2 + 1] as i16 as u16);
-        let y = info_y.wrapping_add(BOOMERANG_DRAW_XY[j * 2] as i16 as u16);
+        let offset = BOOMERANG_DRAW_OFFSET[j];
+        let x = info_x.wrapping_add(offset.x as i16 as u16);
+        let y = info_y.wrapping_add(offset.y as i16 as u16);
         if self.ram[ANCILLA_AUX_TIMER + k] == 0 {
             let i = BOOMERANG_DRAW_OAM_IDX[self.ram[SORT_SPRITES_SETTING] as usize];
             write_le_u16(&mut self.ram, OAM_EXT_CUR_PTR, (i >> 2) + 0xa20);
@@ -2039,15 +2112,169 @@ impl ZeldaState {
     }
 
     fn door_debris_draw(&mut self, k: usize) {
-        const DOOR_DEBRIS_XY: [u16; 64] = [
-            4, 7, 3, 17, 8, 8, 7, 17, 11, 7, 10, 16, 16, 7, 17, 17, 20, 7, 21, 17, 16, 8, 17, 17,
-            13, 7, 14, 16, 8, 7, 7, 17, 7, 4, 17, 3, 8, 8, 17, 7, 7, 11, 16, 10, 7, 16, 17, 17, 7,
-            20, 17, 21, 8, 16, 17, 17, 7, 13, 16, 14, 7, 8, 17, 7,
+        const DOOR_DEBRIS_OFFSET: [UnsignedOffset; 32] = [
+            UnsignedOffset { y: 4, x: 7 },
+            UnsignedOffset { y: 3, x: 17 },
+            UnsignedOffset { y: 8, x: 8 },
+            UnsignedOffset { y: 7, x: 17 },
+            UnsignedOffset { y: 11, x: 7 },
+            UnsignedOffset { y: 10, x: 16 },
+            UnsignedOffset { y: 16, x: 7 },
+            UnsignedOffset { y: 17, x: 17 },
+            UnsignedOffset { y: 20, x: 7 },
+            UnsignedOffset { y: 21, x: 17 },
+            UnsignedOffset { y: 16, x: 8 },
+            UnsignedOffset { y: 17, x: 17 },
+            UnsignedOffset { y: 13, x: 7 },
+            UnsignedOffset { y: 14, x: 16 },
+            UnsignedOffset { y: 8, x: 7 },
+            UnsignedOffset { y: 7, x: 17 },
+            UnsignedOffset { y: 7, x: 4 },
+            UnsignedOffset { y: 17, x: 3 },
+            UnsignedOffset { y: 8, x: 8 },
+            UnsignedOffset { y: 17, x: 7 },
+            UnsignedOffset { y: 7, x: 11 },
+            UnsignedOffset { y: 16, x: 10 },
+            UnsignedOffset { y: 7, x: 16 },
+            UnsignedOffset { y: 17, x: 17 },
+            UnsignedOffset { y: 7, x: 20 },
+            UnsignedOffset { y: 17, x: 21 },
+            UnsignedOffset { y: 8, x: 16 },
+            UnsignedOffset { y: 17, x: 17 },
+            UnsignedOffset { y: 7, x: 13 },
+            UnsignedOffset { y: 16, x: 14 },
+            UnsignedOffset { y: 7, x: 8 },
+            UnsignedOffset { y: 17, x: 7 },
         ];
-        const DOOR_DEBRIS_CHAR_FLAGS: [u16; 32] = [
-            0x205e, 0xe05e, 0xa05e, 0x605e, 0x204f, 0x204f, 0x204f, 0x204f, 0x605e, 0x605e, 0x205e,
-            0xe05e, 0x604f, 0x604f, 0x604f, 0x604f, 0x205e, 0xe05e, 0xa05e, 0x605e, 0x204f, 0xe04f,
-            0x204f, 0x204f, 0x605e, 0x605e, 0x205e, 0xe05e, 0x604f, 0x604f, 0x604f, 0x604f,
+        const DOOR_DEBRIS_TILE: [OamTileAttrs; 32] = [
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xe0,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xa0,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xe0,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xe0,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xa0,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0xe0,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0x20,
+            },
+            OamTileAttrs {
+                char: 0x5e,
+                flags: 0xe0,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
+            OamTileAttrs {
+                char: 0x4f,
+                flags: 0x60,
+            },
         ];
 
         self.ancilla_prep_adjusted_oam_coord(k);
@@ -2061,13 +2288,14 @@ impl ZeldaState {
 
         for i in 0..2 {
             let t = j * 2 + i;
-            let d = DOOR_DEBRIS_CHAR_FLAGS[t];
+            let offset = DOOR_DEBRIS_OFFSET[t];
+            let tile = DOOR_DEBRIS_TILE[t];
             self.ancilla_set_oam(
                 oam,
-                x.wrapping_add(DOOR_DEBRIS_XY[t * 2 + 1]),
-                y.wrapping_add(DOOR_DEBRIS_XY[t * 2]),
-                d as u8,
-                ((d >> 8) as u8 & 0xc0) | self.ram[OAM_PRIORITY_VALUE + 1],
+                x.wrapping_add(offset.x),
+                y.wrapping_add(offset.y),
+                tile.char,
+                (tile.flags & 0xc0) | self.ram[OAM_PRIORITY_VALUE + 1],
                 0,
             );
             oam = self.ancilla_allocate_oam_from_custom_region(oam + 4);
@@ -3194,8 +3422,8 @@ impl ZeldaState {
     pub(super) fn ancilla_add_blast_wall(&mut self) {
         const BLAST_WALL_TAB3: [i8; 4] = [-16, 16, 0, 0];
         const BLAST_WALL_TAB4: [i8; 4] = [0, 0, -16, 16];
-        const BLAST_WALL_TAB5: [i8; 16] =
-            [-8, 0, -8, 16, 16, 0, 16, 16, 0, -8, 16, -8, 0, 16, 16, 16];
+        const BLAST_WALL_FRAGMENT_OFFSET: [SignedOffset; 8] =
+            signed_offsets![-8, 0, -8, 16, 16, 0, 16, 16, 0, -8, 16, -8, 0, 16, 16, 16,];
 
         self.ram[ANCILLA_TYPE] = 0x33;
         self.ram[ANCILLA_TYPE + 1] = 0x33;
@@ -3228,8 +3456,9 @@ impl ZeldaState {
         write_le_u16(&mut self.ram, BLASTWALL_VAR9, blastwall_var9);
         j = if j < 4 { 4 } else { 0 };
         for k in (0..=3).rev() {
-            let y = blastwall_var8.wrapping_add(BLAST_WALL_TAB5[j * 2] as i16 as u16);
-            let x = blastwall_var9.wrapping_add(BLAST_WALL_TAB5[j * 2 + 1] as i16 as u16);
+            let offset = BLAST_WALL_FRAGMENT_OFFSET[j];
+            let y = blastwall_var8.wrapping_add(offset.y as i16 as u16);
+            let x = blastwall_var9.wrapping_add(offset.x as i16 as u16);
             write_le_u16(&mut self.ram, BLASTWALL_VAR10 + k * 2, y);
             write_le_u16(&mut self.ram, BLASTWALL_VAR11 + k * 2, x);
             let x = x.wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2));
@@ -4506,8 +4735,9 @@ impl ZeldaState {
     }
 
     fn morph_poof_draw(&mut self, k: usize) {
-        const MORPH_POOF_X: [i8; 12] = [0, 0, 0, 0, 0, 8, 0, 8, -4, 12, -4, 12];
-        const MORPH_POOF_Y: [i8; 12] = [0, 0, 0, 0, 0, 0, 8, 8, -4, -4, 12, 12];
+        const MORPH_POOF_OFFSET: [SignedOffset; 12] = signed_offsets![
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 0, 8, 8, -4, -4, -4, 12, 12, -4, 12, 12,
+        ];
         const MORPH_POOF_FLAGS: [u8; 12] = [
             0, 0xff, 0xff, 0xff, 0x40, 0, 0xc0, 0x80, 0, 0x40, 0x80, 0xc0,
         ];
@@ -4526,10 +4756,11 @@ impl ZeldaState {
         let ext = MORPH_POOF_EXT[j];
         let chr = MORPH_POOF_CHAR[j];
         for i in 0..4 {
+            let offset = MORPH_POOF_OFFSET[j * 4 + i];
             self.ancilla_set_oam(
                 oam,
-                x.wrapping_add(MORPH_POOF_X[j * 4 + i] as i16 as u16),
-                y.wrapping_add(MORPH_POOF_Y[j * 4 + i] as i16 as u16),
+                x.wrapping_add(offset.x as i16 as u16),
+                y.wrapping_add(offset.y as i16 as u16),
                 chr,
                 MORPH_POOF_FLAGS[j * 4 + i] | 4 | self.ram[OAM_PRIORITY_VALUE + 1],
                 ext,
@@ -5502,25 +5733,20 @@ impl ZeldaState {
         self.ram[ANCILLA_STEP + k] = self.ram[QUAKE_VAR4];
     }
 
-    fn quake_item(table: &[i16], idx: usize) -> (i16, i16, u8) {
-        let base = idx * 3;
-        (table[base], table[base + 1], table[base + 2] as u8)
-    }
-
     fn ancilla_draw_quake_initial_bolts(&mut self, k: usize) {
         const QUAKE_DRAW_GROUND_BOLTS_TAB: [u8; 5] = [0, 0x18, 0, 0x18, 0x2f];
 
         let t = self.ram[QUAKE_ARR2 + k].wrapping_add(QUAKE_DRAW_GROUND_BOLTS_TAB[k]) as usize;
         let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
-        let idx = K_QUAKE_ITEM_POS[t] as usize;
-        let end = K_QUAKE_ITEM_POS[t + 1] as usize;
+        let idx = QUAKE_INITIAL_BOLT_FRAME_RANGES[t] as usize;
+        let end = QUAKE_INITIAL_BOLT_FRAME_RANGES[t + 1] as usize;
         for item_idx in idx..end {
-            let (ix, iy, f) = Self::quake_item(&K_QUAKE_ITEMS, item_idx);
+            let sprite = QUAKE_INITIAL_BOLT_SPRITES[item_idx];
             let x = read_le_u16(&self.ram, QUAKE_VAR2)
-                .wrapping_add(ix as u16)
+                .wrapping_add(sprite.x as u16)
                 .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2));
             let y = read_le_u16(&self.ram, QUAKE_VAR1)
-                .wrapping_add(iy as u16)
+                .wrapping_add(sprite.y as u16)
                 .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
 
             let mut xval = self.ram[oam];
@@ -5533,8 +5759,8 @@ impl ZeldaState {
             }
             self.ram[oam] = xval;
             self.ram[oam + 1] = yval;
-            self.ram[oam + 2] = K_QUAKE_DRAW_GROUND_BOLTS_CHAR[(f & 0x0f) as usize];
-            self.ram[oam + 3] = (f & 0xc0) | 0x3c;
+            self.ram[oam + 2] = K_QUAKE_DRAW_GROUND_BOLTS_CHAR[(sprite.flags & 0x0f) as usize];
+            self.ram[oam + 3] = (sprite.flags & 0xc0) | 0x3c;
             self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = 2;
             oam += 4;
             let cur = read_le_u16(&self.ram, OAM_CUR_PTR).wrapping_add(4);
@@ -5557,16 +5783,16 @@ impl ZeldaState {
             }
         }
         let t = self.ram[ANCILLA_ITEM_TO_LINK + k] as usize;
-        let idx = K_QUAKE_ITEM_POS2[t] as usize;
-        let end = K_QUAKE_ITEM_POS2[t + 1] as usize;
+        let idx = QUAKE_SPREAD_BOLT_FRAME_RANGES[t] as usize;
+        let end = QUAKE_SPREAD_BOLT_FRAME_RANGES[t + 1] as usize;
         let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
         for item_idx in idx..end {
-            let (x, y, f) = Self::quake_item(&K_QUAKE_ITEMS2, item_idx);
-            self.ram[oam] = x as u8;
-            self.ram[oam + 1] = y as u8;
-            self.ram[oam + 2] = K_QUAKE_DRAW_GROUND_BOLTS_CHAR[(f & 0x0f) as usize];
-            self.ram[oam + 3] = (f & 0xc0) | 0x3c;
-            self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = (f >> 4) & 3;
+            let sprite = QUAKE_SPREAD_BOLT_SPRITES[item_idx];
+            self.ram[oam] = sprite.x as u8;
+            self.ram[oam + 1] = sprite.y as u8;
+            self.ram[oam + 2] = K_QUAKE_DRAW_GROUND_BOLTS_CHAR[(sprite.flags & 0x0f) as usize];
+            self.ram[oam + 3] = (sprite.flags & 0xc0) | 0x3c;
+            self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = (sprite.flags >> 4) & 3;
             let cur = read_le_u16(&self.ram, OAM_CUR_PTR).wrapping_add(4);
             let ext = read_le_u16(&self.ram, OAM_EXT_CUR_PTR).wrapping_add(1);
             write_le_u16(&mut self.ram, OAM_CUR_PTR, cur);
@@ -8884,13 +9110,12 @@ impl ZeldaState {
     }
 
     fn ice_shot_spread_draw(&mut self, k: usize) {
-        const ICE_SHOT_SPREAD_CHAR_FLAGS: [u8; 16] = [
+        const ICE_SHOT_SPREAD_TILE: [OamTileAttrs; 8] = oam_tile_attrs![
             0xcf, 0x24, 0xcf, 0x24, 0xcf, 0x24, 0xcf, 0x24, 0xdf, 0x24, 0xdf, 0x24, 0xdf, 0x24,
             0xdf, 0x24,
         ];
-        const ICE_SHOT_SPREAD_XY: [u8; 16] = [
-            0, 0, 0, 8, 8, 0, 8, 8, 0xf8, 0xf8, 0xf8, 0x10, 0x10, 0xf8, 0x10, 0x10,
-        ];
+        const ICE_SHOT_SPREAD_OFFSET: [SignedOffset; 8] =
+            signed_offsets![0, 0, 0, 8, 8, 0, 8, 8, -8, -8, -8, 16, 16, -8, 16, 16,];
 
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
         self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, self.ram[ANCILLA_NUMSPR + k]);
@@ -8898,8 +9123,10 @@ impl ZeldaState {
         let oam_org = oam;
         let mut j = self.ram[ANCILLA_ITEM_TO_LINK + k] as usize * 4;
         for _ in 0..4 {
-            let y = info_y.wrapping_add(ICE_SHOT_SPREAD_XY[j * 2] as i8 as i16 as u16);
-            let x = info_x.wrapping_add(ICE_SHOT_SPREAD_XY[j * 2 + 1] as i8 as i16 as u16);
+            let offset = ICE_SHOT_SPREAD_OFFSET[j];
+            let tile = ICE_SHOT_SPREAD_TILE[j];
+            let y = info_y.wrapping_add(offset.y as i16 as u16);
+            let x = info_x.wrapping_add(offset.x as i16 as u16);
             let mut yv = 0xf0;
             if x < 256 && y < 256 {
                 self.ram[oam] = x as u8;
@@ -8908,9 +9135,8 @@ impl ZeldaState {
                 }
             }
             self.ram[oam + 1] = yv;
-            self.ram[oam + 2] = ICE_SHOT_SPREAD_CHAR_FLAGS[j * 2];
-            self.ram[oam + 3] =
-                ICE_SHOT_SPREAD_CHAR_FLAGS[j * 2 + 1] & !0x30 | self.ram[OAM_PRIORITY_VALUE + 1];
+            self.ram[oam + 2] = tile.char;
+            self.ram[oam + 3] = tile.flags & !0x30 | self.ram[OAM_PRIORITY_VALUE + 1];
             self.ram[BYTEWISE_EXTENDED_OAM + (oam - OAM_BUF) / 4] = 0;
             oam = self.ancilla_allocate_oam_from_custom_region(oam + 4);
             j += 1;
@@ -10197,14 +10423,14 @@ impl ZeldaState {
         x: u16,
         y: u16,
     ) -> usize {
-        const BOMB_DRAW_EXPLOSION_XY: [i8; 108] = [
+        const BOMB_DRAW_EXPLOSION_OFFSET: [SignedOffset; 54] = signed_offsets![
             -8, -8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -8, -8, -8, 0, 0, -8, 0, 0, 0, 0, 0, 0, -16, -16,
             -16, 0, 0, -16, 0, 0, 0, 0, 0, 0, -16, -16, -16, 0, 0, -16, 0, 0, 0, 0, 0, 0, -8, -8,
             -21, -22, -21, 8, 9, -22, 9, 8, 0, 0, -6, -15, 0, -1, -16, -2, -8, -7, 0, 0, 0, 0, -9,
             -4, -21, -5, -12, -18, -11, 7, 0, -15, 4, -2, -9, -4, -22, -5, -13, -20, -11, 8, 1,
             -16, 5, -2, -20, 4, -12, -19, -9, 16, -5, -2, 2, -9, 10, 6,
         ];
-        const BOMB_DRAW_EXPLOSION_CHAR_FLAGS: [u8; 108] = [
+        const BOMB_DRAW_EXPLOSION_TILE: [OamTileAttrs; 54] = oam_tile_attrs![
             0x6e, 0x26, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8c, 0x22,
             0x8c, 0x62, 0x8c, 0xa2, 0x8c, 0xe2, 0xff, 0xff, 0xff, 0xff, 0x84, 0x22, 0x84, 0x62,
             0x84, 0xa2, 0x84, 0xe2, 0xff, 0xff, 0xff, 0xff, 0x88, 0x22, 0x88, 0x62, 0x88, 0xa2,
@@ -10221,16 +10447,16 @@ impl ZeldaState {
 
         let base_frame = frame;
         loop {
-            if BOMB_DRAW_EXPLOSION_CHAR_FLAGS[frame * 2] != 0xff {
+            let tile = BOMB_DRAW_EXPLOSION_TILE[frame];
+            if tile.char != 0xff {
                 let i = idx + base_frame;
+                let offset = BOMB_DRAW_EXPLOSION_OFFSET[i];
                 self.ancilla_set_oam_safe(
                     oam,
-                    x.wrapping_add(BOMB_DRAW_EXPLOSION_XY[i * 2 + 1] as i16 as u16),
-                    y.wrapping_add(BOMB_DRAW_EXPLOSION_XY[i * 2] as i16 as u16),
-                    BOMB_DRAW_EXPLOSION_CHAR_FLAGS[frame * 2],
-                    BOMB_DRAW_EXPLOSION_CHAR_FLAGS[frame * 2 + 1] & !0x3e
-                        | self.ram[OAM_PRIORITY_VALUE + 1]
-                        | r11,
+                    x.wrapping_add(offset.x as i16 as u16),
+                    y.wrapping_add(offset.y as i16 as u16),
+                    tile.char,
+                    tile.flags & !0x3e | self.ram[OAM_PRIORITY_VALUE + 1] | r11,
                     BOMB_DRAW_EXPLOSION_EXT[frame],
                 );
                 oam += 4;
