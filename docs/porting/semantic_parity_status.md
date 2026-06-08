@@ -12,7 +12,8 @@ This file records the current implementation status for
   `--trace-semantic-state`. They name frame, player, world, Map16 load, sprite,
   ancilla, and PPU-facing fields.
 - Typed RAM views provide the source-address-backed extraction layer for frame
-  control, player state, world/camera state, and overworld Map16 load state.
+  control, player state, world/camera state, sprite slots, ancilla slots, and
+  overworld Map16 load state.
 
 ## Graduated Subsystems
 
@@ -36,8 +37,9 @@ remains the strongest regression gate.
 
 All other game state still requires strict byte parity. Player movement,
 camera/scroll, inventory/menu state, sprites, ancilla, shared scratch, and
-PPU/audio-facing effects have semantic fields for diagnostics, but they are not
-graduated because their owned-state storage, edge-route coverage, or
+PPU/audio-facing effects have semantic fields for diagnostics. Sprite and
+ancilla semantic extraction now uses typed slot views over WRAM, but they are
+not graduated because their owned-state storage, edge-route coverage, and
 output-specific parity gates are not yet strong enough to replace raw WRAM
 comparison.
 

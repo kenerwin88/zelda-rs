@@ -40,7 +40,8 @@ use crate::ram::player::{
     LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS,
 };
 use crate::ram::semantic::{
-    FrameControlView, FrameControlViewMut, PlayerStateView, PlayerStateViewMut, WorldStateView,
+    AncillaSlotView, FrameControlView, FrameControlViewMut, PlayerStateView, PlayerStateViewMut,
+    SpriteSlotView, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1836,6 +1837,14 @@ impl ZeldaState {
 
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
+    }
+
+    pub(crate) fn sprite_slot_view(&self, slot: usize) -> SpriteSlotView<'_> {
+        SpriteSlotView::new(&self.ram, slot)
+    }
+
+    pub(crate) fn ancilla_slot_view(&self, slot: usize) -> AncillaSlotView<'_> {
+        AncillaSlotView::new(&self.ram, slot)
     }
 
     pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {
@@ -4075,15 +4084,15 @@ impl ZeldaState {
     }
 
     fn ancilla_x(&self, k: usize) -> u16 {
-        self.ram[ANCILLA_X_LO + k] as u16 | ((self.ram[ANCILLA_X_HI + k] as u16) << 8)
+        self.ancilla_slot_view(k).x()
     }
 
     fn ancilla_y(&self, k: usize) -> u16 {
-        self.ram[ANCILLA_Y_LO + k] as u16 | ((self.ram[ANCILLA_Y_HI + k] as u16) << 8)
+        self.ancilla_slot_view(k).y()
     }
 
     fn sprite_y(&self, k: usize) -> u16 {
-        self.ram[SPRITE_Y_LO + k] as u16 | ((self.ram[SPRITE_Y_HI + k] as u16) << 8)
+        self.sprite_slot_view(k).y()
     }
 
     fn set_oam_helper0_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {

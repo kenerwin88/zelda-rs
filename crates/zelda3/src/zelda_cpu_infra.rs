@@ -9,7 +9,9 @@ use std::slice;
 
 use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 
-use crate::ram::semantic::{FrameControlView, PlayerStateView, WorldStateView};
+use crate::ram::semantic::{
+    AncillaSlotView, FrameControlView, PlayerStateView, SpriteSlotView, WorldStateView,
+};
 use crate::types::{read_le_u16, write_le_u16};
 use crate::zelda_rtl::ZeldaState;
 
@@ -1610,23 +1612,22 @@ fn push_semantic_diff<T: fmt::Debug + PartialEq>(
 fn semantic_sprite_slots(ram: &[u8]) -> Vec<SemanticSpriteSlot> {
     let mut slots = Vec::new();
     for slot in 0..16 {
-        let sprite_type = ram_byte(ram, 0x0e20 + slot);
-        let state = ram_byte(ram, 0x0dd0 + slot);
-        if sprite_type == 0 && state == 0 {
+        let view = SpriteSlotView::new(ram, slot);
+        if !view.is_active() {
             continue;
         }
         slots.push(SemanticSpriteSlot {
-            slot: slot as u8,
-            sprite_type,
-            state,
-            x: packed_position(ram, 0x0d10 + slot, 0x0d30 + slot),
-            y: packed_position(ram, 0x0d00 + slot, 0x0d20 + slot),
-            x_velocity: ram_byte(ram, 0x0d50 + slot),
-            y_velocity: ram_byte(ram, 0x0d40 + slot),
-            ai_state: ram_byte(ram, 0x0d80 + slot),
-            delay_main: ram_byte(ram, 0x0df0 + slot),
-            health: ram_byte(ram, 0x0e50 + slot),
-            hit_timer: ram_byte(ram, 0x0ef0 + slot),
+            slot: view.slot(),
+            sprite_type: view.sprite_type(),
+            state: view.state(),
+            x: view.x(),
+            y: view.y(),
+            x_velocity: view.x_velocity(),
+            y_velocity: view.y_velocity(),
+            ai_state: view.ai_state(),
+            delay_main: view.delay_main(),
+            health: view.health(),
+            hit_timer: view.hit_timer(),
         });
     }
     slots
@@ -1635,39 +1636,23 @@ fn semantic_sprite_slots(ram: &[u8]) -> Vec<SemanticSpriteSlot> {
 fn semantic_ancilla_slots(ram: &[u8]) -> Vec<SemanticAncillaSlot> {
     let mut slots = Vec::new();
     for slot in 0..10 {
-        let ancilla_type = ram_byte(ram, 0x0c4a + slot);
-        if ancilla_type == 0 {
+        let view = AncillaSlotView::new(ram, slot);
+        if !view.is_active() {
             continue;
         }
         slots.push(SemanticAncillaSlot {
-            slot: slot as u8,
-            ancilla_type,
-            x: packed_position(ram, 0x0c04 + slot, 0x0c18 + slot),
-            y: packed_position(ram, 0x0bfa + slot, 0x0c0e + slot),
-            x_velocity: ram_byte(ram, 0x0c2c + slot),
-            y_velocity: ram_byte(ram, 0x0c22 + slot),
-            item_to_link: ram_byte(ram, 0x0c5e + slot),
-            timer: ram_byte(ram, 0x0c68 + slot),
-            direction: ram_byte(ram, 0x0c72 + slot),
+            slot: view.slot(),
+            ancilla_type: view.ancilla_type(),
+            x: view.x(),
+            y: view.y(),
+            x_velocity: view.x_velocity(),
+            y_velocity: view.y_velocity(),
+            item_to_link: view.item_to_link(),
+            timer: view.timer(),
+            direction: view.direction(),
         });
     }
     slots
-}
-
-fn ram_byte(ram: &[u8], offset: usize) -> u8 {
-    ram.get(offset).copied().unwrap_or(0)
-}
-
-fn ram_word(ram: &[u8], offset: usize) -> u16 {
-    if offset + 1 < ram.len() {
-        read_le_u16(ram, offset)
-    } else {
-        0
-    }
-}
-
-fn packed_position(ram: &[u8], low_offset: usize, high_offset: usize) -> u16 {
-    u16::from(ram_byte(ram, low_offset)) | (u16::from(ram_byte(ram, high_offset)) << 8)
 }
 
 fn ppu_byte(ppu_regs: &[u8], offset: usize) -> u8 {

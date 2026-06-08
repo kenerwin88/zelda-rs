@@ -49,6 +49,30 @@ pub(crate) mod semantic {
     const CAMERA_X: usize = 0x061c;
     const RNG_SEED: usize = 0x0fa1;
 
+    const SPRITE_STATE: usize = 0x0dd0;
+    const SPRITE_TYPE: usize = 0x0e20;
+    const SPRITE_Y_LO: usize = 0x0d00;
+    const SPRITE_X_LO: usize = 0x0d10;
+    const SPRITE_Y_HI: usize = 0x0d20;
+    const SPRITE_X_HI: usize = 0x0d30;
+    const SPRITE_Y_VELOCITY: usize = 0x0d40;
+    const SPRITE_X_VELOCITY: usize = 0x0d50;
+    const SPRITE_AI_STATE: usize = 0x0d80;
+    const SPRITE_DELAY_MAIN: usize = 0x0df0;
+    const SPRITE_HEALTH: usize = 0x0e50;
+    const SPRITE_HIT_TIMER: usize = 0x0ef0;
+
+    const ANCILLA_Y_LO: usize = 0x0bfa;
+    const ANCILLA_X_LO: usize = 0x0c04;
+    const ANCILLA_Y_HI: usize = 0x0c0e;
+    const ANCILLA_X_HI: usize = 0x0c18;
+    const ANCILLA_Y_VELOCITY: usize = 0x0c22;
+    const ANCILLA_X_VELOCITY: usize = 0x0c2c;
+    const ANCILLA_TYPE: usize = 0x0c4a;
+    const ANCILLA_ITEM_TO_LINK: usize = 0x0c5e;
+    const ANCILLA_TIMER: usize = 0x0c68;
+    const ANCILLA_DIRECTION: usize = 0x0c72;
+
     pub(crate) struct FrameControlView<'a> {
         ram: &'a [u8],
     }
@@ -291,6 +315,116 @@ pub(crate) mod semantic {
         }
     }
 
+    pub(crate) struct SpriteSlotView<'a> {
+        ram: &'a [u8],
+        slot: usize,
+    }
+
+    impl<'a> SpriteSlotView<'a> {
+        pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
+            Self { ram, slot }
+        }
+
+        pub(crate) fn slot(&self) -> u8 {
+            self.slot as u8
+        }
+
+        pub(crate) fn sprite_type(&self) -> u8 {
+            byte(self.ram, SPRITE_TYPE + self.slot)
+        }
+
+        pub(crate) fn state(&self) -> u8 {
+            byte(self.ram, SPRITE_STATE + self.slot)
+        }
+
+        pub(crate) fn is_active(&self) -> bool {
+            self.sprite_type() != 0 || self.state() != 0
+        }
+
+        pub(crate) fn x(&self) -> u16 {
+            packed_position(self.ram, SPRITE_X_LO + self.slot, SPRITE_X_HI + self.slot)
+        }
+
+        pub(crate) fn y(&self) -> u16 {
+            packed_position(self.ram, SPRITE_Y_LO + self.slot, SPRITE_Y_HI + self.slot)
+        }
+
+        pub(crate) fn x_velocity(&self) -> u8 {
+            byte(self.ram, SPRITE_X_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn y_velocity(&self) -> u8 {
+            byte(self.ram, SPRITE_Y_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn ai_state(&self) -> u8 {
+            byte(self.ram, SPRITE_AI_STATE + self.slot)
+        }
+
+        pub(crate) fn delay_main(&self) -> u8 {
+            byte(self.ram, SPRITE_DELAY_MAIN + self.slot)
+        }
+
+        pub(crate) fn health(&self) -> u8 {
+            byte(self.ram, SPRITE_HEALTH + self.slot)
+        }
+
+        pub(crate) fn hit_timer(&self) -> u8 {
+            byte(self.ram, SPRITE_HIT_TIMER + self.slot)
+        }
+    }
+
+    pub(crate) struct AncillaSlotView<'a> {
+        ram: &'a [u8],
+        slot: usize,
+    }
+
+    impl<'a> AncillaSlotView<'a> {
+        pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
+            Self { ram, slot }
+        }
+
+        pub(crate) fn slot(&self) -> u8 {
+            self.slot as u8
+        }
+
+        pub(crate) fn ancilla_type(&self) -> u8 {
+            byte(self.ram, ANCILLA_TYPE + self.slot)
+        }
+
+        pub(crate) fn is_active(&self) -> bool {
+            self.ancilla_type() != 0
+        }
+
+        pub(crate) fn x(&self) -> u16 {
+            packed_position(self.ram, ANCILLA_X_LO + self.slot, ANCILLA_X_HI + self.slot)
+        }
+
+        pub(crate) fn y(&self) -> u16 {
+            packed_position(self.ram, ANCILLA_Y_LO + self.slot, ANCILLA_Y_HI + self.slot)
+        }
+
+        pub(crate) fn x_velocity(&self) -> u8 {
+            byte(self.ram, ANCILLA_X_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn y_velocity(&self) -> u8 {
+            byte(self.ram, ANCILLA_Y_VELOCITY + self.slot)
+        }
+
+        pub(crate) fn item_to_link(&self) -> u8 {
+            byte(self.ram, ANCILLA_ITEM_TO_LINK + self.slot)
+        }
+
+        pub(crate) fn timer(&self) -> u8 {
+            byte(self.ram, ANCILLA_TIMER + self.slot)
+        }
+
+        pub(crate) fn direction(&self) -> u8 {
+            byte(self.ram, ANCILLA_DIRECTION + self.slot)
+        }
+    }
+
     fn byte(ram: &[u8], offset: usize) -> u8 {
         ram.get(offset).copied().unwrap_or(0)
     }
@@ -301,6 +435,10 @@ pub(crate) mod semantic {
         } else {
             0
         }
+    }
+
+    fn packed_position(ram: &[u8], low_offset: usize, high_offset: usize) -> u16 {
+        u16::from(byte(ram, low_offset)) | (u16::from(byte(ram, high_offset)) << 8)
     }
 }
 
