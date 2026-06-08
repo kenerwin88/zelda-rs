@@ -3542,14 +3542,16 @@ impl ZeldaState {
             self.ram[LINK_CANT_CHANGE_DIRECTION] &= !1;
             self.ram[ANCILLA_L + k] = 1;
 
-            if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
-                self.ram[ANCILLA_Z_VEL + k] = 58;
-                self.ram[ANCILLA_Z + k] = (-105i8) as u8;
+            let enhanced_bird_travel = self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0;
+            let mut bird = self.ancilla_slot_view_mut(k);
+            if enhanced_bird_travel {
+                bird.set_z_velocity(58);
+                bird.set_z((-105i8) as u8);
             } else {
-                self.ram[ANCILLA_Z_VEL + k] = 40;
-                self.ram[ANCILLA_Z + k] = (-51i8) as u8;
+                bird.set_z_velocity(40);
+                bird.set_z((-51i8) as u8);
             }
-            self.ram[ANCILLA_STEP + k] = 2;
+            bird.set_step(2);
             self.add_bird_common(k);
         }
     }
