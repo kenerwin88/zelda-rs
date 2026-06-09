@@ -42,11 +42,12 @@ use crate::game_state::{
     HistoryPositionState, HudRuntimeState, HudStateRead, HudTilemapState, IntroActorRead,
     LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
     MessagingRenderBufferState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
-    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
-    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
+    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -6230,6 +6231,17 @@ impl ZeldaState {
 
     pub(crate) fn sprite_slot_view_mut(&mut self, slot: usize) -> NativeSpriteSlotBridgeMut<'_> {
         self.sprite_slot_mut(slot)
+    }
+
+    pub(crate) fn ancilla_slot_view(&self, slot: usize) -> NativeAncillaSlotView<'_> {
+        self.game_state.sprites.ancilla_slots.slot(slot)
+    }
+
+    pub(crate) fn ancilla_slot_view_mut(&mut self, slot: usize) -> NativeAncillaSlotBridgeMut<'_> {
+        self.game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut self.ram, slot)
     }
 
     pub(crate) fn sprite_system_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
