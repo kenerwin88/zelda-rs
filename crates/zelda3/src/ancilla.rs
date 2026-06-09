@@ -8947,8 +8947,11 @@ impl ZeldaState {
             );
         }
         self.ram[SOUND_EFFECT_1] = self.link_calculate_sfx_pan() | 0x24;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-        self.ram[ANCILLA_AUX_TIMER + k] = 2;
+        {
+            let mut splash = self.ancilla_slot_view_mut(k);
+            splash.set_item_to_link(0);
+            splash.set_aux_timer(2);
+        }
         if self.ram[PLAYER_IS_INDOORS] != 0 && self.ram[LINK_IS_IN_DEEP_WATER] == 0 {
             self.ram[LINK_IS_ON_LOWER_LEVEL] = 0;
         }
@@ -8998,7 +9001,7 @@ impl ZeldaState {
         let mut i = 7usize;
         while MOVE_GRAVESTONE_Y[i] != t {
             if i == 0 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+                self.ancilla_slot_view_mut(k).set_ancilla_type(0);
                 return;
             }
             i -= 1;
@@ -9054,7 +9057,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).set_ancilla_type(0);
     }
 
     pub(super) fn ancilla_add_waterfall_splash(&mut self) {
@@ -9062,8 +9065,9 @@ impl ZeldaState {
             return;
         }
         if let Some(k) = self.ancilla_add_ancilla(0x41, 4) {
-            self.ram[ANCILLA_TIMER + k] = 2;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+            let mut splash = self.ancilla_slot_view_mut(k);
+            splash.set_timer(2);
+            splash.set_item_to_link(0);
         }
     }
 
@@ -9071,8 +9075,11 @@ impl ZeldaState {
         let Some(k) = self.ancilla_add_ancilla(8, 1) else {
             return -1;
         };
-        self.ram[ANCILLA_ARR25 + k] = 0;
-        self.ram[ANCILLA_ARR26 + k] = 7;
+        {
+            let mut debris = self.ancilla_slot_view_mut(k);
+            debris.set_arr25(0);
+            debris.set_arr26(7);
+        }
         k as i32
     }
 
@@ -9846,7 +9853,7 @@ impl ZeldaState {
 
         if self.somarian_block_check_empty(oam_org) {
             self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH_PLAYER] = 0;
-            self.ram[ANCILLA_TYPE + k] = 0;
+            self.ancilla_slot_view_mut(k).set_ancilla_type(0);
             if k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize {
                 self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
                 if self.ram[LINK_STATE_BITS] & 0x80 != 0 {
@@ -9887,11 +9894,14 @@ impl ZeldaState {
             self.ram[LINK_SPEED_SETTING] = 0;
         }
         self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH_PLAYER] = 0;
-        self.ram[ANCILLA_TYPE + k] = 0x2d;
-        self.ram[ANCILLA_AUX_TIMER + k] = 0;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-        self.ram[ANCILLA_ARR3 + k] = 0;
+        {
+            let mut block = self.ancilla_slot_view_mut(k);
+            block.set_ancilla_type(0x2d);
+            block.set_aux_timer(0);
+            block.set_step(0);
+            block.set_item_to_link(0);
+            block.set_arr3(0);
+        }
         self.ram[ANCILLA_ARR1 + k] = 0;
         self.ram[ANCILLA_R_PLAYER + k] = 0;
         if k + 1 == self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] as usize {
