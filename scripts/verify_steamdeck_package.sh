@@ -42,6 +42,13 @@ INSTALLED_DESKTOP="$INSTALL_TEST_DIR/data/applications/zelda3-rs.desktop"
 [[ -x "$INSTALLED_APP_DIR/verify-on-deck.sh" ]] || fail "installer did not copy executable verifier"
 [[ -f "$INSTALLED_APP_DIR/CHECKSUMS.sha256" ]] || fail "installer did not copy checksums"
 [[ -f "$INSTALLED_DESKTOP" ]] || fail "installer did not write desktop entry"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$INSTALLED_APP_DIR" && sha256sum -c CHECKSUMS.sha256 >/dev/null)
+elif command -v shasum >/dev/null 2>&1; then
+  (cd "$INSTALLED_APP_DIR" && shasum -a 256 -c CHECKSUMS.sha256 >/dev/null)
+else
+  fail "sha256sum or shasum not found"
+fi
 grep -q "^Exec=$INSTALLED_APP_DIR/run-zelda3.sh$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Exec"
 grep -q "^Path=$INSTALLED_APP_DIR$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Path"
 grep -q "^Icon=$INSTALLED_APP_DIR/zelda3-rs.svg$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Icon"
