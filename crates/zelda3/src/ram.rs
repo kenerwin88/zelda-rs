@@ -85,6 +85,8 @@ pub(crate) mod semantic {
     const ANCILLA_STEP: usize = 0x0c54;
     const ANCILLA_AUX_TIMER: usize = 0x03b1;
     const ANCILLA_ARR3: usize = 0x039f;
+    const ANCILLA_ARR1: usize = 0x03a4;
+    const ANCILLA_L: usize = 0x0385;
     const ANCILLA_ARR4: usize = 0x0bf0;
     const ANCILLA_ARR25: usize = 0x0746;
     const ANCILLA_ARR26: usize = 0x0741;
@@ -769,6 +771,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_arr3(&mut self, value: u8) {
             self.ram[ANCILLA_ARR3 + self.slot] = value;
+        }
+
+        pub(crate) fn set_arr1(&mut self, value: u8) {
+            self.ram[ANCILLA_ARR1 + self.slot] = value;
+        }
+
+        pub(crate) fn set_l(&mut self, value: u8) {
+            self.ram[ANCILLA_L + self.slot] = value;
         }
 
         pub(crate) fn tick_arr3(&mut self) -> u8 {
