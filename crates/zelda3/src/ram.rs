@@ -616,6 +616,14 @@ pub(crate) mod semantic {
             byte(self.ram, ANCILLA_ARR3 + self.slot)
         }
 
+        pub(crate) fn arr1(&self) -> u8 {
+            byte(self.ram, ANCILLA_ARR1 + self.slot)
+        }
+
+        pub(crate) fn l(&self) -> u8 {
+            byte(self.ram, ANCILLA_L + self.slot)
+        }
+
         pub(crate) fn arr25(&self) -> u8 {
             byte(self.ram, ANCILLA_ARR25 + self.slot)
         }
@@ -779,6 +787,12 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_l(&mut self, value: u8) {
             self.ram[ANCILLA_L + self.slot] = value;
+        }
+
+        pub(crate) fn advance_arr1_mod4(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ARR1 + self.slot].wrapping_add(1) & 3;
+            self.set_arr1(value);
+            value
         }
 
         pub(crate) fn tick_arr3(&mut self) -> u8 {

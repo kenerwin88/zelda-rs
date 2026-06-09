@@ -5317,22 +5317,23 @@ impl ZeldaState {
     fn ancilla2_b_spin_attack_sparkle_b(&mut self, k: usize) {
         const SPIN_SPARK_CHAR: [u8; 4] = [0xd7, 0xb7, 0x80, 0x83];
 
-        if self.ram[ANCILLA_L + k] != 0 {
+        if self.ancilla_slot_view(k).l() != 0 {
             self.spin_attack_sparkle_b_closer(k);
             return;
         }
         let mut flags = 2;
         if self.frame_control_view().submodule() == 0 {
-            let t = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_sub(3);
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = t;
+            let t = self.ancilla_slot_view(k).item_to_link().wrapping_sub(3);
+            self.ancilla_slot_view_mut(k).set_item_to_link(t);
             if t < 13 {
-                self.ram[ANCILLA_AUX_TIMER + k] = 1;
-                self.ram[ANCILLA_L + k] = 1;
-                self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
+                let mut sparkle = self.ancilla_slot_view_mut(k);
+                sparkle.set_aux_timer(1);
+                sparkle.set_l(1);
+                sparkle.set_item_to_link(0);
                 self.spin_attack_sparkle_b_closer(k);
                 return;
             }
-            self.ram[ANCILLA_STEP + k] = if t < 0x42 {
+            let step = if t < 0x42 {
                 3
             } else if t == 0x46 {
                 1
@@ -5341,16 +5342,20 @@ impl ZeldaState {
             } else {
                 0
             };
-            self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-            if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
+            let aux_timer = {
+                let mut sparkle = self.ancilla_slot_view_mut(k);
+                sparkle.set_step(step);
+                sparkle.tick_aux_timer()
+            };
+            if sign8(aux_timer) {
                 flags = 4;
-                self.ram[ANCILLA_AUX_TIMER + k] = 2;
+                self.ancilla_slot_view_mut(k).set_aux_timer(2);
             }
         }
 
         let oam_org = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
         let mut oam = oam_org;
-        let mut i = self.ram[ANCILLA_STEP + k] as usize;
+        let mut i = self.ancilla_slot_view(k).step() as usize;
         loop {
             if self.frame_control_view().submodule() == 0 {
                 self.ram[SWORDBEAM_ARR + i] = self.ram[SWORDBEAM_ARR + i].wrapping_add(4) & 0x3f;
@@ -5375,22 +5380,25 @@ impl ZeldaState {
         }
 
         if self.frame_control_view().submodule() == 0 {
-            self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
-            if !sign8(self.ram[ANCILLA_ARR3 + k]) {
-                if self.ram[ANCILLA_ITEM_TO_LINK + k] == 7 {
+            let arr3 = self.ancilla_slot_view_mut(k).tick_arr3();
+            if !sign8(arr3) {
+                if self.ancilla_slot_view(k).item_to_link() == 7 {
                     self.ram[BYTEWISE_EXTENDED_OAM + (oam_org - OAM_BUF) / 4 + 3] = 1;
                 }
                 return;
             }
 
-            self.ram[ANCILLA_ARR3 + k] = 0;
-            self.ram[ANCILLA_ARR1 + k] = self.ram[ANCILLA_ARR1 + k].wrapping_add(1) & 3;
-            if self.ram[ANCILLA_ARR1 + k] == 3 {
+            let arr1 = {
+                let mut sparkle = self.ancilla_slot_view_mut(k);
+                sparkle.set_arr3(0);
+                sparkle.advance_arr1_mod4()
+            };
+            if arr1 == 3 {
                 self.ram[SWORDBEAM_VAR1] = self.ram[SWORDBEAM_VAR1].wrapping_add(9) & 0x3f;
             }
         }
 
-        let t = self.ram[ANCILLA_ARR1 + k];
+        let t = self.ancilla_slot_view(k).arr1();
         if t != 3 {
             const SPIN_SPARK_CHAR2: [u8; 3] = [0xb7, 0x80, 0x83];
             let pt =
@@ -5407,18 +5415,21 @@ impl ZeldaState {
                 0,
             );
         }
-        if self.ram[ANCILLA_ITEM_TO_LINK + k] == 7 {
+        if self.ancilla_slot_view(k).item_to_link() == 7 {
             self.ram[BYTEWISE_EXTENDED_OAM + (oam_org - OAM_BUF) / 4 + 3] = 1;
         }
     }
 
     fn spin_attack_sparkle_b_closer(&mut self, k: usize) {
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
-            self.ram[ANCILLA_AUX_TIMER + k] = 1;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] == 3 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+        let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+        if sign8(aux_timer) {
+            let item_to_link = {
+                let mut sparkle = self.ancilla_slot_view_mut(k);
+                sparkle.set_aux_timer(1);
+                sparkle.advance_item_to_link()
+            };
+            if item_to_link == 3 {
+                self.ancilla_slot_view_mut(k).clear();
             }
         }
         self.spin_spark_draw(k, 4);
