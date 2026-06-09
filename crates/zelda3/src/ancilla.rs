@@ -4240,7 +4240,7 @@ impl ZeldaState {
             let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
             if self.ram[ANCILLA_TIMER + k] == 0 {
                 let old_type = self.ram[ANCILLA_TYPE + k];
-                self.ram[ANCILLA_TYPE + k] = 0;
+                self.ancilla_slot_view_mut(k).clear();
                 if old_type != 0x2f
                     && self.ram[OVERWORLD_SCREEN_INDEX] == 64
                     && self.ram[ANCILLA_TILE_ATTR_PLAYER + k] == 0x43
@@ -4288,7 +4288,7 @@ impl ZeldaState {
 
         self.ram[ANCILLA_TYPE] = 0x34;
         for i in 1..=5 {
-            self.ram[ANCILLA_TYPE + i] = 0;
+            self.ancilla_slot_view_mut(i).clear();
         }
         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
         self.ram[ANCILLA_NUMSPR] = K_ANCILLA_PFLAGS[0x34];
@@ -4335,10 +4335,11 @@ impl ZeldaState {
                 if self.ancilla_check_sprite_collision(k).is_some()
                     || self.ancilla_check_tile_collision(k) != 0
                 {
-                    self.ram[ANCILLA_TYPE + k] = 0x11;
+                    self.ancilla_slot_view_mut(k).set_ancilla_type(0x11);
                     self.ram[ANCILLA_NUMSPR + k] = K_ANCILLA_PFLAGS[0x11];
-                    self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-                    self.ram[ANCILLA_AUX_TIMER + k] = 4;
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
+                    ancilla.set_item_to_link(0);
+                    ancilla.set_aux_timer(4);
                 }
             }
         }
@@ -4418,9 +4419,12 @@ impl ZeldaState {
         if self.ram[SPRITE_TYPE + j] != 0x1b {
             self.ancilla_sfx2_pan(k, 8);
         }
-        self.ram[ANCILLA_ITEM_TO_LINK + k] = 0;
-        self.ram[ANCILLA_TYPE + k] = 10;
-        self.ram[ANCILLA_AUX_TIMER + k] = 1;
+        {
+            let mut arrow = self.ancilla_slot_view_mut(k);
+            arrow.set_item_to_link(0);
+            arrow.set_ancilla_type(10);
+            arrow.set_aux_timer(1);
+        }
         if self.ram[ANCILLA_H + k] != 0 {
             self.ram[ANCILLA_X_LO + k] = self.ram[ANCILLA_X_LO + k]
                 .wrapping_add(self.ram[BG1HOFS_COPY2])
@@ -4470,8 +4474,11 @@ impl ZeldaState {
                     self.ancilla_get_y(k)
                         .wrapping_add(SWORD_BEAM_YVEL2[j] as i16 as u16),
                 );
-                self.ram[ANCILLA_TYPE + k] = 4;
-                self.ram[ANCILLA_TIMER + k] = 7;
+                {
+                    let mut beam = self.ancilla_slot_view_mut(k);
+                    beam.set_ancilla_type(4);
+                    beam.set_timer(7);
+                }
                 self.ram[ANCILLA_NUMSPR + k] = 0x10;
                 return;
             }
@@ -4544,7 +4551,7 @@ impl ZeldaState {
                 return;
             }
         }
-        self.ram[ANCILLA_TYPE + k] = 0;
+        self.ancilla_slot_view_mut(k).clear();
     }
 
     fn ancilla0_d_spin_attack_full_charge_spark(&mut self, k: usize) {
@@ -4556,7 +4563,7 @@ impl ZeldaState {
             self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, 4) as u8;
 
         if self.ram[ANCILLA_TIMER + k] == 0 {
-            self.ram[ANCILLA_TYPE + k] = 0;
+            self.ancilla_slot_view_mut(k).clear();
             return;
         }
 
