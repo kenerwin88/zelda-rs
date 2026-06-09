@@ -63,6 +63,7 @@ pub(crate) mod semantic {
     const SPRITE_DELAY_MAIN: usize = 0x0df0;
     const SPRITE_HEALTH: usize = 0x0e50;
     const SPRITE_HIT_TIMER: usize = 0x0ef0;
+    const SPRITE_FLOOR: usize = 0x0f20;
     const SPRITE_Z: usize = 0x0f70;
     const SPRITE_Z_VELOCITY: usize = 0x0f80;
     const SPRITE_Z_SUBPIXEL: usize = 0x0f90;
@@ -88,6 +89,8 @@ pub(crate) mod semantic {
     const ANCILLA_STEP: usize = 0x0c54;
     const ANCILLA_OBJPRIO: usize = 0x0280;
     const ANCILLA_U: usize = 0x028a;
+    const ANCILLA_K: usize = 0x0380;
+    const ANCILLA_H: usize = 0x03c5;
     const ANCILLA_AUX_TIMER: usize = 0x03b1;
     const ANCILLA_FLOOR2: usize = 0x03ca;
     const ANCILLA_ARR3: usize = 0x039f;
@@ -418,6 +421,10 @@ pub(crate) mod semantic {
         pub(crate) fn hit_timer(&self) -> u8 {
             byte(self.ram, SPRITE_HIT_TIMER + self.slot)
         }
+
+        pub(crate) fn floor(&self) -> u8 {
+            byte(self.ram, SPRITE_FLOOR + self.slot)
+        }
     }
 
     pub(crate) struct SpriteSlotViewMut<'a> {
@@ -612,6 +619,10 @@ pub(crate) mod semantic {
             byte(self.ram, ANCILLA_FLOOR + self.slot)
         }
 
+        pub(crate) fn object_priority(&self) -> u8 {
+            byte(self.ram, ANCILLA_OBJPRIO + self.slot)
+        }
+
         pub(crate) fn num_sprites(&self) -> u8 {
             byte(self.ram, ANCILLA_NUMSPR + self.slot)
         }
@@ -640,8 +651,20 @@ pub(crate) mod semantic {
             byte(self.ram, ANCILLA_L + self.slot)
         }
 
+        pub(crate) fn h(&self) -> u8 {
+            byte(self.ram, ANCILLA_H + self.slot)
+        }
+
+        pub(crate) fn k(&self) -> u8 {
+            byte(self.ram, ANCILLA_K + self.slot)
+        }
+
         pub(crate) fn g(&self) -> u8 {
             byte(self.ram, ANCILLA_G + self.slot)
+        }
+
+        pub(crate) fn arr4(&self) -> u8 {
+            byte(self.ram, ANCILLA_ARR4 + self.slot)
         }
 
         pub(crate) fn arr25(&self) -> u8 {
@@ -815,6 +838,12 @@ pub(crate) mod semantic {
             self.ram[ANCILLA_STEP + self.slot] = value;
         }
 
+        pub(crate) fn retreat_step(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_STEP + self.slot].wrapping_sub(1);
+            self.set_step(value);
+            value
+        }
+
         pub(crate) fn set_aux_timer(&mut self, value: u8) {
             self.ram[ANCILLA_AUX_TIMER + self.slot] = value;
         }
@@ -835,6 +864,26 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_l(&mut self, value: u8) {
             self.ram[ANCILLA_L + self.slot] = value;
+        }
+
+        pub(crate) fn set_h(&mut self, value: u8) {
+            self.ram[ANCILLA_H + self.slot] = value;
+        }
+
+        pub(crate) fn set_k(&mut self, value: u8) {
+            self.ram[ANCILLA_K + self.slot] = value;
+        }
+
+        pub(crate) fn advance_k(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_K + self.slot].wrapping_add(1);
+            self.set_k(value);
+            value
+        }
+
+        pub(crate) fn retreat_k(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_K + self.slot].wrapping_sub(1);
+            self.set_k(value);
+            value
         }
 
         pub(crate) fn set_g(&mut self, value: u8) {
@@ -861,6 +910,10 @@ pub(crate) mod semantic {
             value
         }
 
+        pub(crate) fn set_arr4(&mut self, value: u8) {
+            self.ram[ANCILLA_ARR4 + self.slot] = value;
+        }
+
         pub(crate) fn set_arr25(&mut self, value: u8) {
             self.ram[ANCILLA_ARR25 + self.slot] = value;
         }
@@ -883,7 +936,7 @@ pub(crate) mod semantic {
 
         pub(crate) fn advance_arr4(&mut self) -> u8 {
             let value = self.ram[ANCILLA_ARR4 + self.slot].wrapping_add(1);
-            self.ram[ANCILLA_ARR4 + self.slot] = value;
+            self.set_arr4(value);
             value
         }
     }
