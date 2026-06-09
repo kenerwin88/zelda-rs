@@ -4629,28 +4629,30 @@ impl ZeldaState {
     fn ancilla21_snore(&mut self, k: usize) {
         const BEDSPREAD_DMA: [u8; 3] = [0x44, 0x43, 0x42];
 
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if (self.ram[ANCILLA_AUX_TIMER + k] as i8).is_negative() {
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] != 2 {
-                self.ram[ANCILLA_ITEM_TO_LINK + k] =
-                    self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
+        let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+        if sign8(aux_timer) {
+            let item_to_link = self.ancilla_slot_view(k).item_to_link();
+            let mut snore = self.ancilla_slot_view_mut(k);
+            if item_to_link != 2 {
+                snore.advance_item_to_link();
             }
-            self.ram[ANCILLA_AUX_TIMER + k] = 7;
+            snore.set_aux_timer(7);
         }
 
-        self.ram[ANCILLA_X_VEL + k] =
-            self.ram[ANCILLA_X_VEL + k].wrapping_add(self.ram[ANCILLA_STEP + k]);
-        if abs8(self.ram[ANCILLA_X_VEL + k]) >= 8 {
-            self.ram[ANCILLA_STEP + k] = (-(self.ram[ANCILLA_STEP + k] as i8)) as u8;
+        let step = self.ancilla_slot_view(k).step();
+        let x_velocity = self.ancilla_slot_view_mut(k).add_x_velocity(step);
+        if abs8(x_velocity) >= 8 {
+            self.ancilla_slot_view_mut(k)
+                .set_step((-(step as i8)) as u8);
         }
 
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
         if self.ancilla_y(k) <= self.player_state_view().y().wrapping_sub(24) {
-            self.ram[ANCILLA_TYPE + k] = 0;
+            self.ancilla_slot_view_mut(k).clear();
         }
 
-        self.ram[LINK_DMA_VAR5] = BEDSPREAD_DMA[self.ram[ANCILLA_ITEM_TO_LINK + k] as usize];
+        self.ram[LINK_DMA_VAR5] = BEDSPREAD_DMA[self.ancilla_slot_view(k).item_to_link() as usize];
         let (x, y) = self.ancilla_prep_oam_coord(k);
         self.ancilla_set_oam(
             read_le_u16(&self.ram, OAM_CUR_PTR) as usize,
