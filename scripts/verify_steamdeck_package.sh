@@ -53,6 +53,14 @@ grep -q "^Exec=$INSTALLED_APP_DIR/run-zelda3.sh$" "$INSTALLED_DESKTOP" || fail "
 grep -q "^Path=$INSTALLED_APP_DIR$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Path"
 grep -q "^Icon=$INSTALLED_APP_DIR/zelda3-rs.svg$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Icon"
 grep -q '^existing-save$' "$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat" || fail "installer modified existing SRAM save"
+if [[ "$(uname -s)" == "Linux" ]]; then
+  rm "$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat"
+  XDG_DATA_HOME="$INSTALL_TEST_DIR/data" HOME="$INSTALL_TEST_DIR/home" "$INSTALLED_APP_DIR/run-zelda3.sh" --sram-smoke >/dev/null
+  [[ -f "$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat" ]] || fail "installed wrapper did not create default SRAM path"
+  if ! head -c 8 "$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat" | grep -q '^Z3SRAMOK$'; then
+    fail "installed wrapper did not use the default XDG SRAM path"
+  fi
+fi
 rm -rf "$INSTALL_TEST_DIR"
 if [[ "$(uname -s)" == "Linux" ]]; then
   SMOKE_SAVE_DIR="$(mktemp -d)"
