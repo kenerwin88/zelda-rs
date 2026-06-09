@@ -115,7 +115,17 @@ FRAMES="${STEAMDECK_SMOKE_FRAMES:-2}"
 GRAPHICAL_ENV=""
 run_logged() {
   printf '\n$ %s\n' "$*" | tee -a "$LOG"
-  "$@" 2>&1 | tee -a "$LOG"
+  OUT="$(mktemp)"
+  if "$@" >"$OUT" 2>&1; then
+    cat "$OUT" | tee -a "$LOG"
+    rm -f "$OUT"
+    return 0
+  else
+    status=$?
+    cat "$OUT" | tee -a "$LOG"
+    rm -f "$OUT"
+    return "$status"
+  fi
 }
 detect_graphical_session() {
   if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
@@ -138,6 +148,14 @@ detect_graphical_session() {
   fi
   if [ -S /tmp/.X11-unix/X0 ]; then
     export DISPLAY=:0
+    if [ -z "${XAUTHORITY:-}" ]; then
+      for auth in "$XDG_RUNTIME_DIR"/xauth_* "$HOME/.Xauthority"; do
+        if [ -f "$auth" ]; then
+          export XAUTHORITY="$auth"
+          break
+        fi
+      done
+    fi
     GRAPHICAL_ENV="x11:$DISPLAY"
   fi
 }
@@ -150,6 +168,7 @@ detect_graphical_session
   if [ -r /etc/os-release ]; then . /etc/os-release; echo "os=${PRETTY_NAME:-unknown}"; fi
   echo "DISPLAY=${DISPLAY:-}"
   echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}"
+  echo "XAUTHORITY=${XAUTHORITY:-}"
   echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
   echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}"
   echo "discovered_graphical_session=${GRAPHICAL_ENV:-}"

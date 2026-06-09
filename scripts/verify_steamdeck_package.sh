@@ -19,6 +19,8 @@ grep -q 'WGPU_BACKEND' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not se
 grep -q 'ZELDA3_SAVE_DIR' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set ZELDA3_SAVE_DIR"
 grep -q 'detect_graphical_session' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not discover graphical sessions"
 grep -q 'WAYLAND_DISPLAY' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not handle Wayland"
+grep -q 'XAUTHORITY' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not handle X11 authority"
+grep -q 'return "$status"' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not propagate logged command failures"
 grep -Fq 'app.new.$$' "$PACKAGE_DIR/install-to-desktop-mode.sh" || fail "installer does not stage app updates"
 grep -Fq 'app.prev.$$' "$PACKAGE_DIR/install-to-desktop-mode.sh" || fail "installer does not preserve previous app during updates"
 grep -q 'dirname "$1"' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry must launch relative to package folder"
