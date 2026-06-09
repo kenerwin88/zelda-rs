@@ -19,6 +19,8 @@ grep -q 'WGPU_BACKEND' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not se
 grep -q 'ZELDA3_SAVE_DIR' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set ZELDA3_SAVE_DIR"
 grep -q 'detect_graphical_session' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not discover graphical sessions"
 grep -q 'WAYLAND_DISPLAY' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not handle Wayland"
+grep -Fq 'app.new.$$' "$PACKAGE_DIR/install-to-desktop-mode.sh" || fail "installer does not stage app updates"
+grep -Fq 'app.prev.$$' "$PACKAGE_DIR/install-to-desktop-mode.sh" || fail "installer does not preserve previous app during updates"
 grep -q 'dirname "$1"' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry must launch relative to package folder"
 grep -q '^Categories=Game;' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry missing Game category"
 grep -q '^runtime_assets=embedded$' "$PACKAGE_DIR/package-manifest.txt" || fail "manifest does not declare embedded runtime assets"
@@ -42,6 +44,9 @@ INSTALLED_DESKTOP="$INSTALL_TEST_DIR/data/applications/zelda3-rs.desktop"
 [[ -x "$INSTALLED_APP_DIR/verify-on-deck.sh" ]] || fail "installer did not copy executable verifier"
 [[ -f "$INSTALLED_APP_DIR/CHECKSUMS.sha256" ]] || fail "installer did not copy checksums"
 [[ -f "$INSTALLED_DESKTOP" ]] || fail "installer did not write desktop entry"
+if find "$INSTALL_TEST_DIR/data/zelda3-rs" -maxdepth 1 \( -name 'app.new.*' -o -name 'app.prev.*' \) | grep -q .; then
+  fail "installer left transactional staging directories behind"
+fi
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$INSTALLED_APP_DIR" && sha256sum -c CHECKSUMS.sha256 >/dev/null)
 elif command -v shasum >/dev/null 2>&1; then

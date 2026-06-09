@@ -184,8 +184,18 @@ set -eu
 SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 APP_DIR="$DATA_HOME/zelda3-rs/app"
+APP_STAGE="$DATA_HOME/zelda3-rs/app.new.$$"
+APP_PREV="$DATA_HOME/zelda3-rs/app.prev.$$"
 APPLICATIONS_DIR="$DATA_HOME/applications"
-mkdir -p "$APP_DIR" "$APPLICATIONS_DIR"
+cleanup() {
+  rm -rf "$APP_STAGE"
+  if [ -d "$APP_PREV" ] && [ ! -d "$APP_DIR" ]; then
+    mv "$APP_PREV" "$APP_DIR"
+  fi
+}
+trap cleanup EXIT INT TERM
+rm -rf "$APP_STAGE" "$APP_PREV"
+mkdir -p "$APP_STAGE" "$APPLICATIONS_DIR"
 cp "$SOURCE_DIR/zelda3" \
   "$SOURCE_DIR/run-zelda3.sh" \
   "$SOURCE_DIR/install-to-desktop-mode.sh" \
@@ -195,8 +205,13 @@ cp "$SOURCE_DIR/zelda3" \
   "$SOURCE_DIR/README.txt" \
   "$SOURCE_DIR/package-manifest.txt" \
   "$SOURCE_DIR/CHECKSUMS.sha256" \
-  "$APP_DIR/"
-chmod +x "$APP_DIR/zelda3" "$APP_DIR/run-zelda3.sh" "$APP_DIR/install-to-desktop-mode.sh" "$APP_DIR/verify-on-deck.sh"
+  "$APP_STAGE/"
+chmod +x "$APP_STAGE/zelda3" "$APP_STAGE/run-zelda3.sh" "$APP_STAGE/install-to-desktop-mode.sh" "$APP_STAGE/verify-on-deck.sh"
+if [ -d "$APP_DIR" ]; then
+  mv "$APP_DIR" "$APP_PREV"
+fi
+mv "$APP_STAGE" "$APP_DIR"
+rm -rf "$APP_PREV"
 cat >"$APPLICATIONS_DIR/zelda3-rs.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
