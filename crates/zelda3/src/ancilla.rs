@@ -5441,17 +5441,18 @@ impl ZeldaState {
         const SWORD_CEREMONY_CHAR: [u8; 8] = [0x86, 0x86, 0x96, 0x96, 0x87, 0x87, 0x97, 0x97];
         const SWORD_CEREMONY_FLAGS: [u8; 8] = [1, 0x41, 1, 0x41, 1, 0x41, 1, 0x41];
 
-        if self.ram[ANCILLA_TIMER + k] == 0 {
-            self.ram[ANCILLA_TYPE + k] = 0;
+        if self.ancilla_slot_view(k).timer() == 0 {
+            self.ancilla_slot_view_mut(k).clear();
             return;
         }
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = if self.ram[ANCILLA_ITEM_TO_LINK + k] == 2 {
+        let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+        if sign8(aux_timer) {
+            let item_to_link = if self.ancilla_slot_view(k).item_to_link() == 2 {
                 0
             } else {
-                self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1)
+                self.ancilla_slot_view(k).item_to_link().wrapping_add(1)
             };
+            self.ancilla_slot_view_mut(k).set_item_to_link(item_to_link);
         }
 
         let (x, y) = self.ancilla_prep_oam_coord(k);
@@ -7515,12 +7516,15 @@ impl ZeldaState {
             0xc6, 0x86, 0x46, 6, 0x46, 0xc6, 6, 0x86, 0xc6, 0x86, 0x46, 6, 0x46, 0xc6, 6, 0x86,
         ];
 
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if (self.ram[ANCILLA_AUX_TIMER + k] as i8) < 0 {
-            self.ram[ANCILLA_AUX_TIMER + k] = 3;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] == 2 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+        let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+        if (aux_timer as i8) < 0 {
+            let item_to_link = {
+                let mut fission = self.ancilla_slot_view_mut(k);
+                fission.set_aux_timer(3);
+                fission.advance_item_to_link()
+            };
+            if item_to_link == 2 {
+                self.ancilla_slot_view_mut(k).clear();
                 self.somaria_block_spawn_bullets(k);
                 return;
             }
@@ -9349,12 +9353,15 @@ impl ZeldaState {
     }
 
     fn ancilla11_ice_rod_wall_hit(&mut self, k: usize) {
-        self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-        if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
-            self.ram[ANCILLA_AUX_TIMER + k] = 7;
-            self.ram[ANCILLA_ITEM_TO_LINK + k] = self.ram[ANCILLA_ITEM_TO_LINK + k].wrapping_add(1);
-            if self.ram[ANCILLA_ITEM_TO_LINK + k] == 2 {
-                self.ram[ANCILLA_TYPE + k] = 0;
+        let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+        if sign8(aux_timer) {
+            let item_to_link = {
+                let mut wall_hit = self.ancilla_slot_view_mut(k);
+                wall_hit.set_aux_timer(7);
+                wall_hit.advance_item_to_link()
+            };
+            if item_to_link == 2 {
+                self.ancilla_slot_view_mut(k).clear();
                 return;
             }
         }
