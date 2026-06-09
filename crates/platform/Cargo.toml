@@ -9,6 +9,7 @@ license.workspace = true
 renderer = { path = "../renderer" }
 winit = "0.30"
 cpal = "0.15"
+gilrs = "0.10"
 pollster = "0.3"
 
 [lints]

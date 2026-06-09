@@ -6,6 +6,7 @@
 
 #![allow(non_snake_case)]
 
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -117,6 +118,15 @@ fn configured_poly_upload_defer_until_frame_counter() -> u8 {
                 .ok()
         })
         .unwrap_or(BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER)
+}
+
+fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {
+    let value = value?;
+    if value.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(value))
+    }
 }
 
 #[path = "ancilla.rs"]
@@ -3504,7 +3514,8 @@ impl ZeldaState {
     }
 
     pub fn zelda_read_sram(&mut self) {
-        if let Ok(mut file) = fs::File::open("saves/sram.dat") {
+        let path = Self::sram_path();
+        if let Ok(mut file) = fs::File::open(&path) {
             let mut total = 0usize;
             while total < SRAM_SIZE {
                 match file.read(&mut self.sram[total..SRAM_SIZE]) {
@@ -3514,20 +3525,58 @@ impl ZeldaState {
                 }
             }
             if total != SRAM_SIZE {
-                eprintln!("Error reading saves/sram.dat");
+                eprintln!("Error reading {}", path.display());
             }
             self.emu_synchronize_whole_state();
         }
     }
 
     pub fn zelda_write_sram(&self) {
-        let _ = fs::rename("saves/sram.dat", "saves/sram.bak");
-        match fs::File::create("saves/sram.dat") {
+        let path = Self::sram_path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let backup_path = path.with_extension("bak");
+        let _ = fs::rename(&path, &backup_path);
+        match fs::File::create(&path) {
             Ok(mut file) => {
                 let _ = file.write_all(&self.sram);
             }
-            Err(_) => eprintln!("Unable to write saves/sram.dat"),
+            Err(_) => eprintln!("Unable to write {}", path.display()),
         }
+    }
+
+    fn sram_path() -> PathBuf {
+        Self::sram_path_from_env(
+            env::var_os("ZELDA3_SAVE_DIR"),
+            env::var_os("XDG_DATA_HOME"),
+            env::var_os("HOME"),
+        )
+    }
+
+    fn sram_path_from_env(
+        save_dir: Option<OsString>,
+        xdg_data_home: Option<OsString>,
+        home: Option<OsString>,
+    ) -> PathBuf {
+        if let Some(save_dir) = non_empty_path(save_dir) {
+            return save_dir.join("sram.dat");
+        }
+        if let Some(xdg_data_home) = non_empty_path(xdg_data_home) {
+            return xdg_data_home
+                .join("zelda3-rs")
+                .join("saves")
+                .join("sram.dat");
+        }
+        if let Some(home) = non_empty_path(home) {
+            return home
+                .join(".local")
+                .join("share")
+                .join("zelda3-rs")
+                .join("saves")
+                .join("sram.dat");
+        }
+        PathBuf::from("saves/sram.dat")
     }
 
     fn hdma_setup(
@@ -4617,6 +4666,34 @@ mod tests {
         assert_eq!(state.ram[1], 0);
         assert_eq!(state.sram[1], 2);
         assert_eq!(state.vram()[1], 0);
+    }
+
+    #[test]
+    fn sram_path_prefers_explicit_save_dir() {
+        assert_eq!(
+            ZeldaState::sram_path_from_env(
+                Some("/tmp/z3-save".into()),
+                Some("/tmp/xdg".into()),
+                Some("/tmp/home".into()),
+            ),
+            PathBuf::from("/tmp/z3-save/sram.dat")
+        );
+    }
+
+    #[test]
+    fn sram_path_uses_xdg_data_home_for_deck_safe_default() {
+        assert_eq!(
+            ZeldaState::sram_path_from_env(None, Some("/tmp/xdg".into()), Some("/tmp/home".into())),
+            PathBuf::from("/tmp/xdg/zelda3-rs/saves/sram.dat")
+        );
+    }
+
+    #[test]
+    fn sram_path_falls_back_to_home_data_dir() {
+        assert_eq!(
+            ZeldaState::sram_path_from_env(None, None, Some("/tmp/home".into())),
+            PathBuf::from("/tmp/home/.local/share/zelda3-rs/saves/sram.dat")
+        );
     }
 
     #[test]

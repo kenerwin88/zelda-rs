@@ -141,6 +141,72 @@ ROM at runtime. Explicit ROM, replay, and oracle commands still load the ROM and
 look for `zelda3_assets.dat` next to the ROM or in the current working directory
 so parity work can keep comparing against original-ROM behavior.
 
+## Steam Deck Packaging
+
+Build a Deck-ready Linux package on Steam Deck, SteamOS, or another Linux x86_64
+machine:
+
+```bash
+ZELDA3_ROM=/path/to/zelda3.sfc scripts/package_steamdeck.sh
+```
+
+The script builds `zelda3-bin`, verifies the embedded no-ROM runtime with
+`--standalone-smoke`, verifies SRAM write/read behavior with `--sram-smoke`, and
+writes `dist/zelda3-steamdeck/` plus `dist/zelda3-steamdeck.tar.gz`. The package
+includes `zelda3`, `run-zelda3.sh`, `install-to-desktop-mode.sh`,
+`verify-on-deck.sh`, `zelda3-rs.desktop`, `zelda3-rs.svg`, and `README.txt`.
+
+Add `dist/zelda3-steamdeck/zelda3-rs.desktop` as a Non-Steam Game, or launch
+`run-zelda3.sh` directly. The wrapper enables `ZELDA3_STEAMDECK=1`,
+`ZELDA3_FULLSCREEN=1`, defaults `WGPU_BACKEND=vulkan`, and stores SRAM under
+`${XDG_DATA_HOME:-$HOME/.local/share}/zelda3-rs/saves` unless
+`ZELDA3_SAVE_DIR` is set.
+
+On a Deck, `install-to-desktop-mode.sh` copies the package to
+`${XDG_DATA_HOME:-$HOME/.local/share}/zelda3-rs/app` and writes
+`${XDG_DATA_HOME:-$HOME/.local/share}/applications/zelda3-rs.desktop`; add that
+desktop entry as a Non-Steam Game.
+
+The native host supports keyboard input and gamepad input. Deck controls map to
+SNES controls as: A/B/X/Y to A/B/X/Y, D-pad and left stick to movement, Menu to
+Start, View to Select, and L1/R1/L2/R2 to L/R. Set `ZELDA3_DISABLE_GAMEPAD=1` to
+force keyboard-only input.
+
+To validate an existing package folder:
+
+```bash
+scripts/verify_steamdeck_package.sh dist/zelda3-steamdeck
+```
+
+On Linux this runs the packaged launcher's embedded-runtime smoke test, SRAM
+write/read smoke test, and captures `ldd` output in
+`dist/zelda3-steamdeck/ldd.txt`. Set `STEAMDECK_FRONTEND_SMOKE=1` on a Deck or
+SteamOS desktop session to also open the native frontend for a bounded render
+smoke.
+
+From macOS, use Docker Desktop or Colima to run the Linux x86_64 package flow:
+
+```bash
+scripts/verify_steamdeck_linux_container.sh
+```
+
+That script builds inside a current stable `linux/amd64` Rust container,
+installs the Linux `libudev`, ALSA, and Opus build dependencies needed by the
+gamepad, audio, and codec dependency stack, runs
+`scripts/package_steamdeck.sh`, and writes the package under
+`target/steamdeck-linux-container/`.
+
+If the Deck is reachable over SSH, copy the tarball and run the on-device smoke
+suite with:
+
+```bash
+STEAMDECK_HOST=deck@steamdeck scripts/verify_steamdeck_remote.sh
+```
+
+The remote verifier extracts the package on the Deck and runs
+`./verify-on-deck.sh`, which records system details, the no-ROM runtime smoke,
+the SRAM smoke, and the frontend smoke when a graphical session is available.
+
 ## Local Git Hooks
 
 Install the tracked hooks when your checkout has the local parity dependencies:

@@ -12,10 +12,13 @@
 #![allow(dead_code)]
 
 use std::collections::VecDeque;
+use std::env;
+use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use gilrs::{Axis, Button, Event, EventType, Gilrs};
 use renderer::{FrameRenderer, GpuFrame, RenderError};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -23,7 +26,7 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
-use winit::window::{Window, WindowAttributes, WindowId};
+use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
 // ── Frontend trait ────────────────────────────────────────────────────────────
 
@@ -33,11 +36,45 @@ pub trait Frontend {
     fn push_audio(&mut self, samples: &[i16]);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeFrontendOptions {
+    pub scale: u32,
+    pub enable_audio: bool,
+    pub fullscreen: bool,
+}
+
+impl NativeFrontendOptions {
+    pub fn from_env(scale: u32, enable_audio: bool) -> Self {
+        Self::from_values(
+            scale,
+            enable_audio,
+            env::var_os("ZELDA3_STEAMDECK"),
+            env::var_os("ZELDA3_FULLSCREEN"),
+        )
+    }
+
+    fn from_values(
+        scale: u32,
+        enable_audio: bool,
+        steamdeck: Option<OsString>,
+        fullscreen: Option<OsString>,
+    ) -> Self {
+        let deck_default = env_flag_option(steamdeck).unwrap_or(false);
+        let fullscreen = env_flag_option(fullscreen).unwrap_or(deck_default);
+        Self {
+            scale,
+            enable_audio,
+            fullscreen,
+        }
+    }
+}
+
 // ── NativeFrontend ────────────────────────────────────────────────────────────
 
 pub struct NativeFrontend {
     event_loop: EventLoop<()>,
     handler: NativeHandler,
+    gamepad: Option<GamepadInput>,
     audio: Option<AudioOutput>,
     audio_samples_per_frame: usize,
     audio_channels: usize,
@@ -49,16 +86,31 @@ pub struct NativeFrontend {
 
 impl NativeFrontend {
     pub fn new(width: u32, height: u32, scale: u32, enable_audio: bool) -> Result<Self, String> {
+        Self::new_with_options(
+            width,
+            height,
+            NativeFrontendOptions::from_values(scale, enable_audio, None, None),
+        )
+    }
+
+    pub fn new_with_options(
+        width: u32,
+        height: u32,
+        options: NativeFrontendOptions,
+    ) -> Result<Self, String> {
         let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
 
-        let window_attrs = WindowAttributes::default()
+        let mut window_attrs = WindowAttributes::default()
             .with_title("The Legend of Zelda: A Link to the Past")
             .with_inner_size(LogicalSize::new(
-                width.saturating_mul(scale.max(1)),
-                height.saturating_mul(scale.max(1)),
+                width.saturating_mul(options.scale.max(1)),
+                height.saturating_mul(options.scale.max(1)),
             ))
             .with_min_inner_size(LogicalSize::new(width, height))
             .with_resizable(true);
+        if options.fullscreen {
+            window_attrs = window_attrs.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
 
         let handler = NativeHandler {
             window_attrs,
@@ -73,6 +125,7 @@ impl NativeFrontend {
         let mut frontend = Self {
             event_loop,
             handler,
+            gamepad: GamepadInput::new(),
             audio: None,
             audio_samples_per_frame: 735,
             audio_channels: 2,
@@ -102,7 +155,7 @@ impl NativeFrontend {
             return Err("window creation failed".to_string());
         }
 
-        if enable_audio {
+        if options.enable_audio {
             if let Ok(audio) = AudioOutput::new() {
                 let samples = ((534 * audio.sample_rate as usize) / 32_000).max(1);
                 let channels = audio.channels.max(1) as usize;
@@ -181,7 +234,8 @@ impl Frontend for NativeFrontend {
             PumpStatus::Exit(_) => self.handler.quit = true,
             PumpStatus::Continue => {}
         }
-        self.handler.input_state
+        let gamepad_state = self.gamepad.as_mut().map(GamepadInput::poll).unwrap_or(0);
+        self.handler.input_state | gamepad_state
     }
 
     fn present_frame(&mut self, pixels: &[u32], _width: u32, _height: u32) {
@@ -321,6 +375,116 @@ fn key_to_input_bit(key: KeyCode) -> Option<u16> {
         KeyCode::KeyV | KeyCode::KeyW => Some(1 << 11), // R
         _ => None,
     }
+}
+
+const GAMEPAD_DEADZONE: f32 = 0.35;
+
+struct GamepadInput {
+    gilrs: Gilrs,
+    button_state: u16,
+    axis_state: u16,
+}
+
+impl GamepadInput {
+    fn new() -> Option<Self> {
+        if env_flag("ZELDA3_DISABLE_GAMEPAD") {
+            return None;
+        }
+        let gilrs = Gilrs::new().ok()?;
+        Some(Self {
+            gilrs,
+            button_state: 0,
+            axis_state: 0,
+        })
+    }
+
+    fn poll(&mut self) -> u16 {
+        while let Some(event) = self.gilrs.next_event() {
+            self.apply_event(event);
+        }
+        self.button_state | self.axis_state
+    }
+
+    fn apply_event(&mut self, event: Event) {
+        match event.event {
+            EventType::ButtonPressed(button, _) => {
+                if let Some(bit) = gamepad_button_bit(button) {
+                    self.button_state |= bit;
+                }
+            }
+            EventType::ButtonReleased(button, _) => {
+                if let Some(bit) = gamepad_button_bit(button) {
+                    self.button_state &= !bit;
+                }
+            }
+            EventType::AxisChanged(axis, value, _) => {
+                update_axis_state(&mut self.axis_state, axis, value);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn gamepad_button_bit(button: Button) -> Option<u16> {
+    match button {
+        Button::South => Some(1 << 0),
+        Button::West => Some(1 << 1),
+        Button::Select => Some(1 << 2),
+        Button::Start => Some(1 << 3),
+        Button::DPadUp => Some(1 << 4),
+        Button::DPadDown => Some(1 << 5),
+        Button::DPadLeft => Some(1 << 6),
+        Button::DPadRight => Some(1 << 7),
+        Button::East => Some(1 << 8),
+        Button::North => Some(1 << 9),
+        Button::LeftTrigger | Button::LeftTrigger2 => Some(1 << 10),
+        Button::RightTrigger | Button::RightTrigger2 => Some(1 << 11),
+        _ => None,
+    }
+}
+
+fn update_axis_state(axis_state: &mut u16, axis: Axis, value: f32) {
+    match axis {
+        Axis::LeftStickX => update_axis_pair(axis_state, value, 1 << 6, 1 << 7),
+        Axis::LeftStickY => update_axis_pair(axis_state, value, 1 << 5, 1 << 4),
+        Axis::LeftZ => update_axis_trigger(axis_state, value, 1 << 10),
+        Axis::RightZ => update_axis_trigger(axis_state, value, 1 << 11),
+        _ => {}
+    }
+}
+
+fn update_axis_pair(axis_state: &mut u16, value: f32, negative_bit: u16, positive_bit: u16) {
+    *axis_state &= !(negative_bit | positive_bit);
+    if value <= -GAMEPAD_DEADZONE {
+        *axis_state |= negative_bit;
+    } else if value >= GAMEPAD_DEADZONE {
+        *axis_state |= positive_bit;
+    }
+}
+
+fn update_axis_trigger(axis_state: &mut u16, value: f32, bit: u16) {
+    if value >= GAMEPAD_DEADZONE {
+        *axis_state |= bit;
+    } else {
+        *axis_state &= !bit;
+    }
+}
+
+fn env_flag(name: &str) -> bool {
+    env_flag_option(env::var_os(name)).unwrap_or(false)
+}
+
+fn env_flag_option(value: Option<OsString>) -> Option<bool> {
+    let value = value?;
+    let value = value.to_string_lossy();
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Some(false);
+    }
+    Some(!matches!(
+        trimmed.to_ascii_lowercase().as_str(),
+        "0" | "false" | "no" | "off"
+    ))
 }
 
 // ── AudioOutput ───────────────────────────────────────────────────────────────
@@ -481,5 +645,54 @@ mod tests {
         assert_ne!(input_state, 0);
         handle_focus_input_state(&mut input_state, false);
         assert_eq!(input_state, 0);
+    }
+
+    #[test]
+    fn steamdeck_env_enables_fullscreen_by_default() {
+        let options = NativeFrontendOptions::from_values(3, true, Some("1".into()), None);
+        assert_eq!(
+            options,
+            NativeFrontendOptions {
+                scale: 3,
+                enable_audio: true,
+                fullscreen: true,
+            }
+        );
+    }
+
+    #[test]
+    fn fullscreen_env_overrides_steamdeck_default() {
+        let options =
+            NativeFrontendOptions::from_values(3, true, Some("1".into()), Some("0".into()));
+        assert!(!options.fullscreen);
+    }
+
+    #[test]
+    fn deck_face_buttons_map_to_snes_buttons() {
+        assert_eq!(gamepad_button_bit(Button::South), Some(1 << 0));
+        assert_eq!(gamepad_button_bit(Button::West), Some(1 << 1));
+        assert_eq!(gamepad_button_bit(Button::East), Some(1 << 8));
+        assert_eq!(gamepad_button_bit(Button::North), Some(1 << 9));
+    }
+
+    #[test]
+    fn deck_left_stick_updates_direction_bits_with_deadzone() {
+        let mut input_state = 0;
+        update_axis_state(&mut input_state, Axis::LeftStickX, -0.5);
+        assert_eq!(input_state, 1 << 6);
+        update_axis_state(&mut input_state, Axis::LeftStickX, 0.1);
+        assert_eq!(input_state, 0);
+        update_axis_state(&mut input_state, Axis::LeftStickY, 0.5);
+        assert_eq!(input_state, 1 << 4);
+    }
+
+    #[test]
+    fn deck_analog_triggers_update_shoulder_bits_with_deadzone() {
+        let mut input_state = 0;
+        update_axis_state(&mut input_state, Axis::LeftZ, 0.5);
+        update_axis_state(&mut input_state, Axis::RightZ, 0.5);
+        assert_eq!(input_state, (1 << 10) | (1 << 11));
+        update_axis_state(&mut input_state, Axis::LeftZ, 0.1);
+        assert_eq!(input_state, 1 << 11);
     }
 }

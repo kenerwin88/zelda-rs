@@ -18,7 +18,7 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use platform::{Frontend, NativeFrontend};
+use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
 use renderer::{
     scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer, ScanlineRegs,
 };
@@ -68,6 +68,14 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--standalone-smoke") {
         run_standalone_smoke(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--sram-smoke") {
+        run_sram_smoke();
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--frontend-smoke") {
+        run_frontend_smoke(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--smoke-render") {
@@ -348,6 +356,7 @@ fn run_headless(args: &[String]) {
 fn run_standalone_smoke(args: &[String]) {
     let frames: u32 = args.first().map(|s| s.parse().unwrap_or(2)).unwrap_or(2);
     let mut game = load_embedded_play_state();
+    game.sram.fill(0);
     let mut audio = vec![0i16; 735 * 2];
 
     for _ in 0..frames {
@@ -361,6 +370,58 @@ fn run_standalone_smoke(args: &[String]) {
         fnv1a64(&game.ram),
         fnv1a64(&game.sram)
     );
+}
+
+fn run_sram_smoke() {
+    if env::var_os("ZELDA3_SAVE_DIR").is_none() {
+        eprintln!("--sram-smoke requires ZELDA3_SAVE_DIR so it cannot touch a real user save");
+        process::exit(2);
+    }
+
+    let mut writer = ZeldaState::new();
+    writer.sram[..8].copy_from_slice(b"Z3SRAMOK");
+    writer.zelda_write_sram();
+
+    let mut reader = ZeldaState::new();
+    reader.zelda_read_sram();
+    if &reader.sram[..8] != b"Z3SRAMOK" {
+        eprintln!("sram smoke failed: read-back bytes did not match");
+        process::exit(1);
+    }
+
+    println!("sram smoke completed");
+}
+
+fn run_frontend_smoke(args: &[String]) {
+    let frames: u32 = args.first().map(|s| s.parse().unwrap_or(2)).unwrap_or(2);
+    let mut game = load_embedded_play_state();
+    let width = 256u32;
+    let height = 224u32;
+    let render_flags = PpuRenderFlags::empty();
+    let mut renderer = play_renderer_from_env();
+    let renderer_name = renderer.name();
+    let mut frontend = match NativeFrontend::new_with_options(
+        width,
+        height,
+        NativeFrontendOptions::from_env(3, false),
+    ) {
+        Ok(frontend) => frontend,
+        Err(e) => {
+            eprintln!("failed to initialize native frontend: {e}");
+            process::exit(1);
+        }
+    };
+    let mut frame = vec![0u8; width as usize * height as usize * 4];
+
+    let mut completed = 0u32;
+    while completed < frames && !frontend.quit_requested() {
+        let live_input = frontend.poll_input();
+        game.zelda_run_frame(live_input as i32);
+        renderer.present_frame(&mut game, &mut frontend, &mut frame, render_flags);
+        completed += 1;
+    }
+
+    println!("frontend smoke completed frames={completed} renderer={renderer_name}");
 }
 
 fn run_trace_rom_apu_upload(args: &[String]) {
@@ -1074,7 +1135,11 @@ fn run_play_with_state(mut game: ZeldaState) {
     let height = 224u32;
     let render_flags = PpuRenderFlags::empty();
     let mut renderer = play_renderer_from_env();
-    let mut frontend = match NativeFrontend::new(width, height, 3, true) {
+    let mut frontend = match NativeFrontend::new_with_options(
+        width,
+        height,
+        NativeFrontendOptions::from_env(3, true),
+    ) {
         Ok(frontend) => frontend,
         Err(e) => {
             eprintln!("failed to initialize native frontend: {e}");
@@ -7243,7 +7308,11 @@ fn run_play_lockstep(args: &[String]) {
     let pitch = width as usize * 4;
     let mut game_frame = vec![0u8; width as usize * height as usize * 4];
     let mut snes_frame = vec![0u8; game_frame.len()];
-    let mut frontend = match NativeFrontend::new(width, height, 3, true) {
+    let mut frontend = match NativeFrontend::new_with_options(
+        width,
+        height,
+        NativeFrontendOptions::from_env(3, true),
+    ) {
         Ok(frontend) => frontend,
         Err(e) => {
             eprintln!("failed to initialize native frontend: {e}");
