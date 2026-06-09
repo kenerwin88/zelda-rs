@@ -82,8 +82,13 @@ pub(crate) mod semantic {
     const ANCILLA_ITEM_TO_LINK: usize = 0x0c5e;
     const ANCILLA_TIMER: usize = 0x0c68;
     const ANCILLA_DIRECTION: usize = 0x0c72;
+    const ANCILLA_FLOOR: usize = 0x0c7c;
+    const ANCILLA_OAM_IDX: usize = 0x0c86;
+    const ANCILLA_NUMSPR: usize = 0x0c90;
     const ANCILLA_STEP: usize = 0x0c54;
+    const ANCILLA_OBJPRIO: usize = 0x0280;
     const ANCILLA_AUX_TIMER: usize = 0x03b1;
+    const ANCILLA_FLOOR2: usize = 0x03ca;
     const ANCILLA_ARR3: usize = 0x039f;
     const ANCILLA_ARR1: usize = 0x03a4;
     const ANCILLA_L: usize = 0x0385;
@@ -600,6 +605,14 @@ pub(crate) mod semantic {
             byte(self.ram, ANCILLA_TIMER + self.slot)
         }
 
+        pub(crate) fn floor(&self) -> u8 {
+            byte(self.ram, ANCILLA_FLOOR + self.slot)
+        }
+
+        pub(crate) fn num_sprites(&self) -> u8 {
+            byte(self.ram, ANCILLA_NUMSPR + self.slot)
+        }
+
         pub(crate) fn direction(&self) -> u8 {
             byte(self.ram, ANCILLA_DIRECTION + self.slot)
         }
@@ -759,6 +772,32 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_timer(&mut self, value: u8) {
             self.ram[ANCILLA_TIMER + self.slot] = value;
+        }
+
+        pub(crate) fn tick_timer(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_TIMER + self.slot].wrapping_sub(1);
+            self.set_timer(value);
+            value
+        }
+
+        pub(crate) fn set_floor(&mut self, value: u8) {
+            self.ram[ANCILLA_FLOOR + self.slot] = value;
+        }
+
+        pub(crate) fn set_floor2(&mut self, value: u8) {
+            self.ram[ANCILLA_FLOOR2 + self.slot] = value;
+        }
+
+        pub(crate) fn set_oam_index(&mut self, value: u8) {
+            self.ram[ANCILLA_OAM_IDX + self.slot] = value;
+        }
+
+        pub(crate) fn set_num_sprites(&mut self, value: u8) {
+            self.ram[ANCILLA_NUMSPR + self.slot] = value;
+        }
+
+        pub(crate) fn set_object_priority(&mut self, value: u8) {
+            self.ram[ANCILLA_OBJPRIO + self.slot] = value;
         }
 
         pub(crate) fn set_direction(&mut self, value: u8) {
