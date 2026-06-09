@@ -32,6 +32,8 @@ else
 fi
 if command -v desktop-file-validate >/dev/null 2>&1; then desktop-file-validate "$PACKAGE_DIR/zelda3-rs.desktop"; fi
 INSTALL_TEST_DIR="$(mktemp -d)"
+mkdir -p "$INSTALL_TEST_DIR/data/zelda3-rs/saves"
+printf 'existing-save\n' >"$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat"
 XDG_DATA_HOME="$INSTALL_TEST_DIR/data" HOME="$INSTALL_TEST_DIR/home" "$PACKAGE_DIR/install-to-desktop-mode.sh" >/dev/null
 INSTALLED_APP_DIR="$INSTALL_TEST_DIR/data/zelda3-rs/app"
 INSTALLED_DESKTOP="$INSTALL_TEST_DIR/data/applications/zelda3-rs.desktop"
@@ -43,6 +45,7 @@ INSTALLED_DESKTOP="$INSTALL_TEST_DIR/data/applications/zelda3-rs.desktop"
 grep -q "^Exec=$INSTALLED_APP_DIR/run-zelda3.sh$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Exec"
 grep -q "^Path=$INSTALLED_APP_DIR$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Path"
 grep -q "^Icon=$INSTALLED_APP_DIR/zelda3-rs.svg$" "$INSTALLED_DESKTOP" || fail "installed desktop entry has wrong Icon"
+grep -q '^existing-save$' "$INSTALL_TEST_DIR/data/zelda3-rs/saves/sram.dat" || fail "installer modified existing SRAM save"
 rm -rf "$INSTALL_TEST_DIR"
 if [[ "$(uname -s)" == "Linux" ]]; then
   SMOKE_SAVE_DIR="$(mktemp -d)"
