@@ -245,6 +245,13 @@ StartupNotify=false
 DESKTOP
 chmod +x "$APPLICATIONS_DIR/zelda3-rs.desktop"
 echo "Installed zelda3-rs desktop entry to $APPLICATIONS_DIR/zelda3-rs.desktop"
+if [ "${ZELDA3_SKIP_STEAM_SHORTCUT:-0}" != "1" ] && command -v steamos-add-to-steam >/dev/null 2>&1; then
+  if steamos-add-to-steam "$APPLICATIONS_DIR/zelda3-rs.desktop"; then
+    echo "Requested SteamOS Non-Steam Game registration for zelda3-rs."
+  else
+    echo "SteamOS Non-Steam Game registration did not complete; add $APPLICATIONS_DIR/zelda3-rs.desktop manually from Steam if needed." >&2
+  fi
+fi
 INSTALLER
 chmod +x "$PACKAGE_DIR/install-to-desktop-mode.sh"
 
@@ -266,7 +273,9 @@ zelda3-rs Steam Deck package
 Desktop Mode:
   1. Copy this folder to the Deck.
   2. Run ./install-to-desktop-mode.sh.
-  3. Add zelda3-rs to Steam from the desktop entry.
+  3. The installer asks SteamOS to register zelda3-rs as a Non-Steam Game
+     when steamos-add-to-steam is available. If it does not appear, add the
+     installed desktop entry from Steam.
 
 Recommended Steam input:
   Use the standard Gamepad template. The native controls map Deck A/B/X/Y,
