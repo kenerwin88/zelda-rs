@@ -4482,10 +4482,10 @@ impl ZeldaState {
                 self.ram[ANCILLA_NUMSPR + k] = 0x10;
                 return;
             }
-            self.ram[ANCILLA_AUX_TIMER + k] = self.ram[ANCILLA_AUX_TIMER + k].wrapping_sub(1);
-            if sign8(self.ram[ANCILLA_AUX_TIMER + k]) {
+            let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
+            if sign8(aux_timer) {
                 flags = 4;
-                self.ram[ANCILLA_AUX_TIMER + k] = 2;
+                self.ancilla_slot_view_mut(k).set_aux_timer(2);
             }
         }
 
@@ -4512,20 +4512,23 @@ impl ZeldaState {
         }
 
         if self.frame_control_view().submodule() == 0 {
-            self.ram[ANCILLA_ARR3 + k] = self.ram[ANCILLA_ARR3 + k].wrapping_sub(1);
-            if !sign8(self.ram[ANCILLA_ARR3 + k]) {
+            let arr3 = self.ancilla_slot_view_mut(k).tick_arr3();
+            if !sign8(arr3) {
                 self.ancilla_sword_beam_check_offscreen(k, oam_org);
                 return;
             }
 
-            self.ram[ANCILLA_ARR3 + k] = 0;
-            self.ram[ANCILLA_ARR1 + k] = self.ram[ANCILLA_ARR1 + k].wrapping_add(1) & 3;
-            if self.ram[ANCILLA_ARR1 + k] == 3 {
+            let arr1 = {
+                let mut beam = self.ancilla_slot_view_mut(k);
+                beam.set_arr3(0);
+                beam.advance_arr1_mod4()
+            };
+            if arr1 == 3 {
                 self.ram[SWORDBEAM_VAR1] = self.ram[SWORDBEAM_VAR1].wrapping_add(s) & 0x3f;
             }
         }
 
-        let t = self.ram[ANCILLA_ARR1 + k];
+        let t = self.ancilla_slot_view(k).arr1();
         if t != 3 {
             let pt =
                 self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
