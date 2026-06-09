@@ -87,11 +87,14 @@ pub(crate) mod semantic {
     const ANCILLA_NUMSPR: usize = 0x0c90;
     const ANCILLA_STEP: usize = 0x0c54;
     const ANCILLA_OBJPRIO: usize = 0x0280;
+    const ANCILLA_U: usize = 0x028a;
     const ANCILLA_AUX_TIMER: usize = 0x03b1;
     const ANCILLA_FLOOR2: usize = 0x03ca;
     const ANCILLA_ARR3: usize = 0x039f;
     const ANCILLA_ARR1: usize = 0x03a4;
+    const ANCILLA_S_PLAYER: usize = 0x03a9;
     const ANCILLA_L: usize = 0x0385;
+    const ANCILLA_G: usize = 0x0394;
     const ANCILLA_ARR4: usize = 0x0bf0;
     const ANCILLA_ARR25: usize = 0x0746;
     const ANCILLA_ARR26: usize = 0x0741;
@@ -637,6 +640,10 @@ pub(crate) mod semantic {
             byte(self.ram, ANCILLA_L + self.slot)
         }
 
+        pub(crate) fn g(&self) -> u8 {
+            byte(self.ram, ANCILLA_G + self.slot)
+        }
+
         pub(crate) fn arr25(&self) -> u8 {
             byte(self.ram, ANCILLA_ARR25 + self.slot)
         }
@@ -828,6 +835,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_l(&mut self, value: u8) {
             self.ram[ANCILLA_L + self.slot] = value;
+        }
+
+        pub(crate) fn set_g(&mut self, value: u8) {
+            self.ram[ANCILLA_G + self.slot] = value;
+        }
+
+        pub(crate) fn set_s_player(&mut self, value: u8) {
+            self.ram[ANCILLA_S_PLAYER + self.slot] = value;
+        }
+
+        pub(crate) fn set_u(&mut self, value: u8) {
+            self.ram[ANCILLA_U + self.slot] = value;
         }
 
         pub(crate) fn advance_arr1_mod4(&mut self) -> u8 {

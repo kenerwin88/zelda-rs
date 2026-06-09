@@ -728,13 +728,13 @@ impl ZeldaState {
             self.ancilla_sfx2_near(0x0e);
         }
 
-        self.ram[ANCILLA_NUMSPR + j] = K_ANCILLA_PFLAGS[type_ as usize];
-        self.ram[ANCILLA_OBJPRIO + j] = 0;
-        self.ram[ANCILLA_U + j] = 0;
         let mut i = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
         {
             let mut ancilla = self.ancilla_slot_view_mut(j);
             ancilla.set_ancilla_type(type_);
+            ancilla.set_num_sprites(K_ANCILLA_PFLAGS[type_ as usize]);
+            ancilla.set_object_priority(0);
+            ancilla.set_u(0);
             ancilla.set_step(0);
             ancilla.set_timer(3);
             ancilla.set_item_to_link(0);
@@ -761,18 +761,21 @@ impl ZeldaState {
                 ancilla.set_x_velocity(K_FIRE_ROD_XVEL2[i] as u8);
                 ancilla.set_y_velocity(K_FIRE_ROD_YVEL2[i] as u8);
             }
-            self.ram[ANCILLA_FLOOR + j] = self.ram[LINK_IS_ON_LOWER_LEVEL];
-            self.ram[ANCILLA_FLOOR2 + j] = self.ram[LINK_IS_ON_LOWER_LEVEL_MIRROR];
+            let floor = self.ram[LINK_IS_ON_LOWER_LEVEL];
+            let mirror_floor = self.ram[LINK_IS_ON_LOWER_LEVEL_MIRROR];
+            let mut ancilla = self.ancilla_slot_view_mut(j);
+            ancilla.set_floor(floor);
+            ancilla.set_floor2(mirror_floor);
         } else if type_ == 1 {
             let mut ancilla = self.ancilla_slot_view_mut(j);
             ancilla.set_ancilla_type(4);
             ancilla.set_timer(7);
-            self.ram[ANCILLA_NUMSPR + j] = 16;
+            ancilla.set_num_sprites(16);
         } else {
             let mut ancilla = self.ancilla_slot_view_mut(j);
             ancilla.set_step(1);
             ancilla.set_timer(31);
-            self.ram[ANCILLA_NUMSPR + j] = 8;
+            ancilla.set_num_sprites(8);
             j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
             self.ancilla_sfx2_pan(j, 0x2a);
         }
@@ -804,9 +807,9 @@ impl ZeldaState {
             ancilla.set_step(0);
             ancilla.set_aux_timer(9);
             ancilla.set_arr3(0);
+            ancilla.set_l(0);
+            ancilla.set_g(FALLING_ITEM_G[item_idx as usize]);
         }
-        self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_G + k] = FALLING_ITEM_G[item_idx as usize];
         self.ram[LINK_RECEIVEITEM_INDEX] = item_type;
 
         let (x, y) = if item_idx != 0 && item_idx != 5 {
@@ -854,13 +857,13 @@ impl ZeldaState {
         self.ram[SWORDBEAM_ARR + 2] = SWORD_BEAM_TAB[j + 2];
         self.ram[SWORDBEAM_ARR + 3] = SWORD_BEAM_TAB[j + 3];
         self.ram[SWORDBEAM_VAR1] = SWORD_BEAM_TAB[j + 3];
-        self.ram[ANCILLA_L + k] = 0;
-        self.ram[ANCILLA_G + k] = 0;
-        self.ram[ANCILLA_ARR1 + k] = 0;
         self.ram[SWORDBEAM_VAR2] = 14;
         j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
         {
             let mut ancilla = self.ancilla_slot_view_mut(k);
+            ancilla.set_l(0);
+            ancilla.set_g(0);
+            ancilla.set_arr1(0);
             ancilla.set_aux_timer(2);
             ancilla.set_arr3(8);
             ancilla.set_step(0);
@@ -868,8 +871,8 @@ impl ZeldaState {
             ancilla.set_direction(j as u8);
             ancilla.set_y_velocity(SWORD_BEAM_YVEL[j] as u8);
             ancilla.set_x_velocity(SWORD_BEAM_XVEL[j] as u8);
+            ancilla.set_s_player(SWORD_BEAM_S[j] as u8);
         }
-        self.ram[ANCILLA_S_PLAYER + k] = SWORD_BEAM_S[j] as u8;
 
         let swordbeam_temp_y = self.player_state_view().y().wrapping_add(12);
         let swordbeam_temp_x = self.player_state_view().x().wrapping_add(8);
@@ -886,7 +889,7 @@ impl ZeldaState {
             let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_ancilla_type(4);
             ancilla.set_timer(7);
-            self.ram[ANCILLA_NUMSPR + k] = 16;
+            ancilla.set_num_sprites(16);
         }
     }
 
@@ -905,7 +908,8 @@ impl ZeldaState {
             sparkle.set_item_to_link(0);
             sparkle.set_timer(4);
         }
-        self.ram[ANCILLA_FLOOR + k] = self.ram[LINK_IS_ON_LOWER_LEVEL];
+        let floor = self.ram[LINK_IS_ON_LOWER_LEVEL];
+        self.ancilla_slot_view_mut(k).set_floor(floor);
         let j = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
         let mut x = 0i8;
         let mut y = 0i8;
