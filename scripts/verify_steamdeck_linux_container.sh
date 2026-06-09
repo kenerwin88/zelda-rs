@@ -5,7 +5,7 @@ cd "$ROOT"
 IMAGE="${IMAGE:-rust:1-bookworm}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 DIST_DIR="${DIST_DIR:-target/steamdeck-linux-container}"
-PROFILE="${PROFILE:-debug}"
+PROFILE="${PROFILE:-release}"
 command -v docker >/dev/null 2>&1 || { echo "docker not found." >&2; exit 2; }
 docker info >/dev/null
 docker run --rm \

@@ -194,8 +194,9 @@ scripts/verify_steamdeck_linux_container.sh
 That script builds inside a current stable `linux/amd64` Rust container,
 installs the Linux `libudev`, ALSA, and Opus build dependencies needed by the
 gamepad, audio, and codec dependency stack, runs
-`scripts/package_steamdeck.sh`, and writes the package under
-`target/steamdeck-linux-container/`.
+`scripts/package_steamdeck.sh` with the release profile, and writes the package
+under `target/steamdeck-linux-container/`. Set `PROFILE=debug` only when you
+want a faster diagnostic package.
 
 If the Deck is reachable over SSH, copy the tarball and run the on-device smoke
 suite with:
