@@ -154,7 +154,8 @@ The script builds `zelda3-bin`, verifies the embedded no-ROM runtime with
 `--standalone-smoke`, verifies SRAM write/read behavior with `--sram-smoke`, and
 writes `dist/zelda3-steamdeck/` plus `dist/zelda3-steamdeck.tar.gz`. The package
 includes `zelda3`, `run-zelda3.sh`, `install-to-desktop-mode.sh`,
-`verify-on-deck.sh`, `zelda3-rs.desktop`, `zelda3-rs.svg`, and `README.txt`.
+`verify-on-deck.sh`, `zelda3-rs.desktop`, `zelda3-rs.svg`, `README.txt`,
+`package-manifest.txt`, and `CHECKSUMS.sha256`.
 
 Add `dist/zelda3-steamdeck/zelda3-rs.desktop` as a Non-Steam Game, or launch
 `run-zelda3.sh` directly. The wrapper enables `ZELDA3_STEAMDECK=1`,
@@ -179,7 +180,7 @@ scripts/verify_steamdeck_package.sh dist/zelda3-steamdeck
 ```
 
 On Linux this runs the packaged launcher's embedded-runtime smoke test, SRAM
-write/read smoke test, and captures `ldd` output in
+write/read smoke test, verifies `CHECKSUMS.sha256`, and captures `ldd` output in
 `dist/zelda3-steamdeck/ldd.txt`. Set `STEAMDECK_FRONTEND_SMOKE=1` on a Deck or
 SteamOS desktop session to also open the native frontend for a bounded render
 smoke.
@@ -204,8 +205,9 @@ STEAMDECK_HOST=deck@steamdeck scripts/verify_steamdeck_remote.sh
 ```
 
 The remote verifier extracts the package on the Deck and runs
-`./verify-on-deck.sh`, which records system details, the no-ROM runtime smoke,
-the SRAM smoke, and the frontend smoke when a graphical session is available.
+`./verify-on-deck.sh`, which records system details, verifies package checksums,
+the no-ROM runtime smoke, the SRAM smoke, and the frontend smoke when a
+graphical session is available.
 
 ## Local Git Hooks
 

@@ -3,7 +3,7 @@ set -euo pipefail
 PACKAGE_DIR="${1:-dist/zelda3-steamdeck}"
 fail() { echo "verify_steamdeck_package: $*" >&2; exit 1; }
 [[ -d "$PACKAGE_DIR" ]] || fail "package directory not found: $PACKAGE_DIR"
-for path in zelda3 run-zelda3.sh install-to-desktop-mode.sh verify-on-deck.sh zelda3-rs.desktop zelda3-rs.svg README.txt; do
+for path in zelda3 run-zelda3.sh install-to-desktop-mode.sh verify-on-deck.sh zelda3-rs.desktop zelda3-rs.svg README.txt package-manifest.txt CHECKSUMS.sha256; do
   [[ -e "$PACKAGE_DIR/$path" ]] || fail "missing $path"
 done
 [[ -x "$PACKAGE_DIR/zelda3" ]] || fail "zelda3 is not executable"
@@ -19,6 +19,15 @@ grep -q 'WGPU_BACKEND' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not se
 grep -q 'ZELDA3_SAVE_DIR' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set ZELDA3_SAVE_DIR"
 grep -q 'dirname "$1"' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry must launch relative to package folder"
 grep -q '^Categories=Game;' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry missing Game category"
+grep -q '^runtime_assets=embedded$' "$PACKAGE_DIR/package-manifest.txt" || fail "manifest does not declare embedded runtime assets"
+grep -q '^binary_sha256=' "$PACKAGE_DIR/package-manifest.txt" || fail "manifest missing binary checksum"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$PACKAGE_DIR" && sha256sum -c CHECKSUMS.sha256 >/dev/null)
+elif command -v shasum >/dev/null 2>&1; then
+  (cd "$PACKAGE_DIR" && shasum -a 256 -c CHECKSUMS.sha256 >/dev/null)
+else
+  fail "sha256sum or shasum not found"
+fi
 if command -v desktop-file-validate >/dev/null 2>&1; then desktop-file-validate "$PACKAGE_DIR/zelda3-rs.desktop"; fi
 if [[ "$(uname -s)" == "Linux" ]]; then
   SMOKE_SAVE_DIR="$(mktemp -d)"

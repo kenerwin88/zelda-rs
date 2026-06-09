@@ -19,8 +19,28 @@ require_command() {
   fi
 }
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    echo "sha256sum or shasum not found." >&2
+    exit 2
+  fi
+}
+
+write_checksum_line() {
+  local path="$1"
+  printf '%s  %s\n' "$(sha256_file "$PACKAGE_DIR/$path")" "$path" >>"$PACKAGE_DIR/CHECKSUMS.sha256"
+}
+
 require_command tar
 require_command mktemp
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+  echo "sha256sum or shasum not found." >&2
+  exit 2
+fi
 
 if [[ "$VERIFY_ONLY" != "1" ]]; then
   if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
@@ -107,6 +127,15 @@ run_logged() {
   echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
   echo "Steam Deck hardware hint=$(test -r /sys/devices/virtual/dmi/id/product_name && cat /sys/devices/virtual/dmi/id/product_name || true)"
 } | tee -a "$LOG"
+if [ -f "$APP_DIR/CHECKSUMS.sha256" ]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    run_logged sh -c "cd '$APP_DIR' && sha256sum -c CHECKSUMS.sha256"
+  elif command -v shasum >/dev/null 2>&1; then
+    run_logged sh -c "cd '$APP_DIR' && shasum -a 256 -c CHECKSUMS.sha256"
+  else
+    echo "No checksum verifier found; skipping package integrity check." | tee -a "$LOG"
+  fi
+fi
 SAVE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SAVE_DIR"' EXIT
 run_logged env ZELDA3_SAVE_DIR="$SAVE_DIR" "$APP_DIR/zelda3" --standalone-smoke "$FRAMES"
@@ -129,8 +158,17 @@ DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 APP_DIR="$DATA_HOME/zelda3-rs/app"
 APPLICATIONS_DIR="$DATA_HOME/applications"
 mkdir -p "$APP_DIR" "$APPLICATIONS_DIR"
-cp "$SOURCE_DIR/zelda3" "$SOURCE_DIR/run-zelda3.sh" "$SOURCE_DIR/zelda3-rs.svg" "$SOURCE_DIR/verify-on-deck.sh" "$APP_DIR/"
-chmod +x "$APP_DIR/zelda3" "$APP_DIR/run-zelda3.sh" "$APP_DIR/verify-on-deck.sh"
+cp "$SOURCE_DIR/zelda3" \
+  "$SOURCE_DIR/run-zelda3.sh" \
+  "$SOURCE_DIR/install-to-desktop-mode.sh" \
+  "$SOURCE_DIR/verify-on-deck.sh" \
+  "$SOURCE_DIR/zelda3-rs.desktop" \
+  "$SOURCE_DIR/zelda3-rs.svg" \
+  "$SOURCE_DIR/README.txt" \
+  "$SOURCE_DIR/package-manifest.txt" \
+  "$SOURCE_DIR/CHECKSUMS.sha256" \
+  "$APP_DIR/"
+chmod +x "$APP_DIR/zelda3" "$APP_DIR/run-zelda3.sh" "$APP_DIR/install-to-desktop-mode.sh" "$APP_DIR/verify-on-deck.sh"
 cat >"$APPLICATIONS_DIR/zelda3-rs.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
@@ -183,7 +221,35 @@ The wrapper enables Steam Deck defaults:
 The game assets are embedded in the executable. No ROM is needed at runtime.
 README
 
+GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+CREATED_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+cat >"$PACKAGE_DIR/package-manifest.txt" <<MANIFEST
+package=$PACKAGE_NAME
+created_utc=$CREATED_UTC
+git_commit=$GIT_COMMIT
+profile=$PROFILE
+binary_sha256=$(sha256_file "$PACKAGE_DIR/zelda3")
+runtime_assets=embedded
+deck_defaults=ZELDA3_STEAMDECK,ZELDA3_FULLSCREEN,WGPU_BACKEND,ZELDA3_SAVE_DIR
+MANIFEST
+
+: >"$PACKAGE_DIR/CHECKSUMS.sha256"
+for path in \
+  zelda3 \
+  run-zelda3.sh \
+  install-to-desktop-mode.sh \
+  verify-on-deck.sh \
+  zelda3-rs.desktop \
+  zelda3-rs.svg \
+  README.txt \
+  package-manifest.txt
+do
+  write_checksum_line "$path"
+done
+
 tar -C "$DIST_DIR" -czf "$TARBALL" "$PACKAGE_NAME"
 scripts/verify_steamdeck_package.sh "$PACKAGE_DIR"
+printf '%s  %s\n' "$(sha256_file "$TARBALL")" "$(basename "$TARBALL")" >"${TARBALL}.sha256"
 echo "wrote $PACKAGE_DIR"
 echo "wrote $TARBALL"
+echo "wrote ${TARBALL}.sha256"
