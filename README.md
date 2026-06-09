@@ -204,6 +204,24 @@ suite with:
 STEAMDECK_HOST=deck@steamdeck scripts/verify_steamdeck_remote.sh
 ```
 
+On the Deck, enable SSH from Desktop Mode with:
+
+```bash
+passwd
+sudo systemctl enable --now sshd
+hostname -I
+```
+
+Then use the reported IP if `steamdeck` does not resolve from the development
+machine:
+
+```bash
+STEAMDECK_HOST=deck@192.168.x.y scripts/verify_steamdeck_remote.sh
+```
+
+Set `STEAMDECK_SSH_OPTS='-o ConnectTimeout=10'` to pass extra `ssh`/`scp`
+options through the verifier.
+
 The remote verifier extracts the package on the Deck and runs
 `./verify-on-deck.sh`, which records system details, verifies package checksums,
 the no-ROM runtime smoke, the SRAM smoke, and the frontend smoke when a

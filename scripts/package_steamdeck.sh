@@ -206,6 +206,10 @@ Desktop Mode:
   2. Run ./install-to-desktop-mode.sh.
   3. Add zelda3-rs to Steam from the desktop entry.
 
+Recommended Steam input:
+  Use the standard Gamepad template. The native controls map Deck A/B/X/Y,
+  D-pad, left stick, View/Menu, and shoulder/trigger buttons to SNES input.
+
 Direct launch:
   ./run-zelda3.sh
 
@@ -219,6 +223,8 @@ The wrapper enables Steam Deck defaults:
   ZELDA3_SAVE_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/zelda3-rs/saves
 
 The game assets are embedded in the executable. No ROM is needed at runtime.
+SRAM is stored under the Deck user data directory by default, not beside the
+application, so package updates should not overwrite saves.
 README
 
 GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
