@@ -226,7 +226,10 @@ options through the verifier.
 The remote verifier extracts the package on the Deck and runs
 `./verify-on-deck.sh`, which records system details, verifies package checksums,
 the no-ROM runtime smoke, the SRAM smoke, and the frontend smoke when a
-graphical session is available.
+graphical session is available. The Deck-side verifier also tries to discover
+the logged-in Wayland or X11 session from SSH, so Desktop Mode verification can
+exercise the native frontend even when `WAYLAND_DISPLAY`/`DISPLAY` were not
+inherited by the SSH shell.
 
 ## Local Git Hooks
 

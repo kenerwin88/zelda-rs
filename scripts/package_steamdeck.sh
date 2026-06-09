@@ -112,11 +112,37 @@ set -eu
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 LOG="$APP_DIR/steamdeck-verification.log"
 FRAMES="${STEAMDECK_SMOKE_FRAMES:-2}"
+GRAPHICAL_ENV=""
 run_logged() {
   printf '\n$ %s\n' "$*" | tee -a "$LOG"
   "$@" 2>&1 | tee -a "$LOG"
 }
+detect_graphical_session() {
+  if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    return
+  fi
+  if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    uid="$(id -u 2>/dev/null || echo 1000)"
+    if [ -d "/run/user/$uid" ]; then
+      export XDG_RUNTIME_DIR="/run/user/$uid"
+    fi
+  fi
+  if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+      if [ -S "$socket" ]; then
+        export WAYLAND_DISPLAY="$(basename "$socket")"
+        GRAPHICAL_ENV="wayland:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+        return
+      fi
+    done
+  fi
+  if [ -S /tmp/.X11-unix/X0 ]; then
+    export DISPLAY=:0
+    GRAPHICAL_ENV="x11:$DISPLAY"
+  fi
+}
 : >"$LOG"
+detect_graphical_session
 {
   echo "zelda3-rs Steam Deck verification"
   date
@@ -125,6 +151,8 @@ run_logged() {
   echo "DISPLAY=${DISPLAY:-}"
   echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}"
   echo "XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
+  echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}"
+  echo "discovered_graphical_session=${GRAPHICAL_ENV:-}"
   echo "Steam Deck hardware hint=$(test -r /sys/devices/virtual/dmi/id/product_name && cat /sys/devices/virtual/dmi/id/product_name || true)"
 } | tee -a "$LOG"
 if [ -f "$APP_DIR/CHECKSUMS.sha256" ]; then

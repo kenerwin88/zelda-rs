@@ -17,6 +17,8 @@ grep -q 'ZELDA3_STEAMDECK' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does no
 grep -q 'ZELDA3_FULLSCREEN' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set ZELDA3_FULLSCREEN"
 grep -q 'WGPU_BACKEND' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set WGPU_BACKEND"
 grep -q 'ZELDA3_SAVE_DIR' "$PACKAGE_DIR/run-zelda3.sh" || fail "wrapper does not set ZELDA3_SAVE_DIR"
+grep -q 'detect_graphical_session' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not discover graphical sessions"
+grep -q 'WAYLAND_DISPLAY' "$PACKAGE_DIR/verify-on-deck.sh" || fail "on-Deck verifier does not handle Wayland"
 grep -q 'dirname "$1"' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry must launch relative to package folder"
 grep -q '^Categories=Game;' "$PACKAGE_DIR/zelda3-rs.desktop" || fail "desktop entry missing Game category"
 grep -q '^runtime_assets=embedded$' "$PACKAGE_DIR/package-manifest.txt" || fail "manifest does not declare embedded runtime assets"
