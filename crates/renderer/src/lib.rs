@@ -28,7 +28,7 @@ pub use mode7_renderer::Mode7Renderer;
 pub use post_process::scanlines_from_raw;
 pub use tile_atlas::{CgramPalette, TileAtlas, ATLAS_HEIGHT, ATLAS_TILE_COUNT, ATLAS_WIDTH};
 
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -43,8 +43,58 @@ struct Viewport {
     h: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewportScaleMode {
+    Integer,
+    Fit,
+    Stretch,
+}
+
+impl ViewportScaleMode {
+    fn from_env() -> Self {
+        let value = env::var("ZELDA3_VIEWPORT_SCALE")
+            .ok()
+            .or_else(|| env::var("ZELDA3_SCALE_MODE").ok());
+
+        match value.map(|s| s.to_ascii_lowercase()) {
+            Some(value) if matches!(value.as_str(), "fit" | "aspect-fit" | "aspect_fit") => {
+                Self::Fit
+            }
+            Some(value) if matches!(value.as_str(), "stretch" | "fullscreen") => Self::Stretch,
+            Some(value) if matches!(value.as_str(), "integer" | "pixel" | "pixel-perfect") => {
+                Self::Integer
+            }
+            Some(_) => Self::Integer,
+            None if env::var_os("ZELDA3_STEAMDECK").is_some() => Self::Fit,
+            None => Self::Integer,
+        }
+    }
+}
+
+/// Compute the centered game rect that fits in `surface`.
+fn compute_viewport(
+    surface_w: u32,
+    surface_h: u32,
+    game_w: u32,
+    game_h: u32,
+    mode: ViewportScaleMode,
+) -> Viewport {
+    match mode {
+        ViewportScaleMode::Integer => {
+            compute_integer_viewport(surface_w, surface_h, game_w, game_h)
+        }
+        ViewportScaleMode::Fit => compute_fit_viewport(surface_w, surface_h, game_w, game_h),
+        ViewportScaleMode::Stretch => Viewport {
+            x: 0.0,
+            y: 0.0,
+            w: surface_w as f32,
+            h: surface_h as f32,
+        },
+    }
+}
+
 /// Compute the largest integer-scaled, centered game rect that fits in `surface`.
-fn compute_viewport(surface_w: u32, surface_h: u32, game_w: u32, game_h: u32) -> Viewport {
+fn compute_integer_viewport(surface_w: u32, surface_h: u32, game_w: u32, game_h: u32) -> Viewport {
     let scale = (surface_w / game_w).min(surface_h / game_h).max(1);
     let scaled_w = game_w * scale;
     let scaled_h = game_h * scale;
@@ -59,6 +109,28 @@ fn compute_viewport(surface_w: u32, surface_h: u32, game_w: u32, game_h: u32) ->
         y: y as f32,
         w: w as f32,
         h: h as f32,
+    }
+}
+
+/// Compute the largest aspect-preserving centered game rect that fits in `surface`.
+fn compute_fit_viewport(surface_w: u32, surface_h: u32, game_w: u32, game_h: u32) -> Viewport {
+    if surface_w == 0 || surface_h == 0 || game_w == 0 || game_h == 0 {
+        return Viewport {
+            x: 0.0,
+            y: 0.0,
+            w: surface_w as f32,
+            h: surface_h as f32,
+        };
+    }
+
+    let scale = (surface_w as f32 / game_w as f32).min(surface_h as f32 / game_h as f32);
+    let w = game_w as f32 * scale;
+    let h = game_h as f32 * scale;
+    Viewport {
+        x: (surface_w as f32 - w) * 0.5,
+        y: (surface_h as f32 - h) * 0.5,
+        w,
+        h,
     }
 }
 
@@ -290,7 +362,9 @@ pub struct FrameRenderer {
     upload_buf: Vec<u8>,
     game_width: u32,
     game_height: u32,
+    scale_mode: ViewportScaleMode,
     viewport: Viewport,
+    log_viewport: bool,
 }
 
 impl FrameRenderer {
@@ -371,7 +445,14 @@ impl FrameRenderer {
                 },
             ],
         });
-        let viewport = compute_viewport(config.width, config.height, game_width, game_height);
+        let scale_mode = ViewportScaleMode::from_env();
+        let viewport = compute_viewport(
+            config.width,
+            config.height,
+            game_width,
+            game_height,
+            scale_mode,
+        );
         let upload_buf = vec![0u8; (game_width * game_height * 4) as usize];
 
         Self {
@@ -389,7 +470,9 @@ impl FrameRenderer {
             upload_buf,
             game_width,
             game_height,
+            scale_mode,
             viewport,
+            log_viewport: env::var_os("ZELDA3_RENDER_VIEWPORT_LOG").is_some(),
         }
     }
 
@@ -405,7 +488,27 @@ impl FrameRenderer {
             new_size.height,
             self.game_width,
             self.game_height,
+            self.scale_mode,
         );
+    }
+
+    fn maybe_log_viewport(&mut self) {
+        if !self.log_viewport {
+            return;
+        }
+        eprintln!(
+            "renderer viewport: mode={:?} surface={}x{} game={}x{} viewport={:.1},{:.1} {:.1}x{:.1}",
+            self.scale_mode,
+            self.config.width,
+            self.config.height,
+            self.game_width,
+            self.game_height,
+            self.viewport.x,
+            self.viewport.y,
+            self.viewport.w,
+            self.viewport.h
+        );
+        self.log_viewport = false;
     }
 
     /// Upload one frame of pixels. `pixels` must be `game_width * game_height`
@@ -422,6 +525,7 @@ impl FrameRenderer {
     }
 
     pub fn render(&mut self) -> Result<(), RenderError> {
+        self.maybe_log_viewport();
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) => t,
             wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -485,6 +589,7 @@ impl FrameRenderer {
     }
 
     pub fn render_gpu_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
+        self.maybe_log_viewport();
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) => t,
             wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -802,9 +907,16 @@ impl OffscreenRenderer {
 mod tests {
     use super::*;
 
+    fn assert_near(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.05,
+            "expected {actual} to be near {expected}"
+        );
+    }
+
     #[test]
     fn viewport_exact_fit() {
-        let vp = compute_viewport(768, 672, 256, 224);
+        let vp = compute_viewport(768, 672, 256, 224, ViewportScaleMode::Integer);
         assert_eq!(vp.x, 0.0);
         assert_eq!(vp.y, 0.0);
         assert_eq!(vp.w, 768.0);
@@ -814,7 +926,7 @@ mod tests {
     #[test]
     fn viewport_letterbox_wide() {
         // scale = min(1000/256, 672/224) = min(3, 3) = 3; x-bar = (1000-768)/2 = 116
-        let vp = compute_viewport(1000, 672, 256, 224);
+        let vp = compute_viewport(1000, 672, 256, 224, ViewportScaleMode::Integer);
         assert_eq!(vp.x, 116.0);
         assert_eq!(vp.y, 0.0);
         assert_eq!(vp.w, 768.0);
@@ -824,7 +936,7 @@ mod tests {
     #[test]
     fn viewport_letterbox_tall() {
         // scale = 3; y-bar = (800-672)/2 = 64
-        let vp = compute_viewport(768, 800, 256, 224);
+        let vp = compute_viewport(768, 800, 256, 224, ViewportScaleMode::Integer);
         assert_eq!(vp.x, 0.0);
         assert_eq!(vp.y, 64.0);
         assert_eq!(vp.w, 768.0);
@@ -834,7 +946,7 @@ mod tests {
     #[test]
     fn viewport_scale_one_when_surface_smaller_than_game() {
         // scale clamps to 1; viewport is clamped to surface size, offset is 0
-        let vp = compute_viewport(100, 100, 256, 224);
+        let vp = compute_viewport(100, 100, 256, 224, ViewportScaleMode::Integer);
         assert_eq!(vp.x, 0.0);
         assert_eq!(vp.y, 0.0);
         assert_eq!(vp.w, 100.0);
@@ -844,9 +956,27 @@ mod tests {
     #[test]
     fn viewport_scale_limited_by_height() {
         // scale = min(1280/256, 720/224) = min(5, 3) = 3
-        let vp = compute_viewport(1280, 720, 256, 224);
+        let vp = compute_viewport(1280, 720, 256, 224, ViewportScaleMode::Integer);
         assert_eq!(vp.w, 768.0);
         assert_eq!(vp.h, 672.0);
+    }
+
+    #[test]
+    fn viewport_fit_fills_steam_deck_height_without_cropping() {
+        let vp = compute_viewport(1280, 800, 256, 224, ViewportScaleMode::Fit);
+        assert_near(vp.x, 182.86);
+        assert_eq!(vp.y, 0.0);
+        assert_near(vp.w, 914.29);
+        assert_eq!(vp.h, 800.0);
+    }
+
+    #[test]
+    fn viewport_stretch_uses_full_surface() {
+        let vp = compute_viewport(1280, 800, 256, 224, ViewportScaleMode::Stretch);
+        assert_eq!(vp.x, 0.0);
+        assert_eq!(vp.y, 0.0);
+        assert_eq!(vp.w, 1280.0);
+        assert_eq!(vp.h, 800.0);
     }
 
     #[test]

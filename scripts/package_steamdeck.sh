@@ -97,6 +97,7 @@ set -eu
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 export ZELDA3_STEAMDECK="${ZELDA3_STEAMDECK:-1}"
 export ZELDA3_FULLSCREEN="${ZELDA3_FULLSCREEN:-1}"
+export ZELDA3_VIEWPORT_SCALE="${ZELDA3_VIEWPORT_SCALE:-fit}"
 export WGPU_BACKEND="${WGPU_BACKEND:-vulkan}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export ZELDA3_SAVE_DIR="${ZELDA3_SAVE_DIR:-$DATA_HOME/zelda3-rs/saves}"
@@ -191,7 +192,7 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
   echo "No graphical session detected; skipping frontend smoke." | tee -a "$LOG"
   echo "Rerun from Desktop Mode or Game Mode to verify frontend launch." | tee -a "$LOG"
 else
-  run_logged env ZELDA3_SAVE_DIR="$SAVE_DIR" ZELDA3_STEAMDECK="${ZELDA3_STEAMDECK:-1}" ZELDA3_FULLSCREEN="${ZELDA3_FULLSCREEN:-1}" WGPU_BACKEND="${WGPU_BACKEND:-vulkan}" "$APP_DIR/zelda3" --frontend-smoke "$FRAMES"
+  run_logged env ZELDA3_SAVE_DIR="$SAVE_DIR" ZELDA3_STEAMDECK="${ZELDA3_STEAMDECK:-1}" ZELDA3_FULLSCREEN="${ZELDA3_FULLSCREEN:-1}" ZELDA3_VIEWPORT_SCALE="${ZELDA3_VIEWPORT_SCALE:-fit}" ZELDA3_RENDER_VIEWPORT_LOG=1 WGPU_BACKEND="${WGPU_BACKEND:-vulkan}" "$APP_DIR/zelda3" --frontend-smoke "$FRAMES"
 fi
 echo "Steam Deck verification log written to $LOG"
 DECKVERIFY
@@ -290,6 +291,7 @@ On-Deck verification:
 The wrapper enables Steam Deck defaults:
   ZELDA3_STEAMDECK=1
   ZELDA3_FULLSCREEN=1
+  ZELDA3_VIEWPORT_SCALE=fit
   WGPU_BACKEND=vulkan
   ZELDA3_SAVE_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/zelda3-rs/saves
 
@@ -307,7 +309,7 @@ git_commit=$GIT_COMMIT
 profile=$PROFILE
 binary_sha256=$(sha256_file "$PACKAGE_DIR/zelda3")
 runtime_assets=embedded
-deck_defaults=ZELDA3_STEAMDECK,ZELDA3_FULLSCREEN,WGPU_BACKEND,ZELDA3_SAVE_DIR
+deck_defaults=ZELDA3_STEAMDECK,ZELDA3_FULLSCREEN,ZELDA3_VIEWPORT_SCALE,WGPU_BACKEND,ZELDA3_SAVE_DIR
 MANIFEST
 
 : >"$PACKAGE_DIR/CHECKSUMS.sha256"

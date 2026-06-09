@@ -159,7 +159,8 @@ includes `zelda3`, `run-zelda3.sh`, `install-to-desktop-mode.sh`,
 
 Add `dist/zelda3-steamdeck/zelda3-rs.desktop` as a Non-Steam Game, or launch
 `run-zelda3.sh` directly. The wrapper enables `ZELDA3_STEAMDECK=1`,
-`ZELDA3_FULLSCREEN=1`, defaults `WGPU_BACKEND=vulkan`, and stores SRAM under
+`ZELDA3_FULLSCREEN=1`, defaults `ZELDA3_VIEWPORT_SCALE=fit` and
+`WGPU_BACKEND=vulkan`, and stores SRAM under
 `${XDG_DATA_HOME:-$HOME/.local/share}/zelda3-rs/saves` unless
 `ZELDA3_SAVE_DIR` is set.
 
