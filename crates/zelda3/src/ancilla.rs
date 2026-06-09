@@ -2494,11 +2494,14 @@ impl ZeldaState {
         self.ram[SWORDBEAM_ARR + 1] = CANE_SPARK_TRANSMUTE_TAB[j + 1];
         self.ram[SWORDBEAM_ARR + 2] = CANE_SPARK_TRANSMUTE_TAB[j + 2];
         self.ram[SWORDBEAM_ARR + 3] = CANE_SPARK_TRANSMUTE_TAB[j + 3];
-        self.ram[ANCILLA_AUX_TIMER + k] = 0x17;
         self.ram[ANCILLA_G + k] = 0;
-        self.ancilla_slot_view_mut(k).set_item_to_link(0);
-        self.ram[ANCILLA_ARR3 + k] = 8;
-        self.ram[ANCILLA_STEP + k] = 0;
+        {
+            let mut spark = self.ancilla_slot_view_mut(k);
+            spark.set_aux_timer(0x17);
+            spark.set_item_to_link(0);
+            spark.set_arr3(8);
+            spark.set_step(0);
+        }
         self.ram[ANCILLA_L + k] = 0;
         self.ram[ANCILLA_ARR1 + k] = 2;
         self.ancilla_slot_view_mut(k).set_timer(21);
@@ -2616,9 +2619,12 @@ impl ZeldaState {
         self.ram[LINK_DMA_VAR5] = 80;
         let mut k = 0usize;
 
-        self.ram[ANCILLA_ARR3 + k] = 64;
-        self.ram[ANCILLA_STEP + k] = 0;
-        self.ancilla_slot_view_mut(k).set_z_velocity(8);
+        {
+            let mut revival = self.ancilla_slot_view_mut(k);
+            revival.set_arr3(64);
+            revival.set_step(0);
+            revival.set_z_velocity(8);
+        }
         self.ram[ANCILLA_L + k] = 0;
         self.ram[ANCILLA_G + k] = 5;
         self.ancilla_slot_view_mut(k).set_item_to_link(0);
@@ -2632,18 +2638,25 @@ impl ZeldaState {
         k += 1;
 
         self.ancilla_slot_view_mut(k).set_z(0);
-        self.ram[ANCILLA_ARR3 + k] = 240;
-        self.ram[ANCILLA_STEP + k] = 0;
+        {
+            let mut revival = self.ancilla_slot_view_mut(k);
+            revival.set_arr3(240);
+            revival.set_step(0);
+        }
         self.ram[ANCILLA_K + k] = 0;
         k += 1;
 
         self.ancilla_slot_view_mut(k).set_item_to_link(2);
-        self.ram[ANCILLA_AUX_TIMER + k] = 3;
-        self.ram[ANCILLA_ARR3 + k] = 8;
-        self.ram[ANCILLA_STEP + k] = 0;
+        {
+            let mut revival = self.ancilla_slot_view_mut(k);
+            revival.set_aux_timer(3);
+            revival.set_arr3(8);
+            revival.set_step(0);
+        }
         self.ancilla_slot_view_mut(k).set_direction(3);
-        self.ram[ANCILLA_ARR25 + k] =
-            K_MAGIC_POWDER_TAB0[30 + self.ancilla_slot_view(k).item_to_link() as usize];
+        let item_to_link = self.ancilla_slot_view(k).item_to_link() as usize;
+        self.ancilla_slot_view_mut(k)
+            .set_arr25(K_MAGIC_POWDER_TAB0[30 + item_to_link]);
 
         self.ancilla_set_xy(
             k,
