@@ -3,15 +3,15 @@ use super::sprite::{DrawMultipleData, PrepOamCoordsRet};
 use super::*;
 
 // Tables shared by Blind head drawing (from sprite_main.c lines 400-401).
-const K_BLIND_HEAD_DRAW_CHAR: [u8; 16] = [
+const BLIND_HEAD_DRAW_CHARS: [u8; 16] = [
     0x86, 0x86, 0x84, 0x82, 0x80, 0x82, 0x84, 0x86, 0x86, 0x86, 0x88, 0x8a, 0x8c, 0x8a, 0x88, 0x86,
 ];
-const K_BLIND_HEAD_DRAW_FLAGS: [u8; 16] = [
+const BLIND_HEAD_DRAW_FLAGS: [u8; 16] = [
     0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0,
 ];
 
 // kBlindPoof_Dmd from sprite_main.c:15819.
-const K_BLIND_POOF_DMD: [DrawMultipleData; 37] = [
+const BLIND_POOF_DRAW_FRAMES: [DrawMultipleData; 37] = [
     DrawMultipleData {
         x: -16,
         y: -20,
@@ -237,7 +237,7 @@ const K_BLIND_POOF_DMD: [DrawMultipleData; 37] = [
 ];
 
 // kBlind_Dmd from sprite_main.c:15863.
-const K_BLIND_DMD: [DrawMultipleData; 105] = [
+const BLIND_DRAW_FRAMES: [DrawMultipleData; 105] = [
     DrawMultipleData {
         x: -8,
         y: 7,
@@ -873,9 +873,10 @@ const K_BLIND_DMD: [DrawMultipleData; 105] = [
 impl ZeldaState {
     // void Sprite_CE_Blind(int k) {  // 9da263
     pub(super) fn sprite_ce_blind(&mut self, k: usize) {
-        if (self.ram[SPRITE_A + k] as i8).is_negative() {
+        let sprite = self.sprite_slot_view(k);
+        if (sprite.a() as i8).is_negative() {
             self.sprite_blind_laser(k);
-        } else if self.ram[SPRITE_A + k] == 2 {
+        } else if sprite.a() == 2 {
             self.sprite_blind_head(k);
         } else {
             self.sprite_blind_blind_blind(k);
@@ -884,13 +885,16 @@ impl ZeldaState {
 
     // void Sprite_BlindLaser(int k) {  // 9da268
     pub(super) fn sprite_blind_laser(&mut self, k: usize) {
-        const GFX: [u8; 16] = [7, 7, 8, 9, 10, 9, 8, 7, 7, 7, 8, 9, 10, 9, 8, 7];
+        const LOCAL_GRAPHICS: [u8; 16] = [7, 7, 8, 9, 10, 9, 8, 7, 7, 7, 8, 9, 10, 9, 8, 7];
         const OAM_FLAGS: [u8; 16] = [
             0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80,
         ];
-        let j = (self.ram[SPRITE_HEAD_DIR + k] & 15) as usize;
-        self.ram[SPRITE_GRAPHICS + k] = GFX[j];
-        self.ram[SPRITE_OAM_FLAGS + k] = OAM_FLAGS[j] | 3;
+        let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
+        {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_graphics(LOCAL_GRAPHICS[j]);
+            sprite.set_oam_flags(OAM_FLAGS[j] | 3);
+        }
         let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -901,23 +905,23 @@ impl ZeldaState {
         if self.sprite_return_if_inactive_for_blind(k) {
             return;
         }
-        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
-            if self.ram[SPRITE_DELAY_MAIN + k] == 1 {
-                self.ram[SPRITE_STATE + k] = 0;
+        if self.sprite_slot_view(k).delay_main() != 0 {
+            if self.sprite_slot_view(k).delay_main() == 1 {
+                self.sprite_slot_view_mut(k).clear();
             }
             return;
         }
         self.sprite_check_damage_to_link_same_layer(k);
         let x = self
             .sprite_get_x(k)
-            .wrapping_add_signed(i16::from(self.ram[SPRITE_X_VEL + k] as i8));
+            .wrapping_add_signed(i16::from(self.sprite_slot_view(k).x_velocity() as i8));
         let y = self
             .sprite_get_y(k)
-            .wrapping_add_signed(i16::from(self.ram[SPRITE_Y_VEL + k] as i8));
+            .wrapping_add_signed(i16::from(self.sprite_slot_view(k).y_velocity() as i8));
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
         if self.sprite_check_tile_collision(k) != 0 {
-            self.ram[SPRITE_DELAY_MAIN + k] = 12;
+            self.sprite_slot_view_mut(k).set_delay_main(12);
         }
         self.blind_laser_spawn_trail_garnish(k);
     }
@@ -935,16 +939,17 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_prep_blind_prepare_battle(&mut self, k: usize) {
-        let dung_state = read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS);
-        if self.ram[FOLLOWER_INDICATOR] != 6 && (dung_state & 0x2000) != 0 {
-            self.ram[SPRITE_DELAY_AUX2 + k] = 96;
-            self.ram[SPRITE_C + k] = 1;
-            self.ram[SPRITE_D + k] = 2;
-            self.ram[SPRITE_HEAD_DIR + k] = 4;
-            self.ram[SPRITE_GRAPHICS + k] = 7;
+        let dung_state = self.dungeon_state_view().savegame_state_bits();
+        if self.follower_state_view().indicator() != 6 && (dung_state & 0x2000) != 0 {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_delay_aux2(96);
+            sprite.set_c(1);
+            sprite.set_direction(2);
+            sprite.set_head_direction(4);
+            sprite.set_graphics(7);
             self.ram[BLIND_HEAD_ANIM_COUNTER] = 0;
         } else {
-            self.ram[SPRITE_STATE + k] = 0;
+            self.sprite_slot_view_mut(k).clear();
         }
     }
 
@@ -996,12 +1001,12 @@ impl ZeldaState {
     //     Sprite_MoveXY(k);
     // }
     pub(super) fn sprite_blind_head(&mut self, k: usize) {
-        const K_BLIND_HEAD_XPOS_LIMIT: [u8; 2] = [0x98, 0x58];
-        const K_BLIND_HEAD_YPOS_LIMIT: [u8; 2] = [0xb0, 0x50];
-        const K_BLIND_HEAD_YVEL_LIMIT: [i8; 2] = [24, -24];
-        const K_BLIND_HEAD_XVEL_LIMIT: [i8; 2] = [32, -32];
+        const BLIND_HEAD_X_POSITION_LIMITS: [u8; 2] = [0x98, 0x58];
+        const BLIND_HEAD_Y_POSITION_LIMITS: [u8; 2] = [0xb0, 0x50];
+        const BLIND_HEAD_Y_VELOCITY_LIMITS: [i8; 2] = [24, -24];
+        const BLIND_HEAD_X_VELOCITY_LIMITS: [i8; 2] = [32, -32];
 
-        self.ram[SPRITE_OBJ_PRIO + k] |= 48;
+        self.sprite_slot_view_mut(k).or_object_priority_bits(48);
         self.sprite_draw_single_large_for_blind(k);
         // OamEnt *oam = GetOamCurPtr(); oam->charnum = ...; oam->flags = ...;
         self.blind_head_apply_oam_for_blind(k);
@@ -1009,52 +1014,53 @@ impl ZeldaState {
         if self.sprite_return_if_inactive_for_blind(k) {
             return;
         }
-        if self.ram[SPRITE_F + k] == 14 {
-            self.ram[SPRITE_F + k] = 8;
+        if self.sprite_slot_view(k).f() == 14 {
+            self.sprite_slot_view_mut(k).set_f(8);
         }
         if self.sprite_return_if_recoiling_for_blind(k) {
             return;
         }
-        let new_sub = self.ram[SPRITE_SUBTYPE + k].wrapping_sub(1);
-        self.ram[SPRITE_SUBTYPE + k] = new_sub;
+        let new_sub = self.sprite_slot_view(k).subtype().wrapping_sub(1);
+        self.sprite_slot_view_mut(k).set_subtype(new_sub);
         if (new_sub as i8) < 0 {
-            self.ram[SPRITE_SUBTYPE + k] = 2;
-            self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_add(1) & 15;
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_subtype(2);
+            sprite.increment_head_direction_mod16();
         }
-        if self.ram[SPRITE_DELAY_MAIN + k] != 0 {
+        if self.sprite_slot_view(k).delay_main() != 0 {
             return;
         }
         self.sprite_check_damage_to_and_from_link_for_blind(k);
-        self.ram[SPRITE_SUBTYPE2 + k] = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
+        self.sprite_slot_view_mut(k).increment_subtype2();
         let j_ret = self.blind_spit_fireball(k, 0x1f);
         if j_ret >= 0 {
-            let zsub = self.ram[SPRITE_Z_SUBPOS + k].wrapping_sub(1);
-            self.ram[SPRITE_Z_SUBPOS + k] = zsub;
+            let zsub = self.sprite_slot_view_mut(k).decrement_z_subpixel();
             if (zsub as i8) < 0 {
-                self.ram[SPRITE_Z_SUBPOS + k] = 4;
+                self.sprite_slot_view_mut(k).set_z_subpixel(4);
                 let pt = self.sprite_project_speed_towards_link(k, 32);
                 let j = j_ret as usize;
-                self.ram[SPRITE_X_VEL + j] = pt.x;
-                self.ram[SPRITE_Y_VEL + j] = pt.y;
+                let mut fireball = self.sprite_slot_view_mut(j);
+                fireball.set_x_velocity(pt.x);
+                fireball.set_y_velocity(pt.y);
             }
         }
-        let mut j = (self.ram[SPRITE_G + k] & 1) as usize;
-        if self.ram[SPRITE_X_VEL + k] != K_BLIND_HEAD_XVEL_LIMIT[j] as u8 {
+        let mut j = (self.sprite_slot_view(k).g() & 1) as usize;
+        if self.sprite_slot_view(k).x_velocity() != BLIND_HEAD_X_VELOCITY_LIMITS[j] as u8 {
             let delta: i8 = if j != 0 { -1 } else { 1 };
-            self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_add(delta as u8);
+            self.sprite_slot_view_mut(k).add_x_velocity(delta as u8);
         }
-        if (self.ram[SPRITE_X_LO + k] & !1) == K_BLIND_HEAD_XPOS_LIMIT[j] {
-            self.ram[SPRITE_G + k] = self.ram[SPRITE_G + k].wrapping_add(1);
+        if (self.sprite_slot_view(k).x_low() & !1) == BLIND_HEAD_X_POSITION_LIMITS[j] {
+            self.sprite_slot_view_mut(k).increment_g();
         }
-        j = (self.ram[SPRITE_ANIM_CLOCK + k] & 1) as usize;
-        if self.ram[SPRITE_Y_VEL + k] != K_BLIND_HEAD_YVEL_LIMIT[j] as u8 {
+        j = (self.sprite_slot_view(k).anim_clock() & 1) as usize;
+        if self.sprite_slot_view(k).y_velocity() != BLIND_HEAD_Y_VELOCITY_LIMITS[j] as u8 {
             let delta: i8 = if j != 0 { -1 } else { 1 };
-            self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(delta as u8);
+            self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
         }
-        if (self.ram[SPRITE_Y_LO + k] & !1) == K_BLIND_HEAD_YPOS_LIMIT[j] {
-            self.ram[SPRITE_ANIM_CLOCK + k] = self.ram[SPRITE_ANIM_CLOCK + k].wrapping_add(1);
+        if (self.sprite_slot_view(k).y_low() & !1) == BLIND_HEAD_Y_POSITION_LIMITS[j] {
+            self.sprite_slot_view_mut(k).increment_anim_clock();
         }
-        if self.ram[SPRITE_F + k] == 0 {
+        if self.sprite_slot_view(k).f() == 0 {
             self.sprite_move_xy(k);
         }
     }
@@ -1081,18 +1087,19 @@ impl ZeldaState {
     pub(super) fn blind_spawn_head(&mut self, k: usize) {
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
             self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
-            self.ram[SPRITE_FLAGS3 + j] = 0x5b;
-            self.ram[SPRITE_OAM_FLAGS + j] = 0x5b & 15;
-            self.ram[SPRITE_DEFL_BITS + j] = 4;
-            self.ram[SPRITE_A + j] = 2;
-            self.ram[SPRITE_FLAGS2 + j] = 1;
-            self.ram[SPRITE_FLAGS4 + j] = 0;
-            self.ram[SPRITE_FLAGS + j] = 0;
-            self.ram[SPRITE_Z + j] = 23;
-            self.ram[SPRITE_Y_LO + j] = (23u16.wrapping_add(r2_y)) as u8;
-            self.ram[SPRITE_G + j] = ((r0_x >> 7) & 1) as u8;
-            self.ram[SPRITE_ANIM_CLOCK + j] = ((r2_y >> 7) & 1) as u8;
-            self.ram[SPRITE_DELAY_MAIN + j] = 48;
+            let mut sprite = self.sprite_slot_view_mut(j);
+            sprite.set_flags3(0x5b);
+            sprite.set_oam_flags(0x5b & 15);
+            sprite.set_deflection_bits(4);
+            sprite.set_a(2);
+            sprite.set_flags2(1);
+            sprite.set_flags4(0);
+            sprite.set_flags(0);
+            sprite.set_z(23);
+            sprite.set_y_low(23u16.wrapping_add(r2_y) as u8);
+            sprite.set_g(((r0_x >> 7) & 1) as u8);
+            sprite.set_anim_clock(((r2_y >> 7) & 1) as u8);
+            sprite.set_delay_main(48);
         }
     }
 
@@ -1104,76 +1111,88 @@ impl ZeldaState {
         // sprite_oam_flags[k] = 1;
         // if (Sprite_ReturnIfInactive(k)) return;
         // uint8 a = sprite_F[k]; if (a) sprite_F[k]--;
-        self.ram[SPRITE_OBJ_PRIO + k] |= 0x30;
+        self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
         self.blind_draw(k);
-        self.ram[SPRITE_OAM_FLAGS + k] = 1;
+        self.sprite_slot_view_mut(k).set_oam_flags(1);
         if self.sprite_return_if_inactive_for_blind(k) {
             return;
         }
-        let a = self.ram[SPRITE_F + k];
+        let a = self.sprite_slot_view(k).f();
         if a != 0 {
-            self.ram[SPRITE_F + k] = self.ram[SPRITE_F + k].wrapping_sub(1);
+            self.sprite_slot_view_mut(k).decrement_f();
         }
 
         // if (a == 11) { ... }
         if a == 11 {
-            self.ram[SPRITE_HIT_TIMER + k] = 0;
-            self.ram[SPRITE_WALLCOLL + k] = 0;
-            if self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
-                self.ram[SPRITE_HEALTH + k] = 128;
-                self.ram[SPRITE_DELAY_AUX4 + k] = 48;
-                self.ram[SPRITE_OAM_FLAGS + k] &= 1;
-                let new_zsub = self.ram[SPRITE_Z_SUBPOS + k].wrapping_add(1);
-                self.ram[SPRITE_Z_SUBPOS + k] = new_zsub;
+            {
+                let mut sprite = self.sprite_slot_view_mut(k);
+                sprite.set_hit_timer(0);
+                sprite.set_wall_collision(0);
+            }
+            if self.sprite_slot_view(k).delay_aux4() == 0 {
+                let new_zsub = {
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.set_health(128);
+                    sprite.set_delay_aux4(48);
+                    sprite.and_oam_flags(1);
+                    sprite.increment_z_subpixel()
+                };
                 if new_zsub < 3 {
-                    self.ram[SPRITE_WALLCOLL + k] = 96;
-                    self.ram[SPRITE_SUBTYPE + k] = 1;
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.set_wall_collision(96);
+                    sprite.set_subtype(1);
                 } else {
-                    self.ram[SPRITE_Z_SUBPOS + k] = 0;
-                    let new_limit = self.ram[SPRITE_LIMIT_INSTANCE].wrapping_add(1);
-                    self.ram[SPRITE_LIMIT_INSTANCE] = new_limit;
+                    self.sprite_slot_view_mut(k).set_z_subpixel(0);
+                    let new_limit = self.sprite_system_view().limit_instance().wrapping_add(1);
+                    self.sprite_system_view_mut().set_limit_instance(new_limit);
                     if new_limit == 3 {
                         self.sprite_kill_friends_for_blind();
-                        self.ram[SPRITE_STATE + k] = 4;
-                        self.ram[SPRITE_A + k] = 0;
-                        self.ram[SPRITE_DELAY_MAIN + k] = 255;
-                        self.ram[SPRITE_HIT_TIMER + k] = 255;
-                        self.ram[FLAG_BLOCK_LINK_MENU] =
-                            self.ram[FLAG_BLOCK_LINK_MENU].wrapping_add(1);
+                        {
+                            let mut sprite = self.sprite_slot_view_mut(k);
+                            sprite.set_state(4);
+                            sprite.set_a(0);
+                            sprite.set_delay_main(255);
+                            sprite.set_hit_timer(255);
+                        }
+                        self.player_state_view_mut().increment_menu_block_flag();
                         self.sprite_sfx_queue_sfx3_with_pan(k, 0x22);
                         return;
                     }
-                    self.ram[SPRITE_Y_VEL + k] = 0;
-                    self.ram[SPRITE_X_VEL + k] = 0;
-                    self.ram[SPRITE_C + k] = 6;
-                    self.ram[SPRITE_DELAY_AUX2 + k] = 255;
-                    self.ram[SPRITE_IGNORE_PROJECTILE + k] = 255;
+                    {
+                        let mut sprite = self.sprite_slot_view_mut(k);
+                        sprite.set_y_velocity(0);
+                        sprite.set_x_velocity(0);
+                        sprite.set_c(6);
+                        sprite.set_delay_aux2(255);
+                        sprite.set_ignore_projectile(255);
+                    }
                     self.blind_spawn_head(k);
                 }
             }
         }
 
         // if (sprite_A[k]) { ... return; }
-        if self.ram[SPRITE_A + k] != 0 {
-            const K_BLIND_GFX0: [u8; 7] = [20, 19, 18, 17, 16, 15, 15];
-            if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
-                self.ram[SPRITE_STATE + k] = 0;
+        if self.sprite_slot_view(k).a() != 0 {
+            const BLIND_DEFEAT_GRAPHICS_SEQUENCE: [u8; 7] = [20, 19, 18, 17, 16, 15, 15];
+            if self.sprite_slot_view(k).delay_main() == 0 {
+                self.sprite_slot_view_mut(k).clear();
             }
-            let idx = (self.ram[SPRITE_DELAY_MAIN + k] >> 3) as usize;
-            self.ram[SPRITE_GRAPHICS + k] = K_BLIND_GFX0[idx.min(6)];
+            let idx = (self.sprite_slot_view(k).delay_main() >> 3) as usize;
+            self.sprite_slot_view_mut(k)
+                .set_graphics(BLIND_DEFEAT_GRAPHICS_SEQUENCE[idx.min(6)]);
             return;
         }
         // if (!(++sprite_subtype2[k] & 1)) sprite_delay_main[k]++;
-        let new_sub2 = self.ram[SPRITE_SUBTYPE2 + k].wrapping_add(1);
-        self.ram[SPRITE_SUBTYPE2 + k] = new_sub2;
+        self.sprite_slot_view_mut(k).increment_subtype2();
+        let new_sub2 = self.sprite_slot_view(k).subtype2();
         if (new_sub2 & 1) == 0 {
-            self.ram[SPRITE_DELAY_MAIN + k] = self.ram[SPRITE_DELAY_MAIN + k].wrapping_add(1);
+            self.sprite_slot_view_mut(k).increment_delay_main();
         }
 
         // if (sprite_delay_aux1[k]) { ... return; }
-        if self.ram[SPRITE_DELAY_AUX1 + k] != 0 {
-            self.ram[SPRITE_AI_STATE + k] = 0;
-            if self.ram[SPRITE_DELAY_AUX1 + k] == 8 {
+        if self.sprite_slot_view(k).delay_aux1() != 0 {
+            self.sprite_slot_view_mut(k).set_ai_state(0);
+            if self.sprite_slot_view(k).delay_aux1() == 8 {
                 self.blind_spawn_laser(k);
             }
             self.blind_check_bump_damage(k);
@@ -1182,111 +1201,133 @@ impl ZeldaState {
         // BLIND_HEAD_ANIM_COUNTER++;
         self.ram[BLIND_HEAD_ANIM_COUNTER] = self.ram[BLIND_HEAD_ANIM_COUNTER].wrapping_add(1);
         // stunned/ai_state branch
-        if self.ram[SPRITE_STUNNED + k] == 0 {
-            if self.ram[SPRITE_AI_STATE + k] != 0 {
-                self.ram[SPRITE_DELAY_AUX1 + k] = 16;
-                self.ram[SPRITE_STUNNED + k] = 128;
-                self.ram[SPRITE_AI_STATE + k] = 0;
+        if self.sprite_slot_view(k).stunned() == 0 {
+            if self.sprite_slot_view(k).ai_state() != 0 {
+                let mut sprite = self.sprite_slot_view_mut(k);
+                sprite.set_delay_aux1(16);
+                sprite.set_stunned(128);
+                sprite.set_ai_state(0);
             }
         } else {
-            self.ram[SPRITE_STUNNED + k] = self.ram[SPRITE_STUNNED + k].wrapping_sub(1);
-            self.ram[SPRITE_AI_STATE + k] = 0;
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.decrement_stunned();
+            sprite.set_ai_state(0);
         }
         // sprite_x_hi[k] = HIBYTE(link_x_coord); sprite_y_hi[k] = HIBYTE(link_y_coord);
-        self.ram[SPRITE_X_HI + k] = self.ram[LINK_X_COORD + 1];
-        self.ram[SPRITE_Y_HI + k] = self.ram[LINK_Y_COORD + 1];
+        let player = self.player_state_view();
+        let link_x_high = player.x_high();
+        let link_y_high = player.y_high();
+        {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_x_high(link_x_high);
+            sprite.set_y_high(link_y_high);
+        }
 
-        match self.ram[SPRITE_C + k] {
+        match self.sprite_slot_view(k).c() {
             0 => {
                 // blinded
                 self.ram[DMA_HEAD_POINTER] = 0;
                 self.ram[DMA_BODY_POINTER] = 0xA0;
-                if self.ram[SPRITE_DELAY_AUX2 + k] == 0 {
-                    self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
-                    self.ram[SPRITE_DELAY_AUX2 + k] = 96;
-                } else if self.ram[SPRITE_DELAY_AUX2 + k] == 80 {
-                    write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x123);
+                if self.sprite_slot_view(k).delay_aux2() == 0 {
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.increment_c();
+                    sprite.set_delay_aux2(96);
+                } else if self.sprite_slot_view(k).delay_aux2() == 80 {
+                    self.dialogue_message_index_view_mut().set_value(0x123);
                     self.sprite_show_message_minimal_for_blind();
-                } else if self.ram[SPRITE_DELAY_AUX2 + k] == 24 {
+                } else if self.sprite_slot_view(k).delay_aux2() == 24 {
                     self.spawn_boss_poof_for_blind(k);
                 }
             }
             1 => {
                 // retreat to back wall
                 self.blind_check_bump_damage(k);
-                self.ram[SPRITE_GRAPHICS + k] = 9;
-                if self.ram[SPRITE_DELAY_AUX2 + k] == 0 {
-                    self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
-                    self.ram[SPRITE_DELAY_MAIN + k] = 255;
-                    self.ram[SPRITE_IGNORE_PROJECTILE + k] = 0;
-                } else if self.ram[SPRITE_DELAY_AUX2 + k] < 64 {
-                    self.ram[SPRITE_Y_VEL + k] = (-8i8) as u8;
+                self.sprite_slot_view_mut(k).set_graphics(9);
+                if self.sprite_slot_view(k).delay_aux2() == 0 {
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.increment_c();
+                    sprite.set_delay_main(255);
+                    sprite.set_ignore_projectile(0);
+                } else if self.sprite_slot_view(k).delay_aux2() < 64 {
+                    self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
                     self.sprite_move_y(k);
                 }
                 self.blind_animate(k);
-                self.ram[SPRITE_HEAD_DIR + k] = 4;
+                self.sprite_slot_view_mut(k).set_head_direction(4);
             }
             2 => {
                 // oscillate
-                const K_OSC_YVEL_TARGET: [i8; 2] = [18, -18];
-                const K_OSC_XVEL_TARGET: [i8; 2] = [24, -24];
-                const K_OSC_XPOS_TARGET: [u8; 2] = [164, 76];
+                const BLIND_OSCILLATION_Y_VELOCITY_TARGETS: [i8; 2] = [18, -18];
+                const BLIND_OSCILLATION_X_VELOCITY_TARGETS: [i8; 2] = [24, -24];
+                const BLIND_OSCILLATION_X_POSITION_TARGETS: [u8; 2] = [164, 76];
                 self.blind_check_bump_damage(k);
                 self.blind_animate(k);
-                let sub2 = self.ram[SPRITE_SUBTYPE2 + k];
+                let sub2 = self.sprite_slot_view(k).subtype2();
                 let below_a = self.sprite_is_below_link(k).a;
-                let cond1 = (sub2 & 127) == 0 && below_a.wrapping_add(2) != self.ram[SPRITE_D + k];
-                let cond2 = self.ram[SPRITE_DELAY_MAIN + k] == 0;
-                if (cond1 || cond2) && self.ram[SPRITE_X_LO + k] < 0x78 {
-                    self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
-                    self.ram[SPRITE_Y_VEL + k] &= !1;
-                    self.ram[SPRITE_X_VEL + k] &= !1;
-                    self.ram[SPRITE_DELAY_AUX2 + k] = 0x30;
+                let sprite = self.sprite_slot_view(k);
+                let cond1 = (sub2 & 127) == 0 && below_a.wrapping_add(2) != sprite.direction();
+                let cond2 = sprite.delay_main() == 0;
+                if (cond1 || cond2) && sprite.x_low() < 0x78 {
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.increment_c();
+                    sprite.and_y_velocity(!1);
+                    sprite.and_x_velocity(!1);
+                    sprite.set_delay_aux2(0x30);
                     return;
                 }
-                let mut j = (self.ram[SPRITE_B + k] & 1) as usize;
+                let mut j = (self.sprite_slot_view(k).b() & 1) as usize;
                 let delta: i8 = if j != 0 { -1 } else { 1 };
-                self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(delta as u8);
-                if self.ram[SPRITE_Y_VEL + k] == K_OSC_YVEL_TARGET[j] as u8 {
-                    self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+                self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
+                if self.sprite_slot_view(k).y_velocity()
+                    == BLIND_OSCILLATION_Y_VELOCITY_TARGETS[j] as u8
+                {
+                    self.sprite_slot_view_mut(k).increment_b();
                 }
-                j = (self.ram[SPRITE_G + k] & 1) as usize;
-                if self.ram[SPRITE_X_VEL + k] != K_OSC_XVEL_TARGET[j] as u8 {
+                j = (self.sprite_slot_view(k).g() & 1) as usize;
+                if self.sprite_slot_view(k).x_velocity()
+                    != BLIND_OSCILLATION_X_VELOCITY_TARGETS[j] as u8
+                {
                     let delta: i8 = if j != 0 { -1 } else { 1 };
-                    self.ram[SPRITE_X_VEL + k] =
-                        self.ram[SPRITE_X_VEL + k].wrapping_add(delta as u8);
+                    self.sprite_slot_view_mut(k).add_x_velocity(delta as u8);
                 }
-                if (self.ram[SPRITE_X_LO + k] & !1) == K_OSC_XPOS_TARGET[j] {
-                    self.ram[SPRITE_G + k] = self.ram[SPRITE_G + k].wrapping_add(1);
+                if (self.sprite_slot_view(k).x_low() & !1)
+                    == BLIND_OSCILLATION_X_POSITION_TARGETS[j]
+                {
+                    self.sprite_slot_view_mut(k).increment_g();
                 }
                 self.sprite_move_xy(k);
-                if self.ram[SPRITE_WALLCOLL + k] != 0 {
-                    let wc = self.ram[SPRITE_WALLCOLL + k];
+                if self.sprite_slot_view(k).wall_collision() != 0 {
+                    let wc = self.sprite_slot_view(k).wall_collision();
                     self.blind_fireball_flurry(k, wc);
-                } else if (self.ram[SPRITE_SUBTYPE2 + k] & 7) == 0 {
-                    let hd = self.ram[SPRITE_HEAD_DIR + k] << 2;
+                } else if (self.sprite_slot_view(k).subtype2() & 7) == 0 {
+                    let hd = self.sprite_slot_view(k).head_direction() << 2;
                     self.sprite_spawn_probe_always_for_blind(k, hd);
                 }
             }
             3 => {
                 // switch walls
                 self.blind_check_bump_damage(k);
-                if self.ram[SPRITE_DELAY_AUX2 + k] != 0 {
+                if self.sprite_slot_view(k).delay_aux2() != 0 {
                     self.blind_decelerate_x(k);
                     self.sprite_move_x(k);
                     self.blind_decelerate_y(k);
                 } else {
-                    const K_SW_YVEL_TARGET: [i8; 2] = [64, -64];
-                    const K_SW_YPOS_TARGET: [u8; 2] = [0x90, 0x50];
-                    let j = (self.ram[SPRITE_D + k].wrapping_sub(2)) as usize;
-                    if self.ram[SPRITE_Y_VEL + k] != K_SW_YVEL_TARGET[j] as u8 {
+                    const BLIND_SWITCH_WALL_Y_VELOCITY_TARGETS: [i8; 2] = [64, -64];
+                    const BLIND_SWITCH_WALL_Y_POSITION_TARGETS: [u8; 2] = [0x90, 0x50];
+                    let j = (self.sprite_slot_view(k).direction().wrapping_sub(2)) as usize;
+                    if self.sprite_slot_view(k).y_velocity()
+                        != BLIND_SWITCH_WALL_Y_VELOCITY_TARGETS[j] as u8
+                    {
                         let delta: i8 = if j != 0 { -2 } else { 2 };
-                        self.ram[SPRITE_Y_VEL + k] =
-                            self.ram[SPRITE_Y_VEL + k].wrapping_add(delta as u8);
+                        self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
                     }
-                    if (self.ram[SPRITE_Y_LO + k] & !3) == K_SW_YPOS_TARGET[j] {
-                        self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
-                        self.ram[SPRITE_B + k] = self.ram[SPRITE_D + k].wrapping_sub(1);
+                    if (self.sprite_slot_view(k).y_low() & !3)
+                        == BLIND_SWITCH_WALL_Y_POSITION_TARGETS[j]
+                    {
+                        let b = self.sprite_slot_view(k).direction().wrapping_sub(1);
+                        let mut sprite = self.sprite_slot_view_mut(k);
+                        sprite.increment_c();
+                        sprite.set_b(b);
                     }
                     self.sprite_move_xy(k);
                     self.blind_decelerate_x(k);
@@ -1295,18 +1336,25 @@ impl ZeldaState {
             4 => {
                 // whirl around
                 self.blind_check_bump_damage(k);
-                if (self.ram[SPRITE_SUBTYPE2 + k] & 7) == 0 {
-                    const K_WA_GFX: [u8; 2] = [0, 9];
-                    let j = (self.ram[SPRITE_D + k].wrapping_sub(2)) as usize;
-                    if self.ram[SPRITE_GRAPHICS + k] == K_WA_GFX[j] {
-                        self.ram[SPRITE_DELAY_MAIN + k] = 254;
-                        self.ram[SPRITE_C + k] = 2;
-                        self.ram[SPRITE_D + k] ^= 1;
-                        self.ram[SPRITE_G + k] = self.ram[SPRITE_X_LO + k] >> 7;
+                if (self.sprite_slot_view(k).subtype2() & 7) == 0 {
+                    const BLIND_WHIRL_AROUND_GRAPHICS_TARGETS: [u8; 2] = [0, 9];
+                    let j = (self.sprite_slot_view(k).direction().wrapping_sub(2)) as usize;
+                    if self.sprite_slot_view(k).graphics() == BLIND_WHIRL_AROUND_GRAPHICS_TARGETS[j]
+                    {
+                        let g = self.sprite_slot_view(k).x_low() >> 7;
+                        let direction = self.sprite_slot_view(k).direction() ^ 1;
+                        let mut sprite = self.sprite_slot_view_mut(k);
+                        sprite.set_delay_main(254);
+                        sprite.set_c(2);
+                        sprite.set_direction(direction);
+                        sprite.set_g(g);
                     } else {
                         let delta: i8 = if j != 0 { 1 } else { -1 };
-                        self.ram[SPRITE_GRAPHICS + k] =
-                            self.ram[SPRITE_GRAPHICS + k].wrapping_add(delta as u8);
+                        let graphics = self
+                            .sprite_slot_view(k)
+                            .graphics()
+                            .wrapping_add(delta as u8);
+                        self.sprite_slot_view_mut(k).set_graphics(graphics);
                     }
                 }
                 self.blind_decelerate_y(k);
@@ -1317,35 +1365,44 @@ impl ZeldaState {
             }
             6 => {
                 // behind the curtain
-                self.ram[SPRITE_HIT_TIMER + k] = 0;
-                self.ram[SPRITE_HEAD_DIR + k] = 12;
-                let aux2 = self.ram[SPRITE_DELAY_AUX2 + k];
+                {
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.set_hit_timer(0);
+                    sprite.set_head_direction(12);
+                }
+                let aux2 = self.sprite_slot_view(k).delay_aux2();
                 if aux2 == 0 {
-                    self.ram[SPRITE_C + k] = self.ram[SPRITE_C + k].wrapping_add(1);
-                    self.ram[SPRITE_DELAY_AUX2 + k] = 39;
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.increment_c();
+                    sprite.set_delay_aux2(39);
                     self.sprite_sfx_queue_sfx1_with_pan(k, 0x13);
                 } else if aux2 >= 224 {
-                    const K_BC_GFX: [u8; 4] = [14, 13, 12, 10];
-                    self.ram[SPRITE_GRAPHICS + k] = K_BC_GFX[((aux2 - 224) >> 3) as usize];
+                    const BLIND_BEHIND_CURTAIN_GRAPHICS: [u8; 4] = [14, 13, 12, 10];
+                    self.sprite_slot_view_mut(k)
+                        .set_graphics(BLIND_BEHIND_CURTAIN_GRAPHICS[((aux2 - 224) >> 3) as usize]);
                 } else {
-                    self.ram[SPRITE_GRAPHICS + k] = 14;
+                    self.sprite_slot_view_mut(k).set_graphics(14);
                 }
             }
             7 => {
                 // rerobe
-                if self.ram[SPRITE_DELAY_AUX2 + k] == 0 {
-                    self.ram[SPRITE_C + k] = 2;
-                    self.ram[SPRITE_DELAY_MAIN + k] = 128;
-                    self.ram[SPRITE_D + k] = (self.ram[SPRITE_Y_LO + k] >> 7).wrapping_add(2);
-                    self.ram[SPRITE_G + k] =
-                        (self.ram[SPRITE_X_LO + k] << 2) | (self.ram[SPRITE_X_LO + k] >> 7);
-                    self.ram[SPRITE_X_VEL + k] = 0;
-                    self.ram[SPRITE_Y_VEL + k] = 0;
-                    self.ram[SPRITE_IGNORE_PROJECTILE + k] = 0;
+                if self.sprite_slot_view(k).delay_aux2() == 0 {
+                    let direction = (self.sprite_slot_view(k).y_low() >> 7).wrapping_add(2);
+                    let g = (self.sprite_slot_view(k).x_low() << 2)
+                        | (self.sprite_slot_view(k).x_low() >> 7);
+                    let mut sprite = self.sprite_slot_view_mut(k);
+                    sprite.set_c(2);
+                    sprite.set_delay_main(128);
+                    sprite.set_direction(direction);
+                    sprite.set_g(g);
+                    sprite.set_x_velocity(0);
+                    sprite.set_y_velocity(0);
+                    sprite.set_ignore_projectile(0);
                 } else {
-                    const K_RR_GFX: [u8; 5] = [10, 11, 12, 13, 14];
-                    let idx = (self.ram[SPRITE_DELAY_AUX2 + k] >> 3) as usize;
-                    self.ram[SPRITE_GRAPHICS + k] = K_RR_GFX[idx.min(4)];
+                    const BLIND_REROBE_GRAPHICS: [u8; 5] = [10, 11, 12, 13, 14];
+                    let idx = (self.sprite_slot_view(k).delay_aux2() >> 3) as usize;
+                    self.sprite_slot_view_mut(k)
+                        .set_graphics(BLIND_REROBE_GRAPHICS[idx.min(4)]);
                 }
             }
             _ => {}
@@ -1357,11 +1414,13 @@ impl ZeldaState {
     //   sprite_graphics[k] = kBlind_Gfx_Animate[(sprite_subtype2[k] >> 3 & 3) + ((sprite_D[k] - 2) << 2)];
     // }
     pub(super) fn blind_animate_robes(&mut self, k: usize) {
-        const K_BLIND_GFX_ANIMATE: [u8; 8] = [7, 8, 9, 8, 0, 1, 2, 1];
-        let s2 = (self.ram[SPRITE_SUBTYPE2 + k] >> 3) & 3;
-        let d_minus_2 = (self.ram[SPRITE_D + k] as i8).wrapping_sub(2);
+        const BLIND_ROBE_ANIMATION_GRAPHICS: [u8; 8] = [7, 8, 9, 8, 0, 1, 2, 1];
+        let sprite = self.sprite_slot_view(k);
+        let s2 = (sprite.subtype2() >> 3) & 3;
+        let d_minus_2 = (sprite.direction() as i8).wrapping_sub(2);
         let idx = (s2 as i32) + ((d_minus_2 as i32) << 2);
-        self.ram[SPRITE_GRAPHICS + k] = K_BLIND_GFX_ANIMATE[(idx as usize) & 7];
+        self.sprite_slot_view_mut(k)
+            .set_graphics(BLIND_ROBE_ANIMATION_GRAPHICS[(idx as usize) & 7]);
     }
 
     // void Blind_FireballFlurry(int k, uint8 a) {  // 9da465
@@ -1377,16 +1436,21 @@ impl ZeldaState {
     //   Blind_SpitFireball(k, 0xf);
     // }
     pub(super) fn blind_fireball_flurry(&mut self, k: usize, a: u8) {
-        self.ram[SPRITE_WALLCOLL + k] = self.ram[SPRITE_WALLCOLL + k].wrapping_sub(1);
-        self.ram[SPRITE_OAM_FLAGS + k] = (a & 7).wrapping_mul(2).wrapping_add(1);
-        let new_e = self.ram[SPRITE_E + k].wrapping_sub(1);
-        self.ram[SPRITE_E + k] = new_e;
+        let new_e = {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.decrement_wall_collision();
+            sprite.set_oam_flags((a & 7).wrapping_mul(2).wrapping_add(1));
+            sprite.decrement_e()
+        };
         if (new_e as i8) < 0 {
-            self.ram[SPRITE_E + k] = self.ram[SPRITE_SUBTYPE + k];
-            self.ram[SPRITE_HEAD_DIR + k] = self.ram[SPRITE_HEAD_DIR + k].wrapping_add(1) & 15;
+            let subtype = self.sprite_slot_view(k).subtype();
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_e(subtype);
+            sprite.increment_head_direction_mod16();
         }
-        if (self.ram[SPRITE_SUBTYPE2 + k] & 31) == 0 && self.ram[SPRITE_SUBTYPE + k] != 5 {
-            self.ram[SPRITE_SUBTYPE + k] = self.ram[SPRITE_SUBTYPE + k].wrapping_add(1);
+        let sprite = self.sprite_slot_view(k);
+        if (sprite.subtype2() & 31) == 0 && sprite.subtype() != 5 {
+            self.sprite_slot_view_mut(k).increment_subtype();
         }
         self.blind_animate_robes(k);
         let _ = self.blind_spit_fireball(k, 0xf);
@@ -1409,13 +1473,13 @@ impl ZeldaState {
     //   return j;
     // }
     pub(super) fn blind_spit_fireball(&mut self, k: usize, a: u8) -> i32 {
-        const K_BLIND_HEAD_SPAWN_FIREBALL_XVEL: [i8; 16] = [
+        const BLIND_FIREBALL_X_VELOCITIES_BY_HEAD_DIR: [i8; 16] = [
             -32, -28, -24, -16, 0, 16, 24, 28, 32, 28, 24, 16, 0, -16, -24, -28,
         ];
-        const K_BLIND_HEAD_SPAWN_FIREBALL_YVEL: [i8; 16] = [
+        const BLIND_FIREBALL_Y_VELOCITIES_BY_HEAD_DIR: [i8; 16] = [
             0, 16, 24, 28, 32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16,
         ];
-        if (self.ram[SPRITE_SUBTYPE2 + k] & a) != 0 {
+        if (self.sprite_slot_view(k).subtype2() & a) != 0 {
             return -1;
         }
         let j = self.sprite_spawn_fireball(k);
@@ -1423,11 +1487,12 @@ impl ZeldaState {
             j if j >= 0 => {
                 let j = j as usize;
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
-                let i = self.ram[SPRITE_HEAD_DIR + k] as usize;
-                self.ram[SPRITE_X_VEL + j] = K_BLIND_HEAD_SPAWN_FIREBALL_XVEL[i] as u8;
-                self.ram[SPRITE_Y_VEL + j] = K_BLIND_HEAD_SPAWN_FIREBALL_YVEL[i] as u8;
-                self.ram[SPRITE_DEFL_BITS + j] |= 8;
-                self.ram[SPRITE_BUMP_DAMAGE + j] = 4;
+                let i = self.sprite_slot_view(k).head_direction() as usize;
+                let mut fireball = self.sprite_slot_view_mut(j);
+                fireball.set_x_velocity(BLIND_FIREBALL_X_VELOCITIES_BY_HEAD_DIR[i] as u8);
+                fireball.set_y_velocity(BLIND_FIREBALL_Y_VELOCITIES_BY_HEAD_DIR[i] as u8);
+                fireball.or_deflection_bits(8);
+                fireball.set_bump_damage(4);
                 j as i32
             }
             _ => -1,
@@ -1442,17 +1507,17 @@ impl ZeldaState {
     //     Blind_FireballFlurry(k, sprite_wallcoll[k]);
     // }
     pub(super) fn blind_decelerate_x(&mut self, k: usize) {
-        if self.ram[SPRITE_X_VEL + k] != 0 {
-            let delta: i8 = if (self.ram[SPRITE_X_VEL + k] as i8) < 0 {
+        if self.sprite_slot_view(k).x_velocity() != 0 {
+            let delta: i8 = if (self.sprite_slot_view(k).x_velocity() as i8) < 0 {
                 2
             } else {
                 -2
             };
-            self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_add(delta as u8);
+            self.sprite_slot_view_mut(k).add_x_velocity(delta as u8);
         }
         self.blind_animate_robes(k);
-        if self.ram[SPRITE_WALLCOLL + k] != 0 {
-            let wc = self.ram[SPRITE_WALLCOLL + k];
+        if self.sprite_slot_view(k).wall_collision() != 0 {
+            let wc = self.sprite_slot_view(k).wall_collision();
             self.blind_fireball_flurry(k, wc);
         }
     }
@@ -1465,17 +1530,17 @@ impl ZeldaState {
     //     Blind_FireballFlurry(k, sprite_wallcoll[k]);
     // }
     pub(super) fn blind_decelerate_y(&mut self, k: usize) {
-        if self.ram[SPRITE_Y_VEL + k] != 0 {
-            let delta: i8 = if (self.ram[SPRITE_Y_VEL + k] as i8) < 0 {
+        if self.sprite_slot_view(k).y_velocity() != 0 {
+            let delta: i8 = if (self.sprite_slot_view(k).y_velocity() as i8) < 0 {
                 4
             } else {
                 -4
             };
-            self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_add(delta as u8);
+            self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
         }
         self.sprite_move_y(k);
-        if self.ram[SPRITE_WALLCOLL + k] != 0 {
-            let wc = self.ram[SPRITE_WALLCOLL + k];
+        if self.sprite_slot_view(k).wall_collision() != 0 {
+            let wc = self.sprite_slot_view(k).wall_collision();
             self.blind_fireball_flurry(k, wc);
         }
     }
@@ -1494,22 +1559,24 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn blind_check_bump_damage(&mut self, k: usize) {
-        if (self.ram[SPRITE_DELAY_AUX4 + k] | self.ram[SPRITE_F + k]) == 0 {
+        let sprite = self.sprite_slot_view(k);
+        if (sprite.delay_aux4() | sprite.f()) == 0 {
             self.sprite_check_damage_to_and_from_link_for_blind(k);
         }
         let link_x = self.player_state_view().x();
-        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
+        let cur_x = self.sprite_workspace_view().current_sprite_x();
         let link_y = self.player_state_view().y();
-        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        let cur_y = self.sprite_workspace_view().current_sprite_y();
         let dx = link_x.wrapping_sub(cur_x).wrapping_add(14);
         let dy = link_y.wrapping_sub(cur_y);
-        let blink_or_disable = self.ram[COUNTDOWN_FOR_BLINK] | self.ram[LINK_DISABLE_SPRITE_DAMAGE];
+        let blink_or_disable = self.player_state_view().blink_countdown()
+            | self.player_state_view().sprite_damage_disable_timer();
         if dx < 28 && dy < 28 && blink_or_disable == 0 {
-            self.ram[LINK_AUXILIARY_STATE] = 1;
-            self.ram[LINK_GIVE_DAMAGE] = 8;
-            self.ram[LINK_INCAPACITATED_TIMER] = 16;
-            self.ram[LINK_ACTUAL_VEL_X] ^= 255;
-            self.ram[LINK_ACTUAL_VEL_Y] ^= 255;
+            self.player_state_view_mut().set_given_damage(8);
+            let mut player = self.player_state_view_mut();
+            player.set_auxiliary_state(1);
+            player.set_incapacitated_timer(16);
+            player.xor_actual_velocity_xy(255);
         }
     }
 
@@ -1527,23 +1594,21 @@ impl ZeldaState {
     //   Blind_AnimateRobes(k);
     // }
     pub(super) fn blind_animate(&mut self, k: usize) {
-        const K_BLIND_HEAD_DIR: [u8; 17] =
+        const BLIND_HEAD_DIRECTION_BASES: [u8; 17] =
             [0, 1, 2, 3, 4, 3, 2, 1, 0, 15, 14, 13, 12, 13, 14, 15, 0];
-        const K_BLIND_ANIMATE_TAB: [u8; 8] = [0, 1, 1, 2, 2, 3, 3, 4];
-        if self.ram[SPRITE_WALLCOLL + k] == 0 {
-            let lx = self.ram[LINK_X_COORD];
-            let t1_raw = K_BLIND_ANIMATE_TAB[(lx >> 5) as usize] as i32;
-            let t1 = if self.ram[SPRITE_D + k] == 3 {
-                -t1_raw
-            } else {
-                t1_raw
-            };
-            let t0 = (self.ram[SPRITE_D + k] as i32 - 2) * 8;
+        const BLIND_HEAD_FRAME_BY_DISTANCE: [u8; 8] = [0, 1, 1, 2, 2, 3, 3, 4];
+        if self.sprite_slot_view(k).wall_collision() == 0 {
+            let lx = self.player_state_view().x() as u8;
+            let t1_raw = BLIND_HEAD_FRAME_BY_DISTANCE[(lx >> 5) as usize] as i32;
+            let direction = self.sprite_slot_view(k).direction();
+            let t1 = if direction == 3 { -t1_raw } else { t1_raw };
+            let t0 = (direction as i32 - 2) * 8;
             let b = self.ram[BLIND_HEAD_ANIM_COUNTER] as i32;
             let idx = ((b >> 3) & 7) + ((b >> 2) & 1) + t0;
             // C reads kBlind_HeadDir[idx]; idx can be 0..16 (17 entries).
-            let head_dir = K_BLIND_HEAD_DIR[(idx as usize) & 0xff] as i32;
-            self.ram[SPRITE_HEAD_DIR + k] = ((head_dir + t1) & 15) as u8;
+            let head_dir = BLIND_HEAD_DIRECTION_BASES[(idx as usize) & 0xff] as i32;
+            self.sprite_slot_view_mut(k)
+                .set_head_direction(((head_dir + t1) & 15) as u8);
         }
         self.blind_animate_robes(k);
     }
@@ -1567,22 +1632,25 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn blind_spawn_laser(&mut self, k: usize) {
-        const K_BLIND_LASER_XVEL: [i8; 16] =
+        const BLIND_LASER_X_VELOCITIES_BY_HEAD_DIR: [i8; 16] =
             [-8, -8, -8, -4, 0, 4, 8, 8, 8, 8, 8, 4, 0, -4, -8, -8];
-        const K_BLIND_LASER_YVEL: [i8; 16] = [0, 0, 4, 8, 8, 8, 4, 0, 0, 0, -4, -8, -8, -8, -4, 0];
+        const BLIND_LASER_Y_VELOCITIES_BY_HEAD_DIR: [i8; 16] =
+            [0, 0, 4, 8, 8, 8, 4, 0, 0, 0, -4, -8, -8, -8, -4, 0];
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
-            self.ram[SOUND_EFFECT_2] = self.sprite_calculate_sfx_pan(k) | 0x26;
+            let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
+            self.system_signals_view_mut().set_sound_effect_2(sfx);
             self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
-            self.ram[SPRITE_X_LO + j] = r0_x.wrapping_add(4) as u8;
-            let i = self.ram[SPRITE_HEAD_DIR + k];
-            self.ram[SPRITE_HEAD_DIR + j] = i;
+            let i = self.sprite_slot_view(k).head_direction();
             let i_idx = i as usize;
-            self.ram[SPRITE_X_VEL + j] = K_BLIND_LASER_XVEL[i_idx] as u8;
-            self.ram[SPRITE_Y_VEL + j] = K_BLIND_LASER_YVEL[i_idx] as u8;
-            self.ram[SPRITE_A + j] = 128;
-            self.ram[SPRITE_IGNORE_PROJECTILE + j] = 128;
-            self.ram[SPRITE_FLAGS2 + j] = 0x40;
-            self.ram[SPRITE_FLAGS4 + j] = 0x14;
+            let mut laser = self.sprite_slot_view_mut(j);
+            laser.set_x_low(r0_x.wrapping_add(4) as u8);
+            laser.set_head_direction(i);
+            laser.set_x_velocity(BLIND_LASER_X_VELOCITIES_BY_HEAD_DIR[i_idx] as u8);
+            laser.set_y_velocity(BLIND_LASER_Y_VELOCITIES_BY_HEAD_DIR[i_idx] as u8);
+            laser.set_a(128);
+            laser.set_ignore_projectile(128);
+            laser.set_flags2(0x40);
+            laser.set_flags4(0x14);
         }
     }
 
@@ -1592,38 +1660,40 @@ impl ZeldaState {
     //   // suppression / certain sprite_C states apply.
     // }
     pub(super) fn blind_draw(&mut self, k: usize) {
-        if self.ram[SPRITE_GRAPHICS + k] >= 15 {
-            const K_OFFS: [u8; 8] = [0, 1, 5, 13, 23, 30, 35, 37];
-            let j = (self.ram[SPRITE_GRAPHICS + k] - 15) as usize;
-            let start = K_OFFS[j] as usize;
-            let count = (K_OFFS[j + 1] - K_OFFS[j]) as usize;
-            self.sprite_draw_multiple_for_blind(k, &K_BLIND_POOF_DMD[start..start + count]);
+        if self.sprite_slot_view(k).graphics() >= 15 {
+            const BLIND_POOF_DRAW_FRAME_STARTS: [u8; 8] = [0, 1, 5, 13, 23, 30, 35, 37];
+            let j = (self.sprite_slot_view(k).graphics() - 15) as usize;
+            let start = BLIND_POOF_DRAW_FRAME_STARTS[j] as usize;
+            let count =
+                (BLIND_POOF_DRAW_FRAME_STARTS[j + 1] - BLIND_POOF_DRAW_FRAME_STARTS[j]) as usize;
+            self.sprite_draw_multiple_for_blind(k, &BLIND_POOF_DRAW_FRAMES[start..start + count]);
             return;
         }
-        let gfx = self.ram[SPRITE_GRAPHICS + k] as usize;
-        self.sprite_draw_multiple_for_blind(k, &K_BLIND_DMD[gfx * 7..gfx * 7 + 7]);
+        let gfx = self.sprite_slot_view(k).graphics() as usize;
+        self.sprite_draw_multiple_for_blind(k, &BLIND_DRAW_FRAMES[gfx * 7..gfx * 7 + 7]);
 
-        if self.ram[SPRITE_WALLCOLL + k] == 0 {
-            if self.ram[SPRITE_C + k] == 6 {
+        if self.sprite_slot_view(k).wall_collision() == 0 {
+            if self.sprite_slot_view(k).c() == 6 {
                 // oam[6].y = 0xf0;
                 self.blind_draw_patch_oam_y_for_blind(k, 6, 0xf0);
                 return;
             }
-            if self.ram[SPRITE_C + k] == 4 {
+            if self.sprite_slot_view(k).c() == 4 {
                 return;
             }
         }
-        if self.ram[SPRITE_GRAPHICS + k] >= 10 {
+        if self.sprite_slot_view(k).graphics() >= 10 {
             return;
         }
-        const K_BLIND_OAM_IDX: [u8; 10] = [4, 4, 4, 5, 5, 0, 0, 0, 0, 0];
-        let oam_off = K_BLIND_OAM_IDX[self.ram[SPRITE_GRAPHICS + k] as usize];
-        let j = self.ram[SPRITE_HEAD_DIR + k] as usize;
+        const BLIND_HEAD_OAM_OFFSETS_BY_GRAPHICS: [u8; 10] = [4, 4, 4, 5, 5, 0, 0, 0, 0, 0];
+        let oam_off =
+            BLIND_HEAD_OAM_OFFSETS_BY_GRAPHICS[self.sprite_slot_view(k).graphics() as usize];
+        let j = self.sprite_slot_view(k).head_direction() as usize;
         self.blind_draw_patch_oam_head_for_blind(
             k,
             oam_off,
-            K_BLIND_HEAD_DRAW_CHAR[j & 15],
-            K_BLIND_HEAD_DRAW_FLAGS[j & 15],
+            BLIND_HEAD_DRAW_CHARS[j & 15],
+            BLIND_HEAD_DRAW_FLAGS[j & 15],
         );
     }
 
@@ -1639,10 +1709,10 @@ impl ZeldaState {
     }
 
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
-        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
-        let j = (self.ram[SPRITE_HEAD_DIR + k] & 15) as usize;
-        self.ram[oam + 2] = K_BLIND_HEAD_DRAW_CHAR[j];
-        self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | K_BLIND_HEAD_DRAW_FLAGS[j];
+        let oam = self.oam_state_view().current_pointer_usize();
+        let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
+        self.ram[oam + 2] = BLIND_HEAD_DRAW_CHARS[j];
+        self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | BLIND_HEAD_DRAW_FLAGS[j];
     }
 
     fn sprite_return_if_inactive_for_blind(&mut self, k: usize) -> bool {
@@ -1707,7 +1777,7 @@ impl ZeldaState {
     }
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {
-        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + oam_idx * 4;
+        let oam = self.oam_state_view().current_pointer_usize() + oam_idx * 4;
         self.ram[oam + 1] = y;
     }
 
@@ -1718,7 +1788,7 @@ impl ZeldaState {
         charnum: u8,
         flags: u8,
     ) {
-        let oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize + oam_idx as usize * 4;
+        let oam = self.oam_state_view().current_pointer_usize() + oam_idx as usize * 4;
         self.ram[oam + 2] = charnum;
         self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | flags;
     }
@@ -1735,31 +1805,32 @@ mod tests {
     #[test]
     fn prep_blind_sets_battle_fields_when_unlocked() {
         let mut s = fresh_state();
-        s.ram[FOLLOWER_INDICATOR] = 0;
-        write_le_u16(&mut s.ram, DUNG_SAVEGAME_STATE_BITS, 0x2000);
+        s.follower_state_view_mut().set_indicator(0);
+        s.dungeon_state_view_mut().set_savegame_state_bits(0x2000);
         // Mark our slot active and clear other slots.
         s.sprite_prep_blind_prepare_battle(3);
-        assert_eq!(s.ram[SPRITE_DELAY_AUX2 + 3], 96);
-        assert_eq!(s.ram[SPRITE_C + 3], 1);
-        assert_eq!(s.ram[SPRITE_D + 3], 2);
-        assert_eq!(s.ram[SPRITE_HEAD_DIR + 3], 4);
-        assert_eq!(s.ram[SPRITE_GRAPHICS + 3], 7);
+        let sprite = s.sprite_slot_view(3);
+        assert_eq!(sprite.delay_aux2(), 96);
+        assert_eq!(sprite.c(), 1);
+        assert_eq!(sprite.direction(), 2);
+        assert_eq!(sprite.head_direction(), 4);
+        assert_eq!(sprite.graphics(), 7);
         assert_eq!(s.ram[BLIND_HEAD_ANIM_COUNTER], 0);
     }
 
     #[test]
     fn prep_blind_kills_sprite_when_locked() {
         let mut s = fresh_state();
-        s.ram[FOLLOWER_INDICATOR] = 6; // wrong indicator -> branch to else
-        s.ram[SPRITE_STATE + 5] = 9;
+        s.follower_state_view_mut().set_indicator(6); // wrong indicator -> branch to else
+        s.sprite_slot_view_mut(5).set_state(9);
         s.sprite_prep_blind_prepare_battle(5);
-        assert_eq!(s.ram[SPRITE_STATE + 5], 0);
+        assert_eq!(s.sprite_slot_view(5).state(), 0);
     }
 
     #[test]
     fn blind_spit_fireball_returns_minus_one_when_subtype2_masks() {
         let mut s = fresh_state();
-        s.ram[SPRITE_SUBTYPE2 + 2] = 0xff;
+        s.sprite_slot_view_mut(2).set_subtype2(0xff);
         let r = s.blind_spit_fireball(2, 0x1f);
         assert_eq!(r, -1);
     }
@@ -1768,50 +1839,60 @@ mod tests {
     fn blind_spit_fireball_writes_velocity_table() {
         let mut s = fresh_state();
         // Zero all sprite states so allocation can succeed (slot 13 picked).
-        s.ram[SPRITE_SUBTYPE2 + 0] = 0;
-        s.ram[SPRITE_HEAD_DIR + 0] = 8; // xvel=32, yvel=0
+        {
+            let mut sprite = s.sprite_slot_view_mut(0);
+            sprite.set_subtype2(0);
+            sprite.set_head_direction(8); // xvel=32, yvel=0
+        }
         let r = s.blind_spit_fireball(0, 0xf);
         assert!(r >= 0, "expected fireball spawn slot, got {r}");
         let j = r as usize;
-        assert_eq!(s.ram[SPRITE_X_VEL + j], 32);
-        assert_eq!(s.ram[SPRITE_Y_VEL + j], 0);
-        assert_eq!(s.ram[SPRITE_DEFL_BITS + j] & 8, 8);
-        assert_eq!(s.ram[SPRITE_BUMP_DAMAGE + j], 4);
+        let fireball = s.sprite_slot_view(j);
+        assert_eq!(fireball.x_velocity(), 32);
+        assert_eq!(fireball.y_velocity(), 0);
+        assert_eq!(fireball.deflection_bits() & 8, 8);
+        assert_eq!(fireball.bump_damage(), 4);
     }
 
     #[test]
     fn blind_decelerate_x_brings_velocity_toward_zero() {
         let mut s = fresh_state();
         // Negative velocity -> add +2.
-        s.ram[SPRITE_X_VEL + 4] = (-5i8) as u8;
-        s.ram[SPRITE_WALLCOLL + 4] = 0; // suppress flurry branch
+        {
+            let mut sprite = s.sprite_slot_view_mut(4);
+            sprite.set_x_velocity((-5i8) as u8);
+            sprite.set_wall_collision(0); // suppress flurry branch
+        }
         s.blind_decelerate_x(4);
-        assert_eq!(s.ram[SPRITE_X_VEL + 4] as i8, -3);
+        assert_eq!(s.sprite_slot_view(4).x_velocity() as i8, -3);
 
         // Positive velocity -> subtract 2.
-        s.ram[SPRITE_X_VEL + 4] = 7;
+        s.sprite_slot_view_mut(4).set_x_velocity(7);
         s.blind_decelerate_x(4);
-        assert_eq!(s.ram[SPRITE_X_VEL + 4], 5);
+        assert_eq!(s.sprite_slot_view(4).x_velocity(), 5);
 
         // Zero velocity stays zero.
-        s.ram[SPRITE_X_VEL + 4] = 0;
+        s.sprite_slot_view_mut(4).set_x_velocity(0);
         s.blind_decelerate_x(4);
-        assert_eq!(s.ram[SPRITE_X_VEL + 4], 0);
+        assert_eq!(s.sprite_slot_view(4).x_velocity(), 0);
     }
 
     #[test]
     fn blind_animate_picks_head_dir_from_table() {
         let mut s = fresh_state();
-        s.ram[SPRITE_WALLCOLL + 1] = 0;
-        s.ram[SPRITE_D + 1] = 2; // t0 = 0, no negation
-        s.ram[LINK_X_COORD] = 0; // tab idx 0 -> t1 = 0
+        {
+            let mut sprite = s.sprite_slot_view_mut(1);
+            sprite.set_wall_collision(0);
+            sprite.set_direction(2); // t0 = 0, no negation
+        }
+        s.player_state_view_mut().set_x(0); // tab idx 0 -> t1 = 0
         s.ram[BLIND_HEAD_ANIM_COUNTER] = 0; // idx 0 -> table[0] = 0
         s.blind_animate(1);
-        assert_eq!(s.ram[SPRITE_HEAD_DIR + 1], 0);
+        assert_eq!(s.sprite_slot_view(1).head_direction(), 0);
 
         // BLIND_HEAD_ANIM_COUNTER=8 -> (8>>3 & 7)=1, (8>>2 & 1)=0, idx=1 -> table[1] = 1
         s.ram[BLIND_HEAD_ANIM_COUNTER] = 8;
         s.blind_animate(1);
-        assert_eq!(s.ram[SPRITE_HEAD_DIR + 1], 1);
+        assert_eq!(s.sprite_slot_view(1).head_direction(), 1);
     }
 }

@@ -686,7 +686,7 @@ def run_sweep(args):
         print_sweep_row(check, args.verbose)
         if not check["ok"]:
             failed = True
-            clusters[classify_diff(check)].append(frame)
+            clusters[classify_diff(check)].append(check["frame"])
 
     if clusters:
         print("sweep-clusters:", flush=True)
@@ -737,7 +737,7 @@ def run_regression(args):
         print_sweep_row(check, args.verbose)
         if not check["ok"]:
             failed = True
-            clusters[classify_diff(check)].append(frame)
+            clusters[classify_diff(check)].append(check["frame"])
     if clusters:
         print("regression-clusters:", flush=True)
         for key in sorted(clusters):

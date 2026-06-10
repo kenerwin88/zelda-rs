@@ -10,23 +10,25 @@ use std::time::Instant;
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, load_rom as snes_load_rom, ppu::PpuRenderFlags, Snes};
 
 use crate::config::{
-    config_value_path, parse_config_file_context, ConfigContext, K_GAMEPAD_BTN_A, K_GAMEPAD_BTN_B,
-    K_GAMEPAD_BTN_BACK, K_GAMEPAD_BTN_COUNT, K_GAMEPAD_BTN_DPAD_DOWN, K_GAMEPAD_BTN_DPAD_LEFT,
-    K_GAMEPAD_BTN_DPAD_RIGHT, K_GAMEPAD_BTN_DPAD_UP, K_GAMEPAD_BTN_GUIDE, K_GAMEPAD_BTN_L1,
-    K_GAMEPAD_BTN_L2, K_GAMEPAD_BTN_L3, K_GAMEPAD_BTN_R1, K_GAMEPAD_BTN_R2, K_GAMEPAD_BTN_R3,
-    K_GAMEPAD_BTN_START, K_GAMEPAD_BTN_X, K_GAMEPAD_BTN_Y, K_KEYS_CLEAR_KEY_LOG,
-    K_KEYS_CONTROLS_LAST, K_KEYS_DISPLAY_PERF, K_KEYS_FULLSCREEN, K_KEYS_LOAD_LAST,
-    K_KEYS_LOAD_REF_LAST, K_KEYS_PAUSE, K_KEYS_PAUSE_DIMMED, K_KEYS_REPLAY_LAST,
-    K_KEYS_REPLAY_REF_LAST, K_KEYS_REPLAY_TURBO, K_KEYS_RESET, K_KEYS_SAVE_LAST,
-    K_KEYS_STOP_REPLAY, K_KEYS_TOGGLE_RENDERER, K_KEYS_TURBO, K_KEYS_VOLUME_DOWN, K_KEYS_VOLUME_UP,
-    K_KEYS_WINDOW_BIGGER, K_KEYS_WINDOW_SMALLER,
+    config_value_path, parse_config_file_context, ConfigContext, GAMEPAD_BUTTON_A,
+    GAMEPAD_BUTTON_B, GAMEPAD_BUTTON_BACK, GAMEPAD_BUTTON_COUNT, GAMEPAD_BUTTON_DPAD_DOWN,
+    GAMEPAD_BUTTON_DPAD_LEFT, GAMEPAD_BUTTON_DPAD_RIGHT, GAMEPAD_BUTTON_DPAD_UP,
+    GAMEPAD_BUTTON_GUIDE, GAMEPAD_BUTTON_L1, GAMEPAD_BUTTON_L2, GAMEPAD_BUTTON_L3,
+    GAMEPAD_BUTTON_R1, GAMEPAD_BUTTON_R2, GAMEPAD_BUTTON_R3, GAMEPAD_BUTTON_START,
+    GAMEPAD_BUTTON_X, GAMEPAD_BUTTON_Y, KEY_COMMAND_CLEAR_KEY_LOG, KEY_COMMAND_CONTROLS_LAST,
+    KEY_COMMAND_DISPLAY_PERF, KEY_COMMAND_FULLSCREEN, KEY_COMMAND_LOAD_LAST,
+    KEY_COMMAND_LOAD_REF_LAST, KEY_COMMAND_PAUSE, KEY_COMMAND_PAUSE_DIMMED,
+    KEY_COMMAND_REPLAY_LAST, KEY_COMMAND_REPLAY_REF_LAST, KEY_COMMAND_REPLAY_TURBO,
+    KEY_COMMAND_RESET, KEY_COMMAND_SAVE_LAST, KEY_COMMAND_STOP_REPLAY, KEY_COMMAND_TOGGLE_RENDERER,
+    KEY_COMMAND_TURBO, KEY_COMMAND_VOLUME_DOWN, KEY_COMMAND_VOLUME_UP, KEY_COMMAND_WINDOW_BIGGER,
+    KEY_COMMAND_WINDOW_SMALLER,
 };
 use crate::types::MemBlk;
 use crate::util::{find_index_in_memblk, ApplyBps};
 use crate::zelda_cpu_infra::{patch_rom_owned, LockstepOracle, OracleError};
 use crate::zelda_rtl::ZeldaState;
 
-const K_MAX_WINDOW_SCALE: i32 = 10;
+const MAX_WINDOW_SCALE: i32 = 10;
 const SDL_MIX_MAXVOLUME: i32 = 128;
 const SDL_CONTROLLER_BUTTON_A: i32 = 0;
 const SDL_CONTROLLER_BUTTON_B: i32 = 1;
@@ -47,9 +49,9 @@ const SDL_CONTROLLER_AXIS_LEFTX: i32 = 0;
 const SDL_CONTROLLER_AXIS_LEFTY: i32 = 1;
 const SDL_CONTROLLER_AXIS_TRIGGERLEFT: i32 = 4;
 const SDL_CONTROLLER_AXIS_TRIGGERRIGHT: i32 = 5;
-const K_DEFAULT_FREQ: i32 = 44100;
-const K_DEFAULT_CHANNELS: i32 = 2;
-const K_FEATURES0_DIM_FLASHES: u32 = 65536;
+const DEFAULT_AUDIO_FREQUENCY: i32 = 44100;
+const DEFAULT_AUDIO_CHANNELS: i32 = 2;
+const FEATURE_DIM_FLASHES: u32 = 65536;
 
 pub enum SDL_Window {}
 
@@ -92,7 +94,7 @@ struct MainState {
     snes_height: i32,
     sdl_audio_mixer_volume: i32,
     gamepad_modifiers: u32,
-    gamepad_last_cmd: [u16; K_GAMEPAD_BTN_COUNT],
+    gamepad_last_cmd: [u16; GAMEPAD_BUTTON_COUNT],
     video_buffer: Vec<u8>,
     audio_buffer: Vec<u8>,
     audio_buffer_cur: usize,
@@ -126,7 +128,7 @@ impl Default for MainState {
             snes_height: 224,
             sdl_audio_mixer_volume: SDL_MIX_MAXVOLUME,
             gamepad_modifiers: 0,
-            gamepad_last_cmd: [0; K_GAMEPAD_BTN_COUNT],
+            gamepad_last_cmd: [0; GAMEPAD_BUTTON_COUNT],
             video_buffer: Vec::new(),
             audio_buffer: Vec::new(),
             audio_buffer_cur: 0,
@@ -155,7 +157,7 @@ pub fn die(error: *const i8) -> ! {
 
 pub fn change_window_scale(scale_step: i32) {
     let mut s = state().lock().unwrap();
-    let new_scale = (s.current_window_scale + scale_step).clamp(1, K_MAX_WINDOW_SCALE);
+    let new_scale = (s.current_window_scale + scale_step).clamp(1, MAX_WINDOW_SCALE);
     s.current_window_scale = new_scale;
     s.snes_width = s.snes_width.max(1);
     s.snes_height = s.snes_height.max(1);
@@ -356,15 +358,15 @@ pub fn configure_runtime_from_config(game: &mut ZeldaState) {
     s.current_window_scale = if cfg.window_scale == 0 {
         2
     } else {
-        (cfg.window_scale as i32).min(K_MAX_WINDOW_SCALE)
+        (cfg.window_scale as i32).min(MAX_WINDOW_SCALE)
     };
     let mut audio_freq = cfg.audio_freq as i32;
     if !(11025..=48000).contains(&audio_freq) {
-        audio_freq = K_DEFAULT_FREQ;
+        audio_freq = DEFAULT_AUDIO_FREQUENCY;
     }
     let mut audio_channels = cfg.audio_channels as i32;
     if !(1..=2).contains(&audio_channels) {
-        audio_channels = K_DEFAULT_CHANNELS;
+        audio_channels = DEFAULT_AUDIO_CHANNELS;
     }
     s.audio_channels = audio_channels as u8;
     s.frames_per_block = (534 * audio_freq) / 32000;
@@ -387,7 +389,7 @@ pub fn configure_runtime_from_config(game: &mut ZeldaState) {
 
 fn apply_feature_asset_patches() {
     let mut s = state().lock().unwrap();
-    if s.config_context.config.features0 & K_FEATURES0_DIM_FLASHES == 0 {
+    if s.config_context.config.features0 & FEATURE_DIM_FLASHES == 0 {
         return;
     }
     if let Some(asset) = s.assets.get_mut(79) {
@@ -507,7 +509,7 @@ fn render_number(dst: *mut u8, pitch: usize, n: i32, big: bool) {
 
 fn handle_command(j: u32, pressed: bool) {
     let mut s = state().lock().unwrap();
-    if j <= K_KEYS_CONTROLS_LAST as u32 {
+    if j <= KEY_COMMAND_CONTROLS_LAST as u32 {
         const KBD_REMAP: [u8; 13] = [0, 4, 5, 6, 7, 2, 3, 8, 0, 9, 1, 10, 11];
         let bit = 1 << KBD_REMAP[j as usize];
         if pressed {
@@ -517,7 +519,7 @@ fn handle_command(j: u32, pressed: bool) {
         }
         return;
     }
-    if j == K_KEYS_TURBO as u32 {
+    if j == KEY_COMMAND_TURBO as u32 {
         s.turbo = pressed;
         return;
     }
@@ -530,38 +532,38 @@ fn handle_command_locked(j: u32, pressed: bool) {
         return;
     }
     let mut s = state().lock().unwrap();
-    if j <= K_KEYS_LOAD_LAST as u32 {
+    if j <= KEY_COMMAND_LOAD_LAST as u32 {
         return;
-    } else if j <= K_KEYS_SAVE_LAST as u32 {
+    } else if j <= KEY_COMMAND_SAVE_LAST as u32 {
         return;
-    } else if j <= K_KEYS_REPLAY_LAST as u32 {
+    } else if j <= KEY_COMMAND_REPLAY_LAST as u32 {
         return;
-    } else if j <= K_KEYS_LOAD_REF_LAST as u32 {
+    } else if j <= KEY_COMMAND_LOAD_REF_LAST as u32 {
         return;
-    } else if j <= K_KEYS_REPLAY_REF_LAST as u32 {
+    } else if j <= KEY_COMMAND_REPLAY_REF_LAST as u32 {
         return;
     }
     match j as u16 {
-        K_KEYS_CLEAR_KEY_LOG | K_KEYS_STOP_REPLAY => {}
-        K_KEYS_FULLSCREEN => s.cursor = !s.cursor,
-        K_KEYS_RESET => {}
-        K_KEYS_PAUSE | K_KEYS_PAUSE_DIMMED => s.paused = !s.paused,
-        K_KEYS_REPLAY_TURBO => s.replay_turbo = !s.replay_turbo,
-        K_KEYS_WINDOW_BIGGER => {
+        KEY_COMMAND_CLEAR_KEY_LOG | KEY_COMMAND_STOP_REPLAY => {}
+        KEY_COMMAND_FULLSCREEN => s.cursor = !s.cursor,
+        KEY_COMMAND_RESET => {}
+        KEY_COMMAND_PAUSE | KEY_COMMAND_PAUSE_DIMMED => s.paused = !s.paused,
+        KEY_COMMAND_REPLAY_TURBO => s.replay_turbo = !s.replay_turbo,
+        KEY_COMMAND_WINDOW_BIGGER => {
             drop(s);
             change_window_scale(1);
         }
-        K_KEYS_WINDOW_SMALLER => {
+        KEY_COMMAND_WINDOW_SMALLER => {
             drop(s);
             change_window_scale(-1);
         }
-        K_KEYS_DISPLAY_PERF => s.display_perf = !s.display_perf,
-        K_KEYS_TOGGLE_RENDERER => s.ppu_render_flags ^= 1,
-        K_KEYS_VOLUME_UP => {
+        KEY_COMMAND_DISPLAY_PERF => s.display_perf = !s.display_perf,
+        KEY_COMMAND_TOGGLE_RENDERER => s.ppu_render_flags ^= 1,
+        KEY_COMMAND_VOLUME_UP => {
             drop(s);
             handle_volume_adjustment(1);
         }
-        K_KEYS_VOLUME_DOWN => {
+        KEY_COMMAND_VOLUME_DOWN => {
             drop(s);
             handle_volume_adjustment(-1);
         }
@@ -582,27 +584,27 @@ fn handle_input(key_code: i32, key_mod: i32, pressed: bool) {
 
 fn remap_sdl_button(button: i32) -> i32 {
     match button {
-        SDL_CONTROLLER_BUTTON_A => K_GAMEPAD_BTN_A as i32,
-        SDL_CONTROLLER_BUTTON_B => K_GAMEPAD_BTN_B as i32,
-        SDL_CONTROLLER_BUTTON_X => K_GAMEPAD_BTN_X as i32,
-        SDL_CONTROLLER_BUTTON_Y => K_GAMEPAD_BTN_Y as i32,
-        SDL_CONTROLLER_BUTTON_BACK => K_GAMEPAD_BTN_BACK as i32,
-        SDL_CONTROLLER_BUTTON_GUIDE => K_GAMEPAD_BTN_GUIDE as i32,
-        SDL_CONTROLLER_BUTTON_START => K_GAMEPAD_BTN_START as i32,
-        SDL_CONTROLLER_BUTTON_LEFTSTICK => K_GAMEPAD_BTN_L3 as i32,
-        SDL_CONTROLLER_BUTTON_RIGHTSTICK => K_GAMEPAD_BTN_R3 as i32,
-        SDL_CONTROLLER_BUTTON_LEFTSHOULDER => K_GAMEPAD_BTN_L1 as i32,
-        SDL_CONTROLLER_BUTTON_RIGHTSHOULDER => K_GAMEPAD_BTN_R1 as i32,
-        SDL_CONTROLLER_BUTTON_DPAD_UP => K_GAMEPAD_BTN_DPAD_UP as i32,
-        SDL_CONTROLLER_BUTTON_DPAD_DOWN => K_GAMEPAD_BTN_DPAD_DOWN as i32,
-        SDL_CONTROLLER_BUTTON_DPAD_LEFT => K_GAMEPAD_BTN_DPAD_LEFT as i32,
-        SDL_CONTROLLER_BUTTON_DPAD_RIGHT => K_GAMEPAD_BTN_DPAD_RIGHT as i32,
+        SDL_CONTROLLER_BUTTON_A => GAMEPAD_BUTTON_A as i32,
+        SDL_CONTROLLER_BUTTON_B => GAMEPAD_BUTTON_B as i32,
+        SDL_CONTROLLER_BUTTON_X => GAMEPAD_BUTTON_X as i32,
+        SDL_CONTROLLER_BUTTON_Y => GAMEPAD_BUTTON_Y as i32,
+        SDL_CONTROLLER_BUTTON_BACK => GAMEPAD_BUTTON_BACK as i32,
+        SDL_CONTROLLER_BUTTON_GUIDE => GAMEPAD_BUTTON_GUIDE as i32,
+        SDL_CONTROLLER_BUTTON_START => GAMEPAD_BUTTON_START as i32,
+        SDL_CONTROLLER_BUTTON_LEFTSTICK => GAMEPAD_BUTTON_L3 as i32,
+        SDL_CONTROLLER_BUTTON_RIGHTSTICK => GAMEPAD_BUTTON_R3 as i32,
+        SDL_CONTROLLER_BUTTON_LEFTSHOULDER => GAMEPAD_BUTTON_L1 as i32,
+        SDL_CONTROLLER_BUTTON_RIGHTSHOULDER => GAMEPAD_BUTTON_R1 as i32,
+        SDL_CONTROLLER_BUTTON_DPAD_UP => GAMEPAD_BUTTON_DPAD_UP as i32,
+        SDL_CONTROLLER_BUTTON_DPAD_DOWN => GAMEPAD_BUTTON_DPAD_DOWN as i32,
+        SDL_CONTROLLER_BUTTON_DPAD_LEFT => GAMEPAD_BUTTON_DPAD_LEFT as i32,
+        SDL_CONTROLLER_BUTTON_DPAD_RIGHT => GAMEPAD_BUTTON_DPAD_RIGHT as i32,
         _ => -1,
     }
 }
 
 fn handle_gamepad_input(button: i32, pressed: bool) {
-    if button < 0 || button as usize >= K_GAMEPAD_BTN_COUNT {
+    if button < 0 || button as usize >= GAMEPAD_BUTTON_COUNT {
         return;
     }
     let mut s = state().lock().unwrap();
@@ -685,9 +687,9 @@ fn handle_gamepad_axis_input(gamepad_id: i32, axis: i32, value: i32) {
         if value < 12000 || value >= 16000 {
             handle_gamepad_input(
                 if axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT {
-                    K_GAMEPAD_BTN_L2 as i32
+                    GAMEPAD_BUTTON_L2 as i32
                 } else {
-                    K_GAMEPAD_BTN_R2 as i32
+                    GAMEPAD_BUTTON_R2 as i32
                 },
                 value >= 12000,
             );

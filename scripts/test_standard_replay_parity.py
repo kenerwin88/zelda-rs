@@ -35,6 +35,20 @@ MENU_CHECKPOINT_FRAME = 700_000
 MENU_DISPLAY_FRAME = MENU_CHECKPOINT_FRAME + 90
 NAME_ENTRY_CHECKPOINT_FRAME = 12_000
 NAME_ENTRY_RELEASE_FRAME = NAME_ENTRY_CHECKPOINT_FRAME + 180
+STANDARD_REGRESSION_FRAMES = (
+    1_000,
+    12_000,
+    42_998,
+    80_000,
+    112_078,
+    180_000,
+    202_254,
+    202_255,
+    350_000,
+    700_000,
+    1_073_092,
+)
+STANDARD_LATE_REGRESSION_CHECKPOINT_FRAME = 700_000
 RENDER_HASH_CHUNK_FRAMES = (356_445, 700_000)
 STANDALONE_EMBEDDED_FRAME = 500
 STANDALONE_EMBEDDED_RAM_HASH = "3290e6db08347541"
@@ -115,6 +129,13 @@ def run_capture(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
     return result
+
+
+def replay_checkpoint_pair(args: argparse.Namespace, frame: int) -> tuple[pathlib.Path, pathlib.Path]:
+    return (
+        args.checkpoint_dir / f"c-frame-{frame}.sav",
+        args.checkpoint_dir / f"rust-frame-{frame}.sav",
+    )
 
 
 def run_pair(
@@ -1005,6 +1026,80 @@ def bind_render_hash_checkpoints(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_standard_regression_gate(
+    args: argparse.Namespace,
+    *,
+    c_root: pathlib.Path,
+    rom: pathlib.Path,
+    save: pathlib.Path,
+    rust_bin: pathlib.Path,
+    env: dict[str, str],
+) -> int:
+    early_frames = [
+        frame
+        for frame in STANDARD_REGRESSION_FRAMES
+        if frame <= args.late_regression_checkpoint_frame
+    ]
+    late_frames = [
+        frame
+        for frame in STANDARD_REGRESSION_FRAMES
+        if frame > args.late_regression_checkpoint_frame
+    ]
+    if not early_frames:
+        print("standard replay parity needs at least one early regression frame", file=sys.stderr)
+        return 2
+    if not late_frames:
+        print("standard replay parity needs at least one late regression frame", file=sys.stderr)
+        return 2
+
+    regression_base = [
+        sys.executable,
+        "scripts/replay_bisect.py",
+        "--regression",
+        "--fields",
+        STANDARD_FIELDS,
+        "--sweep-fail-on-diff",
+        "--verbose",
+        "--isolate-runtime-cwd",
+        "--c-root",
+        str(c_root),
+        "--rom",
+        str(rom),
+        "--save",
+        str(save),
+        "--rust-bin",
+        str(rust_bin),
+    ]
+    early_regression = [
+        *regression_base,
+        "--regression-frames",
+        ",".join(str(frame) for frame in early_frames),
+        "--regression-workers",
+        str(args.regression_workers),
+    ]
+    rc = run(early_regression, env=env)
+    if rc != 0:
+        return rc
+
+    c_checkpoint, rust_checkpoint = replay_checkpoint_pair(
+        args, args.late_regression_checkpoint_frame
+    )
+    late_regression = [
+        *regression_base,
+        "--regression-frames",
+        ",".join(str(frame) for frame in late_frames),
+        "--regression-workers",
+        str(min(args.regression_workers, len(late_frames))),
+        "--checkpoint-frame",
+        str(args.late_regression_checkpoint_frame),
+        "--c-checkpoint",
+        str(c_checkpoint),
+        "--rust-checkpoint",
+        str(rust_checkpoint),
+    ]
+    return run(late_regression, env=env)
+
+
 def run_render_hash_all(args: argparse.Namespace, *, env: dict[str, str]) -> int:
     c_proc, rust_proc = start_render_hash_processes(args, env=env)
     compared = 0
@@ -1145,6 +1240,15 @@ def main() -> int:
         default=3,
         help="parallel workers for standard regression frame checks",
     )
+    parser.add_argument(
+        "--late-regression-checkpoint-frame",
+        type=int,
+        default=STANDARD_LATE_REGRESSION_CHECKPOINT_FRAME,
+        help=(
+            "checkpoint frame used to resume late standard regression frames; "
+            "cached C/R checkpoints are created under --checkpoint-dir when missing"
+        ),
+    )
     args = parser.parse_args()
     if args.render_hash_stride <= 0:
         parser.error("--render-hash-stride must be positive")
@@ -1154,6 +1258,8 @@ def main() -> int:
         parser.error("--render-hash-start-frame must be <= --render-hash-end-frame")
     if args.regression_workers <= 0:
         parser.error("--regression-workers must be positive")
+    if args.late_regression_checkpoint_frame <= 0:
+        parser.error("--late-regression-checkpoint-frame must be positive")
     if args.render_hash_chunked and args.render_hash_start_frame is not None:
         parser.error("--render-hash-chunked cannot be combined with --render-hash-start-frame")
     if args.render_hash_only:
@@ -1208,27 +1314,14 @@ def main() -> int:
     if rc != 0:
         return rc
 
-    regression = [
-        sys.executable,
-        "scripts/replay_bisect.py",
-        "--regression",
-        "--fields",
-        STANDARD_FIELDS,
-        "--sweep-fail-on-diff",
-        "--verbose",
-        "--isolate-runtime-cwd",
-        "--regression-workers",
-        str(args.regression_workers),
-        "--c-root",
-        str(c_root),
-        "--rom",
-        str(rom),
-        "--save",
-        str(save),
-        "--rust-bin",
-        str(rust_bin),
-    ]
-    rc = run(regression, env=env)
+    rc = run_standard_regression_gate(
+        args,
+        c_root=c_root,
+        rom=rom,
+        save=save,
+        rust_bin=rust_bin,
+        env=env,
+    )
     if rc != 0:
         return rc
 

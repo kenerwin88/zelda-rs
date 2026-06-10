@@ -14,19 +14,15 @@ use super::*;
 use crate::types::{Point16U, SpriteHitBox};
 use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet, SpriteSpawnInfo};
 
-// Local constants needed by these handlers. Not yet referenced elsewhere in
-// the crate, so they live here rather than in zelda_rtl.rs.
-const SPRITE_Y_RECOIL: usize = 0x0f30;
-
 // kSpriteDistress_X / kSpriteDistress_Y from sprite.c:435/436 — used by
 // Sprite_DrawDistress_custom, which Cucco_DrawPANIC calls.
-const K_SPRITE_DISTRESS_X: [i8; 4] = [-3, 2, 7, 11];
-const K_SPRITE_DISTRESS_Y: [i8; 4] = [-5, -7, -7, -5];
-const K_SPAWN_BEE_INIT_DELAY: [u8; 4] = [64, 64, 255, 255];
-const K_SPAWN_BEE_INIT_VEL: [i8; 8] = [15, 5, -5, -15, 20, 10, -10, -20];
-const K_CHECK_DAMAGE_FROM_PLAYER_NE: u8 = 2;
+const SPRITE_DISTRESS_X_OFFSETS: [i8; 4] = [-3, 2, 7, 11];
+const SPRITE_DISTRESS_Y_OFFSETS: [i8; 4] = [-5, -7, -7, -5];
+const BEE_SPAWN_INITIAL_DELAYS: [u8; 4] = [64, 64, 255, 255];
+const BEE_SPAWN_INITIAL_VELOCITIES: [i8; 8] = [15, 5, -5, -15, 20, 10, -10, -20];
+const DAMAGE_FROM_PLAYER_NONZERO_MASK: u8 = 2;
 const SRAM_PROGRESS_INDICATOR_3_NPCS: usize = 0x0f3c9;
-const K_BOTTLE_VENDOR_DMD: [DrawMultipleData; 4] = [
+const BOTTLE_VENDOR_DRAW_FRAMES: [DrawMultipleData; 4] = [
     DrawMultipleData {
         x: 0,
         y: -7,
@@ -70,7 +66,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_79_bee(&mut self, k: usize) {
-        match self.ram[SPRITE_AI_STATE + k] {
+        match self.sprite_slot_view(k).ai_state() {
             0 => self.bee_dormant_hive(k),
             1 => self.bee_main(k),
             2 => self.bee_put_in_bottle(k),
@@ -86,10 +82,10 @@ impl ZeldaState {
     //     SpawnBeeFromHive(k);
     // }
     pub(super) fn bee_dormant_hive(&mut self, k: usize) {
-        if self.ram[SPRITE_E + k] != 0 {
+        if self.sprite_slot_view(k).e() != 0 {
             return;
         }
-        self.ram[SPRITE_STATE + k] = 0;
+        self.sprite_slot_view_mut(k).clear();
         for _ in (0..=11).rev() {
             self.spawn_bee_from_hive(k);
         }
@@ -121,15 +117,18 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kSpawnBee_InitVel[GetRandomNumber() & 7];
     // }
     pub(super) fn initialize_spawned_bee(&mut self, k: usize) {
-        self.ram[SPRITE_AI_STATE + k] = 1;
-        let delay = K_SPAWN_BEE_INIT_DELAY[k & 3];
-        self.ram[SPRITE_DELAY_MAIN + k] = delay;
-        self.ram[SPRITE_A + k] = delay;
-        self.ram[SPRITE_DELAY_AUX4 + k] = 96;
-        self.ram[SPRITE_X_VEL + k] =
-            K_SPAWN_BEE_INIT_VEL[(self.get_random_number() & 7) as usize] as u8;
-        self.ram[SPRITE_Y_VEL + k] =
-            K_SPAWN_BEE_INIT_VEL[(self.get_random_number() & 7) as usize] as u8;
+        let delay = BEE_SPAWN_INITIAL_DELAYS[k & 3];
+        let x_velocity =
+            BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
+        let y_velocity =
+            BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_ai_state(1);
+        sprite.set_delay_main(delay);
+        sprite.set_a(delay);
+        sprite.set_delay_aux4(96);
+        sprite.set_x_velocity(x_velocity);
+        sprite.set_y_velocity(y_velocity);
     }
 
     // int ReleaseBeeFromBottle(int x_value) {  // 9edccf
@@ -152,26 +151,33 @@ impl ZeldaState {
     //   return j;
     // }
     pub(super) fn release_bee_from_bottle(&mut self, x_value: usize) -> i32 {
-        const K_SPAWN_BEE_XY: [i8; 8] = [8, 2, -2, -8, 10, 5, -5, -10];
+        const BEE_RELEASE_VELOCITY_CHOICES: [i8; 8] = [8, 2, -2, -8, 10, 5, -5, -10];
 
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(x_value, 0xb2, &mut info);
         if j >= 0 {
             let ju = j as usize;
-            self.ram[SPRITE_FLOOR + ju] = self.ram[LINK_IS_ON_LOWER_LEVEL];
+            let floor = self.player_state_view().lower_level_state();
+            self.sprite_slot_view_mut(ju).set_floor(floor);
             self.sprite_set_x(ju, self.player_state_view().x().wrapping_add(8));
             self.sprite_set_y(ju, self.player_state_view().y().wrapping_add(16));
-            let bottle = self.ram[LINK_ITEM_BOTTLE_INDEX].wrapping_sub(1) as usize;
-            if self.ram[LINK_BOTTLE_INFO + bottle] == 8 {
-                self.ram[SPRITE_HEAD_DIR + ju] = 1;
+            let bottle = self
+                .player_resources_view()
+                .equipped_bottle_index()
+                .wrapping_sub(1) as usize;
+            if self.inventory_state_view().bottle(bottle) == 8 {
+                self.sprite_slot_view_mut(ju).set_head_direction(1);
             }
             self.initialize_spawned_bee(ju);
-            self.ram[SPRITE_X_VEL + ju] =
-                K_SPAWN_BEE_XY[(self.get_random_number() & 7) as usize] as u8;
-            self.ram[SPRITE_Y_VEL + ju] =
-                K_SPAWN_BEE_XY[(self.get_random_number() & 7) as usize] as u8;
-            self.ram[SPRITE_DELAY_MAIN + ju] = 64;
-            self.ram[SPRITE_A + ju] = 64;
+            let x_velocity =
+                BEE_RELEASE_VELOCITY_CHOICES[(self.get_random_number() & 7) as usize] as u8;
+            let y_velocity =
+                BEE_RELEASE_VELOCITY_CHOICES[(self.get_random_number() & 7) as usize] as u8;
+            let mut sprite = self.sprite_slot_view_mut(ju);
+            sprite.set_x_velocity(x_velocity);
+            sprite.set_y_velocity(y_velocity);
+            sprite.set_delay_main(64);
+            sprite.set_a(64);
         }
         j
     }
@@ -221,27 +227,30 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        if self.ram[SPRITE_HEAD_DIR + k] != 0 {
+        if self.sprite_slot_view(k).head_direction() != 0 {
             self.sprite_spawn_sparkle_garnish_for_npcs(k);
         }
         self.bee_bzzt(k);
         self.sprite_move_xy(k);
-        self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 1) & 1;
-        if self.ram[SPRITE_DELAY_AUX4 + k] == 0 {
+        let graphics = (((k as u8) ^ self.frame_control_view().frame_counter()) >> 1) & 1;
+        self.sprite_slot_view_mut(k).set_graphics(graphics);
+        if self.sprite_slot_view(k).delay_aux4() == 0 {
             self.sprite_check_damage_to_link_for_npcs(k);
-            if (self.sprite_check_damage_from_link_for_npcs(k) & K_CHECK_DAMAGE_FROM_PLAYER_NE) != 0
+            if (self.sprite_check_damage_from_link_for_npcs(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
+                != 0
             {
                 self.sprite_show_message_unconditional(0xc8);
-                self.ram[SPRITE_AI_STATE + k] = 2;
+                self.sprite_slot_view_mut(k).set_ai_state(2);
                 return;
             }
         }
 
-        if self.ram[FRAME_COUNTER] == 0 && self.ram[SPRITE_A + k] != 16 {
-            self.ram[SPRITE_A + k] = self.ram[SPRITE_A + k].wrapping_sub(8);
+        if self.frame_control_view().frame_counter() == 0 && self.sprite_slot_view(k).a() != 16 {
+            let a = self.sprite_slot_view(k).a().wrapping_sub(8);
+            self.sprite_slot_view_mut(k).set_a(a);
         }
 
-        if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
+        if self.sprite_slot_view(k).delay_main() == 0 {
             let x = self
                 .player_state_view()
                 .x()
@@ -251,11 +260,13 @@ impl ZeldaState {
                 .y()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let pt = self.sprite_project_speed_towards_location(k, x, y, 20);
-            self.ram[SPRITE_Y_VEL + k] = pt.y;
-            self.ram[SPRITE_X_VEL + k] = pt.x;
-            self.ram[SPRITE_OAM_FLAGS + k] =
-                (self.ram[SPRITE_OAM_FLAGS + k] & !0x40) | if (pt.x as i8) < 0 { 0 } else { 0x40 };
-            self.ram[SPRITE_DELAY_MAIN + k] = (k as u8).wrapping_add(self.ram[SPRITE_A + k]);
+            let oam_flags = self.sprite_slot_view(k).oam_flags();
+            let delay = (k as u8).wrapping_add(self.sprite_slot_view(k).a());
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_y_velocity(pt.y);
+            sprite.set_x_velocity(pt.x);
+            sprite.set_oam_flags((oam_flags & !0x40) | if (pt.x as i8) < 0 { 0 } else { 0x40 });
+            sprite.set_delay_main(delay);
         }
     }
 
@@ -266,10 +277,13 @@ impl ZeldaState {
     //                           (((frame_counter >> 4 & 3) + 1) << 1);
     // }
     pub(super) fn bee_handle_z(&mut self, k: usize) {
-        self.ram[SPRITE_Z + k] = 16;
-        if self.ram[SPRITE_HEAD_DIR + k] != 0 {
-            let palette = (((self.ram[FRAME_COUNTER] >> 4) & 3).wrapping_add(1)) << 1;
-            self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & 0xf1) | palette;
+        self.sprite_slot_view_mut(k).set_z(16);
+        if self.sprite_slot_view(k).head_direction() != 0 {
+            let palette =
+                (((self.frame_control_view().frame_counter() >> 4) & 3).wrapping_add(1)) << 1;
+            let oam_flags = self.sprite_slot_view(k).oam_flags();
+            self.sprite_slot_view_mut(k)
+                .set_oam_flags((oam_flags & 0xf1) | palette);
         }
     }
 
@@ -292,27 +306,35 @@ impl ZeldaState {
     //   sprite_B[k]++;
     // }
     pub(super) fn player_bee_hone_in_on_target(&mut self, j: usize, k: usize) {
-        if self.ram[SPRITE_TYPE + j] != 0x88 && (self.ram[SPRITE_FLAGS + j] & 2) != 0 {
+        let target = self.sprite_slot_view(j);
+        if target.sprite_type() != 0x88 && (target.flags() & 2) != 0 {
             return;
         }
         let x = self.sprite_get_x(j);
         let y = self.sprite_get_y(j);
-        let cur_x = read_le_u16(&self.ram, CUR_SPRITE_X);
-        let cur_y = read_le_u16(&self.ram, CUR_SPRITE_Y);
+        let cur_x = self.sprite_workspace_view().current_sprite_x();
+        let cur_y = self.sprite_workspace_view().current_sprite_y();
         if cur_x.wrapping_sub(x).wrapping_add(16) >= 24
             || cur_y.wrapping_sub(y).wrapping_sub(8) >= 24
         {
             return;
         }
-        if self.ram[SPRITE_TYPE + j] == 0x75 {
-            self.ram[SPRITE_E + j] = (k as u8).wrapping_add(1);
+        if self.sprite_slot_view(j).sprite_type() == 0x75 {
+            self.sprite_slot_view_mut(j)
+                .set_e((k as u8).wrapping_add(1));
             return;
         }
         self.ancilla_check_damage_to_sprite_preset(j, 1);
-        self.ram[SPRITE_F + j] = 15;
-        self.ram[SPRITE_X_RECOIL + j] = self.ram[SPRITE_X_VEL + k].wrapping_shl(1);
-        self.ram[SPRITE_Y_RECOIL + j] = self.ram[SPRITE_Y_VEL + k].wrapping_shl(1);
-        self.ram[SPRITE_B + k] = self.ram[SPRITE_B + k].wrapping_add(1);
+        let source = self.sprite_slot_view(k);
+        let x_recoil = source.x_velocity().wrapping_shl(1);
+        let y_recoil = source.y_velocity().wrapping_shl(1);
+        {
+            let mut target = self.sprite_slot_view_mut(j);
+            target.set_f(15);
+            target.set_x_recoil(x_recoil);
+            target.set_y_recoil(y_recoil);
+        }
+        self.sprite_slot_view_mut(k).increment_b();
     }
 
     // bool PlayerBee_FindTarget(int k, Point16U *pt) {  // sprite_main.c:24145
@@ -342,15 +364,16 @@ impl ZeldaState {
         let mut j: usize = (k * 4) & 0xf;
         loop {
             // C `continue` body — evaluate filter; if it passes, return.
-            let skip = j == k || self.ram[SPRITE_STATE + j] < 9 || self.ram[SPRITE_PAUSE + j] != 0;
+            let source = self.sprite_slot_view(k);
+            let target = self.sprite_slot_view(j);
+            let skip = j == k || target.state() < 9 || target.pause() != 0;
             let inner_skip = if !skip {
-                if self.ram[SPRITE_FLAGS2 + j] & 0x80 == 0 {
-                    self.ram[SPRITE_FLOOR + k] != self.ram[SPRITE_FLOOR + j]
-                        || self.ram[SPRITE_FLAGS4 + j] & 0x40 != 0
-                        || self.ram[SPRITE_IGNORE_PROJECTILE + j] != 0
+                if target.flags2() & 0x80 == 0 {
+                    source.floor() != target.floor()
+                        || target.flags4() & 0x40 != 0
+                        || target.ignore_projectile() != 0
                 } else {
-                    self.ram[SPRITE_HEAD_DIR + k] == 0
-                        || (self.ram[SPRITE_BUMP_DAMAGE + j] & 0x40) == 0
+                    source.head_direction() == 0 || (target.bump_damage() & 0x40) == 0
                 }
             } else {
                 true
@@ -378,10 +401,9 @@ impl ZeldaState {
     //     sprite_delay_aux4[k] = 40;
     // }
     pub(super) fn bee_handle_interactions(&mut self, k: usize) {
-        let dmi = self.ram[DIALOGUE_MESSAGE_INDEX] as u16
-            | ((self.ram[DIALOGUE_MESSAGE_INDEX + 1] as u16) << 8);
+        let dmi = self.dialogue_message_index_view().value();
         if self.frame_control_view().submodule() == 2 && (dmi == 0xc8 || dmi == 0xca) {
-            self.ram[SPRITE_DELAY_AUX4 + k] = 40;
+            self.sprite_slot_view_mut(k).set_delay_aux4(40);
         }
     }
 
@@ -441,23 +463,23 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_b2_player_bee(&mut self, k: usize) {
-        const K_GOOD_BEE_TAB0: [u8; 2] = [0x0a, 0x14];
+        const GOOD_BEE_HEAD_ANIM_LIMITS: [u8; 2] = [0x0a, 0x14];
 
-        match self.ram[SPRITE_AI_STATE + k] {
+        match self.sprite_slot_view(k).ai_state() {
             0 => {
-                if self.ram[SPRITE_E + k] == 0 {
-                    self.ram[SPRITE_STATE + k] = 0;
-                    let or_bottle = self.ram[LINK_BOTTLE_INFO]
-                        | self.ram[LINK_BOTTLE_INFO + 1]
-                        | self.ram[LINK_BOTTLE_INFO + 2]
-                        | self.ram[LINK_BOTTLE_INFO + 3];
+                if self.sprite_slot_view(k).e() == 0 {
+                    self.sprite_slot_view_mut(k).clear();
+                    let or_bottle = self.inventory_state_view().bottle(0)
+                        | self.inventory_state_view().bottle(1)
+                        | self.inventory_state_view().bottle(2)
+                        | self.inventory_state_view().bottle(3);
                     if (or_bottle & 8) == 0 {
                         self.gold_bee_spawn_self(k);
                     }
                 }
             }
             1 => {
-                self.ram[SPRITE_IGNORE_PROJECTILE + k] = 1;
+                self.sprite_slot_view_mut(k).set_ignore_projectile(1);
                 self.bee_handle_z(k);
                 self.sprite_draw_single_small_for_npcs(k);
                 self.bee_handle_interactions(k);
@@ -466,26 +488,29 @@ impl ZeldaState {
                 }
                 self.bee_bzzt(k);
                 self.sprite_move_xy(k);
-                self.ram[SPRITE_GRAPHICS + k] = (((k as u8) ^ self.ram[FRAME_COUNTER]) >> 1) & 1;
-                if self.ram[SPRITE_HEAD_DIR + k] != 0 {
+                let graphics = (((k as u8) ^ self.frame_control_view().frame_counter()) >> 1) & 1;
+                self.sprite_slot_view_mut(k).set_graphics(graphics);
+                if self.sprite_slot_view(k).head_direction() != 0 {
                     self.sprite_spawn_sparkle_garnish_for_npcs(k);
                 }
-                let head = (self.ram[SPRITE_HEAD_DIR + k] & 1) as usize;
-                if self.ram[SPRITE_B + k] >= K_GOOD_BEE_TAB0[head] {
-                    self.ram[SPRITE_DEFL_BITS + k] = 64;
+                let sprite = self.sprite_slot_view(k);
+                let head = (sprite.head_direction() & 1) as usize;
+                if sprite.b() >= GOOD_BEE_HEAD_ANIM_LIMITS[head] {
+                    self.sprite_slot_view_mut(k).set_deflection_bits(64);
                     return;
                 }
-                if self.ram[SPRITE_DELAY_AUX4 + k] != 0 {
+                if self.sprite_slot_view(k).delay_aux4() != 0 {
                     return;
                 }
-                if (self.sprite_check_damage_from_link_for_npcs(k) & K_CHECK_DAMAGE_FROM_PLAYER_NE)
+                if (self.sprite_check_damage_from_link_for_npcs(k)
+                    & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                     != 0
                 {
                     self.sprite_show_message_unconditional(0xc8);
-                    self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
+                    self.sprite_slot_view_mut(k).increment_ai_state();
                     return;
                 }
-                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 3) != 0 {
+                if (((k as u8) ^ self.frame_control_view().frame_counter()) & 3) != 0 {
                     return;
                 }
                 let mut pt2 = Point16U { x: 0, y: 0 };
@@ -499,14 +524,15 @@ impl ZeldaState {
                         .y()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                 }
-                if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 7) != 0 {
+                if (((k as u8) ^ self.frame_control_view().frame_counter()) & 7) != 0 {
                     return;
                 }
                 let pt = self.sprite_project_speed_towards_location(k, pt2.x, pt2.y, 32);
-                self.ram[SPRITE_X_VEL + k] = pt.x;
-                self.ram[SPRITE_Y_VEL + k] = pt.y;
-                self.ram[SPRITE_OAM_FLAGS + k] = (self.ram[SPRITE_OAM_FLAGS + k] & !0x40)
-                    | if (pt.x as i8) < 0 { 0 } else { 0x40 };
+                let oam_flags = self.sprite_slot_view(k).oam_flags();
+                let mut sprite = self.sprite_slot_view_mut(k);
+                sprite.set_x_velocity(pt.x);
+                sprite.set_y_velocity(pt.y);
+                sprite.set_oam_flags((oam_flags & !0x40) | if (pt.x as i8) < 0 { 0 } else { 0x40 });
             }
             2 => self.bee_put_in_bottle(k),
             _ => {}
@@ -533,15 +559,18 @@ impl ZeldaState {
         if j >= 0 {
             let ju = j as usize;
             self.sprite_set_spawned_coordinates(ju, &info);
-            self.ram[SPRITE_AI_STATE + ju] = 1;
-            self.ram[SPRITE_DELAY_MAIN + ju] = 64;
-            self.ram[SPRITE_A + ju] = 64;
-            self.ram[SPRITE_DELAY_AUX4 + ju] = 96;
-            self.ram[SPRITE_HEAD_DIR + ju] = 1;
-            self.ram[SPRITE_X_VEL + ju] =
-                K_SPAWN_BEE_INIT_VEL[(self.get_random_number() & 7) as usize] as u8;
-            self.ram[SPRITE_Y_VEL + ju] =
-                K_SPAWN_BEE_INIT_VEL[(self.get_random_number() & 7) as usize] as u8;
+            let x_velocity =
+                BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
+            let y_velocity =
+                BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
+            let mut sprite = self.sprite_slot_view_mut(ju);
+            sprite.set_ai_state(1);
+            sprite.set_delay_main(64);
+            sprite.set_a(64);
+            sprite.set_delay_aux4(96);
+            sprite.set_head_direction(1);
+            sprite.set_x_velocity(x_velocity);
+            sprite.set_y_velocity(y_velocity);
         }
     }
 
@@ -550,7 +579,7 @@ impl ZeldaState {
     //     SpriteSfx_QueueSfx3WithPan(k, 0x2c);
     // }
     pub(super) fn bee_bzzt(&mut self, k: usize) {
-        if (((k as u8) ^ self.ram[FRAME_COUNTER]) & 31) == 0 {
+        if (((k as u8) ^ self.frame_control_view().frame_counter()) & 31) == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2c);
         }
     }
@@ -577,19 +606,21 @@ impl ZeldaState {
         if self.sprite_return_if_inactive_npcs(k) {
             return;
         }
-        if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0 {
+        if self.multiselect_choice_view().value() == 0 {
             let j = self.sprite_find_empty_bottle();
             if j >= 0 {
-                self.ram[LINK_BOTTLE_INFO + j as usize] =
-                    7u8.wrapping_add(self.ram[SPRITE_HEAD_DIR + k]);
+                let value = 7u8.wrapping_add(self.sprite_slot_view(k).head_direction());
+                self.inventory_state_view_mut()
+                    .set_bottle(j as usize, value);
                 self.hud_refresh_icon();
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 return;
             }
             self.sprite_show_message_unconditional(0xca);
         }
-        self.ram[SPRITE_DELAY_AUX4 + k] = 64;
-        self.ram[SPRITE_AI_STATE + k] = 1;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_delay_aux4(64);
+        sprite.set_ai_state(1);
     }
 
     // int Sprite_Find_EmptyBottle() {  // sprite_main.c:24056
@@ -600,7 +631,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_find_empty_bottle(&self) -> i32 {
         for i in 0..4 {
-            if self.ram[LINK_BOTTLE_INFO + i] == 2 {
+            if self.inventory_state_view().bottle(i) == 2 {
                 return i as i32;
             }
         }
@@ -670,7 +701,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_bottle_vendor(&mut self, k: usize) {
-        self.ram[SPRITE_A + k] = self.bottle_vendor_draw(k);
+        let draw_state = self.bottle_vendor_draw(k);
+        self.sprite_slot_view_mut(k).set_a(draw_state);
         if self.sprite_return_if_inactive_npcs(k) {
             return;
         }
@@ -680,59 +712,62 @@ impl ZeldaState {
             return;
         }
         if self.get_random_number() == 0 {
-            self.ram[SPRITE_DELAY_MAIN + k] = 20;
-            self.ram[SPRITE_GRAPHICS + k] = 1;
-        } else if self.ram[SPRITE_DELAY_MAIN + k] == 0 {
-            self.ram[SPRITE_GRAPHICS + k] = 0;
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_delay_main(20);
+            sprite.set_graphics(1);
+        } else if self.sprite_slot_view(k).delay_main() == 0 {
+            self.sprite_slot_view_mut(k).set_graphics(0);
         }
-        match self.ram[SPRITE_AI_STATE + k] {
+        match self.sprite_slot_view(k).ai_state() {
             0 => {
-                if self.ram[SPRITE_A + k] == 0 && self.ram[SPRITE_E + k] != 0 {
-                    self.ram[SPRITE_AI_STATE + k] = 3;
+                let sprite = self.sprite_slot_view(k);
+                if sprite.a() == 0 && sprite.e() != 0 {
+                    self.sprite_slot_view_mut(k).set_ai_state(3);
                 } else if (self.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2) != 0 {
                     self.sprite_show_solicited_message(k, 0xd4);
                 } else if (self.sprite_show_solicited_message(k, 0xd1) & 0x100) != 0 {
-                    self.ram[SPRITE_AI_STATE + k] = 1;
+                    self.sprite_slot_view_mut(k).set_ai_state(1);
                 }
             }
             1 => {
-                if self.ram[CHOICE_IN_MULTISELECT_BOX] == 0
-                    && read_le_u16(&self.ram, LINK_RUPEES_GOAL) >= 100
+                if self.multiselect_choice_view().value() == 0
+                    && self.player_resources_view().rupees_goal() >= 100
                 {
                     self.sprite_show_message_unconditional(0xd2);
-                    self.ram[SPRITE_AI_STATE + k] = 2;
+                    self.sprite_slot_view_mut(k).set_ai_state(2);
                 } else {
                     self.sprite_show_message_unconditional(0xd3);
-                    self.ram[SPRITE_AI_STATE + k] = 0;
+                    self.sprite_slot_view_mut(k).set_ai_state(0);
                 }
             }
             2 => {
-                self.ram[ITEM_RECEIPT_METHOD] = 0;
+                self.player_state_view_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x16, 0);
                 self.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] |= 2;
-                let rupees = read_le_u16(&self.ram, LINK_RUPEES_GOAL).wrapping_sub(100);
-                write_le_u16(&mut self.ram, LINK_RUPEES_GOAL, rupees);
-                self.ram[SPRITE_AI_STATE + k] = 0;
+                let rupees = self.player_resources_view().rupees_goal().wrapping_sub(100);
+                self.player_resources_view_mut().set_rupees_goal(rupees);
+                self.sprite_slot_view_mut(k).set_ai_state(0);
             }
             3 => {
-                if (self.ram[SPRITE_E + k] as i8) >= 0 {
+                if (self.sprite_slot_view(k).e() as i8) >= 0 {
                     self.sprite_show_message_unconditional(0xd5);
                 } else {
                     self.sprite_show_message_unconditional(0xd6);
                 }
-                self.ram[SPRITE_AI_STATE + k] = 4;
+                self.sprite_slot_view_mut(k).set_ai_state(4);
             }
             4 => {
-                let j = self.ram[SPRITE_E + k];
+                let j = self.sprite_slot_view(k).e();
                 if (j as i8) >= 0 {
-                    self.ram[SPRITE_STATE + j as usize - 1] = 0;
+                    self.sprite_slot_view_mut(j as usize - 1).clear();
                     self.bottle_merchant_buy_bee(k);
                 } else {
-                    self.ram[SPRITE_STATE + (j & 0x0f) as usize] = 0;
+                    self.sprite_slot_view_mut((j & 0x0f) as usize).clear();
                     self.bottle_merchant_buy_fish(k);
                 }
-                self.ram[SPRITE_E + k] = 0;
-                self.ram[SPRITE_AI_STATE + k] = 0;
+                let mut sprite = self.sprite_slot_view_mut(k);
+                sprite.set_e(0);
+                sprite.set_ai_state(0);
             }
             _ => {}
         }
@@ -757,10 +792,10 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        let base = (self.ram[SPRITE_GRAPHICS + k] as usize) * 2;
+        let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
         self.sprite_draw_multiple_player_deferred(
             k,
-            &K_BOTTLE_VENDOR_DMD[base..base + 2],
+            &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
             Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -786,12 +821,14 @@ impl ZeldaState {
     // }
     pub(super) fn bottle_merchant_detect_fish(&mut self, k: usize) {
         for i in (0..=15usize).rev() {
-            if self.ram[SPRITE_STATE + i] != 0 && self.ram[SPRITE_TYPE + i] == 0xd2 {
+            let sprite = self.sprite_slot_view(i);
+            if sprite.state() != 0 && sprite.sprite_type() == 0xd2 {
+                let vendor = self.sprite_slot_view(k);
                 let mut hb = SpriteHitBox {
-                    r0_xlo: self.ram[SPRITE_X_LO + k],
-                    r8_xhi: self.ram[SPRITE_X_HI + k],
-                    r1_ylo: self.ram[SPRITE_Y_LO + k],
-                    r9_yhi: self.ram[SPRITE_Y_HI + k],
+                    r0_xlo: vendor.x_low(),
+                    r8_xhi: vendor.x_high(),
+                    r1_ylo: vendor.y_low(),
+                    r9_yhi: vendor.y_high(),
                     r2: 16,
                     r3: 16,
                     r4_spr_xlo: 0,
@@ -803,7 +840,7 @@ impl ZeldaState {
                 };
                 self.sprite_setup_hit_box(i, &mut hb);
                 if self.check_if_hit_boxes_overlap(&hb) {
-                    self.ram[SPRITE_E + k] = 0x80 | i as u8;
+                    self.sprite_slot_view_mut(k).set_e(0x80 | i as u8);
                 }
                 return;
             }
@@ -836,9 +873,9 @@ impl ZeldaState {
         const FISH_REWARD_YV: [i8; 5] = [11, 14, 16, 14, 11];
 
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
-        self.ram[TMP_COUNTER] = 4;
+        self.temp_counter_view_mut().set(4);
         loop {
-            let i = self.ram[TMP_COUNTER] as usize;
+            let i = self.temp_counter_view().value() as usize;
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, FISH_REWARD_TYPE[i], &mut info);
             if j < 0 {
@@ -850,8 +887,8 @@ impl ZeldaState {
                 FISH_REWARD_XV[i],
                 FISH_REWARD_YV[i],
             );
-            self.ram[TMP_COUNTER] = self.ram[TMP_COUNTER].wrapping_sub(1);
-            if (self.ram[TMP_COUNTER] as i8) < 0 {
+            self.temp_counter_view_mut().decrement();
+            if (self.temp_counter_view().value() as i8) < 0 {
                 break;
             }
         }
@@ -881,9 +918,9 @@ impl ZeldaState {
         const GOOD_BEE_Y: [i8; 5] = [11, 14, 16, 14, 11];
 
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
-        self.ram[TMP_COUNTER] = 4;
+        self.temp_counter_view_mut().set(4);
         loop {
-            let i = self.ram[TMP_COUNTER] as usize;
+            let i = self.temp_counter_view().value() as usize;
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0xdb, &mut info);
             if j >= 0 {
@@ -894,8 +931,8 @@ impl ZeldaState {
                     GOOD_BEE_Y[i],
                 );
             }
-            self.ram[TMP_COUNTER] = self.ram[TMP_COUNTER].wrapping_sub(1);
-            if (self.ram[TMP_COUNTER] as i8) < 0 {
+            self.temp_counter_view_mut().decrement();
+            if (self.temp_counter_view().value() as i8) < 0 {
                 break;
             }
         }
@@ -909,12 +946,13 @@ impl ZeldaState {
         yvel: i8,
     ) {
         self.sprite_set_spawned_coordinates(j, info);
-        self.ram[SPRITE_X_LO + j] = (info.r0_x as u8).wrapping_add(4);
-        self.ram[SPRITE_STUNNED + j] = 0xff;
-        self.ram[SPRITE_X_VEL + j] = xvel as u8;
-        self.ram[SPRITE_Y_VEL + j] = yvel as u8;
-        self.ram[SPRITE_Z_VEL + j] = 32;
-        self.ram[SPRITE_DELAY_AUX4 + j] = 32;
+        let mut sprite = self.sprite_slot_view_mut(j);
+        sprite.add_x_low(4);
+        sprite.set_stunned(0xff);
+        sprite.set_x_velocity(xvel as u8);
+        sprite.set_y_velocity(yvel as u8);
+        sprite.set_z_velocity(32);
+        sprite.set_delay_aux4(32);
     }
 
     // ----- Cucco cluster -------------------------------------------------
@@ -929,7 +967,7 @@ impl ZeldaState {
         let Some(info) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let time = self.ram[FRAME_COUNTER];
+        let time = self.frame_control_view().frame_counter();
         self.sprite_draw_distress_custom_for_npcs(info.0, info.1, time);
     }
 
@@ -949,11 +987,11 @@ impl ZeldaState {
         if time & 0x18 == 0 {
             return;
         }
-        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let mut oam = self.oam_state_view().current_pointer_usize();
         let mut i: i32 = 3;
         loop {
-            let x = xin.wrapping_add(K_SPRITE_DISTRESS_X[i as usize] as i16 as u16);
-            let y = yin.wrapping_add(K_SPRITE_DISTRESS_Y[i as usize] as i16 as u16);
+            let x = xin.wrapping_add(SPRITE_DISTRESS_X_OFFSETS[i as usize] as i16 as u16);
+            let y = yin.wrapping_add(SPRITE_DISTRESS_Y_OFFSETS[i as usize] as i16 as u16);
             self.set_oam_helper0_at(oam, x, y, 0x83, 0x22, 0);
             oam += 4;
             i -= 1;
@@ -1024,24 +1062,26 @@ mod tests {
 
     fn fresh_state() -> ZeldaState {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, OAM_CUR_PTR, OAM_BUF as u16);
-        write_le_u16(
-            &mut state.ram,
-            OAM_EXT_CUR_PTR,
-            BYTEWISE_EXTENDED_OAM as u16,
-        );
+        state
+            .oam_state_view_mut()
+            .set_current_pointer(OAM_BUF as u16);
+        state
+            .oam_state_view_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
         state
     }
 
     fn make_link_idle(state: &mut ZeldaState) {
-        state.ram[FLAG_UNK1] = 0;
+        state.frame_control_view_mut().clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
-        state.ram[LINK_AUXILIARY_STATE] = 0;
-        state.ram[LINK_POSE_FOR_ITEM] = 0;
-        state.ram[LINK_STATE_BITS] = 0;
-        state.ram[ANCILLA_TYPE..ANCILLA_TYPE + 5].fill(0);
-        write_le_u16(&mut state.ram, LINK_X_COORD, 0x1000);
-        write_le_u16(&mut state.ram, LINK_Y_COORD, 0x1000);
+        state.player_state_view_mut().clear_auxiliary_state();
+        state.player_state_view_mut().clear_item_hold_pose();
+        state.player_state_view_mut().clear_state_bits();
+        for slot in 0..5 {
+            state.ancilla_slot_view_mut(slot).clear();
+        }
+        state.player_state_view_mut().set_x(0x1000);
+        state.player_state_view_mut().set_y(0x1000);
     }
 
     #[test]
@@ -1050,24 +1090,32 @@ mod tests {
         // frame_counter are written into sprite_oam_flags.
         let mut state = fresh_state();
         let k = 3;
-        state.ram[FRAME_COUNTER] = 0x20; // (0x20 >> 4) & 3 == 2 → palette = (2+1)<<1 = 6
-        state.ram[SPRITE_HEAD_DIR + k] = 1;
-        state.ram[SPRITE_OAM_FLAGS + k] = 0xff;
+        state.frame_control_view_mut().set_frame_counter(0x20); // (0x20 >> 4) & 3 == 2 → palette = (2+1)<<1 = 6
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_head_direction(1);
+            sprite.set_oam_flags(0xff);
+        }
         state.bee_handle_z(k);
-        assert_eq!(state.ram[SPRITE_Z + k], 16);
-        assert_eq!(state.ram[SPRITE_OAM_FLAGS + k], (0xff & 0xf1) | 6);
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.z(), 16);
+        assert_eq!(sprite.oam_flags(), (0xff & 0xf1) | 6);
     }
 
     #[test]
     fn bee_handle_z_skips_palette_when_head_dir_zero() {
         let mut state = fresh_state();
         let k = 5;
-        state.ram[FRAME_COUNTER] = 0xff;
-        state.ram[SPRITE_HEAD_DIR + k] = 0;
-        state.ram[SPRITE_OAM_FLAGS + k] = 0xaa;
+        state.frame_control_view_mut().set_frame_counter(0xff);
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_head_direction(0);
+            sprite.set_oam_flags(0xaa);
+        }
         state.bee_handle_z(k);
-        assert_eq!(state.ram[SPRITE_Z + k], 16);
-        assert_eq!(state.ram[SPRITE_OAM_FLAGS + k], 0xaa);
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.z(), 16);
+        assert_eq!(sprite.oam_flags(), 0xaa);
     }
 
     #[test]
@@ -1077,84 +1125,99 @@ mod tests {
 
         state.initialize_spawned_bee(k);
 
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 1);
-        assert_eq!(state.ram[SPRITE_DELAY_MAIN + k], 255);
-        assert_eq!(state.ram[SPRITE_A + k], 255);
-        assert_eq!(state.ram[SPRITE_DELAY_AUX4 + k], 96);
-        assert!(K_SPAWN_BEE_INIT_VEL.contains(&(state.ram[SPRITE_X_VEL + k] as i8)));
-        assert!(K_SPAWN_BEE_INIT_VEL.contains(&(state.ram[SPRITE_Y_VEL + k] as i8)));
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.ai_state(), 1);
+        assert_eq!(sprite.delay_main(), 255);
+        assert_eq!(sprite.a(), 255);
+        assert_eq!(sprite.delay_aux4(), 96);
+        assert!(BEE_SPAWN_INITIAL_VELOCITIES.contains(&(sprite.x_velocity() as i8)));
+        assert!(BEE_SPAWN_INITIAL_VELOCITIES.contains(&(sprite.y_velocity() as i8)));
     }
 
     #[test]
     fn release_bee_from_bottle_spawns_at_link_and_marks_good_bee() {
         let mut state = fresh_state();
-        write_le_u16(&mut state.ram, LINK_X_COORD, 0x120);
-        write_le_u16(&mut state.ram, LINK_Y_COORD, 0x230);
-        state.ram[LINK_IS_ON_LOWER_LEVEL] = 1;
-        state.ram[LINK_ITEM_BOTTLE_INDEX] = 1;
-        state.ram[LINK_BOTTLE_INFO] = 8;
+        state.player_state_view_mut().set_x(0x120);
+        state.player_state_view_mut().set_y(0x230);
+        state.player_state_view_mut().mark_lower_level();
+        state
+            .player_resources_view_mut()
+            .set_equipped_bottle_index(1);
+        state.inventory_state_view_mut().set_bottle(0, 8);
 
         let j = state.release_bee_from_bottle(0);
 
         assert_eq!(j, 15);
         let ju = j as usize;
-        assert_eq!(state.ram[SPRITE_TYPE + ju], 0xb2);
-        assert_eq!(state.ram[SPRITE_FLOOR + ju], 1);
+        let sprite = state.sprite_slot_view(ju);
+        assert_eq!(sprite.sprite_type(), 0xb2);
+        assert_eq!(sprite.floor(), 1);
         assert_eq!(state.sprite_get_x(ju), 0x128);
         assert_eq!(state.sprite_get_y(ju), 0x240);
-        assert_eq!(state.ram[SPRITE_HEAD_DIR + ju], 1);
-        assert_eq!(state.ram[SPRITE_DELAY_MAIN + ju], 64);
-        assert_eq!(state.ram[SPRITE_A + ju], 64);
+        assert_eq!(sprite.head_direction(), 1);
+        assert_eq!(sprite.delay_main(), 64);
+        assert_eq!(sprite.a(), 64);
     }
 
     #[test]
     fn sprite_79_bee_routes_dormant_hive_state() {
         let mut state = fresh_state();
         let k = 0;
-        state.ram[SPRITE_AI_STATE + k] = 0;
-        state.ram[SPRITE_STATE + k] = 9;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_ai_state(0);
+            sprite.set_state(9);
+        }
         state.sprite_79_bee(k);
 
-        assert_eq!(state.ram[SPRITE_STATE + k], 0);
-        assert_eq!(state.ram[SPRITE_TYPE + 15], 0x79);
-        assert_eq!(state.ram[SPRITE_AI_STATE + 15], 1);
+        assert_eq!(state.sprite_slot_view(k).state(), 0);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0x79);
+        assert_eq!(state.sprite_slot_view(15).ai_state(), 1);
     }
 
     #[test]
     fn bee_main_updates_motion_and_retarget_timer() {
         let mut state = fresh_state();
         let k = 4;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_A + k] = 64;
-        state.ram[SPRITE_DELAY_AUX4 + k] = 1; // skip damage path
-        state.ram[SPRITE_DELAY_MAIN + k] = 0;
-        state.ram[FRAME_COUNTER] = 4;
-        write_le_u16(&mut state.ram, LINK_X_COORD, 0x120);
-        write_le_u16(&mut state.ram, LINK_Y_COORD, 0x220);
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_a(64);
+            sprite.set_delay_aux4(1); // skip damage path
+            sprite.set_delay_main(0);
+        }
+        state.frame_control_view_mut().set_frame_counter(4);
+        state.player_state_view_mut().set_x(0x120);
+        state.player_state_view_mut().set_y(0x220);
 
         state.bee_main(k);
 
-        assert_eq!(state.ram[SPRITE_Z + k], 16);
-        assert_eq!(state.ram[SPRITE_GRAPHICS + k], 0);
-        assert_eq!(state.ram[SPRITE_DELAY_MAIN + k], 68);
-        assert_eq!(state.ram[SPRITE_OAM_FLAGS + k] & 0x40, 0x40);
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.z(), 16);
+        assert_eq!(sprite.graphics(), 0);
+        assert_eq!(sprite.delay_main(), 68);
+        assert_eq!(sprite.oam_flags() & 0x40, 0x40);
     }
 
     #[test]
     fn player_bee_state_one_caps_after_enough_hits() {
         let mut state = fresh_state();
         let k = 3;
-        state.ram[SPRITE_AI_STATE + k] = 1;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_HEAD_DIR + k] = 1;
-        state.ram[SPRITE_B + k] = 0x14;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_ai_state(1);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_head_direction(1);
+            sprite.set_b(0x14);
+        }
 
         state.sprite_b2_player_bee(k);
 
-        assert_eq!(state.ram[SPRITE_IGNORE_PROJECTILE + k], 1);
-        assert_eq!(state.ram[SPRITE_DEFL_BITS + k], 64);
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.ignore_projectile(), 1);
+        assert_eq!(sprite.deflection_bits(), 64);
     }
 
     #[test]
@@ -1166,12 +1229,15 @@ mod tests {
         state.sprite_set_y(vendor, 0x50);
         state.sprite_set_x(fish, 0x40);
         state.sprite_set_y(fish, 0x50);
-        state.ram[SPRITE_STATE + fish] = 9;
-        state.ram[SPRITE_TYPE + fish] = 0xd2;
+        {
+            let mut sprite = state.sprite_slot_view_mut(fish);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0xd2);
+        }
 
         state.bottle_merchant_detect_fish(vendor);
 
-        assert_eq!(state.ram[SPRITE_E + vendor], 0x80 | fish as u8);
+        assert_eq!(state.sprite_slot_view(vendor).e(), 0x80 | fish as u8);
     }
 
     #[test]
@@ -1184,12 +1250,13 @@ mod tests {
         state.bottle_merchant_buy_bee(k);
 
         for j in 11..=15 {
-            assert_eq!(state.ram[SPRITE_TYPE + j], 0xdb);
-            assert_eq!(state.ram[SPRITE_STUNNED + j], 0xff);
-            assert_eq!(state.ram[SPRITE_Z_VEL + j], 32);
-            assert_eq!(state.ram[SPRITE_DELAY_AUX4 + j], 32);
+            let sprite = state.sprite_slot_view(j);
+            assert_eq!(sprite.sprite_type(), 0xdb);
+            assert_eq!(sprite.stunned(), 0xff);
+            assert_eq!(sprite.z_velocity(), 32);
+            assert_eq!(sprite.delay_aux4(), 32);
         }
-        assert_eq!(state.ram[TMP_COUNTER], 0xff);
+        assert_eq!(state.temp_counter_view().value(), 0xff);
     }
 
     #[test]
@@ -1201,62 +1268,71 @@ mod tests {
 
         state.bottle_merchant_buy_fish(k);
 
-        assert_eq!(state.ram[SPRITE_TYPE + 15], 0xd9);
-        assert_eq!(state.ram[SPRITE_TYPE + 14], 0xe2);
-        assert_eq!(state.ram[SPRITE_TYPE + 13], 0xde);
-        assert_eq!(state.ram[SPRITE_TYPE + 12], 0xe0);
-        assert_eq!(state.ram[SPRITE_TYPE + 11], 0xdb);
-        assert_eq!(state.ram[SPRITE_DELAY_AUX4 + 11], 32);
-        assert_eq!(state.ram[TMP_COUNTER], 0xff);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
+        assert_eq!(state.sprite_slot_view(14).sprite_type(), 0xe2);
+        assert_eq!(state.sprite_slot_view(13).sprite_type(), 0xde);
+        assert_eq!(state.sprite_slot_view(12).sprite_type(), 0xe0);
+        assert_eq!(state.sprite_slot_view(11).sprite_type(), 0xdb);
+        assert_eq!(state.sprite_slot_view(11).delay_aux4(), 32);
+        assert_eq!(state.temp_counter_view().value(), 0xff);
     }
 
     #[test]
     fn sprite_bottle_vendor_base_detects_trade_offer() {
         let mut state = fresh_state();
         let k = 2;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_AI_STATE + k] = 0;
-        state.ram[SPRITE_E + k] = 3;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_ai_state(0);
+            sprite.set_e(3);
+        }
         make_link_idle(&mut state);
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 3);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 3);
     }
 
     #[test]
     fn sprite_bottle_vendor_selling_accepts_when_affordable() {
         let mut state = fresh_state();
         let k = 2;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_AI_STATE + k] = 1;
-        state.ram[CHOICE_IN_MULTISELECT_BOX] = 0;
-        write_le_u16(&mut state.ram, LINK_RUPEES_GOAL, 100);
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_ai_state(1);
+        }
+        state.multiselect_choice_view_mut().set_value(0);
+        state.player_resources_view_mut().set_rupees_goal(100);
         make_link_idle(&mut state);
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 2);
-        assert_eq!(read_le_u16(&state.ram, DIALOGUE_MESSAGE_INDEX), 0xd2);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 2);
+        assert_eq!(state.dialogue_message_index_view().value(), 0xd2);
     }
 
     #[test]
     fn sprite_bottle_vendor_giving_marks_bottle_bought_and_charges_rupees() {
         let mut state = fresh_state();
         let k = 2;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_AI_STATE + k] = 2;
-        write_le_u16(&mut state.ram, LINK_RUPEES_GOAL, 150);
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_ai_state(2);
+        }
+        state.player_resources_view_mut().set_rupees_goal(150);
         make_link_idle(&mut state);
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 0);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
         assert_eq!(state.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2, 2);
-        assert_eq!(read_le_u16(&state.ram, LINK_RUPEES_GOAL), 50);
+        assert_eq!(state.player_resources_view().rupees_goal(), 50);
     }
 
     #[test]
@@ -1264,34 +1340,37 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         let fish = 5;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_AI_STATE + k] = 4;
-        state.ram[SPRITE_E + k] = 0x80 | fish as u8;
-        state.ram[SPRITE_STATE + fish] = 9;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_ai_state(4);
+            sprite.set_e(0x80 | fish as u8);
+        }
+        state.sprite_slot_view_mut(fish).set_state(9);
         make_link_idle(&mut state);
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.ram[SPRITE_STATE + fish], 0);
-        assert_eq!(state.ram[SPRITE_E + k], 0);
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 0);
-        assert_eq!(state.ram[SPRITE_TYPE + 15], 0xd9);
+        assert_eq!(state.sprite_slot_view(fish).state(), 0);
+        assert_eq!(state.sprite_slot_view(k).e(), 0);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
     }
 
     #[test]
     fn sprite_find_empty_bottle_locates_value_two() {
         // Sprite_Find_EmptyBottle returns first slot whose value is 2.
         let mut state = fresh_state();
-        state.ram[LINK_BOTTLE_INFO + 0] = 1;
-        state.ram[LINK_BOTTLE_INFO + 1] = 1;
-        state.ram[LINK_BOTTLE_INFO + 2] = 2;
-        state.ram[LINK_BOTTLE_INFO + 3] = 2;
+        state.inventory_state_view_mut().set_bottle(0, 1);
+        state.inventory_state_view_mut().set_bottle(1, 1);
+        state.inventory_state_view_mut().set_bottle(2, 2);
+        state.inventory_state_view_mut().set_bottle(3, 2);
         assert_eq!(state.sprite_find_empty_bottle(), 2);
 
         // None empty → returns -1.
-        state.ram[LINK_BOTTLE_INFO + 2] = 1;
-        state.ram[LINK_BOTTLE_INFO + 3] = 1;
+        state.inventory_state_view_mut().set_bottle(2, 1);
+        state.inventory_state_view_mut().set_bottle(3, 1);
         assert_eq!(state.sprite_find_empty_bottle(), -1);
     }
 
@@ -1303,19 +1382,22 @@ mod tests {
         let mut state = fresh_state();
         // Make Sprite_ReturnIfInactive(k) return false: state=9, no flags.
         let k = 1;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[FLAG_UNK1] = 0;
+        state.sprite_slot_view_mut(k).set_state(9);
+        state.frame_control_view_mut().clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[SPRITE_PAUSE + k] = 0;
-        state.ram[CHOICE_IN_MULTISELECT_BOX] = 0;
-        state.ram[LINK_BOTTLE_INFO + 0] = 1;
-        state.ram[LINK_BOTTLE_INFO + 1] = 2; // first empty
-        state.ram[SPRITE_HEAD_DIR + k] = 0;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_deflection_bits(0x80);
+            sprite.set_pause(0);
+        }
+        state.multiselect_choice_view_mut().set_value(0);
+        state.inventory_state_view_mut().set_bottle(0, 1);
+        state.inventory_state_view_mut().set_bottle(1, 2); // first empty
+        state.sprite_slot_view_mut(k).set_head_direction(0);
 
         state.bee_put_in_bottle(k);
-        assert_eq!(state.ram[LINK_BOTTLE_INFO + 1], 7);
-        assert_eq!(state.ram[SPRITE_STATE + k], 0);
+        assert_eq!(state.inventory_state_view().bottle(1), 7);
+        assert_eq!(state.sprite_slot_view(k).state(), 0);
     }
 
     #[test]
@@ -1324,21 +1406,25 @@ mod tests {
         // and falls through to delay+ai_state writes.
         let mut state = fresh_state();
         let k = 2;
-        state.ram[SPRITE_STATE + k] = 9;
-        state.ram[SPRITE_DEFL_BITS + k] = 0x80;
-        state.ram[CHOICE_IN_MULTISELECT_BOX] = 0;
+        {
+            let mut sprite = state.sprite_slot_view_mut(k);
+            sprite.set_state(9);
+            sprite.set_deflection_bits(0x80);
+        }
+        state.multiselect_choice_view_mut().set_value(0);
         for i in 0..4 {
-            state.ram[LINK_BOTTLE_INFO + i] = 1;
+            state.inventory_state_view_mut().set_bottle(i, 1);
         }
 
         state.bee_put_in_bottle(k);
         // delay and ai_state are written unconditionally after the bottle
         // check fails.
-        assert_eq!(state.ram[SPRITE_DELAY_AUX4 + k], 64);
-        assert_eq!(state.ram[SPRITE_AI_STATE + k], 1);
+        let sprite = state.sprite_slot_view(k);
+        assert_eq!(sprite.delay_aux4(), 64);
+        assert_eq!(sprite.ai_state(), 1);
         // Sprite_ShowMessageUnconditional(0xca) wrote dialogue index and
         // bumped main_module_index to 14.
-        assert_eq!(read_le_u16(&state.ram, DIALOGUE_MESSAGE_INDEX), 0xca);
+        assert_eq!(state.dialogue_message_index_view().value(), 0xca);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
     }
 
@@ -1349,24 +1435,31 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         let j = 5;
-        state.ram[SPRITE_TYPE + j] = 0x10;
-        state.ram[SPRITE_FLAGS + j] = 0; // bit 1 clear
-                                         // x=y=0; cur_x=0,cur_y=0 → (0-0+16)=16<24 ✓; (0-0-8)=0xfff8 huge — fails.
-                                         // Set Sprite_GetX/Y to large so the deltas pass.
-        state.ram[SPRITE_X_LO + j] = 0x10;
-        state.ram[SPRITE_Y_LO + j] = 0x10;
-        write_le_u16(&mut state.ram, CUR_SPRITE_X, 0x10);
-        write_le_u16(&mut state.ram, CUR_SPRITE_Y, 0x18);
+        {
+            let mut target = state.sprite_slot_view_mut(j);
+            target.set_sprite_type(0x10);
+            target.set_flags(0); // bit 1 clear
+        }
+        // x=y=0; cur_x=0,cur_y=0 → (0-0+16)=16<24 ✓; (0-0-8)=0xfff8 huge — fails.
+        // Set Sprite_GetX/Y to large so the deltas pass.
+        state.sprite_slot_view_mut(j).set_x(0x10);
+        state.sprite_slot_view_mut(j).set_y(0x10);
+        state.sprite_workspace_view_mut().set_current_sprite_x(0x10);
+        state.sprite_workspace_view_mut().set_current_sprite_y(0x18);
         // cur_x - x + 16 = 0 + 16 = 16  (<24 ✓)
         // cur_y - y - 8  = 8         (<24 ✓)
-        state.ram[SPRITE_X_VEL + k] = 3;
-        state.ram[SPRITE_Y_VEL + k] = 2;
-        state.ram[SPRITE_B + k] = 7;
+        {
+            let mut source = state.sprite_slot_view_mut(k);
+            source.set_x_velocity(3);
+            source.set_y_velocity(2);
+            source.set_b(7);
+        }
 
         state.player_bee_hone_in_on_target(j, k);
-        assert_eq!(state.ram[SPRITE_F + j], 15);
-        assert_eq!(state.ram[SPRITE_X_RECOIL + j], 6);
-        assert_eq!(state.ram[SPRITE_Y_RECOIL + j], 4);
-        assert_eq!(state.ram[SPRITE_B + k], 8);
+        let target = state.sprite_slot_view(j);
+        assert_eq!(target.f(), 15);
+        assert_eq!(target.x_recoil(), 6);
+        assert_eq!(target.y_recoil(), 4);
+        assert_eq!(state.sprite_slot_view(k).b(), 8);
     }
 }

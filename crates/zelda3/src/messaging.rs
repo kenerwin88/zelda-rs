@@ -44,15 +44,8 @@ const TEXT_CMD_WAITKEY: u8 = 23;
 const TEXT_CMD_END_MESSAGE: u8 = 24;
 const TEXT_CMD_IS_LETTER: u8 = 25;
 const OVERWORLD_MAP_FLAGS: usize = 0x0636;
-// NES_Ver2: CWORK0, "character work - 0"; used here as menu/text timing state.
-const MENU_ANIMATION_TIMER: usize = 0x0c8;
-const LINK_Y_COORD_SPEXIT: usize = 0x0c108;
-const LINK_X_COORD_SPEXIT: usize = 0x0c10a;
-const CURRENT_MUSIC_CONTROL_DEATH: usize = 0x0c227;
-const SOUND_EFFECT_AMBIENT_LAST_DEATH: usize = 0x0c228;
-const SAVE_OW_EVENT_INFO: usize = 0x0f280;
-const DEATH_SAVE_COUNTER_MESSAGING: usize = 0x0f403;
-const DEATH_VAR2_MESSAGING: usize = 0x0f405;
+const DEATH_BACKUP_CURRENT_MUSIC: usize = 0x0c227;
+const DEATH_BACKUP_AMBIENT_SOUND: usize = 0x0c228;
 const DIALOGUE_NUMBER: usize = 0x1cf2;
 const FLAG_WHICH_MUSIC_TYPE_MESSAGING: usize = 0x0136;
 const IS_IN_DARK_WORLD: usize = 0x0fff;
@@ -64,7 +57,6 @@ const DUNGMAP_IDX: usize = 0x0211;
 const DUNGMAP_SCROLL_TARGET_Y: usize = 0x0213;
 const DUNGMAP_PLAYER_MARKER_X: usize = 0x0215;
 const DUNGMAP_PLAYER_MARKER_Y: usize = 0x0217;
-const DUNGMAP_VAR6: usize = 0x0cf5;
 const MAPBAK_MAIN_TILE_THEME_INDEX: usize = 0x0c20e;
 const MAPBAK_SPRITE_GRAPHICS_INDEX: usize = 0x0c20f;
 const MAPBAK_AUX_TILE_THEME_INDEX: usize = 0x0c210;
@@ -72,57 +64,60 @@ const MAPBAK_BG1_X_OFFSET: usize = 0x0c221;
 const MAPBAK_BG1_Y_OFFSET: usize = 0x0c223;
 const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x045c;
 const MAPBAK_PALETTE: usize = 0x1dd80;
-const K_FEATURES0_EXTEND_SCREEN64_MAP: u32 = 1;
-const K_FEATURES0_CANCEL_BIRD_TRAVEL: u32 = 8192;
-const K_LOCATION_MENU_START_POS: [u8; 3] = [0, 1, 6];
-const K_HEALTH_AFTER_DEATH: [u8; 21] = [
+const FEATURE_EXTEND_SCREEN64_MAP: u32 = 1;
+const FEATURE_CANCEL_BIRD_TRAVEL: u32 = 8192;
+const LOCATION_MENU_START_POSITIONS: [u8; 3] = [0, 1, 6];
+const POST_DEATH_HEALTH_BY_CAPACITY: [u8; 21] = [
     0x18, 0x18, 0x18, 0x18, 0x18, 0x20, 0x20, 0x28, 0x28, 0x30, 0x30, 0x38, 0x38, 0x38, 0x40, 0x40,
     0x40, 0x48, 0x48, 0x48, 0x50,
 ];
-const K_BIRD_TRAVEL_TAB1: [u8; 8] = [0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d];
-const K_BIRD_TRAVEL_X_LO: [u8; 8] = [0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf0];
-const K_BIRD_TRAVEL_X_HI: [u8; 8] = [6, 0x0c, 2, 8, 0x0f, 0, 7, 0x0e];
-const K_BIRD_TRAVEL_Y_LO: [u8; 8] = [0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80];
-const K_BIRD_TRAVEL_Y_HI: [u8; 8] = [3, 5, 7, 0x0b, 0x0b, 0x0f, 0x0f, 0x0f];
-const K_OVERWORLD_MAP_DATA: [u8; 7] = [0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f];
+const BIRD_TRAVEL_OVERWORLD_SCREEN_BY_STOP: [u8; 8] =
+    [0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d];
+const BIRD_TRAVEL_X_LOW: [u8; 8] = [0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf0];
+const BIRD_TRAVEL_X_HIGH: [u8; 8] = [6, 0x0c, 2, 8, 0x0f, 0, 7, 0x0e];
+const BIRD_TRAVEL_Y_LOW: [u8; 8] = [0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80];
+const BIRD_TRAVEL_Y_HIGH: [u8; 8] = [3, 5, 7, 0x0b, 0x0b, 0x0f, 0x0f, 0x0f];
+const OVERWORLD_MAP_ICON_TILES: [u8; 7] = [0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f];
 
-const DUNG_MAP_TAB0: [i8; 14] = [-1, -1, -1, -1, -1, 2, 0, 10, 4, 8, -1, 6, 12, 14];
-const DUNG_MAP_TAB1: [u16; 8] = [
+const DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON: [i8; 14] =
+    [-1, -1, -1, -1, -1, 2, 0, 10, 4, 8, -1, 6, 12, 14];
+const DUNGEON_MAP_LEVEL_LABEL_TOP_TILES: [u16; 8] = [
     0x2108, 0x2109, 0x2109, 0x210a, 0x210b, 0x210c, 0x210d, 0x211d,
 ];
-const DUNG_MAP_TAB2: [u16; 8] = [
+const DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES: [u16; 8] = [
     0x2118, 0x2119, 0xa109, 0x211a, 0x211b, 0x211c, 0x2118, 0xa11d,
 ];
-const DUNG_MAP_TAB3: [u8; 14] = [
+const DUNGEON_MAP_LEVEL_LABEL_TOP_STRIPE: [u8; 14] = [
     0x60, 0x84, 0, 0x0b, 0x32, 0x21, 0x33, 0x21, 0x38, 0x21, 0x3a, 0x21, 0x7f, 0x20,
 ];
-const DUNG_MAP_TAB4: [u8; 14] = [
+const DUNGEON_MAP_LEVEL_LABEL_BOTTOM_STRIPE: [u8; 14] = [
     0x60, 0xa4, 0, 0x0b, 0x42, 0x21, 0x43, 0x21, 0x49, 0x21, 0x4a, 0x21, 0x7f, 0x20,
 ];
-const DUNG_MAP_TAB5: [u16; 14] = [
+const DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON: [u16; 14] = [
     0x21, 0x23, 0x20, 0x21, 0x70, 0x12, 0x11, 0x212, 2, 0x217, 0x160, 0x12, 0x113, 0x171,
 ];
-const DUNG_MAP_TAB6: [u16; 21] = [
+const DUNGEON_MAP_FLOOR_LIST_HEADER_STRIPE: [u16; 21] = [
     0xaa10, 0x0100, 0x1b2f, 0xc910, 0x0300, 0x1b2f, 0x1b2e, 0xe510, 0x0b00, 0x1b2f, 0x1b2e, 0x5b2f,
     0x1b2f, 0x1b2e, 0x1b2e, 0x0311, 0x0100, 0x1b2f, 0x0411, 0x0c40, 0x1b2e,
 ];
-const DUNG_MAP_TAB7: [u16; 9] = [
+const DUNGEON_MAP_FLOOR_LIST_VRAM_STARTS: [u16; 9] = [
     0x1223, 0x1263, 0x12a3, 0x12e3, 0x1323, 0x11e3, 0x11a3, 0x1163, 0x1123,
 ];
-const DUNG_MAP_TAB8: [u16; 7] = [0x1b28, 0x1b29, 0x1b2a, 0x1b2b, 0x1b2c, 0x1b2d, 0x1b2e];
-const DUNG_MAP_TAB9: [u16; 8] = [
+const DUNGEON_MAP_FLOOR_LIST_LABEL_TILES: [u16; 7] =
+    [0x1b28, 0x1b29, 0x1b2a, 0x1b2b, 0x1b2c, 0x1b2d, 0x1b2e];
+const DUNGEON_MAP_FLOOR_LIST_BOX_TILES: [u16; 8] = [
     0x0f26, 0x0f27, 0x4f27, 0x4f26, 0x8f26, 0x8f27, 0xcf27, 0xcf26,
 ];
-const DUNG_MAP_TAB10: [u16; 4] = [0x00e2, 0x00f8, 0x03a2, 0x03b8];
-const DUNG_MAP_TAB11: [u16; 4] = [0x1f19, 0x5f19, 0x9f19, 0xdf19];
-const DUNG_MAP_TAB12: [u16; 2] = [0x00e4, 0x03a4];
-const DUNG_MAP_TAB13: [u16; 2] = [0x1f1a, 0x9f1a];
-const DUNG_MAP_TAB14: [u16; 2] = [0x0122, 0x0138];
-const DUNG_MAP_TAB15: [u16; 2] = [0x1f1b, 0x5f1b];
-const DUNG_MAP_TAB16: [u16; 8] = [
+const DUNGEON_MAP_ROOM_BORDER_CORNER_POSITIONS: [u16; 4] = [0x00e2, 0x00f8, 0x03a2, 0x03b8];
+const DUNGEON_MAP_ROOM_BORDER_CORNER_TILES: [u16; 4] = [0x1f19, 0x5f19, 0x9f19, 0xdf19];
+const DUNGEON_MAP_ROOM_BORDER_HORIZONTAL_POSITIONS: [u16; 2] = [0x00e4, 0x03a4];
+const DUNGEON_MAP_ROOM_BORDER_HORIZONTAL_TILES: [u16; 2] = [0x1f1a, 0x9f1a];
+const DUNGEON_MAP_ROOM_BORDER_VERTICAL_POSITIONS: [u16; 2] = [0x0122, 0x0138];
+const DUNGEON_MAP_ROOM_BORDER_VERTICAL_TILES: [u16; 2] = [0x1f1b, 0x5f1b];
+const DUNGEON_MAP_FLOOR_NUMBER_TILES: [u16; 8] = [
     0x1f1e, 0x1f1f, 0x1f20, 0x1f21, 0x1f22, 0x1f23, 0x1f24, 0x1f25,
 ];
-const DUNG_MAP_TAB23: &[u16] = &[
+const DUNGEON_MAP_ROOM_QUADRANT_TILES: &[u16] = &[
     0xb61, 0x5361, 0x8b61, 0x8b62, 0xb60, 0xb63, 0x8b60, 0xb64, 0xb00, 0xb00, 0xb65, 0xb66, 0xb67,
     0x4b67, 0x9367, 0xd367, 0xb60, 0x5360, 0x8b60, 0xcb60, 0xb6a, 0x4b6a, 0x4b6d, 0xb6d, 0x1368,
     0x1369, 0xb00, 0xb00, 0xb6a, 0x136b, 0xb6c, 0xb6d, 0x136e, 0x4b6e, 0xb00, 0xb00, 0x136f, 0xb00,
@@ -185,28 +180,29 @@ const DUNG_MAP_TAB23: &[u16] = &[
     0xb00, 0x13a6, 0xb00, 0x8b5f, 0x139b, 0x13a6, 0x139c, 0x53a2, 0xb00, 0xb00, 0x138c, 0xb00,
     0x9394, 0x139e, 0xb00, 0xb00,
 ];
-const DUNG_MAP_TAB21: [u16; 3] = [137, 167, 79];
-const DUNG_MAP_TAB22: [u16; 3] = [169, 119, 190];
-const DUNG_MAP_TAB24: [u16; 2] = [0x1f, 0x7f];
-const DUNG_MAP_TAB25: [u8; 14] = [15, 15, 200, 51, 32, 6, 90, 144, 41, 222, 7, 172, 164, 13];
-const DUNG_MAP_TAB26: [i16; 2] = [0x60, -0x60];
-const DUNG_MAP_TAB28: [i16; 14] = [
+const DUNGEON_MAP_ROOM_REMAP_FROM: [u16; 3] = [137, 167, 79];
+const DUNGEON_MAP_ROOM_REMAP_TO: [u16; 3] = [169, 119, 190];
+const DUNGEON_MAP_MARKER_Y_BASES: [u16; 2] = [0x1f, 0x7f];
+const DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON: [u8; 14] =
+    [15, 15, 200, 51, 32, 6, 90, 144, 41, 222, 7, 172, 164, 13];
+const DUNGEON_MAP_FLOOR_SCROLL_TARGET_DELTAS: [i16; 2] = [0x60, -0x60];
+const DUNGEON_MAP_BOSS_FLOOR_OFFSETS: [i16; 14] = [
     -1, -1, 1, 1, 6, 0xff, 0xff, 0xff, 0xfe, 0xf9, 5, 0xff, 0xfd, 6,
 ];
-const DUNG_MAP_TAB29: [i8; 4] = [-9, 8, -9, 8];
-const DUNG_MAP_TAB30: [i8; 4] = [-8, -8, 9, 9];
-const DUNG_MAP_TAB31: [u8; 4] = [0xf1, 0xb1, 0x71, 0x31];
-const DUNG_MAP_TAB32: [u8; 4] = [0x0c, 0x0c, 8, 0x0a];
-const DUNG_MAP_TAB33: [u8; 8] = [187, 171, 155, 139, 123, 107, 91, 75];
-const DUNG_MAP_TAB34: [u8; 8] = [0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
-const DUNG_MAP_TAB35: [u8; 2] = [0, 8];
-const DUNG_MAP_TAB36: [u8; 4] = [0x37, 0x38, 0x38, 0x37];
-const DUNG_MAP_TAB37: [u16; 14] = [
+const DUNGEON_MAP_LOCATION_MARKER_X_OFFSETS: [i8; 4] = [-9, 8, -9, 8];
+const DUNGEON_MAP_LOCATION_MARKER_Y_OFFSETS: [i8; 4] = [-8, -8, 9, 9];
+const DUNGEON_MAP_LOCATION_MARKER_OAM_FLAGS: [u8; 4] = [0xf1, 0xb1, 0x71, 0x31];
+const DUNGEON_MAP_LOCATION_MARKER_CHARS: [u8; 4] = [0x0c, 0x0c, 8, 0x0a];
+const DUNGEON_MAP_FLOOR_Y_POSITIONS: [u8; 8] = [187, 171, 155, 139, 123, 107, 91, 75];
+const DUNGEON_MAP_FLOOR_DIGIT_CHARS: [u8; 8] = [0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
+const DUNGEON_MAP_FLOOR_BLINKER_SPRITE_OFFSETS: [u8; 2] = [0, 8];
+const DUNGEON_MAP_FLOOR_BLINKER_CHARS: [u8; 4] = [0x37, 0x38, 0x38, 0x37];
+const DUNGEON_MAP_BOSS_ICON_XY_BY_DUNGEON: [u16; 14] = [
     0xffff, 0xffff, 0x0808, 8, 0, 8, 0x0808, 8, 0x0808, 0x0800, 0x0404, 0x0808, 8, 8,
 ];
-const DUNG_MAP_TAB38: [u8; 4] = [0x39, 0x3b, 0x3d, 0x3b];
-const DUNG_MAP_TAB39: [i8; 2] = [-4, 4];
-const DUNG_MAP_TAB40: [i8; 2] = [4, -4];
+const DUNGEON_MAP_PLAYER_MARKER_OAM_FLAGS: [u8; 4] = [0x39, 0x3b, 0x3d, 0x3b];
+const DUNGEON_MAP_SCROLL_MARKER_Y_DELTAS: [i8; 2] = [-4, 4];
+const DUNGEON_MAP_SCROLL_BG_Y_DELTAS: [i8; 2] = [4, -4];
 const DUNG_MAP_UPPER_BITMASKS: [u16; 16] = [
     0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020, 0x0010,
     0x0008, 0x0004, 0x0002, 0x0001,
@@ -238,21 +234,22 @@ fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
 impl ZeldaState {
     pub(super) fn Module0E_Interface(&mut self) {
         let mut skip_run = false;
-        if self.ram[PLAYER_IS_INDOORS] != 0 {
+        if self.world_state_view().is_indoors() {
             if self.frame_control_view().submodule() == 3 {
-                skip_run = self.ram[OVERWORLD_MAP_STATE] != 0 && self.ram[OVERWORLD_MAP_STATE] != 7;
+                skip_run = self.world_state_view().overworld_map_state() != 0
+                    && self.world_state_view().overworld_map_state() != 7;
             } else {
                 self.dungeon_push_block_handler();
             }
         } else {
             skip_run = (self.frame_control_view().submodule() == 7
                 || self.frame_control_view().submodule() == 10)
-                && self.ram[OVERWORLD_MAP_STATE] != 0;
+                && self.world_state_view().overworld_map_state() != 0;
         }
         if !skip_run {
             self.sprite_main();
             self.link_oam_main();
-            if self.ram[PLAYER_IS_INDOORS] == 0 {
+            if self.world_state_view().is_outdoors() {
                 self.OverworldOverlay_HandleRain();
             }
             self.hud_refill_logic();
@@ -263,16 +260,16 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module0e-before-run-interface");
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
-        let bg1_x_offset = read_le_u16(&self.ram, BG1_X_OFFSET);
-        let bg1_y_offset = read_le_u16(&self.ram, BG1_Y_OFFSET);
-        let bg2x = read_le_u16(&self.ram, BG2HOFS_COPY2).wrapping_add(bg1_x_offset);
-        let bg2y = read_le_u16(&self.ram, BG2VOFS_COPY2).wrapping_add(bg1_y_offset);
-        let bg1x = read_le_u16(&self.ram, BG1HOFS_COPY2).wrapping_add(bg1_x_offset);
-        let bg1y = read_le_u16(&self.ram, BG1VOFS_COPY2).wrapping_add(bg1_y_offset);
-        write_le_u16(&mut self.ram, BG2HOFS_COPY, bg2x);
-        write_le_u16(&mut self.ram, BG2VOFS_COPY, bg2y);
-        write_le_u16(&mut self.ram, BG1HOFS_COPY, bg1x);
-        write_le_u16(&mut self.ram, BG1VOFS_COPY, bg1y);
+        let bg1_x_offset = self.world_state_view().bg1_x_offset();
+        let bg1_y_offset = self.world_state_view().bg1_y_offset();
+        let bg2x = self.world_state_view().bg2_x().wrapping_add(bg1_x_offset);
+        let bg2y = self.world_state_view().bg2_y().wrapping_add(bg1_y_offset);
+        let bg1x = self.world_state_view().bg1_x().wrapping_add(bg1_x_offset);
+        let bg1y = self.world_state_view().bg1_y().wrapping_add(bg1_y_offset);
+        self.ppu_scroll_copy_view_mut().set_bg2_h_copy(bg2x);
+        self.ppu_scroll_copy_view_mut().set_bg2_v_copy(bg2y);
+        self.ppu_scroll_copy_view_mut().set_bg1_h_copy(bg1x);
+        self.ppu_scroll_copy_view_mut().set_bg1_v_copy(bg1y);
         self.replay_trace_ram_watch("module0e-after-scroll-copy");
     }
 
@@ -311,14 +308,14 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDungmapFloorLayout(&self) -> Vec<u8> {
-        let idx = (self.ram[CUR_PALACE_INDEX_X2] >> 1) as usize;
+        let idx = (self.save_progress_view().palace_index_x2() >> 1) as usize;
         self.asset_memblk(97, idx)
             .map(|blk| blk.ptr.to_vec())
             .unwrap_or_default()
     }
 
     pub(super) fn GetOtherDungmapInfo(&self, count: usize) -> u8 {
-        let idx = (self.ram[CUR_PALACE_INDEX_X2] >> 1) as usize;
+        let idx = (self.save_progress_view().palace_index_x2() >> 1) as usize;
         self.asset_memblk(98, idx)
             .and_then(|blk| blk.ptr.get(count).copied())
             .unwrap_or(0)
@@ -336,9 +333,14 @@ impl ZeldaState {
             1 => self.ApplyPaletteFilter_bounce(),
             2 => {
                 self.DesertPrayer_InitializeIrisHDMA();
-                self.ram[PALETTE_FILTER_COUNTDOWN] = self.ram[MOSAIC_TARGET_LEVEL].wrapping_sub(1);
-                self.ram[MOSAIC_TARGET_LEVEL] = 0;
-                self.ram[DARKENING_OR_LIGHTENING_SCREEN] = 2;
+                let countdown = self
+                    .display_nmi_view()
+                    .mosaic_target_level()
+                    .wrapping_sub(1);
+                self.palette_filter_view_mut().set_countdown(countdown);
+                self.display_nmi_view_mut().clear_mosaic_target_level();
+                self.palette_filter_view_mut()
+                    .set_darkening_or_lightening_screen(2);
             }
             3 => {
                 self.ApplyPaletteFilter_bounce();
@@ -371,36 +373,39 @@ impl ZeldaState {
     }
 
     fn finish_potion_refill(&mut self) {
-        self.ram[BUTTON_MASK_B_Y] &= !0x40;
-        self.ram[FLAG_UPDATE_HUD_IN_NMI] = self.ram[FLAG_UPDATE_HUD_IN_NMI].wrapping_add(1);
+        self.player_state_view_mut()
+            .clear_button_mask_b_y_bits(0x40);
+        self.system_signals_view_mut().increment_hud_update_flag();
         self.frame_control_view_mut().set_submodule(0);
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
     }
 
     pub(super) fn Module0E_0B_SaveMenu(&mut self) {
-        if self.ram[PLAYER_IS_INDOORS] == 0 {
+        if self.world_state_view().is_outdoors() {
             self.Overworld_DwDeathMountainPaletteAnimation();
         }
         self.RenderText();
-        self.ram[FLAG_UPDATE_HUD_IN_NMI] = 0;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 0;
+        self.system_signals_view_mut().clear_hud_update_flag();
+        self.display_nmi_view_mut().set_core_update_disable_flag(0);
         if self.frame_control_view().subsubmodule() < 3 {
             self.frame_control_view_mut().increment_subsubmodule();
         } else {
-            self.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+            self.display_nmi_view_mut().set_bg_vram_load_mode(0);
         }
         if self.frame_control_view().submodule() == 0 {
             self.frame_control_view_mut().set_subsubmodule(0);
-            self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
-            if self.ram[CHOICE_IN_MULTISELECT_BOX] != 0 {
-                self.ram[SOUND_EFFECT_AMBIENT] = 15;
+            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            if self.multiselect_choice_view().value() != 0 {
+                self.system_signals_view_mut().set_ambient_sound_effect(15);
                 self.frame_control_view_mut().set_main_module(23);
                 self.frame_control_view_mut().set_submodule(1);
-                self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS] = 0;
-                self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS + 1] = 0;
+                self.dungeon_state_view_mut()
+                    .clear_changeable_object_index(0);
+                self.dungeon_state_view_mut()
+                    .clear_changeable_object_index(1);
             } else {
-                self.ram[CHOICE_IN_MULTISELECT_BOX] = self.ram[CHOICE_IN_MULTISELECT_BOX_BAK];
+                self.multiselect_choice_view_mut().restore_backup();
             }
         }
     }
@@ -410,12 +415,12 @@ impl ZeldaState {
         if self.frame_control_view().submodule() != 0 {
             return;
         }
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+        self.display_nmi_view_mut().set_bg_vram_load_mode(0);
         self.EnableForceBlank();
         self.EraseTileMaps_normal();
         let bak = self.ram[WHICH_STARTING_POINT];
         self.ram[WHICH_STARTING_POINT] =
-            K_LOCATION_MENU_START_POS[self.ram[CHOICE_IN_MULTISELECT_BOX] as usize];
+            LOCATION_MENU_START_POSITIONS[self.multiselect_choice_view().value() as usize];
         self.frame_control_view_mut().set_subsubmodule(0);
         self.load_dungeon_room_rebuild_hud();
         self.ram[WHICH_STARTING_POINT] = bak;
@@ -426,9 +431,9 @@ impl ZeldaState {
         self.ram[W12SEL_COPY] = 0x33;
         self.ram[W34SEL_COPY] = 3;
         self.ram[WOBJSEL_COPY] = 0x33;
-        self.ram[TMW_COPY] = self.ram[TM_COPY];
-        self.ram[TSW_COPY] = self.ram[TS_COPY];
-        self.ram[HDMAEN_COPY] = 0x80;
+        self.ram[TMW_COPY] = self.display_nmi_view().main_screen_layers();
+        self.ram[TSW_COPY] = self.display_nmi_view().sub_screen_layers();
+        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
         for i in 0..240 {
             write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + i * 2, 0);
         }
@@ -446,7 +451,7 @@ impl ZeldaState {
         let r14 = self
             .player_state_view()
             .y()
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2))
+            .wrapping_sub(self.world_state_view().bg2_y())
             .wrapping_add(12);
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(self.ram[SPOTLIGHT_WINDOW_RADIUS]));
         write_le_u16(&mut self.ram, SPOTLIGHT_Y_LOWER, spotlight_y_lower);
@@ -461,7 +466,7 @@ impl ZeldaState {
         let spotlight_x_center = self
             .player_state_view()
             .x()
-            .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2))
+            .wrapping_sub(self.world_state_view().bg2_x())
             .wrapping_add(8);
         write_le_u16(&mut self.ram, SPOTLIGHT_WINDOW_X_CENTER, spotlight_x_center);
         self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = 1;
@@ -537,7 +542,10 @@ impl ZeldaState {
             return;
         }
         if self.ram[SPOTLIGHT_WINDOW_STATE] != 1
-            && (self.ram[FILTERED_JOYPAD_H] | self.ram[FILTERED_JOYPAD_L]) & 0xc0 != 0
+            && (self.player_state_view().filtered_joypad_h()
+                | self.player_state_view().filtered_joypad_l())
+                & 0xc0
+                != 0
         {
             self.ram[SPOTLIGHT_WINDOW_STATE] = 1;
             self.ram[SPOTLIGHT_WINDOW_RADIUS] >>= 1;
@@ -546,16 +554,16 @@ impl ZeldaState {
             self.ram[SPOTLIGHT_WINDOW_RADIUS] = self.ram[SPOTLIGHT_WINDOW_RADIUS].wrapping_add(8);
             if self.ram[SPOTLIGHT_WINDOW_RADIUS] >= 0xc0 {
                 self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] ^= 1;
-                self.ram[MUSIC_CONTROL] = 0xf3;
-                self.ram[SOUND_EFFECT_AMBIENT] = 0;
-                self.ram[FLAG_UNK1] = 0;
-                self.ram[Y_BUTTON_ACTION_STEP] = 0;
-                self.ram[BUTTON_MASK_B_Y] = 0;
-                self.ram[LINK_STATE_BITS] = 0;
-                self.ram[LINK_CANT_CHANGE_DIRECTION] &= !1;
+                self.system_signals_view_mut().set_music_control(0xf3);
+                self.system_signals_view_mut().set_ambient_sound_effect(0);
+                self.frame_control_view_mut().clear_modal_pause_flag();
+                self.player_state_view_mut().set_y_button_action_step(0);
+                self.player_state_view_mut().set_button_mask_b_y(0);
+                self.player_state_view_mut().clear_state_bits();
+                self.player_state_view_mut().clear_direction_lock_bits(1);
                 self.frame_control_view_mut().set_subsubmodule(0);
                 self.frame_control_view_mut().set_submodule(0);
-                let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+                let saved_module = self.frame_control_view().saved_module_for_menu();
                 self.frame_control_view_mut().set_main_module(saved_module);
                 self.ram[TMW_COPY] = 0;
                 self.ram[TSW_COPY] = 0;
@@ -568,19 +576,25 @@ impl ZeldaState {
         }
 
         const PRAYING_SCENE_DELAYS: [u8; 5] = [22, 22, 22, 64, 1];
-        self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] =
-            self.ram[LINK_DELAY_TIMER_SPIN_ATTACK].wrapping_sub(1);
-        if (self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] as i8).is_negative() {
-            let i = self.ram[Y_BUTTON_ACTION_STEP].wrapping_add(1);
+        if (self
+            .player_state_view_mut()
+            .decrement_spin_attack_delay_timer() as i8)
+            .is_negative()
+        {
+            let i = self
+                .player_state_view()
+                .y_button_action_step()
+                .wrapping_add(1);
             if i != 4 {
-                self.ram[Y_BUTTON_ACTION_STEP] = i;
+                self.player_state_view_mut().set_y_button_action_step(i);
             }
-            self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] = PRAYING_SCENE_DELAYS[i as usize];
+            self.player_state_view_mut()
+                .set_spin_attack_delay_timer(PRAYING_SCENE_DELAYS[i as usize]);
         }
     }
 
     pub(super) fn DesertHDMA_CalculateIrisShapeLine(&self) -> Pair16U {
-        const PRAYING_SCENE_TAB1: [u8; 129] = [
+        const PRAYING_IRIS_OPEN_RADIUS_LOOKUP: [u8; 129] = [
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe,
             0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa,
             0xf9, 0xf9, 0xf8, 0xf8, 0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2,
@@ -592,7 +606,7 @@ impl ZeldaState {
             0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e, 0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37,
             0x2d, 0x1f, 0,
         ];
-        const PRAYING_SCENE_TAB0: [u8; 129] = [
+        const PRAYING_IRIS_CLOSED_RADIUS_LOOKUP: [u8; 129] = [
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfd, 0xfd, 0xfc, 0xfc, 0xfb, 0xfa,
             0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf1, 0xf0, 0xee, 0xed, 0xeb, 0xe9, 0xe8,
             0xe6, 0xe4, 0xe2, 0xdf, 0xdd, 0xdb, 0xd8, 0xd6, 0xd3, 0xd0, 0xcd, 0xca, 0xc7, 0xc4,
@@ -605,9 +619,9 @@ impl ZeldaState {
         let radius = self.ram[SPOTLIGHT_WINDOW_RADIUS].max(1);
         let t = (self.snes_divide(u16::from(y_buffer) << 8, radius) >> 1) as usize;
         let r6 = if self.ram[SPOTLIGHT_WINDOW_STATE] != 0 {
-            PRAYING_SCENE_TAB1[t.min(128)]
+            PRAYING_IRIS_OPEN_RADIUS_LOOKUP[t.min(128)]
         } else {
-            PRAYING_SCENE_TAB0[t.min(128)]
+            PRAYING_IRIS_CLOSED_RADIUS_LOOKUP[t.min(128)]
         };
         let mut r8 = (u16::from(r6) * u16::from(radius)) >> 8;
         if self.ram[SPOTLIGHT_WINDOW_STATE] != 0 {
@@ -626,8 +640,7 @@ impl ZeldaState {
     }
 
     pub(super) fn SaveGameFile(&mut self) {
-        let slot = ((read_le_u16(&self.sram, SRM_VAR1) >> 1).wrapping_sub(1)) as usize;
-        let offs = slot * 0x500;
+        let offs = self.selected_save_slot_offset();
         if offs + 0x500 <= self.sram.len() {
             self.sram[offs..offs + 0x500]
                 .copy_from_slice(&self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500]);
@@ -655,7 +668,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Animate_GAMEOVER_Letters(&mut self) {
-        match self.ram[ANCILLA_TYPE] {
+        match self.ancilla_slot_view(0).ancilla_type() {
             0 => self.frame_control_view_mut().increment_submodule(),
             1 => self.GameOverText_SweepLeft(),
             2 => self.GameOverText_UnfurlRight(),
@@ -665,62 +678,71 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_SweepLeft(&mut self) {
-        const GAME_OVER_TEXT_TAB1: [u8; 8] = [0x40, 0x50, 0x60, 0x70, 0x88, 0x98, 0xa8, 0x40];
+        const GAME_OVER_SWEEP_LEFT_X_TARGETS: [u8; 8] =
+            [0x40, 0x50, 0x60, 0x70, 0x88, 0x98, 0xa8, 0x40];
 
         let mut k = self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] as usize;
         self.ram[CUR_OBJECT_INDEX] = k as u8;
-        self.ram[ANCILLA_X_VEL + k] = 0x80;
+        self.ancilla_slot_view_mut(k).set_x_velocity(0x80);
         self.ancilla_move_x(k);
-        if self.ancilla_get_x(k) < u16::from(GAME_OVER_TEXT_TAB1[k]) {
-            self.ram[ANCILLA_X_LO + k] = GAME_OVER_TEXT_TAB1[k];
+        if self.ancilla_get_x(k) < u16::from(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]) {
+            self.ancilla_slot_view_mut(k)
+                .set_x_low(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]);
             k += 1;
             self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = k as u8;
             if k == 8 {
                 self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 7;
-                self.ram[ANCILLA_TYPE] = self.ram[ANCILLA_TYPE].wrapping_add(1);
-                self.ram[HOOKSHOT_EFFECT_INDEX] = 0;
-                self.ram[SOUND_EFFECT_2] = 38;
+                self.ancilla_slot_view_mut(0).increment_ancilla_type();
+                self.messaging_state_view_mut()
+                    .clear_game_over_letter_cursor();
+                self.system_signals_view_mut().set_sound_effect_2(38);
                 self.GameOverText_Draw();
                 return;
             }
         }
         if k == 7 {
             let mut j = 6i32;
-            while j != i32::from(self.ram[HOOKSHOT_EFFECT_INDEX]) {
-                self.ram[ANCILLA_X_LO + j as usize] = self.ram[ANCILLA_X_LO + k];
+            let x = self.ancilla_slot_view(k).x_low();
+            while j != i32::from(self.messaging_state_view().game_over_letter_cursor()) {
+                self.ancilla_slot_view_mut(j as usize).set_x_low(x);
                 j -= 1;
             }
-            let hookshot = self.ram[HOOKSHOT_EFFECT_INDEX] as usize;
-            if self.ancilla_get_x(k) < u16::from(GAME_OVER_TEXT_TAB1[hookshot]) {
-                self.ram[HOOKSHOT_EFFECT_INDEX] = self.ram[HOOKSHOT_EFFECT_INDEX].wrapping_sub(1);
+            let hookshot = self.messaging_state_view().game_over_letter_cursor() as usize;
+            if self.ancilla_get_x(k) < u16::from(GAME_OVER_SWEEP_LEFT_X_TARGETS[hookshot]) {
+                self.messaging_state_view_mut()
+                    .decrement_game_over_letter_cursor();
             }
         }
         self.GameOverText_Draw();
     }
 
     pub(super) fn GameOverText_UnfurlRight(&mut self) {
-        const GAME_OVER_TEXT_TAB2: [u8; 8] = [0x58, 0x60, 0x68, 0x70, 0x88, 0x90, 0x98, 0xa0];
+        const GAME_OVER_UNFURL_RIGHT_X_TARGETS: [u8; 8] =
+            [0x58, 0x60, 0x68, 0x70, 0x88, 0x90, 0x98, 0xa0];
 
         let mut k = self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] as usize;
         self.ram[CUR_OBJECT_INDEX] = k as u8;
-        self.ram[ANCILLA_X_VEL + k] = 0x60;
+        self.ancilla_slot_view_mut(k).set_x_velocity(0x60);
         self.ancilla_move_x(k);
-        let j = self.ram[HOOKSHOT_EFFECT_INDEX] as usize;
-        if self.ram[ANCILLA_X_LO + k] >= GAME_OVER_TEXT_TAB2[j] {
-            self.ram[ANCILLA_X_LO + j] = GAME_OVER_TEXT_TAB2[j];
-            self.ram[HOOKSHOT_EFFECT_INDEX] = self.ram[HOOKSHOT_EFFECT_INDEX].wrapping_add(1);
-            if self.ram[HOOKSHOT_EFFECT_INDEX] == 8 {
+        let j = self.messaging_state_view().game_over_letter_cursor() as usize;
+        if self.ancilla_slot_view(k).x() >= u16::from(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]) {
+            self.ancilla_slot_view_mut(j)
+                .set_x_low(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]);
+            self.messaging_state_view_mut()
+                .increment_game_over_letter_cursor();
+            if self.messaging_state_view().game_over_letter_cursor() == 8 {
                 self.frame_control_view_mut().increment_submodule();
-                self.ram[ANCILLA_TYPE] = self.ram[ANCILLA_TYPE].wrapping_add(1);
+                self.ancilla_slot_view_mut(0).increment_ancilla_type();
                 self.GameOverText_Draw();
                 return;
             }
         }
-        let end = i32::from(self.ram[HOOKSHOT_EFFECT_INDEX]).wrapping_sub(1);
+        let end = i32::from(self.messaging_state_view().game_over_letter_cursor()).wrapping_sub(1);
         k = self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] as usize;
         let mut j = k as i32;
+        let x = self.ancilla_slot_view(k).x_low();
         loop {
-            self.ram[ANCILLA_X_LO + j as usize] = self.ram[ANCILLA_X_LO + k];
+            self.ancilla_slot_view_mut(j as usize).set_x_low(x);
             j -= 1;
             if j == end {
                 break;
@@ -730,7 +752,7 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_Draw(&mut self) {
-        self.ram[NMI_SUBROUTINE_INDEX] = 0x12;
+        self.display_nmi_view_mut().set_subroutine_index(0x12);
     }
 
     pub(super) fn Module12_GameOver(&mut self) {
@@ -764,42 +786,48 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_Func1(&mut self) {
-        self.ram[CURRENT_MUSIC_CONTROL_DEATH] = self.ram[CURRENT_MUSIC_CONTROL];
-        self.ram[SOUND_EFFECT_AMBIENT_LAST_DEATH] = self.ram[SOUND_EFFECT_AMBIENT_LAST];
-        self.ram[MUSIC_CONTROL] = 0xf1;
-        self.ram[SOUND_EFFECT_AMBIENT] = 5;
-        self.ram[OVERWORLD_MAP_STATE] = 5;
-        self.ram[LINK_ON_CONVEYOR_BELT] = 0;
+        self.ram[DEATH_BACKUP_CURRENT_MUSIC] = self.system_signals_view().current_music_control();
+        self.ram[DEATH_BACKUP_AMBIENT_SOUND] =
+            self.system_signals_view().last_ambient_sound_effect();
+        self.system_signals_view_mut().set_music_control(0xf1);
+        self.system_signals_view_mut().set_ambient_sound_effect(5);
+        self.world_state_view_mut().set_overworld_map_state(5);
+        self.player_state_view_mut().clear_conveyor_belt_state();
         self.ram[PLAYER_LAYER_COLLISION_FLAGS] = 0;
-        self.ram[LINK_CAPE_MODE] = 0;
-        let palette_filter_countdown = read_le_u16(&self.ram, PALETTE_FILTER_COUNTDOWN);
-        let darkening_or_lightening_screen = read_le_u16(&self.ram, DARKENING_OR_LIGHTENING_SCREEN);
+        self.player_state_view_mut().clear_cape_mode();
+        let palette_filter_countdown = self.palette_filter_view().countdown_word();
+        let darkening_or_lightening_screen = self
+            .palette_filter_view()
+            .darkening_or_lightening_screen_word();
         write_le_u16(&mut self.ram, MAPBAK_BG1_X_OFFSET, palette_filter_countdown);
         write_le_u16(
             &mut self.ram,
             MAPBAK_BG1_Y_OFFSET,
             darkening_or_lightening_screen,
         );
-        let palette = self.ram[AUX_PALETTE_BUFFER..AUX_PALETTE_BUFFER + 256].to_vec();
+        let palette = self.palette_buffer_view().aux_visible_slice().to_vec();
         self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 256].copy_from_slice(&palette);
-        self.ram[AUX_PALETTE_BUFFER + 32 * 2..AUX_PALETTE_BUFFER + 32 * 2 + 192].fill(0);
-        write_le_u16(&mut self.ram, PALETTE_FILTER_COUNTDOWN, 0);
-        write_le_u16(&mut self.ram, DARKENING_OR_LIGHTENING_SCREEN, 0);
-        write_le_u16(&mut self.ram, BG1_X_OFFSET, 0);
-        write_le_u16(&mut self.ram, BG1_Y_OFFSET, 0);
-        let cgwsel = read_le_u16(&self.ram, CGWSEL_COPY);
+        self.palette_buffer_view_mut()
+            .clear_aux_visible_subpalettes();
+        self.palette_filter_view_mut().set_countdown_word(0);
+        self.palette_filter_view_mut()
+            .set_darkening_or_lightening_screen_word(0);
+        self.world_state_view_mut().set_bg1_x_offset(0);
+        self.world_state_view_mut().set_bg1_y_offset(0);
+        let cgwsel = self.palette_filter_view().color_window_and_math_word();
         write_le_u16(&mut self.ram, MAPBAK_CGWSEL, cgwsel);
-        self.ram[MENU_ANIMATION_TIMER] = 32;
+        self.messaging_state_view_mut().set_menu_animation_timer(32);
         self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
         self.hud_floor_indicator();
-        self.ram[FLAG_UPDATE_HUD_IN_NMI] = self.ram[FLAG_UPDATE_HUD_IN_NMI].wrapping_add(1);
-        self.ram[SOUND_EFFECT_AMBIENT] = 5;
+        self.system_signals_view_mut().increment_hud_update_flag();
+        self.system_signals_view_mut().set_ambient_sound_effect(5);
         self.frame_control_view_mut().increment_submodule();
     }
 
     pub(super) fn GameOver_DelayBeforeIris(&mut self) {
-        self.ram[MENU_ANIMATION_TIMER] = self.ram[MENU_ANIMATION_TIMER].wrapping_sub(1);
-        if self.ram[MENU_ANIMATION_TIMER] != 0 {
+        self.messaging_state_view_mut()
+            .decrement_menu_animation_timer();
+        if self.messaging_state_view().menu_animation_timer() != 0 {
             return;
         }
         self.Death_InitializeGameOverLetters();
@@ -811,8 +839,8 @@ impl ZeldaState {
 
     pub(super) fn GameOver_IrisWipe(&mut self) {
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + 32 * 2);
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER, bg);
+        let bg = self.palette_buffer_view().main_color(32);
+        self.palette_buffer_view_mut().set_main_color(0, bg);
         let bak = self.frame_control_view().main_module();
         self.IrisSpotlight_ConfigureTable();
         self.frame_control_view_mut().set_main_module(bak);
@@ -821,72 +849,79 @@ impl ZeldaState {
         }
         for base in [0x20usize, 0x30, 0x40, 0x50, 0x60, 0x70] {
             for i in 0..16 {
-                write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER + (base + i) * 2, 0x18);
+                self.palette_buffer_view_mut()
+                    .set_main_color(base + i, 0x18);
             }
         }
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER, 0x18);
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER + 32 * 2, 0x18);
+        self.palette_buffer_view_mut().set_main_color(0, 0x18);
+        self.palette_buffer_view_mut().set_main_color(32, 0x18);
         self.IrisSpotlight_ResetTable();
-        self.ram[COLDATA_COPY0] = 32;
-        self.ram[COLDATA_COPY1] = 64;
-        self.ram[COLDATA_COPY2] = 128;
+        self.palette_filter_view_mut().set_fixed_color_red(32);
+        self.palette_filter_view_mut().set_fixed_color_green(64);
+        self.palette_filter_view_mut().set_fixed_color_blue(128);
         self.ram[W12SEL_COPY] = 0;
         self.ram[W34SEL_COPY] = 0;
         self.ram[WOBJSEL_COPY] = 0;
         self.frame_control_view_mut().set_submodule(4);
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
-        self.ram[INIDISP_COPY] = 15;
-        self.ram[TM_COPY] = 20;
-        self.ram[TS_COPY] = 0;
-        self.ram[CGADSUB_COPY] = 32;
-        self.ram[MENU_ANIMATION_TIMER] = 64;
-        self.ram[PALETTE_FILTER_COUNTDOWN] = 0;
-        self.ram[DARKENING_OR_LIGHTENING_SCREEN] = 0;
+        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.display_nmi_view_mut().set_main_screen_layers(20);
+        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.palette_filter_view_mut().set_color_math_control(32);
+        self.messaging_state_view_mut().set_menu_animation_timer(64);
+        self.palette_filter_view_mut().set_countdown(0);
+        self.palette_filter_view_mut()
+            .set_darkening_or_lightening_screen(0);
         self.Death_PrepFaint();
     }
 
     pub(super) fn GameOver_SplatAndFade(&mut self) {
-        if self.ram[MENU_ANIMATION_TIMER] != 0 {
-            self.ram[MENU_ANIMATION_TIMER] = self.ram[MENU_ANIMATION_TIMER].wrapping_sub(1);
+        if self.messaging_state_view().menu_animation_timer() != 0 {
+            self.messaging_state_view_mut()
+                .decrement_menu_animation_timer();
             return;
         }
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + 32 * 2);
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER, bg);
-        if self.ram[DARKENING_OR_LIGHTENING_SCREEN] != 0xff {
+        let bg = self.palette_buffer_view().main_color(32);
+        self.palette_buffer_view_mut().set_main_color(0, bg);
+        if self.palette_filter_view().darkening_or_lightening_screen() != 0xff {
             return;
         }
-        self.ram[MOSAIC_LEVEL] = 0;
+        self.display_nmi_view_mut().clear_mosaic_level();
         self.ram[MOSAIC_INC_OR_DEC] = 0;
-        self.ram[MOSAIC_COPY] = 3;
+        self.display_nmi_view_mut().set_mosaic_copy(3);
         for i in 0..4 {
-            if self.ram[LINK_BOTTLE_INFO + i] == 6 {
-                self.ram[LINK_BOTTLE_INFO + i] = 2;
-                self.ram[MENU_ANIMATION_TIMER] = 12;
-                self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 15;
+            if self.inventory_state_view().bottle(i) == 6 {
+                let value = 2;
+                self.inventory_state_view_mut().set_bottle(i, value);
+                self.messaging_state_view_mut().set_menu_animation_timer(12);
+                self.display_nmi_view_mut().set_chr_halfslot_state(15);
                 self.Graphics_LoadChrHalfSlot();
-                self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
+                self.display_nmi_view_mut().clear_chr_halfslot_state();
                 self.frame_control_view_mut().set_submodule(10);
                 return;
             }
         }
-        self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS] = 0;
-        self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS + 1] = 0;
-        self.ram[NMI_SUBROUTINE_INDEX] = 22;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 22;
+        self.dungeon_state_view_mut()
+            .clear_changeable_object_index(0);
+        self.dungeon_state_view_mut()
+            .clear_changeable_object_index(1);
+        self.display_nmi_view_mut().set_subroutine_index(22);
+        self.display_nmi_view_mut().set_core_update_disable_flag(22);
         self.frame_control_view_mut().increment_submodule();
     }
 
     pub(super) fn Death_Func6(&mut self) {
-        self.ram[MENU_ANIMATION_TIMER] = 12;
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 15;
+        self.messaging_state_view_mut().set_menu_animation_timer(12);
+        self.display_nmi_view_mut().set_chr_halfslot_state(15);
         self.Graphics_LoadChrHalfSlot();
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
+        self.display_nmi_view_mut().clear_chr_halfslot_state();
         self.ram[PALETTE_SP6R_INDOORS] = 5;
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x200);
+        self.palette_buffer_view_mut()
+            .select_overworld_aux_palette_offset();
         self.Palette_Load_SpriteEnvironment_Dungeon();
         self.Palette_Load_SpriteMain();
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
+        self.system_signals_view_mut().increment_cgram_update_flag();
         self.frame_control_view_mut().increment_submodule();
         self.Death_PlayerSwoon();
     }
@@ -903,32 +938,33 @@ impl ZeldaState {
         self.Animate_GAMEOVER_Letters();
         let bak1 = self.frame_control_view().main_module();
         let bak2 = self.frame_control_view().submodule();
-        self.ram[MESSAGING_MODULE] = 2;
+        self.messaging_state_view_mut().set_module(2);
         self.RenderText();
         self.frame_control_view_mut()
             .set_submodule(bak2.wrapping_add(1));
         self.frame_control_view_mut().set_main_module(bak1);
-        self.ram[MENU_ANIMATION_TIMER] = 2;
-        self.ram[MUSIC_CONTROL] = 11;
+        self.messaging_state_view_mut().set_menu_animation_timer(2);
+        self.system_signals_view_mut().set_music_control(11);
     }
 
     pub(super) fn GameOver_SaveAndOrContinue(&mut self) {
         self.GameOver_AnimateChoiceFairy();
         self.Animate_GAMEOVER_Letters();
 
-        if self.ram[FILTERED_JOYPAD_H] & 0x20 != 0 {
+        if self.player_state_view().filtered_joypad_h() & 0x20 != 0 {
             self.frame_control_view_mut().increment_subsubmodule();
             if self.frame_control_view().subsubmodule() >= 3 {
                 self.frame_control_view_mut().set_subsubmodule(0);
             }
-            self.ram[MENU_ANIMATION_TIMER] = 12;
-            self.ram[SOUND_EFFECT_2] = 32;
+            self.messaging_state_view_mut().set_menu_animation_timer(12);
+            self.system_signals_view_mut().set_sound_effect_2(32);
         } else {
-            self.ram[MENU_ANIMATION_TIMER] = self.ram[MENU_ANIMATION_TIMER].wrapping_sub(1);
-            if self.ram[MENU_ANIMATION_TIMER] == 0 {
-                self.ram[MENU_ANIMATION_TIMER] = 1;
-                if self.ram[JOYPAD1H_LAST] & 12 != 0 {
-                    if self.ram[JOYPAD1H_LAST] & 4 != 0 {
+            self.messaging_state_view_mut()
+                .decrement_menu_animation_timer();
+            if self.messaging_state_view().menu_animation_timer() == 0 {
+                self.messaging_state_view_mut().set_menu_animation_timer(1);
+                if self.player_state_view().joypad1h_last() & 12 != 0 {
+                    if self.player_state_view().joypad1h_last() & 4 != 0 {
                         self.frame_control_view_mut().increment_subsubmodule();
                         if self.frame_control_view().subsubmodule() >= 3 {
                             self.frame_control_view_mut().set_subsubmodule(0);
@@ -939,106 +975,116 @@ impl ZeldaState {
                             self.frame_control_view_mut().set_subsubmodule(2);
                         }
                     }
-                    self.ram[MENU_ANIMATION_TIMER] = 12;
-                    self.ram[SOUND_EFFECT_2] = 32;
+                    self.messaging_state_view_mut().set_menu_animation_timer(12);
+                    self.system_signals_view_mut().set_sound_effect_2(32);
                 }
             }
         }
 
-        if ((self.ram[FILTERED_JOYPAD_L] & 0xc0) | self.ram[FILTERED_JOYPAD_H]) & 0xd0 == 0 {
+        if ((self.player_state_view().filtered_joypad_l() & 0xc0)
+            | self.player_state_view().filtered_joypad_h())
+            & 0xd0
+            == 0
+        {
             return;
         }
-        self.ram[SOUND_EFFECT_1] = 44;
+        self.system_signals_view_mut().set_sound_effect_1(44);
         self.Death_Func15(self.frame_control_view().subsubmodule() != 2);
     }
 
     pub(super) fn Death_Func15(&mut self, count_as_death: bool) {
-        self.ram[MUSIC_CONTROL] = 0xf1;
-        if self.ram[PLAYER_IS_INDOORS] != 0 {
+        self.system_signals_view_mut().set_music_control(0xf1);
+        if self.world_state_view().is_indoors() {
             self.Dungeon_FlagRoomData_Quadrants();
         }
         self.AdjustLinkBunnyStatus();
-        if self.ram[SRAM_PROGRESS_INDICATOR] < 3 {
-            self.ram[SAVEGAME_IS_DARKWORLD] = 0;
-            if self.ram[LINK_ITEM_MOON_PEARL] == 0 {
+        if self.save_progress_view().progress_indicator() < 3 {
+            self.save_progress_view_mut().set_dark_world_state(0);
+            if !self.inventory_state_view().has_moon_pearl() {
                 self.ForceNonbunnyStatus();
             }
         }
         if self.world_state_view().dungeon_room() == 0 {
-            self.ram[PLAYER_IS_INDOORS] = 0;
+            self.world_state_view_mut().set_indoor_flag(0);
         }
 
         self.reset_some_things_after_death(self.world_state_view().dungeon_room() as u8);
-        if matches!(self.ram[FOLLOWER_INDICATOR], 6 | 9 | 10 | 13) {
-            self.ram[FOLLOWER_INDICATOR] = 0;
+        if matches!(self.follower_state_view().indicator(), 6 | 9 | 10 | 13) {
+            self.follower_state_view_mut().set_indicator(0);
         }
 
-        let health = K_HEALTH_AFTER_DEATH[(self.ram[LINK_HEALTH_CAPACITY] >> 3) as usize];
+        let health = POST_DEATH_HEALTH_BY_CAPACITY
+            [(self.player_resources_view().health_capacity() >> 3) as usize];
         self.ram[RESTART_CHECK_FLAG] = health;
-        self.ram[LINK_HEALTH_CURRENT] = health;
-        let palace = self.ram[CUR_PALACE_INDEX_X2];
+        self.player_resources_view_mut().set_current_health(health);
+        let palace = self.save_progress_view().palace_index_x2();
         if palace != 0xff {
             let slot = if palace == 2 { 0 } else { palace } >> 1;
-            self.ram[LINK_KEYS_EARNED_PER_DUNGEON + slot as usize] = self.ram[LINK_NUM_KEYS];
+            let keys = self.player_resources_view().keys();
+            self.dungeon_key_slots_view_mut()
+                .set_keys_earned_slot(slot as usize, keys);
         }
         self.sprite_reset_all();
-        if read_le_u16(&self.ram, DEATH_VAR2_MESSAGING) == 0xffff
+        if self
+            .save_progress_view()
+            .total_death_save_counter_is_uninitialized()
             && (self.read_u32_ram(ENHANCED_FEATURES0) & 4096 == 0 || count_as_death)
         {
-            let deaths = read_le_u16(&self.ram, DEATH_SAVE_COUNTER_MESSAGING).wrapping_add(1);
-            write_le_u16(&mut self.ram, DEATH_SAVE_COUNTER_MESSAGING, deaths);
+            self.save_progress_view_mut()
+                .increment_pending_death_save_counter();
         }
         self.ram[GAME_OVER_CHECK_FLAG] = self.ram[GAME_OVER_CHECK_FLAG].wrapping_add(1);
         if self.frame_control_view().subsubmodule() != 1 {
-            if self.ram[PLAYER_IS_INDOORS] != 0 {
-                if self.ram[FOLLOWER_INDICATOR] != 1 && self.ram[CUR_PALACE_INDEX_X2] != 0xff {
+            if self.world_state_view().is_indoors() {
+                if self.follower_state_view().indicator() != 1
+                    && self.save_progress_view().palace_index_x2() != 0xff
+                {
                     self.ram[RESTART_CHECK_FLAG] = 0;
                 } else {
-                    self.ram[QUEUED_MUSIC_CONTROL] = 0;
-                    self.ram[PLAYER_IS_INDOORS] = 0;
-                    if self.ram[SAVEGAME_IS_DARKWORLD] != 0 {
-                        write_le_u16(&mut self.ram, DUNGEON_ROOM_INDEX, 32);
+                    self.system_signals_view_mut().set_queued_music_control(0);
+                    self.world_state_view_mut().set_indoor_flag(0);
+                    if self.save_progress_view().dark_world_state() != 0 {
+                        self.world_state_view_mut().set_dungeon_room(32);
                     }
                 }
-            } else if self.ram[SAVEGAME_IS_DARKWORLD] != 0 {
-                write_le_u16(&mut self.ram, DUNGEON_ROOM_INDEX, 32);
+            } else if self.save_progress_view().dark_world_state() != 0 {
+                self.world_state_view_mut().set_dungeon_room(32);
             }
 
-            if self.ram[SRAM_PROGRESS_INDICATOR] != 0 {
+            if self.save_progress_view().progress_indicator() != 0 {
                 if self.frame_control_view().subsubmodule() == 0 {
                     self.SaveGameFile();
                 }
                 self.frame_control_view_mut().set_main_module(5);
                 self.frame_control_view_mut().set_submodule(0);
-                self.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+                self.display_nmi_view_mut().set_bg_vram_load_mode(0);
             } else {
-                let slot = read_le_u16(&self.sram, SRM_VAR1) as u8;
-                let offs = ((u16::from(slot) >> 1).wrapping_sub(1)).wrapping_mul(0x500);
-                write_le_u16(&mut self.ram, R0, offs);
+                let offset = self.selected_save_slot_source_offset();
+                self.save_load_scratch_view_mut().set_source_offset(offset);
                 self.ram[GAME_OVER_CHECK_FLAG] = 0;
                 self.CopySaveToWRAM();
             }
         } else {
-            if self.ram[SRAM_PROGRESS_INDICATOR] != 0 {
+            if self.save_progress_view().progress_indicator() != 0 {
                 self.SaveGameFile();
             }
-            self.ram[TM_COPY] = 16;
-            self.ram[PLAYER_IS_INDOORS] = 0;
+            self.display_nmi_view_mut().set_main_screen_layers(16);
+            self.world_state_view_mut().set_indoor_flag(0);
             self.death_func31();
             self.ram[RESTART_CHECK_FLAG] = 0;
             self.ram[GAME_OVER_CHECK_FLAG] = 0;
-            self.ram[QUEUED_MUSIC_CONTROL] = 0;
-            write_le_u16(&mut self.ram, BG1HOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG2HOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG3HOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG1VOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG2VOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG3VOFS_COPY2, 0);
-            write_le_u16(&mut self.ram, BG1HOFS_COPY, 0);
-            write_le_u16(&mut self.ram, BG2HOFS_COPY, 0);
-            write_le_u16(&mut self.ram, BG1VOFS_COPY, 0);
-            write_le_u16(&mut self.ram, BG2VOFS_COPY, 0);
-            self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 256 * 5].fill(0);
+            self.system_signals_view_mut().set_queued_music_control(0);
+            self.world_state_view_mut().set_bg1_x(0);
+            self.world_state_view_mut().set_bg2_x(0);
+            self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
+            self.world_state_view_mut().set_bg1_y(0);
+            self.world_state_view_mut().set_bg2_y(0);
+            self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
+            self.ppu_scroll_copy_view_mut().set_bg1_h_copy(0);
+            self.ppu_scroll_copy_view_mut().set_bg2_h_copy(0);
+            self.ppu_scroll_copy_view_mut().set_bg1_v_copy(0);
+            self.ppu_scroll_copy_view_mut().set_bg2_v_copy(0);
+            self.save_progress_view_mut().clear_dungeon_info();
             self.ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = 0;
             self.load_overworld_songs();
         }
@@ -1049,7 +1095,7 @@ impl ZeldaState {
             0x14,
             0x34,
             DEATH_SPR_Y0[self.frame_control_view().subsubmodule() as usize],
-            DEATH_SPR_CHAR0[(self.ram[FRAME_COUNTER] >> 3 & 1) as usize],
+            DEATH_SPR_CHAR0[(self.frame_control_view().frame_counter() >> 3 & 1) as usize],
             0x78,
             2,
         );
@@ -1057,9 +1103,9 @@ impl ZeldaState {
 
     pub(super) fn GameOver_InitializeRevivalFairy(&mut self) {
         self.configure_revival_ancillae();
-        self.ram[LINK_HEARTS_FILLER] = 56;
+        self.player_resources_view_mut().set_heart_filler(56);
         self.frame_control_view_mut().increment_submodule();
-        self.ram[OVERWORLD_MAP_STATE] = 0;
+        self.world_state_view_mut().set_overworld_map_state(0);
     }
 
     pub(super) fn RevivalFairy_Main_bounce(&mut self) {
@@ -1067,15 +1113,19 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOver_RiseALittle(&mut self) {
-        if self.ram[LINK_HEARTS_FILLER] == 0 {
+        if self.player_resources_view().heart_filler() == 0 {
             let palette = self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 256].to_vec();
-            self.ram[AUX_PALETTE_BUFFER..AUX_PALETTE_BUFFER + 256].copy_from_slice(&palette);
-            self.ram[MAIN_PALETTE_BUFFER + 32 * 2..MAIN_PALETTE_BUFFER + 32 * 2 + 192].fill(0);
-            write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER, 0);
-            write_le_u16(&mut self.ram, PALETTE_FILTER_COUNTDOWN, 0);
-            write_le_u16(&mut self.ram, DARKENING_OR_LIGHTENING_SCREEN, 2);
+            self.palette_buffer_view_mut()
+                .copy_aux_visible_from(&palette);
+            self.palette_buffer_view_mut()
+                .clear_main_visible_subpalettes();
+            self.palette_buffer_view_mut().set_main_color(0, 0);
+            self.palette_filter_view_mut().set_countdown_word(0);
+            self.palette_filter_view_mut()
+                .set_darkening_or_lightening_screen_word(2);
             let cgwsel = read_le_u16(&self.ram, MAPBAK_CGWSEL);
-            write_le_u16(&mut self.ram, CGWSEL_COPY, cgwsel);
+            self.palette_filter_view_mut()
+                .set_color_window_and_math_word(cgwsel);
             self.frame_control_view_mut().increment_submodule();
         }
         self.revival_fairy_main();
@@ -1084,7 +1134,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_Restore0D(&mut self) {
         if self.ram[IS_DOING_HEART_ANIMATION] == 0 {
-            self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 1;
+            self.display_nmi_view_mut().set_chr_halfslot_state(1);
             self.Graphics_LoadChrHalfSlot();
             self.Dungeon_ApproachFixedColor_variable(self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS]);
             self.frame_control_view_mut().increment_submodule();
@@ -1095,43 +1145,44 @@ impl ZeldaState {
 
     pub(super) fn GameOver_Restore0E(&mut self) {
         self.Graphics_LoadChrHalfSlot();
-        self.ram[TS_COPY] = self.ram[MAPBAK_TS];
+        let sub_screen_layers = self.ram[MAPBAK_TS];
+        self.display_nmi_view_mut()
+            .set_sub_screen_layers(sub_screen_layers);
         self.frame_control_view_mut().increment_submodule();
     }
 
     pub(super) fn GameOver_ResituateLink(&mut self) {
         self.PaletteFilter_RestoreBGAdditiveStrict();
-        let bg = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + 32 * 2);
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER, bg);
-        if self.ram[PALETTE_FILTER_COUNTDOWN] != 32 {
+        let bg = self.palette_buffer_view().main_color(32);
+        self.palette_buffer_view_mut().set_main_color(0, bg);
+        if self.palette_filter_view().countdown() != 32 {
             return;
         }
-        if self.ram[PLAYER_IS_INDOORS] == 0 {
+        if self.world_state_view().is_outdoors() {
             self.Overworld_SetFixedColAndScroll();
         }
-        self.ram[TS_COPY] = self.ram[MAPBAK_TS];
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let sub_screen_layers = self.ram[MAPBAK_TS];
+        self.display_nmi_view_mut()
+            .set_sub_screen_layers(sub_screen_layers);
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
-        self.ram[COUNTDOWN_FOR_BLINK] = 144;
-        self.ram[MUSIC_CONTROL] = self.ram[CURRENT_MUSIC_CONTROL_DEATH];
-        self.ram[SOUND_EFFECT_AMBIENT] = self.ram[SOUND_EFFECT_AMBIENT_LAST_DEATH];
+        self.player_state_view_mut().set_blink_countdown(144);
+        let music = self.ram[DEATH_BACKUP_CURRENT_MUSIC];
+        self.system_signals_view_mut().set_music_control(music);
+        let ambient = self.ram[DEATH_BACKUP_AMBIENT_SOUND];
+        self.system_signals_view_mut()
+            .set_ambient_sound_effect(ambient);
         let palette_filter_countdown = read_le_u16(&self.ram, MAPBAK_BG1_X_OFFSET);
         let darkening_or_lightening_screen = read_le_u16(&self.ram, MAPBAK_BG1_Y_OFFSET);
-        write_le_u16(
-            &mut self.ram,
-            PALETTE_FILTER_COUNTDOWN,
-            palette_filter_countdown,
-        );
-        write_le_u16(
-            &mut self.ram,
-            DARKENING_OR_LIGHTENING_SCREEN,
-            darkening_or_lightening_screen,
-        );
+        self.palette_filter_view_mut()
+            .set_countdown_word(palette_filter_countdown);
+        self.palette_filter_view_mut()
+            .set_darkening_or_lightening_screen_word(darkening_or_lightening_screen);
     }
 
     pub(super) fn Module0E_0A_FluteMenu(&mut self) {
-        match self.ram[OVERWORLD_MAP_STATE] {
+        match self.world_state_view().overworld_map_state() {
             0 => self.WorldMap_FadeOut(),
             1 => {
                 self.ram[BIRDTRAVEL_STATUS] = 0;
@@ -1140,8 +1191,9 @@ impl ZeldaState {
             2 => self.WorldMap_LoadSpriteGFX(),
             3 => self.WorldMap_Brighten(),
             4 => {
-                self.ram[MENU_ANIMATION_TIMER] = 0x10;
-                self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+                self.messaging_state_view_mut()
+                    .set_menu_animation_timer(0x10);
+                self.world_state_view_mut().increment_overworld_map_state();
             }
             5 => self.FluteMenu_HandleSelection(),
             6 => self.WorldMap_RestoreGraphics(),
@@ -1154,107 +1206,113 @@ impl ZeldaState {
     }
 
     pub(super) fn FluteMenu_HandleSelection(&mut self) {
-        if self.ram[MENU_ANIMATION_TIMER] == 0 {
-            if (self.ram[JOYPAD1L_LAST] | self.ram[JOYPAD1H_LAST]) & 0xc0 != 0 {
-                if self.read_u32_ram(ENHANCED_FEATURES0) & K_FEATURES0_CANCEL_BIRD_TRAVEL != 0 {
-                    self.ram[MENU_ANIMATION_TIMER] = self.ram[JOYPAD1L_LAST];
+        if self.messaging_state_view().menu_animation_timer() == 0 {
+            if (self.player_state_view().joypad1l_last() | self.player_state_view().joypad1h_last())
+                & 0xc0
+                != 0
+            {
+                if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_CANCEL_BIRD_TRAVEL != 0 {
+                    let joypad = self.player_state_view().joypad1l_last();
+                    self.messaging_state_view_mut()
+                        .set_menu_animation_timer(joypad);
                 }
-                self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+                self.world_state_view_mut().increment_overworld_map_state();
                 return;
             }
         } else {
-            self.ram[MENU_ANIMATION_TIMER] = self.ram[MENU_ANIMATION_TIMER].wrapping_sub(1);
+            self.messaging_state_view_mut()
+                .decrement_menu_animation_timer();
         }
 
-        if self.ram[FILTERED_JOYPAD_H] & 10 != 0 {
+        if self.player_state_view().filtered_joypad_h() & 10 != 0 {
             self.ram[BIRDTRAVEL_STATUS] = self.ram[BIRDTRAVEL_STATUS].wrapping_sub(1);
-            self.ram[SOUND_EFFECT_2] = 32;
+            self.system_signals_view_mut().set_sound_effect_2(32);
         }
-        if self.ram[FILTERED_JOYPAD_H] & 5 != 0 {
+        if self.player_state_view().filtered_joypad_h() & 5 != 0 {
             self.ram[BIRDTRAVEL_STATUS] = self.ram[BIRDTRAVEL_STATUS].wrapping_add(1);
-            self.ram[SOUND_EFFECT_2] = 32;
+            self.system_signals_view_mut().set_sound_effect_2(32);
         }
         self.ram[BIRDTRAVEL_STATUS] &= 7;
 
         let mut pt = Point16U { x: 0, y: 0 };
-        if self.ram[FRAME_COUNTER] & 0x10 != 0 && self.WorldMap_CalculateOamCoordinates(&mut pt) {
+        if self.frame_control_view().frame_counter() & 0x10 != 0
+            && self.WorldMap_CalculateOamCoordinates(&mut pt)
+        {
             self.WorldMap_AddSprite(16, 2, 0x3e, 0, pt.x.wrapping_sub(4), pt.y.wrapping_sub(4));
         }
 
-        let ybak = read_le_u16(&self.ram, LINK_Y_COORD_SPEXIT);
-        let xbak = read_le_u16(&self.ram, LINK_X_COORD_SPEXIT);
+        let ybak = self.special_exit_position_view().y();
+        let xbak = self.special_exit_position_view().x();
         for i in (0..8).rev() {
-            self.ram[BIRD_TRAVEL_X_LO + i] = K_BIRD_TRAVEL_X_LO[i];
-            self.ram[BIRD_TRAVEL_X_HI + i] = K_BIRD_TRAVEL_X_HI[i];
-            write_le_u16(
-                &mut self.ram,
-                LINK_X_COORD_SPEXIT,
-                u16::from(K_BIRD_TRAVEL_X_HI[i]) << 8 | u16::from(K_BIRD_TRAVEL_X_LO[i]),
-            );
-
-            self.ram[BIRD_TRAVEL_Y_LO + i] = K_BIRD_TRAVEL_Y_LO[i];
-            self.ram[BIRD_TRAVEL_Y_HI + i] = K_BIRD_TRAVEL_Y_HI[i];
-            write_le_u16(
-                &mut self.ram,
-                LINK_Y_COORD_SPEXIT,
-                u16::from(K_BIRD_TRAVEL_Y_HI[i]) << 8 | u16::from(K_BIRD_TRAVEL_Y_LO[i]),
-            );
+            let bird_x = u16::from(BIRD_TRAVEL_X_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_X_LOW[i]);
+            let bird_y = u16::from(BIRD_TRAVEL_Y_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_Y_LOW[i]);
+            self.bird_travel_destination_view_mut(i)
+                .set_position(bird_x, bird_y);
+            self.special_exit_position_view_mut()
+                .set_position(bird_x, bird_y);
 
             if self.WorldMap_CalculateOamCoordinates(&mut pt) {
                 self.WorldMap_AddSprite(
                     i,
                     0,
                     if i == usize::from(self.ram[BIRDTRAVEL_STATUS]) {
-                        0x30 + (self.ram[FRAME_COUNTER] & 6)
+                        0x30 + (self.frame_control_view().frame_counter() & 6)
                     } else {
                         0x32
                     },
-                    K_BIRD_TRAVEL_TAB1[i],
+                    BIRD_TRAVEL_OVERWORLD_SCREEN_BY_STOP[i],
                     pt.x,
                     pt.y,
                 );
             }
         }
-        write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, xbak);
-        write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, ybak);
+        self.special_exit_position_view_mut()
+            .set_position(xbak, ybak);
     }
 
     pub(super) fn FluteMenu_LoadSelectedScreen(&mut self) {
-        self.ram[SAVE_OW_EVENT_INFO + 0x3b] &= !0x20;
-        self.ram[SAVE_OW_EVENT_INFO + 0x7b] &= !0x20;
-        let dung_267 = read_le_u16(&self.ram, SAVE_DUNG_INFO + 267 * 2) & !0x0080;
-        let dung_40 = read_le_u16(&self.ram, SAVE_DUNG_INFO + 40 * 2) & !0x0100;
-        write_le_u16(&mut self.ram, SAVE_DUNG_INFO + 267 * 2, dung_267);
-        write_le_u16(&mut self.ram, SAVE_DUNG_INFO + 40 * 2, dung_40);
+        self.overworld_event_info_view_mut()
+            .clear_event_bits(0x3b, 0x20);
+        self.overworld_event_info_view_mut()
+            .clear_event_bits(0x7b, 0x20);
+        let dung_267 = self.save_progress_view().dungeon_info_word(267) & !0x0080;
+        let dung_40 = self.save_progress_view().dungeon_info_word(40) & !0x0100;
+        self.save_progress_view_mut()
+            .set_dungeon_info_word(267, dung_267);
+        self.save_progress_view_mut()
+            .set_dungeon_info_word(40, dung_40);
 
-        if self.ram[MENU_ANIMATION_TIMER] & 0x40 == 0 {
+        if self.messaging_state_view().menu_animation_timer() & 0x40 == 0 {
             self.FluteMenu_LoadTransport();
         }
 
         self.FluteMenu_LoadSelectedScreenPalettes();
-        let t = self.ram[OVERWORLD_SCREEN_INDEX] & 0xbf;
+        let t = self.world_state_view().overworld_screen() & 0xbf;
         self.DecompressAnimatedOverworldTiles(if t == 3 || t == 5 || t == 7 {
             0x58
         } else {
             0x5a
         });
         self.Overworld_SetFixedColAndScroll();
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
+        self.palette_buffer_view_mut()
+            .clear_overworld_aux_or_main_offset();
         self.ram[HUD_PALETTE] = 0;
         self.InitializeTilesets();
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
-        self.ram[DUNG_DRAW_WIDTH_INDICATOR] = 0;
+        self.world_state_view_mut().increment_overworld_map_state();
+        self.dungeon_state_view_mut().set_draw_width_indicator(0);
         self.Overworld_LoadOverlays2();
         self.frame_control_view_mut().decrement_submodule();
-        self.ram[SOUND_EFFECT_2] = 16;
-        let m = self.ram[OVERWORLD_MUSIC + self.ram[OVERWORLD_SCREEN_INDEX] as usize];
-        self.ram[SOUND_EFFECT_AMBIENT] = m >> 4;
+        self.system_signals_view_mut().set_sound_effect_2(16);
+        let m = self.overworld_config_table_view().current_music();
+        self.system_signals_view_mut()
+            .set_ambient_sound_effect(m >> 4);
         let track = m & 0x0f;
-        self.ram[MUSIC_CONTROL] = if self.zelda_is_playing_music_track(track) {
+        let music = if self.zelda_is_playing_music_track(track) {
             0xf3
         } else {
             track
         };
+        self.system_signals_view_mut().set_music_control(music);
     }
 
     pub(super) fn Overworld_LoadOverlayAndMap(&mut self) {
@@ -1266,8 +1324,8 @@ impl ZeldaState {
     }
 
     pub(super) fn FluteMenu_FadeInAndQuack(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_add(1);
-        if self.ram[INIDISP_COPY] == 15 {
+        self.display_nmi_view_mut().increment_screen_brightness();
+        if self.display_nmi_view().screen_brightness() == 15 {
             self.BirdTravel_Finish_Doit();
         } else {
             self.sprite_main();
@@ -1275,18 +1333,20 @@ impl ZeldaState {
     }
 
     pub(super) fn BirdTravel_Finish_Doit(&mut self) {
-        self.ram[OVERWORLD_MAP_STATE] = 0;
+        self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
-        self.ram[HDMAEN_COPY] = self.ram[MAPBAK_HDMAEN];
+        let hdma_enable_mask = self.ram[MAPBAK_HDMAEN];
+        self.display_nmi_view_mut()
+            .set_hdma_enable_mask(hdma_enable_mask);
         self.add_bird_travel_something(0x27, 4);
         self.sprite_main();
     }
 
     pub(super) fn Messaging_OverworldMap(&mut self) {
-        match self.ram[OVERWORLD_MAP_STATE] {
+        match self.world_state_view().overworld_map_state() {
             0 => self.WorldMap_FadeOut(),
             1 => self.WorldMap_LoadLightWorldMap(),
             2 => self.WorldMap_LoadDarkWorldMap(),
@@ -1300,47 +1360,44 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_FadeOut(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_sub(1);
-        if self.ram[INIDISP_COPY] != 0 {
+        self.display_nmi_view_mut().decrement_screen_brightness();
+        if self.display_nmi_view().screen_brightness() != 0 {
             return;
         }
-        self.ram[MAPBAK_HDMAEN] = self.ram[HDMAEN_COPY];
+        self.ram[MAPBAK_HDMAEN] = self.display_nmi_view().hdma_enable_mask();
         self.EnableForceBlank();
-        self.ram[MOSAIC_COPY] = 3;
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
-        let tm_ts = read_le_u16(&self.ram, TM_COPY);
+        self.display_nmi_view_mut().set_mosaic_copy(3);
+        self.world_state_view_mut().increment_overworld_map_state();
+        let tm_ts = self.display_nmi_view().layer_masks_word();
         write_le_u16(&mut self.ram, MAPBAK_TM, tm_ts);
-        let bg1hofs = read_le_u16(&self.ram, BG1HOFS_COPY2);
-        let bg2hofs = read_le_u16(&self.ram, BG2HOFS_COPY2);
-        let bg1vofs = read_le_u16(&self.ram, BG1VOFS_COPY2);
-        let bg2vofs = read_le_u16(&self.ram, BG2VOFS_COPY2);
-        write_le_u16(&mut self.ram, MAPBAK_BG1HOFS_COPY2, bg1hofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG2HOFS_COPY2, bg2hofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG1VOFS_COPY2, bg1vofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG2VOFS_COPY2, bg2vofs);
-        write_le_u16(&mut self.ram, BG1HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG2HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG1VOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3VOFS_COPY2, 0);
-        let cgwsel_cgadsub = read_le_u16(&self.ram, CGWSEL_COPY);
+        let bg1hofs = self.world_state_view().bg1_x();
+        let bg2hofs = self.world_state_view().bg2_x();
+        let bg1vofs = self.world_state_view().bg1_y();
+        let bg2vofs = self.world_state_view().bg2_y();
+        self.ppu_scroll_copy_view_mut()
+            .set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
+        self.world_state_view_mut().set_bg1_x(0);
+        self.world_state_view_mut().set_bg2_x(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
+        self.world_state_view_mut().set_bg1_y(0);
+        self.world_state_view_mut().set_bg2_y(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
+        let cgwsel_cgadsub = self.palette_filter_view().color_window_and_math_word();
         write_le_u16(&mut self.ram, MAPBAK_CGWSEL, cgwsel_cgadsub);
-        write_le_u16(&mut self.ram, LINK_DMA_GRAPHICS_INDEX, 0x01fc);
-        if self.ram[OVERWORLD_SCREEN_INDEX] < 0x80 {
-            let link_y = self.player_state_view().y();
-            let link_x = self.player_state_view().x();
-            write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, link_y);
-            write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, link_x);
+        self.player_state_view_mut()
+            .set_link_dma_graphics_index_word(0x01fc);
+        if self.world_state_view().overworld_screen() < 0x80 {
+            self.special_exit_position_view_mut().store_from_player();
         }
-        if self.ram[SRAM_PROGRESS_INDICATOR] < 2 {
-            self.ram[CGWSEL_COPY] = 0x80;
-            self.ram[CGADSUB_COPY] = 0x61;
+        if self.save_progress_view().progress_indicator() < 2 {
+            self.palette_filter_view_mut()
+                .set_color_window_selection(0x80);
+            self.palette_filter_view_mut().set_color_math_control(0x61);
         }
-        self.ram[SOUND_EFFECT_2] = 16;
-        self.ram[SOUND_EFFECT_AMBIENT] = 5;
-        self.ram[MUSIC_CONTROL] = 0xf2;
-        self.ram[BGMODE_COPY] = 7;
+        self.system_signals_view_mut().set_sound_effect_2(16);
+        self.system_signals_view_mut().set_ambient_sound_effect(5);
+        self.system_signals_view_mut().set_music_control(0xf2);
+        self.display_nmi_view_mut().set_bg_mode(7);
     }
 
     pub(super) fn WorldMap_LoadLightWorldMap(&mut self) {
@@ -1354,37 +1411,37 @@ impl ZeldaState {
                 self.ram[NMI_TILEMAP_UPLOAD_BUFFER..NMI_TILEMAP_UPLOAD_BUFFER + len]
                     .copy_from_slice(&tilemap[..len]);
             }
-            self.ram[NMI_SUBROUTINE_INDEX] = 21;
+            self.display_nmi_view_mut().set_subroutine_index(21);
         }
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.world_state_view_mut().increment_overworld_map_state();
     }
 
     pub(super) fn WorldMap_LoadSpriteGFX(&mut self) {
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0x10;
+        self.display_nmi_view_mut().set_chr_halfslot_state(0x10);
         self.Graphics_LoadChrHalfSlot();
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.display_nmi_view_mut().clear_chr_halfslot_state();
+        self.world_state_view_mut().increment_overworld_map_state();
     }
 
     pub(super) fn WorldMap_Brighten(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_add(1);
-        if self.ram[INIDISP_COPY] == 15 {
-            self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.display_nmi_view_mut().increment_screen_brightness();
+        if self.display_nmi_view().screen_brightness() == 15 {
+            self.world_state_view_mut().increment_overworld_map_state();
         }
     }
 
     pub(super) fn DidPressButtonForMap(&self) -> bool {
         if self.ram[HUD_CUR_ITEM_X] != 0 {
-            self.ram[FILTERED_JOYPAD_H] & 0x20 != 0
+            self.player_state_view().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.ram[FILTERED_JOYPAD_L] & 0x40 != 0
+            self.player_state_view().filtered_joypad_l() & 0x40 != 0
         }
     }
 
     pub(super) fn WorldMap_PlayerControl(&mut self) {
         const OVERWORLD_MAP_TIMER: [u8; 2] = [33, 12];
-        const OVERWORLD_MAP_TABLE3: [i16; 8] = [0, 0, 1, 2, -1, -2, 1, 2];
-        const OVERWORLD_MAP_TABLE2: [u16; 8] =
+        const OVERWORLD_MAP_SCROLL_DELTAS: [i16; 8] = [0, 0, 1, 2, -1, -2, 1, 2];
+        const OVERWORLD_MAP_SCROLL_TARGETS: [u16; 8] =
             [0, 0, 224, 480, (-72i16) as u16, (-224i16) as u16, 0, 0];
 
         if self.ram[OVERWORLD_MAP_FLAGS] & 0x80 != 0 {
@@ -1393,25 +1450,31 @@ impl ZeldaState {
         }
 
         if self.ram[OVERWORLD_MAP_FLAGS] == 0 && self.DidPressButtonForMap() {
-            self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+            self.world_state_view_mut().increment_overworld_map_state();
             return;
         }
 
-        if self.ram[DUNG_DRAW_WIDTH_INDICATOR] != 0 {
-            self.ram[DUNG_DRAW_WIDTH_INDICATOR] =
-                self.ram[DUNG_DRAW_WIDTH_INDICATOR].wrapping_sub(1);
-        } else if self.ram[FILTERED_JOYPAD_L] & 0x30 != 0 || self.DidPressButtonForMap() {
-            self.ram[SOUND_EFFECT_2] = 36;
-            self.ram[DUNG_DRAW_WIDTH_INDICATOR] = 8;
+        if self.dungeon_state_view().draw_width_indicator() != 0 {
+            let draw_width = self
+                .dungeon_state_view()
+                .draw_width_indicator()
+                .wrapping_sub(1);
+            self.dungeon_state_view_mut()
+                .set_draw_width_indicator(draw_width);
+        } else if self.player_state_view().filtered_joypad_l() & 0x30 != 0
+            || self.DidPressButtonForMap()
+        {
+            self.system_signals_view_mut().set_sound_effect_2(36);
+            self.dungeon_state_view_mut().set_draw_width_indicator(8);
             let t = (self.ram[OVERWORLD_MAP_FLAGS] ^ 1) & 1;
             self.ram[OVERWORLD_MAP_FLAGS] = t | 0x80;
             self.ram[TIMER_FOR_MODE7_ZOOM] = OVERWORLD_MAP_TIMER[t as usize];
             if self.ram[TIMER_FOR_MODE7_ZOOM] == 12 {
-                let y =
-                    ((read_le_u16(&self.ram, LINK_Y_COORD_SPEXIT) >> 4).wrapping_sub(0x48)) & !1;
-                write_le_u16(&mut self.ram, BG1VOFS_COPY2, y);
-                write_le_u16(&mut self.ram, M7Y_COPY, y.wrapping_add(0x100));
-                let t0 = (read_le_u16(&self.ram, LINK_X_COORD_SPEXIT) >> 4).wrapping_sub(0x80);
+                let y = self.special_exit_position_view().map_zoom_y();
+                self.world_state_view_mut().set_bg1_y(y);
+                self.ppu_scroll_copy_view_mut()
+                    .set_mode7_center_y(y.wrapping_add(0x100));
+                let t0 = self.special_exit_position_view().map_zoom_x_offset();
                 let abs_t0 = if (t0 as i16) < 0 {
                     0u16.wrapping_sub(t0)
                 } else {
@@ -1423,30 +1486,30 @@ impl ZeldaState {
                 } else {
                     t1
                 };
-                write_le_u16(&mut self.ram, BG1HOFS_COPY2, t2.wrapping_add(0x80) & !1);
+                self.world_state_view_mut()
+                    .set_bg1_x(t2.wrapping_add(0x80) & !1);
             } else {
-                write_le_u16(&mut self.ram, BG1VOFS_COPY2, 200);
-                write_le_u16(&mut self.ram, M7Y_COPY, 200 + 256);
-                write_le_u16(&mut self.ram, BG1HOFS_COPY2, 128);
+                self.world_state_view_mut().set_bg1_y(200);
+                self.ppu_scroll_copy_view_mut()
+                    .set_mode7_center_y(200 + 256);
+                self.world_state_view_mut().set_bg1_x(128);
             }
         }
 
         if self.ram[OVERWORLD_MAP_FLAGS] != 0 {
-            let k = ((self.ram[JOYPAD1H_LAST] & 12) >> 1) as usize;
-            let bg1vofs = read_le_u16(&self.ram, BG1VOFS_COPY2);
-            if bg1vofs != OVERWORLD_MAP_TABLE2[k] {
-                let next = bg1vofs.wrapping_add(OVERWORLD_MAP_TABLE3[k] as u16);
-                write_le_u16(&mut self.ram, BG1VOFS_COPY2, next);
-                write_le_u16(&mut self.ram, M7Y_COPY, next.wrapping_add(0x100));
+            let k = ((self.player_state_view().joypad1h_last() & 12) >> 1) as usize;
+            let bg1vofs = self.world_state_view().bg1_y();
+            if bg1vofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
+                let next = bg1vofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16);
+                self.world_state_view_mut().set_bg1_y(next);
+                self.ppu_scroll_copy_view_mut()
+                    .set_mode7_center_y(next.wrapping_add(0x100));
             }
-            let k = ((self.ram[JOYPAD1H_LAST] & 3) * 2 + 1) as usize;
-            let bg1hofs = read_le_u16(&self.ram, BG1HOFS_COPY2);
-            if bg1hofs != OVERWORLD_MAP_TABLE2[k] {
-                write_le_u16(
-                    &mut self.ram,
-                    BG1HOFS_COPY2,
-                    bg1hofs.wrapping_add(OVERWORLD_MAP_TABLE3[k] as u16),
-                );
+            let k = ((self.player_state_view().joypad1h_last() & 3) * 2 + 1) as usize;
+            let bg1hofs = self.world_state_view().bg1_x();
+            if bg1hofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
+                self.ppu_scroll_copy_view_mut()
+                    .set_bg1_h_copy2(bg1hofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16));
             }
         }
 
@@ -1454,55 +1517,60 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_RestoreGraphics(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_sub(1);
-        if self.ram[INIDISP_COPY] != 0 {
+        self.display_nmi_view_mut().decrement_screen_brightness();
+        if self.display_nmi_view().screen_brightness() != 0 {
             return;
         }
         self.EnableForceBlank();
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
-        let aux = self.ram[AUX_PALETTE_BUFFER..AUX_PALETTE_BUFFER + 512].to_vec();
-        self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + 512].copy_from_slice(&aux);
+        self.world_state_view_mut().increment_overworld_map_state();
+        let aux = self.palette_buffer_view().aux_full_slice().to_vec();
+        self.palette_buffer_view_mut().copy_main_full_from(&aux);
         let cgwsel_cgadsub = read_le_u16(&self.ram, MAPBAK_CGWSEL);
-        write_le_u16(&mut self.ram, CGWSEL_COPY, cgwsel_cgadsub);
-        write_le_u16(&mut self.ram, BG3HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3VOFS_COPY2, 0);
-        let bg1hofs = read_le_u16(&self.ram, MAPBAK_BG1HOFS_COPY2);
-        let bg2hofs = read_le_u16(&self.ram, MAPBAK_BG2HOFS_COPY2);
-        let bg1vofs = read_le_u16(&self.ram, MAPBAK_BG1VOFS_COPY2);
-        let bg2vofs = read_le_u16(&self.ram, MAPBAK_BG2VOFS_COPY2);
-        write_le_u16(&mut self.ram, BG1HOFS_COPY2, bg1hofs);
-        write_le_u16(&mut self.ram, BG2HOFS_COPY2, bg2hofs);
-        write_le_u16(&mut self.ram, BG1VOFS_COPY2, bg1vofs);
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, bg2vofs);
+        self.palette_filter_view_mut()
+            .set_color_window_and_math_word(cgwsel_cgadsub);
+        self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
+        let bg1hofs = self.ppu_scroll_copy_view().map_backup_bg1_h_copy2();
+        let bg2hofs = self.ppu_scroll_copy_view().map_backup_bg2_h_copy2();
+        let bg1vofs = self.ppu_scroll_copy_view().map_backup_bg1_v_copy2();
+        let bg2vofs = self.ppu_scroll_copy_view().map_backup_bg2_v_copy2();
+        self.world_state_view_mut().set_bg1_x(bg1hofs);
+        self.world_state_view_mut().set_bg2_x(bg2hofs);
+        self.world_state_view_mut().set_bg1_y(bg1vofs);
+        self.world_state_view_mut().set_bg2_y(bg2vofs);
         let tm_ts = read_le_u16(&self.ram, MAPBAK_TM);
-        write_le_u16(&mut self.ram, TM_COPY, tm_ts);
+        self.display_nmi_view_mut().set_layer_masks_word(tm_ts);
         self.Attract_SetUpConclusionHDMA();
     }
 
     pub(super) fn Attract_SetUpConclusionHDMA(&mut self) {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
-        self.ram[HDMAEN_COPY] = 0x80;
-        self.ram[BGMODE_COPY] = 9;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 0;
+        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.display_nmi_view_mut().set_bg_mode(9);
+        self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
     pub(super) fn WorldMap_ExitMap(&mut self) {
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
+        self.palette_buffer_view_mut()
+            .clear_overworld_aux_or_main_offset();
         self.ram[HUD_PALETTE] = 0;
         self.InitializeTilesets();
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
-        self.ram[DUNG_DRAW_WIDTH_INDICATOR] = 0;
-        self.ram[OVERWORLD_MAP_STATE] = 0;
+        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.dungeon_state_view_mut().set_draw_width_indicator(0);
+        self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(32);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, 0);
-        self.ram[HDMAEN_COPY] = self.ram[MAPBAK_HDMAEN];
-        let music = self.ram[OVERWORLD_MUSIC + self.ram[OVERWORLD_SCREEN_INDEX] as usize];
-        self.ram[SOUND_EFFECT_AMBIENT] = music >> 4;
-        self.ram[SOUND_EFFECT_2] = 0x10;
-        self.ram[MUSIC_CONTROL] = 0xf3;
+        self.vram_upload_data_view_mut().clear_offset();
+        let hdma_enable_mask = self.ram[MAPBAK_HDMAEN];
+        self.display_nmi_view_mut()
+            .set_hdma_enable_mask(hdma_enable_mask);
+        let music = self.overworld_config_table_view().current_music();
+        self.system_signals_view_mut()
+            .set_ambient_sound_effect(music >> 4);
+        self.system_signals_view_mut().set_sound_effect_2(0x10);
+        self.system_signals_view_mut().set_music_control(0xf3);
     }
 
     pub(super) fn WorldMap_SetUpHDMA(&mut self) {
@@ -1514,38 +1582,34 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_HandleSprites(&mut self) {
-        let ybak = read_le_u16(&self.ram, LINK_Y_COORD_SPEXIT);
-        let xbak = read_le_u16(&self.ram, LINK_X_COORD_SPEXIT);
+        let ybak = self.special_exit_position_view().y();
+        let xbak = self.special_exit_position_view().x();
 
-        if self.ram[FRAME_COUNTER] & 0x10 != 0 {
+        if self.frame_control_view().frame_counter() & 0x10 != 0 {
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
                 self.WorldMap_AddSprite(0, 2, 0x3e, 0, x.wrapping_sub(4), y.wrapping_sub(4));
             }
         }
 
         let k = 15;
-        if self.ram[OVERWORLD_SCREEN_INDEX] < 0x40
-            && (self.ram[BIRD_TRAVEL_X_LO + k]
-                | self.ram[BIRD_TRAVEL_X_HI + k]
-                | self.ram[BIRD_TRAVEL_Y_LO + k]
-                | self.ram[BIRD_TRAVEL_Y_HI + k])
-                != 0
+        if self.world_state_view().overworld_screen() < 0x40
+            && !self.bird_travel_destination_view(k).is_empty()
         {
-            if self.ram[FRAME_COUNTER] == 0 {
-                self.ram[BIRDTRAVEL_STATUS + k] = self.ram[BIRDTRAVEL_STATUS + k].wrapping_add(1);
+            if self.frame_control_view().frame_counter() == 0 {
+                self.bird_travel_status_view_mut().increment(k);
             }
-            let bird_x = u16::from(self.ram[BIRD_TRAVEL_X_HI + k]) << 8
-                | u16::from(self.ram[BIRD_TRAVEL_X_LO + k]);
-            let bird_y = u16::from(self.ram[BIRD_TRAVEL_Y_HI + k]) << 8
-                | u16::from(self.ram[BIRD_TRAVEL_Y_LO + k]);
-            write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, bird_x);
-            write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, bird_y);
+            let bird = self.bird_travel_destination_view(k);
+            let bird_x = bird.x();
+            let bird_y = bird.y();
+            self.special_exit_position_view_mut()
+                .set_position(bird_x, bird_y);
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
-                const OVERWORLD_MAP_TABLE4: [u8; 4] = [0x34, 0x74, 0xf4, 0xb4];
+                const OVERWORLD_MAP_BIRD_FRAME_CHARS: [u8; 4] = [0x34, 0x74, 0xf4, 0xb4];
                 self.WorldMap_AddSprite(
                     15,
                     2,
-                    OVERWORLD_MAP_TABLE4[(self.ram[FRAME_COUNTER] >> 1 & 3) as usize],
+                    OVERWORLD_MAP_BIRD_FRAME_CHARS
+                        [(self.frame_control_view().frame_counter() >> 1 & 3) as usize],
                     0x6a,
                     x,
                     y,
@@ -1553,20 +1617,21 @@ impl ZeldaState {
             }
         }
 
-        if self.ram[SAVE_OW_EVENT_INFO + 0x5b] & 0x20 == 0
-            && (((self.ram[SAVEGAME_MAP_ICONS_INDICATOR] >= 6) as u8 ^ self.ram[IS_IN_DARK_WORLD])
+        if self.overworld_event_info_view().event_info(0x5b) & 0x20 == 0
+            && (((self.save_progress_view().map_icons_indicator() >= 6) as u8
+                ^ self.ram[IS_IN_DARK_WORLD])
                 & 1)
                 == 0
         {
             self.WorldMap_HandleCrystalSprites();
         }
 
-        write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, ybak);
-        write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, xbak);
+        self.special_exit_position_view_mut()
+            .set_position(xbak, ybak);
     }
 
     fn WorldMap_HandleCrystalSprites(&mut self) {
-        const OW_MAP_TAB2: [u8; 4] = [0x68, 0x69, 0x78, 0x69];
+        const OVERWORLD_MAP_CRYSTAL_ICON_FRAMES: [u8; 4] = [0x68, 0x69, 0x78, 0x69];
         const X: [[u16; 9]; 7] = [
             [0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d, 0x7e0, 0xf40, 0xf40, 0x8dc],
             [
@@ -1618,7 +1683,7 @@ impl ZeldaState {
             [0, 0, 0, 0, 0, 0, 0, 0x6434, 0],
             [0, 0, 0, 0, 0, 0, 0, 0x6434, 0],
         ];
-        let k = self.ram[SAVEGAME_MAP_ICONS_INDICATOR] as usize;
+        let k = self.save_progress_view().map_icons_indicator() as usize;
         if k >= 9 {
             return;
         }
@@ -1632,23 +1697,24 @@ impl ZeldaState {
             if have_marker || (X[crystal][k] as i16) < 0 {
                 continue;
             }
-            write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, X[crystal][k]);
-            write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, Y[crystal][k]);
+            self.special_exit_position_view_mut()
+                .set_position(X[crystal][k], Y[crystal][k]);
             let mut info = INFO[crystal][k];
             let t = (info >> 8) as u8;
             if t != 0 {
-                if t != 100 && self.ram[FRAME_COUNTER] & 0x10 != 0 {
+                if t != 100 && self.frame_control_view().frame_counter() & 0x10 != 0 {
                     continue;
                 }
-                let x = read_le_u16(&self.ram, LINK_X_COORD_SPEXIT).wrapping_sub(4);
-                let y = read_le_u16(&self.ram, LINK_Y_COORD_SPEXIT).wrapping_sub(4);
-                write_le_u16(&mut self.ram, LINK_X_COORD_SPEXIT, x);
-                write_le_u16(&mut self.ram, LINK_Y_COORD_SPEXIT, y);
+                self.special_exit_position_view_mut()
+                    .offset_position(0u16.wrapping_sub(4), 0u16.wrapping_sub(4));
             }
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
                 let mut ext = 2;
                 if info >> 8 == 0 {
-                    info = u16::from(OW_MAP_TAB2[(self.ram[FRAME_COUNTER] >> 3 & 3) as usize]) << 8
+                    info = u16::from(
+                        OVERWORLD_MAP_CRYSTAL_ICON_FRAMES
+                            [(self.frame_control_view().frame_counter() >> 3 & 3) as usize],
+                    ) << 8
                         | 0x32;
                     ext = 0;
                 }
@@ -1668,7 +1734,7 @@ impl ZeldaState {
     }
 
     fn WorldMap_CalculateCurrentOamCoordinates(&self) -> Option<(u16, u16)> {
-        const OVERWORLD_MAP_TAB1: [u8; 333] = [
+        const OVERWORLD_MAP_PROJECTION_CURVE: [u8; 333] = [
             0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0,
             0xe0, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2,
             0xd1, 0xd0, 0xcf, 0xce, 0xcd, 0xcc, 0xcb, 0xca, 0xc9, 0xc7, 0xc6, 0xc5, 0xc4, 0xc3,
@@ -1693,14 +1759,15 @@ impl ZeldaState {
             0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed,
             0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
         ];
-        let y_spexit = read_le_u16(&self.ram, LINK_Y_COORD_SPEXIT);
-        let x_spexit = read_le_u16(&self.ram, LINK_X_COORD_SPEXIT);
+        let spexit = self.special_exit_position_view();
+        let y_spexit = spexit.y();
+        let x_spexit = spexit.x();
         if self.ram[OVERWORLD_MAP_FLAGS] == 0 {
             let j = (-(i32::from(y_spexit >> 4))
-                + i32::from(read_le_u16(&self.ram, M7Y_COPY))
+                + i32::from(self.ppu_scroll_copy_view().mode7_center_y())
                 + i32::from((y_spexit >> 3) & 1)
                 - 0xc0) as usize;
-            let yval = 13u16.wrapping_mul(*OVERWORLD_MAP_TAB1.get(j)? as u16) >> 4;
+            let yval = 13u16.wrapping_mul(*OVERWORLD_MAP_PROJECTION_CURVE.get(j)? as u16) >> 4;
             let mut at = (x_spexit >> 4) as u8;
             let below = at < 0x80;
             at = at.wrapping_sub(0x80);
@@ -1715,18 +1782,19 @@ impl ZeldaState {
                 u16::from(t2).wrapping_add(0x80)
             };
             Some((
-                x.wrapping_sub(read_le_u16(&self.ram, BG1HOFS_COPY2))
+                x.wrapping_sub(self.world_state_view().bg1_x())
                     .wrapping_add(0x80),
                 yval + 12,
             ))
         } else {
-            let t0 = (-(i32::from(y_spexit >> 4)) + i32::from(read_le_u16(&self.ram, M7Y_COPY))
+            let t0 = (-(i32::from(y_spexit >> 4))
+                + i32::from(self.ppu_scroll_copy_view().mode7_center_y())
                 - 0x80) as u16;
             if t0 >= 0x100 {
                 return None;
             }
             let t1 = (t0 * 37) >> 4;
-            let yval = *OVERWORLD_MAP_TAB1.get(t1 as usize)? as u16;
+            let yval = *OVERWORLD_MAP_PROJECTION_CURVE.get(t1 as usize)? as u16;
             let mut t2 = x_spexit;
             let below = t2 < 0x7f8;
             t2 = t2.wrapping_sub(0x7f8);
@@ -1752,9 +1820,8 @@ impl ZeldaState {
             } else {
                 t10.wrapping_add(0x80)
             };
-            let xval = t11.wrapping_sub(read_le_u16(&self.ram, BG1HOFS_COPY2));
-            let xt = if self.read_u32_ram(ENHANCED_FEATURES0) & K_FEATURES0_EXTEND_SCREEN64_MAP != 0
-            {
+            let xval = t11.wrapping_sub(self.world_state_view().bg1_x());
+            let xt = if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_EXTEND_SCREEN64_MAP != 0 {
                 0x48
             } else {
                 0
@@ -1781,16 +1848,16 @@ impl ZeldaState {
         let mut x = x;
         let mut y = y;
 
-        if self.ram[FRAME_COUNTER] & 0x10 == 0 && ch == 100 {
+        if self.frame_control_view().frame_counter() & 0x10 == 0 && ch == 100 {
             assert!(spr >= 8);
-            ch = K_OVERWORLD_MAP_DATA[spr - 8];
+            ch = OVERWORLD_MAP_ICON_TILES[spr - 8];
             flags = 0x32;
             big = 0;
         } else {
             x = x.wrapping_sub(4);
             y = y.wrapping_sub(4);
         }
-        if self.read_u32_ram(ENHANCED_FEATURES0) & K_FEATURES0_EXTEND_SCREEN64_MAP != 0 {
+        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_EXTEND_SCREEN64_MAP != 0 {
             big |= ((x >> 8) as u8) & 1;
         }
         self.set_oam_plain(spr, x as u8, y as u8, ch, flags, big);
@@ -1798,19 +1865,19 @@ impl ZeldaState {
 
     pub(super) fn OverworldMap_CheckForPendant(&self, k: usize) -> bool {
         const PENDANT_BIT_MASK: [u8; 3] = [4, 1, 2];
-        self.ram[SAVEGAME_MAP_ICONS_INDICATOR] == 3
-            && self.ram[LINK_WHICH_PENDANTS] & PENDANT_BIT_MASK[k] != 0
+        self.save_progress_view().map_icons_indicator() == 3
+            && self.player_resources_view().pendant_flags() & PENDANT_BIT_MASK[k] != 0
     }
 
     pub(super) fn OverworldMap_CheckForCrystal(&self, k: usize) -> bool {
         const CRYSTAL_BIT_MASK: [u8; 7] = [2, 0x40, 8, 0x20, 1, 4, 0x10];
-        self.ram[SAVEGAME_MAP_ICONS_INDICATOR] == 7
-            && self.ram[LINK_HAS_CRYSTALS] & CRYSTAL_BIT_MASK[k] != 0
+        self.save_progress_view().map_icons_indicator() == 7
+            && self.player_resources_view().crystal_flags() & CRYSTAL_BIT_MASK[k] != 0
     }
 
     pub(super) fn Module0E_03_DungeonMap(&mut self) {
         self.replay_trace_ram_watch("dungmap-before-submodule");
-        match self.ram[OVERWORLD_MAP_STATE] {
+        match self.world_state_view().overworld_map_state() {
             0 => self.DungMap_Backup(),
             1 => self.Module0E_03_01_DrawMap(),
             2 => self.DungMap_LightenUpMap(),
@@ -1841,21 +1908,24 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_00_PrepMapGraphics(&mut self) {
         self.replay_trace_ram_watch("dungmap-prep-entry");
-        let hdmaen_bak = self.ram[HDMAEN_COPY];
-        self.ram[HDMAEN_COPY] = 0;
+        let hdmaen_bak = self.display_nmi_view().hdma_enable_mask();
+        self.display_nmi_view_mut().clear_hdma_enable_mask();
         self.ram[MAPBAK_MAIN_TILE_THEME_INDEX] = self.ram[MAIN_TILE_THEME_INDEX];
-        self.ram[MAPBAK_SPRITE_GRAPHICS_INDEX] = self.ram[SPRITE_GRAPHICS_INDEX];
+        self.ram[MAPBAK_SPRITE_GRAPHICS_INDEX] = self.sprite_system_view().graphics_index();
         self.ram[MAPBAK_AUX_TILE_THEME_INDEX] = self.ram[AUX_TILE_THEME_INDEX];
-        self.ram[MAPBAK_TM] = self.ram[TM_COPY];
-        self.ram[MAPBAK_TS] = self.ram[TS_COPY];
+        self.ram[MAPBAK_TM] = self.display_nmi_view().main_screen_layers();
+        self.ram[MAPBAK_TS] = self.display_nmi_view().sub_screen_layers();
         self.ram[MAIN_TILE_THEME_INDEX] = 32;
-        self.ram[SPRITE_GRAPHICS_INDEX] = 0x80 | (self.ram[CUR_PALACE_INDEX_X2] >> 1);
+        let graphics_index = 0x80 | (self.save_progress_view().palace_index_x2() >> 1);
+        self.sprite_system_view_mut()
+            .set_graphics_index(graphics_index);
         self.ram[AUX_TILE_THEME_INDEX] = 64;
-        self.ram[TM_COPY] = 0x16;
-        self.ram[TS_COPY] = 1;
+        self.display_nmi_view_mut().set_main_screen_layers(0x16);
+        self.display_nmi_view_mut().set_sub_screen_layers(1);
         self.EraseTileMaps_dungeonmap();
         self.InitializeTilesets();
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
+        self.palette_buffer_view_mut()
+            .select_overworld_aux_palette_offset();
         self.replay_trace_ram_watch("dungmap-prep-before-bg-palette");
         self.Palette_Load_DungeonMapBG();
         self.replay_trace_ram_watch("dungmap-prep-after-bg-palette");
@@ -1866,46 +1936,52 @@ impl ZeldaState {
         self.replay_trace_ram_watch("dungmap-prep-after-hud-palette");
         self.LoadActualGearPalettes();
         self.replay_trace_ram_watch("dungmap-prep-after-gear-palette");
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
+        self.system_signals_view_mut().increment_cgram_update_flag();
         self.ram[DUNGMAP_INIT_STATE] = self.ram[DUNGMAP_INIT_STATE].wrapping_add(1);
-        self.ram[HDMAEN_COPY] = hdmaen_bak;
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 9;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 9;
+        self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
+        self.display_nmi_view_mut().set_bg_vram_load_mode(9);
+        self.display_nmi_view_mut().set_core_update_disable_flag(9);
         self.replay_trace_ram_watch("dungmap-prep-exit");
     }
 
     pub(super) fn Module0E_03_01_01_DrawLEVEL(&mut self) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB0.len() - 1);
-        let i = DUNG_MAP_TAB0[dung] >> 1;
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON.len() - 1);
+        let i = DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON[dung] >> 1;
         if i >= 0 {
             let i = i as usize;
-            self.ram[VRAM_UPLOAD_DATA + 32] = 0xff;
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + 14, DUNG_MAP_TAB1[i]);
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + 30, DUNG_MAP_TAB2[i]);
-            for i in (0..14).rev() {
-                self.ram[VRAM_UPLOAD_DATA + i] = DUNG_MAP_TAB3[i];
-                self.ram[VRAM_UPLOAD_DATA + i + 16] = DUNG_MAP_TAB4[i];
-            }
-            self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+            self.vram_upload_data_view_mut().set_level_label_tiles(
+                &DUNGEON_MAP_LEVEL_LABEL_TOP_STRIPE,
+                &DUNGEON_MAP_LEVEL_LABEL_BOTTOM_STRIPE,
+            );
+            self.vram_upload_data_view_mut()
+                .set_word(14, DUNGEON_MAP_LEVEL_LABEL_TOP_TILES[i]);
+            self.vram_upload_data_view_mut()
+                .set_word(30, DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES[i]);
+            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
         }
         self.ram[DUNGMAP_INIT_STATE] = self.ram[DUNGMAP_INIT_STATE].wrapping_add(1);
     }
 
     pub(super) fn Module0E_03_01_02_DrawFloorsBackdrop(&mut self) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t5 = DUNG_MAP_TAB5[dung];
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung];
         let mut offs = 0usize;
 
         if t5 & 0x0100 != 0 {
-            for &tile in &DUNG_MAP_TAB6 {
-                write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, tile);
+            for &tile in &DUNGEON_MAP_FLOOR_LIST_HEADER_STRIPE {
+                self.vram_upload_data_view_mut().set_word(offs * 2, tile);
                 offs += 1;
             }
             let mut t = 0x1123u16;
             for _ in 0..16 {
-                write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, t.swap_bytes());
-                write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + (offs + 1) * 2, 0x0e40);
-                write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + (offs + 2) * 2, 0x1b2e);
+                self.vram_upload_data_view_mut()
+                    .set_word(offs * 2, t.swap_bytes());
+                self.vram_upload_data_view_mut()
+                    .set_word((offs + 1) * 2, 0x0e40);
+                self.vram_upload_data_view_mut()
+                    .set_word((offs + 2) * 2, 0x1b2e);
                 t = t.wrapping_add(0x20);
                 offs += 3;
             }
@@ -1919,18 +1995,18 @@ impl ZeldaState {
         } else {
             0
         };
-        let mut t7 = DUNG_MAP_TAB7[tab7_index];
+        let mut t7 = DUNGEON_MAP_FLOOR_LIST_VRAM_STARTS[tab7_index];
         let t7_org = t7;
         let mut j = 0usize;
         loop {
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, t7.swap_bytes());
+            self.vram_upload_data_view_mut()
+                .set_word(offs * 2, t7.swap_bytes());
             offs += 1;
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, 0x0e40);
+            self.vram_upload_data_view_mut().set_word(offs * 2, 0x0e40);
             offs += 1;
-            write_le_u16(
-                &mut self.ram,
-                VRAM_UPLOAD_DATA + offs * 2,
-                DUNG_MAP_TAB8[j] + if t5 & 0x0200 != 0 { 0x0400 } else { 0 },
+            self.vram_upload_data_view_mut().set_word(
+                offs * 2,
+                DUNGEON_MAP_FLOOR_LIST_LABEL_TILES[j] + if t5 & 0x0200 != 0 { 0x0400 } else { 0 },
             );
             offs += 1;
             if j != 6 {
@@ -1941,12 +2017,13 @@ impl ZeldaState {
                 break;
             }
         }
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, (offs * 2) as u16);
+        self.vram_upload_data_view_mut()
+            .set_offset((offs * 2) as u16);
         self.DungeonMap_BuildFloorListBoxes(t5 as u8, t7_org);
-        let offset = read_le_u16(&self.ram, VRAM_UPLOAD_OFFSET) as usize;
-        self.ram[VRAM_UPLOAD_DATA + offset] = 0xff;
+        let offset = self.vram_upload_data_view().offset() as usize;
+        self.vram_upload_data_view_mut().terminate_at(offset);
         self.ram[DUNGMAP_INIT_STATE] = self.ram[DUNGMAP_INIT_STATE].wrapping_add(1);
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
 
     pub(super) fn DungeonMap_BuildFloorListBoxes(&mut self, t5: u8, mut r14: u16) {
@@ -1954,38 +2031,46 @@ impl ZeldaState {
         r14 = r14
             .wrapping_sub(0x40 - 2)
             .wrapping_add(u16::from(t5 & 0x0f) * 0x40);
-        let mut offs = read_le_u16(&self.ram, VRAM_UPLOAD_OFFSET) as usize >> 1;
+        let mut offs = self.vram_upload_data_view().offset() as usize >> 1;
         for _ in 0..n {
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, r14.swap_bytes());
+            self.vram_upload_data_view_mut()
+                .set_word(offs * 2, r14.swap_bytes());
             offs += 1;
-            write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, 0x0700);
+            self.vram_upload_data_view_mut().set_word(offs * 2, 0x0700);
             offs += 1;
-            for (x, &tile) in DUNG_MAP_TAB9.iter().enumerate() {
-                write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, tile);
+            for (x, &tile) in DUNGEON_MAP_FLOOR_LIST_BOX_TILES.iter().enumerate() {
+                self.vram_upload_data_view_mut().set_word(offs * 2, tile);
                 offs += 1;
                 if x == 3 {
                     r14 = r14.wrapping_add(0x20);
-                    write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, r14.swap_bytes());
+                    self.vram_upload_data_view_mut()
+                        .set_word(offs * 2, r14.swap_bytes());
                     offs += 1;
-                    write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offs * 2, 0x0700);
+                    self.vram_upload_data_view_mut().set_word(offs * 2, 0x0700);
                     offs += 1;
                 }
             }
             r14 = r14.wrapping_sub(0x40 + 0x20);
         }
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, (offs * 2) as u16);
+        self.vram_upload_data_view_mut()
+            .set_offset((offs * 2) as u16);
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
         write_le_u16(&mut self.ram, DUNGMAP_FLOOR_SCROLL_STEP, 0);
         write_le_u16(&mut self.ram, DUNGMAP_IDX, 0);
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t = (-(i16::from((DUNG_MAP_TAB5[dung] & 0x0f) as u8)) as u16) as u8;
-        if read_le_u16(&self.ram, DUNG_CUR_FLOOR) != u16::from(t) {
-            let dung_cur_floor = u16::from(self.ram[DUNG_CUR_FLOOR]);
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t =
+            (-(i16::from((DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8)) as u16) as u8;
+        if self.dungeon_state_view().current_floor_word() != u16::from(t) {
+            let dung_cur_floor = u16::from(self.dungeon_state_view().current_floor());
             write_le_u16(&mut self.ram, DUNGMAP_CUR_FLOOR, dung_cur_floor);
         } else {
-            let dung_cur_floor = read_le_u16(&self.ram, DUNG_CUR_FLOOR).wrapping_add(1);
+            let dung_cur_floor = self
+                .dungeon_state_view()
+                .current_floor_word()
+                .wrapping_add(1);
             let dungmap_idx = read_le_u16(&self.ram, DUNGMAP_IDX).wrapping_add(2);
             write_le_u16(&mut self.ram, DUNGMAP_CUR_FLOOR, dung_cur_floor);
             write_le_u16(&mut self.ram, DUNGMAP_IDX, dungmap_idx);
@@ -1999,41 +2084,41 @@ impl ZeldaState {
         self.DungeonMap_DrawDungeonLayout(0x0300);
         let dungmap_cur_floor = read_le_u16(&self.ram, DUNGMAP_CUR_FLOOR).wrapping_add(1);
         write_le_u16(&mut self.ram, DUNGMAP_CUR_FLOOR, dungmap_cur_floor);
-        write_le_u16(&mut self.ram, R6, 0);
-        write_le_u16(&mut self.ram, R10, 0);
-        self.ram[NMI_SUBROUTINE_INDEX] = 8;
-        self.ram[NMI_LOAD_TARGET_ADDR] = 0x22;
+        self.dungeon_map_scratch_view_mut().clear_scroll_state();
+        self.display_nmi_view_mut().set_subroutine_index(8);
+        self.display_nmi_view_mut().set_load_target_addr(0x22);
         self.ram[DUNGMAP_INIT_STATE] = self.ram[DUNGMAP_INIT_STATE].wrapping_add(1);
     }
 
     pub(super) fn DungeonMap_DrawBorderForRooms(&mut self, pd: u16, mask: u16) {
         for i in 0..4 {
-            let idx = (((DUNG_MAP_TAB10[i].wrapping_add(pd)) & 0x0fff) >> 1) as usize;
+            let idx = (((DUNGEON_MAP_ROOM_BORDER_CORNER_POSITIONS[i].wrapping_add(pd)) & 0x0fff)
+                >> 1) as usize;
             write_le_u16(
                 &mut self.ram,
                 MESSAGING_BUF + idx * 2,
-                DUNG_MAP_TAB11[i] & mask,
+                DUNGEON_MAP_ROOM_BORDER_CORNER_TILES[i] & mask,
             );
         }
         for i in 0..2 {
-            let r4 = DUNG_MAP_TAB12[i].wrapping_add(pd);
+            let r4 = DUNGEON_MAP_ROOM_BORDER_HORIZONTAL_POSITIONS[i].wrapping_add(pd);
             for j in (0..20u16).step_by(2) {
                 let idx = (((r4.wrapping_add(j)) & 0x0fff) >> 1) as usize;
                 write_le_u16(
                     &mut self.ram,
                     MESSAGING_BUF + idx * 2,
-                    DUNG_MAP_TAB13[i] & mask,
+                    DUNGEON_MAP_ROOM_BORDER_HORIZONTAL_TILES[i] & mask,
                 );
             }
         }
         for i in 0..2 {
-            let r4 = DUNG_MAP_TAB14[i].wrapping_add(pd);
+            let r4 = DUNGEON_MAP_ROOM_BORDER_VERTICAL_POSITIONS[i].wrapping_add(pd);
             for j in (0..0x280u16).step_by(0x40) {
                 let idx = (((r4.wrapping_add(j)) & 0x0fff) >> 1) as usize;
                 write_le_u16(
                     &mut self.ram,
                     MESSAGING_BUF + idx * 2,
-                    DUNG_MAP_TAB15[i] & mask,
+                    DUNGEON_MAP_ROOM_BORDER_VERTICAL_TILES[i] & mask,
                 );
             }
         }
@@ -2053,9 +2138,15 @@ impl ZeldaState {
         let t = (((0x035eu16.wrapping_add(pd)) & 0x0fff) >> 1) as usize;
         let floor = read_le_u16(&self.ram, DUNGMAP_CUR_FLOOR);
         let (q1, q2) = if (floor & 0x80) != 0 {
-            (0x1f1c, DUNG_MAP_TAB16[usize::from((!(floor as u8)) & 0x07)])
+            (
+                0x1f1c,
+                DUNGEON_MAP_FLOOR_NUMBER_TILES[usize::from((!(floor as u8)) & 0x07)],
+            )
         } else {
-            (DUNG_MAP_TAB16[usize::from(floor & 0x0f)], 0x1f1d)
+            (
+                DUNGEON_MAP_FLOOR_NUMBER_TILES[usize::from(floor & 0x0f)],
+                0x1f1d,
+            )
         };
         write_le_u16(&mut self.ram, MESSAGING_BUF + t * 2, q1 & r8);
         write_le_u16(&mut self.ram, MESSAGING_BUF + (t + 1) * 2, q2 & r8);
@@ -2069,11 +2160,12 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawSingleRowOfRooms(&mut self, i: i32, mut arg_x: i32) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t5 = DUNG_MAP_TAB5[dung];
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung];
         let dungmask = DUNG_MAP_UPPER_BITMASKS[dung & 0x0f];
         let curp = self.GetDungmapFloorLayout();
-        let has_map = (read_le_u16(&self.ram, LINK_DUNGEON_MAP) & dungmask) != 0;
+        let has_map = self.player_resources_view().has_dungeon_map_mask(dungmask);
 
         for j in 0..5 {
             let mut r14 = self.ram[DUNGMAP_CUR_FLOOR].wrapping_add((t5 & 0x0f) as u8);
@@ -2082,7 +2174,7 @@ impl ZeldaState {
             let yv = if v == 0x0f {
                 0x51
             } else {
-                r14 = (read_le_u16(&self.ram, SAVE_DUNG_INFO + usize::from(v) * 2) & 0x0f) as u8;
+                r14 = (self.save_progress_view().dungeon_info_word(usize::from(v)) & 0x0f) as u8;
                 let mut k = 0usize;
                 let mut count = 0usize;
                 while k < curp.len() && curp[k] != v {
@@ -2093,10 +2185,26 @@ impl ZeldaState {
             };
 
             let base = usize::from(yv) * 4;
-            let av0 = self.dungeon_map_room_tile(DUNG_MAP_TAB23[base], r14, 8, has_map);
-            let av1 = self.dungeon_map_room_tile(DUNG_MAP_TAB23[base + 1], r14, 4, has_map);
-            let av2 = self.dungeon_map_room_tile(DUNG_MAP_TAB23[base + 2], r14, 2, has_map);
-            let av3 = self.dungeon_map_room_tile(DUNG_MAP_TAB23[base + 3], r14, 1, has_map);
+            let av0 =
+                self.dungeon_map_room_tile(DUNGEON_MAP_ROOM_QUADRANT_TILES[base], r14, 8, has_map);
+            let av1 = self.dungeon_map_room_tile(
+                DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 1],
+                r14,
+                4,
+                has_map,
+            );
+            let av2 = self.dungeon_map_room_tile(
+                DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 2],
+                r14,
+                2,
+                has_map,
+            );
+            let av3 = self.dungeon_map_room_tile(
+                DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 3],
+                r14,
+                1,
+                has_map,
+            );
             let idx = arg_x as usize;
             write_le_u16(&mut self.ram, MESSAGING_BUF + idx * 2, av0);
             write_le_u16(&mut self.ram, MESSAGING_BUF + (idx + 1) * 2, av1);
@@ -2127,14 +2235,15 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawRoomMarkers(&mut self) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t5 = (DUNG_MAP_TAB5[dung] & 0x0f) as u8;
-        let floor1 = t5.wrapping_add(self.ram[DUNG_CUR_FLOOR]);
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t5 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
+        let floor1 = t5.wrapping_add(self.dungeon_state_view().current_floor());
 
         let mut room = self.world_state_view().dungeon_room();
         for i in 0..3 {
-            if room == DUNG_MAP_TAB21[i] {
-                room = DUNG_MAP_TAB22[i];
+            if room == DUNGEON_MAP_ROOM_REMAP_FROM[i] {
+                room = DUNGEON_MAP_ROOM_REMAP_TO[i];
             }
         }
 
@@ -2154,44 +2263,48 @@ impl ZeldaState {
             }
         }
 
-        let var3 = u16::from(xcoord)
+        let marker_x = u16::from(xcoord)
             .wrapping_add(0x90)
             .wrapping_add((self.player_state_view().x() & 0x01e0) >> 5);
-        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_X, var3);
-        write_le_u16(&mut self.ram, DUNGMAP_VAR6, u16::from(ycoord));
+        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_X, marker_x);
+        self.dungeon_map_scratch_view_mut()
+            .set_location_marker_base_y(ycoord);
 
         let idx = usize::from((read_le_u16(&self.ram, DUNGMAP_IDX) >> 1) & 1);
-        let var5 = u16::from(ycoord)
-            .wrapping_add(DUNG_MAP_TAB24[idx])
+        let marker_y = u16::from(ycoord)
+            .wrapping_add(DUNGEON_MAP_MARKER_Y_BASES[idx])
             .wrapping_add((self.player_state_view().y() & 0x01e0) >> 5);
-        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, var5);
+        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, marker_y);
 
-        let floor2 = t5.wrapping_add(DUNG_MAP_TAB28[dung] as u8);
+        let floor2 = t5.wrapping_add(DUNGEON_MAP_BOSS_FLOOR_OFFSETS[dung] as u8);
         let marker_base = usize::from(floor2) * 25;
-        write_le_u16(&mut self.ram, DUNGMAP_VAR7, 0x0040);
-        write_le_u16(&mut self.ram, DUNGMAP_VAR8, 0x0040);
+        self.dungeon_map_scratch_view_mut().reset_marker_offsets();
 
-        let lookfor = DUNG_MAP_TAB25[dung];
+        let lookfor = DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON[dung];
         for j in (0..25).rev() {
             let value = roomp.get(marker_base + j).copied().unwrap_or(0x0f);
             if value != 0x0f && value == lookfor {
                 break;
             }
-            let var7 = read_le_u16(&self.ram, DUNGMAP_VAR7).wrapping_sub(0x10);
-            write_le_u16(&mut self.ram, DUNGMAP_VAR7, var7);
-            if (var7 as i16) < 0 {
-                write_le_u16(&mut self.ram, DUNGMAP_VAR7, 0x0040);
-                self.ram[DUNGMAP_VAR8] = self.ram[DUNGMAP_VAR8].wrapping_sub(0x10);
+            let marker_x_offset = self.dungeon_map_scratch_view_mut().shift_marker_x_left();
+            if (marker_x_offset as i16) < 0 {
+                let mut scratch = self.dungeon_map_scratch_view_mut();
+                scratch.reset_marker_x_offset();
+                scratch.shift_marker_y_low_up();
             }
         }
 
-        let floor3 = (self.ram[DUNGMAP_CUR_FLOOR] as i8).wrapping_sub(DUNG_MAP_TAB28[dung] as i8);
-        let var8 = read_le_u16(&self.ram, DUNGMAP_VAR8)
+        let floor3 = (self.ram[DUNGMAP_CUR_FLOOR] as i8)
+            .wrapping_sub(DUNGEON_MAP_BOSS_FLOOR_OFFSETS[dung] as i8);
+        let marker_y_offset = self
+            .dungeon_map_scratch_view()
+            .marker_y_offset()
             .wrapping_add_signed(i16::from(floor3) * 0x60)
-            .wrapping_add(DUNG_MAP_TAB24[0]);
-        write_le_u16(&mut self.ram, DUNGMAP_VAR8, var8);
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
-        self.ram[INIDISP_COPY] = 0;
+            .wrapping_add(DUNGEON_MAP_MARKER_Y_BASES[0]);
+        self.dungeon_map_scratch_view_mut()
+            .set_marker_y_offset(marker_y_offset);
+        self.world_state_view_mut().increment_overworld_map_state();
+        self.display_nmi_view_mut().set_screen_brightness(0);
         self.ram[DUNGMAP_INIT_STATE] = 0;
     }
 
@@ -2202,7 +2315,12 @@ impl ZeldaState {
 
     pub(super) fn DungeonMap_HandleInput(&mut self) {
         if self.WantExitDungeonMap() {
-            self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(2);
+            let overworld_map_state = self
+                .world_state_view()
+                .overworld_map_state()
+                .wrapping_add(2);
+            self.world_state_view_mut()
+                .set_overworld_map_state(overworld_map_state);
             self.ram[DUNGMAP_INIT_STATE] = 0;
         } else {
             self.DungeonMap_HandleMovementInput();
@@ -2211,9 +2329,9 @@ impl ZeldaState {
 
     fn WantExitDungeonMap(&self) -> bool {
         if self.ram[HUD_CUR_ITEM_X] != 0 {
-            self.ram[FILTERED_JOYPAD_H] & 0x20 != 0
+            self.player_state_view().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.ram[FILTERED_JOYPAD_L] & 0x40 != 0
+            self.player_state_view().filtered_joypad_l() & 0x40 != 0
         }
     }
 
@@ -2225,70 +2343,81 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_HandleFloorSelect(&mut self) {
-        let t5 = DUNG_MAP_TAB5
-            [usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1)];
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
+            self.save_progress_view().palace_index_x2() >> 1,
+        )
+        .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1)];
         let r2 = ((t5 >> 4) & 0x0f) as u8;
         let r3 = (t5 & 0x0f) as u8;
         if r2.wrapping_add(r3) < 3
             || self.ram[DUNGMAP_FLOOR_SCROLL_STEP] != 0
-            || (self.ram[JOYPAD1H_LAST] & 0x0c) == 0
+            || (self.player_state_view().joypad1h_last() & 0x0c) == 0
         {
             return;
         }
 
-        self.ram[DUNGMAP_CUR_FLOOR + 1] = 0;
-        let mut r6 = read_le_u16(&self.ram, R6);
-        if (self.ram[JOYPAD1H_LAST] & 8) != 0 {
+        self.dungeon_map_view_mut().clear_current_floor_high();
+        let mut scroll_draw_offset = self.dungeon_map_scratch_view().scroll_draw_offset();
+        if (self.player_state_view().joypad1h_last() & 8) != 0 {
             if r2.wrapping_sub(1) == self.ram[DUNGMAP_CUR_FLOOR] {
                 return;
             }
             self.ram[DUNGMAP_CUR_FLOOR] = self.ram[DUNGMAP_CUR_FLOOR].wrapping_add(1);
-            r6 = r6.wrapping_sub(0x300) & 0x0fff;
+            scroll_draw_offset = scroll_draw_offset.wrapping_sub(0x300) & 0x0fff;
         } else {
             if (!r3).wrapping_add(1) == self.ram[DUNGMAP_CUR_FLOOR] {
                 return;
             }
             self.ram[DUNGMAP_CUR_FLOOR] = self.ram[DUNGMAP_CUR_FLOOR].wrapping_sub(2);
-            r6 = r6.wrapping_add(0x600) & 0x0fff;
+            scroll_draw_offset = scroll_draw_offset.wrapping_add(0x600) & 0x0fff;
         }
 
-        self.DungeonMap_DrawFloorNumbersByRoom(r6, !0x1000);
-        self.DungeonMap_DrawBorderForRooms(r6, !0x1000);
-        self.DungeonMap_DrawDungeonLayout(r6 as i32);
+        self.DungeonMap_DrawFloorNumbersByRoom(scroll_draw_offset, !0x1000);
+        self.DungeonMap_DrawBorderForRooms(scroll_draw_offset, !0x1000);
+        self.DungeonMap_DrawDungeonLayout(scroll_draw_offset as i32);
         self.ram[DUNGMAP_FLOOR_SCROLL_STEP] = self.ram[DUNGMAP_FLOOR_SCROLL_STEP].wrapping_add(1);
-        let joypad_h = self.ram[JOYPAD1H_LAST];
-        write_le_u16(&mut self.ram, R10, u16::from(joypad_h));
+        let joypad_h = self.player_state_view().joypad1h_last();
+        self.dungeon_map_scratch_view_mut()
+            .set_scroll_input(u16::from(joypad_h));
         let x = usize::from((joypad_h >> 3) & 1);
-        let target = read_le_u16(&self.ram, BG2VOFS_COPY2).wrapping_add_signed(DUNG_MAP_TAB26[x]);
+        let target = self
+            .world_state_view()
+            .bg2_y()
+            .wrapping_add_signed(DUNGEON_MAP_FLOOR_SCROLL_TARGET_DELTAS[x]);
         write_le_u16(&mut self.ram, DUNGMAP_SCROLL_TARGET_Y, target);
         if x == 0 {
-            r6 = r6.wrapping_sub(0x300) & 0x0fff;
+            scroll_draw_offset = scroll_draw_offset.wrapping_sub(0x300) & 0x0fff;
             self.ram[DUNGMAP_CUR_FLOOR] = self.ram[DUNGMAP_CUR_FLOOR].wrapping_add(1);
         }
-        write_le_u16(&mut self.ram, R6, r6);
-        self.ram[NMI_SUBROUTINE_INDEX] = 8;
+        self.dungeon_map_scratch_view_mut()
+            .set_scroll_draw_offset(scroll_draw_offset);
+        self.display_nmi_view_mut().set_subroutine_index(8);
     }
 
     pub(super) fn DungeonMap_ScrollFloors(&mut self) {
-        let x = usize::from((read_le_u16(&self.ram, R10) >> 3) & 1);
-        let var5 = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y)
-            .wrapping_add_signed(i16::from(DUNG_MAP_TAB39[x]));
-        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, var5);
-        let var8 =
-            read_le_u16(&self.ram, DUNGMAP_VAR8).wrapping_add_signed(i16::from(DUNG_MAP_TAB39[x]));
-        write_le_u16(&mut self.ram, DUNGMAP_VAR8, var8);
-        let bg2 =
-            read_le_u16(&self.ram, BG2VOFS_COPY2).wrapping_add_signed(i16::from(DUNG_MAP_TAB40[x]));
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, bg2);
+        let x = self
+            .dungeon_map_scratch_view()
+            .scroll_input_direction_index();
+        let marker_y = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y)
+            .wrapping_add_signed(i16::from(DUNGEON_MAP_SCROLL_MARKER_Y_DELTAS[x]));
+        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, marker_y);
+        self.dungeon_map_scratch_view_mut()
+            .add_marker_y_offset_signed(i16::from(DUNGEON_MAP_SCROLL_MARKER_Y_DELTAS[x]));
+        let bg2 = self
+            .world_state_view()
+            .bg2_y()
+            .wrapping_add_signed(i16::from(DUNGEON_MAP_SCROLL_BG_Y_DELTAS[x]));
+        self.world_state_view_mut().set_bg2_y(bg2);
         if bg2 == read_le_u16(&self.ram, DUNGMAP_SCROLL_TARGET_Y) {
             self.ram[DUNGMAP_FLOOR_SCROLL_STEP] = 0;
         }
     }
 
     pub(super) fn DungeonMap_DrawSprites(&mut self) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let r2 = (DUNG_MAP_TAB5[dung] & 0x0f) as u8;
-        let floor = r2.wrapping_add(self.ram[DUNG_CUR_FLOOR]);
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let r2 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
+        let floor = r2.wrapping_add(self.dungeon_state_view().current_floor());
 
         let mut spr_pos = 0usize;
         let mut r14 = 0u16;
@@ -2308,8 +2437,9 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawLinkPointing(&mut self, spr_pos: usize, r2: u8, mut r3: u8) {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t5 = DUNG_MAP_TAB5[dung] as u8;
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] as u8;
         if 4i8.wrapping_sub(r2 as i8) >= 0 {
             r3 = r3.wrapping_add(4u8.wrapping_sub(r2));
             let a = ((t5 >> 4) as i8).wrapping_sub(4);
@@ -2317,7 +2447,7 @@ impl ZeldaState {
                 r3 = r3.wrapping_sub(a as u8);
             }
         }
-        let y = DUNG_MAP_TAB33[usize::from(r3)].wrapping_sub(4);
+        let y = DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(r3)].wrapping_sub(4);
         let flags = if self.ram[PALETTE_SWAP_FLAG] != 0 {
             0x30
         } else {
@@ -2327,14 +2457,15 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawBlinkingIndicator(&mut self, spr_pos: usize) -> usize {
-        let var5 = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y);
-        let y = if var5 < 256 { var5 as u8 } else { 0xf0 }.wrapping_sub(3);
+        let marker_y = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y);
+        let y = if marker_y < 256 { marker_y as u8 } else { 0xf0 }.wrapping_sub(3);
         self.set_oam_plain(
             spr_pos,
             self.ram[DUNGMAP_PLAYER_MARKER_X].wrapping_sub(3),
             y,
             0x34,
-            DUNG_MAP_TAB38[usize::from((self.ram[FRAME_COUNTER] >> 2) & 3)],
+            DUNGEON_MAP_PLAYER_MARKER_OAM_FLAGS
+                [usize::from((self.frame_control_view().frame_counter() >> 2) & 3)],
             0,
         );
         spr_pos + 1
@@ -2342,21 +2473,30 @@ impl ZeldaState {
 
     pub(super) fn DungeonMap_DrawLocationMarker(&mut self, mut spr_pos: usize, r14: u16) -> usize {
         for i in (0..4).rev() {
-            let r15 = self.ram[DUNGMAP_VAR6].wrapping_add(DUNG_MAP_TAB24[usize::from(r14)] as u8);
-            let mut fr = (self.ram[FRAME_COUNTER] >> 2) & 1;
-            let var5 = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y);
-            if ((var5.wrapping_add(1)) & 0x00f0) == u16::from(r15.wrapping_add(1)) && var5 < 256 {
+            let r15 = self
+                .dungeon_map_scratch_view()
+                .location_marker_base_y()
+                .wrapping_add(DUNGEON_MAP_MARKER_Y_BASES[usize::from(r14)] as u8);
+            let mut fr = (self.frame_control_view().frame_counter() >> 2) & 1;
+            let marker_y = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y);
+            if ((marker_y.wrapping_add(1)) & 0x00f0) == u16::from(r15.wrapping_add(1))
+                && marker_y < 256
+            {
                 fr = fr.wrapping_add(2);
             }
             let x = (read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_X) & 0x00f0)
-                .wrapping_add_signed(i16::from(DUNG_MAP_TAB29[i])) as u8;
-            let y = u16::from(r15).wrapping_add_signed(i16::from(DUNG_MAP_TAB30[i])) as u8;
+                .wrapping_add_signed(i16::from(DUNGEON_MAP_LOCATION_MARKER_X_OFFSETS[i]))
+                as u8;
+            let y = u16::from(r15)
+                .wrapping_add_signed(i16::from(DUNGEON_MAP_LOCATION_MARKER_Y_OFFSETS[i]))
+                as u8;
             self.set_oam_plain(
                 spr_pos,
                 x,
                 y,
                 0,
-                DUNG_MAP_TAB32[usize::from(fr)] | DUNG_MAP_TAB31[i],
+                DUNGEON_MAP_LOCATION_MARKER_CHARS[usize::from(fr)]
+                    | DUNGEON_MAP_LOCATION_MARKER_OAM_FLAGS[i],
                 2,
             );
             spr_pos += 1;
@@ -2365,8 +2505,10 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawFloorNumberObjects(&mut self, spr_pos: usize) -> usize {
-        let t5 = DUNG_MAP_TAB5
-            [usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1)];
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
+            self.save_progress_view().palace_index_x2() >> 1,
+        )
+        .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1)];
         let mut r2 = ((t5 >> 4) & 0x0f) as u8;
         let mut r3 = (t5 & 0x0f) as u8;
         let mut yv = 7u8;
@@ -2386,7 +2528,7 @@ impl ZeldaState {
             }
         }
 
-        let mut r4 = DUNG_MAP_TAB33[usize::from(yv)].wrapping_add(1);
+        let mut r4 = DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(yv)].wrapping_add(1);
         r2 = r2.wrapping_sub(1);
         r3 = 0u8.wrapping_sub(r3);
         let mut pos = spr_pos;
@@ -2394,10 +2536,10 @@ impl ZeldaState {
             let left = if (r2 as i8) < 0 {
                 0x1c
             } else {
-                DUNG_MAP_TAB34[usize::from(r2)]
+                DUNGEON_MAP_FLOOR_DIGIT_CHARS[usize::from(r2)]
             };
             let right = if (r2 as i8) < 0 {
-                DUNG_MAP_TAB34[usize::from(r2 ^ 0xff)]
+                DUNGEON_MAP_FLOOR_DIGIT_CHARS[usize::from(r2 ^ 0xff)]
             } else {
                 0x1d
             };
@@ -2416,9 +2558,10 @@ impl ZeldaState {
 
     pub(super) fn DungeonMap_DrawFloorBlinker(&mut self) {
         let mut floor = self.ram[DUNGMAP_CUR_FLOOR];
-        let t5 = DUNG_MAP_TAB5
-            [usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1)]
-            as u8;
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
+            self.save_progress_view().palace_index_x2() >> 1,
+        )
+        .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1)] as u8;
         let mut flag = u8::from(((t5 >> 4) & 0x0f).wrapping_add(t5 & 0x0f) != 1);
         floor = floor.wrapping_sub(flag);
         let mut r0;
@@ -2439,20 +2582,21 @@ impl ZeldaState {
             }
             i = i.wrapping_sub(1);
         }
-        if (self.ram[FRAME_COUNTER] & 0x10) == 0 {
+        if (self.frame_control_view().frame_counter() & 0x10) == 0 {
             return;
         }
-        let y = DUNG_MAP_TAB33[usize::from(r0)].wrapping_sub(4);
+        let y = DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(r0)].wrapping_sub(4);
         loop {
             let mut x = 40u8;
-            let mut spr_pos = 0x40 + usize::from(DUNG_MAP_TAB35[usize::from(flag)]);
+            let mut spr_pos =
+                0x40 + usize::from(DUNGEON_MAP_FLOOR_BLINKER_SPRITE_OFFSETS[usize::from(flag)]);
             for i in (0..4).rev() {
                 let t = 0x3d | if i != 0 { 0 } else { 0x40 };
                 self.set_oam_plain(
                     spr_pos,
                     x,
                     y.wrapping_add(flag.wrapping_mul(16)),
-                    DUNG_MAP_TAB36[i],
+                    DUNGEON_MAP_FLOOR_BLINKER_CHARS[i],
                     t,
                     0,
                 );
@@ -2460,7 +2604,7 @@ impl ZeldaState {
                     spr_pos + 4,
                     x,
                     y.wrapping_add(flag.wrapping_mul(16)).wrapping_add(8),
-                    DUNG_MAP_TAB36[i],
+                    DUNGEON_MAP_FLOOR_BLINKER_CHARS[i],
                     t | 0x80,
                     0,
                 );
@@ -2475,28 +2619,31 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawBossIcon(&mut self, spr_pos: usize) -> usize {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         if (read_le_u16(
             &self.ram,
-            SAVE_DUNG_INFO + usize::from(DUNG_MAP_TAB25[dung]) * 2,
+            SAVE_DUNG_INFO + usize::from(DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON[dung]) * 2,
         ) & 0x0800)
             != 0
-            || (read_le_u16(&self.ram, LINK_COMPASS) & DUNG_MAP_UPPER_BITMASKS[dung & 0x0f]) == 0
-            || DUNG_MAP_TAB28[dung] < 0
+            || !self
+                .player_resources_view()
+                .has_compass_mask(DUNG_MAP_UPPER_BITMASKS[dung & 0x0f])
+            || DUNGEON_MAP_BOSS_FLOOR_OFFSETS[dung] < 0
         {
             return spr_pos;
         }
         let spr_pos = self.DungeonMap_DrawBossIconByFloor(spr_pos);
-        if (self.ram[FRAME_COUNTER] & 0x0f) >= 10 {
+        if (self.frame_control_view().frame_counter() & 0x0f) >= 10 {
             return spr_pos;
         }
-        let xy = DUNG_MAP_TAB37[dung];
+        let xy = DUNGEON_MAP_BOSS_ICON_XY_BY_DUNGEON[dung];
         let x = (xy >> 8)
-            .wrapping_add(read_le_u16(&self.ram, DUNGMAP_VAR7))
+            .wrapping_add(self.dungeon_map_scratch_view().marker_x_offset())
             .wrapping_add(0x90) as u8;
-        let var8 = read_le_u16(&self.ram, DUNGMAP_VAR8);
-        let y = if var8 < 256 {
-            xy.wrapping_add(var8) as u8
+        let marker_y_offset = self.dungeon_map_scratch_view().marker_y_offset();
+        let y = if marker_y_offset < 256 {
+            xy.wrapping_add(marker_y_offset) as u8
         } else {
             0xf0
         };
@@ -2505,10 +2652,11 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_DrawBossIconByFloor(&mut self, spr_pos: usize) -> usize {
-        let dung = usize::from(self.ram[CUR_PALACE_INDEX_X2] >> 1).min(DUNG_MAP_TAB5.len() - 1);
-        let t5 = DUNG_MAP_TAB5[dung] as u8;
+        let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
+            .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
+        let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] as u8;
         let r2 = t5 & 0x0f;
-        let mut r3 = r2.wrapping_add(DUNG_MAP_TAB28[dung] as u8);
+        let mut r3 = r2.wrapping_add(DUNGEON_MAP_BOSS_FLOOR_OFFSETS[dung] as u8);
         if 4i8.wrapping_sub(r2 as i8) >= 0 {
             r3 = r3.wrapping_add(4u8.wrapping_sub(r2));
             let a = ((t5 >> 4) as i8).wrapping_sub(4);
@@ -2516,13 +2664,13 @@ impl ZeldaState {
                 r3 = r3.wrapping_sub(a as u8);
             }
         }
-        if (self.ram[FRAME_COUNTER] & 0x0f) >= 10 {
+        if (self.frame_control_view().frame_counter() & 0x0f) >= 10 {
             return spr_pos;
         }
         self.set_oam_plain(
             spr_pos,
             0x4c,
-            DUNG_MAP_TAB33[usize::from(r3)],
+            DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(r3)],
             0x31,
             0x33,
             0,
@@ -2531,191 +2679,209 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_RecoverGFX(&mut self) {
-        let hdmaen_bak = self.ram[HDMAEN_COPY];
-        self.ram[HDMAEN_COPY] = 0;
+        let hdmaen_bak = self.display_nmi_view().hdma_enable_mask();
+        self.display_nmi_view_mut().clear_hdma_enable_mask();
         self.EraseTileMaps_normal();
 
-        self.ram[TM_COPY] = self.ram[MAPBAK_TM];
-        self.ram[TS_COPY] = self.ram[MAPBAK_TS];
+        let main_screen_layers = self.ram[MAPBAK_TM];
+        let sub_screen_layers = self.ram[MAPBAK_TS];
+        self.display_nmi_view_mut()
+            .set_main_screen_layers(main_screen_layers);
+        self.display_nmi_view_mut()
+            .set_sub_screen_layers(sub_screen_layers);
         self.ram[MAIN_TILE_THEME_INDEX] = self.ram[MAPBAK_MAIN_TILE_THEME_INDEX];
-        self.ram[SPRITE_GRAPHICS_INDEX] = self.ram[MAPBAK_SPRITE_GRAPHICS_INDEX];
+        let graphics_index = self.ram[MAPBAK_SPRITE_GRAPHICS_INDEX];
+        self.sprite_system_view_mut()
+            .set_graphics_index(graphics_index);
         self.ram[AUX_TILE_THEME_INDEX] = self.ram[MAPBAK_AUX_TILE_THEME_INDEX];
         self.InitializeTilesets();
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
+        self.palette_buffer_view_mut()
+            .clear_overworld_aux_or_main_offset();
         self.ram[HUD_PALETTE] = 0;
         self.hud_rebuild();
 
-        self.ram[OVERWORLD_SCREEN_TRANSITION] = 0;
-        self.ram[DUNG_CUR_QUADRANT_UPLOAD] = 0;
+        self.world_state_view_mut().clear_screen_transition();
+        self.dungeon_state_view_mut().clear_quadrant_upload_index();
         loop {
             self.WaterFlood_BuildOneQuadrantForVRAM();
             self.upload_tilemap_now();
             self.Dungeon_PrepareNextRoomQuadrantUpload();
             self.upload_tilemap_now();
-            if self.ram[DUNG_CUR_QUADRANT_UPLOAD] == 0x10 {
+            if self.dungeon_state_view().quadrant_upload_index() == 0x10 {
                 break;
             }
         }
 
-        self.ram[NMI_SUBROUTINE_INDEX] = 0;
+        self.display_nmi_view_mut().set_subroutine_index(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        self.ram[HDMAEN_COPY] = hdmaen_bak;
+        self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
         let mapbak_palette = self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 512].to_vec();
-        self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + 512].copy_from_slice(&mapbak_palette);
-        self.ram[COLDATA_COPY0] |= self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS];
-        self.ram[COLDATA_COPY1] |= self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS];
-        self.ram[COLDATA_COPY2] |= self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS];
+        self.palette_buffer_view_mut()
+            .copy_main_full_from(&mapbak_palette);
+        let fixed_color_plusminus = self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS];
+        self.palette_filter_view_mut()
+            .or_fixed_color_red(fixed_color_plusminus);
+        self.palette_filter_view_mut()
+            .or_fixed_color_green(fixed_color_plusminus);
+        self.palette_filter_view_mut()
+            .or_fixed_color_blue(fixed_color_plusminus);
 
-        self.ram[SOUND_EFFECT_2] = 16;
-        self.ram[MUSIC_CONTROL] = 0xf3;
+        self.system_signals_view_mut().set_sound_effect_2(16);
+        self.system_signals_view_mut().set_music_control(0xf3);
         self.RecoverPegGFXFromMapping();
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
-        self.ram[INIDISP_COPY] = 0;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 0;
+        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.world_state_view_mut().increment_overworld_map_state();
+        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
     pub(super) fn ToggleStarTilesAndAdvance(&mut self) {
         self.ResetStarTileGraphics();
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.world_state_view_mut().increment_overworld_map_state();
     }
 
     pub(super) fn DungMap_4(&mut self) {
-        let y = read_le_u16(&self.ram, BG2VOFS_COPY2)
+        let y = self
+            .world_state_view()
+            .bg2_y()
             .wrapping_add(read_le_u16(&self.ram, DUNGMAP_SCROLL_TARGET_Y));
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, y);
-        let var5 = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y)
+        self.world_state_view_mut().set_bg2_y(y);
+        let marker_y = read_le_u16(&self.ram, DUNGMAP_PLAYER_MARKER_Y)
             .wrapping_sub(read_le_u16(&self.ram, DUNGMAP_SCROLL_TARGET_Y));
-        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, var5);
+        write_le_u16(&mut self.ram, DUNGMAP_PLAYER_MARKER_Y, marker_y);
         self.ram[BOTTLE_MENU_EXPAND_ROW] = self.ram[BOTTLE_MENU_EXPAND_ROW].wrapping_sub(1);
         if self.ram[BOTTLE_MENU_EXPAND_ROW] == 0 {
-            self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_sub(1);
+            let overworld_map_state = self
+                .world_state_view()
+                .overworld_map_state()
+                .wrapping_sub(1);
+            self.world_state_view_mut()
+                .set_overworld_map_state(overworld_map_state);
         }
     }
 
     pub(super) fn DungMap_LightenUpMap(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_add(1);
-        if self.ram[INIDISP_COPY] == 0x0f {
-            self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.display_nmi_view_mut().increment_screen_brightness();
+        if self.display_nmi_view().screen_brightness() == 0x0f {
+            self.world_state_view_mut().increment_overworld_map_state();
         }
     }
 
     pub(super) fn DungMap_Backup(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_sub(1);
-        if self.ram[INIDISP_COPY] != 0 {
+        self.display_nmi_view_mut().decrement_screen_brightness();
+        if self.display_nmi_view().screen_brightness() != 0 {
             return;
         }
-        self.ram[MOSAIC_COPY] = 3;
-        self.ram[MAPBAK_HDMAEN] = self.ram[HDMAEN_COPY];
+        self.display_nmi_view_mut().set_mosaic_copy(3);
+        self.ram[MAPBAK_HDMAEN] = self.display_nmi_view().hdma_enable_mask();
         self.EnableForceBlank();
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.world_state_view_mut().increment_overworld_map_state();
         self.ram[DUNGMAP_INIT_STATE] = 0;
-        self.ram[COLDATA_COPY0] = 0x20;
-        self.ram[COLDATA_COPY1] = 0x40;
-        self.ram[COLDATA_COPY2] = 0x80;
-        write_le_u16(&mut self.ram, LINK_DMA_GRAPHICS_INDEX, 0x0250);
-        let palette = self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + 512].to_vec();
+        self.palette_filter_view_mut().set_fixed_color_red(0x20);
+        self.palette_filter_view_mut().set_fixed_color_green(0x40);
+        self.palette_filter_view_mut().set_fixed_color_blue(0x80);
+        self.player_state_view_mut()
+            .set_link_dma_graphics_index_word(0x0250);
+        let palette = self.palette_buffer_view().main_full_slice().to_vec();
         self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 512].copy_from_slice(&palette);
-        let bg1_x_offset = read_le_u16(&self.ram, BG1_X_OFFSET);
-        let bg1_y_offset = read_le_u16(&self.ram, BG1_Y_OFFSET);
+        let bg1_x_offset = self.world_state_view().bg1_x_offset();
+        let bg1_y_offset = self.world_state_view().bg1_y_offset();
         write_le_u16(&mut self.ram, MAPBAK_BG1_X_OFFSET, bg1_x_offset);
         write_le_u16(&mut self.ram, MAPBAK_BG1_Y_OFFSET, bg1_y_offset);
-        write_le_u16(&mut self.ram, BG1_X_OFFSET, 0);
-        write_le_u16(&mut self.ram, BG1_Y_OFFSET, 0);
-        let bg1hofs = read_le_u16(&self.ram, BG1HOFS_COPY2);
-        let bg2hofs = read_le_u16(&self.ram, BG2HOFS_COPY2);
-        let bg1vofs = read_le_u16(&self.ram, BG1VOFS_COPY2);
-        let bg2vofs = read_le_u16(&self.ram, BG2VOFS_COPY2);
-        write_le_u16(&mut self.ram, MAPBAK_BG1HOFS_COPY2, bg1hofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG2HOFS_COPY2, bg2hofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG1VOFS_COPY2, bg1vofs);
-        write_le_u16(&mut self.ram, MAPBAK_BG2VOFS_COPY2, bg2vofs);
-        write_le_u16(&mut self.ram, BG1HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG1VOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG2HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3HOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3VOFS_COPY2, 0);
-        let cgwsel = read_le_u16(&self.ram, CGWSEL_COPY);
+        self.world_state_view_mut().set_bg1_x_offset(0);
+        self.world_state_view_mut().set_bg1_y_offset(0);
+        let bg1hofs = self.world_state_view().bg1_x();
+        let bg2hofs = self.world_state_view().bg2_x();
+        let bg1vofs = self.world_state_view().bg1_y();
+        let bg2vofs = self.world_state_view().bg2_y();
+        self.ppu_scroll_copy_view_mut()
+            .set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
+        self.world_state_view_mut().set_bg1_x(0);
+        self.world_state_view_mut().set_bg1_y(0);
+        self.world_state_view_mut().set_bg2_x(0);
+        self.world_state_view_mut().set_bg2_y(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
+        let cgwsel = self.palette_filter_view().color_window_and_math_word();
         write_le_u16(&mut self.ram, MAPBAK_CGWSEL, cgwsel);
-        self.ram[CGWSEL_COPY] = 0x02;
-        self.ram[CGADSUB_COPY] = 0x20;
+        self.palette_filter_view_mut()
+            .set_color_window_selection(0x02);
+        self.palette_filter_view_mut().set_color_math_control(0x20);
         for i in 0..2048 {
             write_le_u16(&mut self.ram, MESSAGING_BUF + i * 2, 0x0300);
         }
-        self.ram[SOUND_EFFECT_2] = 16;
-        self.ram[MUSIC_CONTROL] = 0xf2;
+        self.system_signals_view_mut().set_sound_effect_2(16);
+        self.system_signals_view_mut().set_music_control(0xf2);
     }
 
     pub(super) fn DungMap_FadeMapToBlack(&mut self) {
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_sub(1);
-        if self.ram[INIDISP_COPY] != 0 {
+        self.display_nmi_view_mut().decrement_screen_brightness();
+        if self.display_nmi_view().screen_brightness() != 0 {
             return;
         }
         self.EnableForceBlank();
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.world_state_view_mut().increment_overworld_map_state();
         let cgwsel = read_le_u16(&self.ram, MAPBAK_CGWSEL);
-        let bg1hofs = read_le_u16(&self.ram, MAPBAK_BG1HOFS_COPY2);
-        let bg2hofs = read_le_u16(&self.ram, MAPBAK_BG2HOFS_COPY2);
-        let bg1vofs = read_le_u16(&self.ram, MAPBAK_BG1VOFS_COPY2);
-        let bg2vofs = read_le_u16(&self.ram, MAPBAK_BG2VOFS_COPY2);
-        write_le_u16(&mut self.ram, CGWSEL_COPY, cgwsel);
-        write_le_u16(&mut self.ram, BG1HOFS_COPY2, bg1hofs);
-        write_le_u16(&mut self.ram, BG2HOFS_COPY2, bg2hofs);
-        write_le_u16(&mut self.ram, BG1VOFS_COPY2, bg1vofs);
-        write_le_u16(&mut self.ram, BG2VOFS_COPY2, bg2vofs);
-        write_le_u16(&mut self.ram, BG3VOFS_COPY2, 0);
-        write_le_u16(&mut self.ram, BG3HOFS_COPY2, 0);
+        let bg1hofs = self.ppu_scroll_copy_view().map_backup_bg1_h_copy2();
+        let bg2hofs = self.ppu_scroll_copy_view().map_backup_bg2_h_copy2();
+        let bg1vofs = self.ppu_scroll_copy_view().map_backup_bg1_v_copy2();
+        let bg2vofs = self.ppu_scroll_copy_view().map_backup_bg2_v_copy2();
+        self.palette_filter_view_mut()
+            .set_color_window_and_math_word(cgwsel);
+        self.world_state_view_mut().set_bg1_x(bg1hofs);
+        self.world_state_view_mut().set_bg2_x(bg2hofs);
+        self.world_state_view_mut().set_bg1_y(bg1vofs);
+        self.world_state_view_mut().set_bg2_y(bg2vofs);
+        self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
+        self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
         let bg1_x_offset = read_le_u16(&self.ram, MAPBAK_BG1_X_OFFSET);
         let bg1_y_offset = read_le_u16(&self.ram, MAPBAK_BG1_Y_OFFSET);
-        write_le_u16(&mut self.ram, BG1_X_OFFSET, bg1_x_offset);
-        write_le_u16(&mut self.ram, BG1_Y_OFFSET, bg1_y_offset);
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
+        self.world_state_view_mut().set_bg1_x_offset(bg1_x_offset);
+        self.world_state_view_mut().set_bg1_y_offset(bg1_y_offset);
+        self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn DungMap_RestoreOld(&mut self) {
         self.OrientLampLightCone();
-        self.ram[INIDISP_COPY] = self.ram[INIDISP_COPY].wrapping_add(1);
-        if self.ram[INIDISP_COPY] != 0x0f {
+        self.display_nmi_view_mut().increment_screen_brightness();
+        if self.display_nmi_view().screen_brightness() != 0x0f {
             return;
         }
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
-        self.ram[OVERWORLD_MAP_STATE] = 0;
+        self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        self.ram[INIDISP_COPY] = 0x0f;
-        self.ram[HDMAEN_COPY] = self.ram[MAPBAK_HDMAEN];
+        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        let hdma_enable_mask = self.ram[MAPBAK_HDMAEN];
+        self.display_nmi_view_mut()
+            .set_hdma_enable_mask(hdma_enable_mask);
     }
 
     pub(super) fn Death_InitializeGameOverLetters(&mut self) {
         self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
         for i in 0..8 {
-            self.ram[ANCILLA_X_LO + i] = 0xb0;
-            self.ram[ANCILLA_X_HI + i] = 0;
+            self.ancilla_slot_view_mut(i).set_x(0xb0);
         }
-        self.ram[ANCILLA_TYPE] = 1;
-        self.ram[HOOKSHOT_EFFECT_INDEX] = 6;
+        self.ancilla_slot_view_mut(0).set_ancilla_type(1);
+        self.messaging_state_view_mut()
+            .set_game_over_letter_cursor(6);
     }
 
     pub(super) fn CopySaveToWRAM(&mut self) {
         let k = 0x0f;
-        self.ram[BIRD_TRAVEL_X_HI + k] = 0;
-        self.ram[BIRD_TRAVEL_Y_HI + k] = 0;
-        self.ram[BIRD_TRAVEL_X_LO + k] = 0;
-        self.ram[BIRD_TRAVEL_Y_LO + k] = 0;
-        self.ram[BIRDTRAVEL_STATUS + k] = 0;
+        self.bird_travel_destination_view_mut(k).clear();
+        self.bird_travel_status_view_mut().clear(k);
 
-        let save_offset = read_le_u16(&self.ram, R0) as usize;
+        let save_offset = self.save_load_scratch_view().source_offset_usize();
         if save_offset + 0x500 <= self.sram.len() {
             let save = self.sram[save_offset..save_offset + 0x500].to_vec();
             self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500].copy_from_slice(&save);
         }
 
         write_le_u16(&mut self.ram, BG_TILE_ANIMATION_COUNTDOWN, 7);
-        write_le_u16(&mut self.ram, LINK_DMA_COUNTDOWN, 7);
-        write_le_u16(&mut self.ram, LINK_DMA_SOURCE_OFFSET, 0);
-        write_le_u16(&mut self.ram, LINK_DMA_TILE_OFFSET, 0);
+        self.player_state_view_mut()
+            .reset_link_dma_animation_cycle(7);
         write_le_u16(&mut self.ram, MESSAGE_DMA_DST_ADDR, 0x6040);
         write_le_u16(&mut self.ram, MESSAGE_DMA_TILE_BASE, 0x4841);
         write_le_u16(&mut self.ram, MESSAGE_DMA_TILE_LIMIT, 0x007f);
@@ -2723,19 +2889,19 @@ impl ZeldaState {
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
-            self.ram[MOSAIC_LEVEL] = 0;
+            self.display_nmi_view_mut().clear_mosaic_level();
         }
 
-        self.ram[HUD_VAR1] = 0x80;
+        self.save_progress_view_mut().request_post_message_refresh();
         self.frame_control_view_mut().set_main_module(5);
         self.frame_control_view_mut().set_submodule(0);
         self.ram[WHICH_ENTRANCE] = 0;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 0;
+        self.display_nmi_view_mut().set_core_update_disable_flag(0);
         self.ram[HUD_PALETTE] = 0;
     }
 
     pub(super) fn RenderText(&mut self) {
-        match self.ram[MESSAGING_MODULE] {
+        match self.messaging_state_view().module() {
             0 => self.Text_Initialize(),
             1 => self.Text_Render(),
             2 => self.RenderText_PostDeathSaveOptions(),
@@ -2744,10 +2910,10 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_PostDeathSaveOptions(&mut self) {
-        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 3);
+        self.dialogue_message_index_view_mut().set_value(3);
         self.Text_Initialize_initModuleStateLoop();
         write_le_u16(&mut self.ram, TEXT_MSGBOX_TOPLEFT, 0x61e8);
-        self.ram[TEXT_RENDER_STATE] = 2;
+        self.messaging_state_view_mut().set_text_render_state(2);
         for _ in 0..5 {
             self.Text_Render();
         }
@@ -2770,14 +2936,14 @@ impl ZeldaState {
         write_le_u16(&mut self.ram, TEXT_TILEMAP_CUR, 0x3980);
         self.Text_LoadCharacterBuffer();
         self.ram[MESSAGING_BUF..MESSAGING_BUF + 0x7e0].fill(0);
-        self.ram[NMI_SUBROUTINE_INDEX] = 2;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 2;
+        self.display_nmi_view_mut().set_subroutine_index(2);
+        self.display_nmi_view_mut().set_core_update_disable_flag(2);
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
         write_le_u16(&mut self.ram, VWF_CURLINE, 0);
         write_le_u16(&mut self.ram, VWF_FLAG_NEXT_LINE, 0);
-        write_le_u16(&mut self.ram, VWF_VAR1, 0);
+        self.vwf_glyph_spacing_view_mut().clear_cursor();
         write_le_u16(&mut self.ram, VWF_LINE_PTR, 0);
     }
 
@@ -2844,7 +3010,7 @@ impl ZeldaState {
         };
         let dictionary = find_index_in_memblk(dialogue_blk, 0).ptr.to_vec();
         let dialogue = find_index_in_memblk(dialogue_blk, 1).ptr.to_vec();
-        let text_index = read_le_u16(&self.ram, DIALOGUE_MESSAGE_INDEX) as usize;
+        let text_index = self.dialogue_message_index_view().value() as usize;
         let text_str = find_index_in_memblk(MemBlk { ptr: &dialogue }, text_index)
             .ptr
             .to_vec();
@@ -2865,9 +3031,11 @@ impl ZeldaState {
             let (param, cmd, multibyte) = self.text_decode_cmd(c, text_str.get(src).copied());
             match cmd {
                 TEXT_CMD_NAME => self.text_write_player_name_vec(&mut decoded),
-                TEXT_CMD_WINDOW => self.ram[TEXT_RENDER_STATE] = param,
+                TEXT_CMD_WINDOW => self.messaging_state_view_mut().set_text_render_state(param),
                 TEXT_CMD_NUMBER => {
-                    let v = self.ram[DIALOGUE_NUMBER + (param >> 1) as usize];
+                    let v = self
+                        .dialogue_number_view()
+                        .packed_digits((param >> 1) as usize);
                     decoded.push(0x34 + if param & 1 != 0 { v >> 4 } else { v & 0x0f });
                 }
                 TEXT_CMD_POSITION => {
@@ -2912,7 +3080,7 @@ impl ZeldaState {
     }
 
     fn text_write_player_name_vec(&self, decoded: &mut Vec<u8>) {
-        let slot = read_le_u16(&self.sram, SRM_VAR1) as u8;
+        let slot = self.selected_save_slot_byte();
         let offs = (((slot >> 1) as isize) - 1) * 0x500;
         let start = 0x3d9isize + offs;
         let mut name = [0u8; 6];
@@ -2948,7 +3116,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Render(&mut self) {
-        match self.ram[TEXT_RENDER_STATE] {
+        match self.messaging_state_view().text_render_state() {
             0 => self.RenderText_Draw_Border(),
             1 => self.RenderText_Draw_BorderIncremental(),
             2 => self.RenderText_Draw_CharacterTilemap(),
@@ -2965,12 +3133,12 @@ impl ZeldaState {
             d = self.RenderText_DrawBorderRow(d, 6);
         }
         self.RenderText_DrawBorderRow(d, 12);
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
-        self.ram[TEXT_RENDER_STATE] = 2;
+        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.messaging_state_view_mut().set_text_render_state(2);
     }
 
     pub(super) fn RenderText_Draw_BorderIncremental(&mut self) {
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
         let mut a = self.ram[TEXT_INCREMENTAL_STATE];
         let d = 0x1002;
         if a != 0 {
@@ -2987,7 +3155,7 @@ impl ZeldaState {
                 self.ram[TEXT_INCREMENTAL_STATE] = self.ram[TEXT_INCREMENTAL_STATE].wrapping_add(1);
             }
             2 => {
-                self.ram[TEXT_RENDER_STATE] = 2;
+                self.messaging_state_view_mut().set_text_render_state(2);
                 self.RenderText_DrawBorderRow(d, 12);
                 self.ram[TEXT_INCREMENTAL_STATE] = self.ram[TEXT_INCREMENTAL_STATE].wrapping_add(1);
             }
@@ -3002,11 +3170,9 @@ impl ZeldaState {
     pub(super) fn RenderText_Draw_MessageCharacters(&mut self) {
         loop {
             let read_pos = read_le_u16(&self.ram, DIALOGUE_MSG_READ_POS) as usize;
-            let c = self.ram[MESSAGING_TEXT_BUFFER + read_pos];
-            let (param, cmd, multibyte) = self.text_decode_cmd(
-                c,
-                self.ram.get(MESSAGING_TEXT_BUFFER + read_pos + 1).copied(),
-            );
+            let c = self.messaging_text_view().byte(read_pos);
+            let (param, cmd, multibyte) =
+                self.text_decode_cmd(c, self.messaging_text_view().next_byte(read_pos));
             let mut command_done = false;
             let mut restart_if_zero_speed = false;
             match cmd {
@@ -3022,7 +3188,7 @@ impl ZeldaState {
                 TEXT_CMD_NEXT_PIC => {
                     if self.frame_control_view().main_module() == 20 {
                         self.PaletteFilterHistory();
-                        command_done = self.ram[PALETTE_FILTER_COUNTDOWN] == 0;
+                        command_done = self.palette_filter_view().countdown() == 0;
                     } else {
                         command_done = true;
                     }
@@ -3039,7 +3205,7 @@ impl ZeldaState {
                     command_done = true;
                 }
                 TEXT_CMD_WAIT => {
-                    let wait = if self.ram[JOYPAD1L_LAST] & 0x80 != 0 {
+                    let wait = if self.player_state_view().joypad1l_last() & 0x80 != 0 {
                         1
                     } else {
                         read_le_u16(&self.ram, TEXT_WAIT_COUNTDOWN)
@@ -3058,7 +3224,7 @@ impl ZeldaState {
                     }
                 }
                 TEXT_CMD_SOUND => {
-                    self.ram[SOUND_EFFECT_2] = param;
+                    self.system_signals_view_mut().set_sound_effect_2(param);
                     command_done = true;
                 }
                 TEXT_CMD_SPEED => {
@@ -3074,26 +3240,27 @@ impl ZeldaState {
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
                     if cmd == TEXT_CMD_END_MESSAGE
                         && std::env::var_os("ZELDA3_SMV_MESSAGING_TIMING_HACKS").is_some()
-                        && read_le_u16(&self.ram, DIALOGUE_MESSAGE_INDEX) == 0x0070
+                        && self.dialogue_message_index_view().value() == 0x0070
                         && read_le_u16(&self.ram, DIALOGUE_MSG_READ_POS) == 0x0115
-                        && self.ram[TEXT_WAIT_COUNTDOWN2] <= 3
+                        && self.messaging_state_view().text_wait_countdown2() <= 3
                     {
-                        self.ram[TEXT_WAIT_COUNTDOWN2] = 0;
+                        self.messaging_state_view_mut().clear_text_wait_countdown2();
                     }
-                    if self.ram[TEXT_WAIT_COUNTDOWN2] != 0 {
-                        self.ram[TEXT_WAIT_COUNTDOWN2] =
-                            self.ram[TEXT_WAIT_COUNTDOWN2].wrapping_sub(1);
-                        if self.ram[TEXT_WAIT_COUNTDOWN2] == 1 {
-                            self.ram[SOUND_EFFECT_2] = 36;
+                    if self.messaging_state_view().text_wait_countdown2() != 0 {
+                        self.messaging_state_view_mut()
+                            .decrement_text_wait_countdown2();
+                        if self.messaging_state_view().text_wait_countdown2() == 1 {
+                            self.system_signals_view_mut().set_sound_effect_2(36);
                         }
-                    } else if (self.ram[FILTERED_JOYPAD_H] | self.ram[FILTERED_JOYPAD_L])
+                    } else if (self.player_state_view().filtered_joypad_h()
+                        | self.player_state_view().filtered_joypad_l())
                         & if cmd == TEXT_CMD_WAITKEY { 0xc0 } else { 0xff }
                         != 0
                     {
-                        self.ram[TEXT_WAIT_COUNTDOWN2] = 28;
+                        self.messaging_state_view_mut().set_text_wait_countdown2(28);
                         command_done = cmd == TEXT_CMD_WAITKEY;
                         if cmd == TEXT_CMD_END_MESSAGE {
-                            self.ram[TEXT_RENDER_STATE] = 4;
+                            self.messaging_state_view_mut().set_text_render_state(4);
                         }
                     }
                 }
@@ -3112,28 +3279,29 @@ impl ZeldaState {
                 break;
             }
         }
-        self.ram[NMI_SUBROUTINE_INDEX] = 2;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = 2;
+        self.display_nmi_view_mut().set_subroutine_index(2);
+        self.display_nmi_view_mut().set_core_update_disable_flag(2);
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {
         self.RenderText_DrawBorderInitialize();
         let top_left = read_le_u16(&self.ram, TEXT_MSGBOX_TOPLEFT_COPY);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA, top_left.swap_bytes());
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + 2, 0x2e42);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + 4, 0x387f);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + 6, 0xffff);
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
-        self.ram[MESSAGING_MODULE] = 0;
+        self.vram_upload_data_view_mut()
+            .set_word(0, top_left.swap_bytes());
+        self.vram_upload_data_view_mut().set_word(2, 0x2e42);
+        self.vram_upload_data_view_mut().set_word(4, 0x387f);
+        self.vram_upload_data_view_mut().set_word(6, 0xffff);
+        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.messaging_state_view_mut().clear_module();
         self.frame_control_view_mut().set_submodule(0);
-        let saved_module = self.ram[SAVED_MODULE_FOR_MENU];
+        let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
     }
 
     pub(super) fn VWF_RenderSingle(&mut self, c: i32) {
         let c = c as u8;
         if c != 0x59 {
-            self.ram[SOUND_EFFECT_2] = 12;
+            self.system_signals_view_mut().set_sound_effect_2(12);
         }
         self.ram[VWF_LINE_SPEED_CUR] = self.ram[VWF_LINE_SPEED];
         if read_le_u16(&self.ram, VWF_FLAG_NEXT_LINE) != 0 {
@@ -3143,11 +3311,8 @@ impl ZeldaState {
                 VWF_LINE_PTR,
                 VWF_RENDER_CHARACTER_RENDER_POS[line],
             );
-            write_le_u16(
-                &mut self.ram,
-                VWF_VAR1,
-                VWF_RENDER_CHARACTER_LINE_POSITIONS[line],
-            );
+            self.vwf_glyph_spacing_view_mut()
+                .set_cursor(VWF_RENDER_CHARACTER_LINE_POSITIONS[line]);
             write_le_u16(&mut self.ram, VWF_FLAG_NEXT_LINE, 0);
         }
         let Some(dialogue_font) = self.asset_memblk(95, self.dialogue_font_blk_index) else {
@@ -3157,10 +3322,11 @@ impl ZeldaState {
         let widths = find_index_in_memblk(dialogue_font, 1).ptr.to_vec();
         let width = widths.get(c as usize).copied().unwrap_or(0);
         assert!(width <= 8);
-        let i = read_le_u16(&self.ram, VWF_VAR1) as usize;
-        write_le_u16(&mut self.ram, VWF_VAR1, (i as u16).wrapping_add(1));
-        let arrval = self.ram[VWF_ARR + i];
-        self.ram[VWF_ARR + i + 1] = arrval.wrapping_add(width);
+        let i = self.vwf_glyph_spacing_view().cursor_usize();
+        self.vwf_glyph_spacing_view_mut().increment_cursor();
+        let arrval = self.vwf_glyph_spacing_view().offset(i);
+        self.vwf_glyph_spacing_view_mut()
+            .set_next_offset(i, arrval.wrapping_add(width));
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;
         let line_ptr = read_le_u16(&self.ram, VWF_LINE_PTR) as usize;
@@ -3189,14 +3355,18 @@ impl ZeldaState {
             let mut r3 = width;
             while r3 != 0 {
                 if r4 & 0x0080 != 0 {
-                    self.ram[MESSAGING_BUF + x] ^= VWF_RENDER_CHARACTER_SET_MASKS[y];
+                    self.messaging_render_buffer_view_mut()
+                        .xor_mask(x, VWF_RENDER_CHARACTER_SET_MASKS[y]);
                 } else {
-                    self.ram[MESSAGING_BUF + x] &= !VWF_RENDER_CHARACTER_SET_MASKS[y];
+                    self.messaging_render_buffer_view_mut()
+                        .clear_mask(x, VWF_RENDER_CHARACTER_SET_MASKS[y]);
                 }
                 if r4 & 0x8000 != 0 {
-                    self.ram[MESSAGING_BUF + x + 1] ^= VWF_RENDER_CHARACTER_SET_MASKS[y];
+                    self.messaging_render_buffer_view_mut()
+                        .xor_mask(x + 1, VWF_RENDER_CHARACTER_SET_MASKS[y]);
                 } else {
-                    self.ram[MESSAGING_BUF + x + 1] &= !VWF_RENDER_CHARACTER_SET_MASKS[y];
+                    self.messaging_render_buffer_view_mut()
+                        .clear_mask(x + 1, VWF_RENDER_CHARACTER_SET_MASKS[y]);
                 }
                 r4 = (r4 & !0x8080) << 1;
                 r3 -= 1;
@@ -3217,20 +3387,23 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_ChooseItem(&mut self) {
-        if self.ram[TEXT_WAIT_COUNTDOWN2] != 0 {
-            self.ram[TEXT_WAIT_COUNTDOWN2] = self.ram[TEXT_WAIT_COUNTDOWN2].wrapping_sub(1);
-            if self.ram[TEXT_WAIT_COUNTDOWN2] == 1 {
+        if self.messaging_state_view().text_wait_countdown2() != 0 {
+            self.messaging_state_view_mut()
+                .decrement_text_wait_countdown2();
+            if self.messaging_state_view().text_wait_countdown2() == 1 {
                 self.RenderText_FindYItem_Next();
             }
-        } else if (self.ram[FILTERED_JOYPAD_H] | self.ram[FILTERED_JOYPAD_L]) & 0xc0 != 0 {
-            self.ram[TEXT_RENDER_STATE] = 4;
+        } else if (self.player_state_view().filtered_joypad_h()
+            | self.player_state_view().filtered_joypad_l())
+            & 0xc0
+            != 0
+        {
+            self.messaging_state_view_mut().set_text_render_state(4);
         } else {
-            if self.ram[FILTERED_JOYPAD_H] & 5 != 0 {
-                self.ram[CHOICE_IN_MULTISELECT_BOX] =
-                    self.ram[CHOICE_IN_MULTISELECT_BOX].wrapping_add(1);
-            } else if self.ram[FILTERED_JOYPAD_H] & 10 != 0 {
-                self.ram[CHOICE_IN_MULTISELECT_BOX] =
-                    self.ram[CHOICE_IN_MULTISELECT_BOX].wrapping_sub(1);
+            if self.player_state_view().filtered_joypad_h() & 5 != 0 {
+                self.multiselect_choice_view_mut().increment_value();
+            } else if self.player_state_view().filtered_joypad_h() & 10 != 0 {
+                self.multiselect_choice_view_mut().decrement_value();
                 self.RenderText_FindYItem_Previous();
                 self.RenderText_Refresh();
                 return;
@@ -3242,48 +3415,46 @@ impl ZeldaState {
 
     pub(super) fn RenderText_FindYItem_Previous(&mut self) {
         loop {
-            let mut x = self.ram[CHOICE_IN_MULTISELECT_BOX];
+            let mut x = self.multiselect_choice_view().value();
             if (x as i8) < 0 {
-                self.ram[CHOICE_IN_MULTISELECT_BOX] = 31;
+                self.multiselect_choice_view_mut().set_value(31);
                 x = 31;
             }
             if x != 15
-                && (self.ram[LINK_ITEM_BOW + x as usize] != 0
-                    || (x == 32 && self.ram[LINK_ITEM_BOW + x as usize + 1] != 0))
+                && (self.inventory_state_view().inventory_item(x as usize) != 0
+                    || (x == 32 && self.inventory_state_view().inventory_item(x as usize + 1) != 0))
             {
                 break;
             }
-            self.ram[CHOICE_IN_MULTISELECT_BOX] =
-                self.ram[CHOICE_IN_MULTISELECT_BOX].wrapping_sub(1);
+            self.multiselect_choice_view_mut().decrement_value();
         }
         self.RenderText_DrawSelectedYItem();
     }
 
     pub(super) fn RenderText_FindYItem_Next(&mut self) {
         loop {
-            let mut x = self.ram[CHOICE_IN_MULTISELECT_BOX];
+            let mut x = self.multiselect_choice_view().value();
             if x >= 32 {
-                self.ram[CHOICE_IN_MULTISELECT_BOX] = 0;
+                self.multiselect_choice_view_mut().set_value(0);
                 x = 0;
             }
             if x != 15
-                && (self.ram[LINK_ITEM_BOW + x as usize] != 0
-                    || (x == 32 && self.ram[LINK_ITEM_BOW + x as usize + 1] != 0))
+                && (self.inventory_state_view().inventory_item(x as usize) != 0
+                    || (x == 32 && self.inventory_state_view().inventory_item(x as usize + 1) != 0))
             {
                 break;
             }
-            self.ram[CHOICE_IN_MULTISELECT_BOX] =
-                self.ram[CHOICE_IN_MULTISELECT_BOX].wrapping_add(1);
+            self.multiselect_choice_view_mut().increment_value();
         }
         self.RenderText_DrawSelectedYItem();
     }
 
     pub(super) fn RenderText_DrawSelectedYItem(&mut self) {
-        let item = self.ram[CHOICE_IN_MULTISELECT_BOX];
+        let item = self.multiselect_choice_view().value();
         let variant = if item == 3 || item == 32 {
             1
         } else {
-            self.ram[LINK_ITEM_BOW + item as usize] as usize
+            self.inventory_state_view().inventory_item(item as usize) as usize
         };
         let p = self.hud_get_item_box_table(item)[variant];
         write_le_u16(&mut self.ram, VWF_TILE_BUFFER + 0x0c2, p[0]);
@@ -3297,49 +3468,53 @@ impl ZeldaState {
     }
 
     fn RenderText_Draw_Choose2(&mut self, message_base: u16) {
-        if self.ram[TEXT_WAIT_COUNTDOWN2] != 0 {
-            self.ram[TEXT_WAIT_COUNTDOWN2] = self.ram[TEXT_WAIT_COUNTDOWN2].wrapping_sub(1);
-            if self.ram[TEXT_WAIT_COUNTDOWN2] == 1 {
-                self.ram[SOUND_EFFECT_2] = 36;
+        if self.messaging_state_view().text_wait_countdown2() != 0 {
+            self.messaging_state_view_mut()
+                .decrement_text_wait_countdown2();
+            if self.messaging_state_view().text_wait_countdown2() == 1 {
+                self.system_signals_view_mut().set_sound_effect_2(36);
             }
-        } else if (self.ram[FILTERED_JOYPAD_H] | self.ram[FILTERED_JOYPAD_L]) & 0xc0 != 0 {
-            self.ram[SOUND_EFFECT_1] = 43;
-            self.ram[TEXT_RENDER_STATE] = 4;
-        } else if self.ram[FILTERED_JOYPAD_H] & 12 != 0 {
-            let t = if self.ram[FILTERED_JOYPAD_H] & 8 != 0 {
+        } else if (self.player_state_view().filtered_joypad_h()
+            | self.player_state_view().filtered_joypad_l())
+            & 0xc0
+            != 0
+        {
+            self.system_signals_view_mut().set_sound_effect_1(43);
+            self.messaging_state_view_mut().set_text_render_state(4);
+        } else if self.player_state_view().filtered_joypad_h() & 12 != 0 {
+            let t = if self.player_state_view().filtered_joypad_h() & 8 != 0 {
                 0
             } else {
                 1
             };
-            if self.ram[CHOICE_IN_MULTISELECT_BOX] == t {
+            if self.multiselect_choice_view().value() == t {
                 return;
             }
-            self.ram[CHOICE_IN_MULTISELECT_BOX] = t;
-            self.ram[SOUND_EFFECT_2] = 32;
-            write_le_u16(
-                &mut self.ram,
-                DIALOGUE_MESSAGE_INDEX,
-                message_base + u16::from(t),
-            );
+            self.multiselect_choice_view_mut().set_value(t);
+            self.system_signals_view_mut().set_sound_effect_2(32);
+            self.dialogue_message_index_view_mut()
+                .set_value(message_base + u16::from(t));
             self.Text_LoadCharacterBuffer();
             self.Text_InitVwfState();
         }
     }
 
     pub(super) fn RenderText_Draw_Choose3(&mut self) {
-        if self.ram[TEXT_WAIT_COUNTDOWN2] != 0 {
-            self.ram[TEXT_WAIT_COUNTDOWN2] = self.ram[TEXT_WAIT_COUNTDOWN2].wrapping_sub(1);
-            if self.ram[TEXT_WAIT_COUNTDOWN2] == 1 {
-                self.ram[SOUND_EFFECT_2] = 36;
+        if self.messaging_state_view().text_wait_countdown2() != 0 {
+            self.messaging_state_view_mut()
+                .decrement_text_wait_countdown2();
+            if self.messaging_state_view().text_wait_countdown2() == 1 {
+                self.system_signals_view_mut().set_sound_effect_2(36);
             }
             return;
         }
-        let y = (self.ram[FILTERED_JOYPAD_L] & 0xc0) | self.ram[FILTERED_JOYPAD_H];
+        let y = (self.player_state_view().filtered_joypad_l() & 0xc0)
+            | self.player_state_view().filtered_joypad_h();
         if y & 0xd0 != 0 {
-            self.ram[SOUND_EFFECT_1] = 43;
-            self.ram[TEXT_RENDER_STATE] = 4;
+            self.system_signals_view_mut().set_sound_effect_1(43);
+            self.messaging_state_view_mut().set_text_render_state(4);
         } else if y & 12 != 0 {
-            let mut choice = self.ram[CHOICE_IN_MULTISELECT_BOX];
+            let mut choice = self.multiselect_choice_view().value();
             choice = if y & 8 != 0 {
                 if choice == 0 {
                     2
@@ -3351,34 +3526,38 @@ impl ZeldaState {
             } else {
                 choice + 1
             };
-            self.ram[CHOICE_IN_MULTISELECT_BOX] = choice;
-            self.ram[SOUND_EFFECT_2] = 32;
-            write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, u16::from(choice) + 6);
+            self.multiselect_choice_view_mut().set_value(choice);
+            self.system_signals_view_mut().set_sound_effect_2(32);
+            self.dialogue_message_index_view_mut()
+                .set_value(u16::from(choice) + 6);
             self.Text_LoadCharacterBuffer();
             self.Text_InitVwfState();
         }
     }
 
     pub(super) fn RenderText_Draw_Choose1Or2(&mut self) {
-        if self.ram[TEXT_WAIT_COUNTDOWN2] != 0 {
-            self.ram[TEXT_WAIT_COUNTDOWN2] = self.ram[TEXT_WAIT_COUNTDOWN2].wrapping_sub(1);
-            if self.ram[TEXT_WAIT_COUNTDOWN2] == 1 {
-                self.ram[SOUND_EFFECT_2] = 36;
+        if self.messaging_state_view().text_wait_countdown2() != 0 {
+            self.messaging_state_view_mut()
+                .decrement_text_wait_countdown2();
+            if self.messaging_state_view().text_wait_countdown2() == 1 {
+                self.system_signals_view_mut().set_sound_effect_2(36);
             }
             return;
         }
-        let y = (self.ram[FILTERED_JOYPAD_L] & 0xc0) | self.ram[FILTERED_JOYPAD_H];
+        let y = (self.player_state_view().filtered_joypad_l() & 0xc0)
+            | self.player_state_view().filtered_joypad_h();
         if y & 0xd0 != 0 {
-            self.ram[SOUND_EFFECT_1] = 43;
-            self.ram[TEXT_RENDER_STATE] = 4;
+            self.system_signals_view_mut().set_sound_effect_1(43);
+            self.messaging_state_view_mut().set_text_render_state(4);
         } else if y & 12 != 0 {
             let t = if y & 8 != 0 { 0 } else { 1 };
-            if self.ram[CHOICE_IN_MULTISELECT_BOX] == t {
+            if self.multiselect_choice_view().value() == t {
                 return;
             }
-            self.ram[CHOICE_IN_MULTISELECT_BOX] = t;
-            self.ram[SOUND_EFFECT_2] = 32;
-            write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, u16::from(t) + 9);
+            self.multiselect_choice_view_mut().set_value(t);
+            self.system_signals_view_mut().set_sound_effect_2(32);
+            self.dialogue_message_index_view_mut()
+                .set_value(u16::from(t) + 9);
             self.Text_LoadCharacterBuffer();
             self.Text_InitVwfState();
         }
@@ -3398,9 +3577,10 @@ impl ZeldaState {
             for i in (0x34f..=0x3ef).step_by(8) {
                 write_le_u16(&mut self.ram, MESSAGING_BUF + i * 2, 0);
             }
-            self.ram[DIALOGUE_MSG_SRC_OFFS + 2] =
-                self.ram[DIALOGUE_MSG_SRC_OFFS + 2].wrapping_add(1);
-            if self.ram[DIALOGUE_MSG_SRC_OFFS + 2] & 0x0f == 0 {
+            let source_bank_offset = self
+                .dialogue_source_offset_view_mut()
+                .increment_bank_offset_low_nibble();
+            if source_bank_offset & 0x0f == 0 {
                 write_le_u16(&mut self.ram, VWF_CURLINE, 4);
                 write_le_u16(&mut self.ram, VWF_FLAG_NEXT_LINE, 1);
                 return true;
@@ -3417,7 +3597,7 @@ impl ZeldaState {
         let y = self
             .player_state_view()
             .y()
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
+            .wrapping_sub(self.world_state_view().bg2_y());
         let flag = usize::from(y < 0x78);
         write_le_u16(&mut self.ram, TEXT_MSGBOX_TOPLEFT, TEXT_POSITIONS[flag]);
     }
@@ -3459,7 +3639,8 @@ impl ZeldaState {
         }
         write_le_u16(&mut self.ram, TEXT_TILEMAP_CUR, tile);
         self.RenderText_Refresh();
-        self.ram[TEXT_RENDER_STATE] = self.ram[TEXT_RENDER_STATE].wrapping_add(1);
+        self.messaging_state_view_mut()
+            .increment_text_render_state();
     }
 
     pub(super) fn RenderText_Refresh(&mut self) {
@@ -3487,7 +3668,7 @@ impl ZeldaState {
             }
         }
         write_le_u16(&mut self.ram, d, 0xffff);
-        self.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Text_GenerateMessagePointers(&mut self) {
@@ -3511,9 +3692,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_PlayerSwoon(&mut self) {
-        let mut k = self.ram[LINK_VAR30D] as usize;
-        self.ram[Y_BUTTON_ACTION_TIMER] = self.ram[Y_BUTTON_ACTION_TIMER].wrapping_sub(1);
-        if (self.ram[Y_BUTTON_ACTION_TIMER] as i8) < 0 {
+        let mut k = self.player_state_view().item_action_step_var() as usize;
+        self.player_state_view_mut()
+            .decrement_y_button_action_timer();
+        if (self.player_state_view().y_button_action_timer() as i8) < 0 {
             k += 1;
             if k == 15 {
                 return;
@@ -3521,74 +3703,87 @@ impl ZeldaState {
             if k == 14 {
                 self.frame_control_view_mut().increment_submodule();
             }
-            self.ram[LINK_VAR30D] = k as u8;
-            self.ram[Y_BUTTON_ACTION_STEP] = DEATH_ANIM_CTR0[k];
-            self.ram[Y_BUTTON_ACTION_TIMER] = DEATH_ANIM_CTR1[k];
+            self.player_state_view_mut()
+                .set_item_action_step_var(k as u8);
+            self.player_state_view_mut()
+                .set_y_button_action_step(DEATH_ANIM_CTR0[k]);
+            self.player_state_view_mut()
+                .set_y_button_action_timer(DEATH_ANIM_CTR1[k]);
         }
-        if k != 13 || self.ram[LINK_VISIBILITY_STATUS] == 12 {
+        if k != 13 || self.player_state_view().visibility_status() == 12 {
             return;
         }
         let y = (self
             .player_state_view()
             .y()
             .wrapping_add(16)
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2))) as u8;
+            .wrapping_sub(self.world_state_view().bg2_y())) as u8;
         let x = (self
             .player_state_view()
             .x()
             .wrapping_add(7)
-            .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2))) as u8;
-        let flags = DEATH_SPR_FLAGS[self.ram[LINK_IS_ON_LOWER_LEVEL] as usize & 1] | 2;
+            .wrapping_sub(self.world_state_view().bg2_x())) as u8;
+        let flags = DEATH_SPR_FLAGS[self.player_state_view().lower_level_state() as usize & 1] | 2;
         self.set_oam_plain(0x74, x, y, 0xaa, flags, 2);
     }
 
     pub(super) fn Death_PrepFaint(&mut self) {
-        self.ram[LINK_DIRECTION_FACING] = 2;
-        self.ram[LINK_FAINT_ANIMATION_ACTIVE] = 1;
-        self.ram[LINK_VAR30D] = 0;
-        self.ram[Y_BUTTON_ACTION_STEP] = 0;
-        self.ram[Y_BUTTON_ACTION_TIMER] = 5;
-        self.ram[LINK_HEARTS_FILLER] = 0;
-        self.ram[LINK_HEALTH_CURRENT] = 0;
-        self.link_reset_properties_c();
-        self.ram[PLAYER_ON_SOMARIA_PLATFORM] = 0;
-        self.ram[DRAW_WATER_RIPPLES_OR_GRASS] = 0;
-        self.ram[LINK_IS_BUNNY_MIRROR] = 0;
-        self.ram[PLAYER_DEFENSE_FLAGS] = 0;
-        self.ram[FLAG_IS_ANCILLA_TO_PICK_UP] = 0;
-        self.ram[LINK_AUXILIARY_STATE] = 0;
-        self.ram[LINK_INCAPACITATED_TIMER] = 0;
-        self.ram[LINK_GIVE_DAMAGE] = 0;
-        self.ram[LINK_IS_TRANSFORMING] = 0;
-        self.ram[LINK_SPEED_SETTING] = 0;
-        self.ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = 0;
-        if self.ram[LINK_ITEM_MOON_PEARL] != 0 {
-            self.ram[LINK_IS_BUNNY] = 0;
+        self.player_state_view_mut().set_facing(2);
+        self.player_state_view_mut().set_faint_animation_active(1);
+        self.player_state_view_mut().clear_item_action_step_var();
+        self.player_state_view_mut().set_y_button_action_step(0);
+        self.player_state_view_mut().set_y_button_action_timer(5);
+        {
+            let mut resources = self.player_resources_view_mut();
+            resources.set_heart_filler(0);
+            resources.set_current_health(0);
         }
-        self.ram[LINK_TIMER_TEMPBUNNY] = 0;
+        self.link_reset_properties_c();
+        self.player_state_view_mut().clear_somaria_platform_state();
+        self.player_state_view_mut()
+            .clear_water_ripple_or_grass_state();
+        self.player_state_view_mut().clear_bunny_mirror();
+        self.player_state_view_mut().clear_defense_flags();
+        self.player_state_view_mut().clear_ancilla_pickup_flag();
+        self.player_state_view_mut().clear_auxiliary_state();
+        self.player_state_view_mut().set_incapacitated_timer(0);
+        {
+            let mut player = self.player_state_view_mut();
+            player.clear_given_damage();
+            player.clear_transforming();
+        }
+        self.player_state_view_mut().set_speed_setting(0);
+        self.player_state_view_mut()
+            .clear_transform_poof_need_and_temp_bunny_timer();
+        if self.inventory_state_view().has_moon_pearl() {
+            self.player_state_view_mut().clear_bunny_body_state();
+        }
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
             self.LoadActualGearPalettes();
         }
-        self.ram[SOUND_EFFECT_1] = 0x27 | self.link_calculate_sfx_pan();
+        let sfx = 0x27 | self.link_calculate_sfx_pan();
+        self.system_signals_view_mut().set_sound_effect_1(sfx);
         for i in 0..4 {
-            if self.ram[LINK_BOTTLE_INFO + i] == 6 {
+            if self.inventory_state_view().bottle(i) == 6 {
                 return;
             }
         }
-        self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS] = 0;
-        self.ram[INDEX_OF_CHANGABLE_DUNGEON_OBJS + 1] = 0;
+        self.dungeon_state_view_mut()
+            .clear_changeable_object_index(0);
+        self.dungeon_state_view_mut()
+            .clear_changeable_object_index(1);
     }
 
     pub(super) fn DisplaySelectMenu(&mut self) {
-        self.ram[CHOICE_IN_MULTISELECT_BOX_BAK] = self.ram[CHOICE_IN_MULTISELECT_BOX];
-        write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX, 0x0186);
+        self.multiselect_choice_view_mut().save_backup();
+        self.dialogue_message_index_view_mut().set_value(0x0186);
         let bak = self.frame_control_view().main_module();
         self.main_show_text_message();
         self.frame_control_view_mut().set_main_module(bak);
         self.frame_control_view_mut().set_subsubmodule(0);
         self.frame_control_view_mut().set_submodule(11);
-        self.ram[SAVED_MODULE_FOR_MENU] = self.frame_control_view().main_module();
+        self.frame_control_view_mut().save_main_module_for_menu();
         self.frame_control_view_mut().set_main_module(14);
     }
 }
@@ -3596,17 +3791,18 @@ impl ZeldaState {
 impl ZeldaState {
     pub(super) fn world_map_load_light_world_map(&mut self) {
         self.world_map_fill_tilemap_with_ef();
-        self.ram[TM_COPY] = 0x11;
-        self.ram[TS_COPY] = 0;
+        self.display_nmi_view_mut().set_main_screen_layers(0x11);
+        self.display_nmi_view_mut().set_sub_screen_layers(0);
         self.transfer_mode7_characters();
         self.world_map_setup_hdma();
         self.load_overworld_map_palette();
         self.load_actual_gear_palettes();
-        self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.ram[FLAG_UPDATE_CGRAM_IN_NMI].wrapping_add(1);
-        self.ram[NMI_SUBROUTINE_INDEX] = 7;
-        self.ram[INIDISP_COPY] = 0;
-        self.ram[NMI_DISABLE_CORE_UPDATES] = self.ram[NMI_DISABLE_CORE_UPDATES].wrapping_add(1);
-        self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
+        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.display_nmi_view_mut().set_subroutine_index(7);
+        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.display_nmi_view_mut()
+            .increment_core_update_disable_flag();
+        self.world_state_view_mut().increment_overworld_map_state();
     }
 
     pub(super) fn world_map_fill_tilemap_with_ef(&mut self) {
@@ -3625,9 +3821,9 @@ impl ZeldaState {
 
     pub(super) fn did_press_button_for_map(&self) -> bool {
         if self.ram[HUD_CUR_ITEM_X] != 0 {
-            self.ram[FILTERED_JOYPAD_H] & 0x20 != 0
+            self.player_state_view().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.ram[FILTERED_JOYPAD_L] & 0x40 != 0
+            self.player_state_view().filtered_joypad_l() & 0x40 != 0
         }
     }
 }

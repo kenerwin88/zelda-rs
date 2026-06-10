@@ -806,7 +806,7 @@ fn setup_echo_parameter_edl(p: *mut SpcPlayer, mut a: uint8) {
 }
 
 fn write_volume_to_dsp(p: *mut SpcPlayer, c: *mut Channel, mut volume: uint16) {
-    static K_VOLUME_TABLE: [uint8; 22] = [
+    static SPC_VOLUME_CURVE: [uint8; 22] = [
         0, 1, 3, 7, 13, 21, 30, 41, 52, 66, 81, 94, 103, 110, 115, 119, 122, 124, 125, 126, 127,
         127,
     ];
@@ -824,9 +824,10 @@ fn write_volume_to_dsp(p: *mut SpcPlayer, c: *mut Channel, mut volume: uint16) {
                     >> 8) as uint8,
             )
         } else {
-            let a = K_VOLUME_TABLE[j];
+            let a = SPC_VOLUME_CURVE[j];
             a.wrapping_add(
-                (((K_VOLUME_TABLE[j + 1].wrapping_sub(a)) as uint16 * (volume as uint8) as uint16)
+                (((SPC_VOLUME_CURVE[j + 1].wrapping_sub(a)) as uint16
+                    * (volume as uint8) as uint16)
                     >> 8) as uint8,
             )
         };
@@ -840,7 +841,7 @@ fn write_volume_to_dsp(p: *mut SpcPlayer, c: *mut Channel, mut volume: uint16) {
 }
 
 fn write_pitch(p: *mut SpcPlayer, c: *mut Channel, mut pitch: uint16) {
-    static K_BASE_NOTE_FREQS: [uint16; 13] = [
+    static SPC_BASE_NOTE_FREQUENCIES: [uint16; 13] = [
         2143, 2270, 2405, 2548, 2700, 2860, 3030, 3211, 3402, 3604, 3818, 4045, 4286,
     ];
     if (pitch >> 8) >= 0x34 {
@@ -852,8 +853,8 @@ fn write_pitch(p: *mut SpcPlayer, c: *mut Channel, mut pitch: uint16) {
     let pp = ((pitch >> 8) & 0x7f) as uint8;
     let mut q = pp / 12;
     let r = (pp % 12) as usize;
-    let mut t = K_BASE_NOTE_FREQS[r].wrapping_add(
-        (((K_BASE_NOTE_FREQS[r + 1] - K_BASE_NOTE_FREQS[r]) as uint8 as uint16)
+    let mut t = SPC_BASE_NOTE_FREQUENCIES[r].wrapping_add(
+        (((SPC_BASE_NOTE_FREQUENCIES[r + 1] - SPC_BASE_NOTE_FREQUENCIES[r]) as uint8 as uint16)
             * (pitch as uint8 as uint16))
             >> 8,
     );
@@ -959,12 +960,12 @@ fn pitch_slide_to_note_check(p: *mut SpcPlayer, c: *mut Channel) {
 }
 
 fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
-    const K_EFFECT_BYTE_LENGTH: [uint8; 27] = [
+    const SPC_EFFECT_ARGUMENT_BYTE_LENGTHS: [uint8; 27] = [
         1, 1, 2, 3, 0, 1, 2, 1, 2, 1, 1, 3, 0, 1, 2, 3, 1, 3, 3, 0, 1, 3, 0, 3, 3, 3, 1,
     ];
     let p_ref = unsafe { &mut *p };
     let c_ref = unsafe { &mut *c };
-    let arg = if K_EFFECT_BYTE_LENGTH[(effect - 0xe0) as usize] != 0 {
+    let arg = if SPC_EFFECT_ARGUMENT_BYTE_LENGTHS[(effect - 0xe0) as usize] != 0 {
         let v = p_ref.ram[c_ref.pattern_order_ptr_for_chan as usize];
         c_ref.pattern_order_ptr_for_chan = c_ref.pattern_order_ptr_for_chan.wrapping_add(1);
         v
@@ -1080,7 +1081,7 @@ fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
             p_ref.reg_FLG |= 0x20;
         }
         0xf7 => {
-            static K_ECHO_FIR_PARAMETERS: [i8; 32] = [
+            static SPC_ECHO_FIR_FILTER_PRESETS: [i8; 32] = [
                 127, 0, 0, 0, 0, 0, 0, 0, 88, -65, -37, -16, -2, 7, 12, 12, 12, 33, 43, 43, 19, -2,
                 -13, -7, 52, 51, 0, -39, -27, 1, -4, -21,
             ];
@@ -1093,7 +1094,7 @@ fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
                 dsp_write(
                     p,
                     FIR0 + i * 16,
-                    K_ECHO_FIR_PARAMETERS[ep + i as usize] as uint8,
+                    SPC_ECHO_FIR_FILTER_PRESETS[ep + i as usize] as uint8,
                 );
             }
         }
@@ -1130,7 +1131,7 @@ fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
 }
 
 fn want_write_kof(p: *mut SpcPlayer, c: *mut Channel) -> bool {
-    const K_EFFECT_BYTE_LENGTH: [uint8; 27] = [
+    const SPC_EFFECT_ARGUMENT_BYTE_LENGTHS: [uint8; 27] = [
         1, 1, 2, 3, 0, 1, 2, 1, 2, 1, 1, 3, 0, 1, 2, 3, 1, 3, 3, 0, 1, 3, 0, 3, 3, 3, 1,
     ];
     let p_ref = unsafe { &mut *p };
@@ -1164,7 +1165,7 @@ fn want_write_kof(p: *mut SpcPlayer, c: *mut Channel) -> bool {
                 let idx = (cmd - 0xe0) as usize;
                 // C indexes kEffectByteLength directly for effect opcodes
                 // e0..fa; this is the Rust guard for corrupt/out-of-range data.
-                let Some(&len) = K_EFFECT_BYTE_LENGTH.get(idx) else {
+                let Some(&len) = SPC_EFFECT_ARGUMENT_BYTE_LENGTHS.get(idx) else {
                     panic!(
                         "invalid SPC effect {:02x} in WantWriteKof ptr={:04x} loops={} chan={}",
                         cmd, ptr, loops, c_ref.index

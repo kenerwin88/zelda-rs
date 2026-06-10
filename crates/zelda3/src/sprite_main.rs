@@ -16,24 +16,24 @@ impl ZeldaState {
         };
         let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.guard_animate_head(k, 0, &poc);
-        self.guard_animate_body(
-            k,
-            SOLDIER_DRAW2_OAM_IDX[self.ram[SPRITE_D + k] as usize] >> 2,
-            &poc,
-        );
+        let sprite = self.sprite_slot_view(k);
+        let direction = sprite.direction() as usize;
+        let flags3 = sprite.flags3();
+        self.guard_animate_body(k, SOLDIER_DRAW2_OAM_IDX[direction] >> 2, &poc);
         self.guard_animate_weapon(k, &poc);
-        if self.ram[SPRITE_FLAGS3 + k] & 0x10 != 0 {
+        if flags3 & 0x10 != 0 {
             self.sprite_draw_shadow_custom_attract(
                 k,
                 (poc.x, poc.y, poc.flags),
-                SOLDIER_DRAW_SHADOW[self.ram[SPRITE_D + k] as usize],
+                SOLDIER_DRAW_SHADOW[direction],
             );
         }
     }
 
     pub(super) fn guard_animate_head(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
-        let dir = self.ram[SPRITE_HEAD_DIR + k] as usize;
-        let graphics = self.ram[SPRITE_GRAPHICS + k] as usize;
+        let sprite = self.sprite_slot_view(k);
+        let dir = sprite.head_direction() as usize;
+        let graphics = sprite.graphics() as usize;
         self.set_sprite_main_guard_oam(
             oam_offs as usize,
             poc.x,
@@ -45,9 +45,10 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_body(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet) {
-        let g = self.ram[SPRITE_GRAPHICS + k] as usize * 4;
-        let sprite_type = self.ram[SPRITE_TYPE + k];
-        let oam_base = (read_le_u16(&self.ram, OAM_CUR_PTR) as usize - OAM_BUF) / 4;
+        let sprite = self.sprite_slot_view(k);
+        let g = sprite.graphics() as usize * 4;
+        let sprite_type = sprite.sprite_type();
+        let oam_base = (self.oam_state_view().current_pointer_usize() - OAM_BUF) / 4;
         let mut oam_offset = oam_idx as usize;
         for i in (0..=3).rev() {
             let j = i + g;
@@ -71,23 +72,22 @@ impl ZeldaState {
                 SOLDIER_DRAW2_BIG[j],
             );
             if SOLDIER_DRAW2_CHAR[j] == 0x20 && sprite_type == 0x46 {
-                self.ram[OAM_BUF + (oam_base + oam_offset) * 4 + 1] = 0xf0;
+                self.oam_state_view_mut()
+                    .hide_sprite_row(oam_base + oam_offset);
             }
             oam_offset += 1;
         }
     }
 
     pub(super) fn guard_animate_weapon(&mut self, k: usize, poc: &PrepOamCoordsRet) {
-        let oam_idx = SOLDIER_DRAW3_OAM_IDX[self.ram[SPRITE_D + k] as usize] >> 2;
-        let g = self.ram[SPRITE_GRAPHICS + k] as usize * 2;
-        let sprite_type = self.ram[SPRITE_TYPE + k];
+        let sprite = self.sprite_slot_view(k);
+        let oam_idx = SOLDIER_DRAW3_OAM_IDX[sprite.direction() as usize] >> 2;
+        let g = sprite.graphics() as usize * 2;
+        let sprite_type = sprite.sprite_type();
         for i in (0..=1).rev() {
             let j = i + g;
-            write_le_u16(
-                &mut self.ram,
-                DUNGMAP_VAR8,
-                ((SOLDIER_DRAW3_XD[j] as u8 as u16) << 8) | SOLDIER_DRAW3_YD[j] as u8 as u16,
-            );
+            self.hitbox_scratch_offset_view_mut()
+                .set_offsets(SOLDIER_DRAW3_YD[j] as u8, SOLDIER_DRAW3_XD[j] as u8);
             self.set_sprite_main_guard_oam(
                 oam_idx as usize + (1 - i),
                 poc.x.wrapping_add(SOLDIER_DRAW3_XD[j] as i16 as u16),
@@ -108,7 +108,7 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        let oam_cur = read_le_u16(&self.ram, OAM_CUR_PTR) as usize;
+        let oam_cur = self.oam_state_view().current_pointer_usize();
         let index = (oam_cur - OAM_BUF) / 4 + offset;
         self.set_oam_helper0_index(index, x, y, charnum, flags, big);
     }
@@ -149,15 +149,15 @@ mod tests {
             .collect();
 
         let mut s = ZeldaState::new();
-        write_le_u16(&mut s.ram, OAM_CUR_PTR, OAM_BUF as u16);
+        s.oam_state_view_mut().set_current_pointer(OAM_BUF as u16);
         for i in 0..4 {
             let base = OAM_BUF + i * 4;
             s.ram[base + 1] = 0xee;
             s.ram[base + 2] = 0xee;
         }
         let k = 0;
-        s.ram[SPRITE_TYPE + k] = 0x46;
-        s.ram[SPRITE_GRAPHICS + k] = graphics as u8;
+        s.sprite_slot_view_mut(k).set_sprite_type(0x46);
+        s.sprite_slot_view_mut(k).set_graphics(graphics as u8);
 
         s.guard_animate_body(
             k,

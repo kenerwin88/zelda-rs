@@ -17,17 +17,12 @@ use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet};
 // follow the same convention).
 // ---------------------------------------------------------------------------
 
-// variables.h:660 — sprite_flags.
-const SPRITE_FLAGS_HS: usize = 0x0b6b;
-// variables.h:672 — sprite_ignore_projectile.
-const SPRITE_IGNORE_PROJECTILE_HS: usize = 0x0ba0;
-
 // kMaxArrowsForLevel / kMaxBombsForLevel — duplicated from hud.rs (private).
-const K_MAX_BOMBS_FOR_LEVEL_HS: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
-const K_MAX_ARROWS_FOR_LEVEL_HS: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
+const MAX_BOMBS_BY_UPGRADE_LEVEL: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
+const MAX_ARROWS_BY_UPGRADE_LEVEL: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
 
 // Hinox_Draw multi-OAM table (sprite_main.c:9053).
-const K_HINOX_DMD: [DrawMultipleData; 46] = [
+const HINOX_DRAW_FRAMES: [DrawMultipleData; 46] = [
     DrawMultipleData {
         x: 0,
         y: -13,
@@ -306,15 +301,15 @@ const K_HINOX_DMD: [DrawMultipleData; 46] = [
     },
 ];
 
-const K_HINOX_NUM: [u8; 12] = [4, 4, 4, 4, 3, 3, 3, 3, 5, 5, 4, 4];
-const K_HINOX_OFFS: [u8; 12] = [0, 4, 8, 12, 16, 19, 22, 25, 28, 33, 38, 42];
+const HINOX_DRAW_FRAME_COUNTS: [u8; 12] = [4, 4, 4, 4, 3, 3, 3, 3, 5, 5, 4, 4];
+const HINOX_DRAW_FRAME_STARTS: [u8; 12] = [0, 4, 8, 12, 16, 19, 22, 25, 28, 33, 38, 42];
 
 // Hinox_SetDirection velocity tables (sprite_main.c:9043-9044).
-const K_HINOX_XVEL: [i8; 4] = [8, -8, 0, 0];
-const K_HINOX_YVEL: [i8; 4] = [0, 0, 8, -8];
+const HINOX_X_VELOCITIES: [i8; 4] = [8, -8, 0, 0];
+const HINOX_Y_VELOCITIES: [i8; 4] = [0, 0, 8, -8];
 
 // ShopItem_HandleReceipt message table (sprite_main.c:25306).
-const K_SHOP_KEEPER_GIVE_ITEM_MSGS: [u16; 7] = [0x168, 0x167, 0x167, 0x16c, 0x169, 0x16a, 0x16b];
+const SHOP_KEEPER_GIVE_ITEM_MESSAGES: [u16; 7] = [0x168, 0x167, 0x167, 0x16c, 0x169, 0x16a, 0x16b];
 
 impl ZeldaState {
     // -----------------------------------------------------------------------
@@ -336,8 +331,9 @@ impl ZeldaState {
     pub(super) fn hinox_face_link(&mut self, k: usize) {
         let dir = self.sprite_direction_to_face_link_for_hinox_shop(k);
         self.hinox_set_direction(k, dir);
-        self.ram[SPRITE_X_VEL + k] = self.ram[SPRITE_X_VEL + k].wrapping_shl(1);
-        self.ram[SPRITE_Y_VEL + k] = self.ram[SPRITE_Y_VEL + k].wrapping_shl(1);
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.shift_x_velocity_left(1);
+        sprite.shift_y_velocity_left(1);
     }
 
     // void Hinox_SetDirection(int k, uint8 dir) {  // 86a004
@@ -350,13 +346,14 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kHinox_Yvel[dir];
     // }
     pub(super) fn hinox_set_direction(&mut self, k: usize, dir: u8) {
-        self.ram[SPRITE_D + k] = dir;
         let r = self.get_random_number();
-        self.ram[SPRITE_DELAY_MAIN + k] = (r & 63).wrapping_add(96);
-        self.ram[SPRITE_AI_STATE + k] = self.ram[SPRITE_AI_STATE + k].wrapping_add(1);
         let idx = (dir as usize) & 3;
-        self.ram[SPRITE_X_VEL + k] = K_HINOX_XVEL[idx] as u8;
-        self.ram[SPRITE_Y_VEL + k] = K_HINOX_YVEL[idx] as u8;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_direction(dir);
+        sprite.set_delay_main((r & 63).wrapping_add(96));
+        sprite.increment_ai_state();
+        sprite.set_x_velocity(HINOX_X_VELOCITIES[idx] as u8);
+        sprite.set_y_velocity(HINOX_Y_VELOCITIES[idx] as u8);
     }
 
     // void Hinox_Draw(int k) {  // 86a1f9
@@ -369,16 +366,16 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn hinox_draw(&mut self, k: usize) {
-        let j = self.ram[SPRITE_GRAPHICS + k] as usize;
-        let start = K_HINOX_OFFS[j] as usize;
-        let count = K_HINOX_NUM[j] as usize;
+        let j = self.sprite_slot_view(k).graphics() as usize;
+        let start = HINOX_DRAW_FRAME_STARTS[j] as usize;
+        let count = HINOX_DRAW_FRAME_COUNTS[j] as usize;
         let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple(k, &K_HINOX_DMD[start..start + count], Some(&mut info));
+        self.sprite_draw_multiple(k, &HINOX_DRAW_FRAMES[start..start + count], Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -415,7 +412,7 @@ impl ZeldaState {
                 self.sprite_show_message_unconditional(0x16d);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(150) {
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 self.shop_item_handle_receipt(k, 0x2e);
             } else {
                 self.sprite_show_message_unconditional(0x17c);
@@ -454,7 +451,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.ram[LINK_SHIELD_TYPE] != 0 {
+            if self.inventory_state_view().shield_type() != 0 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -464,10 +461,10 @@ impl ZeldaState {
                 self.shop_item_play_beep(k);
                 return;
             }
-            self.ram[SPRITE_STATE + k] = 0;
+            self.sprite_slot_view_mut(k).clear();
             self.shop_item_handle_receipt(k, 4);
         }
-        self.ram[SPRITE_FLAGS4 + k] = 0x1c;
+        self.sprite_slot_view_mut(k).set_flags4(0x1c);
     }
 
     // void ShopItem_FireShield(int k) {  // 9ef230
@@ -500,7 +497,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.ram[LINK_SHIELD_TYPE] >= 2 {
+            if self.inventory_state_view().shield_type() >= 2 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -510,10 +507,10 @@ impl ZeldaState {
                 self.shop_item_play_beep(k);
                 return;
             }
-            self.ram[SPRITE_STATE + k] = 0;
+            self.sprite_slot_view_mut(k).clear();
             self.shop_item_handle_receipt(k, 5);
         }
-        self.ram[SPRITE_FLAGS4 + k] = 0x1c;
+        self.sprite_slot_view_mut(k).set_flags4(0x1c);
     }
 
     // void ShopItem_MakeShieldsDeflect(int k) {  // 9ef261
@@ -525,12 +522,15 @@ impl ZeldaState {
     //   sprite_flags4[k] = 0xa;
     // }
     pub(super) fn shop_item_make_shields_deflect(&mut self, k: usize) {
-        self.ram[SPRITE_IGNORE_PROJECTILE_HS + k] = 0;
-        self.ram[SPRITE_FLAGS_HS + k] = 8;
-        self.ram[SPRITE_DEFL_BITS + k] = 4;
-        self.ram[SPRITE_FLAGS4 + k] = 0x1c;
+        {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_ignore_projectile(0);
+            sprite.set_flags(8);
+            sprite.set_deflection_bits(4);
+            sprite.set_flags4(0x1c);
+        }
         self.sprite_check_damage_from_link_for_hinox_shop(k);
-        self.ram[SPRITE_FLAGS4 + k] = 0xa;
+        self.sprite_slot_view_mut(k).set_flags4(0xa);
     }
 
     // void ShopItem_Heart(int k) {  // 9ef27d
@@ -557,10 +557,12 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.ram[LINK_HEALTH_CURRENT] == self.ram[LINK_HEALTH_CAPACITY] {
+            if self.player_resources_view().current_health()
+                == self.player_resources_view().health_capacity()
+            {
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 self.shop_item_handle_receipt(k, 0x42);
             } else {
                 self.sprite_show_message_unconditional(0x17c);
@@ -594,12 +596,12 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.ram[LINK_ARROW_UPGRADES] as usize;
-            if self.ram[LINK_NUM_ARROWS] == K_MAX_ARROWS_FOR_LEVEL_HS[upg] {
+            let upg = self.player_resources_view().arrow_upgrade_level() as usize;
+            if self.player_resources_view().arrows() == MAX_ARROWS_BY_UPGRADE_LEVEL[upg] {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(30) {
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 self.shop_item_handle_receipt(k, 0x44);
             } else {
                 self.sprite_show_message_unconditional(0x17c);
@@ -633,12 +635,12 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.ram[LINK_BOMB_UPGRADES] as usize;
-            if self.ram[LINK_ITEM_BOMBS] == K_MAX_BOMBS_FOR_LEVEL_HS[upg] {
+            let upg = self.player_resources_view().bomb_upgrade_level() as usize;
+            if self.player_resources_view().bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg] {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(50) {
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 self.shop_item_handle_receipt(k, 0x31);
             } else {
                 self.sprite_show_message_unconditional(0x17c);
@@ -676,7 +678,7 @@ impl ZeldaState {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16d);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
-                self.ram[SPRITE_STATE + k] = 0;
+                self.sprite_slot_view_mut(k).clear();
                 self.shop_item_handle_receipt(k, 0xe);
             } else {
                 self.sprite_show_message_unconditional(0x17c);
@@ -696,11 +698,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_handle_receipt(&mut self, k: usize, item: u8) {
-        self.ram[ITEM_RECEIPT_METHOD] = 0;
+        self.player_state_view_mut().set_item_receipt_method(0);
         self.link_receive_item(item, 0);
-        let j = self.ram[SPRITE_SUBTYPE2 + k] as usize;
+        let j = self.sprite_slot_view(k).subtype2() as usize;
         if j >= 7 {
-            let msg = K_SHOP_KEEPER_GIVE_ITEM_MSGS[j - 7];
+            let msg = SHOP_KEEPER_GIVE_ITEM_MESSAGES[j - 7];
             self.sprite_show_message_unconditional(msg);
             self.shop_keeper_rapid_terminate_receive_item_for_hinox_shop();
         }
@@ -723,7 +725,7 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToLink_same_layer(k);
     // }
     pub(super) fn shop_item_check_for_a_press(&mut self, k: usize) -> bool {
-        if (self.ram[FILTERED_JOYPAD_L] & 0x80) == 0 {
+        if (self.player_state_view().filtered_joypad_l() & 0x80) == 0 {
             return false;
         }
         self.sprite_check_damage_to_link_same_layer_for_hinox_shop(k)
@@ -740,12 +742,12 @@ impl ZeldaState {
     // a 16-bit unsigned compared against `int amt`; mirror that with u16
     // arithmetic so signedness matches.
     pub(super) fn shop_item_handle_cost(&mut self, amt: i32) -> bool {
-        let goal = read_le_u16(&self.ram, LINK_RUPEES_GOAL) as i32;
+        let goal = self.player_resources_view().rupees_goal() as i32;
         if amt > goal {
             return false;
         }
         let new_goal = (goal - amt) as u16;
-        write_le_u16(&mut self.ram, LINK_RUPEES_GOAL, new_goal);
+        self.player_resources_view_mut().set_rupees_goal(new_goal);
         true
     }
 
@@ -795,7 +797,7 @@ impl ZeldaState {
     // in sprite_main_npcs.rs is not registered in zelda_rtl.rs.
     fn sprite_find_empty_bottle_for_hinox_shop(&self) -> i32 {
         for i in 0..4 {
-            if self.ram[LINK_BOTTLE_INFO + i] == 2 {
+            if self.inventory_state_view().bottle(i) == 2 {
                 return i as i32;
             }
         }
@@ -817,26 +819,30 @@ mod tests {
     fn hinox_set_direction_writes_velocity_tables() {
         let mut s = fresh_state();
         // Seed RNG-related state so get_random_number is deterministic.
-        s.ram[SPRITE_AI_STATE + 3] = 0;
+        s.sprite_slot_view_mut(3).set_ai_state(0);
         s.hinox_set_direction(3, 0);
-        assert_eq!(s.ram[SPRITE_D + 3], 0);
-        assert_eq!(s.ram[SPRITE_X_VEL + 3], 8);
-        assert_eq!(s.ram[SPRITE_Y_VEL + 3], 0);
-        assert_eq!(s.ram[SPRITE_AI_STATE + 3], 1);
+        let sprite = s.sprite_slot_view(3);
+        assert_eq!(sprite.direction(), 0);
+        assert_eq!(sprite.x_velocity(), 8);
+        assert_eq!(sprite.y_velocity(), 0);
+        assert_eq!(sprite.ai_state(), 1);
 
         s.hinox_set_direction(3, 1);
-        assert_eq!(s.ram[SPRITE_D + 3], 1);
-        assert_eq!(s.ram[SPRITE_X_VEL + 3], (-8i8) as u8);
-        assert_eq!(s.ram[SPRITE_Y_VEL + 3], 0);
-        assert_eq!(s.ram[SPRITE_AI_STATE + 3], 2);
+        let sprite = s.sprite_slot_view(3);
+        assert_eq!(sprite.direction(), 1);
+        assert_eq!(sprite.x_velocity(), (-8i8) as u8);
+        assert_eq!(sprite.y_velocity(), 0);
+        assert_eq!(sprite.ai_state(), 2);
 
         s.hinox_set_direction(3, 2);
-        assert_eq!(s.ram[SPRITE_X_VEL + 3], 0);
-        assert_eq!(s.ram[SPRITE_Y_VEL + 3], 8);
+        let sprite = s.sprite_slot_view(3);
+        assert_eq!(sprite.x_velocity(), 0);
+        assert_eq!(sprite.y_velocity(), 8);
 
         s.hinox_set_direction(3, 3);
-        assert_eq!(s.ram[SPRITE_X_VEL + 3], 0);
-        assert_eq!(s.ram[SPRITE_Y_VEL + 3], (-8i8) as u8);
+        let sprite = s.sprite_slot_view(3);
+        assert_eq!(sprite.x_velocity(), 0);
+        assert_eq!(sprite.y_velocity(), (-8i8) as u8);
     }
 
     #[test]
@@ -844,13 +850,14 @@ mod tests {
         let mut s = fresh_state();
         // Set up so DirectionToFaceLink returns 0 (right).
         // sprite at (0,0), link at (100,0) -> dx>0 dominant axis -> dir 0.
-        write_le_u16(&mut s.ram, LINK_X_COORD, 100);
-        write_le_u16(&mut s.ram, LINK_Y_COORD, 0);
+        s.player_state_view_mut().set_x(100);
+        s.player_state_view_mut().set_y(0);
         s.hinox_face_link(5);
         // After hinox_set_direction with dir=0, x_vel=8, then shifted left by 1 -> 16.
-        assert_eq!(s.ram[SPRITE_X_VEL + 5], 16);
-        assert_eq!(s.ram[SPRITE_Y_VEL + 5], 0);
-        assert_eq!(s.ram[SPRITE_D + 5], 0);
+        let sprite = s.sprite_slot_view(5);
+        assert_eq!(sprite.x_velocity(), 16);
+        assert_eq!(sprite.y_velocity(), 0);
+        assert_eq!(sprite.direction(), 0);
     }
 
     #[test]
@@ -866,18 +873,18 @@ mod tests {
     #[test]
     fn shop_item_handle_cost_succeeds_when_affordable() {
         let mut s = fresh_state();
-        write_le_u16(&mut s.ram, LINK_RUPEES_GOAL, 200);
+        s.player_resources_view_mut().set_rupees_goal(200);
         assert!(s.shop_item_handle_cost(150));
-        assert_eq!(read_le_u16(&s.ram, LINK_RUPEES_GOAL), 50);
+        assert_eq!(s.player_resources_view().rupees_goal(), 50);
     }
 
     #[test]
     fn shop_item_handle_cost_rejects_when_too_expensive() {
         let mut s = fresh_state();
-        write_le_u16(&mut s.ram, LINK_RUPEES_GOAL, 50);
+        s.player_resources_view_mut().set_rupees_goal(50);
         assert!(!s.shop_item_handle_cost(150));
         assert_eq!(
-            read_le_u16(&s.ram, LINK_RUPEES_GOAL),
+            s.player_resources_view().rupees_goal(),
             50,
             "rupees unchanged on failed cost"
         );
@@ -886,35 +893,39 @@ mod tests {
     #[test]
     fn shop_item_check_for_a_press_requires_a_button() {
         let mut s = fresh_state();
-        s.ram[FILTERED_JOYPAD_L] = 0;
+        s.player_state_view_mut().set_filtered_joypad_l(0);
         assert!(!s.shop_item_check_for_a_press(0));
         // With A pressed but no Link overlap, the canonical damage check still
         // returns false; just confirm the early-exit doesn't fire.
-        s.ram[FILTERED_JOYPAD_L] = 0x80;
+        s.player_state_view_mut().set_filtered_joypad_l(0x80);
         let _ = s.shop_item_check_for_a_press(0);
     }
 
     #[test]
     fn shop_item_make_shields_deflect_writes_expected_flags() {
         let mut s = fresh_state();
-        s.ram[SPRITE_IGNORE_PROJECTILE_HS + 4] = 0xff;
-        s.ram[SPRITE_FLAGS_HS + 4] = 0;
-        s.ram[SPRITE_DEFL_BITS + 4] = 0;
-        s.ram[SPRITE_FLAGS4 + 4] = 0;
+        {
+            let mut sprite = s.sprite_slot_view_mut(4);
+            sprite.set_ignore_projectile(0xff);
+            sprite.set_flags(0);
+            sprite.set_deflection_bits(0);
+            sprite.set_flags4(0);
+        }
         s.shop_item_make_shields_deflect(4);
-        assert_eq!(s.ram[SPRITE_IGNORE_PROJECTILE_HS + 4], 0);
-        assert_eq!(s.ram[SPRITE_FLAGS_HS + 4], 8);
-        assert_eq!(s.ram[SPRITE_DEFL_BITS + 4], 4);
+        let sprite = s.sprite_slot_view(4);
+        assert_eq!(sprite.ignore_projectile(), 0);
+        assert_eq!(sprite.flags(), 8);
+        assert_eq!(sprite.deflection_bits(), 4);
         // Final flags4 value is 0xa (overwrites the bracketing 0x1c).
-        assert_eq!(s.ram[SPRITE_FLAGS4 + 4], 0xa);
+        assert_eq!(sprite.flags4(), 0xa);
     }
 
     #[test]
     fn shop_item_handle_receipt_clears_method_and_skips_msg_for_low_subtype() {
         let mut s = fresh_state();
-        s.ram[ITEM_RECEIPT_METHOD] = 5;
-        s.ram[SPRITE_SUBTYPE2 + 1] = 3; // < 7, no message branch
+        s.player_state_view_mut().set_item_receipt_method(5);
+        s.sprite_slot_view_mut(1).set_subtype2(3); // < 7, no message branch
         s.shop_item_handle_receipt(1, 0x2e);
-        assert_eq!(s.ram[ITEM_RECEIPT_METHOD], 0);
+        assert_eq!(s.player_state_view().item_receipt_method(), 0);
     }
 }

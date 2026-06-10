@@ -1,7 +1,7 @@
 // Methods ported from zelda3/src/audio.c and included inside ZeldaState.
 
 use super::*;
-use crate::config::{config_value_path, K_MSU_ENABLED_MSU_DELUXE, K_MSU_ENABLED_OPUZ};
+use crate::config::{config_value_path, MSU_FEATURE_MSU_DELUXE, MSU_FEATURE_OPUZ};
 use opus::{Channels, Decoder as OpusDecoder};
 use std::fs;
 
@@ -15,16 +15,16 @@ const MSU_RESUME_INFO_ALT: usize = 0x1db20;
 const MSU_RESUME_INFO: usize = 0x1db60;
 const MSU_VOLUME: usize = 0x0654;
 
-const K_MSU_TRACKS_WITH_REPEAT: [u8; 48] = [
+const MSU_TRACK_REPEATS: [u8; 48] = [
     1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
     1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
-const K_IS_MUSIC_OW_OR_DUNGEON: [u8; 32] = [
+const MSU_DELUXE_TRACK_ROUTE: [u8; 32] = [
     0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 2, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 0, 0, 0, 0,
 ];
 
-const K_MSU_DELUXE_OW_SONGS: [u8; 160] = [
+const MSU_DELUXE_OVERWORLD_TRACKS: [u8; 160] = [
     37, 37, 42, 38, 38, 38, 38, 39, 37, 37, 42, 38, 38, 38, 38, 41, 42, 42, 42, 42, 42, 42, 40, 40,
     43, 43, 42, 47, 47, 42, 45, 45, 43, 43, 43, 47, 47, 42, 45, 45, 112, 112, 48, 42, 42, 42, 42,
     45, 44, 44, 48, 48, 48, 46, 46, 46, 44, 44, 44, 48, 48, 46, 46, 46, 49, 49, 51, 50, 50, 50, 50,
@@ -34,7 +34,7 @@ const K_MSU_DELUXE_OW_SONGS: [u8; 160] = [
     42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
 ];
 
-const K_MSU_DELUXE_ENTRANCE_SONGS: [u8; 133] = [
+const MSU_DELUXE_ENTRANCE_TRACKS: [u8; 133] = [
     59, 59, 60, 61, 61, 61, 62, 62, 63, 64, 64, 64, 105, 65, 65, 66, 66, 62, 67, 62, 62, 68, 62,
     62, 68, 68, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 69, 70, 71, 72, 73, 73, 73, 106, 102, 74,
     62, 62, 75, 75, 76, 77, 78, 68, 79, 80, 81, 62, 62, 62, 82, 75, 242, 59, 59, 76, 242, 242, 242,
@@ -43,8 +43,8 @@ const K_MSU_DELUXE_ENTRANCE_SONGS: [u8; 133] = [
     62, 242, 242, 242, 73, 73, 73, 73, 102, 114, 81, 76, 62, 67, 62, 61, 94, 62, 103,
 ];
 
-const K_VOLUME_TRANSITION_TARGET: [u8; 4] = [0, 64, 255, 255];
-const K_VOLUME_TRANSITION_STEP: [u8; 4] = [7, 3, 3, 24];
+const MSU_VOLUME_TRANSITION_TARGETS: [u8; 4] = [0, 64, 255, 255];
+const MSU_VOLUME_TRANSITION_STEPS: [u8; 4] = [7, 3, 3, 24];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct MsuPlayerResumeInfo {
@@ -226,28 +226,28 @@ impl Drop for AudioState {
 
 impl ZeldaState {
     fn remap_msu_deluxe_track(&self, mp: &MsuPlayer, track: u8) -> u8 {
-        if mp.enabled & K_MSU_ENABLED_MSU_DELUXE == 0
-            || track as usize >= K_IS_MUSIC_OW_OR_DUNGEON.len()
+        if mp.enabled & MSU_FEATURE_MSU_DELUXE == 0
+            || track as usize >= MSU_DELUXE_TRACK_ROUTE.len()
         {
             return track;
         }
-        match K_IS_MUSIC_OW_OR_DUNGEON[track as usize] {
+        match MSU_DELUXE_TRACK_ROUTE[track as usize] {
             1 => {
                 let area = read_le_u16(&self.ram, OVERWORLD_AREA_INDEX_AUDIO) as usize & 0xff;
-                if area < K_MSU_DELUXE_OW_SONGS.len() {
-                    K_MSU_DELUXE_OW_SONGS[area]
+                if area < MSU_DELUXE_OVERWORLD_TRACKS.len() {
+                    MSU_DELUXE_OVERWORLD_TRACKS[area]
                 } else {
                     track
                 }
             }
             2 => {
                 let entrance = self.ram[WHICH_ENTRANCE] as usize;
-                if entrance >= K_MSU_DELUXE_ENTRANCE_SONGS.len()
-                    || K_MSU_DELUXE_ENTRANCE_SONGS[entrance] == 242
+                if entrance >= MSU_DELUXE_ENTRANCE_TRACKS.len()
+                    || MSU_DELUXE_ENTRANCE_TRACKS[entrance] == 242
                 {
                     track
                 } else {
-                    K_MSU_DELUXE_ENTRANCE_SONGS[entrance]
+                    MSU_DELUXE_ENTRANCE_TRACKS[entrance]
                 }
             }
             _ => track,
@@ -256,22 +256,22 @@ impl ZeldaState {
 
     pub fn zelda_is_playing_music_track(&self, track: u8) -> bool {
         let mp = &self.audio.msu_player;
-        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+        if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
         } else {
-            track == self.ram[CURRENT_MUSIC_CONTROL]
+            track == self.system_signals_view().current_music_control()
         }
     }
 
     pub fn zelda_is_playing_music_track_with_bug(&self, track: u8) -> bool {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         let mp = &self.audio.msu_player;
-        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+        if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
         } else if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
-            track == self.ram[CURRENT_MUSIC_CONTROL]
+            track == self.system_signals_view().current_music_control()
         } else {
-            track == self.ram[LAST_MUSIC_CONTROL]
+            track == self.system_signals_view().last_music_control()
         }
     }
 
@@ -284,11 +284,11 @@ impl ZeldaState {
             .copied()
             .unwrap_or(0);
         let mp = &self.audio.msu_player;
-        if mp.state != MSU_STATE_IDLE && mp.enabled & K_MSU_ENABLED_MSU_DELUXE != 0 {
+        if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             let entrance = self.ram[WHICH_ENTRANCE] as usize;
             if rv == 242
-                && entrance < K_MSU_DELUXE_ENTRANCE_SONGS.len()
-                && K_MSU_DELUXE_ENTRANCE_SONGS[entrance] != 242
+                && entrance < MSU_DELUXE_ENTRANCE_TRACKS.len()
+                && MSU_DELUXE_ENTRANCE_TRACKS[entrance] != 242
             {
                 rv = 16;
             }
@@ -367,7 +367,7 @@ impl ZeldaState {
             return;
         }
 
-        let ext = if mp.enabled & K_MSU_ENABLED_OPUZ != 0 {
+        let ext = if mp.enabled & MSU_FEATURE_OPUZ != 0 {
             "opuz"
         } else {
             "pcm"
@@ -655,8 +655,8 @@ impl ZeldaState {
                 } else if self.audio.msu_player.has_file {
                     if self.audio.msu_player.samples_until_repeat == 0 {
                         let actual_track = self.audio.msu_player.resume_info.actual_track as usize;
-                        if actual_track < K_MSU_TRACKS_WITH_REPEAT.len()
-                            && K_MSU_TRACKS_WITH_REPEAT[actual_track] == 0
+                        if actual_track < MSU_TRACK_REPEATS.len()
+                            && MSU_TRACK_REPEATS[actual_track] == 0
                         {
                             self.audio.msu_player.state = MSU_STATE_FINISHED_PLAYING;
                             Self::msu_player_close_file(&mut self.audio.msu_player);
@@ -857,7 +857,7 @@ impl ZeldaState {
     }
 
     pub fn zelda_read_apui00(&self) -> u8 {
-        self.ram[RAM_APUI00]
+        self.system_signals_view().apui00()
     }
 
     pub fn zelda_apu_read(&self, adr: u32) -> u8 {
@@ -980,15 +980,18 @@ impl ZeldaState {
         if self.audio.msu_player.enabled != 0 {
             self.audio.msu_player.volume = 0.0;
             let resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO);
-            let track = if self.ram[CURRENT_MUSIC_CONTROL] == 0xf1 {
+            let system_signals = self.system_signals_view();
+            let current_music_control = system_signals.current_music_control();
+            let last_music_control = system_signals.last_music_control();
+            let track = if current_music_control == 0xf1 {
                 resume.orig_track
             } else {
-                self.ram[CURRENT_MUSIC_CONTROL]
+                current_music_control
             };
             self.msu_player_open(track as i32, true);
-            if (0xf1..=0xf3).contains(&self.ram[LAST_MUSIC_CONTROL]) {
-                let i = (self.ram[LAST_MUSIC_CONTROL] - 0xf1) as usize;
-                let target = K_VOLUME_TRANSITION_TARGET[i];
+            if (0xf1..=0xf3).contains(&last_music_control) {
+                let i = (last_music_control - 0xf1) as usize;
+                let target = MSU_VOLUME_TRANSITION_TARGETS[i];
                 if target != self.ram[MSU_VOLUME] {
                     let f = self.audio.volume_transition_target_float[3] * (1.0 / 255.0);
                     self.audio.msu_player.volume = self.ram[MSU_VOLUME] as f32 * f;
@@ -1029,11 +1032,11 @@ impl ZeldaState {
             self.audio.config_audio_freq as f32
         };
         let stepscale = self.audio.config_msuvolume as f32 * (60.0 / 256.0 / 100.0) / freq;
-        for i in 0..K_VOLUME_TRANSITION_STEP.len() {
+        for i in 0..MSU_VOLUME_TRANSITION_STEPS.len() {
             self.audio.volume_transition_step_float[i] =
-                K_VOLUME_TRANSITION_STEP[i] as f32 * stepscale;
+                MSU_VOLUME_TRANSITION_STEPS[i] as f32 * stepscale;
             self.audio.volume_transition_target_float[i] =
-                K_VOLUME_TRANSITION_TARGET[i] as f32 * volscale;
+                MSU_VOLUME_TRANSITION_TARGETS[i] as f32 * volscale;
         }
     }
 
@@ -1265,7 +1268,7 @@ mod tests {
             false,
             Some(format!("{}/", dir.to_string_lossy())),
         );
-        state.zelda_enable_msu(K_MSU_ENABLED_OPUZ);
+        state.zelda_enable_msu(MSU_FEATURE_OPUZ);
         state.msu_player_open(5, false);
 
         assert!(state.audio.msu_player.has_file);
@@ -1305,7 +1308,7 @@ mod tests {
             false,
             Some(format!("{}/", dir.to_string_lossy())),
         );
-        state.zelda_enable_msu(K_MSU_ENABLED_OPUZ);
+        state.zelda_enable_msu(MSU_FEATURE_OPUZ);
         state.msu_player_open(5, false);
 
         assert_eq!(

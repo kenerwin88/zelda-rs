@@ -1997,16 +1997,16 @@ const PRIMARY_WATER_GRASS_TIMER: usize = 0x356;
 const WHICH_STAIRCASE_INDEX: usize = 0x462;
 const FEATURES0_WIDESCREEN_VISUAL_FIXES: u32 = 1024;
 
-const K_PLAYER_STATE_SPIN_ATTACKING: u8 = 3;
-const K_PLAYER_STATE_SWIMMING: u8 = 4;
-const K_PLAYER_STATE_TURTLE_ROCK: u8 = 5;
-const K_PLAYER_STATE_ETHER: u8 = 8;
-const K_PLAYER_STATE_BOMBOS: u8 = 9;
-const K_PLAYER_STATE_QUAKE: u8 = 10;
-const K_PLAYER_STATE_HOOKSHOT: u8 = 19;
-const K_PLAYER_STATE_ASLEEP_IN_BED: u8 = 22;
-const K_PLAYER_STATE_SPIN_ATTACK_MOTION: u8 = 30;
-const K_SWIMMING_TAB1: [u8; 4] = [2, 0, 1, 0];
+const PLAYER_HANDLER_STATE_SPIN_ATTACKING: u8 = 3;
+const PLAYER_HANDLER_STATE_SWIMMING: u8 = 4;
+const PLAYER_HANDLER_STATE_TURTLE_ROCK: u8 = 5;
+const PLAYER_HANDLER_STATE_ETHER: u8 = 8;
+const PLAYER_HANDLER_STATE_BOMBOS: u8 = 9;
+const PLAYER_HANDLER_STATE_QUAKE: u8 = 10;
+const PLAYER_HANDLER_STATE_HOOKSHOT: u8 = 19;
+const PLAYER_HANDLER_STATE_ASLEEP_IN_BED: u8 = 22;
+const PLAYER_HANDLER_STATE_SPIN_ATTACK_MOTION: u8 = 30;
+const SWIMMING_SPLASH_FRAME_BY_DIRECTION: [u8; 4] = [2, 0, 1, 0];
 
 struct SwordResult {
     r6: usize,
@@ -2022,11 +2022,7 @@ fn oam_addr(oam_pos: usize) -> usize {
 }
 
 fn zcoord_for_oam(ram: &[u8]) -> u8 {
-    if read_le_u16(ram, LINK_Z_COORD) < 0x8000 || ram[LINK_Z_COORD] < 0xf0 {
-        ram[LINK_Z_COORD]
-    } else {
-        0
-    }
+    PlayerStateView::new(ram).z_for_oam()
 }
 
 fn read_u16_from_u8_table(table: &[u8], idx: usize) -> u16 {
@@ -2044,43 +2040,48 @@ impl ZeldaState {
     }
 
     fn player_oam_want_invoke_sword(&self) -> bool {
-        let state = self.ram[LINK_PLAYER_HANDLER_STATE];
-        if state != K_PLAYER_STATE_ETHER
-            && state != K_PLAYER_STATE_BOMBOS
-            && state != K_PLAYER_STATE_QUAKE
-            && state != K_PLAYER_STATE_SPIN_ATTACKING
-            && state != K_PLAYER_STATE_SPIN_ATTACK_MOTION
-            && self.ram[LINK_STATE_BITS] == 0
-            && self.ram[LINK_FORCE_HOLD_SWORD_UP] == 0
-            && self.ram[LINK_ELECTROCUTE_ON_TOUCH] == 0
+        let state = self.player_state_view().handler_state();
+        if state != PLAYER_HANDLER_STATE_ETHER
+            && state != PLAYER_HANDLER_STATE_BOMBOS
+            && state != PLAYER_HANDLER_STATE_QUAKE
+            && state != PLAYER_HANDLER_STATE_SPIN_ATTACKING
+            && state != PLAYER_HANDLER_STATE_SPIN_ATTACK_MOTION
+            && !self.player_state_view().has_action_state()
+            && self.player_state_view().force_hold_sword_up_state() == 0
+            && self.player_state_view().electrocute_on_touch() == 0
         {
-            if self.ram[LINK_ITEM_IN_HAND] & 0x40 != 0 {
+            if self.player_state_view().item_in_hand_has(0x40) {
                 return false;
             }
-            if self.ram[LINK_POSITION_MODE] & 0x3d != 0 || self.ram[LINK_ITEM_IN_HAND] & 0x93 != 0 {
+            if self.player_state_view().position_mode_has(0x3d)
+                || self.player_state_view().item_in_hand_has(0x93)
+            {
                 return true;
             }
-            if self.ram[BUTTON_MASK_B_Y] & 0x80 == 0 {
+            if self.player_state_view().button_mask_b_y() & 0x80 == 0 {
                 return false;
             }
         }
-        ((self.ram[LINK_SWORD_TYPE].wrapping_add(1)) & 0xfe) != 0
+        ((self.inventory_state_view().sword_type().wrapping_add(1)) & 0xfe) != 0
     }
 
     pub(super) fn calculate_sword_hit_box(&mut self) {
-        if self.ram[LINK_SWORD_TYPE] == 0 || self.ram[LINK_SWORD_TYPE] == 0xff {
+        let sword_type = self.inventory_state_view().sword_type();
+        if sword_type == 0 || sword_type == 0xff {
             return;
         }
-        if self.ram[LINK_SWORD_TYPE] >= 2 && self.ram[BUTTON_B_FRAMES] < 9 {
-            let i = self.ram[BUTTON_B_FRAMES] as usize
-                + ((self.ram[LINK_DIRECTION_FACING] >> 1) as usize * 9);
+        if sword_type >= 2 && self.player_state_view().button_b_frames() < 9 {
+            let i = self.player_state_view().button_b_frames_index()
+                + self.player_state_view().facing_index() * 9;
             if kSwordTipSomething[i] as u8 != 0xff {
-                self.ram[PLAYER_OAM_Y_OFFSET] = kSwordOamYOffs_Good[i] as u8;
-                self.ram[PLAYER_OAM_X_OFFSET] = kSwordOamXOffs_Good[i] as u8;
+                self.player_state_view_mut()
+                    .set_oam_y_offset(kSwordOamYOffs_Good[i] as u8);
+                self.player_state_view_mut()
+                    .set_oam_x_offset(kSwordOamXOffs_Good[i] as u8);
                 return;
             }
         }
-        let mut offs = self.ram[BUTTON_B_FRAMES];
+        let mut offs = self.player_state_view().button_b_frames();
         if offs == 9 {
             return;
         }
@@ -2089,11 +2090,12 @@ impl ZeldaState {
             offs = offs.wrapping_sub(10);
             y = 3;
         }
-        let i = kPlayerOamOtherOffs[(self.ram[LINK_DIRECTION_FACING] >> 1) as usize * 40 + y]
-            as usize
+        let i = kPlayerOamOtherOffs[self.player_state_view().facing_index() * 40 + y] as usize
             + offs as usize;
-        self.ram[PLAYER_OAM_Y_OFFSET] = kSwordOamYOffs[i] as u8;
-        self.ram[PLAYER_OAM_X_OFFSET] = kSwordOamXOffs[i] as u8;
+        self.player_state_view_mut()
+            .set_oam_y_offset(kSwordOamYOffs[i] as u8);
+        self.player_state_view_mut()
+            .set_oam_x_offset(kSwordOamXOffs[i] as u8);
     }
 
     pub(crate) fn link_oam_main(&mut self) {
@@ -2102,11 +2104,11 @@ impl ZeldaState {
 
         if submodule == 18 || submodule == 19 {
             let mut t = if submodule == 18 { 0 } else { 12 };
-            if self.ram[WHICH_STAIRCASE_INDEX] & 4 != 0 {
+            if self.dungeon_state_view().staircase_index() & 4 != 0 {
                 t += 6;
             }
-            if self.ram[LINK_ANIMATION_STEPS] < 6 {
-                t += self.ram[LINK_ANIMATION_STEPS] as usize;
+            if self.player_state_view().animation_step() < 6 {
+                t += self.player_state_view().animation_step_index();
             }
             let y = y_coord_backup.wrapping_add(kPlayerOam_StairsOffsY[t] as i16 as u16);
             self.player_state_view_mut().set_y(y);
@@ -2115,19 +2117,19 @@ impl ZeldaState {
         let xcoord = self
             .player_state_view()
             .x()
-            .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2)) as u8;
+            .wrapping_sub(self.world_state_view().bg2_x()) as u8;
         let ycoord = self
             .player_state_view()
             .y()
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2)) as u8;
-        self.ram[PLAYER_OAM_X_OFFSET] = 0x80;
-        self.ram[PLAYER_OAM_Y_OFFSET] = 0x80;
-        let scratch_0_var = self.ram[DRAW_WATER_RIPPLES_OR_GRASS] != 0;
+            .wrapping_sub(self.world_state_view().bg2_y()) as u8;
+        self.player_state_view_mut().disable_oam_offsets();
+        let scratch_0_var = self.player_state_view().water_ripple_or_grass_state() != 0;
         let mut oam_priority_value =
-            kPlayerOam_FloorOamPrio[self.ram[LINK_IS_ON_LOWER_LEVEL] as usize];
-        write_le_u16(&mut self.ram, OAM_PRIORITY_VALUE, oam_priority_value);
+            kPlayerOam_FloorOamPrio[self.player_state_view().lower_level_state() as usize];
+        self.oam_state_view_mut()
+            .set_priority_word(oam_priority_value);
         let mut sort_sprites_offset_into_oam_buffer =
-            kPlayerOam_SortSpritesOffs[self.ram[SORT_SPRITES_SETTING] as usize];
+            kPlayerOam_SortSpritesOffs[self.oam_state_view().sprite_sorting_offset_index()];
         write_le_u16(
             &mut self.ram,
             SORT_SPRITES_OFFSET_INTO_OAM_BUFFER,
@@ -2136,22 +2138,23 @@ impl ZeldaState {
 
         let mut yt: u8;
         let mut rt: u8;
+        let handler_state = self.player_state_view().handler_state();
 
-        if self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_ASLEEP_IN_BED
-            && self.ram[LINK_POSE_DURING_OPENING] != 2
+        if handler_state == PLAYER_HANDLER_STATE_ASLEEP_IN_BED
+            && self.player_state_view().opening_pose() != 2
         {
             yt = 0x1f;
-            rt = self.ram[LINK_POSE_DURING_OPENING];
-        } else if self.ram[LINK_FORCE_HOLD_SWORD_UP] != 0 {
+            rt = self.player_state_view().opening_pose();
+        } else if self.player_state_view().force_hold_sword_up_state() != 0 {
             yt = 0x24;
             rt = 0;
-            self.ram[LINK_DIRECTION_FACING_MIRROR] = self.ram[LINK_DIRECTION_FACING];
-        } else if self.ram[LINK_IS_BUNNY_MIRROR] != 0 {
+            self.player_state_view_mut().cache_facing_to_mirror();
+        } else if self.player_state_view().is_bunny_mirror() {
             yt = 0x21;
-            rt = self.ram[LINK_ANIMATION_STEPS] & 3;
-            self.ram[LINK_DIRECTION_FACING_MIRROR] = self.ram[LINK_DIRECTION_FACING];
+            rt = self.player_state_view().animation_step() & 3;
+            self.player_state_view_mut().cache_facing_to_mirror();
         } else {
-            yt = if self.ram[DRAW_WATER_RIPPLES_OR_GRASS] != 0 {
+            yt = if self.player_state_view().water_ripple_or_grass_state() != 0 {
                 10
             } else {
                 0
@@ -2159,82 +2162,85 @@ impl ZeldaState {
 
             if submodule == 14 && self.frame_control_view().main_module() != 18 && {
                 yt = 10;
-                self.ram[LINK_ACTUAL_VEL_X] != 0
+                self.player_state_view().actual_x_velocity() != 0
             } {
-                if self.ram[LINK_DIRECTION_FACING] != 4 && self.ram[LINK_DIRECTION_FACING] != 6 {
-                    rt = kPlayerOam_Tab1[self.ram[LINK_ANIMATION_STEPS] as usize] as u8;
-                    yt = if self.ram[WHICH_STAIRCASE_INDEX] & 4 != 0 {
+                if self.player_state_view().facing() != 4 && self.player_state_view().facing() != 6
+                {
+                    rt = kPlayerOam_Tab1[self.player_state_view().animation_step_index()] as u8;
+                    yt = if self.dungeon_state_view().staircase_index() & 4 != 0 {
                         0x1a
                     } else {
                         0x19
                     };
                 } else {
-                    rt = self.ram[LINK_ANIMATION_STEPS];
+                    rt = self.player_state_view().animation_step();
                 }
-            } else if self.ram[LINK_GRABBING_WALL] & 3 != 0 {
+            } else if self.player_state_view().grabbing_wall_has(3) {
                 yt = 0x18;
-                rt = self.ram[Y_BUTTON_ACTION_STEP];
+                rt = self.player_state_view().y_button_action_step();
             } else {
-                if self.ram[PLAYER_DEFENSE_FLAGS] & 0x0d != 0 {
+                if self.player_state_view().defense_flags() & 0x0d != 0 {
                     yt = 0x16;
-                    if self.ram[LINK_ANIMATION_STEPS] >= 5 {
-                        self.ram[LINK_ANIMATION_STEPS] = 0;
-                    }
+                    self.player_state_view_mut()
+                        .clear_animation_step_if_at_least(5);
                 }
-                rt = self.ram[LINK_ANIMATION_STEPS];
+                rt = self.player_state_view().animation_step();
             }
-            self.ram[LINK_DIRECTION_FACING_MIRROR] = self.ram[LINK_DIRECTION_FACING];
-            if self.ram[LINK_IS_IN_DEEP_WATER] != 0 {
+            self.player_state_view_mut().cache_facing_to_mirror();
+            if self.player_state_view().deep_water_state() != 0 {
                 oam_priority_value = 0x2000;
-                write_le_u16(&mut self.ram, OAM_PRIORITY_VALUE, oam_priority_value);
+                self.oam_state_view_mut()
+                    .set_priority_word(oam_priority_value);
             }
 
-            if self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_SWIMMING {
+            if handler_state == PLAYER_HANDLER_STATE_SWIMMING {
                 yt = 0x11;
                 rt &= 1;
-                if (submodule == 0 && self.ram[JOYPAD1H_LAST] & 0x0f != 0)
-                    || (read_le_u16(&self.ram, SWIM_ACCELERATION)
-                        | read_le_u16(&self.ram, SWIM_ACCELERATION + 2))
+                if (submodule == 0 && self.player_state_view().joypad1h_last() & 0x0f != 0)
+                    || (self.swim_acceleration_view().acceleration(0)
+                        | self.swim_acceleration_view().acceleration(2))
                         != 0
                 {
                     yt = 0x13;
                     rt = self.ram[SWIM_STROKE_ANIM_STEP];
                 }
-                if self.ram[LINK_MAYBE_SWIM_FASTER] != 0 {
+                if self.player_state_view().swim_fast_state() != 0 {
                     yt = 0x12;
-                    rt = self.ram[LINK_MAYBE_SWIM_FASTER].wrapping_sub(1);
+                    rt = self.player_state_view().swim_fast_state().wrapping_sub(1);
                 }
-            } else if self.ram[LINK_POSE_FOR_ITEM] != 0 {
+            } else if self.player_state_view().item_hold_pose() != 0 {
                 rt = 0;
-                yt = if self.ram[LINK_POSE_FOR_ITEM] != 2 {
+                yt = if self.player_state_view().item_hold_pose() != 2 {
                     0x1d
                 } else {
                     0x1e
                 };
-            } else if self.ram[LINK_FAINT_ANIMATION_ACTIVE] & 1 != 0 {
+            } else if self.player_state_view().faint_animation_active() & 1 != 0 {
                 yt = 0x1b;
-                rt = self.ram[Y_BUTTON_ACTION_STEP];
+                rt = self.player_state_view().y_button_action_step();
             } else {
                 let mut continue_after_set = false;
                 let mut link_state_is_empty = false;
 
-                if self.ram[LINK_AUXILIARY_STATE] == 4 {
+                if self.player_state_view().is_in_auxiliary_state(4) {
                     yt = 0x13;
-                    rt = K_SWIMMING_TAB1[((self.ram[FRAME_COUNTER] & 0x18) >> 3) as usize];
+                    rt = SWIMMING_SPLASH_FRAME_BY_DIRECTION
+                        [((self.frame_control_view().frame_counter() & 0x18) >> 3) as usize];
                     continue_after_set = true;
-                } else if self.ram[LINK_AUXILIARY_STATE] == 1 {
-                    if self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_TURTLE_ROCK {
+                } else if self.player_state_view().is_in_auxiliary_state(1) {
+                    if handler_state == PLAYER_HANDLER_STATE_TURTLE_ROCK {
                         if self.ram[TURTLE_ROCK_OAM_PRIORITY_FLAG] == 0 {
                             oam_priority_value = 0x3000;
-                            write_le_u16(&mut self.ram, OAM_PRIORITY_VALUE, oam_priority_value);
+                            self.oam_state_view_mut()
+                                .set_priority_word(oam_priority_value);
                         }
                         link_state_is_empty = true;
-                    } else if self.ram[LINK_PLAYER_HANDLER_STATE] != K_PLAYER_STATE_HOOKSHOT
-                        && self.ram[LINK_CAPE_MODE] == 0
+                    } else if handler_state != PLAYER_HANDLER_STATE_HOOKSHOT
+                        && !self.player_state_view().is_cape_active()
                     {
-                        if self.ram[LINK_ELECTROCUTE_ON_TOUCH] != 0 {
+                        if self.player_state_view().electrocute_on_touch() != 0 {
                             yt = 0x14;
-                            rt = self.ram[PLAYER_HANDLER_TIMER] & 3;
+                            rt = self.player_state_view().action_handler_timer() & 3;
                         } else {
                             yt = 5;
                             rt = 0;
@@ -2245,77 +2251,79 @@ impl ZeldaState {
 
                 if !continue_after_set {
                     if !link_state_is_empty {
-                        if self.ram[PLAYER_NEAR_PIT_STATE] != 0
-                            && self.ram[PLAYER_NEAR_PIT_STATE] != 1
+                        if self.player_state_view().is_near_pit()
+                            && !self.player_state_view().near_pit_state_is(1)
                         {
-                            if self.ram[PLAYER_NEAR_PIT_STATE] == 3 {
+                            if self.player_state_view().near_pit_state_is(3) {
                                 sort_sprites_offset_into_oam_buffer = 0;
                                 write_le_u16(&mut self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER, 0);
                             }
                             yt = 4;
-                            rt = self.ram[PLAYER_PIT_DATA_INDEX];
+                            rt = self.player_state_view().pit_data_index();
                             if rt >= 6 {
                                 oam_priority_value |= 0x3000;
-                                write_le_u16(&mut self.ram, OAM_PRIORITY_VALUE, oam_priority_value);
+                                self.oam_state_view_mut()
+                                    .set_priority_word(oam_priority_value);
                             }
                             continue_after_set = true;
-                        } else if self.ram[LINK_STATE_BITS] != 0 {
-                            let bit =
-                                self.find_most_significant_bit(self.ram[LINK_STATE_BITS]) as usize;
+                        } else if self.player_state_view().has_action_state() {
+                            let bit = self
+                                .find_most_significant_bit(self.player_state_view().state_bits())
+                                as usize;
                             if bit < 6 {
-                                self.ram[LINK_DIRECTION_FACING_MIRROR] = 2;
+                                self.player_state_view_mut().set_facing_mirror(2);
                             }
                             yt = kPlayerOam_Tab4[bit] as u8;
                             let mut keep_selected_rt = false;
                             if yt >= 0x0d {
-                                if self.ram[LINK_PICKING_THROW_STATE] & 2 != 0 {
+                                if self.player_state_view().picking_throw_state_has(2) {
                                     yt = yt.wrapping_add(1);
                                 }
-                                if self.ram[LINK_PICKING_THROW_STATE] & 1 != 0 {
+                                if self.player_state_view().is_lift_throw_primed() {
                                     yt = 0x10;
-                                } else if self.ram[LINK_STATE_BITS] & 0x80 != 0 {
+                                } else if self.player_state_view().is_lifting_or_carrying() {
                                     keep_selected_rt = true;
                                 }
                             }
                             if !keep_selected_rt {
-                                rt = self.ram[Y_BUTTON_ACTION_STEP];
+                                rt = self.player_state_view().y_button_action_step();
                             }
                             continue_after_set = true;
                         }
                     }
 
                     if !continue_after_set {
-                        if self.ram[LINK_PULL_ACTION_STATE] != 0 {
+                        let pull_action_state = self.player_state_view().pull_action_state();
+                        if pull_action_state != 0 {
                             yt = 0x17;
-                            rt = self.ram[LINK_PULL_ACTION_STATE].wrapping_sub(1);
-                        } else if self.ram[LINK_ITEM_IN_HAND] != 0 {
+                            rt = pull_action_state.wrapping_sub(1);
+                        } else if self.player_state_view().has_item_in_hand() {
                             yt = kPlayerOam_Tab2[self
-                                .find_most_significant_bit(self.ram[LINK_ITEM_IN_HAND])
+                                .find_most_significant_bit(self.player_state_view().item_in_hand())
                                 as usize] as u8;
-                            rt = self.ram[PLAYER_HANDLER_TIMER];
-                        } else if self.ram[LINK_POSITION_MODE] != 0 {
+                            rt = self.player_state_view().action_handler_timer();
+                        } else if self.player_state_view().has_position_mode() {
                             yt = kPlayerOam_Tab3[self
-                                .find_most_significant_bit(self.ram[LINK_POSITION_MODE])
+                                .find_most_significant_bit(self.player_state_view().position_mode())
                                 as usize] as u8;
-                            rt = self.ram[PLAYER_HANDLER_TIMER];
-                        } else if self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_QUAKE
-                            || self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_ETHER
-                            || self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_BOMBOS
+                            rt = self.player_state_view().action_handler_timer();
+                        } else if handler_state == PLAYER_HANDLER_STATE_QUAKE
+                            || handler_state == PLAYER_HANDLER_STATE_ETHER
+                            || handler_state == PLAYER_HANDLER_STATE_BOMBOS
                         {
                             yt = 0x15;
                             rt = self.ram[STATE_FOR_SPIN_ATTACK];
-                        } else if self.ram[LINK_PLAYER_HANDLER_STATE]
-                            == K_PLAYER_STATE_SPIN_ATTACK_MOTION
-                            || self.ram[LINK_PLAYER_HANDLER_STATE] == K_PLAYER_STATE_SPIN_ATTACKING
+                        } else if handler_state == PLAYER_HANDLER_STATE_SPIN_ATTACK_MOTION
+                            || handler_state == PLAYER_HANDLER_STATE_SPIN_ATTACKING
                         {
                             yt = 0x0f;
                             rt = self.ram[STATE_FOR_SPIN_ATTACK];
-                        } else if self.ram[BUTTON_MASK_B_Y] & 0x80 != 0 {
-                            if self.ram[BUTTON_B_FRAMES] == 9 {
+                        } else if self.player_state_view().button_mask_b_y() & 0x80 != 0 {
+                            if self.player_state_view().button_b_frames() == 9 {
                                 yt = 2;
                             } else {
                                 yt = 0x27;
-                                rt = self.ram[BUTTON_B_FRAMES];
+                                rt = self.player_state_view().button_b_frames();
                                 if rt >= 9 {
                                     yt = 3;
                                     rt = rt.wrapping_sub(10);
@@ -2331,9 +2339,10 @@ impl ZeldaState {
         if yt != 5 {
             write_le_u16(&mut self.ram, OAM_PRIORITY_VALUE_2, oam_priority_value);
         }
-        self.ram[INDEX_OF_INTERACTING_TILE] = rt;
+        self.tile_detect_position_view_mut()
+            .set_interacting_tile(u16::from(rt));
 
-        let dir = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize;
+        let dir = self.player_state_view().facing_index();
         let r2 = kPlayerOamOtherOffs[dir * 40 + yt as usize] as usize + rt as usize;
         let mut r4loc = kPlayerOamSpriteLocs[r2] as usize;
 
@@ -2342,13 +2351,9 @@ impl ZeldaState {
         } else {
             0x0e00
         };
-        write_le_u16(
-            &mut self.ram,
-            LINK_PALETTE_BITS_OF_OAM,
-            link_palette_bits_of_oam,
-        );
-        write_le_u16(&mut self.ram, LINK_DMA_VAR1, 0);
-        write_le_u16(&mut self.ram, LINK_DMA_VAR2, 0);
+        self.player_state_view_mut()
+            .set_palette_bits_of_oam_word(link_palette_bits_of_oam);
+        self.player_state_view_mut().clear_link_dma_sprite_banks();
 
         if let Some(xt) = kPlayerOam_Tab5.iter().position(|&v| v == yt) {
             let j = kPlayerOam_Tab6[xt + dir * 7] as usize + rt as usize;
@@ -2356,7 +2361,8 @@ impl ZeldaState {
             let bank1 = kPlayerOam_Spr1Bank[j];
             if bank1 >= 0 {
                 let bank1u = bank1 as usize;
-                write_le_u16(&mut self.ram, LINK_DMA_VAR1, (bank1u as u16) * 2);
+                self.player_state_view_mut()
+                    .set_link_dma_left_sprite_bank_word((bank1u as u16) * 2);
                 let oam_pos = ((if scratch_0_var {
                     kPlayerOam_Tab19B[r4loc]
                 } else {
@@ -2376,13 +2382,15 @@ impl ZeldaState {
                     oam_pos,
                     (q & 0xc000) | oam_priority_value | link_palette_bits_of_oam | 4,
                 );
-                self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 0;
+                let value = 0;
+                self.oam_state_view_mut().set_extended_byte(oam_pos, value);
             }
 
             let bank2 = kPlayerOam_Spr2Bank[j];
             if bank2 >= 0 {
                 let bank2u = bank2 as usize;
-                write_le_u16(&mut self.ram, LINK_DMA_VAR2, (bank2u as u16) * 2);
+                self.player_state_view_mut()
+                    .set_link_dma_right_sprite_bank_word((bank2u as u16) * 2);
                 let oam_pos = ((if scratch_0_var {
                     kPlayerOam_Tab20B[r4loc]
                 } else {
@@ -2402,12 +2410,13 @@ impl ZeldaState {
                     oam_pos,
                     (q & 0xc000) | oam_priority_value | link_palette_bits_of_oam | 0x14,
                 );
-                self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 0;
+                let value = 0;
+                self.oam_state_view_mut().set_extended_byte(oam_pos, value);
             }
         }
 
         let mut sr = SwordResult { r6: 0, r12: 0 };
-        if self.ram[LINK_PICKING_THROW_STATE] & 4 != 0 {
+        if self.player_state_view().picking_throw_state_has(4) {
             self.link_oam_unused_weapon_settings(r4loc, xcoord, ycoord);
         } else if self.player_oam_want_invoke_sword()
             && !self.link_oam_set_weapon_vram_offsets(r2, &mut sr)
@@ -2415,21 +2424,24 @@ impl ZeldaState {
             let zcoord = zcoord_for_oam(&self.ram);
             let mut oam_y = add_i8(ycoord, kDrawSword_y[r2]).wrapping_sub(zcoord);
             let mut oam_x = add_i8(xcoord, kDrawSword_x[r2]);
-            if if self.ram[LINK_ITEM_IN_HAND] & 2 != 0 {
-                self.ram[PLAYER_HANDLER_TIMER] == 2 && self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] == 15
+            if if self.player_state_view().item_in_hand_has(2) {
+                self.player_state_view().action_handler_timer() == 2
+                    && self.player_state_view().spin_attack_delay_timer() == 15
             } else {
-                self.ram[LINK_ITEM_IN_HAND] & 5 == 0
+                !self.player_state_view().item_in_hand_has(5)
             } {
-                self.ram[PLAYER_OAM_Y_OFFSET] = kSwordOamYOffs[r2] as u8;
-                self.ram[PLAYER_OAM_X_OFFSET] = kSwordOamXOffs[r2] as u8;
+                self.player_state_view_mut()
+                    .set_oam_y_offset(kSwordOamYOffs[r2] as u8);
+                self.player_state_view_mut()
+                    .set_oam_x_offset(kSwordOamXOffs[r2] as u8);
             }
             let mut oam_pal = 0;
-            if self.ram[LINK_ITEM_IN_HAND] & 5 != 0 {
+            if self.player_state_view().item_in_hand_has(5) {
                 oam_pal = (kPlayerOam_Rod[self.ram[EQ_SELECTED_ROD].wrapping_sub(1) as usize]
                     as u16)
                     << 8;
             }
-            if self.ram[LINK_POSITION_MODE] & 8 != 0 && self.ram[CURRENT_ITEM_Y] == 13 {
+            if self.player_state_view().position_mode_has(8) && self.ram[CURRENT_ITEM_Y] == 13 {
                 oam_pal = 0x400;
             }
             let mut oam_pos = ((if scratch_0_var {
@@ -2455,7 +2467,8 @@ impl ZeldaState {
                     self.ram[oam_addr(oam_pos)] = oam_x;
                     self.ram[oam_addr(oam_pos) + 1] = oam_y;
                     let xt = (xcoord as i16 - oam_x as i16).unsigned_abs();
-                    self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = sr.r12 | u8::from(xt >= 0x80);
+                    let value = sr.r12 | u8::from(xt >= 0x80);
+                    self.oam_state_view_mut().set_extended_byte(oam_pos, value);
                     oam_pos += 1;
                 }
                 oam_x = oam_x.wrapping_add(8);
@@ -2467,8 +2480,8 @@ impl ZeldaState {
             }
         }
 
-        if self.ram[LINK_SHIELD_TYPE] != 0
-            && self.ram[SRAM_PROGRESS_INDICATOR] != 0
+        if self.inventory_state_view().shield_type() != 0
+            && self.save_progress_view().progress_indicator() != 0
             && !self.link_oam_set_equipment_vram_offsets(r2, &mut sr)
         {
             let zcoord = zcoord_for_oam(&self.ram);
@@ -2496,7 +2509,8 @@ impl ZeldaState {
                     td = (td & 0xc1ff) | oam_pal | oam_priority_value;
                     self.set_oam_charnum(oam_pos, td);
                     self.set_oam_word_xy(oam_pos, oam_x, oam_y);
-                    self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = sr.r12 | self.ram[BIT9_OF_XCOORD];
+                    let value = sr.r12 | self.ram[BIT9_OF_XCOORD];
+                    self.oam_state_view_mut().set_extended_byte(oam_pos, value);
                     oam_x = oam_x.wrapping_add(8);
                     if i == 1 {
                         oam_x = oam_x.wrapping_sub(16);
@@ -2507,41 +2521,41 @@ impl ZeldaState {
             }
         }
 
-        if self.ram[LINK_VISIBILITY_STATUS] != 12
-            && self.ram[LINK_PLAYER_HANDLER_STATE] != K_PLAYER_STATE_ASLEEP_IN_BED
+        if self.player_state_view().visibility_status() != 12
+            && handler_state != PLAYER_HANDLER_STATE_ASLEEP_IN_BED
         {
             if self.ram[VALUE_COMPUTED_FOR_PLAYER_OAM] != 5
-                && self.ram[DRAW_WATER_RIPPLES_OR_GRASS] != 0
+                && self.player_state_view().water_ripple_or_grass_state() != 0
             {
                 self.link_oam_draw_foot_object(r4loc, xcoord, ycoord);
-            } else if self.ram[LINK_AUXILIARY_STATE] != 4
-                && self.ram[LINK_PLAYER_HANDLER_STATE] != K_PLAYER_STATE_SWIMMING
+            } else if !self.player_state_view().is_in_auxiliary_state(4)
+                && handler_state != PLAYER_HANDLER_STATE_SWIMMING
             {
-                if self.ram[PLAYER_NEAR_PIT_STATE] != 0 && self.ram[PLAYER_NEAR_PIT_STATE] != 1 {
-                    if self.ram[PLAYER_PIT_DATA_INDEX] >= 6 {
+                if self.player_state_view().is_near_pit()
+                    && !self.player_state_view().near_pit_state_is(1)
+                {
+                    if self.player_state_view().pit_data_index() >= 6 {
                         self.link_oam_draw_dungeon_fall_shadow(r4loc, xcoord);
                         r4loc = 2;
                     }
                 } else {
                     let shadow_idx = usize::from(
-                        self.ram[LINK_AUXILIARY_STATE] != 0
-                            && (self.ram[LINK_AUXILIARY_STATE] != 1
-                                || self.ram[LINK_CAPE_MODE] == 0),
+                        self.player_state_view().has_auxiliary_state()
+                            && (!self.player_state_view().is_in_auxiliary_state(1)
+                                || !self.player_state_view().is_cape_active()),
                     );
                     let oam_y = self
                         .player_state_view()
                         .y()
-                        .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2))
+                        .wrapping_sub(self.world_state_view().bg2_y())
                         .wrapping_add(
-                            kOffsToShadowGivenDir_Y
-                                [(self.ram[LINK_DIRECTION_FACING_MIRROR] >> 1) as usize]
+                            kOffsToShadowGivenDir_Y[self.player_state_view().facing_mirror_index()]
                                 as i16 as u16,
                         );
                     if oam_y < 256 {
                         let oam_x = add_i8(
                             xcoord,
-                            kOffsToShadowGivenDir_X
-                                [(self.ram[LINK_DIRECTION_FACING_MIRROR] >> 1) as usize],
+                            kOffsToShadowGivenDir_X[self.player_state_view().facing_mirror_index()],
                         );
                         let oam_pos = ((if scratch_0_var {
                             kShadow_oam_indexes_1[r4loc]
@@ -2559,8 +2573,11 @@ impl ZeldaState {
                         self.set_oam_charnum(oam_pos + 1, (td & !0xc000) | 0x4000);
                         self.set_oam_word_xy(oam_pos, oam_x, oam_y as u8);
                         self.set_oam_word_xy(oam_pos + 1, oam_x.wrapping_add(8), oam_y as u8);
-                        self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 0;
-                        self.ram[BYTEWISE_EXTENDED_OAM + oam_pos + 1] = 0;
+                        let value = 0;
+                        self.oam_state_view_mut().set_extended_byte(oam_pos, value);
+                        let value = 0;
+                        self.oam_state_view_mut()
+                            .set_extended_byte(oam_pos + 1, value);
                     }
                 }
             }
@@ -2574,8 +2591,9 @@ impl ZeldaState {
             + sort_sprites_offset_into_oam_buffer)
             >> 2) as usize;
         let j = kLinkDmaGraphicsIndices[r2] as usize;
-        write_le_u16(&mut self.ram, LINK_DMA_GRAPHICS_INDEX, (j as u16) * 2);
-        if self.ram[LINK_VISIBILITY_STATUS] != 12 {
+        self.player_state_view_mut()
+            .set_link_dma_graphics_index_word((j as u16) * 2);
+        if self.player_state_view().visibility_status() != 12 {
             let zcoord = zcoord_for_oam(&self.ram);
             let sp = kLinkSpriteBodys[j];
             let oam_y = add_i8(ycoord, sp.y).wrapping_sub(zcoord);
@@ -2587,7 +2605,8 @@ impl ZeldaState {
                     (td & 0xf000) | oam_priority_value | link_palette_bits_of_oam,
                 );
                 self.set_oam_word_xy(oam_pos, oam_x, oam_y);
-                self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 2 + u8::from(oam_x >= 0xf8);
+                let value = 2 + u8::from(oam_x >= 0xf8);
+                self.oam_state_view_mut().set_extended_byte(oam_pos, value);
             }
             if ((td << 4) & 0xf000) != 0xf000 {
                 self.set_oam_charnum(
@@ -2599,7 +2618,9 @@ impl ZeldaState {
                     xcoord,
                     ycoord.wrapping_sub(zcoord).wrapping_add(8),
                 );
-                self.ram[BYTEWISE_EXTENDED_OAM + oam_pos + 1] = 2;
+                let value = 2;
+                self.oam_state_view_mut()
+                    .set_extended_byte(oam_pos + 1, value);
             }
         }
 
@@ -2607,32 +2628,34 @@ impl ZeldaState {
         let door_x = self
             .player_state_view()
             .x()
-            .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2));
+            .wrapping_sub(self.world_state_view().bg2_x());
         let door_y = self
             .player_state_view()
             .y()
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2));
-        let hide = (self.ram[IS_STANDING_IN_DOORWAY] != 0
+            .wrapping_sub(self.world_state_view().bg2_y());
+        let hide = (self.player_state_view().doorway_state() != 0
             && (door_x < 4 || door_x >= 252 || door_y < 4 || door_y >= 224))
             || {
                 hide_shadow = false;
-                submodule == 0 && self.ram[COUNTDOWN_FOR_BLINK] != 0 && {
-                    self.ram[COUNTDOWN_FOR_BLINK] = self.ram[COUNTDOWN_FOR_BLINK].wrapping_sub(1);
-                    self.ram[COUNTDOWN_FOR_BLINK] >= 4 && (self.ram[COUNTDOWN_FOR_BLINK] & 1) == 0
+                submodule == 0 && self.player_state_view().blink_countdown() != 0 && {
+                    self.player_state_view_mut().decrement_blink_countdown();
+                    self.player_state_view().blink_countdown() >= 4
+                        && (self.player_state_view().blink_countdown() & 1) == 0
                 }
             }
-            || self.ram[LINK_VISIBILITY_STATUS] == 12
-            || self.ram[LINK_CAPE_MODE] != 0;
+            || self.player_state_view().visibility_status() == 12
+            || self.player_state_view().is_cape_active();
         if hide {
-            let shadow_oam_pos = if !hide_shadow && self.ram[LINK_VISIBILITY_STATUS] != 12 {
-                (if scratch_0_var {
-                    kShadow_oam_indexes_1[r4loc]
+            let shadow_oam_pos =
+                if !hide_shadow && self.player_state_view().visibility_status() != 12 {
+                    (if scratch_0_var {
+                        kShadow_oam_indexes_1[r4loc]
+                    } else {
+                        kShadow_oam_indexes_0[r4loc]
+                    } >> 2) as isize
                 } else {
-                    kShadow_oam_indexes_0[r4loc]
-                } >> 2) as isize
-            } else {
-                -10
-            };
+                    -10
+                };
             if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_WIDESCREEN_VISUAL_FIXES != 0 {
                 let base = (sort_sprites_offset_into_oam_buffer >> 2) as usize;
                 for i in 0..12 {
@@ -2641,13 +2664,14 @@ impl ZeldaState {
                     }
                 }
             } else {
-                let p =
-                    BYTEWISE_EXTENDED_OAM + ((sort_sprites_offset_into_oam_buffer >> 2) as usize);
+                let base = (sort_sprites_offset_into_oam_buffer >> 2) as usize;
                 for off in [0usize, 2, 4, 6, 8, 10] {
-                    write_le_u16(&mut self.ram, p + off, 0x0101);
+                    self.oam_state_view_mut()
+                        .set_extended_word(base + off, 0x0101);
                 }
                 if shadow_oam_pos >= 0 {
-                    write_le_u16(&mut self.ram, p + shadow_oam_pos as usize, 0);
+                    self.oam_state_view_mut()
+                        .set_extended_word(base + shadow_oam_pos as usize, 0);
                 }
             }
         }
@@ -2680,12 +2704,12 @@ impl ZeldaState {
         sr.r12 = kPlayerOam_Main_SwordStuff_array2[j];
         let mut y = kPlayerOam_Main_SwordStuff_array3[j];
         if j < 29 {
-            self.ram[LINK_DMA_SWORD_GRAPHICS_INDEX] = y;
+            self.player_state_view_mut().set_sword_dma_graphics_index(y);
         } else {
-            if self.ram[LINK_ITEM_IN_HAND] & 5 != 0 {
+            if self.player_state_view().item_in_hand_has(5) {
                 y = kPlayerOam_Main_SwordStuff_array4[j - 29];
             }
-            self.ram[LINK_DMA_VAR5] = y;
+            self.player_state_view_mut().set_link_dma_staging_index(y);
         }
         false
     }
@@ -2700,13 +2724,14 @@ impl ZeldaState {
         sr.r6 = j;
         let mut y = kPlayerOam_ShieldStuff_array2[j];
         if j >= 8 {
-            if self.ram[LINK_ITEM_IN_HAND] & 5 != 0 {
+            if self.player_state_view().item_in_hand_has(5) {
                 y = kPlayerOam_ShieldStuff_array3[j - 8];
             }
-            self.ram[LINK_DMA_VAR5] = y;
+            self.player_state_view_mut().set_link_dma_staging_index(y);
             sr.r12 = if y & 7 != 0 { 0 } else { 2 };
         } else {
-            self.ram[LINK_DMA_SHIELD_GRAPHICS_INDEX] = y;
+            self.player_state_view_mut()
+                .set_shield_dma_graphics_index(y);
             sr.r12 = 2;
         }
         false
@@ -2714,42 +2739,43 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn link_oam_calculate_sword_sparkle_position(&mut self, oam_pos: usize, oam_x: u8, oam_y: u8) -> usize {
-        if self.ram[LINK_PLAYER_HANDLER_STATE] | self.ram[LINK_SPEED_SETTING] != 0 {
+        if self.player_state_view().handler_state() | self.player_state_view().speed_setting() != 0 {
             return oam_pos;
         }
-        if self.ram[LINK_SWORD_TYPE] == 0
-            || self.ram[LINK_SWORD_TYPE] == 1
-            || self.ram[LINK_SWORD_TYPE] == 0xff
-            || self.ram[BUTTON_MASK_B_Y] & 0x80 == 0
-            || self.ram[BUTTON_B_FRAMES] >= 9
+        let sword_type = self.inventory_state_view().sword_type();
+        if sword_type == 0
+            || sword_type == 1
+            || sword_type == 0xff
+            || self.player_state_view().button_mask_b_y() & 0x80 == 0
+            || self.player_state_view().button_b_frames() >= 9
         {
             return oam_pos;
         }
-        let i = (self.ram[LINK_DIRECTION_FACING] >> 1) as usize * 9
-            + self.ram[BUTTON_B_FRAMES] as usize;
+        let i = self.player_state_view().facing_index() * 9 + self.player_state_view().button_b_frames_index();
         let mut td = kSwordTipSomething[i];
         if td == 0xffff {
             return oam_pos;
         }
-        td = (td & !0x3000) | read_le_u16(&self.ram, OAM_PRIORITY_VALUE);
-        if read_le_u16(&self.ram, LINK_PALETTE_BITS_OF_OAM) == 0 {
+        td = (td & !0x3000) | self.oam_state_view().priority_word();
+        if self.player_state_view().palette_bits_of_oam_word() == 0 {
             td = (td & !0x0e00) | 0x0600;
         }
         self.set_oam_charnum(oam_pos, td);
-        self.ram[PLAYER_OAM_X_OFFSET] = kSwordOamXOffs_Good[i] as u8;
-        self.ram[PLAYER_OAM_Y_OFFSET] = kSwordOamYOffs_Good[i] as u8;
-        let x = oam_x.wrapping_add(self.ram[PLAYER_OAM_X_OFFSET]);
-        let y = oam_y.wrapping_add(self.ram[PLAYER_OAM_Y_OFFSET]);
+        self.player_state_view_mut().set_oam_x_offset(kSwordOamXOffs_Good[i] as u8);
+        self.player_state_view_mut().set_oam_y_offset(kSwordOamYOffs_Good[i] as u8);
+        let x = oam_x.wrapping_add(self.player_state_view().oam_x_offset());
+        let y = oam_y.wrapping_add(self.player_state_view().oam_y_offset());
         self.ram[oam_addr(oam_pos)] = x;
         self.ram[oam_addr(oam_pos) + 1] = y;
-        self.link_oam_calculate_x_offset_relative_link(self.ram[PLAYER_OAM_X_OFFSET]);
-        self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = self.ram[BIT9_OF_XCOORD];
+        self.link_oam_calculate_x_offset_relative_link(self.player_state_view().oam_x_offset());
+        let value = self.ram[BIT9_OF_XCOORD];
+            self.oam_state_view_mut().set_extended_byte(oam_pos, value);
         oam_pos + 1
     }
 
     fn link_oam_unused_weapon_settings(&mut self, r4loc: usize, oam_x: u8, oam_y: u8) {
-        let mut j = self.ram[LINK_VAR30E] as usize * 4;
-        let mut oam_pos = ((if self.ram[DRAW_WATER_RIPPLES_OR_GRASS] != 0 {
+        let mut j = self.player_state_view().throw_oam_state_index() as usize * 4;
+        let mut oam_pos = ((if self.player_state_view().water_ripple_or_grass_state() != 0 {
             kSwordStuff_oam_index_ptrs_1[r4loc]
         } else {
             kSwordStuff_oam_index_ptrs_0[r4loc]
@@ -2761,11 +2787,12 @@ impl ZeldaState {
             if st != -1 {
                 self.set_oam_charnum(
                     oam_pos,
-                    (0x2609 & !0x3000) | read_le_u16(&self.ram, OAM_PRIORITY_VALUE),
+                    (0x2609 & !0x3000) | self.oam_state_view().priority_word(),
                 );
                 self.ram[oam_addr(oam_pos)] = add_i8(oam_x, kPlayerOam_DrawOam_Throwing_X[j]);
                 self.ram[oam_addr(oam_pos) + 1] = add_i8(oam_y, kPlayerOam_DrawOam_Throwing_Y[j]);
-                self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 0;
+                let value = 0;
+                self.oam_state_view_mut().set_extended_byte(oam_pos, value);
                 oam_pos += 1;
             }
             j += 1;
@@ -2788,9 +2815,9 @@ impl ZeldaState {
         xcoord = xcoord.wrapping_add(kPlayerOam_DrawOam_2X[yv]);
         let ycoord = read_le_u16(&self.ram, TILEDETECT_WHICH_Y_POS)
             .wrapping_sub(12)
-            .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2))
+            .wrapping_sub(self.world_state_view().bg2_y())
             .wrapping_add(29) as u8;
-        let mut oam_pos = ((if self.ram[DRAW_WATER_RIPPLES_OR_GRASS] != 0 {
+        let mut oam_pos = ((if self.player_state_view().water_ripple_or_grass_state() != 0 {
             kShadow_oam_indexes_1[r4loc]
         } else {
             kShadow_oam_indexes_0[r4loc]
@@ -2807,7 +2834,8 @@ impl ZeldaState {
                 );
                 self.set_oam_word_xy(oam_pos, xcoord, ycoord);
             }
-            self.ram[BYTEWISE_EXTENDED_OAM + oam_pos] = 0;
+            let value = 0;
+            self.oam_state_view_mut().set_extended_byte(oam_pos, value);
             xcoord = xcoord.wrapping_add(8);
             oam_pos += 1;
             yv += 1;
@@ -2825,24 +2853,27 @@ impl ZeldaState {
                 self.ram[SECONDARY_WATER_GRASS_TIMER] = 0;
             }
         }
-        let i = (self.ram[LINK_DIRECTION_FACING_MIRROR] >> 1) as usize
-            + kShieldTypeToOffs[self.ram[LINK_SHIELD_TYPE] as usize] as usize;
+        let i = self.player_state_view().facing_mirror_index()
+            + kShieldTypeToOffs[self.inventory_state_view().shield_type() as usize] as usize;
         oam_x = add_i8(oam_x, kOffsToShadowGivenDir_X[i]);
         oam_y = add_i8(oam_y, kOffsToShadowGivenDir_Y[i]);
         let oam_pos = ((kShadow_oam_indexes_1[r4loc] as u16
             + read_le_u16(&self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER))
             >> 2) as usize;
-        let yv = if self.ram[DRAW_WATER_RIPPLES_OR_GRASS] == 2 {
-            let yv = if self.ram[LINK_ANIMATION_STEPS] >= 3 {
-                self.ram[LINK_ANIMATION_STEPS].wrapping_sub(3)
+        let yv = if self.player_state_view().water_ripple_or_grass_state() == 2 {
+            let yv = if self.player_state_view().animation_step() >= 3 {
+                self.player_state_view().animation_step().wrapping_sub(3)
             } else {
-                self.ram[LINK_ANIMATION_STEPS]
+                self.player_state_view().animation_step()
             };
-            self.ram[OVERLAY_INDEX + 1] = yv.wrapping_mul(4);
+            self.world_state_view_mut()
+                .set_overlay_high(yv.wrapping_mul(4));
             yv.wrapping_add(8) as usize
         } else {
-            self.ram[OVERLAY_INDEX + 1] = self.ram[SECONDARY_WATER_GRASS_TIMER].wrapping_mul(4);
-            5 + self.ram[SECONDARY_WATER_GRASS_TIMER] as usize
+            let timer = self.ram[SECONDARY_WATER_GRASS_TIMER];
+            self.world_state_view_mut()
+                .set_overlay_high(timer.wrapping_mul(4));
+            5 + timer as usize
         };
         if yv >= 11 {
             self.set_oam_charnum(oam_pos, read_le_u16(&self.ram, OAM_PRIORITY_VALUE_2));
@@ -2865,13 +2896,13 @@ impl ZeldaState {
         self.ram[oam_addr(oam_pos + 1)] = oam_x.wrapping_add(8);
         self.ram[oam_addr(oam_pos) + 1] = oam_y;
         self.ram[oam_addr(oam_pos + 1) + 1] = oam_y;
-        write_le_u16(&mut self.ram, BYTEWISE_EXTENDED_OAM + oam_pos, 0);
+        self.oam_state_view_mut().set_extended_word(oam_pos, 0);
     }
 
     fn link_oam_calculate_x_offset_relative_link(&mut self, x: u8) {
         let x = x as i8 as i32;
         let value =
-            self.player_state_view().x() as i32 + x - read_le_u16(&self.ram, BG2HOFS_COPY2) as i32;
+            self.player_state_view().x() as i32 + x - self.world_state_view().bg2_x() as i32;
         write_le_u16(&mut self.ram, BIT9_OF_XCOORD, ((value >> 8) & 1) as u16);
     }
 }

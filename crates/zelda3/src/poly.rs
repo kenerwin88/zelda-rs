@@ -2,7 +2,7 @@
 
 use super::*;
 
-const K_POLY_SIN_COS: [i8; 320] = [
+const POLY_ROTATION_SIN_COS: [i8; 320] = [
     0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 16, 17, 19, 20, 22, 23, 24, 26, 27, 29, 30, 32, 33, 34, 36,
     37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 56, 57, 58, 59, 59,
     60, 60, 61, 61, 62, 62, 62, 63, 63, 63, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 63, 63, 63,
@@ -27,7 +27,7 @@ struct Vertex3 {
     z: i8,
 }
 
-const K_POLY0_VTX: [Vertex3; 6] = [
+const POLY_MODEL_0_VERTICES: [Vertex3; 6] = [
     Vertex3 { x: 0, y: 65, z: 0 },
     Vertex3 { x: 0, y: -65, z: 0 },
     Vertex3 { x: 0, y: 0, z: -40 },
@@ -36,12 +36,12 @@ const K_POLY0_VTX: [Vertex3; 6] = [
     Vertex3 { x: 40, y: 0, z: 0 },
 ];
 
-const K_POLY0_POLYS: [u8; 40] = [
+const POLY_MODEL_0_FACE_INDICES: [u8; 40] = [
     3, 0, 5, 2, 4, 3, 0, 2, 3, 1, 3, 0, 3, 4, 2, 3, 0, 4, 5, 3, 3, 1, 2, 5, 4, 3, 1, 3, 2, 1, 3, 1,
     4, 3, 2, 3, 1, 5, 4, 3,
 ];
 
-const K_POLY1_VTX: [Vertex3; 6] = [
+const POLY_MODEL_1_VERTICES: [Vertex3; 6] = [
     Vertex3 { x: 0, y: 40, z: 10 },
     Vertex3 {
         x: 40,
@@ -70,7 +70,7 @@ const K_POLY1_VTX: [Vertex3; 6] = [
     },
 ];
 
-const K_POLY1_POLYS: [u8; 28] = [
+const POLY_MODEL_1_FACE_INDICES: [u8; 28] = [
     3, 0, 1, 2, 7, 3, 3, 4, 5, 6, 4, 0, 3, 5, 1, 5, 4, 1, 5, 4, 2, 4, 4, 3, 0, 2, 4, 3,
 ];
 
@@ -83,33 +83,33 @@ struct PolyConfig {
     poly: &'static [u8],
 }
 
-const K_POLY_CONFIGS: [PolyConfig; 2] = [
+const POLY_MODEL_CONFIGS: [PolyConfig; 2] = [
     PolyConfig {
         num_vtx: 6,
         num_poly: 8,
         vtx_val: 0xff98,
         polys_val: 0xffaa,
-        vertex: &K_POLY0_VTX,
-        poly: &K_POLY0_POLYS,
+        vertex: &POLY_MODEL_0_VERTICES,
+        poly: &POLY_MODEL_0_FACE_INDICES,
     },
     PolyConfig {
         num_vtx: 6,
         num_poly: 5,
         vtx_val: 0xffd2,
         polys_val: 0xffe4,
-        vertex: &K_POLY1_VTX,
-        poly: &K_POLY1_POLYS,
+        vertex: &POLY_MODEL_1_VERTICES,
+        poly: &POLY_MODEL_1_FACE_INDICES,
     },
 ];
 
-const K_POLY_RASTER_COLORS: [u32; 16] = [
+const POLY_RASTER_COLORS: [u32; 16] = [
     0x00, 0xff, 0xff00, 0xffff, 0xff0000, 0xff00ff, 0xffff00, 0xffffff, 0xff000000, 0xff0000ff,
     0xff00ff00, 0xff00ffff, 0xffff0000, 0xffff00ff, 0xffffff00, 0xffffffff,
 ];
-const K_POLY_LEFT_SIDE_MASK: [u16; 8] = [
+const POLY_LEFT_EDGE_MASKS: [u16; 8] = [
     0xffff, 0x7f7f, 0x3f3f, 0x1f1f, 0x0f0f, 0x0707, 0x0303, 0x0101,
 ];
-const K_POLY_RIGHT_SIDE_MASK: [u16; 8] = [
+const POLY_RIGHT_EDGE_MASKS: [u16; 8] = [
     0x8080, 0xc0c0, 0xe0e0, 0xf0f0, 0xf8f8, 0xfcfc, 0xfefe, 0xffff,
 ];
 
@@ -127,12 +127,11 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_shape_pointer(&mut self) {
-        self.write_u16_ram(
-            POLY_VAR1,
-            (self.ram[POLY_CONFIG1] as u16)
-                .wrapping_mul(2)
-                .wrapping_add(0x80),
-        );
+        let shape_depth_bias = (self.ram[POLY_CONFIG1] as u16)
+            .wrapping_mul(2)
+            .wrapping_add(0x80);
+        self.poly_state_view_mut()
+            .set_shape_depth_bias(shape_depth_bias);
         self.write_u16_ram(
             POLY_TMP0,
             (self.ram[POLY_WHICH_MODEL] as u16).wrapping_mul(2),
@@ -146,10 +145,10 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_rotation_matrix(&mut self) {
-        let sin_a = K_POLY_SIN_COS[self.ram[POLY_A] as usize];
-        let cos_a = K_POLY_SIN_COS[self.ram[POLY_A] as usize + 64];
-        let sin_b = K_POLY_SIN_COS[self.ram[POLY_B] as usize];
-        let cos_b = K_POLY_SIN_COS[self.ram[POLY_B] as usize + 64];
+        let sin_a = POLY_ROTATION_SIN_COS[self.ram[POLY_A] as usize];
+        let cos_a = POLY_ROTATION_SIN_COS[self.ram[POLY_A] as usize + 64];
+        let sin_b = POLY_ROTATION_SIN_COS[self.ram[POLY_B] as usize];
+        let cos_b = POLY_ROTATION_SIN_COS[self.ram[POLY_B] as usize + 64];
 
         self.write_i16_ram(POLY_SIN_A, sin_a as i16);
         self.write_i16_ram(POLY_COS_A, cos_a as i16);
@@ -172,8 +171,9 @@ impl ZeldaState {
             self.ram[POLY_FROMLUT_Z] = src.x as u8;
             self.polyhedral_rotate_point();
             self.polyhedral_project_point();
-            self.ram[POLY_ARR_X + i] = self.ram[POLY_BASE_X].wrapping_add(self.ram[POLY_F0]);
-            self.ram[POLY_ARR_Y + i] = self.ram[POLY_BASE_Y].wrapping_sub(self.ram[POLY_F1]);
+            let x = self.ram[POLY_BASE_X].wrapping_add(self.ram[POLY_F0]);
+            let y = self.ram[POLY_BASE_Y].wrapping_sub(self.ram[POLY_F1]);
+            self.poly_projected_vertex_view_mut().set_position(i, x, y);
         }
     }
 
@@ -189,13 +189,13 @@ impl ZeldaState {
         let e1 = self.read_i16_ram(POLY_E1) as i32;
         let e2 = self.read_i16_ram(POLY_E2) as i32;
         let e3 = self.read_i16_ram(POLY_E3) as i32;
-        let var1 = self.read_u16_ram(POLY_VAR1) as i32;
+        let shape_depth_bias = self.poly_state_view().shape_depth_bias() as i32;
 
         self.write_i16_ram(POLY_F0, (cos_b * z - sin_b * x) as i16);
         self.write_i16_ram(POLY_F1, (e0 * z + cos_a * y + e2 * x) as i16);
         self.write_i16_ram(
             POLY_F2,
-            (((e3 * z) >> 8) - ((sin_a * y) >> 8) + ((e1 * x) >> 8) + var1) as i16,
+            (((e3 * z) >> 8) - ((sin_a * y) >> 8) + ((e1 * x) >> 8) + shape_depth_bias) as i16,
         );
     }
 
@@ -238,8 +238,11 @@ impl ZeldaState {
             loop {
                 let j = poly[src] as usize;
                 src += 1;
-                self.ram[POLY_XY_COORDS + i] = self.ram[POLY_ARR_X + j];
-                self.ram[POLY_XY_COORDS + i + 1] = self.ram[POLY_ARR_Y + j];
+                let projected = self.poly_projected_vertex_view();
+                let x = projected.x(j);
+                let y = projected.y(j);
+                self.poly_face_coords_view_mut().set_coord(i, x);
+                self.poly_face_coords_view_mut().set_coord(i + 1, y);
                 i += 2;
                 self.ram[POLY_TMP0] = self.ram[POLY_TMP0].wrapping_sub(1);
                 if self.ram[POLY_TMP0] == 0 {
@@ -262,15 +265,16 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_calculate_cross_product(&mut self) -> i16 {
-        let mut a =
-            (self.ram[POLY_XY_COORDS + 3] as i16).wrapping_sub(self.ram[POLY_XY_COORDS + 1] as i16);
-        let mut tmp0 = (a as i32).wrapping_mul(
-            (self.ram[POLY_XY_COORDS + 6].wrapping_sub(self.ram[POLY_XY_COORDS + 4]) as i8) as i32,
-        ) as u16;
-        a = (self.ram[POLY_XY_COORDS + 5] as i16).wrapping_sub(self.ram[POLY_XY_COORDS + 3] as i16);
-        tmp0 = tmp0.wrapping_sub((a as i32).wrapping_mul(
-            (self.ram[POLY_XY_COORDS + 4].wrapping_sub(self.ram[POLY_XY_COORDS + 2]) as i8) as i32,
-        ) as u16);
+        let face = self.poly_face_coords_view();
+        let mut a = (face.coord(3) as i16).wrapping_sub(face.coord(1) as i16);
+        let mut tmp0 = (a as i32)
+            .wrapping_mul((face.coord(6).wrapping_sub(face.coord(4)) as i8) as i32)
+            as u16;
+        a = (face.coord(5) as i16).wrapping_sub(face.coord(3) as i16);
+        tmp0 = tmp0.wrapping_sub(
+            (a as i32).wrapping_mul((face.coord(4).wrapping_sub(face.coord(2)) as i8) as i32)
+                as u16,
+        );
         self.write_u16_ram(POLY_TMP0, tmp0);
         tmp0 as i16
     }
@@ -293,22 +297,23 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_color_mask(&mut self, color: usize) {
-        let value = K_POLY_RASTER_COLORS[color];
+        let value = POLY_RASTER_COLORS[color];
         self.write_u16_ram(POLY_RASTER_COLOR0, value as u16);
         self.write_u16_ram(POLY_RASTER_COLOR1, (value >> 16) as u16);
     }
 
     pub(super) fn polyhedral_draw_face(&mut self) {
         let mut n = self.ram[POLY_XY_COORDS] as usize;
-        let mut min_y = self.ram[POLY_XY_COORDS + n];
+        let mut min_y = self.poly_face_coords_view().coord(n);
         let mut min_idx = n;
         loop {
             n = n.wrapping_sub(2);
             if n == 0 {
                 break;
             }
-            if self.ram[POLY_XY_COORDS + n] < min_y {
-                min_y = self.ram[POLY_XY_COORDS + n];
+            let y = self.poly_face_coords_view().coord(n);
+            if y < min_y {
+                min_y = y;
                 min_idx = n;
             }
         }
@@ -320,10 +325,11 @@ impl ZeldaState {
         self.ram[POLY_CUR_VERTEX_IDX0] = min_idx as u8;
         self.ram[POLY_CUR_VERTEX_IDX1] = min_idx as u8;
         self.ram[POLY_TOTAL_NUM_STEPS] = self.ram[POLY_XY_COORDS] >> 1;
-        self.ram[POLY_Y0_CUR] = self.ram[POLY_XY_COORDS + min_idx];
-        self.ram[POLY_Y1_CUR] = self.ram[POLY_XY_COORDS + min_idx];
-        self.ram[POLY_X0_CUR] = self.ram[POLY_XY_COORDS + min_idx - 1];
-        self.ram[POLY_X1_CUR] = self.ram[POLY_XY_COORDS + min_idx - 1];
+        let min_x = self.poly_face_coords_view().coord(min_idx - 1);
+        self.poly_raster_edge_view_mut()
+            .set_left_current(min_x, min_y);
+        self.poly_raster_edge_view_mut()
+            .set_right_current(min_x, min_y);
         if self.polyhedral_set_left() || self.polyhedral_set_right() {
             return;
         }
@@ -340,14 +346,18 @@ impl ZeldaState {
             self.write_u16_ram(POLY_RASTER_DST_PTR, raster_dst_ptr);
 
             if self.ram[POLY_Y0_CUR] == self.ram[POLY_Y0_TRIG] {
-                self.ram[POLY_X0_CUR] = self.ram[POLY_X0_TARGET];
+                let x0_target = self.poly_raster_edge_view().x0_target();
+                self.poly_raster_edge_view_mut()
+                    .set_left_current_x(x0_target);
                 if self.polyhedral_set_left() {
                     return;
                 }
             }
             self.ram[POLY_Y0_CUR] = self.ram[POLY_Y0_CUR].wrapping_add(1);
             if self.ram[POLY_Y1_CUR] == self.ram[POLY_Y1_TRIG] {
-                self.ram[POLY_X1_CUR] = self.ram[POLY_X1_TARGET];
+                let x1_target = self.poly_raster_edge_view().x1_target();
+                self.poly_raster_edge_view_mut()
+                    .set_right_current_x(x1_target);
                 if self.polyhedral_set_right() {
                     return;
                 }
@@ -367,8 +377,8 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_fill_line(&mut self) {
-        let left = K_POLY_LEFT_SIDE_MASK[((self.read_u16_ram(POLY_X0_FRAC) >> 8) & 7) as usize];
-        let right = K_POLY_RIGHT_SIDE_MASK[((self.read_u16_ram(POLY_X1_FRAC) >> 8) & 7) as usize];
+        let left = POLY_LEFT_EDGE_MASKS[((self.read_u16_ram(POLY_X0_FRAC) >> 8) & 7) as usize];
+        let right = POLY_RIGHT_EDGE_MASKS[((self.read_u16_ram(POLY_X1_FRAC) >> 8) & 7) as usize];
         self.ram[POLY_TMP2] = ((self.read_u16_ram(POLY_X0_FRAC) >> 8) & 0x38) as u8;
         let mut d0 = ((self.read_u16_ram(POLY_X1_FRAC) >> 8) & 0x38) as i32;
         let mut ptr = self.read_u16_ram(POLY_RASTER_DST_PTR) as usize + d0 as usize * 4;
@@ -414,22 +424,24 @@ impl ZeldaState {
                 i = self.ram[POLY_XY_COORDS] as i32;
             }
             let i = i as usize;
-            if self.ram[POLY_XY_COORDS + i] < self.ram[POLY_Y0_CUR] {
+            let y = self.poly_face_coords_view().coord(i);
+            let x = self.poly_face_coords_view().coord(i - 1);
+            if y < self.ram[POLY_Y0_CUR] {
                 return true;
             }
-            if self.ram[POLY_XY_COORDS + i] != self.ram[POLY_Y0_CUR] {
-                self.ram[POLY_Y0_TRIG] = self.ram[POLY_XY_COORDS + i];
-                self.ram[POLY_X0_TARGET] = self.ram[POLY_XY_COORDS + i - 1];
+            if y != self.ram[POLY_Y0_CUR] {
+                self.poly_raster_edge_view_mut().set_left_target(x, y);
                 self.ram[POLY_CUR_VERTEX_IDX0] = i as u8;
-                let u = self.ram[POLY_X0_TARGET] as i32 - self.ram[POLY_X0_CUR] as i32;
+                let edge = self.poly_raster_edge_view();
+                let u = edge.x0_target() as i32 - edge.x0_cur() as i32;
                 let t = (((u.abs() & 0xff) << 8)
-                    / self.ram[POLY_Y0_TRIG].wrapping_sub(self.ram[POLY_Y0_CUR]) as i32)
+                    / edge.y0_trigger().wrapping_sub(edge.y0_cur()) as i32)
                     as u16;
-                self.write_u16_ram(POLY_X0_FRAC, ((self.ram[POLY_X0_CUR] as u16) << 8) | 0x80);
+                self.write_u16_ram(POLY_X0_FRAC, ((edge.x0_cur() as u16) << 8) | 0x80);
                 self.write_u16_ram(POLY_X0_STEP, if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
-            self.ram[POLY_X0_CUR] = self.ram[POLY_XY_COORDS + i - 1];
+            self.poly_raster_edge_view_mut().set_left_current_x(x);
             self.ram[POLY_CUR_VERTEX_IDX0] = i as u8;
         }
     }
@@ -445,22 +457,24 @@ impl ZeldaState {
                 i = 0;
             }
             i += 2;
-            if self.ram[POLY_XY_COORDS + i] < self.ram[POLY_Y1_CUR] {
+            let y = self.poly_face_coords_view().coord(i);
+            let x = self.poly_face_coords_view().coord(i - 1);
+            if y < self.ram[POLY_Y1_CUR] {
                 return true;
             }
-            if self.ram[POLY_XY_COORDS + i] != self.ram[POLY_Y1_CUR] {
-                self.ram[POLY_Y1_TRIG] = self.ram[POLY_XY_COORDS + i];
-                self.ram[POLY_X1_TARGET] = self.ram[POLY_XY_COORDS + i - 1];
+            if y != self.ram[POLY_Y1_CUR] {
+                self.poly_raster_edge_view_mut().set_right_target(x, y);
                 self.ram[POLY_CUR_VERTEX_IDX1] = i as u8;
-                let u = self.ram[POLY_X1_TARGET] as i32 - self.ram[POLY_X1_CUR] as i32;
+                let edge = self.poly_raster_edge_view();
+                let u = edge.x1_target() as i32 - edge.x1_cur() as i32;
                 let t = (((u.abs() & 0xff) << 8)
-                    / self.ram[POLY_Y1_TRIG].wrapping_sub(self.ram[POLY_Y1_CUR]) as i32)
+                    / edge.y1_trigger().wrapping_sub(edge.y1_cur()) as i32)
                     as u16;
-                self.write_u16_ram(POLY_X1_FRAC, ((self.ram[POLY_X1_CUR] as u16) << 8) | 0x80);
+                self.write_u16_ram(POLY_X1_FRAC, ((edge.x1_cur() as u16) << 8) | 0x80);
                 self.write_u16_ram(POLY_X1_STEP, if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
-            self.ram[POLY_X1_CUR] = self.ram[POLY_XY_COORDS + i - 1];
+            self.poly_raster_edge_view_mut().set_right_current_x(x);
             self.ram[POLY_CUR_VERTEX_IDX1] = i as u8;
         }
     }
@@ -471,6 +485,6 @@ impl ZeldaState {
     }
 
     fn poly_config(&self) -> &'static PolyConfig {
-        &K_POLY_CONFIGS[self.ram[POLY_WHICH_MODEL] as usize]
+        &POLY_MODEL_CONFIGS[self.ram[POLY_WHICH_MODEL] as usize]
     }
 }

@@ -20,6 +20,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install native audio dependencies
+        run: brew install opus pkg-config
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 

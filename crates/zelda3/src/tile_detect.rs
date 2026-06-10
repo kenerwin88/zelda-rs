@@ -2,13 +2,13 @@
 
 use super::*;
 
-const K_DETECT_TILES_TAB0: [u8; 4] = [8, 24, 0, 15];
-const K_DETECT_TILES_TAB1: [u8; 4] = [0, 0, 8, 8];
-const K_DETECT_TILES_TAB2: [u8; 4] = [8, 8, 16, 16];
-const K_DETECT_TILES_TAB3: [u8; 4] = [15, 15, 23, 23];
-const K_DETECT_TILES_TAB4: [i8; 4] = [7, 24, -1, 16];
-const K_DETECT_TILES_TAB5: [u8; 4] = [0, 0, 8, 8];
-const K_DETECT_TILES_TAB6: [u8; 4] = [15, 15, 23, 23];
+const TILE_DETECT_CARDINAL_AXIS_OFFSETS: [u8; 4] = [8, 24, 0, 15];
+const TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
+const TILE_DETECT_CARDINAL_CENTER_OFFSETS: [u8; 4] = [8, 8, 16, 16];
+const TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
+const TILE_DETECT_SLOPE_AXIS_OFFSETS: [i8; 4] = [7, 24, -1, 16];
+const TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
+const TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
@@ -17,7 +17,7 @@ impl ZeldaState {
             << 3)
             | (x.wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_X))
                 & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_X));
-        let map16 = read_le_u16(&self.ram, DUNG_BG2 + ((pos >> 1) as usize) * 2);
+        let map16 = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
         let mut attr = self.asset_u8(163, (map8 & 0x01ff) as usize);
@@ -29,7 +29,7 @@ impl ZeldaState {
         {
             eprintln!(
                 "tile-probe frame={} x=0x{:04x} y=0x{:04x} pos=0x{:04x} map16=0x{:04x} map8=0x{:04x} attr=0x{:02x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x}",
-                self.ram[FRAME_COUNTER],
+                self.frame_control_view().frame_counter(),
                 x,
                 y,
                 pos,
@@ -48,17 +48,23 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_y(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
-        let detect_y = link_y.wrapping_add(K_DETECT_TILES_TAB0[direction] as u16);
+        let detect_y = link_y.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16);
         write_le_u16(&mut self.ram, TILEDETECT_WHICH_Y_POS, detect_y);
         let y = detect_y & mask;
-        let x0 = (link_x.wrapping_add(K_DETECT_TILES_TAB1[direction] as u16) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(K_DETECT_TILES_TAB2[direction] as u16) & mask) >> 3;
-        let x2 = (link_x.wrapping_add(K_DETECT_TILES_TAB3[direction] as u16) & mask) >> 3;
+        let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16)
+            & mask)
+            >> 3;
+        let x1 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_CENTER_OFFSETS[direction] as u16)
+            & mask)
+            >> 3;
+        let x2 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16)
+            & mask)
+            >> 3;
         write_le_u16(&mut self.ram, SCRATCH_1, x2);
         self.tile_detection_execute(x0, y, 1);
         self.tile_detection_execute(x1, y, 2);
@@ -68,17 +74,19 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_x(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
-        let x = (link_x.wrapping_add(K_DETECT_TILES_TAB0[direction] as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(K_DETECT_TILES_TAB1[direction] as u16) & mask;
-        let y1_pos = link_y.wrapping_add(K_DETECT_TILES_TAB2[direction] as u16);
+        let x =
+            (link_x.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16) & mask) >> 3;
+        let y0 =
+            link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16) & mask;
+        let y1_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_CENTER_OFFSETS[direction] as u16);
         write_le_u16(&mut self.ram, TILEDETECT_WHICH_Y_POS, y1_pos);
         let y1 = y1_pos & mask;
-        let y2_pos = link_y.wrapping_add(K_DETECT_TILES_TAB3[direction] as u16);
+        let y2_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16);
         write_le_u16(&mut self.ram, TILEDETECT_WHICH_Y_POS + 2, y2_pos);
         let y2 = y2_pos & mask;
         self.tile_detection_execute(x, y0, 1);
@@ -89,14 +97,17 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_vertical_slopes(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
-        let y = link_y.wrapping_add(K_DETECT_TILES_TAB4[direction] as i16 as u16) & mask;
-        let x0 = (link_x.wrapping_add(K_DETECT_TILES_TAB5[direction] as u16) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(K_DETECT_TILES_TAB6[direction] as u16) & mask) >> 3;
+        let y = link_y.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16) & mask;
+        let x0 =
+            (link_x.wrapping_add(TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS[direction] as u16) & mask) >> 3;
+        let x1 = (link_x.wrapping_add(TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS[direction] as u16)
+            & mask)
+            >> 3;
         self.tile_detection_execute(x0, y, 1);
         self.tile_detection_execute(x1, y, 2);
     }
@@ -104,28 +115,31 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_horizontal_slopes(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
-        let x = (link_x.wrapping_add(K_DETECT_TILES_TAB4[direction] as i16 as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(K_DETECT_TILES_TAB5[direction] as u16) & mask;
-        let y1 = link_y.wrapping_add(K_DETECT_TILES_TAB6[direction] as u16) & mask;
+        let x = (link_x.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16)
+            & mask)
+            >> 3;
+        let y0 = link_y.wrapping_add(TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS[direction] as u16) & mask;
+        let y1 = link_y.wrapping_add(TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS[direction] as u16) & mask;
         self.tile_detection_execute(x, y0, 1);
         self.tile_detection_execute(x, y1, 2);
     }
 
     pub(super) fn player_tile_detect_nearby(&mut self) {
         self.tile_detect_reset_state();
-        self.ram[TILEDETECT_PIT_TILE] = 0;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        self.tile_detect_position_view_mut().clear_pit_tile();
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
-        let x0 = (link_x.wrapping_add(K_DETECT_TILES_TAB1[0] as u16) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(K_DETECT_TILES_TAB3[0] as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(K_DETECT_TILES_TAB1[2] as u16) & mask;
-        let y1 = link_y.wrapping_add(K_DETECT_TILES_TAB3[2] as u16) & mask;
+        let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[0] as u16) & mask) >> 3;
+        let x1 =
+            (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[0] as u16) & mask) >> 3;
+        let y0 = link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[2] as u16) & mask;
+        let y1 = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[2] as u16) & mask;
         write_le_u16(&mut self.ram, SCRATCH_1, y0);
         self.tile_detection_execute(x0, y0, 8);
         self.tile_detection_execute(x0, y1, 2);
@@ -135,40 +149,41 @@ impl ZeldaState {
 
     pub(super) fn hookshot_check_tile_collision(&mut self, k: i32) {
         let k = k as usize;
-        let bak0 = self.ram[DUNGEON_ROOM_INDEX];
-        let bak1 = self.ram[LINK_IS_ON_LOWER_LEVEL];
-        if self.ram[ANCILLA_ARR1 + k] != 0 {
+        let bak0 = self.world_state_view().dungeon_room_index();
+        let bak1 = self.player_state_view().lower_level_state();
+        if self.ancilla_slot_view(k).work_byte_1() != 0 {
             if self.ram[KIND_OF_IN_ROOM_STAIRCASE] == 0 {
-                self.ram[DUNGEON_ROOM_INDEX] = self.ram[DUNGEON_ROOM_INDEX].wrapping_add(0x10);
+                self.world_state_view_mut()
+                    .increment_dungeon_room_index_by(0x10);
             }
-            self.ram[LINK_IS_ON_LOWER_LEVEL] ^= 1;
+            self.player_state_view_mut().set_lower_level_state(bak1 ^ 1);
         }
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
-        let dir = self.ram[ANCILLA_DIR + k] as i32;
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        let dir = self.ancilla_slot_view(k).direction() as i32;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        if self.ram[DUNG_HDR_COLLISION] == 2 {
-            self.ram[LINK_IS_ON_LOWER_LEVEL] = 1;
+        if self.dungeon_state_view().header_collision() == 2 {
+            self.player_state_view_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
-                x.wrapping_add(read_le_u16(&self.ram, BG1HOFS_COPY2))
-                    .wrapping_sub(read_le_u16(&self.ram, BG2HOFS_COPY2)),
-                y.wrapping_add(read_le_u16(&self.ram, BG1VOFS_COPY2))
-                    .wrapping_sub(read_le_u16(&self.ram, BG2VOFS_COPY2)),
+                x.wrapping_add(self.world_state_view().bg1_x())
+                    .wrapping_sub(self.world_state_view().bg2_x()),
+                y.wrapping_add(self.world_state_view().bg1_y())
+                    .wrapping_sub(self.world_state_view().bg2_y()),
                 dir,
             );
-            self.ram[LINK_IS_ON_LOWER_LEVEL] = 0;
+            self.player_state_view_mut().set_lower_level_state(0);
         }
         self.hookshot_check_single_layer_tile_collision(x, y, dir);
-        self.ram[LINK_IS_ON_LOWER_LEVEL] = bak1;
-        self.ram[DUNGEON_ROOM_INDEX] = bak0;
+        self.player_state_view_mut().set_lower_level_state(bak1);
+        self.world_state_view_mut().set_dungeon_room_index(bak0);
     }
 
     pub(super) fn hookshot_check_single_layer_tile_collision(&mut self, x: u16, y: u16, dir: i32) {
         const CHECK_X: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
         const CHECK_Y: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
         let base = dir as usize * 2;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let y0 = y.wrapping_add(CHECK_Y[base] as u16) & mask;
         let y1 = y.wrapping_add(CHECK_Y[base + 1] as u16) & mask;
         let x0 = (x.wrapping_add(CHECK_X[base] as u16) & mask) >> 3;
@@ -178,7 +193,7 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_nudging_in_a_door(&mut self, speed: i8) {
-        let y = if self.ram[LINK_LAST_DIRECTION_MOVED_TOWARDS] & 2 != 0 {
+        let y = if self.player_state_view().last_direction_moved_towards() & 2 != 0 {
             if (self.player_state_view().y() as u8) < 0x80 {
                 1
             } else {
@@ -189,46 +204,42 @@ impl ZeldaState {
         } else {
             2
         };
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         const DETECT_Y: [i8; 4] = [8, 23, 16, 16];
         const DETECT_X: [i8; 4] = [8, 8, 0, 15];
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(DETECT_X[y] as i16 as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(DETECT_Y[y] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
-        if ((read_le_u16(&self.ram, R14) | self.ram[DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ] as u16)
+        if ((self.tile_detect_position_view().collision_bits()
+            | self.tile_detect_position_view().horizontal_ledge() as u16)
             & 3)
             == 0
-            && ((self.ram[TILEDETECT_VERTICAL_LEDGE] | self.ram[DETECTION_OF_UNKNOWN_TILE_TYPES])
+            && ((self.tile_detect_position_view().vertical_ledge()
+                | self.tile_detect_position_view().diagonal_ledge_tiles())
                 & 0x33)
                 == 0
         {
             return;
         }
-        if self.ram[LINK_LAST_DIRECTION_MOVED_TOWARDS] & 2 != 0 {
+        if self.player_state_view().last_direction_moved_towards() & 2 != 0 {
             let y = self.player_state_view().y();
-            write_le_u16(
-                &mut self.ram,
-                LINK_Y_COORD,
-                y.wrapping_sub(speed as i16 as u16),
-            );
+            self.player_state_view_mut()
+                .set_y(y.wrapping_sub(speed as i16 as u16));
         } else {
             let x = self.player_state_view().x();
-            write_le_u16(
-                &mut self.ram,
-                LINK_X_COORD,
-                x.wrapping_sub(speed as i16 as u16),
-            );
+            self.player_state_view_mut()
+                .set_x(x.wrapping_sub(speed as i16 as u16));
         }
     }
 
     pub(super) fn tile_check_for_mirror_bonk(&mut self) {
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(2) & mask) >> 3;
@@ -243,12 +254,12 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_sword_swing_deep_in_door(&mut self, dw: u8) {
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         const DOORWAY_DETECT_X: [i8; 4] = [8, 8, -1, 16];
         const DOORWAY_DETECT_Y: [i8; 4] = [-1, 24, 16, 16];
         let o = dw.wrapping_sub(1) as usize * 2;
-        let mask = read_le_u16(&self.ram, TILEMAP_LOCATION_CALC_MASK);
+        let mask = self.tile_detect_position_view().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(DOORWAY_DETECT_X[o] as i16 as u16) & mask) >> 3;
@@ -260,63 +271,73 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_reset_state(&mut self) {
-        write_le_u16(&mut self.ram, R12, 0);
-        write_le_u16(&mut self.ram, R14, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_DIAGONAL_TILE, 0);
-        self.ram[TILEDETECT_STAIR_TILE] = 0;
-        self.ram[TILEDETECT_PIT_TILE] = 0;
+        self.tile_detect_position_view_mut()
+            .clear_slope_collision_bits();
+        self.tile_detect_position_view_mut().clear_collision_bits();
+        self.tile_detect_position_view_mut().clear_diagonal_tile();
+        self.tile_detect_position_view_mut().clear_stair_tile();
+        self.tile_detect_position_view_mut().clear_pit_tile();
         write_le_u16(&mut self.ram, TILEDETECT_INROOM_STAIRCASE, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_BLOCK_FLAGS_LO, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_DOOR_DIRECTION_FLAGS, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_MOVING_FLOOR_TILES, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_DEEPWATER, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_ICY_FLOOR, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_WATER_STAIRCASE, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_THICK_GRASS, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_SHALLOW_WATER, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_DESTRUCTION_AFTERMATH, 0);
-        write_le_u16(&mut self.ram, TILEDETECT_READ_SOMETHING, 0);
-        self.ram[TILEDETECT_VERTICAL_LEDGE] = 0;
-        self.ram[DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ] = 0;
-        self.ram[TILEDETECT_LEDGES_DOWN_LEFTRIGHT] = 0;
-        self.ram[DETECTION_OF_UNKNOWN_TILE_TYPES] = 0;
-        write_le_u16(&mut self.ram, TILEDETECT_CHEST, 0);
-        self.ram[TILEDETECT_KEY_LOCK_GRAVESTONES] = 0;
-        self.ram[BITFIELD_SPIKE_CACTUS_TILES] = 0;
-        self.ram[TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS] = 0;
-        self.ram[BITMASK_FOR_DASHABLE_TILES] = 0;
-        write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, 0);
+        self.tile_detect_position_view_mut().clear_block_flags();
+        self.tile_detect_position_view_mut()
+            .clear_door_direction_flags();
+        self.tile_detect_position_view_mut()
+            .clear_moving_floor_tiles();
+        self.tile_detect_position_view_mut().clear_deepwater();
+        self.tile_detect_position_view_mut().clear_normal_tiles();
+        self.tile_detect_position_view_mut().clear_icy_floor();
+        self.tile_detect_position_view_mut().clear_water_staircase();
+        self.tile_detect_position_view_mut().clear_thick_grass();
+        self.tile_detect_position_view_mut().clear_shallow_water();
+        self.tile_detect_position_view_mut()
+            .clear_destruction_aftermath();
+        self.tile_detect_position_view_mut().clear_read_something();
+        self.tile_detect_position_view_mut().clear_vertical_ledge();
+        self.tile_detect_position_view_mut()
+            .clear_horizontal_ledge();
+        self.tile_detect_position_view_mut()
+            .clear_ledges_down_leftright();
+        self.tile_detect_position_view_mut()
+            .clear_diagonal_ledge_tiles();
+        self.tile_detect_position_view_mut().clear_chest();
+        self.tile_detect_position_view_mut()
+            .clear_key_lock_gravestones();
+        self.tile_detect_position_view_mut()
+            .clear_spike_cactus_tiles();
+        self.tile_detect_position_view_mut()
+            .clear_spike_floor_and_triggers();
+        self.tile_detect_position_view_mut().clear_dashable_tiles();
+        self.tile_detect_position_view_mut().clear_misc_tiles();
         write_le_u16(&mut self.ram, MOVING_FLOOR_BG_CHECK_FLAGS, 0);
     }
 
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
         let mut offset = 0usize;
-        let is_indoors = self.ram[PLAYER_IS_INDOORS] != 0;
+        let is_indoors = self.world_state_view().is_indoors();
         let trace = env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame();
-        let r14_before = read_le_u16(&self.ram, R14);
-        let r12_before = read_le_u16(&self.ram, R12);
-        let misc_before = read_le_u16(&self.ram, TILEDETECT_MISC_TILES);
-        let normal_before = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES);
-        let pit_before = self.ram[TILEDETECT_PIT_TILE];
-        let diag_before = read_le_u16(&self.ram, TILEDETECT_DIAG_STATE);
-        let below_before = self.ram[LINK_TILE_BELOW];
+        let r14_before = self.tile_detect_position_view().collision_bits();
+        let r12_before = self.tile_detect_position_view().slope_collision_bits();
+        let misc_before = self.tile_detect_position_view().misc_tiles();
+        let normal_before = self.tile_detect_position_view().normal_tiles();
+        let pit_before = self.tile_detect_position_view().pit_tile();
+        let diag_before = self.tile_detect_position_view().diag_state();
+        let below_before = self.player_state_view().tile_below();
         let tile = if is_indoors {
             let force_move = read_le_u16(&self.ram, FORCE_MOVE_ANY_DIRECTION) & 0x00ff;
             write_le_u16(&mut self.ram, FORCE_MOVE_ANY_DIRECTION, force_move);
             offset = ((y & !7) as usize) * 8
                 + (x as usize & 63)
-                + if self.ram[LINK_IS_ON_LOWER_LEVEL] != 0 {
+                + if self.player_state_view().lower_level_state() != 0 {
                     0x1000
                 } else {
                     0
                 };
-            let mut tile = self.ram[DUNG_BG2_ATTR_TABLE + offset];
+            let mut tile = self.dungeon_state_view().bg2_attr(offset);
             if self.ram[CHEAT_WALK_THROUGH_WALLS] != 0 {
                 tile = 0;
             }
-            self.ram[LINK_TILE_BELOW] = tile;
+            self.player_state_view_mut().set_tile_below(tile);
             tile
         } else {
             self.overworld_get_tile_attribute_at_location(x, y)
@@ -325,32 +346,32 @@ impl ZeldaState {
         if trace {
             eprintln!(
                 "tile-exec frame={} x=0x{:04x} y=0x{:04x} bits=0x{:04x} indoors={} lower={} offs=0x{:04x} tile=0x{:02x} link=0x{:04x}/0x{:04x} speed=0x{:02x}/0x{:02x} r14=0x{:04x}->0x{:04x} r12=0x{:04x}->0x{:04x} misc=0x{:04x}->0x{:04x} normal=0x{:04x}->0x{:04x} pit=0x{:02x}->0x{:02x} diag=0x{:04x}->0x{:04x} below=0x{:02x}->0x{:02x}",
-                self.ram[FRAME_COUNTER],
+                self.frame_control_view().frame_counter(),
                 x,
                 y,
                 bits,
-                self.ram[PLAYER_IS_INDOORS],
-                self.ram[LINK_IS_ON_LOWER_LEVEL],
+                self.world_state_view().indoor_flag(),
+                self.player_state_view().lower_level_state(),
                 offset,
                 tile,
                 self.player_state_view().x(),
                 self.player_state_view().y(),
-                self.ram[LINK_SPEED_SETTING],
-                self.ram[LINK_SPEED_MODIFIER],
+                self.player_state_view().speed_setting(),
+                self.player_state_view().speed_modifier(),
                 r14_before,
-                read_le_u16(&self.ram, R14),
+                self.tile_detect_position_view().collision_bits(),
                 r12_before,
-                read_le_u16(&self.ram, R12),
+                self.tile_detect_position_view().slope_collision_bits(),
                 misc_before,
-                read_le_u16(&self.ram, TILEDETECT_MISC_TILES),
+                self.tile_detect_position_view().misc_tiles(),
                 normal_before,
-                read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES),
+                self.tile_detect_position_view().normal_tiles(),
                 pit_before,
-                self.ram[TILEDETECT_PIT_TILE],
+                self.tile_detect_position_view().pit_tile(),
                 diag_before,
-                read_le_u16(&self.ram, TILEDETECT_DIAG_STATE),
+                self.tile_detect_position_view().diag_state(),
                 below_before,
-                self.ram[LINK_TILE_BELOW],
+                self.player_state_view().tile_below(),
             );
         }
     }
@@ -396,245 +417,230 @@ impl ZeldaState {
             | 0xbf
             | 0xd0..=0xef => {
                 if !is_indoors {
-                    let normal = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES) | bits;
-                    write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, normal);
+                    let normal = self.tile_detect_position_view().normal_tiles() | bits;
+                    self.tile_detect_position_view_mut().set_normal_tiles(normal);
                 }
             }
             0x01 | 0x02 | 0x03 | 0x26 | 0x43 => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
             }
             0x04 => {
                 if is_indoors {
-                    let r14 = read_le_u16(&self.ram, R14) | bits;
-                    write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
                 } else {
-                    let grass = read_le_u16(&self.ram, TILEDETECT_THICK_GRASS) | bits;
-                    write_le_u16(&mut self.ram, TILEDETECT_THICK_GRASS, grass);
+                    let grass = self.tile_detect_position_view().thick_grass() | bits;
+                    self.tile_detect_position_view_mut().set_thick_grass(grass);
                 }
             }
             0x0b => {
                 if is_indoors {
-                    let r14 = read_le_u16(&self.ram, R14) | bits;
-                    write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
                 } else {
-                    write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                    let deepwater = read_le_u16(&self.ram, TILEDETECT_DEEPWATER) | (bits << 4);
-                    write_le_u16(&mut self.ram, TILEDETECT_DEEPWATER, deepwater);
+                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                    let deepwater = self.tile_detect_position_view().deepwater() | (bits << 4);
+                    self.tile_detect_position_view_mut().set_deepwater(deepwater);
                 }
             }
             0x08 => {
-                let deepwater = read_le_u16(&self.ram, TILEDETECT_DEEPWATER) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_DEEPWATER, deepwater);
+                let deepwater = self.tile_detect_position_view().deepwater() | bits;
+                self.tile_detect_position_view_mut().set_deepwater(deepwater);
             }
             0x09 => {
-                let shallow = read_le_u16(&self.ram, TILEDETECT_SHALLOW_WATER) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_SHALLOW_WATER, shallow);
+                let shallow = self.tile_detect_position_view().shallow_water() | bits;
+                self.tile_detect_position_view_mut().set_shallow_water(shallow);
             }
             0x0a => {
-                let normal = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, normal);
+                let normal = self.tile_detect_position_view().normal_tiles() | bits;
+                self.tile_detect_position_view_mut().set_normal_tiles(normal);
             }
             0x0c => {
-                let moving_floor = read_le_u16(&self.ram, TILEDETECT_MOVING_FLOOR_TILES) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_MOVING_FLOOR_TILES, moving_floor);
+                let moving_floor = self.tile_detect_position_view().moving_floor_tiles() | bits;
+                self.tile_detect_position_view_mut().set_moving_floor_tiles(moving_floor);
             }
             0x0d => {
-                if self.ram[FLAG_BLOCK_LINK_MENU] == 0
-                    && read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) & 0x8000 == 0
+                if !self.player_state_view().is_menu_blocked()
+                    && self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0
                 {
-                    self.ram[TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS] |= (bits << 4) as u8;
+                    self.tile_detect_position_view_mut().or_spike_floor_and_triggers((bits << 4) as u8);
                 }
             }
             0x0e => {
-                let icy = read_le_u16(&self.ram, TILEDETECT_ICY_FLOOR) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_ICY_FLOOR, icy);
+                let icy = self.tile_detect_position_view().icy_floor() | bits;
+                self.tile_detect_position_view_mut().set_icy_floor(icy);
             }
             0x0f => {
-                let icy = read_le_u16(&self.ram, TILEDETECT_ICY_FLOOR) | (bits << 4);
-                write_le_u16(&mut self.ram, TILEDETECT_ICY_FLOOR, icy);
+                let icy = self.tile_detect_position_view().icy_floor() | (bits << 4);
+                self.tile_detect_position_view_mut().set_icy_floor(icy);
             }
             0x6c..=0x6f if is_indoors => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
             }
             0x6c..=0x6f => {
-                let normal = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, normal);
+                let normal = self.tile_detect_position_view().normal_tiles() | bits;
+                self.tile_detect_position_view_mut().set_normal_tiles(normal);
             }
             0x10..=0x13 => {
                 const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
-                let r12 = read_le_u16(&self.ram, R12) | bits;
-                write_le_u16(&mut self.ram, R12, r12);
-                write_le_u16(
-                    &mut self.ram,
-                    TILEDETECT_DIAG_STATE,
-                    DIAG_STATE[(tile & 3) as usize],
-                );
+                self.tile_detect_position_view_mut().or_slope_collision_bits(bits);
+                self.tile_detect_position_view_mut()
+                    .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
             }
             0x18..=0x1b => {
                 const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
-                let diagonal = read_le_u16(&self.ram, TILEDETECT_DIAGONAL_TILE) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_DIAGONAL_TILE, diagonal);
-                let r12 = read_le_u16(&self.ram, R12) | bits;
-                write_le_u16(&mut self.ram, R12, r12);
-                write_le_u16(
-                    &mut self.ram,
-                    TILEDETECT_DIAG_STATE,
-                    DIAG_STATE[(tile & 3) as usize],
-                );
+                let diagonal = self.tile_detect_position_view().diagonal_tile() | bits;
+                self.tile_detect_position_view_mut().set_diagonal_tile(diagonal);
+                self.tile_detect_position_view_mut().or_slope_collision_bits(bits);
+                self.tile_detect_position_view_mut()
+                    .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
             }
             0x1c => {
-                let water_stair = read_le_u16(&self.ram, TILEDETECT_WATER_STAIRCASE) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_WATER_STAIRCASE, water_stair);
+                let water_stair = self.tile_detect_position_view().water_staircase() | bits;
+                self.tile_detect_position_view_mut().set_water_staircase(water_stair);
             }
             0x1d..=0x1f => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
                 let stairs = read_le_u16(&self.ram, TILEDETECT_INROOM_STAIRCASE) | bits;
                 write_le_u16(&mut self.ram, TILEDETECT_INROOM_STAIRCASE, stairs);
-                self.ram[TILEDETECT_STAIR_TILE] |= bits as u8;
+                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
             }
             0x20 | 0xb0..=0xbd => {
-                if self.ram[PLAYER_ON_SOMARIA_PLATFORM] == 0 {
-                    self.ram[TILEDETECT_PIT_TILE] |= bits as u8;
+                if !self.player_state_view().has_somaria_platform_state() {
+                    self.tile_detect_position_view_mut().or_pit_tile(bits as u8);
                 }
             }
             0x22 | 0x30..=0x37 => {
-                self.ram[TILEDETECT_STAIR_TILE] |= bits as u8;
+                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
             }
             0x27 => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
             }
             0x28 => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                self.ram[TILEDETECT_VERTICAL_LEDGE] |= bits as u8;
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_view_mut().or_vertical_ledge(bits as u8);
             }
             0x29 => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                self.ram[TILEDETECT_VERTICAL_LEDGE] |= (bits << 4) as u8;
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_view_mut().or_vertical_ledge((bits << 4) as u8);
             }
             0x2a | 0x2b => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                self.ram[DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ] |= bits as u8;
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_view_mut().or_horizontal_ledge(bits as u8);
             }
             0x2c | 0x2e => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                self.ram[DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ] |= (bits << 4) as u8;
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_view_mut().or_horizontal_ledge((bits << 4) as u8);
             }
             0x2d | 0x2f => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                self.ram[TILEDETECT_LEDGES_DOWN_LEFTRIGHT] |= bits as u8;
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_view_mut().or_ledges_down_leftright(bits as u8);
             }
             0x3d..=0x3f => {
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
                 let stairs = read_le_u16(&self.ram, TILEDETECT_INROOM_STAIRCASE) | (bits << 4);
                 write_le_u16(&mut self.ram, TILEDETECT_INROOM_STAIRCASE, stairs);
-                self.ram[TILEDETECT_STAIR_TILE] |= bits as u8;
+                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
             }
             0x40 => {
-                let grass = read_le_u16(&self.ram, TILEDETECT_THICK_GRASS) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_THICK_GRASS, grass);
+                let grass = self.tile_detect_position_view().thick_grass() | bits;
+                self.tile_detect_position_view_mut().set_thick_grass(grass);
             }
             0x44 => {
-                if self.ram[FLAG_BLOCK_LINK_MENU] == 0
-                    && read_le_u16(&self.ram, DUNG_SAVEGAME_STATE_BITS) & 0x8000 == 0
+                if !self.player_state_view().is_menu_blocked()
+                    && self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0
                 {
-                    self.ram[BITFIELD_SPIKE_CACTUS_TILES] |= bits as u8;
+                    self.tile_detect_position_view_mut().or_spike_cactus_tiles(bits as u8);
                 } else {
-                    let r14 = read_le_u16(&self.ram, R14) | bits;
-                    write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
                 }
             }
             0x46 => {
-                self.ram[TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS] |= bits as u8;
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
+                self.tile_detect_position_view_mut().or_spike_floor_and_triggers(bits as u8);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
             }
             0x48 | 0x4a => {
-                let aftermath = read_le_u16(&self.ram, TILEDETECT_DESTRUCTION_AFTERMATH) | bits;
-                let normal = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_DESTRUCTION_AFTERMATH, aftermath);
-                write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, normal);
+                let aftermath = self.tile_detect_position_view().destruction_aftermath() | bits;
+                let normal = self.tile_detect_position_view().normal_tiles() | bits;
+                self.tile_detect_position_view_mut().set_destruction_aftermath(aftermath);
+                self.tile_detect_position_view_mut().set_normal_tiles(normal);
             }
             0x4b => {
-                let grass = read_le_u16(&self.ram, TILEDETECT_THICK_GRASS) | (bits << 4);
-                write_le_u16(&mut self.ram, TILEDETECT_THICK_GRASS, grass);
+                let grass = self.tile_detect_position_view().thick_grass() | (bits << 4);
+                self.tile_detect_position_view_mut().set_thick_grass(grass);
             }
             0x4c | 0x4d => {
                 if !is_indoors {
-                    write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                    self.ram[DETECTION_OF_UNKNOWN_TILE_TYPES] |= bits as u8;
+                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                    self.tile_detect_position_view_mut().or_diagonal_ledge_tiles(bits as u8);
                 }
             }
             0x4e | 0x4f => {
                 if !is_indoors {
-                    write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
-                    self.ram[DETECTION_OF_UNKNOWN_TILE_TYPES] |= (bits << 4) as u8;
+                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                    self.tile_detect_position_view_mut().or_diagonal_ledge_tiles((bits << 4) as u8);
                 }
             }
             0x50..=0x56 => {
                 const TILE50_DATA: [u8; 7] = [0x54, 0x52, 0x50, 0x51, 0x53, 0x55, 0x56];
                 if let Some(i) = TILE50_DATA.iter().rposition(|&value| value == tile) {
                     if tile == 0x50 || tile == 0x51 {
-                        self.ram[BITMASK_FOR_DASHABLE_TILES] |= (bits << 4) as u8;
+                        self.tile_detect_position_view_mut().or_dashable_tiles((bits << 4) as u8);
                     }
-                    let read_something = read_le_u16(&self.ram, TILEDETECT_READ_SOMETHING) | bits;
-                    let r14 = read_le_u16(&self.ram, R14) | bits;
-                    let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                    write_le_u16(&mut self.ram, TILEDETECT_READ_SOMETHING, read_something);
-                    self.ram[INTERACTING_WITH_LIFTABLE_TILE_X2] = (i * 2) as u8;
-                    write_le_u16(&mut self.ram, R14, r14);
-                    write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                    let read_something = self.tile_detect_position_view().read_something() | bits;
+                    let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                    let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                    self.tile_detect_position_view_mut().set_read_something(read_something);
+                    self.ram[LIFTABLE_TILE_DETECTED_INDEX_DOUBLED] = (i * 2) as u8;
+                    self.tile_detect_position_view_mut().set_collision_bits(r14);
+                    self.tile_detect_position_view_mut().set_misc_tiles(misc);
                 }
             }
             0x57 => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
-                self.ram[BITMASK_FOR_DASHABLE_TILES] |= (bits << 4) as u8;
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_view_mut().or_dashable_tiles((bits << 4) as u8);
             }
             0x58..=0x5d | 0x63 => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
-                write_le_u16(&mut self.ram, INDEX_OF_INTERACTING_TILE, tile as u16);
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
                 if tile != 0x63
                     && read_le_u16(&self.ram, DUNG_CHEST_LOCATIONS + (tile - 0x58) as usize * 2)
                         >= 0x8000
                 {
-                    write_le_u16(&mut self.ram, R14, r14);
-                    self.ram[TILEDETECT_KEY_LOCK_GRAVESTONES] |= (bits << 4) as u8;
+                    self.tile_detect_position_view_mut().set_collision_bits(r14);
+                    self.tile_detect_position_view_mut().or_key_lock_gravestones((bits << 4) as u8);
                     if bits & 2 != 0 {
-                        write_le_u16(&mut self.ram, TILEDETECT_TILE_TYPE, tile as u16);
+                        self.tile_detect_position_view_mut().set_tile_type(tile as u16);
                     }
                 } else {
-                    let chest = read_le_u16(&self.ram, TILEDETECT_CHEST) | bits;
-                    write_le_u16(&mut self.ram, R14, r14);
-                    write_le_u16(&mut self.ram, TILEDETECT_CHEST, chest);
+                    let chest = self.tile_detect_position_view().chest() | bits;
+                    self.tile_detect_position_view_mut().set_collision_bits(r14);
+                    self.tile_detect_position_view_mut().set_chest(chest);
                 }
             }
             0x60 => {
                 if is_indoors {
-                    let misc_bits = if self.ram[DUNG_BG2_ATTR_TABLE + offset + 64] == 0x60 {
+                    let misc_bits = if self.dungeon_state_view().bg2_attr(offset + 64) == 0x60 {
                         bits << 8
                     } else {
                         bits << 12
                     };
-                    let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | misc_bits;
-                    write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                    let misc = self.tile_detect_position_view().misc_tiles() | misc_bits;
+                    self.tile_detect_position_view_mut().set_misc_tiles(misc);
                 } else {
-                    let normal = read_le_u16(&self.ram, TILEDETECT_NORMAL_TILES) | bits;
-                    write_le_u16(&mut self.ram, TILEDETECT_NORMAL_TILES, normal);
+                    let normal = self.tile_detect_position_view().normal_tiles() | bits;
+                    self.tile_detect_position_view_mut().set_normal_tiles(normal);
                 }
             }
             0x67 => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
-                self.ram[BITFIELD_SPIKE_CACTUS_TILES] |= (bits << 4) as u8;
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                self.tile_detect_position_view_mut().or_spike_cactus_tiles((bits << 4) as u8);
             }
             0x68 => {
                 let conveyor = read_le_u16(&self.ram, MOVING_FLOOR_BG_CHECK_FLAGS) | bits;
@@ -654,64 +660,64 @@ impl ZeldaState {
             }
             0x70..=0x7f => {
                 if bits & 2 != 0 {
-                    let var2 = read_le_u16(&self.ram, TILEDETECT_BLOCK_FLAGS_LO) | (1 << (tile & 0x0f));
-                    write_le_u16(&mut self.ram, TILEDETECT_BLOCK_FLAGS_LO, var2);
+                    let block_flags =
+                        self.tile_detect_position_view().block_flags() | (1 << (tile & 0x0f));
+                    self.tile_detect_position_view_mut().set_block_flags(block_flags);
                 }
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
             }
             0x80..=0x8d => {
-                let r14 = read_le_u16(&self.ram, R14)
+                let r14 = self.tile_detect_position_view().collision_bits()
                     | if tile == 0x82 || tile == 0x83 {
                         (bits << 4) | (bits << 8)
                     } else {
                         bits << 4
                     };
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_DOOR_DIRECTION_FLAGS, 2 * (tile as u16 & 1));
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0x8e | 0x8f => {
-                let r14 = read_le_u16(&self.ram, R14) | (bits << 4);
-                write_le_u16(&mut self.ram, R14, r14);
-                self.ram[BITMASK_FOR_DASHABLE_TILES] |= bits as u8;
-                write_le_u16(&mut self.ram, TILEDETECT_DOOR_DIRECTION_FLAGS, 0);
+                let r14 = self.tile_detect_position_view().collision_bits() | (bits << 4);
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().or_dashable_tiles(bits as u8);
+                self.tile_detect_position_view_mut().clear_door_direction_flags();
             }
             0x90..=0x9f | 0xa8..=0xaf => {
                 self.ram[ROOM_TRANSITIONING_FLAGS] = if tile < 0x98 { 1 } else { 3 };
-                let r14 = read_le_u16(&self.ram, R14) | (bits << 4) | (bits << 8);
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_DOOR_DIRECTION_FLAGS, 2 * (tile as u16 & 1));
+                let r14 = self.tile_detect_position_view().collision_bits() | (bits << 4) | (bits << 8);
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xa0..=0xa5 => {
                 self.ram[ROOM_TRANSITIONING_FLAGS] = 2;
-                let r14 = read_le_u16(&self.ram, R14)
+                let r14 = self.tile_detect_position_view().collision_bits()
                     | if tile == 0xa2 || tile == 0xa3 {
                         (bits << 4) | (bits << 8)
                     } else {
                         bits << 4
                     };
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_DOOR_DIRECTION_FLAGS, 2 * (tile as u16 & 1));
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xc0..=0xcf => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | bits;
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | bits;
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
             }
             0xf0..=0xff => {
-                let r14 = read_le_u16(&self.ram, R14) | bits;
-                let misc = read_le_u16(&self.ram, TILEDETECT_MISC_TILES) | (bits << 4);
-                write_le_u16(&mut self.ram, R14, r14);
-                write_le_u16(&mut self.ram, TILEDETECT_MISC_TILES, misc);
+                let r14 = self.tile_detect_position_view().collision_bits() | bits;
+                let misc = self.tile_detect_position_view().misc_tiles() | (bits << 4);
+                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                self.tile_detect_position_view_mut().set_misc_tiles(misc);
             }
             0x42 => {
                 if !is_indoors {
-                    self.ram[TILEDETECT_KEY_LOCK_GRAVESTONES] |= bits as u8;
-                    let r14 = read_le_u16(&self.ram, R14) | bits;
-                    write_le_u16(&mut self.ram, R14, r14);
+                    self.tile_detect_position_view_mut().or_key_lock_gravestones(bits as u8);
+                self.tile_detect_position_view_mut().or_collision_bits(bits);
                 }
             }
         }

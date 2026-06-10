@@ -43,90 +43,90 @@ pub const KMOD_SHIFT: SdlKeymod = 0x0003;
 pub const KMOD_CTRL: SdlKeymod = 0x00c0;
 pub const KMOD_ALT: SdlKeymod = 0x0300;
 
-const K_KEY_MOD_SCAN_CODE: u16 = 0x0200;
-const K_KEY_MOD_ALT: u16 = 0x0400;
-const K_KEY_MOD_SHIFT: u16 = 0x0800;
-const K_KEY_MOD_CTRL: u16 = 0x1000;
+const KEY_MODIFIER_SCAN_CODE: u16 = 0x0200;
+const KEY_MODIFIER_ALT: u16 = 0x0400;
+const KEY_MODIFIER_SHIFT: u16 = 0x0800;
+const KEY_MODIFIER_CTRL: u16 = 0x1000;
 
-const K_FEATURES0_EXTEND_SCREEN64: u32 = 1;
-const K_FEATURES0_SWITCH_LR: u32 = 2;
-const K_FEATURES0_TURN_WHILE_DASHING: u32 = 4;
-const K_FEATURES0_MIRROR_TO_DARKWORLD: u32 = 8;
-const K_FEATURES0_COLLECT_ITEMS_WITH_SWORD: u32 = 16;
-const K_FEATURES0_BREAK_POTS_WITH_SWORD: u32 = 32;
-const K_FEATURES0_DISABLE_LOW_HEALTH_BEEP: u32 = 64;
-const K_FEATURES0_SKIP_INTRO_ON_KEYPRESS: u32 = 128;
-const K_FEATURES0_SHOW_MAX_ITEMS_IN_YELLOW: u32 = 256;
-const K_FEATURES0_MORE_ACTIVE_BOMBS: u32 = 512;
-const K_FEATURES0_WIDESCREEN_VISUAL_FIXES: u32 = 1024;
-const K_FEATURES0_CARRY_MORE_RUPEES: u32 = 2048;
-const K_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-const K_FEATURES0_CANCEL_BIRD_TRAVEL: u32 = 8192;
-const K_FEATURES0_GAME_CHANGING_BUG_FIXES: u32 = 16384;
-const K_FEATURES0_SWITCH_LR_LIMIT: u32 = 32768;
-const K_FEATURES0_DIM_FLASHES: u32 = 65536;
+const FEATURE_EXTEND_SCREEN64: u32 = 1;
+const FEATURE_SWITCH_LR: u32 = 2;
+const FEATURE_TURN_WHILE_DASHING: u32 = 4;
+const FEATURE_MIRROR_TO_DARKWORLD: u32 = 8;
+const FEATURE_COLLECT_ITEMS_WITH_SWORD: u32 = 16;
+const FEATURE_BREAK_POTS_WITH_SWORD: u32 = 32;
+const FEATURE_DISABLE_LOW_HEALTH_BEEP: u32 = 64;
+const FEATURE_SKIP_INTRO_ON_KEYPRESS: u32 = 128;
+const FEATURE_SHOW_MAX_ITEMS_IN_YELLOW: u32 = 256;
+const FEATURE_MORE_ACTIVE_BOMBS: u32 = 512;
+const FEATURE_WIDESCREEN_VISUAL_FIXES: u32 = 1024;
+const FEATURE_CARRY_MORE_RUPEES: u32 = 2048;
+const FEATURE_MISC_BUG_FIXES: u32 = 4096;
+const FEATURE_CANCEL_BIRD_TRAVEL: u32 = 8192;
+const FEATURE_GAME_CHANGING_BUG_FIXES: u32 = 16384;
+const FEATURE_SWITCH_LR_LIMIT: u32 = 32768;
+const FEATURE_DIM_FLASHES: u32 = 65536;
 
-pub const K_KEYS_NULL: u16 = 0;
-pub const K_KEYS_CONTROLS: u16 = 1;
-pub const K_KEYS_CONTROLS_LAST: u16 = K_KEYS_CONTROLS + 11;
-pub const K_KEYS_LOAD: u16 = K_KEYS_CONTROLS_LAST + 1;
-pub const K_KEYS_LOAD_LAST: u16 = K_KEYS_LOAD + 19;
-pub const K_KEYS_SAVE: u16 = K_KEYS_LOAD_LAST + 1;
-pub const K_KEYS_SAVE_LAST: u16 = K_KEYS_SAVE + 19;
-pub const K_KEYS_REPLAY: u16 = K_KEYS_SAVE_LAST + 1;
-pub const K_KEYS_REPLAY_LAST: u16 = K_KEYS_REPLAY + 19;
-pub const K_KEYS_LOAD_REF: u16 = K_KEYS_REPLAY_LAST + 1;
-pub const K_KEYS_LOAD_REF_LAST: u16 = K_KEYS_LOAD_REF + 19;
-pub const K_KEYS_REPLAY_REF: u16 = K_KEYS_LOAD_REF_LAST + 1;
-pub const K_KEYS_REPLAY_REF_LAST: u16 = K_KEYS_REPLAY_REF + 19;
-pub const K_KEYS_CHEAT_LIFE: u16 = K_KEYS_REPLAY_REF_LAST + 1;
-pub const K_KEYS_CHEAT_KEYS: u16 = K_KEYS_CHEAT_LIFE + 1;
-pub const K_KEYS_CHEAT_EQUIPMENT: u16 = K_KEYS_CHEAT_KEYS + 1;
-pub const K_KEYS_CHEAT_WALK_THROUGH_WALLS: u16 = K_KEYS_CHEAT_EQUIPMENT + 1;
-pub const K_KEYS_CLEAR_KEY_LOG: u16 = K_KEYS_CHEAT_WALK_THROUGH_WALLS + 1;
-pub const K_KEYS_STOP_REPLAY: u16 = K_KEYS_CLEAR_KEY_LOG + 1;
-pub const K_KEYS_FULLSCREEN: u16 = K_KEYS_STOP_REPLAY + 1;
-pub const K_KEYS_RESET: u16 = K_KEYS_FULLSCREEN + 1;
-pub const K_KEYS_PAUSE: u16 = K_KEYS_RESET + 1;
-pub const K_KEYS_PAUSE_DIMMED: u16 = K_KEYS_PAUSE + 1;
-pub const K_KEYS_TURBO: u16 = K_KEYS_PAUSE_DIMMED + 1;
-pub const K_KEYS_REPLAY_TURBO: u16 = K_KEYS_TURBO + 1;
-pub const K_KEYS_WINDOW_BIGGER: u16 = K_KEYS_REPLAY_TURBO + 1;
-pub const K_KEYS_WINDOW_SMALLER: u16 = K_KEYS_WINDOW_BIGGER + 1;
-pub const K_KEYS_DISPLAY_PERF: u16 = K_KEYS_WINDOW_SMALLER + 1;
-pub const K_KEYS_TOGGLE_RENDERER: u16 = K_KEYS_DISPLAY_PERF + 1;
-pub const K_KEYS_VOLUME_UP: u16 = K_KEYS_TOGGLE_RENDERER + 1;
-pub const K_KEYS_VOLUME_DOWN: u16 = K_KEYS_VOLUME_UP + 1;
-pub const K_KEYS_TOTAL: usize = K_KEYS_VOLUME_DOWN as usize + 1;
+pub const KEY_COMMAND_NULL: u16 = 0;
+pub const KEY_COMMAND_CONTROLS: u16 = 1;
+pub const KEY_COMMAND_CONTROLS_LAST: u16 = KEY_COMMAND_CONTROLS + 11;
+pub const KEY_COMMAND_LOAD: u16 = KEY_COMMAND_CONTROLS_LAST + 1;
+pub const KEY_COMMAND_LOAD_LAST: u16 = KEY_COMMAND_LOAD + 19;
+pub const KEY_COMMAND_SAVE: u16 = KEY_COMMAND_LOAD_LAST + 1;
+pub const KEY_COMMAND_SAVE_LAST: u16 = KEY_COMMAND_SAVE + 19;
+pub const KEY_COMMAND_REPLAY: u16 = KEY_COMMAND_SAVE_LAST + 1;
+pub const KEY_COMMAND_REPLAY_LAST: u16 = KEY_COMMAND_REPLAY + 19;
+pub const KEY_COMMAND_LOAD_REF: u16 = KEY_COMMAND_REPLAY_LAST + 1;
+pub const KEY_COMMAND_LOAD_REF_LAST: u16 = KEY_COMMAND_LOAD_REF + 19;
+pub const KEY_COMMAND_REPLAY_REF: u16 = KEY_COMMAND_LOAD_REF_LAST + 1;
+pub const KEY_COMMAND_REPLAY_REF_LAST: u16 = KEY_COMMAND_REPLAY_REF + 19;
+pub const KEY_COMMAND_CHEAT_LIFE: u16 = KEY_COMMAND_REPLAY_REF_LAST + 1;
+pub const KEY_COMMAND_CHEAT_KEYS: u16 = KEY_COMMAND_CHEAT_LIFE + 1;
+pub const KEY_COMMAND_CHEAT_EQUIPMENT: u16 = KEY_COMMAND_CHEAT_KEYS + 1;
+pub const KEY_COMMAND_CHEAT_WALK_THROUGH_WALLS: u16 = KEY_COMMAND_CHEAT_EQUIPMENT + 1;
+pub const KEY_COMMAND_CLEAR_KEY_LOG: u16 = KEY_COMMAND_CHEAT_WALK_THROUGH_WALLS + 1;
+pub const KEY_COMMAND_STOP_REPLAY: u16 = KEY_COMMAND_CLEAR_KEY_LOG + 1;
+pub const KEY_COMMAND_FULLSCREEN: u16 = KEY_COMMAND_STOP_REPLAY + 1;
+pub const KEY_COMMAND_RESET: u16 = KEY_COMMAND_FULLSCREEN + 1;
+pub const KEY_COMMAND_PAUSE: u16 = KEY_COMMAND_RESET + 1;
+pub const KEY_COMMAND_PAUSE_DIMMED: u16 = KEY_COMMAND_PAUSE + 1;
+pub const KEY_COMMAND_TURBO: u16 = KEY_COMMAND_PAUSE_DIMMED + 1;
+pub const KEY_COMMAND_REPLAY_TURBO: u16 = KEY_COMMAND_TURBO + 1;
+pub const KEY_COMMAND_WINDOW_BIGGER: u16 = KEY_COMMAND_REPLAY_TURBO + 1;
+pub const KEY_COMMAND_WINDOW_SMALLER: u16 = KEY_COMMAND_WINDOW_BIGGER + 1;
+pub const KEY_COMMAND_DISPLAY_PERF: u16 = KEY_COMMAND_WINDOW_SMALLER + 1;
+pub const KEY_COMMAND_TOGGLE_RENDERER: u16 = KEY_COMMAND_DISPLAY_PERF + 1;
+pub const KEY_COMMAND_VOLUME_UP: u16 = KEY_COMMAND_TOGGLE_RENDERER + 1;
+pub const KEY_COMMAND_VOLUME_DOWN: u16 = KEY_COMMAND_VOLUME_UP + 1;
+pub const KEY_COMMAND_TOTAL: usize = KEY_COMMAND_VOLUME_DOWN as usize + 1;
 
-pub const K_OUTPUT_METHOD_SDL: u8 = 0;
-pub const K_OUTPUT_METHOD_SDL_SOFTWARE: u8 = 1;
-pub const K_OUTPUT_METHOD_OPENGL: u8 = 2;
-pub const K_OUTPUT_METHOD_OPENGL_ES: u8 = 3;
+pub const OUTPUT_METHOD_SDL: u8 = 0;
+pub const OUTPUT_METHOD_SDL_SOFTWARE: u8 = 1;
+pub const OUTPUT_METHOD_OPENGL: u8 = 2;
+pub const OUTPUT_METHOD_OPENGL_ES: u8 = 3;
 
-pub const K_MSU_ENABLED_MSU: u8 = 1;
-pub const K_MSU_ENABLED_MSU_DELUXE: u8 = 2;
-pub const K_MSU_ENABLED_OPUZ: u8 = 4;
+pub const MSU_FEATURE_MSU: u8 = 1;
+pub const MSU_FEATURE_MSU_DELUXE: u8 = 2;
+pub const MSU_FEATURE_OPUZ: u8 = 4;
 
-pub const K_GAMEPAD_BTN_INVALID: i32 = -1;
-pub const K_GAMEPAD_BTN_A: usize = 0;
-pub const K_GAMEPAD_BTN_B: usize = 1;
-pub const K_GAMEPAD_BTN_X: usize = 2;
-pub const K_GAMEPAD_BTN_Y: usize = 3;
-pub const K_GAMEPAD_BTN_BACK: usize = 4;
-pub const K_GAMEPAD_BTN_GUIDE: usize = 5;
-pub const K_GAMEPAD_BTN_START: usize = 6;
-pub const K_GAMEPAD_BTN_L3: usize = 7;
-pub const K_GAMEPAD_BTN_R3: usize = 8;
-pub const K_GAMEPAD_BTN_L1: usize = 9;
-pub const K_GAMEPAD_BTN_R1: usize = 10;
-pub const K_GAMEPAD_BTN_DPAD_UP: usize = 11;
-pub const K_GAMEPAD_BTN_DPAD_DOWN: usize = 12;
-pub const K_GAMEPAD_BTN_DPAD_LEFT: usize = 13;
-pub const K_GAMEPAD_BTN_DPAD_RIGHT: usize = 14;
-pub const K_GAMEPAD_BTN_L2: usize = 15;
-pub const K_GAMEPAD_BTN_R2: usize = 16;
-pub const K_GAMEPAD_BTN_COUNT: usize = 17;
+pub const GAMEPAD_BUTTON_INVALID: i32 = -1;
+pub const GAMEPAD_BUTTON_A: usize = 0;
+pub const GAMEPAD_BUTTON_B: usize = 1;
+pub const GAMEPAD_BUTTON_X: usize = 2;
+pub const GAMEPAD_BUTTON_Y: usize = 3;
+pub const GAMEPAD_BUTTON_BACK: usize = 4;
+pub const GAMEPAD_BUTTON_GUIDE: usize = 5;
+pub const GAMEPAD_BUTTON_START: usize = 6;
+pub const GAMEPAD_BUTTON_L3: usize = 7;
+pub const GAMEPAD_BUTTON_R3: usize = 8;
+pub const GAMEPAD_BUTTON_L1: usize = 9;
+pub const GAMEPAD_BUTTON_R1: usize = 10;
+pub const GAMEPAD_BUTTON_DPAD_UP: usize = 11;
+pub const GAMEPAD_BUTTON_DPAD_DOWN: usize = 12;
+pub const GAMEPAD_BUTTON_DPAD_LEFT: usize = 13;
+pub const GAMEPAD_BUTTON_DPAD_RIGHT: usize = 14;
+pub const GAMEPAD_BUTTON_L2: usize = 15;
+pub const GAMEPAD_BUTTON_R2: usize = 16;
+pub const GAMEPAD_BUTTON_COUNT: usize = 17;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -171,7 +171,7 @@ impl Default for Config {
             window_scale: 0,
             enable_audio: false,
             linear_filtering: false,
-            output_method: K_OUTPUT_METHOD_SDL,
+            output_method: OUTPUT_METHOD_SDL,
             audio_freq: 0,
             audio_channels: 0,
             audio_samples: 0,
@@ -203,33 +203,40 @@ struct KeyNameId {
 const KEY_NAME_ID: [KeyNameId; 25] = [
     KeyNameId {
         name: "Null",
-        id: K_KEYS_NULL,
+        id: KEY_COMMAND_NULL,
         size: 65535,
     },
-    key_range("Controls", K_KEYS_CONTROLS, K_KEYS_CONTROLS_LAST),
-    key_range("Load", K_KEYS_LOAD, K_KEYS_LOAD_LAST),
-    key_range("Save", K_KEYS_SAVE, K_KEYS_SAVE_LAST),
-    key_range("Replay", K_KEYS_REPLAY, K_KEYS_REPLAY_LAST),
-    key_range("LoadRef", K_KEYS_LOAD_REF, K_KEYS_LOAD_REF_LAST),
-    key_range("ReplayRef", K_KEYS_REPLAY_REF, K_KEYS_REPLAY_REF_LAST),
-    key_single("CheatLife", K_KEYS_CHEAT_LIFE),
-    key_single("CheatKeys", K_KEYS_CHEAT_KEYS),
-    key_single("CheatEquipment", K_KEYS_CHEAT_EQUIPMENT),
-    key_single("CheatWalkThroughWalls", K_KEYS_CHEAT_WALK_THROUGH_WALLS),
-    key_single("ClearKeyLog", K_KEYS_CLEAR_KEY_LOG),
-    key_single("StopReplay", K_KEYS_STOP_REPLAY),
-    key_single("Fullscreen", K_KEYS_FULLSCREEN),
-    key_single("Reset", K_KEYS_RESET),
-    key_single("Pause", K_KEYS_PAUSE),
-    key_single("PauseDimmed", K_KEYS_PAUSE_DIMMED),
-    key_single("Turbo", K_KEYS_TURBO),
-    key_single("ReplayTurbo", K_KEYS_REPLAY_TURBO),
-    key_single("WindowBigger", K_KEYS_WINDOW_BIGGER),
-    key_single("WindowSmaller", K_KEYS_WINDOW_SMALLER),
-    key_single("VolumeUp", K_KEYS_VOLUME_UP),
-    key_single("VolumeDown", K_KEYS_VOLUME_DOWN),
-    key_single("DisplayPerf", K_KEYS_DISPLAY_PERF),
-    key_single("ToggleRenderer", K_KEYS_TOGGLE_RENDERER),
+    key_range("Controls", KEY_COMMAND_CONTROLS, KEY_COMMAND_CONTROLS_LAST),
+    key_range("Load", KEY_COMMAND_LOAD, KEY_COMMAND_LOAD_LAST),
+    key_range("Save", KEY_COMMAND_SAVE, KEY_COMMAND_SAVE_LAST),
+    key_range("Replay", KEY_COMMAND_REPLAY, KEY_COMMAND_REPLAY_LAST),
+    key_range("LoadRef", KEY_COMMAND_LOAD_REF, KEY_COMMAND_LOAD_REF_LAST),
+    key_range(
+        "ReplayRef",
+        KEY_COMMAND_REPLAY_REF,
+        KEY_COMMAND_REPLAY_REF_LAST,
+    ),
+    key_single("CheatLife", KEY_COMMAND_CHEAT_LIFE),
+    key_single("CheatKeys", KEY_COMMAND_CHEAT_KEYS),
+    key_single("CheatEquipment", KEY_COMMAND_CHEAT_EQUIPMENT),
+    key_single(
+        "CheatWalkThroughWalls",
+        KEY_COMMAND_CHEAT_WALK_THROUGH_WALLS,
+    ),
+    key_single("ClearKeyLog", KEY_COMMAND_CLEAR_KEY_LOG),
+    key_single("StopReplay", KEY_COMMAND_STOP_REPLAY),
+    key_single("Fullscreen", KEY_COMMAND_FULLSCREEN),
+    key_single("Reset", KEY_COMMAND_RESET),
+    key_single("Pause", KEY_COMMAND_PAUSE),
+    key_single("PauseDimmed", KEY_COMMAND_PAUSE_DIMMED),
+    key_single("Turbo", KEY_COMMAND_TURBO),
+    key_single("ReplayTurbo", KEY_COMMAND_REPLAY_TURBO),
+    key_single("WindowBigger", KEY_COMMAND_WINDOW_BIGGER),
+    key_single("WindowSmaller", KEY_COMMAND_WINDOW_SMALLER),
+    key_single("VolumeUp", KEY_COMMAND_VOLUME_UP),
+    key_single("VolumeDown", KEY_COMMAND_VOLUME_DOWN),
+    key_single("DisplayPerf", KEY_COMMAND_DISPLAY_PERF),
+    key_single("ToggleRenderer", KEY_COMMAND_TOGGLE_RENDERER),
 ];
 
 const fn key_range(name: &'static str, first: u16, last: u16) -> KeyNameId {
@@ -264,7 +271,7 @@ pub struct ConfigContext {
     keymap_hash_first: [u16; 255],
     keymap_hash: Vec<KeyMapHashEnt>,
     has_keynameid: [bool; KEY_NAME_ID.len()],
-    joymap_first: [u16; K_GAMEPAD_BTN_COUNT],
+    joymap_first: [u16; GAMEPAD_BUTTON_COUNT],
     joymap_ents: Vec<GamepadMapEnt>,
     has_joypad_controls: bool,
 }
@@ -276,7 +283,7 @@ impl Default for ConfigContext {
             keymap_hash_first: [0; 255],
             keymap_hash: Vec::new(),
             has_keynameid: [false; KEY_NAME_ID.len()],
-            joymap_first: [0; K_GAMEPAD_BTN_COUNT],
+            joymap_first: [0; GAMEPAD_BUTTON_COUNT],
             joymap_ents: Vec::new(),
             has_joypad_controls: false,
         }
@@ -285,11 +292,11 @@ impl Default for ConfigContext {
 
 const fn remap_sdl_keycode(key: SdlKeycode) -> u16 {
     let scancode = if key & SDLK_SCANCODE_MASK != 0 {
-        K_KEY_MOD_SCAN_CODE
+        KEY_MODIFIER_SCAN_CODE
     } else {
         0
     };
-    scancode | ((key as u16) & (K_KEY_MOD_SCAN_CODE - 1))
+    scancode | ((key as u16) & (KEY_MODIFIER_SCAN_CODE - 1))
 }
 
 const fn key(key: SdlKeycode) -> u16 {
@@ -297,77 +304,77 @@ const fn key(key: SdlKeycode) -> u16 {
 }
 
 const fn shift(key: SdlKeycode) -> u16 {
-    remap_sdl_keycode(key) | K_KEY_MOD_SHIFT
+    remap_sdl_keycode(key) | KEY_MODIFIER_SHIFT
 }
 
 const fn alt(key: SdlKeycode) -> u16 {
-    remap_sdl_keycode(key) | K_KEY_MOD_ALT
+    remap_sdl_keycode(key) | KEY_MODIFIER_ALT
 }
 
 const fn ctrl(key: SdlKeycode) -> u16 {
-    remap_sdl_keycode(key) | K_KEY_MOD_CTRL
+    remap_sdl_keycode(key) | KEY_MODIFIER_CTRL
 }
 
 const N: u16 = 0;
 
-const DEFAULT_KBD_CONTROLS: [u16; K_KEYS_TOTAL] = {
-    let mut a = [0; K_KEYS_TOTAL];
-    a[K_KEYS_CONTROLS as usize] = key(SDLK_UP);
-    a[K_KEYS_CONTROLS as usize + 1] = key(SDLK_DOWN);
-    a[K_KEYS_CONTROLS as usize + 2] = key(SDLK_LEFT);
-    a[K_KEYS_CONTROLS as usize + 3] = key(SDLK_RIGHT);
-    a[K_KEYS_CONTROLS as usize + 4] = key(SDLK_RSHIFT);
-    a[K_KEYS_CONTROLS as usize + 5] = key(SDLK_RETURN);
-    a[K_KEYS_CONTROLS as usize + 6] = key(b'x' as SdlKeycode);
-    a[K_KEYS_CONTROLS as usize + 7] = key(b'z' as SdlKeycode);
-    a[K_KEYS_CONTROLS as usize + 8] = key(b's' as SdlKeycode);
-    a[K_KEYS_CONTROLS as usize + 9] = key(b'a' as SdlKeycode);
-    a[K_KEYS_CONTROLS as usize + 10] = key(b'c' as SdlKeycode);
-    a[K_KEYS_CONTROLS as usize + 11] = key(b'v' as SdlKeycode);
+const DEFAULT_KBD_CONTROLS: [u16; KEY_COMMAND_TOTAL] = {
+    let mut a = [0; KEY_COMMAND_TOTAL];
+    a[KEY_COMMAND_CONTROLS as usize] = key(SDLK_UP);
+    a[KEY_COMMAND_CONTROLS as usize + 1] = key(SDLK_DOWN);
+    a[KEY_COMMAND_CONTROLS as usize + 2] = key(SDLK_LEFT);
+    a[KEY_COMMAND_CONTROLS as usize + 3] = key(SDLK_RIGHT);
+    a[KEY_COMMAND_CONTROLS as usize + 4] = key(SDLK_RSHIFT);
+    a[KEY_COMMAND_CONTROLS as usize + 5] = key(SDLK_RETURN);
+    a[KEY_COMMAND_CONTROLS as usize + 6] = key(b'x' as SdlKeycode);
+    a[KEY_COMMAND_CONTROLS as usize + 7] = key(b'z' as SdlKeycode);
+    a[KEY_COMMAND_CONTROLS as usize + 8] = key(b's' as SdlKeycode);
+    a[KEY_COMMAND_CONTROLS as usize + 9] = key(b'a' as SdlKeycode);
+    a[KEY_COMMAND_CONTROLS as usize + 10] = key(b'c' as SdlKeycode);
+    a[KEY_COMMAND_CONTROLS as usize + 11] = key(b'v' as SdlKeycode);
 
     let fkeys = [
         SDLK_F1, SDLK_F2, SDLK_F3, SDLK_F4, SDLK_F5, SDLK_F6, SDLK_F7, SDLK_F8, SDLK_F9, SDLK_F10,
     ];
     let mut i = 0;
     while i < 10 {
-        a[K_KEYS_LOAD as usize + i] = key(fkeys[i]);
-        a[K_KEYS_SAVE as usize + i] = shift(fkeys[i]);
-        a[K_KEYS_REPLAY as usize + i] = ctrl(fkeys[i]);
+        a[KEY_COMMAND_LOAD as usize + i] = key(fkeys[i]);
+        a[KEY_COMMAND_SAVE as usize + i] = shift(fkeys[i]);
+        a[KEY_COMMAND_REPLAY as usize + i] = ctrl(fkeys[i]);
         i += 1;
     }
 
-    a[K_KEYS_CHEAT_LIFE as usize] = key(b'w' as SdlKeycode);
-    a[K_KEYS_CHEAT_KEYS as usize] = key(b'o' as SdlKeycode);
-    a[K_KEYS_CHEAT_EQUIPMENT as usize] = shift(b'w' as SdlKeycode);
-    a[K_KEYS_CHEAT_WALK_THROUGH_WALLS as usize] = ctrl(b'e' as SdlKeycode);
-    a[K_KEYS_CLEAR_KEY_LOG as usize] = key(b'k' as SdlKeycode);
-    a[K_KEYS_STOP_REPLAY as usize] = key(b'l' as SdlKeycode);
-    a[K_KEYS_FULLSCREEN as usize] = alt(SDLK_RETURN);
-    a[K_KEYS_RESET as usize] = ctrl(b'r' as SdlKeycode);
-    a[K_KEYS_PAUSE as usize] = shift(b'p' as SdlKeycode);
-    a[K_KEYS_PAUSE_DIMMED as usize] = key(b'p' as SdlKeycode);
-    a[K_KEYS_TURBO as usize] = key(SDLK_TAB);
-    a[K_KEYS_REPLAY_TURBO as usize] = key(b't' as SdlKeycode);
-    a[K_KEYS_WINDOW_BIGGER as usize] = N;
-    a[K_KEYS_WINDOW_SMALLER as usize] = N;
-    a[K_KEYS_DISPLAY_PERF as usize] = key(b'f' as SdlKeycode);
-    a[K_KEYS_TOGGLE_RENDERER as usize] = key(b'r' as SdlKeycode);
+    a[KEY_COMMAND_CHEAT_LIFE as usize] = key(b'w' as SdlKeycode);
+    a[KEY_COMMAND_CHEAT_KEYS as usize] = key(b'o' as SdlKeycode);
+    a[KEY_COMMAND_CHEAT_EQUIPMENT as usize] = shift(b'w' as SdlKeycode);
+    a[KEY_COMMAND_CHEAT_WALK_THROUGH_WALLS as usize] = ctrl(b'e' as SdlKeycode);
+    a[KEY_COMMAND_CLEAR_KEY_LOG as usize] = key(b'k' as SdlKeycode);
+    a[KEY_COMMAND_STOP_REPLAY as usize] = key(b'l' as SdlKeycode);
+    a[KEY_COMMAND_FULLSCREEN as usize] = alt(SDLK_RETURN);
+    a[KEY_COMMAND_RESET as usize] = ctrl(b'r' as SdlKeycode);
+    a[KEY_COMMAND_PAUSE as usize] = shift(b'p' as SdlKeycode);
+    a[KEY_COMMAND_PAUSE_DIMMED as usize] = key(b'p' as SdlKeycode);
+    a[KEY_COMMAND_TURBO as usize] = key(SDLK_TAB);
+    a[KEY_COMMAND_REPLAY_TURBO as usize] = key(b't' as SdlKeycode);
+    a[KEY_COMMAND_WINDOW_BIGGER as usize] = N;
+    a[KEY_COMMAND_WINDOW_SMALLER as usize] = N;
+    a[KEY_COMMAND_DISPLAY_PERF as usize] = key(b'f' as SdlKeycode);
+    a[KEY_COMMAND_TOGGLE_RENDERER as usize] = key(b'r' as SdlKeycode);
     a
 };
 
 const DEFAULT_GAMEPAD_CMDS: [usize; 12] = [
-    K_GAMEPAD_BTN_DPAD_UP,
-    K_GAMEPAD_BTN_DPAD_DOWN,
-    K_GAMEPAD_BTN_DPAD_LEFT,
-    K_GAMEPAD_BTN_DPAD_RIGHT,
-    K_GAMEPAD_BTN_BACK,
-    K_GAMEPAD_BTN_START,
-    K_GAMEPAD_BTN_B,
-    K_GAMEPAD_BTN_A,
-    K_GAMEPAD_BTN_Y,
-    K_GAMEPAD_BTN_X,
-    K_GAMEPAD_BTN_L1,
-    K_GAMEPAD_BTN_R1,
+    GAMEPAD_BUTTON_DPAD_UP,
+    GAMEPAD_BUTTON_DPAD_DOWN,
+    GAMEPAD_BUTTON_DPAD_LEFT,
+    GAMEPAD_BUTTON_DPAD_RIGHT,
+    GAMEPAD_BUTTON_BACK,
+    GAMEPAD_BUTTON_START,
+    GAMEPAD_BUTTON_B,
+    GAMEPAD_BUTTON_A,
+    GAMEPAD_BUTTON_Y,
+    GAMEPAD_BUTTON_X,
+    GAMEPAD_BUTTON_L1,
+    GAMEPAD_BUTTON_R1,
 ];
 
 fn cstr_to_string(s: *const i8) -> String {
@@ -426,21 +433,21 @@ impl ConfigContext {
         let mut key = 0;
         if code != SDLK_LALT && code != SDLK_RALT {
             key |= if keymod & KMOD_ALT != 0 {
-                K_KEY_MOD_ALT
+                KEY_MODIFIER_ALT
             } else {
                 0
             };
         }
         if code != SDLK_LCTRL && code != SDLK_RCTRL {
             key |= if keymod & KMOD_CTRL != 0 {
-                K_KEY_MOD_CTRL
+                KEY_MODIFIER_CTRL
             } else {
                 0
             };
         }
         if code != SDLK_LSHIFT && code != SDLK_RSHIFT {
             key |= if keymod & KMOD_SHIFT != 0 {
-                K_KEY_MOD_SHIFT
+                KEY_MODIFIER_SHIFT
             } else {
                 0
             };
@@ -460,13 +467,13 @@ impl ConfigContext {
                 let mut key_with_mod = 0;
                 loop {
                     if let Some(rest) = StringStartsWithNoCase(s, "Shift+") {
-                        key_with_mod |= K_KEY_MOD_SHIFT;
+                        key_with_mod |= KEY_MODIFIER_SHIFT;
                         s = rest;
                     } else if let Some(rest) = StringStartsWithNoCase(s, "Ctrl+") {
-                        key_with_mod |= K_KEY_MOD_CTRL;
+                        key_with_mod |= KEY_MODIFIER_CTRL;
                         s = rest;
                     } else if let Some(rest) = StringStartsWithNoCase(s, "Alt+") {
-                        key_with_mod |= K_KEY_MOD_ALT;
+                        key_with_mod |= KEY_MODIFIER_ALT;
                         s = rest;
                     } else {
                         break;
@@ -546,7 +553,7 @@ impl ConfigContext {
                 let mut ss = s;
                 loop {
                     let button = parse_gamepad_button_name_str(&mut ss);
-                    if button == K_GAMEPAD_BTN_INVALID {
+                    if button == GAMEPAD_BUTTON_INVALID {
                         break;
                     }
                     ss = ss.trim_start_matches([' ', '\t']);
@@ -580,7 +587,7 @@ impl ConfigContext {
         }
         if !self.has_joypad_controls {
             for (i, &button) in DEFAULT_GAMEPAD_CMDS.iter().enumerate() {
-                self.gamepad_map_add(button, 0, K_KEYS_CONTROLS + i as u16);
+                self.gamepad_map_add(button, 0, KEY_COMMAND_CONTROLS + i as u16);
             }
         }
     }
@@ -634,13 +641,13 @@ impl ConfigContext {
                 return true;
             } else if StringEqualsNoCase(key, "OutputMethod") {
                 self.config.output_method = if StringEqualsNoCase(value, "SDL-Software") {
-                    K_OUTPUT_METHOD_SDL_SOFTWARE
+                    OUTPUT_METHOD_SDL_SOFTWARE
                 } else if StringEqualsNoCase(value, "OpenGL") {
-                    K_OUTPUT_METHOD_OPENGL
+                    OUTPUT_METHOD_OPENGL
                 } else if StringEqualsNoCase(value, "OpenGL ES") {
-                    K_OUTPUT_METHOD_OPENGL_ES
+                    OUTPUT_METHOD_OPENGL_ES
                 } else {
-                    K_OUTPUT_METHOD_SDL
+                    OUTPUT_METHOD_SDL
                 };
                 return true;
             } else if StringEqualsNoCase(key, "LinearFiltering") {
@@ -658,11 +665,7 @@ impl ConfigContext {
                 };
                 return true;
             } else if StringEqualsNoCase(key, "DimFlashes") {
-                return parse_bool_bit_str(
-                    value,
-                    &mut self.config.features0,
-                    K_FEATURES0_DIM_FLASHES,
-                );
+                return parse_bool_bit_str(value, &mut self.config.features0, FEATURE_DIM_FLASHES);
             }
         } else if section == 2 {
             if StringEqualsNoCase(key, "EnableAudio") {
@@ -678,11 +681,11 @@ impl ConfigContext {
                 return true;
             } else if StringEqualsNoCase(key, "EnableMSU") {
                 if StringEqualsNoCase(value, "opuz") {
-                    self.config.enable_msu = K_MSU_ENABLED_OPUZ;
+                    self.config.enable_msu = MSU_FEATURE_OPUZ;
                 } else if StringEqualsNoCase(value, "deluxe") {
-                    self.config.enable_msu = K_MSU_ENABLED_MSU_DELUXE;
+                    self.config.enable_msu = MSU_FEATURE_MSU_DELUXE;
                 } else if StringEqualsNoCase(value, "deluxe-opuz") {
-                    self.config.enable_msu = K_MSU_ENABLED_MSU_DELUXE | K_MSU_ENABLED_OPUZ;
+                    self.config.enable_msu = MSU_FEATURE_MSU_DELUXE | MSU_FEATURE_OPUZ;
                 } else {
                     let mut enabled = self.config.enable_msu != 0;
                     if !parse_bool_str(value, Some(&mut enabled)) {
@@ -730,10 +733,10 @@ impl ConfigContext {
                     }
                 }
                 if self.config.extended_aspect_ratio != 0 && !nospr {
-                    self.config.features0 |= K_FEATURES0_EXTEND_SCREEN64;
+                    self.config.features0 |= FEATURE_EXTEND_SCREEN64;
                 }
                 if self.config.extended_aspect_ratio != 0 && !novis {
-                    self.config.features0 |= K_FEATURES0_WIDESCREEN_VISUAL_FIXES;
+                    self.config.features0 |= FEATURE_WIDESCREEN_VISUAL_FIXES;
                 }
                 return true;
             } else if StringEqualsNoCase(key, "DisplayPerfInTitle") {
@@ -746,33 +749,33 @@ impl ConfigContext {
             }
         } else if section == 4 {
             let mask = if StringEqualsNoCase(key, "ItemSwitchLR") {
-                Some(K_FEATURES0_SWITCH_LR)
+                Some(FEATURE_SWITCH_LR)
             } else if StringEqualsNoCase(key, "ItemSwitchLRLimit") {
-                Some(K_FEATURES0_SWITCH_LR_LIMIT)
+                Some(FEATURE_SWITCH_LR_LIMIT)
             } else if StringEqualsNoCase(key, "TurnWhileDashing") {
-                Some(K_FEATURES0_TURN_WHILE_DASHING)
+                Some(FEATURE_TURN_WHILE_DASHING)
             } else if StringEqualsNoCase(key, "MirrorToDarkworld") {
-                Some(K_FEATURES0_MIRROR_TO_DARKWORLD)
+                Some(FEATURE_MIRROR_TO_DARKWORLD)
             } else if StringEqualsNoCase(key, "CollectItemsWithSword") {
-                Some(K_FEATURES0_COLLECT_ITEMS_WITH_SWORD)
+                Some(FEATURE_COLLECT_ITEMS_WITH_SWORD)
             } else if StringEqualsNoCase(key, "BreakPotsWithSword") {
-                Some(K_FEATURES0_BREAK_POTS_WITH_SWORD)
+                Some(FEATURE_BREAK_POTS_WITH_SWORD)
             } else if StringEqualsNoCase(key, "DisableLowHealthBeep") {
-                Some(K_FEATURES0_DISABLE_LOW_HEALTH_BEEP)
+                Some(FEATURE_DISABLE_LOW_HEALTH_BEEP)
             } else if StringEqualsNoCase(key, "SkipIntroOnKeypress") {
-                Some(K_FEATURES0_SKIP_INTRO_ON_KEYPRESS)
+                Some(FEATURE_SKIP_INTRO_ON_KEYPRESS)
             } else if StringEqualsNoCase(key, "ShowMaxItemsInYellow") {
-                Some(K_FEATURES0_SHOW_MAX_ITEMS_IN_YELLOW)
+                Some(FEATURE_SHOW_MAX_ITEMS_IN_YELLOW)
             } else if StringEqualsNoCase(key, "MoreActiveBombs") {
-                Some(K_FEATURES0_MORE_ACTIVE_BOMBS)
+                Some(FEATURE_MORE_ACTIVE_BOMBS)
             } else if StringEqualsNoCase(key, "CarryMoreRupees") {
-                Some(K_FEATURES0_CARRY_MORE_RUPEES)
+                Some(FEATURE_CARRY_MORE_RUPEES)
             } else if StringEqualsNoCase(key, "MiscBugFixes") {
-                Some(K_FEATURES0_MISC_BUG_FIXES)
+                Some(FEATURE_MISC_BUG_FIXES)
             } else if StringEqualsNoCase(key, "GameChangingBugFixes") {
-                Some(K_FEATURES0_GAME_CHANGING_BUG_FIXES)
+                Some(FEATURE_GAME_CHANGING_BUG_FIXES)
             } else if StringEqualsNoCase(key, "CancelBirdTravel") {
-                Some(K_FEATURES0_CANCEL_BIRD_TRAVEL)
+                Some(FEATURE_CANCEL_BIRD_TRAVEL)
             } else {
                 None
             };
@@ -852,25 +855,25 @@ fn count_bits32(mut n: u32) -> i32 {
 
 fn parse_gamepad_button_name_str(value: &mut &str) -> i32 {
     const NAMES: [(&str, usize); 19] = [
-        ("Back", K_GAMEPAD_BTN_BACK),
-        ("Guide", K_GAMEPAD_BTN_GUIDE),
-        ("Start", K_GAMEPAD_BTN_START),
-        ("L3", K_GAMEPAD_BTN_L3),
-        ("R3", K_GAMEPAD_BTN_R3),
-        ("L1", K_GAMEPAD_BTN_L1),
-        ("R1", K_GAMEPAD_BTN_R1),
-        ("DpadUp", K_GAMEPAD_BTN_DPAD_UP),
-        ("DpadDown", K_GAMEPAD_BTN_DPAD_DOWN),
-        ("DpadLeft", K_GAMEPAD_BTN_DPAD_LEFT),
-        ("DpadRight", K_GAMEPAD_BTN_DPAD_RIGHT),
-        ("L2", K_GAMEPAD_BTN_L2),
-        ("R2", K_GAMEPAD_BTN_R2),
-        ("Lb", K_GAMEPAD_BTN_L1),
-        ("Rb", K_GAMEPAD_BTN_R1),
-        ("A", K_GAMEPAD_BTN_A),
-        ("B", K_GAMEPAD_BTN_B),
-        ("X", K_GAMEPAD_BTN_X),
-        ("Y", K_GAMEPAD_BTN_Y),
+        ("Back", GAMEPAD_BUTTON_BACK),
+        ("Guide", GAMEPAD_BUTTON_GUIDE),
+        ("Start", GAMEPAD_BUTTON_START),
+        ("L3", GAMEPAD_BUTTON_L3),
+        ("R3", GAMEPAD_BUTTON_R3),
+        ("L1", GAMEPAD_BUTTON_L1),
+        ("R1", GAMEPAD_BUTTON_R1),
+        ("DpadUp", GAMEPAD_BUTTON_DPAD_UP),
+        ("DpadDown", GAMEPAD_BUTTON_DPAD_DOWN),
+        ("DpadLeft", GAMEPAD_BUTTON_DPAD_LEFT),
+        ("DpadRight", GAMEPAD_BUTTON_DPAD_RIGHT),
+        ("L2", GAMEPAD_BUTTON_L2),
+        ("R2", GAMEPAD_BUTTON_R2),
+        ("Lb", GAMEPAD_BUTTON_L1),
+        ("Rb", GAMEPAD_BUTTON_R1),
+        ("A", GAMEPAD_BUTTON_A),
+        ("B", GAMEPAD_BUTTON_B),
+        ("X", GAMEPAD_BUTTON_X),
+        ("Y", GAMEPAD_BUTTON_Y),
     ];
     for (name, id) in NAMES {
         if let Some(rest) = StringStartsWithNoCase(value, name) {
@@ -878,7 +881,7 @@ fn parse_gamepad_button_name_str(value: &mut &str) -> i32 {
             return id as i32;
         }
     }
-    K_GAMEPAD_BTN_INVALID
+    GAMEPAD_BUTTON_INVALID
 }
 
 fn get_ini_section_str(s: &str) -> i32 {
@@ -1287,32 +1290,35 @@ mod tests {
         let mut ctx = ConfigContext::default();
         ctx.parse_config_file(Some("__missing_config__"));
 
-        assert_eq!(ctx.find_cmd_for_sdl_key(SDLK_UP, 0), K_KEYS_CONTROLS as i32);
+        assert_eq!(
+            ctx.find_cmd_for_sdl_key(SDLK_UP, 0),
+            KEY_COMMAND_CONTROLS as i32
+        );
         assert_eq!(
             ctx.find_cmd_for_sdl_key(SDLK_RETURN, KMOD_ALT),
-            K_KEYS_FULLSCREEN as i32
+            KEY_COMMAND_FULLSCREEN as i32
         );
         assert_eq!(
             ctx.find_cmd_for_sdl_key(b'r' as SdlKeycode, KMOD_CTRL),
-            K_KEYS_RESET as i32
+            KEY_COMMAND_RESET as i32
         );
         assert_eq!(
             ctx.find_cmd_for_sdl_key(SDLK_RSHIFT, KMOD_SHIFT),
-            K_KEYS_CONTROLS as i32 + 4
+            KEY_COMMAND_CONTROLS as i32 + 4
         );
     }
 
     #[test]
     fn gamepad_modifier_entries_precede_less_specific_entries() {
         let mut ctx = ConfigContext::default();
-        ctx.parse_gamepad_array("L1+A,A", K_KEYS_CONTROLS, 2);
+        ctx.parse_gamepad_array("L1+A,A", KEY_COMMAND_CONTROLS, 2);
         assert_eq!(
-            ctx.find_cmd_for_gamepad_button(K_GAMEPAD_BTN_A, 1 << K_GAMEPAD_BTN_L1),
-            K_KEYS_CONTROLS as i32
+            ctx.find_cmd_for_gamepad_button(GAMEPAD_BUTTON_A, 1 << GAMEPAD_BUTTON_L1),
+            KEY_COMMAND_CONTROLS as i32
         );
         assert_eq!(
-            ctx.find_cmd_for_gamepad_button(K_GAMEPAD_BTN_A, 0),
-            K_KEYS_CONTROLS as i32 + 1
+            ctx.find_cmd_for_gamepad_button(GAMEPAD_BUTTON_A, 0),
+            KEY_COMMAND_CONTROLS as i32 + 1
         );
     }
 
@@ -1351,23 +1357,23 @@ mod tests {
         ctx.parse_config_file(Some(root.to_str().unwrap()));
         assert_eq!(ctx.config.window_width, 320);
         assert_eq!(ctx.config.window_height, 240);
-        assert_eq!(ctx.config.output_method, K_OUTPUT_METHOD_OPENGL_ES);
+        assert_eq!(ctx.config.output_method, OUTPUT_METHOD_OPENGL_ES);
         assert_eq!(ctx.config.shader, None);
         assert_eq!(
             ctx.config.enable_msu,
-            K_MSU_ENABLED_MSU_DELUXE | K_MSU_ENABLED_OPUZ
+            MSU_FEATURE_MSU_DELUXE | MSU_FEATURE_OPUZ
         );
         assert_eq!(ctx.config.msuvolume, 77);
         assert!(ctx.config.extend_y);
-        assert_ne!(ctx.config.features0 & K_FEATURES0_SWITCH_LR, 0);
+        assert_ne!(ctx.config.features0 & FEATURE_SWITCH_LR, 0);
         assert_eq!(ctx.config.language.as_deref(), Some("en"));
         assert_eq!(
             ctx.find_cmd_for_sdl_key(b'r' as SdlKeycode, KMOD_CTRL),
-            K_KEYS_RESET as i32
+            KEY_COMMAND_RESET as i32
         );
         assert_eq!(
-            ctx.find_cmd_for_gamepad_button(K_GAMEPAD_BTN_A, 1 << K_GAMEPAD_BTN_L1),
-            K_KEYS_CONTROLS as i32
+            ctx.find_cmd_for_gamepad_button(GAMEPAD_BUTTON_A, 1 << GAMEPAD_BUTTON_L1),
+            KEY_COMMAND_CONTROLS as i32
         );
 
         fs::remove_dir_all(&dir).unwrap();
