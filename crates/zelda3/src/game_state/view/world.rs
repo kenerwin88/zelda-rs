@@ -89,6 +89,25 @@ impl<'a> WorldStateView<'a> {
         word(self.ram, OVERWORLD_SCREEN_TRANSITION)
     }
 
+    pub(crate) fn horizontal_room_bounds_base_index(&self) -> usize {
+        (byte(self.ram, QUADRANT_FULLSIZE_X) >> 1) as usize
+    }
+
+    pub(crate) fn vertical_room_bounds_base_index(&self) -> usize {
+        (byte(self.ram, QUADRANT_FULLSIZE_Y) >> 1) as usize
+    }
+
+    pub(crate) fn dungeon_quadrant_visit_index(
+        &self,
+        player_quadrant_y: u8,
+        player_quadrant_x: u8,
+    ) -> usize {
+        ((byte(self.ram, QUADRANT_FULLSIZE_Y) as usize) << 2)
+            + ((byte(self.ram, QUADRANT_FULLSIZE_X) as usize) << 1)
+            + player_quadrant_y as usize
+            + player_quadrant_x as usize
+    }
+
     pub(crate) fn overlay_index(&self) -> u8 {
         byte(self.ram, OVERLAY_INDEX)
     }
@@ -103,6 +122,10 @@ impl<'a> WorldStateView<'a> {
 
     pub(crate) fn map16_load_y_unit(&self) -> u16 {
         word(self.ram, MAP16_LOAD_Y_UNIT)
+    }
+
+    pub(crate) fn exit_screen_index(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCREEN_INDEX_EXIT)
     }
 
     pub(crate) fn bg1_x(&self) -> u16 {
@@ -573,6 +596,89 @@ impl<'a> WorldStateViewMut<'a> {
         self.ram[QUADRANT_FULLSIZE_Y] = value;
     }
 
+    pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
+        self.ram[QUADRANT_FULLSIZE_X] = 2;
+        self.ram[QUADRANT_FULLSIZE_Y] = 2;
+    }
+
+    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
+        self.ram[QUADRANT_FULLSIZE_X] = value;
+    }
+
+    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
+        self.ram[QUADRANT_FULLSIZE_Y] = value;
+    }
+
+    pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        vertical_mask: u8,
+        blast_wall_x_open: bool,
+        blast_wall_y_open: bool,
+    ) {
+        self.ram[QUADRANT_FULLSIZE_X] = if blast_wall_x_open || layout_flags & horizontal_mask == 0
+        {
+            2
+        } else {
+            0
+        };
+        self.ram[QUADRANT_FULLSIZE_Y] = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
+            2
+        } else {
+            0
+        };
+    }
+
+    pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        blast_wall_x_open: bool,
+    ) {
+        self.ram[QUADRANT_FULLSIZE_X] = if blast_wall_x_open || layout_flags & horizontal_mask == 0
+        {
+            2
+        } else {
+            0
+        };
+    }
+
+    pub(crate) fn apply_dungeon_layout_vertical_fullsize(
+        &mut self,
+        layout_flags: u8,
+        vertical_mask: u8,
+        blast_wall_y_open: bool,
+    ) {
+        self.ram[QUADRANT_FULLSIZE_Y] = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
+            2
+        } else {
+            0
+        };
+    }
+
+    pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
+        if reset_xy_flags as u8 != 0 {
+            self.ram[QUADRANT_FULLSIZE_X] = reset_xy_flags as u8;
+        }
+        if (reset_xy_flags >> 8) as u8 != 0 {
+            self.ram[QUADRANT_FULLSIZE_Y] = (reset_xy_flags >> 8) as u8;
+        }
+    }
+
+    pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
+        let quadrant = word(self.ram, QUADRANT_FULLSIZE_X);
+        write_le_u16(self.ram, QUADRANT_FULLSIZE_X_CACHED, quadrant);
+    }
+
+    pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
+        self.ram[QUADRANT_FULLSIZE_X] = 2;
+    }
+
+    pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
+        self.ram[QUADRANT_FULLSIZE_Y] = 2;
+    }
+
     pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
         self.ram[OVERWORLD_TILE_THEME_INDEX] = value;
     }
@@ -882,6 +988,26 @@ impl<'a> WorldStateViewMut<'a> {
 
     pub(crate) fn exit_camera_x_scroll_low(&self) -> u16 {
         word(self.ram, CAMERA_X_COORD_SCROLL_LOW_EXIT)
+    }
+
+    pub(crate) fn restore_exit_camera_scroll(&mut self) {
+        let camera_y = word(self.ram, CAMERA_Y_COORD_SCROLL_LOW_EXIT);
+        write_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_LOW, camera_y);
+        write_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_HI, camera_y.wrapping_sub(2));
+
+        let camera_x = word(self.ram, CAMERA_X_COORD_SCROLL_LOW_EXIT);
+        write_le_u16(self.ram, CAMERA_X_COORD_SCROLL_LOW, camera_x);
+        write_le_u16(self.ram, CAMERA_X_COORD_SCROLL_HI, camera_x.wrapping_sub(2));
+    }
+
+    pub(crate) fn restore_special_exit_camera_scroll(&mut self) {
+        let camera_y = word(self.ram, CAMERA_Y_COORD_SCROLL_LOW_SPEXIT);
+        write_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_LOW, camera_y);
+        write_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_HI, camera_y.wrapping_sub(2));
+
+        let camera_x = word(self.ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT);
+        write_le_u16(self.ram, CAMERA_X_COORD_SCROLL_LOW, camera_x);
+        write_le_u16(self.ram, CAMERA_X_COORD_SCROLL_HI, camera_x.wrapping_sub(2));
     }
 
     pub(crate) fn restore_exit_tile_themes(&mut self) {

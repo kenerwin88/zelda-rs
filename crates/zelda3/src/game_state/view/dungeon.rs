@@ -77,6 +77,18 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNG_CUR_FLOOR)
     }
 
+    pub(crate) fn blast_wall_x_open(&self) -> bool {
+        byte(self.ram, DUNG_BLASTWALL_FLAG_X) != 0
+    }
+
+    pub(crate) fn blast_wall_y_open(&self) -> bool {
+        byte(self.ram, DUNG_BLASTWALL_FLAG_Y) != 0
+    }
+
+    pub(crate) fn reset_xy_check_flags(&self) -> u16 {
+        word(self.ram, RESET_XY_CHECK_FLAGS)
+    }
+
     pub(crate) fn cached_floor(&self) -> u8 {
         byte(self.ram, DUNG_CUR_FLOOR_CACHED)
     }
@@ -760,6 +772,26 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn set_quadrants_visited(&mut self, value: u16) {
         write_le_u16(self.ram, DUNG_QUADRANTS_VISITED, value);
+    }
+
+    pub(crate) fn or_quadrants_visited(&mut self, value: u16) -> u16 {
+        let visited = word(self.ram, DUNG_QUADRANTS_VISITED) | value;
+        write_le_u16(self.ram, DUNG_QUADRANTS_VISITED, visited);
+        visited
+    }
+
+    pub(crate) fn mark_blast_wall_x_open(&mut self) {
+        self.ram[DUNG_BLASTWALL_FLAG_X] = 1;
+    }
+
+    pub(crate) fn mark_blast_wall_y_open(&mut self) {
+        self.ram[DUNG_BLASTWALL_FLAG_Y] = 1;
+    }
+
+    pub(crate) fn add_reset_xy_check_flags(&mut self, value: u16) -> u16 {
+        let flags = word(self.ram, RESET_XY_CHECK_FLAGS) | value;
+        write_le_u16(self.ram, RESET_XY_CHECK_FLAGS, flags);
+        flags
     }
 
     pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {

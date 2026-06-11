@@ -31,15 +31,12 @@ const DUNG_FLOOR_Y_VEL_DUNGEON: usize = 0x310;
 const DUNG_FLOOR_X_VEL: usize = 0x312;
 const DUNG_FLOOR_X_OFFS: usize = 0x422;
 // NES_Ver2: RSXYCKF, "reset x,y check flag".
-const RESET_XY_CHECK_FLAGS: usize = 0x00fc;
 // NES_Ver2: B1CWPT/BG1MPT, moving-wall write point and dot pointer.
 const MOVING_WALL_WRITE_POINT: usize = 0x42a;
 const MOVING_WALL_DOT_POINTER: usize = 0x41e;
 const MOVING_WALL_ARR1: usize = 0xc880;
 const INVISIBLE_DOOR_DIR_AND_INDEX_X2: usize = 0x436;
 const TRANSITION_COUNTER: usize = 0x0126;
-const DUNG_BLASTWALL_FLAG_X: usize = 0x0452;
-const DUNG_BLASTWALL_FLAG_Y: usize = 0x0453;
 const DUNG_FLAG_TRAPDOORS_DOWN: usize = 0x468;
 const DUNG_FLAG_STATECHANGE_WATERPUZZLE: usize = 0x642;
 // NES_Ver2: WGTPNT, water-gate pointer.
@@ -3309,16 +3306,17 @@ impl ZeldaState {
                 && self.dungeon_state_view().primary_header_tag() != 0x28,
         );
         self.dungeon_state_view_mut().clear_header_tag(slot);
-        self.ram[QUADRANT_FULLSIZE_Y] = 2;
-        self.ram[DUNG_BLASTWALL_FLAG_Y] = 1;
+        self.world_state_view_mut()
+            .force_vertical_fullsize_for_blast_wall();
+        self.dungeon_state_view_mut().mark_blast_wall_y_open();
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_DOWN[42] as usize, dsto);
         let next = self
             .dungeon_state_view()
             .current_door_index()
             .wrapping_add(2);
         self.dungeon_state_view_mut().set_current_door_index(next);
-        let reset_xy_flags = read_le_u16(&self.ram, RESET_XY_CHECK_FLAGS) | 0x0200;
-        write_le_u16(&mut self.ram, RESET_XY_CHECK_FLAGS, reset_xy_flags);
+        self.dungeon_state_view_mut()
+            .add_reset_xy_check_flags(0x0200);
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_UP[42] as usize, dsto + xy(0, 6) as u16);
     }
 
@@ -5451,12 +5449,13 @@ impl ZeldaState {
         const QUADRANT_VISITING_FLAGS: [u16; 16] = [
             8, 4, 2, 1, 0x0c, 0x0c, 3, 3, 0x0a, 5, 0x0a, 5, 0x0f, 0x0f, 0x0f, 0x0f,
         ];
+        let player_quadrant_y = self.player_state_view().quadrant_y();
+        let player_quadrant_x = self.player_state_view().quadrant_x();
         let index = self
-            .player_state_view()
-            .quadrant_visit_index(self.ram[QUADRANT_FULLSIZE_Y], self.ram[QUADRANT_FULLSIZE_X]);
+            .world_state_view()
+            .dungeon_quadrant_visit_index(player_quadrant_y, player_quadrant_x);
         let flag = QUADRANT_VISITING_FLAGS[index];
-        let visited = read_le_u16(&self.ram, DUNG_QUADRANTS_VISITED) | flag;
-        write_le_u16(&mut self.ram, DUNG_QUADRANTS_VISITED, visited);
+        let visited = self.dungeon_state_view_mut().or_quadrants_visited(flag);
 
         let room = self.world_state_view().dungeon_room() as usize;
         let dst = SAVE_DUNG_INFO + room * 2;
@@ -5563,28 +5562,21 @@ impl ZeldaState {
     pub(super) fn Dungeon_AdjustForRoomLayout(&mut self) {
         self.Dungeon_AdjustQuadrant();
         let flags = LAYOUT_QUADRANT_FLAGS[self.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] as usize];
-        self.ram[QUADRANT_FULLSIZE_X] = if self.ram[DUNG_BLASTWALL_FLAG_X] != 0
-            || flags & self.player_state_view().quadrant_x_mask() == 0
-        {
-            2
-        } else {
-            0
-        };
-        self.ram[QUADRANT_FULLSIZE_Y] = if self.ram[DUNG_BLASTWALL_FLAG_Y] != 0
-            || flags & self.player_state_view().quadrant_y_mask() == 0
-        {
-            2
-        } else {
-            0
-        };
-
-        let reset_xy_flags = read_le_u16(&self.ram, RESET_XY_CHECK_FLAGS);
-        if reset_xy_flags as u8 != 0 {
-            self.ram[QUADRANT_FULLSIZE_X] = reset_xy_flags as u8;
-        }
-        if (reset_xy_flags >> 8) as u8 != 0 {
-            self.ram[QUADRANT_FULLSIZE_Y] = (reset_xy_flags >> 8) as u8;
-        }
+        let horizontal_mask = self.player_state_view().quadrant_x_mask();
+        let vertical_mask = self.player_state_view().quadrant_y_mask();
+        let blast_wall_x_open = self.dungeon_state_view().blast_wall_x_open();
+        let blast_wall_y_open = self.dungeon_state_view().blast_wall_y_open();
+        self.world_state_view_mut()
+            .apply_dungeon_layout_quadrant_fullsize(
+                flags,
+                horizontal_mask,
+                vertical_mask,
+                blast_wall_x_open,
+                blast_wall_y_open,
+            );
+        let reset_xy_flags = self.dungeon_state_view().reset_xy_check_flags();
+        self.world_state_view_mut()
+            .apply_reset_xy_quadrant_overrides(reset_xy_flags);
     }
 
     pub(super) fn Dung_SaveDataForCurrentRoom(&mut self) {
@@ -5617,12 +5609,13 @@ impl ZeldaState {
         const QUADRANT_VISITING_FLAGS: [u16; 16] = [
             8, 4, 2, 1, 0x0c, 0x0c, 3, 3, 0x0a, 5, 0x0a, 5, 0x0f, 0x0f, 0x0f, 0x0f,
         ];
+        let player_quadrant_y = self.player_state_view().quadrant_y();
+        let player_quadrant_x = self.player_state_view().quadrant_x();
         let index = self
-            .player_state_view()
-            .quadrant_visit_index(self.ram[QUADRANT_FULLSIZE_Y], self.ram[QUADRANT_FULLSIZE_X]);
-        let visited =
-            read_le_u16(&self.ram, DUNG_QUADRANTS_VISITED) | QUADRANT_VISITING_FLAGS[index];
-        write_le_u16(&mut self.ram, DUNG_QUADRANTS_VISITED, visited);
+            .world_state_view()
+            .dungeon_quadrant_visit_index(player_quadrant_y, player_quadrant_x);
+        self.dungeon_state_view_mut()
+            .or_quadrants_visited(QUADRANT_VISITING_FLAGS[index]);
         self.Dung_SaveDataForCurrentRoom();
     }
 
@@ -5847,23 +5840,17 @@ impl ZeldaState {
     fn update_quadrant_fullsize_x_after_transition(&mut self) {
         let flags = LAYOUT_QUADRANT_FLAGS[self.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] as usize];
         let mask = self.player_state_view().quadrant_x_mask();
-        self.ram[QUADRANT_FULLSIZE_X] = if self.ram[DUNG_BLASTWALL_FLAG_X] != 0 || flags & mask == 0
-        {
-            2
-        } else {
-            0
-        };
+        let blast_wall_x_open = self.dungeon_state_view().blast_wall_x_open();
+        self.world_state_view_mut()
+            .apply_dungeon_layout_horizontal_fullsize(flags, mask, blast_wall_x_open);
     }
 
     fn update_quadrant_fullsize_y_after_transition(&mut self) {
         let flags = LAYOUT_QUADRANT_FLAGS[self.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] as usize];
         let mask = self.player_state_view().quadrant_y_mask();
-        self.ram[QUADRANT_FULLSIZE_Y] = if self.ram[DUNG_BLASTWALL_FLAG_Y] != 0 || flags & mask == 0
-        {
-            2
-        } else {
-            0
-        };
+        let blast_wall_y_open = self.dungeon_state_view().blast_wall_y_open();
+        self.world_state_view_mut()
+            .apply_dungeon_layout_vertical_fullsize(flags, mask, blast_wall_y_open);
     }
 
     pub(super) fn HandleEdgeTransitionMovementEast_RightBy8(&mut self) {
@@ -11621,7 +11608,7 @@ impl ZeldaState {
             };
 
             for _ in 0..steps {
-                let mut qm = (self.ram[QUADRANT_FULLSIZE_Y] >> 1) as usize;
+                let mut qm = self.world_state_view().vertical_room_bounds_base_index();
                 if moving_up {
                     if y > read_le_u16(&self.ram, CAMERA_Y_COORD_SCROLL_LOW) {
                         continue;
@@ -11680,7 +11667,7 @@ impl ZeldaState {
             };
 
             for _ in 0..steps {
-                let mut qm = (self.ram[QUADRANT_FULLSIZE_X] >> 1) as usize;
+                let mut qm = self.world_state_view().horizontal_room_bounds_base_index();
                 if moving_left {
                     if x > read_le_u16(&self.ram, CAMERA_X_COORD_SCROLL_LOW) {
                         continue;
@@ -12084,14 +12071,15 @@ impl ZeldaState {
             write_le_u16(&mut self.ram, DUNG_DOOR_OPENED, opened);
 
             if self.dungeon_state_view().door_direction(door) & 2 != 0 {
-                self.ram[DUNG_BLASTWALL_FLAG_X] = 1;
-                self.ram[QUADRANT_FULLSIZE_X] = 2;
+                self.dungeon_state_view_mut().mark_blast_wall_x_open();
+                self.world_state_view_mut()
+                    .force_horizontal_fullsize_for_blast_wall();
             } else {
-                self.ram[DUNG_BLASTWALL_FLAG_Y] = 1;
-                self.ram[QUADRANT_FULLSIZE_Y] = 2;
+                self.dungeon_state_view_mut().mark_blast_wall_y_open();
+                self.world_state_view_mut()
+                    .force_vertical_fullsize_for_blast_wall();
             }
-            let quadrant = read_le_u16(&self.ram, QUADRANT_FULLSIZE_X);
-            write_le_u16(&mut self.ram, QUADRANT_FULLSIZE_X_CACHED, quadrant);
+            self.world_state_view_mut().cache_quadrant_fullsize_state();
             self.Door_LoadBlastWallAttr(door);
             write_le_u16(&mut self.ram, CRUSH_WALL_PROGRESS_DUNGEON, 0);
             write_le_u16(&mut self.ram, CRUSH_WALL_DOOR_INDEX_X2_DUNGEON, 0);
