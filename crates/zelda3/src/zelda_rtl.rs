@@ -84,7 +84,7 @@ use crate::ram::semantic::{
     WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut,
     WorldStateView, WorldStateViewMut, ArcheryGameView, ArcheryGameViewMut,
     MinigameStateView, MinigameStateViewMut, SpriteBattleView, SpriteBattleViewMut,
-    SharedMessageTimerViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2086,6 +2086,10 @@ impl ZeldaState {
 
     pub(crate) fn sprite_battle_view_mut(&mut self) -> SpriteBattleViewMut<'_> {
         SpriteBattleViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn shared_message_timer_view(&self) -> SharedMessageTimerView<'_> {
+        SharedMessageTimerView::new(&self.ram)
     }
 
     pub(crate) fn shared_message_timer_view_mut(&mut self) -> SharedMessageTimerViewMut<'_> {

@@ -242,8 +242,8 @@ impl<'a> TagalongLinkState<'a> {
             | tagalong_link_byte(self.ram, LINK_PULL_ACTION_STATE_TAGALONG)
             | tagalong_link_byte(self.ram, LINK_ITEM_IN_HAND_TAGALONG)
             | tagalong_link_byte(self.ram, LINK_POSITION_MODE_TAGALONG)
-            | self.ram[FLAG_IS_ANCILLA_TO_PICK_UP_TAGALONG]
-            | self.ram[FLAG_IS_SPRITE_TO_PICK_UP_TAGALONG]
+            | tagalong_link_byte(self.ram, FLAG_IS_ANCILLA_TO_PICK_UP_TAGALONG)
+            | tagalong_link_byte(self.ram, FLAG_IS_SPRITE_TO_PICK_UP_TAGALONG)
             | tagalong_link_byte(self.ram, LINK_STATE_BITS_TAGALONG)
             | tagalong_link_byte(self.ram, LINK_GRABBING_WALL_TAGALONG);
         self.is_ground_swim_or_dash_start() && blocked == 0
@@ -904,8 +904,8 @@ const TAGALONG_DRAW_SPR_OFFS1: [u16; 2] = [0x1c0, 0x110];
 
 impl ZeldaState {
     pub(super) fn tagalong_is_following(&self) -> bool {
-        let main = self.ram[MAIN_MODULE_INDEX_TAGALONG];
-        let sub = self.ram[SUBMODULE_INDEX_TAGALONG];
+        let main = self.frame_control_view().main_module();
+        let sub = self.frame_control_view().submodule();
         !self.tagalong_link_state().is_immobilized()
             && sub != 10
             && !(main == 9 && sub == 0x23)
@@ -972,7 +972,7 @@ impl ZeldaState {
         self.follower_state_view_mut().set_data_index(0);
         self.follower_state_view_mut().set_tail_write_index(0);
         self.follower_state_view_mut().clear_hookshot_interlock();
-        self.ram[TAGALONG_JUMP_TIMER_TAGALONG] = 0;
+        self.follower_state_view_mut().clear_jump_timer();
         self.tagalong_link_state_mut().set_speed_setting(0);
         if self.read_u32_ram(ENHANCED_FEATURES0_TAGALONG) & FEATURES0_TURN_WHILE_DASHING_TAGALONG
             != 0
@@ -995,7 +995,7 @@ impl ZeldaState {
         self.follower_state_view_mut().set_tail_write_index(0);
         self.follower_state_view_mut().set_data_index(0);
         self.follower_state_view_mut().clear_hookshot_interlock();
-        self.ram[TAGALONG_JUMP_TIMER_TAGALONG] = 0;
+        self.follower_state_view_mut().clear_jump_timer();
         self.tagalong_link_state_mut().set_speed_setting(0);
         self.follower_state_view_mut().set_appearance_none_flag(0);
         self.follower_state_view_mut().set_dropped(0);
@@ -1016,26 +1016,18 @@ impl ZeldaState {
             .map(|v| v as i32)
             .unwrap_or(-1);
         if j >= 0
-            && self.ram[SUBMODULE_INDEX_TAGALONG] == 0
-            && !(j == 2 && self.ram[OVERWORLD_SCREEN_INDEX_TAGALONG] & 0x40 != 0)
+            && self.frame_control_view().submodule() == 0
+            && !(j == 2 && self.world_state_view().overworld_screen() & 0x40 != 0)
         {
-            let timer = read_le_u16(&self.ram, TAGALONG_MESSAGE_TIMER).wrapping_sub(1);
-            write_le_u16(&mut self.ram, TAGALONG_MESSAGE_TIMER, timer);
+            let timer = self.shared_message_timer_view().get().wrapping_sub(1);
+            self.shared_message_timer_view_mut().set(timer);
             if sign16(timer) {
                 if !self.follower_validate_message_freedom() {
-                    write_le_u16(&mut self.ram, TAGALONG_MESSAGE_TIMER, 0);
+                    self.shared_message_timer_view_mut().set(0);
                 } else {
                     let j = j as usize;
-                    write_le_u16(
-                        &mut self.ram,
-                        TAGALONG_MESSAGE_TIMER,
-                        TAGALONG_MESSAGE_TIMERS[j],
-                    );
-                    write_le_u16(
-                        &mut self.ram,
-                        DIALOGUE_MESSAGE_INDEX_TAGALONG,
-                        TAGALONG_MSG[j],
-                    );
+                    self.shared_message_timer_view_mut().set(TAGALONG_MESSAGE_TIMERS[j]);
+                    self.dialogue_message_index_view_mut().set_value(TAGALONG_MSG[j]);
                     self.Tagalong_Main_ShowTextMessage();
                 }
             }
@@ -1073,7 +1065,7 @@ impl ZeldaState {
     }
 
     fn follower_can_drop(&self) -> bool {
-        self.ram[SUBMODULE_INDEX_TAGALONG] == 0
+        self.frame_control_view().submodule() == 0
             && self.tagalong_link_state().can_drop_follower()
             && self.follower_state_view().appearance_none_flag() == 0
             && self.follower_state_view().hookshot_interlock_is_clear()
@@ -1081,28 +1073,31 @@ impl ZeldaState {
                 .tagalong_slot_view(self.follower_state_view().data_index() as usize)
                 .z_signed()
                 <= 0
-            && self.ram[FILTERED_JOYPAD_L_TAGALONG] & 0x80 != 0
+            && self.player_state_view().filtered_joypad_l() & 0x80 != 0
     }
 
     fn follower_drop(&mut self) {
-        if self.follower_state_view().indicator() == 13 && self.ram[PLAYER_IS_INDOORS_TAGALONG] == 0
+        if self.follower_state_view().indicator() == 13
+            && self.world_state_view().indoor_flag() == 0
         {
             if self.tagalong_link_state().is_using_medallion() {
                 self.follower_check_game_mode();
                 return;
             }
-            self.ram[SUPER_BOMB_INDICATOR_TIMER_TAGALONG] = 3;
-            self.ram[SUPER_BOMB_INDICATOR_COUNTER_TAGALONG] = 0xbb;
+            self.hud_state_view_mut().set_super_bomb_indicator_timer(3);
+            self.hud_state_view_mut().set_super_bomb_indicator_counter(0xbb);
         }
         self.follower_state_view_mut().set_dropped(128);
         self.follower_state_view_mut().set_reacquire_timer_low(64);
         let k = self.follower_state_view().data_index() as usize;
         let y = self.tagalong_y(k);
         let x = self.tagalong_x(k);
-        write_le_u16(&mut self.ram, SAVED_TAGALONG_Y_TAGALONG, y);
-        write_le_u16(&mut self.ram, SAVED_TAGALONG_X_TAGALONG, x);
-        self.ram[SAVED_TAGALONG_FLOOR_TAGALONG] = self.tagalong_link_state().floor();
-        self.ram[SAVED_TAGALONG_INDOORS_TAGALONG] = self.ram[PLAYER_IS_INDOORS_TAGALONG];
+        let floor = self.tagalong_link_state().floor();
+        let indoor = self.world_state_view().indoor_flag();
+        self.follower_state_view_mut().set_saved_y(y);
+        self.follower_state_view_mut().set_saved_x(x);
+        self.follower_state_view_mut().set_saved_floor(floor);
+        self.follower_state_view_mut().set_saved_indoor_flag(indoor);
         self.follower_not_following();
     }
 
@@ -1154,7 +1149,7 @@ impl ZeldaState {
         self.follower_handle_trigger();
         if self.follower_state_view().indicator() == 10
             && self.tagalong_link_state().has_auxiliary_state()
-            && self.ram[COUNTDOWN_FOR_BLINK_TAGALONG] != 0
+            && self.player_state_view().blink_countdown() != 0
         {
             let k = if self.follower_state_view().data_index().wrapping_add(1) == 20 {
                 0
@@ -1166,8 +1161,8 @@ impl ZeldaState {
             return;
         }
         if self.follower_state_view().indicator() == 6
-            && read_le_u16(&self.ram, DUNGEON_ROOM_INDEX_TAGALONG) == 0x0ac
-            && read_le_u16(&self.ram, SAVE_DUNG_INFO_TAGALONG + 101 * 2) & 0x100 != 0
+            && self.world_state_view().dungeon_room() == 0x0ac
+            && self.save_progress_view().dungeon_info_word(101) & 0x100 != 0
             && self.follower_check_blind_trigger()
         {
             let k = self.follower_state_view().data_index() as usize;
@@ -1175,12 +1170,11 @@ impl ZeldaState {
             let y = self.tagalong_y(k);
             self.follower_state_view_mut().set_indicator(0);
             self.blind_spawn_from_maiden(x, y);
-            self.ram[DUNG_FLAG_TRAPDOORS_DOWN_TAGALONG] =
-                self.ram[DUNG_FLAG_TRAPDOORS_DOWN_TAGALONG].wrapping_add(1);
-            self.ram[DUNG_CUR_DOOR_POS_TAGALONG] = 0;
-            self.ram[DOOR_ANIMATION_STEP_INDICATOR_TAGALONG] = 0;
-            self.ram[SUBMODULE_INDEX_TAGALONG] = 5;
-            self.ram[TAGALONG_MIRROR_BGM_COMMAND] = 21;
+            self.dungeon_state_view_mut().increment_trapdoors_down_low();
+            self.dungeon_state_view_mut().clear_current_door_pos();
+            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.frame_control_view_mut().set_submodule(5);
+            self.system_signals_view_mut().set_music_control(21);
             return;
         }
         if self.follower_state_view().hookshot_interlock_is_clear() {
@@ -1244,22 +1238,23 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_not_following(&mut self) {
-        if self.ram[SAVED_TAGALONG_INDOORS_TAGALONG] != self.ram[PLAYER_IS_INDOORS_TAGALONG] {
+        if self.follower_state_view().saved_indoor_flag() != self.world_state_view().indoor_flag() {
             return;
         }
         if !self.tagalong_link_state().is_running() && !self.follower_check_proximity_to_link() {
             self.follower_initialize();
-            self.ram[SAVED_TAGALONG_INDOORS_TAGALONG] = self.ram[PLAYER_IS_INDOORS_TAGALONG];
+            let indoor = self.world_state_view().indoor_flag();
+            self.follower_state_view_mut().set_saved_indoor_flag(indoor);
             if self.follower_state_view().indicator() == 13 {
-                self.ram[SUPER_BOMB_INDICATOR_TIMER_TAGALONG] = 254;
-                self.ram[SUPER_BOMB_INDICATOR_COUNTER_TAGALONG] = 0;
+                self.hud_state_view_mut().set_super_bomb_indicator_timer(254);
+                self.hud_state_view_mut().set_super_bomb_indicator_counter(0);
             }
             self.follower_state_view_mut().set_dropped(0);
             self.tagalong_draw();
         } else {
             if self.follower_state_view().indicator() == 13
-                && self.ram[PLAYER_IS_INDOORS_TAGALONG] == 0
-                && self.ram[SUPER_BOMB_INDICATOR_TIMER_TAGALONG] == 0
+                && self.world_state_view().indoor_flag() == 0
+                && self.hud_state_view().super_bomb_indicator_timer() == 0
             {
                 if self.AncillaAdd_SuperBombExplosion(0x3a, 0).is_some() {
                     self.follower_state_view_mut().set_dropped(0);
@@ -1271,7 +1266,7 @@ impl ZeldaState {
                         return;
                     }
                 } else {
-                    self.ram[SUPER_BOMB_INDICATOR_COUNTER_TAGALONG] = 1;
+                    self.hud_state_view_mut().set_super_bomb_indicator_counter(1);
                 }
             }
             self.follower_do_layers();
@@ -1334,7 +1329,7 @@ impl ZeldaState {
                 self.follower_state_view_mut()
                     .advance_data_index_wrapping_at_20();
             }
-        } else if self.ram[FRAME_COUNTER_TAGALONG] & 3 == 0
+        } else if self.frame_control_view().frame_counter() & 3 == 0
             && self.follower_state_view().tail_write_index()
                 != self.follower_state_view().data_index()
         {
@@ -1361,9 +1356,10 @@ impl ZeldaState {
         let k = self.follower_state_view().data_index() as usize;
         let y = self.tagalong_y(k);
         let x = self.tagalong_x(k);
-        write_le_u16(&mut self.ram, SAVED_TAGALONG_Y_TAGALONG, y);
-        write_le_u16(&mut self.ram, SAVED_TAGALONG_X_TAGALONG, x);
-        self.ram[SAVED_TAGALONG_FLOOR_TAGALONG] = self.tagalong_link_state().floor();
+        let floor = self.tagalong_link_state().floor();
+        self.follower_state_view_mut().set_saved_y(y);
+        self.follower_state_view_mut().set_saved_x(x);
+        self.follower_state_view_mut().set_saved_floor(floor);
         self.follower_old_man_unused();
     }
 
@@ -1384,12 +1380,9 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_do_layers(&mut self) {
-        let floor = self.ram[SAVED_TAGALONG_FLOOR_TAGALONG] as usize;
-        write_le_u16(
-            &mut self.ram,
-            OAM_PRIORITY_VALUE_TAGALONG,
-            (TAGALONG_FLAGS[floor] as u16) << 8,
-        );
+        let floor = self.follower_state_view().saved_floor() as usize;
+        self.oam_state_view_mut()
+            .set_priority_word((TAGALONG_FLAGS[floor] as u16) << 8);
         let a = if self.follower_state_view().indicator() == 12
             || self.follower_state_view().indicator() == 13
         {
@@ -1399,8 +1392,8 @@ impl ZeldaState {
         };
         self.follower_animate_movement_preserved(
             a,
-            read_le_u16(&self.ram, SAVED_TAGALONG_X_TAGALONG),
-            read_le_u16(&self.ram, SAVED_TAGALONG_Y_TAGALONG),
+            self.follower_state_view().saved_x(),
+            self.follower_state_view().saved_y(),
         );
     }
 
@@ -1411,8 +1404,8 @@ impl ZeldaState {
             return true;
         }
         self.follower_state_view_mut().set_reacquire_timer_low(0);
-        let y = read_le_u16(&self.ram, SAVED_TAGALONG_Y_TAGALONG);
-        let x = read_le_u16(&self.ram, SAVED_TAGALONG_X_TAGALONG);
+        let y = self.follower_state_view().saved_y();
+        let x = self.follower_state_view().saved_x();
         let link = self.tagalong_link_state();
         let ly = link.y();
         let lx = link.x();
@@ -1423,11 +1416,11 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_handle_trigger(&mut self) {
-        if self.ram[SUBMODULE_INDEX_TAGALONG] != 0 {
+        if self.frame_control_view().submodule() != 0 {
             return;
         }
-        let (infos, start, end) = if self.ram[PLAYER_IS_INDOORS_TAGALONG] != 0 {
-            let room = read_le_u16(&self.ram, DUNGEON_ROOM_INDEX_TAGALONG);
+        let (infos, start, end) = if self.world_state_view().is_indoors() {
+            let room = self.world_state_view().dungeon_room();
             let Some(j) = TAGALONG_INDOOR_ROOMS.iter().position(|&v| v == room) else {
                 return;
             };
@@ -1437,7 +1430,7 @@ impl ZeldaState {
                 TAGALONG_INDOOR_OFFSETS[j + 1] as usize,
             )
         } else {
-            let screen = read_le_u16(&self.ram, OVERWORLD_SCREEN_INDEX_TAGALONG);
+            let screen = self.world_state_view().overworld_screen_word();
             let Some(j) = TAGALONG_OUTDOOR_ROOMS.iter().position(|&v| v == screen) else {
                 return;
             };
@@ -1460,13 +1453,13 @@ impl ZeldaState {
                     return;
                 }
                 self.follower_state_view_mut().or_event_flags(info.bit);
-                write_le_u16(&mut self.ram, DIALOGUE_MESSAGE_INDEX_TAGALONG, info.msg);
+                self.dialogue_message_index_view_mut().set_value(info.msg);
                 if info.msg == 0xffff {
                     if info.bit & 3 == 0 {
                         self.kiki_revert_to_sprite(st as usize);
                     } else if self
                         .overworld_event_info_view()
-                        .event_info(self.ram[OVERWORLD_SCREEN_INDEX_TAGALONG] as usize)
+                        .event_info(self.world_state_view().overworld_screen() as usize)
                         & 1
                         == 0
                     {
@@ -1491,18 +1484,15 @@ impl ZeldaState {
         }
         let current_follower =
             self.tagalong_slot_view(self.follower_state_view().data_index() as usize);
-        let priority = if current_follower.z() != 0 && self.ram[PLAYER_IS_INDOORS_TAGALONG] == 0 {
+        let priority = if current_follower.z() != 0 && !self.world_state_view().is_indoors() {
             0x20
-        } else if self.ram[SUBMODULE_INDEX_TAGALONG] == 14 {
+        } else if self.frame_control_view().submodule() == 14 {
             TAGALONG_FLAGS[self.tagalong_link_state().floor() as usize]
         } else {
             (current_follower.layer_bits() & 0x0c) << 2
         };
-        write_le_u16(
-            &mut self.ram,
-            OAM_PRIORITY_VALUE_TAGALONG,
-            (priority as u16) << 8,
-        );
+        self.oam_state_view_mut()
+            .set_priority_word((priority as u16) << 8);
         let k = if sign8(self.follower_state_view().data_index()) {
             0
         } else {
@@ -1529,14 +1519,14 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
-        self.ram[oam] = x as u8;
+        self.write_u8_ram(oam, x as u8);
         let visible = x.wrapping_add(0x80) < 0x180 && {
             big |= ((x >> 8) & 1) as u8;
             y.wrapping_add(0x10) < 0x100
         };
-        self.ram[oam + 1] = if visible { y as u8 } else { 0xf0 };
-        self.ram[oam + 2] = charnum;
-        self.ram[oam + 3] = flags;
+        self.write_u8_ram(oam + 1, if visible { y as u8 } else { 0xf0 });
+        self.write_u8_ram(oam + 2, charnum);
+        self.write_u8_ram(oam + 3, flags);
         self.oam_state_view_mut()
             .set_extended_byte((oam - OAM_BUF_TAGALONG) / 4, big);
     }
@@ -1551,40 +1541,40 @@ impl ZeldaState {
         {
             yt = 8;
             av = if self.swim_acceleration_view().acceleration(0) != 0 {
-                (self.ram[FRAME_COUNTER_TAGALONG] >> 1) & 4
+                (self.frame_control_view().frame_counter() >> 1) & 4
             } else {
-                (self.ram[FRAME_COUNTER_TAGALONG] >> 2) & 4
+                (self.frame_control_view().frame_counter() >> 2) & 4
             };
-        } else if self.ram[SUBMODULE_INDEX_TAGALONG] == 8
-            || self.ram[SUBMODULE_INDEX_TAGALONG] == 14
-            || self.ram[SUBMODULE_INDEX_TAGALONG] == 16
+        } else if self.frame_control_view().submodule() == 8
+            || self.frame_control_view().submodule() == 14
+            || self.frame_control_view().submodule() == 16
         {
             av = if self.tagalong_link_state().is_running() {
-                self.ram[FRAME_COUNTER_TAGALONG] & 4
+                self.frame_control_view().frame_counter() & 4
             } else {
-                (self.ram[FRAME_COUNTER_TAGALONG] >> 1) & 4
+                (self.frame_control_view().frame_counter() >> 1) & 4
             };
         } else if self.follower_state_view().indicator() == 11 {
-            av = (self.ram[FRAME_COUNTER_TAGALONG] >> 1) & 4;
+            av = (self.frame_control_view().frame_counter() >> 1) & 4;
         } else if ((self.follower_state_view().indicator() == 12
             || self.follower_state_view().indicator() == 13)
             && self.follower_state_view().dropped() != 0)
             || self.tagalong_link_state().is_immobilized()
-            || self.ram[SUBMODULE_INDEX_TAGALONG] == 10
-            || (self.ram[MAIN_MODULE_INDEX_TAGALONG] == 9
-                && self.ram[SUBMODULE_INDEX_TAGALONG] == 0x23)
-            || (self.ram[MAIN_MODULE_INDEX_TAGALONG] == 14
-                && (self.ram[SUBMODULE_INDEX_TAGALONG] == 1
-                    || self.ram[SUBMODULE_INDEX_TAGALONG] == 2))
+            || self.frame_control_view().submodule() == 10
+            || (self.frame_control_view().main_module() == 9
+                && self.frame_control_view().submodule() == 0x23)
+            || (self.frame_control_view().main_module() == 14
+                && (self.frame_control_view().submodule() == 1
+                    || self.frame_control_view().submodule() == 2))
             || !self.tagalong_link_state().is_moving()
         {
             av = 4;
             sc = 4;
         } else {
             av = if self.tagalong_link_state().is_running() {
-                self.ram[FRAME_COUNTER_TAGALONG] & 4
+                self.frame_control_view().frame_counter() & 4
             } else {
-                (self.ram[FRAME_COUNTER_TAGALONG] >> 1) & 4
+                (self.frame_control_view().frame_counter() >> 1) & 4
             };
         }
         let frame = (ain & 3).wrapping_add(av).wrapping_add(yt) as usize;
@@ -1594,17 +1584,11 @@ impl ZeldaState {
         } else {
             TAGALONG_DRAW_SPR_OFFS1[self.oam_state_view().sprite_sorting_offset_index()] >> 2
         } as usize;
-        write_le_u16(
-            &mut self.ram,
-            OAM_EXT_CUR_PTR_TAGALONG,
-            0x0a20 + spr_offs as u16,
-        );
-        write_le_u16(
-            &mut self.ram,
-            OAM_CUR_PTR_TAGALONG,
-            0x0800 + (spr_offs as u16) * 4,
-        );
-        let mut oam = read_le_u16(&self.ram, OAM_CUR_PTR_TAGALONG) as usize;
+        self.oam_state_view_mut()
+            .set_current_extended_pointer(0x0a20 + spr_offs as u16);
+        self.oam_state_view_mut()
+            .set_current_pointer(0x0800 + (spr_offs as u16) * 4);
+        let mut oam = self.oam_state_view().current_pointer_usize();
         let scrolly = yin.wrapping_sub(self.ppu_scroll_copy_view().bg2_v_copy2());
         let scrollx = xin.wrapping_sub(self.ppu_scroll_copy_view().bg2_h_copy2());
         let mut skip_first_sprites = false;
@@ -1618,29 +1602,21 @@ impl ZeldaState {
             } else if (ain & 0x80) == 0 {
                 sk_index += 12;
                 if sc != 0 {
-                    self.ram[TAGALONG_DRAW_ANIM_FRAME] = 0;
-                } else if self.ram[FRAME_COUNTER_TAGALONG] & 7 == 0 {
-                    self.ram[TAGALONG_DRAW_ANIM_FRAME] =
-                        self.ram[TAGALONG_DRAW_ANIM_FRAME].wrapping_add(1);
-                    if self.ram[TAGALONG_DRAW_ANIM_FRAME] == 3 {
-                        self.ram[TAGALONG_DRAW_ANIM_FRAME] = 0;
-                    }
+                    self.follower_state_view_mut().clear_tagalong_anim_frame_counter();
+                } else if self.frame_control_view().frame_counter() & 7 == 0 {
+                    self.follower_state_view_mut()
+                        .increment_and_cycle_anim_frame_counter();
                 }
-            } else if self.ram[FRAME_COUNTER_TAGALONG] & 7 == 0 {
-                self.ram[TAGALONG_DRAW_ANIM_FRAME] =
-                    self.ram[TAGALONG_DRAW_ANIM_FRAME].wrapping_add(1);
-                if self.ram[TAGALONG_DRAW_ANIM_FRAME] == 3 {
-                    self.ram[TAGALONG_DRAW_ANIM_FRAME] = 0;
-                }
+            } else if self.frame_control_view().frame_counter() & 7 == 0 {
+                self.follower_state_view_mut()
+                    .increment_and_cycle_anim_frame_counter();
             }
-        } else if self.ram[FRAME_COUNTER_TAGALONG] & 7 == 0 {
-            self.ram[TAGALONG_DRAW_ANIM_FRAME] = self.ram[TAGALONG_DRAW_ANIM_FRAME].wrapping_add(1);
-            if self.ram[TAGALONG_DRAW_ANIM_FRAME] == 3 {
-                self.ram[TAGALONG_DRAW_ANIM_FRAME] = 0;
-            }
+        } else if self.frame_control_view().frame_counter() & 7 == 0 {
+            self.follower_state_view_mut()
+                .increment_and_cycle_anim_frame_counter();
         }
         if !skip_first_sprites {
-            sk_index += self.ram[TAGALONG_DRAW_ANIM_FRAME] as usize * 4;
+            sk_index += self.follower_state_view().anim_frame_counter() as usize * 4;
             self.set_oam_follower_at(
                 oam,
                 scrollx,
@@ -1660,7 +1636,7 @@ impl ZeldaState {
             oam += 8;
         }
         let mut pal = TAGALONG_DRAW_PALS[self.follower_state_view().indicator() as usize];
-        if pal == 7 && self.ram[PALETTE_SWAP_FLAG_TAGALONG] != 0 {
+        if pal == 7 && self.follower_state_view().palette_swap_flag() != 0 {
             pal = 0;
         }
         if self.follower_state_view().indicator() == 13 {
@@ -1668,12 +1644,12 @@ impl ZeldaState {
                 & FEATURES0_MISC_BUG_FIXES_TAGALONG
                 != 0
             {
-                self.ram[SUPER_BOMB_INDICATOR_TIMER_TAGALONG] <= 1
+                self.hud_state_view().super_bomb_indicator_timer() <= 1
             } else {
-                self.ram[SUPER_BOMB_INDICATOR_TIMER_TAGALONG] == 1
+                self.hud_state_view().super_bomb_indicator_timer() == 1
             };
             if colorful {
-                pal = self.ram[FRAME_COUNTER_TAGALONG] & 7;
+                pal = self.frame_control_view().frame_counter() & 7;
             }
         }
         let sprd = TAGALONG_DRAW_SPR_XY[frame
@@ -1689,11 +1665,11 @@ impl ZeldaState {
                 0x20,
                 (sprf.flags & 0xf0)
                     | (pal << 1)
-                    | (read_le_u16(&self.ram, OAM_PRIORITY_VALUE_TAGALONG) >> 8) as u8,
+                    | (self.oam_state_view().priority_word() >> 8) as u8,
                 2,
             );
             oam += 4;
-            self.ram[TAGALONG_DMA_HEAD_POINTER] = sprf.dma6;
+            self.display_nmi_view_mut().set_dma_head_pointer(sprf.dma6);
         }
         self.set_oam_follower_at(
             oam,
@@ -1702,10 +1678,10 @@ impl ZeldaState {
             0x22,
             ((sprf.flags & 0x0f) << 4)
                 | (pal << 1)
-                | (read_le_u16(&self.ram, OAM_PRIORITY_VALUE_TAGALONG) >> 8) as u8,
+                | (self.oam_state_view().priority_word() >> 8) as u8,
             2,
         );
-        self.ram[TAGALONG_DMA_BODY_POINTER] = sprf.dma7;
+        self.display_nmi_view_mut().set_dma_body_pointer(sprf.dma7);
     }
 
     pub(super) fn follower_check_for_trigger(&self, info: &TagalongMessageInfo) -> bool {
@@ -1749,7 +1725,7 @@ impl ZeldaState {
         maiden.set_direction(2);
         maiden.set_ignore_projectile(2);
         self.dungeon_state_view_mut().or_savegame_state_bits(0x2000);
-        self.ram[KIKI_ANIM_COUNTER_TAGALONG] = 0;
+        self.follower_state_view_mut().clear_kiki_anim_counter();
     }
 
     pub(super) fn kiki_revert_to_sprite(&mut self, k: usize) {
@@ -1813,12 +1789,12 @@ impl ZeldaState {
     }
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
-        if self.ram[MAIN_MODULE_INDEX_TAGALONG] != 14 {
-            self.ram[TAGALONG_MESSAGE_RESET_FLAG] = 0;
-            self.ram[MESSAGING_MODULE_TAGALONG] = 0;
-            self.ram[SUBMODULE_INDEX_TAGALONG] = 2;
-            self.ram[SAVED_MODULE_FOR_MENU_TAGALONG] = self.ram[MAIN_MODULE_INDEX_TAGALONG];
-            self.ram[MAIN_MODULE_INDEX_TAGALONG] = 14;
+        if self.frame_control_view().main_module() != 14 {
+            self.world_state_view_mut().clear_tile_interaction_shared_flag();
+            self.messaging_state_view_mut().clear_module();
+            self.frame_control_view_mut().set_submodule(2);
+            self.frame_control_view_mut().save_main_module_for_menu();
+            self.frame_control_view_mut().set_main_module(14);
         }
     }
 
@@ -1943,7 +1919,7 @@ impl ZeldaState {
 
     fn set_sprite_room_marker_word(&mut self, k: usize, value: u16) {
         let offset = SPRITE_N_WORD_TAGALONG + k * 2;
-        write_le_u16(&mut self.ram, offset, value);
+        self.write_u16_ram(offset, value);
     }
 
     fn Tagalong_Sprite_SpawnDynamically(
@@ -1960,7 +1936,7 @@ impl ZeldaState {
             spawned.set_sprite_type(sprite);
         }
         self.SpritePrep_LoadProperties(j);
-        if self.ram[PLAYER_IS_INDOORS_TAGALONG] == 0 {
+        if !self.world_state_view().is_indoors() {
             self.set_sprite_room_marker_word(j, 0xffff);
         } else {
             self.sprite_slot_view_mut(j).set_n(0xff);

@@ -725,7 +725,14 @@ pub(crate) mod semantic {
     const TAGALONG_Z: usize = 0x1a50;
     const TAGALONG_LAYERBITS: usize = 0x1a64;
     const FOLLOWER_INDICATOR: usize = 0x0f3cc;
+    const FOLLOWER_SAVED_Y: usize = 0x0f3cd;
+    const FOLLOWER_SAVED_X: usize = 0x0f3cf;
+    const FOLLOWER_SAVED_INDOORS: usize = 0x0f3d1;
+    const FOLLOWER_SAVED_FLOOR: usize = 0x0f3d2;
     const FOLLOWER_DROPPED: usize = 0x0f3d3;
+    const FOLLOWER_JUMP_TIMER: usize = 0x02d6;
+    const FOLLOWER_KIKI_ANIM_COUNTER: usize = 0x0b69;
+    const FOLLOWER_PALETTE_SWAP_FLAG: usize = 0x0abd;
 
     const OVERLORD_X_LO: usize = 0x0b08;
     const OVERLORD_X_HI: usize = 0x0b10;
@@ -1782,6 +1789,14 @@ pub(crate) mod semantic {
         pub(crate) fn set_virq_trigger(&mut self, value: u8) {
             self.ram[VIRQ_TRIGGER] = value;
         }
+
+        pub(crate) fn set_dma_head_pointer(&mut self, value: u8) {
+            self.ram[DMA_HEAD_POINTER] = value;
+        }
+
+        pub(crate) fn set_dma_body_pointer(&mut self, value: u8) {
+            self.ram[DMA_BODY_POINTER] = value;
+        }
     }
 
     pub(crate) struct PlayerStateView<'a> {
@@ -2254,6 +2269,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn ancilla_pickup_flag(&self) -> u8 {
             byte(self.ram, FLAG_IS_ANCILLA_TO_PICK_UP)
+        }
+
+        pub(crate) fn sprite_pickup_flag(&self) -> u8 {
+            byte(self.ram, FLAG_IS_SPRITE_TO_PICK_UP)
         }
 
         pub(crate) fn spin_attack_delay_timer(&self) -> u8 {
@@ -12873,6 +12892,30 @@ pub(crate) mod semantic {
         pub(crate) fn reacquire_timer(&self) -> u16 {
             word(self.ram, TIMER_TAGALONG_REACQUIRE)
         }
+
+        pub(crate) fn anim_frame_counter(&self) -> u8 {
+            byte(self.ram, TAGALONG_ANIM_FRAME_COUNTER)
+        }
+
+        pub(crate) fn saved_y(&self) -> u16 {
+            word(self.ram, FOLLOWER_SAVED_Y)
+        }
+
+        pub(crate) fn saved_x(&self) -> u16 {
+            word(self.ram, FOLLOWER_SAVED_X)
+        }
+
+        pub(crate) fn saved_indoor_flag(&self) -> u8 {
+            byte(self.ram, FOLLOWER_SAVED_INDOORS)
+        }
+
+        pub(crate) fn saved_floor(&self) -> u8 {
+            byte(self.ram, FOLLOWER_SAVED_FLOOR)
+        }
+
+        pub(crate) fn palette_swap_flag(&self) -> u8 {
+            byte(self.ram, FOLLOWER_PALETTE_SWAP_FLAG)
+        }
     }
 
     pub(crate) struct FollowerStateViewMut<'a> {
@@ -12967,6 +13010,38 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_tagalong_anim_frame_counter(&mut self) {
             self.ram[TAGALONG_ANIM_FRAME_COUNTER] = 0;
+        }
+
+        pub(crate) fn increment_and_cycle_anim_frame_counter(&mut self) {
+            self.ram[TAGALONG_ANIM_FRAME_COUNTER] =
+                self.ram[TAGALONG_ANIM_FRAME_COUNTER].wrapping_add(1);
+            if self.ram[TAGALONG_ANIM_FRAME_COUNTER] == 3 {
+                self.ram[TAGALONG_ANIM_FRAME_COUNTER] = 0;
+            }
+        }
+
+        pub(crate) fn clear_jump_timer(&mut self) {
+            self.ram[FOLLOWER_JUMP_TIMER] = 0;
+        }
+
+        pub(crate) fn set_saved_y(&mut self, value: u16) {
+            write_le_u16(self.ram, FOLLOWER_SAVED_Y, value);
+        }
+
+        pub(crate) fn set_saved_x(&mut self, value: u16) {
+            write_le_u16(self.ram, FOLLOWER_SAVED_X, value);
+        }
+
+        pub(crate) fn set_saved_indoor_flag(&mut self, value: u8) {
+            self.ram[FOLLOWER_SAVED_INDOORS] = value;
+        }
+
+        pub(crate) fn set_saved_floor(&mut self, value: u8) {
+            self.ram[FOLLOWER_SAVED_FLOOR] = value;
+        }
+
+        pub(crate) fn clear_kiki_anim_counter(&mut self) {
+            self.ram[FOLLOWER_KIKI_ANIM_COUNTER] = 0;
         }
     }
 
@@ -16428,6 +16503,20 @@ pub(crate) mod semantic {
             let v = self.ram[ITEM_DROP_COUNTER].wrapping_add(1);
             self.ram[ITEM_DROP_COUNTER] = v;
             v
+        }
+    }
+
+    pub(crate) struct SharedMessageTimerView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> SharedMessageTimerView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn get(&self) -> u16 {
+            word(self.ram, SHARED_MESSAGE_TIMER)
         }
     }
 
