@@ -55,6 +55,7 @@ pub(crate) mod semantic {
     const HUD_TILE_INDICES_BUFFER: usize = 0x0c700;
     const NMI_FLAG_UPDATE_POLYHEDRAL: usize = 0x1f0c;
     const POLY_THREAD_STACK: usize = 0x1f0a;
+    const IRQ_FLAG: usize = 0x128;
     const RUN_MAIN_THREAD: u8 = 1;
     const RUN_POLY_THREAD: u8 = 2;
 
@@ -510,7 +511,29 @@ pub(crate) mod semantic {
     const PALETTE_SP0L: usize = 0x0aac;
     const PALETTE_SP5L: usize = 0x0aad;
     const PALETTE_SP6L: usize = 0x0aae;
+    const PALETTE_SP6R_INDOORS: usize = 0x0ab1;
+    const HUD_PALETTE: usize = 0x0ab2;
+    const OVERWORLD_PALETTE_AUX2_BP5TO7_HI: usize = 0x0ab5;
     const PALETTE_MAIN_INDOORS: usize = 0x0ab6;
+    const OVERWORLD_PALETTE_AUX3_BP7_LO: usize = 0x0ab8;
+    const MISC_SPRITES_GRAPHICS_INDEX: usize = 0x0aa4;
+    const BIRDTRAVEL_STATUS: usize = 0x1af0;
+    const WHICH_ENTRANCE: usize = 0x10e;
+    const SPRCOLL_X_SIZE: usize = 0x0fb8;
+    const SPRCOLL_Y_SIZE: usize = 0x0fba;
+    const OAM_REGION_BASE: usize = 0x0fe0;
+    const INTRO_WANT_DOUBLE_RET: usize = 0x1e02;
+    const INTRO_SPRITE_ALLOC: usize = 0x1e08;
+    const TRIFORCE_CTR: usize = 0x1e0c;
+    const ENDING_WHICH_DUNG: usize = 0x0cc;
+    const ENDING_CREDIT_DIGIT_CHAR: usize = 0x0ce;
+    const BG_TILE_ANIMATION_COUNTDOWN: usize = 0x0c00d;
+    const INTRO_SWORD_YPOS: usize = 0xc8;
+    const INTRO_SWORD_SPARKLE_TIMER: usize = 0xca;
+    const INTRO_SWORD_SPARKLE_STEP: usize = 0xcb;
+    const INTRO_SWORD_ANIM_STEP: usize = 0xcc;
+    const INTRO_SWORD_SPARKLE_Y_OFFSET: usize = 0xcd;
+    const INTRO_SWORD_FLASH_RGB_CHANNEL: usize = 0xd0;
     const RAW_SFX_PAN_VALUE: usize = 0x0cf8;
     const TILE_INTERACTION_SHARED_FLAG: usize = 0x0223;
     const PUSHED_BLOCK_MODE: usize = 0x02c3;
@@ -1336,6 +1359,10 @@ pub(crate) mod semantic {
             self.ram[RESTART_CHECK_FLAG] = 0;
         }
 
+        pub(crate) fn set_restart_check_flag(&mut self, value: u8) {
+            self.ram[RESTART_CHECK_FLAG] = value;
+        }
+
         pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
             self.ram[RAW_SFX_PAN_VALUE] = value;
         }
@@ -1796,6 +1823,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_dma_body_pointer(&mut self, value: u8) {
             self.ram[DMA_BODY_POINTER] = value;
+        }
+
+        pub(crate) fn set_nmi_thread_active(&mut self, value: u8) {
+            self.ram[NMI_THREAD_ACTIVE] = value;
+        }
+
+        pub(crate) fn set_irq_flag(&mut self, value: u8) {
+            self.ram[IRQ_FLAG] = value;
         }
     }
 
@@ -6753,6 +6788,10 @@ pub(crate) mod semantic {
         pub(crate) fn flag_overworld_area_changed(&self) -> bool {
             byte(self.ram, FLAG_OVERWORLD_AREA_CHANGED) != 0
         }
+
+        pub(crate) fn overworld_area_index(&self) -> u16 {
+            word(self.ram, OVERWORLD_AREA_INDEX)
+        }
     }
 
     pub(crate) struct WorldStateViewMut<'a> {
@@ -6928,6 +6967,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
             self.ram[TILE_INTERACTION_SHARED_FLAG] = 0;
+        }
+
+        pub(crate) fn set_which_entrance(&mut self, value: u16) {
+            write_le_u16(self.ram, WHICH_ENTRANCE, value);
+        }
+
+        pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
+            self.ram[BIRDTRAVEL_STATUS] = value;
+        }
+
+        pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
+            self.ram[FLAG_TRAVEL_BIRD] = value;
         }
     }
 
@@ -7739,6 +7790,14 @@ pub(crate) mod semantic {
             self.ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + 0x140]
                 .copy_from_slice(&data[..0x140]);
         }
+
+        pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
+            self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
+        }
+
+        pub(crate) fn clear_dungeon_dark_with_lantern(&mut self) {
+            self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 0;
+        }
     }
 
     pub(crate) struct DungeonEntranceBackupViewMut<'a> {
@@ -8437,6 +8496,26 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
             self.ram[PALETTE_MAIN_INDOORS] = value;
+        }
+
+        pub(crate) fn set_hud_palette(&mut self, value: u8) {
+            self.ram[HUD_PALETTE] = value;
+        }
+
+        pub(crate) fn set_sp6r_indoors(&mut self, value: u8) {
+            self.ram[PALETTE_SP6R_INDOORS] = value;
+        }
+
+        pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
+            self.ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = value;
+        }
+
+        pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
+            self.ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = value;
+        }
+
+        pub(crate) fn set_bg_tile_animation_countdown(&mut self, value: u16) {
+            write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
         }
     }
 
@@ -11388,6 +11467,10 @@ pub(crate) mod semantic {
         pub(crate) fn high(&self) -> u8 {
             byte(self.ram, OVERWORLD_SCROLL_DELTA + 1)
         }
+
+        pub(crate) fn word(&self) -> u16 {
+            word(self.ram, OVERWORLD_SCROLL_DELTA)
+        }
     }
 
     pub(crate) struct OverworldScrollDeltaViewMut<'a> {
@@ -11405,6 +11488,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_high_word(&mut self, value: u16) {
             write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA + 1, value);
+        }
+
+        pub(crate) fn set_y_delta(&mut self, value: u16) {
+            write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA, value);
         }
     }
 
@@ -13390,6 +13477,10 @@ pub(crate) mod semantic {
         pub(crate) fn cur_object_index(&self) -> u8 {
             byte(self.ram, CUR_OBJECT_INDEX)
         }
+
+        pub(crate) fn main_tile_theme(&self) -> u8 {
+            byte(self.ram, MAIN_TILE_THEME_INDEX)
+        }
     }
 
     pub(crate) struct SpriteSystemViewMut<'a> {
@@ -13454,6 +13545,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
             self.ram[ALT_SPRITE_SPAWNED_FLAG] = value;
+        }
+
+        pub(crate) fn set_main_tile_theme(&mut self, value: u8) {
+            self.ram[MAIN_TILE_THEME_INDEX] = value;
+        }
+
+        pub(crate) fn set_aux_tile_theme(&mut self, value: u8) {
+            self.ram[AUX_TILE_THEME_INDEX] = value;
+        }
+
+        pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
+            self.ram[MISC_SPRITES_GRAPHICS_INDEX] = value;
+        }
+
+        pub(crate) fn set_cur_object_index(&mut self, value: u8) {
+            self.ram[CUR_OBJECT_INDEX] = value;
         }
     }
 
@@ -16217,6 +16324,14 @@ pub(crate) mod semantic {
             self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] =
                 self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH].wrapping_add(1);
         }
+
+        pub(crate) fn set_sprcoll_x_size(&mut self, value: u16) {
+            write_le_u16(self.ram, SPRCOLL_X_SIZE, value);
+        }
+
+        pub(crate) fn set_sprcoll_y_size(&mut self, value: u16) {
+            write_le_u16(self.ram, SPRCOLL_Y_SIZE, value);
+        }
     }
 
     pub(crate) struct OamStateView<'a> {
@@ -16348,6 +16463,12 @@ pub(crate) mod semantic {
 
         pub(crate) fn hide_sprite_row(&mut self, oam_index: usize) {
             self.ram[OAM_BUF + oam_index * 4 + 1] = 0xf0;
+        }
+
+        pub(crate) fn init_credits_region_base(&mut self) {
+            write_le_u16(self.ram, OAM_REGION_BASE, 0x30);
+            write_le_u16(self.ram, OAM_REGION_BASE + 2, 0x1d0);
+            write_le_u16(self.ram, OAM_REGION_BASE + 4, 0);
         }
     }
 
@@ -16531,6 +16652,200 @@ pub(crate) mod semantic {
 
         pub(crate) fn set(&mut self, value: u16) {
             write_le_u16(self.ram, SHARED_MESSAGE_TIMER, value);
+        }
+    }
+
+    pub(crate) struct IntroStateView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> IntroStateView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn want_double_ret(&self) -> u8 {
+            byte(self.ram, INTRO_WANT_DOUBLE_RET)
+        }
+
+        pub(crate) fn sprite_alloc(&self) -> u16 {
+            word(self.ram, INTRO_SPRITE_ALLOC)
+        }
+
+        pub(crate) fn triforce_ctr(&self) -> u16 {
+            word(self.ram, TRIFORCE_CTR)
+        }
+    }
+
+    pub(crate) struct IntroStateViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> IntroStateViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn set_want_double_ret(&mut self, value: u8) {
+            self.ram[INTRO_WANT_DOUBLE_RET] = value;
+        }
+
+        pub(crate) fn set_sprite_alloc(&mut self, value: u16) {
+            write_le_u16(self.ram, INTRO_SPRITE_ALLOC, value);
+        }
+
+        pub(crate) fn set_triforce_ctr(&mut self, value: u16) {
+            write_le_u16(self.ram, TRIFORCE_CTR, value);
+        }
+
+        pub(crate) fn decrement_triforce_ctr(&mut self) {
+            let v = read_le_u16(self.ram, TRIFORCE_CTR).wrapping_sub(1);
+            write_le_u16(self.ram, TRIFORCE_CTR, v);
+        }
+    }
+
+    pub(crate) struct EndingCreditStateView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> EndingCreditStateView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn which_dung(&self) -> u16 {
+            word(self.ram, ENDING_WHICH_DUNG)
+        }
+    }
+
+    pub(crate) struct EndingCreditStateViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> EndingCreditStateViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn set_which_dung(&mut self, value: u16) {
+            write_le_u16(self.ram, ENDING_WHICH_DUNG, value);
+        }
+
+        pub(crate) fn clear_which_dung(&mut self) {
+            write_le_u16(self.ram, ENDING_WHICH_DUNG, 0);
+        }
+
+        pub(crate) fn set_credit_digit_char(&mut self, value: u16) {
+            write_le_u16(self.ram, ENDING_CREDIT_DIGIT_CHAR, value);
+        }
+    }
+
+    pub(crate) struct IntroSwordView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> IntroSwordView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn ypos(&self) -> u16 {
+            word(self.ram, INTRO_SWORD_YPOS)
+        }
+
+        pub(crate) fn sparkle_timer(&self) -> u8 {
+            byte(self.ram, INTRO_SWORD_SPARKLE_TIMER)
+        }
+
+        pub(crate) fn sparkle_step(&self) -> u8 {
+            byte(self.ram, INTRO_SWORD_SPARKLE_STEP)
+        }
+
+        pub(crate) fn anim_phase(&self) -> u8 {
+            byte(self.ram, INTRO_SWORD_ANIM_STEP) >> 1
+        }
+
+        pub(crate) fn anim_step_raw(&self) -> u8 {
+            byte(self.ram, INTRO_SWORD_ANIM_STEP)
+        }
+
+        pub(crate) fn sparkle_y_offset(&self) -> u8 {
+            byte(self.ram, INTRO_SWORD_SPARKLE_Y_OFFSET)
+        }
+
+        pub(crate) fn flash_rgb_channel(&self) -> usize {
+            byte(self.ram, INTRO_SWORD_FLASH_RGB_CHANNEL) as usize
+        }
+    }
+
+    pub(crate) struct IntroSwordViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> IntroSwordViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn reset_sword_state(&mut self) {
+            self.ram[INTRO_SWORD_SPARKLE_STEP] = 7;
+            self.ram[INTRO_SWORD_ANIM_STEP] = 0;
+            self.ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = 0;
+            write_le_u16(self.ram, INTRO_SWORD_YPOS, (-130i16) as u16);
+        }
+
+        pub(crate) fn set_ypos(&mut self, value: u16) {
+            write_le_u16(self.ram, INTRO_SWORD_YPOS, value);
+        }
+
+        pub(crate) fn advance_ypos(&mut self) {
+            let y = read_le_u16(self.ram, INTRO_SWORD_YPOS).wrapping_add(16);
+            write_le_u16(self.ram, INTRO_SWORD_YPOS, y);
+        }
+
+        pub(crate) fn decrement_sparkle_timer(&mut self) {
+            self.ram[INTRO_SWORD_SPARKLE_TIMER] =
+                self.ram[INTRO_SWORD_SPARKLE_TIMER].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_sparkle_timer(&mut self, value: u8) {
+            self.ram[INTRO_SWORD_SPARKLE_TIMER] = value;
+        }
+
+        pub(crate) fn set_sparkle_step(&mut self, value: u8) {
+            self.ram[INTRO_SWORD_SPARKLE_STEP] = value;
+        }
+
+        pub(crate) fn decrement_sparkle_step_check_negative(&mut self) -> bool {
+            self.ram[INTRO_SWORD_SPARKLE_STEP] =
+                self.ram[INTRO_SWORD_SPARKLE_STEP].wrapping_sub(1);
+            (self.ram[INTRO_SWORD_SPARKLE_STEP] as i8) < 0
+        }
+
+        pub(crate) fn advance_anim_step(&mut self) {
+            self.ram[INTRO_SWORD_ANIM_STEP] = self.ram[INTRO_SWORD_ANIM_STEP].wrapping_add(2);
+        }
+
+        pub(crate) fn set_sparkle_y_offset(&mut self, value: u8) {
+            self.ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = value;
+        }
+
+        pub(crate) fn advance_sparkle_y_offset(&mut self) {
+            self.ram[INTRO_SWORD_SPARKLE_Y_OFFSET] =
+                self.ram[INTRO_SWORD_SPARKLE_Y_OFFSET].wrapping_add(4);
+        }
+
+        pub(crate) fn set_flash_rgb_channel_word(&mut self, value: u16) {
+            write_le_u16(self.ram, INTRO_SWORD_FLASH_RGB_CHANNEL, value);
+        }
+
+        pub(crate) fn cycle_flash_rgb_channel(&mut self) {
+            self.ram[INTRO_SWORD_FLASH_RGB_CHANNEL] =
+                if self.ram[INTRO_SWORD_FLASH_RGB_CHANNEL] == 2 {
+                    0
+                } else {
+                    self.ram[INTRO_SWORD_FLASH_RGB_CHANNEL].wrapping_add(1)
+                };
         }
     }
 

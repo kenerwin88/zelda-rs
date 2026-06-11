@@ -85,6 +85,8 @@ use crate::ram::semantic::{
     WorldStateView, WorldStateViewMut, ArcheryGameView, ArcheryGameViewMut,
     MinigameStateView, MinigameStateViewMut, SpriteBattleView, SpriteBattleViewMut,
     SharedMessageTimerView, SharedMessageTimerViewMut,
+    IntroStateView, IntroStateViewMut, EndingCreditStateView, EndingCreditStateViewMut,
+    IntroSwordView, IntroSwordViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2094,6 +2096,30 @@ impl ZeldaState {
 
     pub(crate) fn shared_message_timer_view_mut(&mut self) -> SharedMessageTimerViewMut<'_> {
         SharedMessageTimerViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn intro_state_view(&self) -> IntroStateView<'_> {
+        IntroStateView::new(&self.ram)
+    }
+
+    pub(crate) fn intro_state_view_mut(&mut self) -> IntroStateViewMut<'_> {
+        IntroStateViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn ending_credit_state_view(&self) -> EndingCreditStateView<'_> {
+        EndingCreditStateView::new(&self.ram)
+    }
+
+    pub(crate) fn ending_credit_state_view_mut(&mut self) -> EndingCreditStateViewMut<'_> {
+        EndingCreditStateViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn intro_sword_view(&self) -> IntroSwordView<'_> {
+        IntroSwordView::new(&self.ram)
+    }
+
+    pub(crate) fn intro_sword_view_mut(&mut self) -> IntroSwordViewMut<'_> {
+        IntroSwordViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn graphics_scratch_view_mut(&mut self) -> GraphicsScratchViewMut<'_> {
