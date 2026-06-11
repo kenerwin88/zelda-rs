@@ -357,6 +357,38 @@ impl<'a> MessagingTextView<'a> {
     }
 }
 
+pub(crate) struct MessagingTextViewMut<'a> {
+    ram: &'a mut [u8],
+}
+
+impl<'a> MessagingTextViewMut<'a> {
+    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+        Self { ram }
+    }
+
+    pub(crate) fn load_decoded_dialogue(&mut self, decoded: &[u8]) -> usize {
+        let len = decoded
+            .len()
+            .min(self.ram.len().saturating_sub(MESSAGING_TEXT_BUFFER));
+        self.ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + len]
+            .copy_from_slice(&decoded[..len]);
+        len
+    }
+
+    pub(crate) fn write_decoded_text_at(&mut self, dst: usize, decoded: &[u8]) -> usize {
+        let len = decoded.len().min(self.ram.len().saturating_sub(dst));
+        self.ram[dst..dst + len].copy_from_slice(&decoded[..len]);
+        len
+    }
+
+    pub(crate) fn set_dialogue_pointer(&mut self, index: usize, pointer: u32) {
+        let dst = TEXT_DIALOGUE_POINTERS + index * 3;
+        self.ram[dst] = pointer as u8;
+        self.ram[dst + 1] = (pointer >> 8) as u8;
+        self.ram[dst + 2] = (pointer >> 16) as u8;
+    }
+}
+
 pub(crate) struct MessagingRenderBufferView<'a> {
     ram: &'a [u8],
 }

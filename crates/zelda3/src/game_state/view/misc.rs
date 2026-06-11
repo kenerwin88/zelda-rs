@@ -91,6 +91,13 @@ impl<'a> MemorizedTileViewMut<'a> {
     pub(crate) fn set_entry_value(&mut self, offset: usize, tile: u16) {
         write_le_u16(self.ram, MEMORIZED_TILE_VALUE + offset, tile);
     }
+
+    pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
+        let offset = word(self.ram, NUM_MEMORIZED_TILES) as usize;
+        self.set_entry_value(offset, tile);
+        self.set_entry_addr(offset, pos);
+        self.set_count(offset as u16 + 2);
+    }
 }
 
 pub(crate) struct ArcheryGameView<'a> {

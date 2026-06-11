@@ -18,7 +18,6 @@ use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 use crate::config::config_value_bytes;
 #[cfg(test)]
 use crate::game_state::constants::messaging::MODULE as MESSAGING_MODULE;
-use crate::game_state::constants::messaging::TEXT_BUFFER as MESSAGING_TEXT_BUFFER;
 use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
     VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET,
@@ -42,23 +41,24 @@ use crate::game_state::{
     DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
     DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
     DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
-    DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStateView, DungeonStateViewMut,
-    DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
-    EndingCreditStateView, EndingCreditStateViewMut, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesView, EnhancedFeaturesViewMut,
-    EtherOrbitView, EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameControlView,
-    FrameControlViewMut, GarnishSlotView, GarnishSlotViewMut, GarnishStateView,
-    GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
-    HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
-    IntroStateView, IntroStateViewMut, IntroSwordView, IntroSwordViewMut, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    MazeGameTimerView, MazeGameTimerViewMut, MemorizedTileView, MemorizedTileViewMut,
-    MessagingRenderBufferView, MessagingRenderBufferViewMut, MessagingStateView,
-    MessagingStateViewMut, MessagingTextView, MinigameStateView, MinigameStateViewMut,
-    MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
-    MosaicDirectionView, MosaicDirectionViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView,
+    EffectAngleScratchViewMut, EndingCreditStateView, EndingCreditStateViewMut, EndingScratchView,
+    EndingScratchViewMut, EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesView,
+    EnhancedFeaturesViewMut, EtherOrbitView, EtherOrbitViewMut, FollowerStateView,
+    FollowerStateViewMut, FrameControlView, FrameControlViewMut, GarnishSlotView,
+    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
+    HitboxScratchOffsetViewMut, HudInventoryOrderView, HudInventoryOrderViewMut, HudStateView,
+    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroStateView, IntroStateViewMut,
+    IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, MazeGameTimerView, MazeGameTimerViewMut,
+    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
+    MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
+    MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
+    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MosaicDirectionView,
+    MosaicDirectionViewMut, MultiselectChoiceView, MultiselectChoiceViewMut, OamStateView,
+    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
     OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut,
     OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
@@ -2494,6 +2494,10 @@ impl ZeldaState {
 
     pub(crate) fn messaging_text_view(&self) -> MessagingTextView<'_> {
         MessagingTextView::new(&self.ram)
+    }
+
+    pub(crate) fn messaging_text_view_mut(&mut self) -> MessagingTextViewMut<'_> {
+        MessagingTextViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn messaging_render_buffer_view(&self) -> MessagingRenderBufferView<'_> {

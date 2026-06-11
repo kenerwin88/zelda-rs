@@ -3442,6 +3442,10 @@ pub(crate) struct Bg1MoveCalcViewMut<'a> {
 }
 
 impl<'a> Bg1MoveCalcViewMut<'a> {
+    pub(crate) fn set_buffer(&mut self, value: u16) {
+        write_le_u16(self.ram, BG1_MOVE_CALC_BUFFER, value);
+    }
+
     pub(crate) fn set_y_subpixel(&mut self, value: u8) {
         self.ram[BG1_MOVE_CALC_BUFFER] = value;
     }

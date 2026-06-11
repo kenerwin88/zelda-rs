@@ -1357,8 +1357,8 @@ impl ZeldaState {
         let Some(data) = self.decomp_spr_data(gfx_pack) else {
             return;
         };
-        let len = data.len().min(self.ram.len().saturating_sub(decomp_dst));
-        self.ram[decomp_dst..decomp_dst + len].copy_from_slice(&data[..len]);
+        self.graphics_scratch_view_mut()
+            .copy_decompressed_graphics_to(decomp_dst, &data);
         if matches!(gfx_pack, 0x52 | 0x53 | 0x5a | 0x5b | 0x5c | 0x5e | 0x5f) {
             self.do3_to_4_high_to_vram(dst, &data);
         } else {
@@ -1376,8 +1376,8 @@ impl ZeldaState {
         let Some(data) = self.decomp_bg_data(gfx_pack) else {
             return;
         };
-        let len = data.len().min(self.ram.len().saturating_sub(decomp_dst));
-        self.ram[decomp_dst..decomp_dst + len].copy_from_slice(&data[..len]);
+        self.graphics_scratch_view_mut()
+            .copy_decompressed_graphics_to(decomp_dst, &data);
         let high = if self.world_state_view().main_tile_theme_index() >= 0x20 {
             matches!(slot, 7 | 2 | 3 | 4)
         } else {
@@ -1403,17 +1403,8 @@ impl ZeldaState {
             .primary_decomp_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xac80, &tmp, 0, 48);
 
-        for i in 0..256 {
-            let base = 0x9000 + i * 2;
-            let x = read_le_u16(&self.ram, base + 0x1880);
-            let a = read_le_u16(&self.ram, base + 0x1c80);
-            let b = read_le_u16(&self.ram, base + 0x1e80);
-            let c = read_le_u16(&self.ram, base + 0x1a80);
-            write_le_u16(&mut self.ram, base + 0x1880, a);
-            write_le_u16(&mut self.ram, base + 0x1c80, b);
-            write_le_u16(&mut self.ram, base + 0x1e80, c);
-            write_le_u16(&mut self.ram, base + 0x1a80, x);
-        }
+        self.graphics_scratch_view_mut()
+            .rotate_animated_dungeon_tile_planes();
 
         self.display_nmi_view_mut()
             .set_animated_tile_vram_addr(0x3b00);
@@ -1426,18 +1417,16 @@ impl ZeldaState {
         let Some(data) = self.decomp_spr_data(gfx) else {
             return 0;
         };
-        let len = data.len().min(self.ram.len().saturating_sub(dst));
-        self.ram[dst..dst + len].copy_from_slice(&data[..len]);
-        len
+        self.graphics_scratch_view_mut()
+            .copy_decompressed_graphics_to(dst, &data)
     }
 
     pub(super) fn decomp_bg_to_ram(&mut self, dst: usize, gfx: usize) -> usize {
         let Some(data) = self.decomp_bg_data(gfx) else {
             return 0;
         };
-        let len = data.len().min(self.ram.len().saturating_sub(dst));
-        self.ram[dst..dst + len].copy_from_slice(&data[..len]);
-        len
+        self.graphics_scratch_view_mut()
+            .copy_decompressed_graphics_to(dst, &data)
     }
 
     pub(super) fn decomp_spr_data(&self, mut gfx: usize) -> Option<Vec<u8>> {
@@ -1470,10 +1459,13 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.ram[dst] = lo;
-                self.ram[dst + 1] = hi;
-                self.ram[dst + 0x10] = u;
-                self.ram[dst + 0x11] = lo | hi | u;
+                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                    dst,
+                    lo,
+                    hi,
+                    u,
+                    lo | hi | u,
+                );
                 dst += 2;
             }
             dst += 16;
@@ -1497,10 +1489,13 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.ram[dst] = lo;
-                self.ram[dst + 1] = hi;
-                self.ram[dst + 0x10] = u;
-                self.ram[dst + 0x11] = lo | hi | u;
+                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                    dst,
+                    lo,
+                    hi,
+                    u,
+                    lo | hi | u,
+                );
                 dst += 2;
             }
             dst += 16;
@@ -1518,10 +1513,13 @@ impl ZeldaState {
         for _ in 0..num {
             let src2 = src + 0x10;
             for i in 0..8 {
-                self.ram[dst] = data.get(src + i * 2).copied().unwrap_or(0);
-                self.ram[dst + 1] = data.get(src + i * 2 + 1).copied().unwrap_or(0);
-                self.ram[dst + 0x10] = data.get(src2 + i).copied().unwrap_or(0);
-                self.ram[dst + 0x11] = 0;
+                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                    dst,
+                    data.get(src + i * 2).copied().unwrap_or(0),
+                    data.get(src + i * 2 + 1).copied().unwrap_or(0),
+                    data.get(src2 + i).copied().unwrap_or(0),
+                    0,
+                );
                 dst += 2;
             }
             dst += 16;
@@ -1538,7 +1536,8 @@ impl ZeldaState {
                 let hi = data.get(src + 1).copied().unwrap_or(0);
                 self.ppu.vram[dst] = lo as u16 | ((hi as u16) << 8);
                 tmp[i] = lo | hi;
-                write_le_u16(&mut self.ram, DUNG_LINE_PTRS_ROW0 + i * 2, tmp[i] as u16);
+                self.graphics_scratch_view_mut()
+                    .set_dungeon_line_pointer_row0(i, tmp[i] as u16);
                 dst += 1;
                 src += 2;
             }
@@ -1632,10 +1631,13 @@ impl ZeldaState {
                 let lo = sprite_data[i * 2];
                 let hi = sprite_data[i * 2 + 1];
                 let mask = sprite_data[16 + i];
-                self.ram[dst] = lo;
-                self.ram[dst + 1] = hi;
-                self.ram[dst + 16] = mask;
-                self.ram[dst + 17] = lo | hi | mask;
+                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                    dst,
+                    lo,
+                    hi,
+                    mask,
+                    lo | hi | mask,
+                );
                 dst += 2;
             }
             dst += 16;
@@ -2393,7 +2395,8 @@ impl ZeldaState {
                 }
                 self.display_nmi_view_mut().clear_hdma_enable_mask();
                 for i in 0..240 {
-                    write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + i * 2, 0x0778);
+                    self.spotlight_hdma_view_mut()
+                        .set_hdma_table_dynamic_entry(i, 0x0778);
                 }
                 self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
             }
@@ -2727,7 +2730,8 @@ impl ZeldaState {
         let mut r4 = 0usize;
         let upper = self.spotlight_hdma_view().y_upper() as usize;
         while r4 != upper {
-            write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + r4 * 2, 0xff00);
+            self.spotlight_hdma_view_mut()
+                .set_hdma_table_dynamic_entry(r4, 0xff00);
             r4 += 1;
         }
         let r12w = r14.wrapping_sub(7).wrapping_add(8);
@@ -2740,7 +2744,8 @@ impl ZeldaState {
             ^ 1;
         while r4 < 225 {
             if r4 as u16 >= r10 {
-                write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + r4 * 2, 0x00ff);
+                self.spotlight_hdma_view_mut()
+                    .set_hdma_table_dynamic_entry(r4, 0x00ff);
             } else {
                 let mut a = r4 as u16;
                 loop {
@@ -2749,9 +2754,8 @@ impl ZeldaState {
                         break;
                     }
                 }
-                write_le_u16(
-                    &mut self.ram,
-                    HDMA_TABLE_DYNAMIC + (a as usize >> 1) * 2,
+                self.spotlight_hdma_view_mut().set_hdma_table_dynamic_entry(
+                    a as usize >> 1,
                     if r12_pair == 0xffff { 0x00ff } else { r12_pair },
                 );
             }
@@ -2821,14 +2825,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_UpdatePegGFXBuffer(&mut self, x: usize, y: usize) {
-        for i in 0..64 {
-            let color = read_le_u16(&self.ram, PEG_TILE_GFX_BUFFER + (x >> 1) * 2 + i * 2);
-            write_le_u16(&mut self.ram, MESSAGING_BUF_LOAD_GFX + i * 2, color);
-        }
-        for i in 0..64 {
-            let color = read_le_u16(&self.ram, PEG_TILE_GFX_BUFFER + (y >> 1) * 2 + i * 2);
-            write_le_u16(&mut self.ram, MESSAGING_BUF_LOAD_GFX + (64 + i) * 2, color);
-        }
+        self.graphics_scratch_view_mut()
+            .copy_peg_tile_graphics_to_message_buffer(x, y);
         self.display_nmi_view_mut().set_subroutine_index(23);
     }
 
@@ -3365,10 +3363,12 @@ impl ZeldaState {
                 r8 = self.iris_spotlight_calculate_circle_value(t);
             }
             if r4 < 240 {
-                write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + r4 as usize * 2, r8);
+                self.spotlight_hdma_view_mut()
+                    .set_hdma_table_dynamic_entry(r4 as usize, r8);
             }
             if r6 < 240 {
-                write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + r6 as usize * 2, r8);
+                self.spotlight_hdma_view_mut()
+                    .set_hdma_table_dynamic_entry(r6 as usize, r8);
             }
             if r4 == r14 {
                 break;
@@ -3377,14 +3377,10 @@ impl ZeldaState {
             r6 = r6.wrapping_sub(1);
         }
 
-        for i in 224..240 {
-            write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + i * 2, 0);
-        }
-        let src = HDMA_TABLE_DYNAMIC;
-        let dst = RESERVED_HDMA_TABLE;
-        let bytes = 224 * 2;
-        let tmp = self.ram[src..src + bytes].to_vec();
-        self.ram[dst..dst + bytes].copy_from_slice(&tmp);
+        self.spotlight_hdma_view_mut()
+            .clear_hdma_table_dynamic_range(224, 16);
+        self.graphics_scratch_view_mut()
+            .copy_dynamic_hdma_table_to_reserved(224);
 
         let idx = (self.spotlight_hdma_view().window_state() >> 1) as usize;
         let delta = SPOTLIGHT_DELTA_SIZE[idx] as i16 as u16;
@@ -3465,7 +3461,8 @@ impl ZeldaState {
 
     pub(super) fn iris_spotlight_reset_table(&mut self) {
         for i in 0..240 {
-            write_le_u16(&mut self.ram, HDMA_TABLE_DYNAMIC + i * 2, 0xff00);
+            self.spotlight_hdma_view_mut()
+                .set_hdma_table_dynamic_entry(i, 0xff00);
         }
     }
 

@@ -101,22 +101,24 @@ impl ZeldaState {
 
     pub(super) fn module_select_file_0(&mut self) {
         self.enable_force_blank();
-        self.ram[IS_NMI_THREAD_ACTIVE] = 0;
-        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
+        self.world_state_view_mut().set_nmi_thread_active(0);
+        self.world_state_view_mut()
+            .clear_nmi_flag_update_polyhedral();
         self.system_signals_view_mut().set_music_control(11);
         self.frame_control_view_mut().increment_submodule();
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
-        self.ram[PALETTE_MAIN_INDOORS] = 6;
+        self.palette_buffer_view_mut().set_palette_main_indoors(6);
         self.display_nmi_view_mut().set_core_update_disable_flag(6);
         self.palette_load_dungeon_set();
         self.palette_load_ow_bg3();
-        self.ram[HUD_PALETTE] = 0;
+        self.world_state_view_mut().set_hud_palette(0);
         self.palette_load_hud();
         self.save_progress_view_mut().set_hud_current_item(0);
-        self.ram[MISC_SPRITES_GRAPHICS_INDEX] = 1;
-        self.ram[MAIN_TILE_THEME_INDEX] = 35;
-        self.ram[AUX_TILE_THEME_INDEX] = 81;
+        self.world_state_view_mut()
+            .set_misc_sprites_graphics_index(1);
+        self.world_state_view_mut().set_main_tile_theme_index(35);
+        self.world_state_view_mut().set_aux_tile_theme_index(81);
         self.load_default_graphics();
         self.initialize_tilesets();
         self.load_file_select_graphics();
@@ -216,20 +218,25 @@ impl ZeldaState {
         ];
 
         let mut dst = self.select_file_func1();
-        self.ram[dst..dst + SELECT_FILE_GFX0.len()].copy_from_slice(&SELECT_FILE_GFX0);
+        let upload_base = self.vram_upload_data_view().data_base();
+        self.vram_upload_data_view_mut()
+            .copy_bytes(dst - upload_base, &SELECT_FILE_GFX0);
         dst += SELECT_FILE_GFX0.len();
 
         let mut t = 0x1103u16;
         for _ in 0..18 {
-            write_le_u16(&mut self.ram, dst, t.swap_bytes());
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst, t.swap_bytes());
             dst += 2;
-            write_le_u16(&mut self.ram, dst, 0x3240);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst, 0x3240);
             dst += 2;
-            write_le_u16(&mut self.ram, dst, 0x347f);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst, 0x347f);
             dst += 2;
             t = t.wrapping_add(0x20);
         }
-        self.ram[dst] = 0xff;
+        self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.frame_control_view_mut().increment_submodule();
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
@@ -237,13 +244,14 @@ impl ZeldaState {
     pub(super) fn select_file_func1(&mut self) -> usize {
         const BACKGROUND_CHECKERBOARD_TILES: [u16; 4] = [0x3581, 0x3582, 0x3591, 0x3592];
         let mut dst = self.vram_upload_data_view().data_base();
-        write_le_u16(&mut self.ram, dst, 0x0010);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst, 0x0010);
         dst += 2;
-        write_le_u16(&mut self.ram, dst, 0xff07);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst, 0xff07);
         dst += 2;
         for i in 0..1024 {
-            write_le_u16(
-                &mut self.ram,
+            self.vram_upload_data_view_mut().write_le_u16_at(
                 dst,
                 BACKGROUND_CHECKERBOARD_TILES[((i & 0x20) >> 4) + (i & 1)],
             );
@@ -490,8 +498,9 @@ impl ZeldaState {
         for i in 0..6 {
             let t =
                 read_le_u16(&self.sram, sram_base + KSRM_OFFS_NAME + i * 2).wrapping_add(0x1800);
-            write_le_u16(&mut self.ram, dst, t);
-            write_le_u16(&mut self.ram, dst + 42, t.wrapping_add(0x10));
+            self.vram_upload_data_view_mut().write_le_u16_at(dst, t);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst + 42, t.wrapping_add(0x10));
             dst += 2;
         }
 
@@ -502,7 +511,8 @@ impl ZeldaState {
         let dst_org = dst;
         let mut row = 10u8;
         loop {
-            write_le_u16(&mut self.ram, dst, 0x0520);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst, 0x0520);
             dst += 2;
             row = row.wrapping_sub(1);
             if row == 0 {
@@ -609,7 +619,8 @@ impl ZeldaState {
         for j in (0..2).rev() {
             let dst = self.vram_upload_data_view().data_address(DST[j]);
             for i in 0..11 {
-                write_le_u16(&mut self.ram, dst + i * 2, 0x00a9);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(dst + i * 2, 0x00a9);
             }
         }
     }
@@ -650,8 +661,9 @@ impl ZeldaState {
                 for i in 0..6 {
                     let t = read_le_u16(&self.sram, k * 0x500 + KSRM_OFFS_NAME + i * 2)
                         .wrapping_add(0x1800);
-                    write_le_u16(&mut self.ram, dst, t);
-                    write_le_u16(&mut self.ram, dst + 20, t.wrapping_add(0x10));
+                    self.vram_upload_data_view_mut().write_le_u16_at(dst, t);
+                    self.vram_upload_data_view_mut()
+                        .write_le_u16_at(dst + 20, t.wrapping_add(0x10));
                     dst += 2;
                 }
             }
@@ -703,8 +715,10 @@ impl ZeldaState {
                 let dst = self
                     .vram_upload_data_view()
                     .data_address(self.select_file_scratch_view().cursor_usize() * 12);
-                write_le_u16(&mut self.ram, dst + 52, 0x2762);
-                write_le_u16(&mut self.ram, dst + 58, 0x4762);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(dst + 52, 0x2762);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(dst + 58, 0x4762);
             }
             self.frame_control_view_mut().increment_submodule();
             self.select_file_scratch_view_mut().clear_cursor();
@@ -757,15 +771,17 @@ impl ZeldaState {
             let mut dst = self.vram_upload_data_view().data_address(DST[j]);
             j += 1;
             let t = COPY_TARGET_SLOT_BLANK_TILES[k];
-            write_le_u16(&mut self.ram, dst, t);
-            write_le_u16(&mut self.ram, dst + 20, t.wrapping_add(0x10));
+            self.vram_upload_data_view_mut().write_le_u16_at(dst, t);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(dst + 20, t.wrapping_add(0x10));
             dst += 4;
             if self.select_file_scratch_view().save_slot_flag(k) != 0 {
                 for i in 0..6 {
                     let t = read_le_u16(&self.sram, k * 0x500 + KSRM_OFFS_NAME + i * 2)
                         .wrapping_add(0x1800);
-                    write_le_u16(&mut self.ram, dst, t);
-                    write_le_u16(&mut self.ram, dst + 20, t.wrapping_add(0x10));
+                    self.vram_upload_data_view_mut().write_le_u16_at(dst, t);
+                    self.vram_upload_data_view_mut()
+                        .write_le_u16_at(dst + 20, t.wrapping_add(0x10));
                     dst += 2;
                 }
             }
@@ -977,8 +993,10 @@ impl ZeldaState {
                 let dst = self
                     .vram_upload_data_view()
                     .data_address(self.select_file_scratch_view().cursor_usize() * 12);
-                write_le_u16(&mut self.ram, dst, 0x6762);
-                write_le_u16(&mut self.ram, dst + 6, 0x8762);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(dst, 0x6762);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(dst + 6, 0x8762);
             }
             let subsubmodule = self.select_file_scratch_view().cursor();
             self.frame_control_view_mut().set_subsubmodule(subsubmodule);
@@ -998,12 +1016,12 @@ impl ZeldaState {
 
     pub(super) fn name_file_erase_save(&mut self) {
         self.file_select_erase_triforce();
-        self.ram[IRQ_FLAG] = 1;
+        self.display_nmi_view_mut().set_irq_flag(1);
         self.select_file_scratch_view_mut().clear_name_entry_state();
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
 
         let offs = self.select_file_scratch_view().cursor_usize() * 0x500;
-        write_le_u16(&mut self.ram, ATTRACT_LEGEND_CTR, offs as u16);
+        self.attract_state_view_mut().set_legend_ctr(offs as u16);
         self.sram[offs..offs + 0x500].fill(0);
         for i in 0..6 {
             write_le_u16(&mut self.sram, offs + KSRM_OFFS_NAME + i * 2, 0x00a9);
@@ -1012,7 +1030,8 @@ impl ZeldaState {
 
     pub(super) fn module_name_player_1(&mut self) {
         let dst = self.select_file_func1();
-        write_le_u16(&mut self.ram, dst, 0xffff);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst, 0xffff);
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
         self.frame_control_view_mut().increment_submodule();
     }
@@ -1149,7 +1168,7 @@ impl ZeldaState {
                 return;
             } else if t != 0x6f {
                 let name_slot = self.select_file_scratch_view().name_slot_usize();
-                let p = name_slot * 2 + read_le_u16(&self.ram, ATTRACT_LEGEND_CTR) as usize;
+                let p = name_slot * 2 + self.attract_state_view().legend_ctr() as usize;
                 let chr = ((t as u16 & 0xfff0) * 2) + (t as u16 & 0x0f);
                 write_le_u16(&mut self.sram, p + KSRM_OFFS_NAME, chr);
                 self.name_file_draw_selected_character(name_slot, chr);
@@ -1159,7 +1178,7 @@ impl ZeldaState {
             }
         }
 
-        let name_base = read_le_u16(&self.ram, ATTRACT_LEGEND_CTR) as usize;
+        let name_base = self.attract_state_view().legend_ctr() as usize;
         if (0..6).all(|i| read_le_u16(&self.sram, name_base + KSRM_OFFS_NAME + i * 2) == 0x00a9) {
             self.system_signals_view_mut().set_sound_effect_1(0x3c);
             return;
@@ -1182,7 +1201,7 @@ impl ZeldaState {
         self.intro_fix_cksum_slot(slot_base);
         self.zelda_write_sram();
         self.return_to_file_select();
-        self.ram[IRQ_FLAG] = 0xff;
+        self.display_nmi_view_mut().set_irq_flag(0xff);
         self.system_signals_view_mut().set_sound_effect_1(0x2c);
     }
 

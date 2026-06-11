@@ -2947,7 +2947,7 @@ impl ZeldaState {
         let save_offset = self.save_load_scratch_view().source_offset_usize();
         if save_offset + 0x500 <= self.sram.len() {
             let save = self.sram[save_offset..save_offset + 0x500].to_vec();
-            self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500].copy_from_slice(&save);
+            self.save_progress_view_mut().copy_dungeon_info_from(&save);
         }
 
         self.palette_buffer_view_mut()
@@ -3135,11 +3135,8 @@ impl ZeldaState {
             }
         }
         decoded.push(0x7f);
-        let len = decoded
-            .len()
-            .min(self.ram.len().saturating_sub(MESSAGING_TEXT_BUFFER));
-        self.ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + len]
-            .copy_from_slice(&decoded[..len]);
+        self.messaging_text_view_mut()
+            .load_decoded_dialogue(&decoded);
         self.messaging_state_view_mut()
             .clear_dialogue_msg_read_pos();
     }
@@ -3147,8 +3144,9 @@ impl ZeldaState {
     pub(super) fn Text_WritePlayerName(&mut self, dst: usize) -> usize {
         let mut decoded = Vec::new();
         self.text_write_player_name_vec(&mut decoded);
-        let len = decoded.len().min(self.ram.len().saturating_sub(dst));
-        self.ram[dst..dst + len].copy_from_slice(&decoded[..len]);
+        let len = self
+            .messaging_text_view_mut()
+            .write_decoded_text_at(dst, &decoded);
         dst + len
     }
 
@@ -3773,15 +3771,11 @@ impl ZeldaState {
         };
         let dialogue = find_index_in_memblk(dialogue_blk, 1).ptr.to_vec();
         let mut p = 0x1c8000u32;
-        let mut dst = TEXT_DIALOGUE_POINTERS;
         for i in 0..398 {
             if i == 359 {
                 p = 0x0edf40;
             }
-            self.ram[dst] = p as u8;
-            self.ram[dst + 1] = (p >> 8) as u8;
-            self.ram[dst + 2] = (p >> 16) as u8;
-            dst += 3;
+            self.messaging_text_view_mut().set_dialogue_pointer(i, p);
             let entry = find_index_in_memblk(MemBlk { ptr: &dialogue }, i);
             p = p.wrapping_add(entry.ptr.len() as u32 + 1);
         }

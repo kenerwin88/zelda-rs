@@ -213,6 +213,14 @@ impl<'a> OverworldMap16DecodeViewMut<'a> {
         }
     }
 
+    pub(crate) fn write_decompressed_byte(&mut self, dst: usize, value: u8) {
+        self.ram[dst] = value;
+    }
+
+    pub(crate) fn copy_decompressed_byte(&mut self, dst_org: usize, dst: usize, offset: usize) {
+        self.ram[dst] = self.ram[dst_org + offset];
+    }
+
     pub(crate) fn decomp_scratch_byte_mut(&mut self, index: usize) -> &mut u8 {
         &mut self.ram[OVERWORLD_DECOMP_SCRATCH + index]
     }
@@ -240,6 +248,17 @@ impl<'a> OverworldMap16DecodeViewMut<'a> {
 
     pub(crate) fn set_decode_tmp(&mut self, value: u16) {
         write_le_u16(self.ram, MAP16_DECODE_TMP, value);
+    }
+
+    pub(crate) fn write_decoded_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {
+        let v0 = word(self.ram, MAP16_DECODE_0 + idx);
+        let v1 = word(self.ram, MAP16_DECODE_1 + idx);
+        let v2 = word(self.ram, MAP16_DECODE_2 + idx);
+        let v3 = word(self.ram, MAP16_DECODE_3 + idx);
+        write_le_u16(self.ram, dst, v0);
+        write_le_u16(self.ram, dst + 128, v2);
+        write_le_u16(self.ram, dst + 2, v1);
+        write_le_u16(self.ram, dst + 130, v3);
     }
 }
 
@@ -467,5 +486,26 @@ impl<'a> VramUploadDataViewMut<'a> {
     pub(crate) fn copy_bytes(&mut self, offset: usize, data: &[u8]) {
         self.ram[VRAM_UPLOAD_DATA + offset..VRAM_UPLOAD_DATA + offset + data.len()]
             .copy_from_slice(data);
+    }
+
+    pub(crate) fn write_map16_update_packet(
+        &mut self,
+        abs_addr: usize,
+        vram_pos: u16,
+        tiles: [u16; 4],
+    ) {
+        write_le_u16(self.ram, abs_addr, vram_pos.swap_bytes());
+        write_le_u16(self.ram, abs_addr + 2, 0x0300);
+        write_le_u16(self.ram, abs_addr + 4, tiles[0]);
+        write_le_u16(self.ram, abs_addr + 6, tiles[1]);
+        write_le_u16(
+            self.ram,
+            abs_addr + 8,
+            vram_pos.wrapping_add(0x20).swap_bytes(),
+        );
+        write_le_u16(self.ram, abs_addr + 10, 0x0300);
+        write_le_u16(self.ram, abs_addr + 12, tiles[2]);
+        write_le_u16(self.ram, abs_addr + 14, tiles[3]);
+        write_le_u16(self.ram, abs_addr + 16, 0xffff);
     }
 }

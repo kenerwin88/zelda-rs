@@ -743,6 +743,49 @@ impl<'a> WorldStateViewMut<'a> {
         word(self.ram, CAMERA_X_COORD_SCROLL_HI)
     }
 
+    pub(crate) fn camera_scroll_low_for_axis(&self, horizontal: bool) -> u16 {
+        if horizontal {
+            word(self.ram, CAMERA_X_COORD_SCROLL_LOW)
+        } else {
+            word(self.ram, CAMERA_Y_COORD_SCROLL_LOW)
+        }
+    }
+
+    pub(crate) fn camera_scroll_hi_for_axis(&self, horizontal: bool) -> u16 {
+        if horizontal {
+            word(self.ram, CAMERA_X_COORD_SCROLL_HI)
+        } else {
+            word(self.ram, CAMERA_Y_COORD_SCROLL_HI)
+        }
+    }
+
+    pub(crate) fn add_camera_scroll_for_axis(&mut self, horizontal: bool, delta: i16) -> u16 {
+        let hi_addr = if horizontal {
+            CAMERA_X_COORD_SCROLL_HI
+        } else {
+            CAMERA_Y_COORD_SCROLL_HI
+        };
+        let low_addr = if horizontal {
+            CAMERA_X_COORD_SCROLL_LOW
+        } else {
+            CAMERA_Y_COORD_SCROLL_LOW
+        };
+        let hi = word(self.ram, hi_addr).wrapping_add_signed(delta);
+        write_le_u16(self.ram, hi_addr, hi);
+        write_le_u16(self.ram, low_addr, hi.wrapping_add(2));
+        hi
+    }
+
+    pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
+        if horizontal {
+            self.set_camera_x_coord_scroll_hi(value);
+            self.set_camera_x_coord_scroll_low(value.wrapping_add(2));
+        } else {
+            self.set_camera_y_coord_scroll_hi(value);
+            self.set_camera_y_coord_scroll_low(value.wrapping_add(2));
+        }
+    }
+
     pub(crate) fn set_up_down_scroll_target(&mut self, value: u16) {
         write_le_u16(self.ram, UP_DOWN_SCROLL_TARGET, value);
     }
@@ -785,6 +828,16 @@ impl<'a> WorldStateViewMut<'a> {
 
     pub(crate) fn overworld_scroll_counter_for_axis(&self, ya: usize) -> u16 {
         word(self.ram, OVERWORLD_SCROLL_UP_COUNTER + ya * 2)
+    }
+
+    pub(crate) fn clear_opposed_scroll_counters(&mut self, ya: usize) {
+        self.set_overworld_scroll_counter_for_axis(ya, 0);
+        self.set_overworld_scroll_counter_for_axis(ya ^ 1, 0);
+    }
+
+    pub(crate) fn set_opposed_scroll_counter_pair(&mut self, ya: usize, value: u16) {
+        self.set_overworld_scroll_counter_for_axis(ya, value);
+        self.set_overworld_scroll_counter_for_axis(ya ^ 1, (0u16).wrapping_sub(value));
     }
 
     pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
@@ -913,6 +966,11 @@ impl<'a> WorldStateViewMut<'a> {
         write_le_u16(self.ram, OVERWORLD_AREA_INDEX_SPEXIT, v);
     }
 
+    pub(crate) fn restore_spexit_area_index(&mut self) {
+        let value = word(self.ram, OVERWORLD_AREA_INDEX_SPEXIT);
+        write_le_u16(self.ram, OVERWORLD_AREA_INDEX, value);
+    }
+
     pub(crate) fn spexit_area_index(&self) -> u16 {
         word(self.ram, OVERWORLD_AREA_INDEX_SPEXIT)
     }
@@ -920,6 +978,11 @@ impl<'a> WorldStateViewMut<'a> {
     pub(crate) fn save_spexit_tm_copy(&mut self) {
         let v = word(self.ram, TM_COPY);
         write_le_u16(self.ram, TM_COPY_SPEXIT, v);
+    }
+
+    pub(crate) fn restore_spexit_layer_masks(&mut self) {
+        let value = word(self.ram, TM_COPY_SPEXIT);
+        write_le_u16(self.ram, TM_COPY, value);
     }
 
     pub(crate) fn set_spexit_screen_index(&mut self, value: u16) {
@@ -949,9 +1012,30 @@ impl<'a> WorldStateViewMut<'a> {
         word(self.ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT)
     }
 
+    pub(crate) fn spexit_room_bound_y_start(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START)
+    }
+
+    pub(crate) fn spexit_room_bound_y_end(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_END)
+    }
+
+    pub(crate) fn spexit_room_bound_x_start(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_X_START)
+    }
+
+    pub(crate) fn spexit_room_bound_x_end(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_X_END)
+    }
+
     pub(crate) fn save_exit_area_index(&mut self) {
         let v = word(self.ram, OVERWORLD_AREA_INDEX);
         write_le_u16(self.ram, OVERWORLD_AREA_INDEX_EXIT, v);
+    }
+
+    pub(crate) fn restore_exit_area_index(&mut self) {
+        let value = word(self.ram, OVERWORLD_AREA_INDEX_EXIT);
+        write_le_u16(self.ram, OVERWORLD_AREA_INDEX, value);
     }
 
     pub(crate) fn exit_area_index(&self) -> u16 {
@@ -961,6 +1045,11 @@ impl<'a> WorldStateViewMut<'a> {
     pub(crate) fn save_exit_tm_copy(&mut self) {
         let v = word(self.ram, TM_COPY);
         write_le_u16(self.ram, TM_COPY_EXIT, v);
+    }
+
+    pub(crate) fn restore_exit_layer_masks(&mut self) {
+        let value = word(self.ram, TM_COPY_EXIT);
+        write_le_u16(self.ram, TM_COPY, value);
     }
 
     pub(crate) fn set_exit_screen_index(&mut self, value: u16) {
@@ -1392,6 +1481,22 @@ impl<'a> WorldStateView<'a> {
 
     pub(crate) fn spexit_camera_x_scroll_low(&self) -> u16 {
         word(self.ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT)
+    }
+
+    pub(crate) fn spexit_room_bound_y_start(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START)
+    }
+
+    pub(crate) fn spexit_room_bound_y_end(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_END)
+    }
+
+    pub(crate) fn spexit_room_bound_x_start(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_X_START)
+    }
+
+    pub(crate) fn spexit_room_bound_x_end(&self) -> u16 {
+        word(self.ram, SPECIAL_EXIT_ROOM_BOUNDS_X_END)
     }
 
     pub(crate) fn prev_screen_index_byte(&self) -> u8 {

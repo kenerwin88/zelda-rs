@@ -1,5 +1,73 @@
 use super::*;
 
+const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; 33] = [
+    0, 0x20, 0x7e, 2, 0x20, 0x7e, 4, 0x20, 0x7e, 6, 0x20, 0x7e, 0x80, 0x20, 0x7e, 0x82, 0x20, 0x7e,
+    0x84, 0x20, 0x7e, 0x86, 0x20, 0x7e, 0, 0x21, 0x7e, 0x80, 0x21, 0x7e, 0, 0x22, 0x7e,
+];
+const DUNGEON_DRAW_OBJECT_OFFSETS_BG2: [u8; 33] = [
+    0, 0x40, 0x7e, 2, 0x40, 0x7e, 4, 0x40, 0x7e, 6, 0x40, 0x7e, 0x80, 0x40, 0x7e, 0x82, 0x40, 0x7e,
+    0x84, 0x40, 0x7e, 0x86, 0x40, 0x7e, 0, 0x41, 0x7e, 0x80, 0x41, 0x7e, 0, 0x42, 0x7e,
+];
+const DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL: usize = 0x0432;
+const DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL: usize = 0x0438;
+const DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL: usize = 0x043a;
+const DUNG_NUM_INROOM_SOUTHDOWN_STAIRS_LOCAL: usize = 0x043e;
+const DUNG_NUM_WATER_LADDERS_LOCAL: usize = 0x0446;
+const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_LOCAL: usize = 0x047e;
+const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_LOCAL: usize = 0x0480;
+const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2_LOCAL: usize = 0x0482;
+const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2_LOCAL: usize = 0x0484;
+const DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a2;
+const DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a4;
+const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a6;
+const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a8;
+const DUNG_INTER_STAIRCASE_TABLE_LOCAL: usize = 0x06b0;
+const DUNG_STAIRS_TABLE_1_LOCAL: usize = 0x06b8;
+const STAR_SHAPED_SWITCHES_TILE_LOCAL: usize = 0x06a0;
+
+#[derive(Clone, Copy)]
+pub(crate) enum DungeonStairList {
+    InterRoomUpNorth,
+    InterRoomSouthDown,
+    InRoomSouthDown,
+    InterPseudoUpNorth,
+    InRoomUpNorthWater,
+    ActivatedWaterLadders,
+    WaterLadders,
+    WaterSideStepSwitch,
+    WallUpNorthSpiral,
+    WallDownNorthSpiral,
+    WallUpNorthSpiralBg1,
+    WallDownNorthSpiralBg1,
+    InterRoomUpNorthStraight,
+    InterRoomUpSouthStraight,
+    InterRoomDownNorthStraight,
+    InterRoomDownSouthStraight,
+}
+
+impl DungeonStairList {
+    fn counter(self) -> usize {
+        match self {
+            Self::InterRoomUpNorth => DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL,
+            Self::InterRoomSouthDown => DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL,
+            Self::InRoomSouthDown => DUNG_NUM_INROOM_SOUTHDOWN_STAIRS_LOCAL,
+            Self::InterPseudoUpNorth => DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
+            Self::InRoomUpNorthWater => DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
+            Self::ActivatedWaterLadders => DUNG_NUM_ACTIVATED_WATER_LADDERS,
+            Self::WaterLadders => DUNG_NUM_WATER_LADDERS_LOCAL,
+            Self::WaterSideStepSwitch => WATER_SIDE_STEP_SWITCH,
+            Self::WallUpNorthSpiral => DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_LOCAL,
+            Self::WallDownNorthSpiral => DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_LOCAL,
+            Self::WallUpNorthSpiralBg1 => DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2_LOCAL,
+            Self::WallDownNorthSpiralBg1 => DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2_LOCAL,
+            Self::InterRoomUpNorthStraight => DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS_LOCAL,
+            Self::InterRoomUpSouthStraight => DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL,
+            Self::InterRoomDownNorthStraight => DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL,
+            Self::InterRoomDownSouthStraight => DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL,
+        }
+    }
+}
+
 pub(crate) struct DungeonStateView<'a> {
     ram: &'a [u8],
 }
@@ -177,6 +245,82 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNG_FLOOR_Y_OFFS)
     }
 
+    pub(crate) fn dungeon_music_type_flag(&self) -> u8 {
+        byte(self.ram, FLAG_WHICH_MUSIC_TYPE_DUNGEON)
+    }
+
+    pub(crate) fn fixed_color_plusminus(&self) -> u8 {
+        byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
+    }
+
+    pub(crate) fn water_transition_counter(&self) -> u8 {
+        byte(self.ram, TURN_ON_OFF_WATER_CTR)
+    }
+
+    pub(crate) fn water_hdma_y_radius(&self) -> u16 {
+        word(self.ram, WATER_HDMA_WINDOW_Y_RADIUS)
+    }
+
+    pub(crate) fn water_hdma_x_radius(&self) -> u16 {
+        word(self.ram, WATER_HDMA_WINDOW_X_RADIUS)
+    }
+
+    pub(crate) fn water_hdma_y_target(&self) -> u16 {
+        word(self.ram, WATER_HDMA_WINDOW_Y_TARGET)
+    }
+
+    pub(crate) fn water_hdma_y_radius_alt(&self) -> u16 {
+        word(self.ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT)
+    }
+
+    pub(crate) fn current_staircase_plane(&self) -> u8 {
+        byte(self.ram, CUR_STAIRCASE_PLANE)
+    }
+
+    pub(crate) fn staircase_lower_level_status(&self) -> u8 {
+        byte(self.ram, STAIRCASE_LOWER_LEVEL_STATUS)
+    }
+
+    pub(crate) fn line_pointer_row0(&self, index: usize) -> u16 {
+        word(self.ram, DUNG_LINE_PTRS_ROW0 + index * 2)
+    }
+
+    pub(crate) fn first_line_pointer_row0(&self) -> u16 {
+        word(self.ram, DUNG_LINE_PTRS_ROW0)
+    }
+
+    pub(crate) fn num_chests_x2(&self) -> u16 {
+        word(self.ram, DUNG_NUM_CHESTS_X2)
+    }
+
+    pub(crate) fn num_big_key_locks_x2(&self) -> u16 {
+        word(self.ram, DUNG_NUM_BIGKEY_LOCKS_X2)
+    }
+
+    pub(crate) fn adjacent_door_flags(&self) -> u16 {
+        word(self.ram, ADJACENT_DOORS_FLAGS)
+    }
+
+    pub(crate) fn adjacent_door(&self, index: usize) -> u16 {
+        word(self.ram, ADJACENT_DOORS + index * 2)
+    }
+
+    pub(crate) fn torch_data_word(&self, offset: usize) -> u16 {
+        word(self.ram, DUNG_TORCH_DATA + offset)
+    }
+
+    pub(crate) fn torch_index(&self) -> u16 {
+        word(self.ram, DUNG_INDEX_OF_TORCHES)
+    }
+
+    pub(crate) fn floor_1_filler_tile_source(&self) -> usize {
+        usize::from(word(self.ram, FLOOR_1_FILLER_TILES))
+    }
+
+    pub(crate) fn floor_2_filler_tile_source(&self) -> usize {
+        usize::from(word(self.ram, FLOOR_2_FILLER_TILES))
+    }
+
     pub(crate) fn object_pos_in_objdata(&self, index: usize) -> u16 {
         word(self.ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2)
     }
@@ -266,6 +410,10 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNGEON_ROOM_INDEX2)
     }
 
+    pub(crate) fn previous_room_index(&self) -> usize {
+        usize::from(word(self.ram, DUNGEON_ROOM_INDEX_PREV))
+    }
+
     pub(crate) fn bg2_tile(&self, index: usize) -> u16 {
         word(self.ram, DUNG_BG2 + index * 2)
     }
@@ -350,12 +498,29 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNG_LOADE_BGOFFS_V_COPY)
     }
 
+    pub(crate) fn movable_block_room(&self, offset: usize) -> u16 {
+        word(self.ram, MOVABLE_BLOCK_DATAS + offset)
+    }
+
+    pub(crate) fn movable_block_tilemap(&self, offset: usize) -> u16 {
+        word(self.ram, MOVABLE_BLOCK_DATAS + offset + 2)
+    }
+
     pub(crate) fn big_rock_starting_address(&self) -> u16 {
         word(self.ram, BIG_ROCK_STARTING_ADDRESS)
     }
 
     pub(crate) fn chest_location(&self, index: usize) -> u16 {
         word(self.ram, DUNG_CHEST_LOCATIONS + index * 2)
+    }
+
+    pub(crate) fn replacement_tilemap_quad(&self, index: usize) -> [u16; 4] {
+        [
+            word(self.ram, REPLACEMENT_TILEMAP_UL + index * 2),
+            word(self.ram, REPLACEMENT_TILEMAP_LL + index * 2),
+            word(self.ram, REPLACEMENT_TILEMAP_UR + index * 2),
+            word(self.ram, REPLACEMENT_TILEMAP_LR + index * 2),
+        ]
     }
 
     pub(crate) fn moving_floor_check_flags(&self) -> u16 {
@@ -562,6 +727,11 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] = 0;
     }
 
+    pub(crate) fn increment_somaria_block_bg_check_flag(&mut self) {
+        self.ram[SOMARIA_BLOCK_BG_CHECK_FLAG] =
+            self.ram[SOMARIA_BLOCK_BG_CHECK_FLAG].wrapping_add(1);
+    }
+
     pub(crate) fn increment_somaria_block_switch_counter(&mut self) {
         self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] =
             self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH].wrapping_add(1);
@@ -622,6 +792,258 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn set_floor_x_offset(&mut self, value: u16) {
         write_le_u16(self.ram, DUNG_FLOOR_X_OFFS, value);
+    }
+
+    pub(crate) fn set_floor_y_offset(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_FLOOR_Y_OFFS, value);
+    }
+
+    pub(crate) fn clear_dungeon_music_type_flag(&mut self) {
+        self.ram[FLAG_WHICH_MUSIC_TYPE_DUNGEON] = 0;
+    }
+
+    pub(crate) fn set_dungeon_music_type_flag(&mut self, value: u8) {
+        self.ram[FLAG_WHICH_MUSIC_TYPE_DUNGEON] = value;
+    }
+
+    pub(crate) fn set_fixed_color_plusminus(&mut self, value: u8) {
+        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
+    }
+
+    pub(crate) fn clear_moving_wall_torch_blink_phase(&mut self) {
+        self.ram[MOVING_WALL_TORCH_BLINK_PHASE] = 0;
+    }
+
+    pub(crate) fn set_water_transition_counter(&mut self, value: u8) {
+        self.ram[TURN_ON_OFF_WATER_CTR] = value;
+    }
+
+    pub(crate) fn increment_water_transition_counter(&mut self) -> u8 {
+        self.ram[TURN_ON_OFF_WATER_CTR] = self.ram[TURN_ON_OFF_WATER_CTR].wrapping_add(1);
+        self.ram[TURN_ON_OFF_WATER_CTR]
+    }
+
+    pub(crate) fn decrement_water_transition_counter(&mut self) -> u8 {
+        self.ram[TURN_ON_OFF_WATER_CTR] = self.ram[TURN_ON_OFF_WATER_CTR].wrapping_sub(1);
+        self.ram[TURN_ON_OFF_WATER_CTR]
+    }
+
+    pub(crate) fn set_water_hdma_y_radius(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS, value);
+    }
+
+    pub(crate) fn set_water_hdma_x_radius(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X_RADIUS, value);
+    }
+
+    pub(crate) fn set_water_hdma_y_target(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_TARGET, value);
+    }
+
+    pub(crate) fn set_water_hdma_y_radius_alt(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT, value);
+    }
+
+    pub(crate) fn set_water_window_position(&mut self, x: u16, y: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, x);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, y);
+    }
+
+    pub(crate) fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
+        write_le_u16(self.ram, DUNG_LOADE_BGOFFS_H_COPY, horizontal);
+        write_le_u16(self.ram, DUNG_LOADE_BGOFFS_V_COPY, vertical);
+    }
+
+    pub(crate) fn promote_water_ladders_to_saved_stair_counters(&mut self) {
+        let north_stairs = word(self.ram, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER);
+        let active_ladders = word(self.ram, DUNG_NUM_ACTIVATED_WATER_LADDERS);
+        let south_stairs = word(self.ram, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER);
+
+        write_le_u16(self.ram, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, north_stairs);
+        write_le_u16(self.ram, WATER_SIDE_STEP_SWITCH, active_ladders);
+        write_le_u16(self.ram, DUNG_NUM_ACTIVATED_WATER_LADDERS, 0);
+        write_le_u16(self.ram, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, 0);
+        write_le_u16(self.ram, DUNG_NUM_STAIRS_WET, south_stairs);
+        write_le_u16(self.ram, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, 0);
+    }
+
+    pub(crate) fn append_star_switch_tile(&mut self, tilemap_pos: u16) -> usize {
+        let index = usize::from(word(self.ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL)) >> 1;
+        let next = word(self.ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL).wrapping_add(2);
+        write_le_u16(self.ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL, next);
+        write_le_u16(
+            self.ram,
+            STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2,
+            tilemap_pos,
+        );
+        index
+    }
+
+    pub(crate) fn stair_list_count(&self, list: DungeonStairList) -> u16 {
+        word(self.ram, list.counter())
+    }
+
+    pub(crate) fn set_stair_list_count(&mut self, list: DungeonStairList, value: u16) {
+        write_le_u16(self.ram, list.counter(), value);
+    }
+
+    pub(crate) fn sync_stair_list_counts(&mut self, lists: &[DungeonStairList], value: u16) {
+        for &list in lists {
+            self.set_stair_list_count(list, value);
+        }
+    }
+
+    pub(crate) fn append_interroom_staircase(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        write_le_u16(
+            self.ram,
+            DUNG_INTER_STAIRCASE_TABLE_LOCAL + index * 2,
+            tilemap_pos,
+        );
+        self.stair_list_count(list).wrapping_add(2)
+    }
+
+    pub(crate) fn append_bg1_stair_table_position(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        write_le_u16(self.ram, DUNG_STAIRS_TABLE_1_LOCAL + index * 2, tilemap_pos);
+        let next = self.stair_list_count(list).wrapping_add(2);
+        self.set_stair_list_count(list, next);
+        next
+    }
+
+    pub(crate) fn clear_room_parser_words(&mut self, offsets: &[usize]) {
+        for &offset in offsets {
+            write_le_u16(self.ram, offset, 0);
+        }
+    }
+
+    pub(crate) fn clear_invisible_door_marker(&mut self) {
+        write_le_u16(self.ram, INVISIBLE_DOOR_DIR_AND_INDEX_X2, 0xffff);
+    }
+
+    pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, value);
+    }
+
+    pub(crate) fn set_torch_index(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
+    }
+
+    pub(crate) fn set_bg2_properties_backup(&mut self, value: u8) {
+        self.ram[DUNG_HDR_BG2_PROPERTIES_BACKUP] = value;
+    }
+
+    pub(crate) fn copy_header_travel_destinations_from(&mut self, header: &[u8]) {
+        self.ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS..DUNGEON_HEADER_TRAVEL_DESTINATIONS + 5]
+            .copy_from_slice(&header[9..14]);
+    }
+
+    pub(crate) fn clear_overlay_to_load(&mut self) {
+        self.ram[DUNG_OVERLAY_TO_LOAD] = 0;
+    }
+
+    pub(crate) fn set_room_index_x3(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_INDEX_X3, value);
+    }
+
+    pub(crate) fn set_current_staircase_plane(&mut self, value: u8) {
+        self.ram[CUR_STAIRCASE_PLANE] = value;
+    }
+
+    pub(crate) fn set_staircase_lower_level_status(&mut self, value: u8) {
+        self.ram[STAIRCASE_LOWER_LEVEL_STATUS] = value;
+    }
+
+    pub(crate) fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
+        write_le_u16(self.ram, DUNG_LINE_PTRS_ROW0 + index * 2, value);
+    }
+
+    pub(crate) fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
+        self.ram[DUNG_LINE_PTRS_ROW0..DUNG_LINE_PTRS_ROW0 + offsets.len()].copy_from_slice(offsets);
+    }
+
+    pub(crate) fn clear_exit_door_count_and_flags(&mut self) {
+        self.ram[DUNG_EXIT_DOOR_COUNT..DUNG_EXIT_DOOR_COUNT + 10].fill(0);
+    }
+
+    pub(crate) fn clear_movable_block_was_pushed(&mut self) {
+        self.ram[DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED] = 0;
+    }
+
+    pub(crate) fn toggle_movable_block_was_pushed(&mut self) {
+        self.ram[DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED] ^= 1;
+    }
+
+    pub(crate) fn set_movable_block_record(&mut self, index: usize, room: u16, tilemap: u16) {
+        write_le_u16(self.ram, MOVABLE_BLOCK_DATAS + index * 4, room);
+        write_le_u16(self.ram, MOVABLE_BLOCK_DATAS + index * 4 + 2, tilemap);
+    }
+
+    pub(crate) fn set_num_chests_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_NUM_CHESTS_X2, value);
+    }
+
+    pub(crate) fn set_num_big_key_locks_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_NUM_BIGKEY_LOCKS_X2, value);
+    }
+
+    pub(crate) fn append_chest_location_and_sync_big_key_count(&mut self, value: u16) -> usize {
+        let index = self.advance_chest_and_big_key_counts();
+        self.set_chest_location(index, value);
+        index
+    }
+
+    pub(crate) fn advance_chest_and_big_key_counts(&mut self) -> usize {
+        let index = usize::from(word(self.ram, DUNG_NUM_CHESTS_X2)) >> 1;
+        let next = ((index + 1) * 2) as u16;
+        self.set_num_chests_x2(next);
+        self.set_num_big_key_locks_x2(next);
+        index
+    }
+
+    pub(crate) fn append_big_key_lock_location(&mut self, value: u16) -> usize {
+        let index = self.advance_big_key_lock_count();
+        self.set_chest_location(index, value);
+        index
+    }
+
+    pub(crate) fn advance_big_key_lock_count(&mut self) -> usize {
+        let index = usize::from(word(self.ram, DUNG_NUM_BIGKEY_LOCKS_X2)) >> 1;
+        self.set_num_big_key_locks_x2(((index + 1) * 2) as u16);
+        index
+    }
+
+    pub(crate) fn set_chest_location(&mut self, index: usize, value: u16) {
+        write_le_u16(self.ram, DUNG_CHEST_LOCATIONS + index * 2, value);
+    }
+
+    pub(crate) fn clear_chest_location(&mut self, index: usize) {
+        self.set_chest_location(index, 0);
+    }
+
+    pub(crate) fn set_opened_doors(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_DOOR_OPENED, value);
+    }
+
+    pub(crate) fn or_opened_doors(&mut self, mask: u16) -> u16 {
+        let opened = word(self.ram, DUNG_DOOR_OPENED) | mask;
+        self.set_opened_doors(opened);
+        opened
+    }
+
+    pub(crate) fn set_replacement_tilemap_quad(&mut self, index: usize, quad: [u16; 4]) {
+        write_le_u16(self.ram, REPLACEMENT_TILEMAP_UL + index * 2, quad[0]);
+        write_le_u16(self.ram, REPLACEMENT_TILEMAP_LL + index * 2, quad[1]);
+        write_le_u16(self.ram, REPLACEMENT_TILEMAP_UR + index * 2, quad[2]);
+        write_le_u16(self.ram, REPLACEMENT_TILEMAP_LR + index * 2, quad[3]);
     }
 
     pub(crate) fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
@@ -742,6 +1164,10 @@ impl<'a> DungeonStateViewMut<'a> {
         write_le_u16(self.ram, DUNG_OBJECT_TILEMAP_POS + index * 2, value);
     }
 
+    pub(crate) fn set_object_data_pos(&mut self, index: usize, value: u16) {
+        write_le_u16(self.ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, value);
+    }
+
     pub(crate) fn set_misc_object_index(&mut self, value: u16) {
         write_le_u16(self.ram, DUNG_MISC_OBJS_INDEX, value);
     }
@@ -851,6 +1277,26 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[FLOOR_2_FILLER_TILES + 1] = value;
     }
 
+    pub(crate) fn set_floor_1_filler_low(&mut self, value: u8) {
+        self.ram[FLOOR_1_FILLER_TILES] = value;
+    }
+
+    pub(crate) fn set_floor_2_filler_low(&mut self, value: u8) {
+        self.ram[FLOOR_2_FILLER_TILES] = value;
+    }
+
+    pub(crate) fn set_room_layout_and_starting_quadrant(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_LAYOUT_AND_STARTING_QUADRANT, value);
+    }
+
+    pub(crate) fn copy_bg2_draw_line_offsets(&mut self) {
+        self.copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG2);
+    }
+
+    pub(crate) fn copy_bg1_draw_line_offsets(&mut self) {
+        self.copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
+    }
+
     pub(crate) fn set_staircase_index_high(&mut self, value: u8) {
         self.ram[WHICH_STAIRCASE_INDEX + 1] = value;
     }
@@ -874,6 +1320,24 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn clear_door_direction(&mut self, door: usize) {
         self.set_door_direction_word(door, 0);
+    }
+
+    pub(crate) fn set_adjacent_door_flags(&mut self, value: u16) {
+        write_le_u16(self.ram, ADJACENT_DOORS_FLAGS, value);
+    }
+
+    pub(crate) fn mark_adjacent_door_flag(&mut self, index: usize) -> u16 {
+        let flags = word(self.ram, ADJACENT_DOORS_FLAGS) | (0x8000u16 >> (index & 15));
+        self.set_adjacent_door_flags(flags);
+        flags
+    }
+
+    pub(crate) fn set_adjacent_door(&mut self, index: usize, value: u16) {
+        write_le_u16(self.ram, ADJACENT_DOORS + index * 2, value);
+    }
+
+    pub(crate) fn mark_no_adjacent_doors(&mut self) {
+        self.set_adjacent_door(0, 0xffff);
     }
 
     pub(crate) fn set_changeable_object_index(&mut self, index: usize, value: u8) {

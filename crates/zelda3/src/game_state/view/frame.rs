@@ -174,6 +174,10 @@ impl<'a> SystemSignalsView<'a> {
         byte(self.ram, SOUND_EFFECT_AMBIENT_LAST)
     }
 
+    pub(crate) fn msu_volume(&self) -> u8 {
+        byte(self.ram, MSU_VOLUME)
+    }
+
     pub(crate) fn apui00(&self) -> u8 {
         byte(self.ram, RAM_APUI00)
     }
@@ -258,6 +262,10 @@ impl<'a> SystemSignalsViewMut<'a> {
 
     pub(crate) fn set_apui00(&mut self, value: u8) {
         self.ram[RAM_APUI00] = value;
+    }
+
+    pub(crate) fn set_msu_volume(&mut self, value: u8) {
+        self.ram[MSU_VOLUME] = value;
     }
 
     pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {

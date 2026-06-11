@@ -1699,6 +1699,14 @@ impl<'a> OverworldScrollDeltaViewMut<'a> {
         self.ram[OVERWORLD_SCROLL_DELTA + 1] = value;
     }
 
+    pub(crate) fn set_low(&mut self, value: u8) {
+        self.ram[OVERWORLD_SCROLL_DELTA] = value;
+    }
+
+    pub(crate) fn set_low_word(&mut self, value: u16) {
+        write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA, value);
+    }
+
     pub(crate) fn set_high_word(&mut self, value: u16) {
         write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA + 1, value);
     }
