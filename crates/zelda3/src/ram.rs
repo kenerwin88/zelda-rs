@@ -311,6 +311,7 @@ pub(crate) mod semantic {
     const HUD_POST_MESSAGE_REFRESH_FLAG: usize = 0x0204;
     const SRAM_PROGRESS_INDICATOR: usize = 0x0f3c5;
     const SRAM_PROGRESS_FLAGS: usize = 0x0f3c6;
+    const SRAM_PROGRESS_INDICATOR_3: usize = 0x0f3c9;
     const SAVEGAME_MAP_ICONS_INDICATOR: usize = 0x0f3c7;
     const SAVEGAME_IS_DARKWORLD: usize = 0x0f3ca;
     const MODAL_PAUSE_FLAG: usize = 0x0fc1;
@@ -407,14 +408,18 @@ pub(crate) mod semantic {
     const SPRITE_GRAPHICS_INDEX: usize = 0x0aa3;
     const SPRITE_GRAPHICS_INDEX_SPEXIT: usize = 0x0c127;
     const SPRITE_GRAPHICS_INDEX_EXIT: usize = 0x0c167;
+    const DRAG_PLAYER_X: usize = 0x0b7c;
+    const DRAG_PLAYER_Y: usize = 0x0b7e;
     const SPRITE_LIMIT_INSTANCE: usize = 0x0b6a;
     const SPRITE_ROOM_ORIGIN_X_HI: usize = 0x0fb0;
     const SPRITE_ROOM_ORIGIN_Y_HI: usize = 0x0fb1;
     const SPRITE_PICKUP_SLOT_CACHE: usize = 0x0fb2;
     const SPRITE_SHARED_SCRATCH_A: usize = 0x0fb6;
     const SPRITE_TILETYPE: usize = 0x0fa5;
+    const CUR_OBJECT_INDEX: usize = 0x0fa0;
     const SPRITE_CHR_HALFSLOT_STATE: usize = 0x0fc6;
     const SPRITE_ALERT_FLAG: usize = 0x0fdc;
+    const HAUNTED_GROVE_FLUTE_EVENT_LATCH: usize = 0x0fdd;
     const CUR_SPRITE_X: usize = 0x0fd8;
     const CUR_SPRITE_Y: usize = 0x0fda;
     const SPRITE_RESET_SCRATCH_A: usize = 0x0ff8;
@@ -2595,6 +2600,14 @@ pub(crate) mod semantic {
         pub(crate) fn cheat_walk_through_walls(&self) -> u8 {
             byte(self.ram, CHEAT_WALK_THROUGH_WALLS)
         }
+
+        pub(crate) fn drag_player_x(&self) -> u16 {
+            word(self.ram, DRAG_PLAYER_X)
+        }
+
+        pub(crate) fn drag_player_y(&self) -> u16 {
+            word(self.ram, DRAG_PLAYER_Y)
+        }
     }
 
     pub(crate) struct PlayerStateViewMut<'a> {
@@ -4615,6 +4628,24 @@ pub(crate) mod semantic {
             let lo = self.ram[FORCE_MOVE_ANY_DIRECTION];
             write_le_u16(self.ram, FORCE_MOVE_ANY_DIRECTION, lo as u16);
         }
+
+        pub(crate) fn set_drag_player_x(&mut self, value: u16) {
+            write_le_u16(self.ram, DRAG_PLAYER_X, value);
+        }
+
+        pub(crate) fn set_drag_player_y(&mut self, value: u16) {
+            write_le_u16(self.ram, DRAG_PLAYER_Y, value);
+        }
+
+        pub(crate) fn add_drag_player_x(&mut self, delta: u16) {
+            let cur = word(self.ram, DRAG_PLAYER_X);
+            write_le_u16(self.ram, DRAG_PLAYER_X, cur.wrapping_add(delta));
+        }
+
+        pub(crate) fn add_drag_player_y(&mut self, delta: u16) {
+            let cur = word(self.ram, DRAG_PLAYER_Y);
+            write_le_u16(self.ram, DRAG_PLAYER_Y, cur.wrapping_add(delta));
+        }
     }
 
     pub(crate) struct SpecialExitPositionView<'a> {
@@ -5848,6 +5879,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn or_progress_flags(&mut self, value: u8) {
             self.ram[SRAM_PROGRESS_FLAGS] |= value;
+        }
+
+        pub(crate) fn or_progress_indicator_3(&mut self, bits: u8) {
+            self.ram[SRAM_PROGRESS_INDICATOR_3] |= bits;
         }
 
         pub(crate) fn xor_progress_flags(&mut self, value: u8) {
@@ -12935,6 +12970,14 @@ pub(crate) mod semantic {
         pub(crate) fn saved_exit_graphics_index(&self) -> u8 {
             byte(self.ram, SPRITE_GRAPHICS_INDEX_EXIT)
         }
+
+        pub(crate) fn alt_sprite_spawned_flag(&self) -> u8 {
+            byte(self.ram, ALT_SPRITE_SPAWNED_FLAG)
+        }
+
+        pub(crate) fn cur_object_index(&self) -> u8 {
+            byte(self.ram, CUR_OBJECT_INDEX)
+        }
     }
 
     pub(crate) struct SpriteSystemViewMut<'a> {
@@ -12995,6 +13038,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_live_table_pages(&mut self) {
             self.ram[SPRITE_Y_LO..SPRITE_Y_LO + 256 * 3].fill(0);
+        }
+
+        pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
+            self.ram[ALT_SPRITE_SPAWNED_FLAG] = value;
         }
     }
 
@@ -15713,6 +15760,10 @@ pub(crate) mod semantic {
         pub(crate) fn active_overlord_index(&self) -> u8 {
             byte(self.ram, ACTIVE_OVERLORD_INDEX)
         }
+
+        pub(crate) fn haunted_grove_flute_event_latch(&self) -> u8 {
+            byte(self.ram, HAUNTED_GROVE_FLUTE_EVENT_LATCH)
+        }
     }
 
     pub(crate) struct GarnishStateViewMut<'a> {
@@ -15740,6 +15791,11 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_active_overlord_index(&mut self, value: u8) {
             self.ram[ACTIVE_OVERLORD_INDEX] = value;
+        }
+
+        pub(crate) fn increment_haunted_grove_flute_event_latch(&mut self) {
+            self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] =
+                self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH].wrapping_add(1);
         }
     }
 
