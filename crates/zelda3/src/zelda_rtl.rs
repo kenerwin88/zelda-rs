@@ -16,12 +16,14 @@ use snes::ppu::PpuRenderFlags;
 use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 
 use crate::config::config_value_bytes;
+#[cfg(test)]
+use crate::ram::messaging::MODULE as MESSAGING_MODULE;
 use crate::ram::messaging::{
     DIALOGUE_MSG_READ_POS, DIALOGUE_SCROLL_SPEED, MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE,
-    MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL, MODULE as MESSAGING_MODULE,
-    TEXT_BUFFER as MESSAGING_TEXT_BUFFER, TEXT_INCREMENTAL_STATE, TEXT_MSGBOX_TOPLEFT,
-    TEXT_MSGBOX_TOPLEFT_COPY, TEXT_TILEMAP_CUR, TEXT_WAIT_COUNTDOWN, VWF_CURLINE,
-    VWF_FLAG_NEXT_LINE, VWF_LINE_PTR, VWF_LINE_SPEED, VWF_LINE_SPEED_CUR,
+    MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL, TEXT_BUFFER as MESSAGING_TEXT_BUFFER,
+    TEXT_INCREMENTAL_STATE, TEXT_MSGBOX_TOPLEFT, TEXT_MSGBOX_TOPLEFT_COPY, TEXT_TILEMAP_CUR,
+    TEXT_WAIT_COUNTDOWN, VWF_CURLINE, VWF_FLAG_NEXT_LINE, VWF_LINE_PTR, VWF_LINE_SPEED,
+    VWF_LINE_SPEED_CUR,
 };
 use crate::ram::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
@@ -63,28 +65,28 @@ use crate::ram::semantic::{
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
     OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldScreenSizeView,
     OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
-    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
-    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, VramUploadDataView,
-    VramUploadDataViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldStateView,
-    WorldStateViewMut,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
+    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpriteBattleView, SpriteBattleViewMut,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
+    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
+    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldStateView, WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2652,6 +2654,10 @@ impl ZeldaState {
         &mut self,
     ) -> OverworldSpritePresenceViewMut<'_> {
         OverworldSpritePresenceViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedView<'_> {
+        OverworldSpriteLoadedView::new(&self.ram)
     }
 
     pub(crate) fn overworld_sprite_loaded_view_mut(&mut self) -> OverworldSpriteLoadedViewMut<'_> {
