@@ -82,7 +82,9 @@ use crate::ram::semantic::{
     TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
     VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut,
     WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut,
-    WorldStateView, WorldStateViewMut,
+    WorldStateView, WorldStateViewMut, ArcheryGameView, ArcheryGameViewMut,
+    MinigameStateView, MinigameStateViewMut, SpriteBattleView, SpriteBattleViewMut,
+    SharedMessageTimerViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2060,6 +2062,34 @@ impl ZeldaState {
 
     pub(crate) fn hud_inventory_order_view_mut(&mut self) -> HudInventoryOrderViewMut<'_> {
         HudInventoryOrderViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn archery_game_view(&self) -> ArcheryGameView<'_> {
+        ArcheryGameView::new(&self.ram)
+    }
+
+    pub(crate) fn archery_game_view_mut(&mut self) -> ArcheryGameViewMut<'_> {
+        ArcheryGameViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn minigame_state_view(&self) -> MinigameStateView<'_> {
+        MinigameStateView::new(&self.ram)
+    }
+
+    pub(crate) fn minigame_state_view_mut(&mut self) -> MinigameStateViewMut<'_> {
+        MinigameStateViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn sprite_battle_view(&self) -> SpriteBattleView<'_> {
+        SpriteBattleView::new(&self.ram)
+    }
+
+    pub(crate) fn sprite_battle_view_mut(&mut self) -> SpriteBattleViewMut<'_> {
+        SpriteBattleViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn shared_message_timer_view_mut(&mut self) -> SharedMessageTimerViewMut<'_> {
+        SharedMessageTimerViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn graphics_scratch_view_mut(&mut self) -> GraphicsScratchViewMut<'_> {

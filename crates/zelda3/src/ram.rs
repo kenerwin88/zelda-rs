@@ -530,6 +530,21 @@ pub(crate) mod semantic {
     const BOTTLE_MENU_ROW: usize = 0x0205;
     const EQUIPMENT_MENU_EXIT_STATE: usize = 0x034b;
     const RUPEE_SFX_SOUND_DELAY: usize = 0x0cfd;
+    const IS_IN_DARK_WORLD_FLAG: usize = 0x0fff;
+    const FLAG_OVERWORLD_AREA_CHANGED: usize = 0x0abf;
+    const SPRCOLL_X_BASE: usize = 0x0fbc;
+    const ARCHERY_GAME_HIT_COUNTER: usize = 0x0b88;
+    const ARCHERY_GAME_ARROWS_LEFT: usize = 0x0b99;
+    const ARCHERY_GAME_OUT_OF_ARROWS: usize = 0x0b9a;
+    const ITEM_DROP_COUNTER: usize = 0x0b9b;
+    const MINIGAME_CREDITS: usize = 0x04c4;
+    const FLAG_FOR_BOOMERANG_IN_PLACE: usize = 0x35f;
+    const ORANGE_BLUE_BARRIER_STATE: usize = 0x0c172;
+    const SHARED_MESSAGE_TIMER: usize = 0x2cd;
+    const ITEM_DROP_LUCK: usize = 0x0cf9;
+    const LUCK_KILL_COUNTER: usize = 0x0cfa;
+    const NUM_SPRITES_KILLED: usize = 0x0cfb;
+    const TIMES_HURT_BY_SPRITES: usize = 0x0cfc;
     const SELECT_FILE_COPY_SOURCE_SLOT_X2: usize = 0x00cc;
     const SELECT_FILE_NAME_SCROLL_X: usize = 0x0630;
     const SELECT_FILE_NAME_COLUMN: usize = 0x0b10;
@@ -5951,6 +5966,10 @@ pub(crate) mod semantic {
         pub(crate) fn which_starting_point(&self) -> u8 {
             byte(self.ram, WHICH_STARTING_POINT)
         }
+
+        pub(crate) fn progress_indicator_3(&self) -> u8 {
+            byte(self.ram, SRAM_PROGRESS_INDICATOR_3)
+        }
     }
 
     pub(crate) struct SaveProgressViewMut<'a> {
@@ -5964,6 +5983,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_palace_index_x2(&mut self, value: u8) {
             self.ram[CUR_PALACE_INDEX_X2] = value;
+        }
+
+        pub(crate) fn set_which_starting_point(&mut self, value: u8) {
+            self.ram[WHICH_STARTING_POINT] = value;
         }
 
         pub(crate) fn xor_palace_index_x2(&mut self, value: u8) {
@@ -6699,6 +6722,18 @@ pub(crate) mod semantic {
         pub(crate) fn overworld_offset_mask_y(&self) -> u16 {
             word(self.ram, OVERWORLD_OFFSET_MASK_Y)
         }
+
+        pub(crate) fn dark_world_region_index(&self) -> u8 {
+            byte(self.ram, IS_IN_DARK_WORLD_FLAG)
+        }
+
+        pub(crate) fn is_in_dark_world(&self) -> bool {
+            byte(self.ram, IS_IN_DARK_WORLD_FLAG) != 0
+        }
+
+        pub(crate) fn flag_overworld_area_changed(&self) -> bool {
+            byte(self.ram, FLAG_OVERWORLD_AREA_CHANGED) != 0
+        }
     }
 
     pub(crate) struct WorldStateViewMut<'a> {
@@ -6964,6 +6999,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn lit_torches(&self) -> u8 {
             byte(self.ram, DUNG_NUM_LIT_TORCHES)
+        }
+
+        pub(crate) fn orange_blue_barrier_state(&self) -> u8 {
+            byte(self.ram, ORANGE_BLUE_BARRIER_STATE)
         }
 
         pub(crate) fn wants_lights_out(&self) -> u8 {
@@ -7657,6 +7696,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_floor_move_flags(&mut self, value: u8) {
             self.ram[DUNG_FLOOR_MOVE_FLAGS] = value;
+        }
+
+        pub(crate) fn increment_floor_move_flags(&mut self) {
+            self.ram[DUNG_FLOOR_MOVE_FLAGS] = self.ram[DUNG_FLOOR_MOVE_FLAGS].wrapping_add(1);
+        }
+
+        pub(crate) fn clear_orange_blue_barrier_state(&mut self) {
+            write_le_u16(self.ram, ORANGE_BLUE_BARRIER_STATE, 0);
         }
 
         pub(crate) fn clear_moving_floor_check_flags(&mut self) {
@@ -11202,6 +11249,10 @@ pub(crate) mod semantic {
         pub(crate) fn mark_spawned(&mut self) {
             self.ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
         }
+
+        pub(crate) fn clear_prize_spawned(&mut self) {
+            self.ram[DIGGING_GAME_PRIZE_SPAWNED] = 0;
+        }
     }
 
     pub(crate) struct DrawScratchPositionView<'a> {
@@ -11309,6 +11360,10 @@ pub(crate) mod semantic {
     impl<'a> OverworldScrollDeltaView<'a> {
         pub(crate) fn new(ram: &'a [u8]) -> Self {
             Self { ram }
+        }
+
+        pub(crate) fn low(&self) -> u8 {
+            byte(self.ram, OVERWORLD_SCROLL_DELTA)
         }
 
         pub(crate) fn high(&self) -> u8 {
@@ -16039,6 +16094,14 @@ pub(crate) mod semantic {
             byte(self.ram, SPRCOLL_Y_BASE + 1)
         }
 
+        pub(crate) fn sprcoll_x_word(&self) -> u16 {
+            word(self.ram, SPRCOLL_X_BASE)
+        }
+
+        pub(crate) fn sprcoll_y_word(&self) -> u16 {
+            word(self.ram, SPRCOLL_Y_BASE)
+        }
+
         pub(crate) fn active_overlord_index(&self) -> u8 {
             byte(self.ram, ACTIVE_OVERLORD_INDEX)
         }
@@ -16210,6 +16273,175 @@ pub(crate) mod semantic {
 
         pub(crate) fn hide_sprite_row(&mut self, oam_index: usize) {
             self.ram[OAM_BUF + oam_index * 4 + 1] = 0xf0;
+        }
+    }
+
+    pub(crate) struct ArcheryGameView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> ArcheryGameView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn hit_counter(&self) -> u8 {
+            byte(self.ram, ARCHERY_GAME_HIT_COUNTER)
+        }
+
+        pub(crate) fn arrows_left(&self) -> u8 {
+            byte(self.ram, ARCHERY_GAME_ARROWS_LEFT)
+        }
+
+        pub(crate) fn out_of_arrows(&self) -> u8 {
+            byte(self.ram, ARCHERY_GAME_OUT_OF_ARROWS)
+        }
+    }
+
+    pub(crate) struct ArcheryGameViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> ArcheryGameViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn clear_hit_counter(&mut self) {
+            self.ram[ARCHERY_GAME_HIT_COUNTER] = 0;
+        }
+
+        pub(crate) fn set_arrows_left(&mut self, value: u8) {
+            self.ram[ARCHERY_GAME_ARROWS_LEFT] = value;
+        }
+
+        pub(crate) fn increment_out_of_arrows(&mut self) {
+            self.ram[ARCHERY_GAME_OUT_OF_ARROWS] =
+                self.ram[ARCHERY_GAME_OUT_OF_ARROWS].wrapping_add(1);
+        }
+    }
+
+    pub(crate) struct MinigameStateView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> MinigameStateView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn is_archer_or_shovel_game(&self) -> u8 {
+            byte(self.ram, IS_ARCHER_OR_SHOVEL_GAME)
+        }
+
+        pub(crate) fn credits(&self) -> u8 {
+            byte(self.ram, MINIGAME_CREDITS)
+        }
+
+        pub(crate) fn flag_boomerang_in_place(&self) -> u8 {
+            byte(self.ram, FLAG_FOR_BOOMERANG_IN_PLACE)
+        }
+    }
+
+    pub(crate) struct MinigameStateViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> MinigameStateViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn set_is_archer_or_shovel_game(&mut self, value: u8) {
+            self.ram[IS_ARCHER_OR_SHOVEL_GAME] = value;
+        }
+
+        pub(crate) fn clear_is_archer_or_shovel_game(&mut self) {
+            self.ram[IS_ARCHER_OR_SHOVEL_GAME] = 0;
+        }
+
+        pub(crate) fn set_credits(&mut self, value: u8) {
+            self.ram[MINIGAME_CREDITS] = value;
+        }
+
+        pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
+            self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
+        }
+    }
+
+    pub(crate) struct SpriteBattleView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> SpriteBattleView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn sprites_killed(&self) -> u8 {
+            byte(self.ram, NUM_SPRITES_KILLED)
+        }
+
+        pub(crate) fn times_hurt_by_sprites(&self) -> u8 {
+            byte(self.ram, TIMES_HURT_BY_SPRITES)
+        }
+
+        pub(crate) fn item_drop_luck(&self) -> u8 {
+            byte(self.ram, ITEM_DROP_LUCK)
+        }
+
+        pub(crate) fn luck_kill_counter(&self) -> u8 {
+            byte(self.ram, LUCK_KILL_COUNTER)
+        }
+
+        pub(crate) fn item_drop_counter(&self) -> u8 {
+            byte(self.ram, ITEM_DROP_COUNTER)
+        }
+    }
+
+    pub(crate) struct SpriteBattleViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> SpriteBattleViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn clear_sprites_killed(&mut self) {
+            self.ram[NUM_SPRITES_KILLED] = 0;
+        }
+
+        pub(crate) fn clear_times_hurt_by_sprites(&mut self) {
+            self.ram[TIMES_HURT_BY_SPRITES] = 0;
+        }
+
+        pub(crate) fn set_item_drop_luck(&mut self, value: u8) {
+            self.ram[ITEM_DROP_LUCK] = value;
+        }
+
+        pub(crate) fn clear_luck_kill_counter(&mut self) {
+            self.ram[LUCK_KILL_COUNTER] = 0;
+        }
+
+        pub(crate) fn increment_item_drop_counter(&mut self) -> u8 {
+            let v = self.ram[ITEM_DROP_COUNTER].wrapping_add(1);
+            self.ram[ITEM_DROP_COUNTER] = v;
+            v
+        }
+    }
+
+    pub(crate) struct SharedMessageTimerViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> SharedMessageTimerViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn set(&mut self, value: u16) {
+            write_le_u16(self.ram, SHARED_MESSAGE_TIMER, value);
         }
     }
 
