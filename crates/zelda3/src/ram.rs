@@ -157,6 +157,7 @@ pub(crate) mod semantic {
     const LINK_X_COORD_COPY: usize = 0x02dc;
     const LINK_Y_COORD_COPY: usize = 0x02de;
     const TAGALONG_EVENT_FLAGS: usize = 0x02f2;
+    const ANCILLA_INTERACTIVE_RESET_FLAG: usize = 0x02f3;
     const FLAG_IS_SPRITE_TO_PICK_UP_CACHED: usize = 0x02f4;
     const LINK_DASH_COUNTER: usize = 0x02f1;
     const PLAYER_ON_SOMARIA_PLATFORM: usize = 0x02f5;
@@ -182,6 +183,8 @@ pub(crate) mod semantic {
     const FLAG_IS_SPRITE_TO_PICK_UP: usize = 0x0314;
     const TILE_COLL_FLAG: usize = 0x0315;
     const STATE_FOR_SPIN_ATTACK: usize = 0x031c;
+    const SPIN_ATTACK_SOUND_LATCH: usize = 0x0324;
+    const MAGIC_SPELL_PLAYER_LOCK_FLAG: usize = 0x0325;
     const TURTLE_ROCK_OAM_PRIORITY_FLAG: usize = 0x034e;
     const SORT_SPRITES_OFFSET_INTO_OAM_BUFFER: usize = 0x0352;
     const VALUE_COMPUTED_FOR_PLAYER_OAM: usize = 0x0354;
@@ -224,6 +227,7 @@ pub(crate) mod semantic {
     const PLAYER_RESET_ANCILLA_WORK_BYTE_24: usize = 0x03db;
     const LINK_SOMETHING_WITH_HOOKSHOT: usize = 0x03e9;
     const LINK_FORCE_HOLD_SWORD_UP: usize = 0x03ef;
+    const FLUTE_COUNTDOWN: usize = 0x03f0;
     const LINK_ON_CONVEYOR_BELT: usize = 0x03f3;
     const LINK_TIMER_TEMPBUNNY: usize = 0x03f5;
     const LINK_NEED_FOR_POOF_FOR_TRANSFORM: usize = 0x03f7;
@@ -362,6 +366,9 @@ pub(crate) mod semantic {
     const DUNG_NUM_LIT_TORCHES: usize = 0x045a;
     const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x045c;
     const DUNG_FLAG_STATECHANGE_WATERPUZZLE: usize = 0x0642;
+    const DUNG_FLAG_SOMARIA_BLOCK_SWITCH: usize = 0x0646;
+    const RAM_BUGS_FIXED: usize = 0x064a;
+    const BIG_ROCK_STARTING_ADDRESS: usize = 0x0698;
     const DUNG_DOOR_OPENED: usize = 0x0400;
     const DUNG_DOOR_OPENED_INCL_ADJACENT: usize = 0x068c;
     const DUNG_CUR_DOOR_POS_DUNGEON: usize = 0x068e;
@@ -411,6 +418,7 @@ pub(crate) mod semantic {
     const DUNGEON_TORCH_DATA: usize = 0x0fb40;
     const DUNG_INDEX_OF_TORCHES_START: usize = 0x0478;
     const GANON_TORCH_COUNT: usize = 0x04c5;
+    const MILESTONE_ITEM_GFX_SWAP_COUNTDOWN: usize = 0x04c2;
     const TRIGGER_SPECIAL_ENTRANCE: usize = 0x04c6;
     const WHICH_STAIRCASE_INDEX: usize = 0x0462;
     const STAIRCASE_MOVE_COUNTER: usize = 0x0464;
@@ -441,6 +449,7 @@ pub(crate) mod semantic {
     const REPULSESPARK_TIMER: usize = 0x0fac;
     const REPULSESPARK_X_LO: usize = 0x0fad;
     const REPULSESPARK_Y_LO: usize = 0x0fae;
+    const REPULSESPARK_ANIM_DELAY: usize = 0x0faf;
     const REPULSESPARK_FLOOR_STATUS: usize = 0x0b68;
     const GARNISH_ACTIVE: usize = 0x0fb4;
     const SPR_RANGED_BASED_TOGGLER: usize = 0x0fb7;
@@ -455,11 +464,13 @@ pub(crate) mod semantic {
     const DUNG_FLOOR_Y_OFFS: usize = 0x0424;
     const ACTIVATE_BOMB_TRAP_OVERLORD: usize = 0x0cf4;
     const OVERLORD_OFFSET_SPRITE_POS: usize = 0x0b48;
+    const CURRENT_AREA_OF_PLAYER: usize = 0x0700;
     const OVERWORLD_OFFSET_BASE_Y: usize = 0x0708;
     const OVERWORLD_OFFSET_MASK_Y: usize = 0x070a;
     const OVERWORLD_OFFSET_BASE_X: usize = 0x070c;
     const OVERWORLD_OFFSET_MASK_X: usize = 0x070e;
     const TILEDETECT_INROOM_STAIRCASE: usize = 0x02c0;
+    const SCRATCH_0: usize = 0x0072;
     const SCRATCH_1: usize = 0x0074;
     const LIFTABLE_TILE_DETECTED_INDEX_DOUBLED: usize = 0x036a;
     const KIND_OF_IN_ROOM_STAIRCASE: usize = 0x044a;
@@ -625,6 +636,7 @@ pub(crate) mod semantic {
     const BG3_V_SCROLL_COPY2: usize = 0x00ea;
     const BG2_H_SCROLL_COPY2_CACHED: usize = 0x0c180;
     const BG2_V_SCROLL_COPY2_CACHED: usize = 0x0c182;
+    const MAPBAK_TM: usize = 0x0c211;
     const MAP_BACKUP_BG1_H_SCROLL_COPY2: usize = 0x0c200;
     const MAP_BACKUP_BG2_H_SCROLL_COPY2: usize = 0x0c202;
     const MAP_BACKUP_BG1_V_SCROLL_COPY2: usize = 0x0c204;
@@ -780,6 +792,9 @@ pub(crate) mod semantic {
     const ANCILLA_WORK_BYTE_22: usize = 0x074b;
     const ANCILLA_WORK_BYTE_24: usize = 0x03db;
     const ANCILLA_WORK_BYTE_26: usize = 0x0741;
+    const ANCILLA_ALLOC_ROTATE: usize = 0x03c4;
+    const BOOMERANG_TEMP_Y: usize = 0x0399;
+    const BOOMERANG_TEMP_X: usize = 0x039b;
     const TAGALONG_DATA_INDEX: usize = 0x02cf;
     const TAGALONG_HOOKSHOT_INTERLOCK: usize = 0x02d0;
     const FOLLOWER_TAIL_WRITE_INDEX: usize = 0x02d3;
@@ -1290,6 +1305,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn restart_check_flag(&self) -> u8 {
             byte(self.ram, RESTART_CHECK_FLAG)
+        }
+
+        pub(crate) fn bugs_fixed(&self) -> u8 {
+            byte(self.ram, RAM_BUGS_FIXED)
         }
     }
 
@@ -2799,6 +2818,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn state_for_spin_attack(&self) -> u8 {
             byte(self.ram, STATE_FOR_SPIN_ATTACK)
+        }
+
+        pub(crate) fn somaria_block_bg_check_flag(&self) -> u8 {
+            byte(self.ram, SOMARIA_BLOCK_BG_CHECK_FLAG)
+        }
+
+        pub(crate) fn player_special_draw_flag(&self) -> u8 {
+            byte(self.ram, PLAYER_SPECIAL_DRAW_FLAG)
         }
 
         pub(crate) fn bit9_of_xcoord(&self) -> u8 {
@@ -4806,6 +4833,30 @@ pub(crate) mod semantic {
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0;
         }
 
+        pub(crate) fn set_custom_spell_animation_active(&mut self) {
+            self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
+        }
+
+        pub(crate) fn clear_spin_attack_sound_latch(&mut self) {
+            self.ram[SPIN_ATTACK_SOUND_LATCH] = 0;
+        }
+
+        pub(crate) fn clear_state_for_spin_attack(&mut self) {
+            self.ram[STATE_FOR_SPIN_ATTACK] = 0;
+        }
+
+        pub(crate) fn clear_magic_spell_player_lock(&mut self) {
+            self.ram[MAGIC_SPELL_PLAYER_LOCK_FLAG] = 0;
+        }
+
+        pub(crate) fn clear_ancilla_interactive_reset_flag(&mut self) {
+            self.ram[ANCILLA_INTERACTIVE_RESET_FLAG] = 0;
+        }
+
+        pub(crate) fn clear_flute_countdown(&mut self) {
+            self.ram[FLUTE_COUNTDOWN] = 0;
+        }
+
         pub(crate) fn reset_properties_c_fields(&mut self) {
             self.ram[TILE_ACTION_INDEX] = 0;
             self.ram[STATE_FOR_SPIN_ATTACK] = 0;
@@ -4940,6 +4991,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_player_special_draw_flag(&mut self) {
             self.ram[PLAYER_SPECIAL_DRAW_FLAG] = 0;
+        }
+
+        pub(crate) fn set_player_special_draw_flag(&mut self, value: u8) {
+            self.ram[PLAYER_SPECIAL_DRAW_FLAG] = value;
         }
     }
 
@@ -5163,6 +5218,10 @@ pub(crate) mod semantic {
             word(self.ram, INDEX_OF_INTERACTING_TILE)
         }
 
+        pub(crate) fn interacting_tile_low(&self) -> u8 {
+            byte(self.ram, INDEX_OF_INTERACTING_TILE)
+        }
+
         pub(crate) fn pit_tile(&self) -> u8 {
             byte(self.ram, TILEDETECT_PIT_TILE)
         }
@@ -5364,6 +5423,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_interacting_tile(&mut self, value: u16) {
             write_le_u16(self.ram, INDEX_OF_INTERACTING_TILE, value);
+        }
+
+        pub(crate) fn set_interacting_tile_low(&mut self, value: u8) {
+            self.ram[INDEX_OF_INTERACTING_TILE] = value;
+        }
+
+        /// Y coordinate scratch word at 0x72 shared with tile interaction
+        /// routines.
+        pub(crate) fn set_interaction_scratch_y(&mut self, value: u16) {
+            write_le_u16(self.ram, SCRATCH_0, value);
+        }
+
+        /// X coordinate scratch word at 0x74 shared with tile interaction
+        /// routines.
+        pub(crate) fn set_interaction_scratch_x(&mut self, value: u16) {
+            write_le_u16(self.ram, SCRATCH_1, value);
         }
 
         pub(crate) fn set_diagonal_tile(&mut self, value: u16) {
@@ -6782,6 +6857,14 @@ pub(crate) mod semantic {
             byte(self.ram, PLAYER_IS_INDOORS) != 0
         }
 
+        pub(crate) fn current_area_of_player(&self) -> u8 {
+            byte(self.ram, CURRENT_AREA_OF_PLAYER)
+        }
+
+        pub(crate) fn milestone_item_gfx_swap_countdown(&self) -> u8 {
+            byte(self.ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN)
+        }
+
         pub(crate) fn indoor_flag(&self) -> u8 {
             byte(self.ram, PLAYER_IS_INDOORS)
         }
@@ -7104,6 +7187,11 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_trigger_special_entrance(&mut self, value: u8) {
             self.ram[TRIGGER_SPECIAL_ENTRANCE] = value;
+        }
+
+        pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
+            self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] =
+                self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN].wrapping_sub(1);
         }
 
         pub(crate) fn set_overworld_screen_trans_dir_bits(&mut self, value: u8) {
@@ -7648,6 +7736,19 @@ pub(crate) mod semantic {
         pub(crate) fn increment_trapdoors_down_low(&mut self) -> u8 {
             self.ram[DUNG_FLAG_TRAPDOORS_DOWN] = self.ram[DUNG_FLAG_TRAPDOORS_DOWN].wrapping_add(1);
             self.ram[DUNG_FLAG_TRAPDOORS_DOWN]
+        }
+
+        pub(crate) fn clear_somaria_block_switch_counter(&mut self) {
+            self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] = 0;
+        }
+
+        pub(crate) fn increment_somaria_block_switch_counter(&mut self) {
+            self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] =
+                self.ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH].wrapping_add(1);
+        }
+
+        pub(crate) fn set_big_rock_starting_address(&mut self, value: u16) {
+            write_le_u16(self.ram, BIG_ROCK_STARTING_ADDRESS, value);
         }
 
         pub(crate) fn clear_water_puzzle_state_changed(&mut self) {
@@ -11555,6 +11656,10 @@ pub(crate) mod semantic {
             self.ram[DOOR_DEBRIS_Y + slot] = value as u8;
             self.ram[DOOR_DEBRIS_X + slot] = (value >> 8) as u8;
         }
+
+        pub(crate) fn set_x_word(&mut self, slot: usize, value: u16) {
+            write_le_u16(self.ram, DOOR_DEBRIS_X + slot * 2, value);
+        }
     }
 
     pub(crate) struct DiggingGamePrizeView<'a> {
@@ -11863,6 +11968,12 @@ pub(crate) mod semantic {
 
         pub(crate) fn map_backup_bg1_h_copy2(&self) -> u16 {
             word(self.ram, MAP_BACKUP_BG1_H_SCROLL_COPY2)
+        }
+
+        /// Backup of the main screen layer designation (TM) taken when the
+        /// overworld map opens.
+        pub(crate) fn mapbak_tm(&self) -> u8 {
+            byte(self.ram, MAPBAK_TM)
         }
 
         pub(crate) fn map_backup_bg2_h_copy2(&self) -> u16 {
@@ -13942,6 +14053,10 @@ pub(crate) mod semantic {
             byte(self.ram, CUR_OBJECT_INDEX)
         }
 
+        pub(crate) fn ancilla_alloc_rotate(&self) -> u8 {
+            byte(self.ram, ANCILLA_ALLOC_ROTATE)
+        }
+
         pub(crate) fn alt_sprites_flag(&self) -> u8 {
             byte(self.ram, ALT_SPRITES_FLAG)
         }
@@ -14041,6 +14156,20 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_cur_object_index(&mut self, value: u8) {
             self.ram[CUR_OBJECT_INDEX] = value;
+        }
+
+        pub(crate) fn set_ancilla_alloc_rotate(&mut self, value: u8) {
+            self.ram[ANCILLA_ALLOC_ROTATE] = value;
+        }
+
+        pub(crate) fn decrement_ancilla_alloc_rotate(&mut self) -> u8 {
+            let value = self.ram[ANCILLA_ALLOC_ROTATE].wrapping_sub(1);
+            self.ram[ANCILLA_ALLOC_ROTATE] = value;
+            value
+        }
+
+        pub(crate) fn clear_ancilla_alloc_rotate(&mut self) {
+            self.ram[ANCILLA_ALLOC_ROTATE] = 0;
         }
 
         pub(crate) fn set_alt_sprites_flag(&mut self, value: u8) {
@@ -14339,6 +14468,15 @@ pub(crate) mod semantic {
             read_le_u16(self.ram, ETHER_ORBIT_Y)
         }
 
+        /// Sword beam scratch coordinates alias the ether orbit scratch words.
+        pub(crate) fn swordbeam_temp_x(&self) -> u16 {
+            read_le_u16(self.ram, ETHER_ORBIT_X)
+        }
+
+        pub(crate) fn swordbeam_temp_y(&self) -> u16 {
+            read_le_u16(self.ram, ETHER_ORBIT_Y)
+        }
+
         pub(crate) fn orb_x(&self) -> u16 {
             read_le_u16(self.ram, ETHER_ORB_X)
         }
@@ -14395,6 +14533,12 @@ pub(crate) mod semantic {
         }
 
         pub(crate) fn set_orbit_position(&mut self, x: u16, y: u16) {
+            write_le_u16(self.ram, ETHER_ORBIT_X, x);
+            write_le_u16(self.ram, ETHER_ORBIT_Y, y);
+        }
+
+        /// Sword beam scratch coordinates alias the ether orbit scratch words.
+        pub(crate) fn set_swordbeam_temp(&mut self, x: u16, y: u16) {
             write_le_u16(self.ram, ETHER_ORBIT_X, x);
             write_le_u16(self.ram, ETHER_ORBIT_Y, y);
         }
@@ -15743,6 +15887,12 @@ pub(crate) mod semantic {
             u16::from(self.a()) | (u16::from(self.b()) << 8)
         }
 
+        /// Word read at `a`; the high byte aliases the next slot's `a` byte,
+        /// matching the original WORD(ancilla_A(k)) access.
+        pub(crate) fn a_word(&self) -> u16 {
+            word(self.ram, ANCILLA_A + self.slot)
+        }
+
         pub(crate) fn l(&self) -> u8 {
             byte(self.ram, ANCILLA_L + self.slot)
         }
@@ -16098,6 +16248,12 @@ pub(crate) mod semantic {
             let value = self.ram[ANCILLA_A + self.slot].wrapping_add(1);
             self.set_a(value);
             value
+        }
+
+        /// Word write at `a`; the high byte aliases the next slot's `a` byte,
+        /// matching the original WORD(ancilla_A(k)) access.
+        pub(crate) fn set_a_word(&mut self, value: u16) {
+            write_le_u16(self.ram, ANCILLA_A + self.slot, value);
         }
 
         pub(crate) fn set_b(&mut self, value: u8) {
@@ -16861,6 +17017,22 @@ pub(crate) mod semantic {
             byte(self.ram, REPULSESPARK_TIMER)
         }
 
+        pub(crate) fn repulsespark_anim_delay(&self) -> u8 {
+            byte(self.ram, REPULSESPARK_ANIM_DELAY)
+        }
+
+        pub(crate) fn repulsespark_floor_status(&self) -> u8 {
+            byte(self.ram, REPULSESPARK_FLOOR_STATUS)
+        }
+
+        pub(crate) fn repulsespark_x_lo(&self) -> u8 {
+            byte(self.ram, REPULSESPARK_X_LO)
+        }
+
+        pub(crate) fn repulsespark_y_lo(&self) -> u8 {
+            byte(self.ram, REPULSESPARK_Y_LO)
+        }
+
         pub(crate) fn sprcoll_x_size(&self) -> u16 {
             word(self.ram, SPRCOLL_X_SIZE)
         }
@@ -16904,6 +17076,24 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_repulsespark_timer(&mut self, value: u8) {
             self.ram[REPULSESPARK_TIMER] = value;
+        }
+
+        pub(crate) fn clear_repulsespark_timer(&mut self) {
+            self.ram[REPULSESPARK_TIMER] = 0;
+        }
+
+        pub(crate) fn decrement_repulsespark_timer(&mut self) {
+            self.ram[REPULSESPARK_TIMER] = self.ram[REPULSESPARK_TIMER].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_repulsespark_anim_delay(&mut self, value: u8) {
+            self.ram[REPULSESPARK_ANIM_DELAY] = value;
+        }
+
+        pub(crate) fn decrement_repulsespark_anim_delay(&mut self) -> u8 {
+            let value = self.ram[REPULSESPARK_ANIM_DELAY].wrapping_sub(1);
+            self.ram[REPULSESPARK_ANIM_DELAY] = value;
+            value
         }
 
         pub(crate) fn set_repulsespark_x_lo(&mut self, value: u8) {
@@ -17254,6 +17444,10 @@ pub(crate) mod semantic {
             self.ram[ARCHERY_GAME_HIT_COUNTER] = 0;
         }
 
+        pub(crate) fn increment_hit_counter(&mut self) {
+            self.ram[ARCHERY_GAME_HIT_COUNTER] = self.ram[ARCHERY_GAME_HIT_COUNTER].wrapping_add(1);
+        }
+
         pub(crate) fn set_arrows_left(&mut self, value: u8) {
             self.ram[ARCHERY_GAME_ARROWS_LEFT] = value;
         }
@@ -17288,6 +17482,14 @@ pub(crate) mod semantic {
         pub(crate) fn flag_boomerang_in_place(&self) -> u8 {
             byte(self.ram, FLAG_FOR_BOOMERANG_IN_PLACE)
         }
+
+        pub(crate) fn boomerang_temp_x(&self) -> u16 {
+            word(self.ram, BOOMERANG_TEMP_X)
+        }
+
+        pub(crate) fn boomerang_temp_y(&self) -> u16 {
+            word(self.ram, BOOMERANG_TEMP_Y)
+        }
     }
 
     pub(crate) struct MinigameStateViewMut<'a> {
@@ -17313,6 +17515,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
             self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
+        }
+
+        pub(crate) fn set_flag_boomerang_in_place(&mut self, value: u8) {
+            self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = value;
+        }
+
+        pub(crate) fn set_boomerang_temp_x(&mut self, value: u16) {
+            write_le_u16(self.ram, BOOMERANG_TEMP_X, value);
+        }
+
+        pub(crate) fn set_boomerang_temp_y(&mut self, value: u16) {
+            write_le_u16(self.ram, BOOMERANG_TEMP_Y, value);
         }
     }
 
