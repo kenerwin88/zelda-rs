@@ -947,7 +947,7 @@ impl ZeldaState {
             sprite.set_direction(2);
             sprite.set_head_direction(4);
             sprite.set_graphics(7);
-            self.ram[BLIND_HEAD_ANIM_COUNTER] = 0;
+            self.sprite_system_view_mut().set_blind_head_anim_counter(0);
         } else {
             self.sprite_slot_view_mut(k).clear();
         }
@@ -1199,7 +1199,8 @@ impl ZeldaState {
             return;
         }
         // BLIND_HEAD_ANIM_COUNTER++;
-        self.ram[BLIND_HEAD_ANIM_COUNTER] = self.ram[BLIND_HEAD_ANIM_COUNTER].wrapping_add(1);
+        self.sprite_system_view_mut()
+            .increment_blind_head_anim_counter();
         // stunned/ai_state branch
         if self.sprite_slot_view(k).stunned() == 0 {
             if self.sprite_slot_view(k).ai_state() != 0 {
@@ -1226,8 +1227,8 @@ impl ZeldaState {
         match self.sprite_slot_view(k).c() {
             0 => {
                 // blinded
-                self.ram[DMA_HEAD_POINTER] = 0;
-                self.ram[DMA_BODY_POINTER] = 0xA0;
+                self.display_nmi_view_mut().set_dma_head_pointer(0);
+                self.display_nmi_view_mut().set_dma_body_pointer(0xA0);
                 if self.sprite_slot_view(k).delay_aux2() == 0 {
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.increment_c();
@@ -1603,7 +1604,7 @@ impl ZeldaState {
             let direction = self.sprite_slot_view(k).direction();
             let t1 = if direction == 3 { -t1_raw } else { t1_raw };
             let t0 = (direction as i32 - 2) * 8;
-            let b = self.ram[BLIND_HEAD_ANIM_COUNTER] as i32;
+            let b = self.sprite_system_view().blind_head_anim_counter() as i32;
             let idx = ((b >> 3) & 7) + ((b >> 2) & 1) + t0;
             // C reads kBlind_HeadDir[idx]; idx can be 0..16 (17 entries).
             let head_dir = BLIND_HEAD_DIRECTION_BASES[(idx as usize) & 0xff] as i32;
@@ -1711,8 +1712,10 @@ impl ZeldaState {
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
         let oam = self.oam_state_view().current_pointer_usize();
         let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
-        self.ram[oam + 2] = BLIND_HEAD_DRAW_CHARS[j];
-        self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | BLIND_HEAD_DRAW_FLAGS[j];
+        self.oam_state_view_mut()
+            .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
+        self.oam_state_view_mut()
+            .merge_entry_flags(oam, 0x3f, BLIND_HEAD_DRAW_FLAGS[j]);
     }
 
     fn sprite_return_if_inactive_for_blind(&mut self, k: usize) -> bool {
@@ -1778,7 +1781,7 @@ impl ZeldaState {
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {
         let oam = self.oam_state_view().current_pointer_usize() + oam_idx * 4;
-        self.ram[oam + 1] = y;
+        self.oam_state_view_mut().set_entry_y(oam, y);
     }
 
     fn blind_draw_patch_oam_head_for_blind(
@@ -1789,8 +1792,9 @@ impl ZeldaState {
         flags: u8,
     ) {
         let oam = self.oam_state_view().current_pointer_usize() + oam_idx as usize * 4;
-        self.ram[oam + 2] = charnum;
-        self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | flags;
+        self.oam_state_view_mut().set_entry_char(oam, charnum);
+        self.oam_state_view_mut()
+            .merge_entry_flags(oam, 0x3f, flags);
     }
 }
 

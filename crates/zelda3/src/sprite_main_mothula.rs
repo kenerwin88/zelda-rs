@@ -548,7 +548,7 @@ impl ZeldaState {
                     0
                 };
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] != 0 {
+                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
                     self.sprite_slot_view_mut(k).set_x_velocity((-16i8) as u8);
@@ -586,7 +586,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_slot_view_mut(k).set_graphics(3);
-                if self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] != 0 {
+                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).xor_direction(1);
                     let value = FLUTE_BOY_ANIMAL_X_VELOCITIES
@@ -645,7 +645,7 @@ impl ZeldaState {
                     3
                 };
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] != 0 {
+                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).xor_direction(1);
                     let value = FLUTE_BOY_ANIMAL_X_VELOCITIES
@@ -686,10 +686,13 @@ impl ZeldaState {
         };
         let oam = self.oam_state_view().current_pointer_usize();
         let j = usize::from(self.sprite_slot_view(k).direction());
-        self.ram[oam] = x.wrapping_add(FLUTE_BOY_BIRD_X_OFFSETS[j] as i16 as u16) as u8;
-        self.ram[oam + 1] = y as u8;
-        self.ram[oam + 2] = 0xae;
-        self.ram[oam + 3] = flags | FLUTE_BOY_ANIMAL_OAM_FLAGS[j];
+        self.oam_state_view_mut().write_entry(
+            oam,
+            x.wrapping_add(FLUTE_BOY_BIRD_X_OFFSETS[j] as i16 as u16) as u8,
+            y as u8,
+            0xae,
+            flags | FLUTE_BOY_ANIMAL_OAM_FLAGS[j],
+        );
         self.sprite_correct_oam_entries(k, 0, 0);
     }
 
@@ -870,7 +873,7 @@ impl ZeldaState {
                 } else {
                     1
                 };
-                write_le_u16(&mut self.ram, DUNG_FLOOR_X_OFFS, x_offs);
+                self.dungeon_state_view_mut().set_floor_x_offset(x_offs);
                 self.dungeon_state_view_mut()
                     .set_header_collision_2_mirror(1);
             } else {
@@ -1447,7 +1450,7 @@ impl ZeldaState {
                     self.sprite_slot_view(k).direction(),
                     self.sprite_slot_view(k).c(),
                     self.sprite_slot_view(k).delay_main(),
-                    self.ram[RNG_SEED],
+                    self.world_state_view().rng_seed(),
                 );
             }
         }
@@ -1542,7 +1545,7 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let old_delay = self.sprite_slot_view(k).delay_main();
-                    let rng_before = self.ram[RNG_SEED];
+                    let rng_before = self.world_state_view().rng_seed();
                     let rng = self.get_random_number();
                     self.sprite_slot_view_mut(k)
                         .set_delay_main(STALFOS_HOP_DELAYS[usize::from(rng & 3)]);
@@ -1600,7 +1603,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_main(32);
                 }
                 let old_head = self.sprite_slot_view(k).head_direction();
-                let rng_before = self.ram[RNG_SEED];
+                let rng_before = self.world_state_view().rng_seed();
                 let rng = self.get_random_number();
                 let rng_bit = rng & 1;
                 let value = ZAZAK_ALT_DIRECTIONS
@@ -1642,7 +1645,7 @@ impl ZeldaState {
                             self.sprite_slot_view(k).direction(),
                             self.sprite_slot_view(k).c(),
                             self.sprite_slot_view(k).delay_main(),
-                            self.ram[RNG_SEED],
+                            self.world_state_view().rng_seed(),
                         );
                     }
                     self.sprite_slot_view_mut(k).set_delay_main(24);
@@ -3043,7 +3046,7 @@ impl ZeldaState {
                             let j = j as usize;
                             let value = 21;
                             self.garnish_slot_view_mut(j).set_garnish_type(value);
-                            self.ram[GARNISH_ACTIVE_MOTHULA] = 21;
+                            self.garnish_state_view_mut().set_active_type(21);
                             let value = self.sprite_slot_view(k).x_low();
                             self.garnish_slot_view_mut(j).set_x_low(value);
                             let value = self.sprite_slot_view(k).x_high();
@@ -3100,13 +3103,15 @@ impl ZeldaState {
         let oam = self.oam_state_view().current_pointer_usize();
         let chr = self.sprite_slot_view(k).graphics().wrapping_mul(2);
         for i in 0..4 {
-            self.ram[oam + i * 4 + 2] = self.ram[oam + i * 4 + 2].wrapping_add(chr);
+            let addr = oam + i * 4;
+            let charnum = self.oam_state_view().entry_char(addr).wrapping_add(chr);
+            self.oam_state_view_mut().set_entry_char(addr, charnum);
         }
         if self.sprite_slot_view(k).ai_state() == 5 {
-            self.ram[oam + 4 * 4 + 1] = 0xf0;
+            self.oam_state_view_mut().hide_entry(oam + 4 * 4);
         }
         if (self.sprite_slot_view(k).subtype2() & 8) != 0 {
-            self.ram[oam + 4 * 4 + 3] |= 0x40;
+            self.oam_state_view_mut().or_entry_flags(oam + 4 * 4, 0x40);
         }
 
         if self.sprite_slot_view(k).ai_state() != 5 {
@@ -3590,7 +3595,7 @@ impl ZeldaState {
             if self.garnish_slot_view(i).is_empty() {
                 let value = 2;
                 self.garnish_slot_view_mut(i).set_garnish_type(value);
-                self.ram[GARNISH_ACTIVE_MOTHULA] = 2;
+                self.garnish_state_view_mut().set_active_type(2);
                 let value = self.sprite_slot_view(k).x_low();
                 self.garnish_slot_view_mut(i).set_x_low(value);
                 let value = self.sprite_slot_view(k).x_high();
@@ -4724,9 +4729,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 return;
             }
-            self.ram[ARMOS_KNIGHT_REMAINING_COUNT] =
-                self.ram[ARMOS_KNIGHT_REMAINING_COUNT].wrapping_sub(1);
-            if self.ram[ARMOS_KNIGHT_REMAINING_COUNT] == 1 {
+            if self
+                .sprite_workspace_view_mut()
+                .decrement_armos_knight_remaining_count()
+                == 1
+            {
                 for j in (0..=5usize).rev() {
                     self.sprite_slot_view_mut(j).set_health(48);
                     self.sprite_slot_view_mut(j).set_x_velocity(0);
@@ -4754,7 +4761,9 @@ impl ZeldaState {
         if sign8(self.sprite_slot_view(k).z()) {
             self.sprite_slot_view_mut(k).set_z_velocity(0);
             self.sprite_slot_view_mut(k).set_z(0);
-            if self.ram[ARMOS_KNIGHT_REMAINING_COUNT] != 1 && self.sprite_slot_view(k).a() != 0 {
+            if self.sprite_workspace_view().armos_knight_remaining_count() != 1
+                && self.sprite_slot_view(k).a() != 0
+            {
                 self.sprite_slot_view_mut(k).set_z_velocity(48);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x16);
             }
@@ -4791,7 +4800,7 @@ impl ZeldaState {
                     self.sprite_repel_dash();
                 }
             }
-        } else if self.ram[ARMOS_KNIGHT_REMAINING_COUNT] == 1 {
+        } else if self.sprite_workspace_view().armos_knight_remaining_count() == 1 {
             self.sprite_armos_crusher(k);
         } else {
             self.sprite_check_damage_to_and_from_link(k);

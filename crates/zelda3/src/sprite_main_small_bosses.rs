@@ -383,12 +383,14 @@ impl ZeldaState {
                 self.sprite_draw_trinexx_rock_head(k, &info);
             }
         }
-        self.ram[SMALL_BOSS_SHARED_SCRATCH_A] = self.sprite_slot_view(k).anim_clock();
+        let anim_clock = self.sprite_slot_view(k).anim_clock();
+        self.sprite_workspace_view_mut()
+            .set_shared_scratch_a(anim_clock);
     }
 
     // void Sprite_CB_TrinexxRockHead(int k) {  // 9db0ca
     pub(super) fn sprite_cb_trinexx_rock_head(&mut self, k: usize) {
-        if self.ram[OVERLORD_X_HI_SB] != 0 {
+        if self.overlord_slot_view(0).x_high() != 0 {
             self.sprite_trinexx_final_phase(k);
             return;
         }
@@ -402,7 +404,7 @@ impl ZeldaState {
         if (ai_state as i8).is_negative() {
             self.player_state_view_mut().set_menu_block_flag(ai_state);
             if self.sprite_slot_view(k).delay_main() == 0 {
-                self.ram[OVERLORD_X_HI_SB] = self.ram[OVERLORD_X_HI_SB].wrapping_add(1);
+                self.overlord_slot_view_mut(0).increment_x_high();
                 self.sprite_initialized_segmented_for_small_bosses(k);
                 self.sprite_slot_view_mut(k).set_subtype2(0);
                 self.sprite_slot_view_mut(k).set_head_direction(0);
@@ -950,11 +952,13 @@ impl ZeldaState {
         }
         let subtype = self.sprite_slot_view(k).subtype2();
         self.temp_counter_view_mut().set(subtype);
-        self.ram[SMALL_BOSS_SHARED_SCRATCH_A] = self
+        let scratch = self
             .sprite_slot_view(k)
             .subtype2()
             .wrapping_mul(4)
             .wrapping_add(16);
+        self.sprite_workspace_view_mut()
+            .set_shared_scratch_a(scratch);
         if self.frame_control_view().submodule() != 0 {
             self.sprite_correct_oam_entries(k, 4, 2);
         }
@@ -1212,7 +1216,8 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.ram[VITREOUS_EYEBALL_RELEASE_COUNT] = 0;
+                self.sprite_workspace_view_mut()
+                    .clear_vitreous_eyeball_release_count();
                 self.sprite_slot_view_mut(k).set_f(0);
                 self.sprite_slot_view_mut(k).or_flags3(64);
                 if (self.frame_control_view().frame_counter() & 1) == 0 {
@@ -1599,7 +1604,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(j).set_flags3(0x40);
                 }
             }
-            self.ram[SMALL_BOSS_SHARED_SCRATCH_A] = 1;
+            self.sprite_workspace_view_mut().set_shared_scratch_a(1);
         } else {
             let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
             let j =
@@ -2084,10 +2089,8 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.ram[oam] = x;
-        self.ram[oam + 1] = y;
-        self.ram[oam + 2] = charnum;
-        self.ram[oam + 3] = flags;
+        self.oam_state_view_mut()
+            .write_entry(oam, x, y, charnum, flags);
         let ext_index = (oam - OAM_BUF) / 4;
         let value = big;
         self.oam_state_view_mut()

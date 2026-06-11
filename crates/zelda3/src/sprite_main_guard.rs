@@ -122,20 +122,24 @@ impl ZeldaState {
         self.sprite_check_damage_from_link(k);
 
         let y_low = self.sprite_slot_view(k).y_low();
-        if self.ram[OVERWORLD_AREA_INDEX_GUARD] == 0x1b && (y_low == 0x50 || y_low == 0x90) {
+        let message_counter = self.sprite_system_view().blind_head_anim_counter();
+        if self.world_state_view().overworld_area_low() == 0x1b && (y_low == 0x50 || y_low == 0x90)
+        {
             self.sprite_tutorial_guard_show_message_on_contact(
                 k,
                 if y_low == 0x50 { 0xb2 } else { 0xb3 },
             );
-        } else if self.sprite_tutorial_guard_show_message_on_contact(
-            k,
-            u16::from(self.ram[BLIND_HEAD_ANIM_COUNTER]) + 0x0f,
-        ) {
-            self.ram[BLIND_HEAD_ANIM_COUNTER] = if self.ram[BLIND_HEAD_ANIM_COUNTER] != 6 {
-                self.ram[BLIND_HEAD_ANIM_COUNTER].wrapping_add(1)
+        } else if self
+            .sprite_tutorial_guard_show_message_on_contact(k, u16::from(message_counter) + 0x0f)
+        {
+            let counter = self.sprite_system_view().blind_head_anim_counter();
+            let next = if counter != 6 {
+                counter.wrapping_add(1)
             } else {
                 0
             };
+            self.sprite_system_view_mut()
+                .set_blind_head_anim_counter(next);
         }
         self.sprite_check_damage_to_and_from_link(k);
         if (((k as u8) ^ self.frame_control_view().frame_counter()) & 0x1f) == 0 {
@@ -169,7 +173,7 @@ impl ZeldaState {
                 let cond = (((self.frame_control_view().frame_counter() ^ j as u8) & 7)
                     | self.sprite_slot_view(j).hit_timer())
                     == 0;
-                if j != self.ram[CUR_OBJECT_INDEX] as usize
+                if j != self.sprite_system_view().cur_object_index() as usize
                     && self.sprite_slot_view(j).state() >= 9
                     && cond
                 {
@@ -355,10 +359,11 @@ impl ZeldaState {
             t += ((cur_y & 0x01f8) << 3) as usize;
             self.dungeon_state_view().bg2_attr(t)
         } else {
-            let t = ((cur_x >> 3).wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_X))
-                & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_X))
-                | ((cur_y.wrapping_sub(read_le_u16(&self.ram, OVERWORLD_OFFSET_BASE_Y))
-                    & read_le_u16(&self.ram, OVERWORLD_OFFSET_MASK_Y))
+            let world = self.world_state_view();
+            let t = ((cur_x >> 3).wrapping_sub(world.overworld_offset_base_x())
+                & world.overworld_offset_mask_x())
+                | ((cur_y.wrapping_sub(world.overworld_offset_base_y())
+                    & world.overworld_offset_mask_y())
                     << 3);
             let map16 = self.dungeon_state_view().bg2_tile_by_byte_pos(t);
             self.asset_u8(164, map16 as usize)
@@ -931,7 +936,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).increment_g();
             if old == 15 {
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x4);
-                let area_lo = self.ram[OVERWORLD_AREA_INDEX_GUARD];
+                let area_lo = self.world_state_view().overworld_area_low();
                 if self.save_progress_view().progress_indicator() == 2 && area_lo == 24 {
                     self.system_signals_view_mut().set_music_control(12);
                 }

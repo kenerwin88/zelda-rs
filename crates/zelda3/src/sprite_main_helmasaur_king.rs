@@ -435,9 +435,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_direction();
             }
             // WORD(overlord_gen1[5]) += (int8)overlord_gen2[0]
-            let word = read_le_u16(&self.ram, OVERLORD_GEN1 + 5);
             let delta_w = (self.overlord_slot_view(0).gen2() as i8) as i16 as u16;
-            write_le_u16(&mut self.ram, OVERLORD_GEN1 + 5, word.wrapping_add(delta_w));
+            self.overlord_slot_view_mut(5).add_gen1_word(delta_w);
         }
         if self.sprite_slot_view(k).anim_clock() == 0 {
             return;
@@ -449,8 +448,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).anim_clock() == 2 {
             let j = self.sprite_slot_view(k).head_direction();
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            let word = read_le_u16(&self.ram, OVERLORD_GEN2 + 1);
-            write_le_u16(&mut self.ram, OVERLORD_GEN2 + 1, word.wrapping_add(dw));
+            self.overlord_slot_view_mut(1).add_gen2_word(dw);
             let cmp = if j != 0 { (-124i8) as u8 } else { 124u8 };
             if self.overlord_slot_view(1).gen2() == cmp {
                 self.sprite_slot_view_mut(k).set_anim_clock(3);
@@ -459,8 +457,7 @@ impl ZeldaState {
         } else if self.sprite_slot_view(k).anim_clock() == 3 {
             let j = self.sprite_slot_view(k).head_direction() ^ 1;
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            let word = read_le_u16(&self.ram, OVERLORD_GEN2 + 1);
-            write_le_u16(&mut self.ram, OVERLORD_GEN2 + 1, word.wrapping_add(dw));
+            self.overlord_slot_view_mut(1).add_gen2_word(dw);
             if self.overlord_slot_view(1).gen2() == 0 {
                 self.sprite_slot_view_mut(k).set_anim_clock(0);
             }
@@ -537,10 +534,11 @@ impl ZeldaState {
             let mut player = self.player_state_view_mut();
             player.set_actual_velocity_xy(pt.x, pt.y);
             player.set_incapacitated_timer(8);
-            if self.ram[REPULSESPARK_TIMER] == 0 {
-                self.ram[REPULSESPARK_X_LO] = pt.y;
-                self.ram[REPULSESPARK_Y_LO] = pt.x;
-                self.ram[REPULSESPARK_TIMER] = 5;
+            if self.garnish_state_view().repulsespark_timer() == 0 {
+                let mut garnish = self.garnish_state_view_mut();
+                garnish.set_repulsespark_x_lo(pt.y);
+                garnish.set_repulsespark_y_lo(pt.x);
+                garnish.set_repulsespark_timer(5);
             }
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x5);
         }

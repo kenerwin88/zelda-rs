@@ -508,12 +508,12 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_graphics(graphics);
         }
 
-        if self.ram[GANON_TORCH_COUNT] == 2
-            && self.ram[GANON_TORCH_COUNT] != self.sprite_slot_view(k).room()
+        if self.dungeon_torch_view().ganon_torch_count() == 2
+            && self.dungeon_torch_view().ganon_torch_count() != self.sprite_slot_view(k).room()
         {
             self.sprite_slot_view_mut(k).set_delay_aux1(64);
         }
-        let torch_count = self.ram[GANON_TORCH_COUNT];
+        let torch_count = self.dungeon_torch_view().ganon_torch_count();
         self.sprite_slot_view_mut(k).set_room(torch_count);
 
         self.ganon_draw(k);
@@ -558,7 +558,7 @@ impl ZeldaState {
         if (self.sprite_slot_view(k).ignore_projectile()
             | self.player_state_view().immobilized_flag())
             == 0
-            && self.ram[GANON_TORCH_COUNT] == 2
+            && self.dungeon_torch_view().ganon_torch_count() == 2
         {
             self.sprite_check_damage_to_and_from_link(k);
         }
@@ -671,9 +671,9 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).increment_ignore_projectile();
                 let x = (u16::from(self.sprite_slot_view(k).x_high()) << 8)
-                    | u16::from(self.ram[SWAMOLA_TARGET_X_LO_GANON]);
+                    | u16::from(self.swamola_target_view(0).x_low());
                 let y = (u16::from(self.sprite_slot_view(k).y_high()) << 8)
-                    | u16::from(self.ram[SWAMOLA_TARGET_Y_LO_GANON]);
+                    | u16::from(self.swamola_target_view(0).y_low());
                 if self.ganon_attempt_trident_catch(x, y) {
                     let direction = self.sprite_slot_view(k).subtype() >> 2;
                     self.sprite_slot_view_mut(k).set_direction(direction);
@@ -1347,8 +1347,8 @@ impl ZeldaState {
                 self.sprite_slot_view(k).health(),
                 self.sprite_slot_view(k).subtype(),
                 self.sprite_slot_view(k).direction(),
-                self.ram[SWAMOLA_TARGET_X_LO_GANON],
-                self.ram[SWAMOLA_TARGET_Y_LO_GANON],
+                self.swamola_target_view(0).x_low(),
+                self.swamola_target_view(0).y_low(),
             );
         }
         let rnd = self.get_random_number();
@@ -1358,8 +1358,10 @@ impl ZeldaState {
         let j = GANON_WARP_SUBTYPES[idx & 0x1f];
         self.sprite_slot_view_mut(k).set_subtype(j);
         let ju = j as usize;
-        self.ram[SWAMOLA_TARGET_X_LO_GANON] = GANON_WARP_TARGET_X_LOW[ju];
-        self.ram[SWAMOLA_TARGET_Y_LO_GANON] = GANON_WARP_TARGET_Y_LOW[ju];
+        self.swamola_target_view_mut(0)
+            .set_x_low(GANON_WARP_TARGET_X_LOW[ju]);
+        self.swamola_target_view_mut(0)
+            .set_y_low(GANON_WARP_TARGET_Y_LOW[ju]);
         self.sprite_slot_view_mut(k).set_ai_state(a);
         self.sprite_slot_view_mut(k).set_x_velocity(0);
         self.sprite_slot_view_mut(k).set_y_velocity(0);
@@ -1387,7 +1389,7 @@ impl ZeldaState {
         if sign8(g)
             || (self.sprite_slot_view(k).ai_state() != 19
                 && self.sprite_slot_view(k).delay_aux4() == 0
-                && self.ram[GANON_TORCH_COUNT] == 0)
+                && self.dungeon_torch_view().ganon_torch_count() == 0)
         {
             let _ = self.sprite_prep_oam_coord_or_double_ret(k);
             return;
@@ -1474,25 +1476,26 @@ impl ZeldaState {
     // Sprite_D6_Ganon calls them from sprite_main.c.
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
         self.Palette_AssertTranslucencySwap();
-        self.ram[DUNGEON_TORCH_ATTR] = 0xc0;
+        self.dungeon_torch_view_mut().set_attr(0xc0);
         self.dungeon_extinguish_torch_for_ganon();
     }
 
     fn ganon_extinguish_torch_for_ganon(&mut self) {
-        self.ram[DUNGEON_TORCH_ATTR] = 193;
+        self.dungeon_torch_view_mut().set_attr(193);
         self.dungeon_extinguish_torch_for_ganon();
     }
 
     fn dungeon_extinguish_torch_for_ganon(&mut self) {
-        let y = ((self.ram[DUNGEON_TORCH_ATTR] & 0x0f) as usize) * 2
-            + read_le_u16(&self.ram, DUNG_INDEX_OF_TORCHES_START) as usize;
+        let y = self.dungeon_torch_view().attr_index() * 2
+            + self.dungeon_torch_view().torches_start_index() as usize;
         let idx = y >> 1;
         let mut r8 = self.dungeon_state_view().object_tilemap_pos(idx) & 0x7fff;
         self.dungeon_state_view_mut()
             .set_object_tilemap_pos(idx, r8);
 
-        let opos = (read_le_u16(&self.ram, DUNG_OBJECT_POS_IN_OBJDATA + idx * 2) & 0xff) >> 1;
-        write_le_u16(&mut self.ram, DUNG_TORCH_DATA_GANON + opos as usize * 2, r8);
+        let opos = (self.dungeon_state_view().object_pos_in_objdata(idx) & 0xff) >> 1;
+        self.dungeon_torch_view_mut()
+            .set_torch_data_word(opos as usize, r8);
 
         r8 &= 0x3fff;
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
@@ -1507,14 +1510,15 @@ impl ZeldaState {
                     self.display_nmi_view_mut().set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-                self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] =
-                    LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
+                let plus = LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
+                self.display_nmi_view_mut()
+                    .set_overworld_fixed_color_plusminus(plus);
                 self.frame_control_view_mut().set_submodule(10);
                 self.frame_control_view_mut().set_subsubmodule(0);
             }
         }
 
-        let torch_timer = (self.ram[DUNGEON_TORCH_ATTR] & 0x0f) as usize;
+        let torch_timer = self.dungeon_torch_view().attr_index();
         self.dungeon_torch_view_mut().clear_timer(torch_timer);
         self.dungeon_torch_view_mut().clear_attr();
     }
@@ -1573,10 +1577,14 @@ impl ZeldaState {
             } else {
                 0
             };
-        self.ram[oam + 2] = GANON_DRAW_PATCH_CHARS[j];
-        self.ram[oam + 3] = (self.ram[oam + 3] & 0x3f) | GANON_DRAW_PATCH_FLAGS[j];
-        self.ram[oam + 6] = GANON_DRAW_PATCH_CHARS[j + 1];
-        self.ram[oam + 7] = (self.ram[oam + 7] & 0x3f) | GANON_DRAW_PATCH_FLAGS[j + 1];
+        self.oam_state_view_mut()
+            .set_entry_char(oam, GANON_DRAW_PATCH_CHARS[j]);
+        self.oam_state_view_mut()
+            .merge_entry_flags(oam, 0x3f, GANON_DRAW_PATCH_FLAGS[j]);
+        self.oam_state_view_mut()
+            .set_entry_char(oam + 4, GANON_DRAW_PATCH_CHARS[j + 1]);
+        self.oam_state_view_mut()
+            .merge_entry_flags(oam + 4, 0x3f, GANON_DRAW_PATCH_FLAGS[j + 1]);
     }
 
     // Rewired to canonical Sprite_CorrectOamEntries port.
@@ -1602,10 +1610,8 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.ram[oam] = x;
-        self.ram[oam + 1] = y;
-        self.ram[oam + 2] = charnum;
-        self.ram[oam + 3] = flags;
+        self.oam_state_view_mut()
+            .write_entry(oam, x, y, charnum, flags);
         let ext_index = (oam - OAM_BUF) / 4;
         let value = big;
         self.oam_state_view_mut()

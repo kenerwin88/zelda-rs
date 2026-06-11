@@ -167,6 +167,7 @@ pub(crate) mod semantic {
     const LINK_ITEM_IN_HAND: usize = 0x0301;
     const PIT_CORRECTION_ACTIVE_FLAG: usize = 0x0302;
     const LINK_CURRENT_ITEM_Y: usize = 0x0303;
+    const EQ_SELECTED_ROD: usize = 0x0307;
     const LINK_CURRENT_ITEM_ACTIVE: usize = 0x0304;
     const LINK_STATE_BITS: usize = 0x0308;
     const LINK_PICKING_THROW_STATE: usize = 0x0309;
@@ -181,6 +182,12 @@ pub(crate) mod semantic {
     const FLAG_IS_SPRITE_TO_PICK_UP: usize = 0x0314;
     const TILE_COLL_FLAG: usize = 0x0315;
     const STATE_FOR_SPIN_ATTACK: usize = 0x031c;
+    const TURTLE_ROCK_OAM_PRIORITY_FLAG: usize = 0x034e;
+    const SORT_SPRITES_OFFSET_INTO_OAM_BUFFER: usize = 0x0352;
+    const VALUE_COMPUTED_FOR_PLAYER_OAM: usize = 0x0354;
+    const SECONDARY_WATER_GRASS_TIMER: usize = 0x0355;
+    const PRIMARY_WATER_GRASS_TIMER: usize = 0x0356;
+    const OAM_PRIORITY_VALUE_2: usize = 0x035d;
     const STEP_COUNTER_FOR_SPIN_ATTACK: usize = 0x031d;
     const LINK_SPIN_OFFSETS: usize = 0x031e;
     const COUNTDOWN_FOR_BLINK: usize = 0x031f;
@@ -351,9 +358,11 @@ pub(crate) mod semantic {
     const DUNGEON_FLOOR_Y_VELOCITY: usize = 0x0310;
     const DUNGEON_FLOOR_X_VELOCITY: usize = 0x0312;
     const DUNG_OBJECT_TILEMAP_POS: usize = 0x0540;
+    const DUNG_OBJECT_POS_IN_OBJDATA: usize = 0x0520;
     const DUNG_NUM_LIT_TORCHES: usize = 0x045a;
     const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x045c;
     const DUNG_FLAG_STATECHANGE_WATERPUZZLE: usize = 0x0642;
+    const DUNG_DOOR_OPENED: usize = 0x0400;
     const DUNG_DOOR_OPENED_INCL_ADJACENT: usize = 0x068c;
     const DUNG_CUR_DOOR_POS_DUNGEON: usize = 0x068e;
     const DOOR_ANIMATION_STEP_INDICATOR_DUNGEON: usize = 0x0690;
@@ -400,6 +409,9 @@ pub(crate) mod semantic {
     const TORCH_TIMERS: usize = 0x04f0;
     const DUNGEON_TORCH_ATTR: usize = 0x0333;
     const DUNGEON_TORCH_DATA: usize = 0x0fb40;
+    const DUNG_INDEX_OF_TORCHES_START: usize = 0x0478;
+    const GANON_TORCH_COUNT: usize = 0x04c5;
+    const TRIGGER_SPECIAL_ENTRANCE: usize = 0x04c6;
     const WHICH_STAIRCASE_INDEX: usize = 0x0462;
     const STAIRCASE_MOVE_COUNTER: usize = 0x0464;
     const MOVABLE_BLOCK_DATAS: usize = 0x0f940;
@@ -411,6 +423,7 @@ pub(crate) mod semantic {
     const SPRITE_GRAPHICS_INDEX_EXIT: usize = 0x0c167;
     const DRAG_PLAYER_X: usize = 0x0b7c;
     const DRAG_PLAYER_Y: usize = 0x0b7e;
+    const BLIND_HEAD_ANIM_COUNTER: usize = 0x0b69;
     const SPRITE_LIMIT_INSTANCE: usize = 0x0b6a;
     const SPRITE_ROOM_ORIGIN_X_HI: usize = 0x0fb0;
     const SPRITE_ROOM_ORIGIN_Y_HI: usize = 0x0fb1;
@@ -435,6 +448,8 @@ pub(crate) mod semantic {
     const OVERWORLD_BOULDER_TRAP_TIMER: usize = 0x0ffe;
     const DUNGEON_TRAP_TRIGGER_LATCH: usize = 0x0b9e;
     const DUNG_FLOOR_MOVE_FLAGS: usize = 0x041a;
+    const DUNG_FLOOR_X_OFFS: usize = 0x0422;
+    const DUNG_FLOOR_Y_OFFS: usize = 0x0424;
     const ACTIVATE_BOMB_TRAP_OVERLORD: usize = 0x0cf4;
     const OVERLORD_OFFSET_SPRITE_POS: usize = 0x0b48;
     const OVERWORLD_OFFSET_BASE_Y: usize = 0x0708;
@@ -778,6 +793,7 @@ pub(crate) mod semantic {
     const FOLLOWER_JUMP_TIMER: usize = 0x02d6;
     const FOLLOWER_KIKI_ANIM_COUNTER: usize = 0x0b69;
     const FOLLOWER_PALETTE_SWAP_FLAG: usize = 0x0abd;
+    const ZELDA_RESCUE_CUTSCENE_STATE: usize = 0x1fe01;
 
     const OVERLORD_X_LO: usize = 0x0b08;
     const OVERLORD_X_HI: usize = 0x0b10;
@@ -2760,6 +2776,30 @@ pub(crate) mod semantic {
             byte(self.ram, LINK_CURRENT_ITEM_Y)
         }
 
+        pub(crate) fn selected_rod(&self) -> u8 {
+            byte(self.ram, EQ_SELECTED_ROD)
+        }
+
+        pub(crate) fn swim_stroke_anim_step(&self) -> u8 {
+            byte(self.ram, SWIM_STROKE_ANIM_STEP)
+        }
+
+        pub(crate) fn state_for_spin_attack(&self) -> u8 {
+            byte(self.ram, STATE_FOR_SPIN_ATTACK)
+        }
+
+        pub(crate) fn bit9_of_xcoord(&self) -> u8 {
+            byte(self.ram, BIT9_OF_XCOORD)
+        }
+
+        pub(crate) fn primary_water_grass_timer(&self) -> u8 {
+            byte(self.ram, PRIMARY_WATER_GRASS_TIMER)
+        }
+
+        pub(crate) fn secondary_water_grass_timer(&self) -> u8 {
+            byte(self.ram, SECONDARY_WATER_GRASS_TIMER)
+        }
+
         pub(crate) fn item_debug_value_1(&self) -> u8 {
             byte(self.ram, LINK_DEBUG_VALUE_1)
         }
@@ -4592,6 +4632,29 @@ pub(crate) mod semantic {
             self.ram[LINK_CURRENT_ITEM_Y] = value;
         }
 
+        pub(crate) fn increment_sleep_in_bed_state(&mut self) {
+            self.ram[PLAYER_SLEEP_IN_BED_STATE] =
+                self.ram[PLAYER_SLEEP_IN_BED_STATE].wrapping_add(1);
+        }
+
+        pub(crate) fn set_bit9_of_xcoord_word(&mut self, value: u16) {
+            write_le_u16(self.ram, BIT9_OF_XCOORD, value);
+        }
+
+        /// Stashes the selected Link body sprite table index in the shared
+        /// scratch word at 0x74 for the player OAM routines.
+        pub(crate) fn set_link_sprite_index_scratch(&mut self, value: u16) {
+            write_le_u16(self.ram, SCRATCH_1, value);
+        }
+
+        pub(crate) fn set_primary_water_grass_timer(&mut self, value: u8) {
+            self.ram[PRIMARY_WATER_GRASS_TIMER] = value;
+        }
+
+        pub(crate) fn set_secondary_water_grass_timer(&mut self, value: u8) {
+            self.ram[SECONDARY_WATER_GRASS_TIMER] = value;
+        }
+
         pub(crate) fn clear_item_debug_value_1(&mut self) {
             self.ram[LINK_DEBUG_VALUE_1] = 0;
         }
@@ -6108,6 +6171,10 @@ pub(crate) mod semantic {
             self.ram[SRAM_PROGRESS_INDICATOR_3] |= bits;
         }
 
+        pub(crate) fn clear_progress_indicator_3_bits(&mut self, bits: u8) {
+            self.ram[SRAM_PROGRESS_INDICATOR_3] &= !bits;
+        }
+
         pub(crate) fn xor_progress_flags(&mut self, value: u8) {
             self.ram[SRAM_PROGRESS_FLAGS] ^= value;
         }
@@ -6714,6 +6781,10 @@ pub(crate) mod semantic {
             word(self.ram, OVERWORLD_AREA_INDEX)
         }
 
+        pub(crate) fn overworld_area_low(&self) -> u8 {
+            byte(self.ram, OVERWORLD_AREA_INDEX)
+        }
+
         pub(crate) fn transition_direction(&self) -> u8 {
             byte(self.ram, OVERWORLD_TRANSITION_DIR)
         }
@@ -7010,6 +7081,10 @@ pub(crate) mod semantic {
             self.ram[RNG_SEED] = value;
         }
 
+        pub(crate) fn set_trigger_special_entrance(&mut self, value: u8) {
+            self.ram[TRIGGER_SPECIAL_ENTRANCE] = value;
+        }
+
         pub(crate) fn set_overworld_screen_trans_dir_bits(&mut self, value: u8) {
             self.ram[OVERWORLD_SCREEN_TRANS_DIR_BITS] = value;
         }
@@ -7178,6 +7253,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn opened_doors_including_adjacent(&self) -> u16 {
             word(self.ram, DUNG_DOOR_OPENED_INCL_ADJACENT)
+        }
+
+        pub(crate) fn opened_doors(&self) -> u16 {
+            word(self.ram, DUNG_DOOR_OPENED)
+        }
+
+        pub(crate) fn floor_x_offset(&self) -> u16 {
+            word(self.ram, DUNG_FLOOR_X_OFFS)
+        }
+
+        pub(crate) fn floor_y_offset(&self) -> u16 {
+            word(self.ram, DUNG_FLOOR_Y_OFFS)
+        }
+
+        pub(crate) fn object_pos_in_objdata(&self, index: usize) -> u16 {
+            word(self.ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2)
         }
 
         pub(crate) fn has_opened_door_mask(&self, mask: u16) -> bool {
@@ -7577,6 +7668,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_opened_doors_including_adjacent(&mut self, value: u16) {
             write_le_u16(self.ram, DUNG_DOOR_OPENED_INCL_ADJACENT, value);
+        }
+
+        pub(crate) fn set_floor_x_offset(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNG_FLOOR_X_OFFS, value);
         }
 
         pub(crate) fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
@@ -7985,6 +8080,14 @@ pub(crate) mod semantic {
         pub(crate) fn torch_attr(&self) -> u8 {
             byte(self.ram, DUNGEON_TORCH_ATTR)
         }
+
+        pub(crate) fn ganon_torch_count(&self) -> u8 {
+            byte(self.ram, GANON_TORCH_COUNT)
+        }
+
+        pub(crate) fn torches_start_index(&self) -> u16 {
+            word(self.ram, DUNG_INDEX_OF_TORCHES_START)
+        }
     }
 
     pub(crate) struct DungeonTorchViewMut<'a> {
@@ -8012,6 +8115,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_timer(&mut self, index: usize, value: u8) {
             self.ram[TORCH_TIMERS + index] = value;
+        }
+
+        pub(crate) fn set_torch_data_word(&mut self, index: usize, value: u16) {
+            write_le_u16(self.ram, DUNGEON_TORCH_DATA + index * 2, value);
         }
 
         pub(crate) fn set_attr(&mut self, value: u8) {
@@ -11185,6 +11292,14 @@ pub(crate) mod semantic {
                 SWAMOLA_TARGET_Y_HI + self.slot,
             )
         }
+
+        pub(crate) fn x_low(&self) -> u8 {
+            byte(self.ram, SWAMOLA_TARGET_X_LO + self.slot)
+        }
+
+        pub(crate) fn y_low(&self) -> u8 {
+            byte(self.ram, SWAMOLA_TARGET_Y_LO + self.slot)
+        }
     }
 
     pub(crate) struct SwamolaTargetViewMut<'a> {
@@ -11202,6 +11317,14 @@ pub(crate) mod semantic {
             self.ram[SWAMOLA_TARGET_X_HI + self.slot] = (x >> 8) as u8;
             self.ram[SWAMOLA_TARGET_Y_LO + self.slot] = y as u8;
             self.ram[SWAMOLA_TARGET_Y_HI + self.slot] = (y >> 8) as u8;
+        }
+
+        pub(crate) fn set_x_low(&mut self, value: u8) {
+            self.ram[SWAMOLA_TARGET_X_LO + self.slot] = value;
+        }
+
+        pub(crate) fn set_y_low(&mut self, value: u8) {
+            self.ram[SWAMOLA_TARGET_Y_LO + self.slot] = value;
         }
     }
 
@@ -13269,6 +13392,12 @@ pub(crate) mod semantic {
         pub(crate) fn palette_swap_flag(&self) -> u8 {
             byte(self.ram, FOLLOWER_PALETTE_SWAP_FLAG)
         }
+
+        /// Cutscene progress byte shared by the Priest and rescued Zelda
+        /// during the opening rescue sequence.
+        pub(crate) fn zelda_rescue_cutscene_state(&self) -> u8 {
+            byte(self.ram, ZELDA_RESCUE_CUTSCENE_STATE)
+        }
     }
 
     pub(crate) struct FollowerStateViewMut<'a> {
@@ -13395,6 +13524,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_kiki_anim_counter(&mut self) {
             self.ram[FOLLOWER_KIKI_ANIM_COUNTER] = 0;
+        }
+
+        pub(crate) fn set_zelda_rescue_cutscene_state(&mut self, value: u8) {
+            self.ram[ZELDA_RESCUE_CUTSCENE_STATE] = value;
         }
     }
 
@@ -13716,6 +13849,11 @@ pub(crate) mod semantic {
             byte(self.ram, SPRITE_LIMIT_INSTANCE)
         }
 
+        /// Animation counter shared by Blind's head and the tutorial guards.
+        pub(crate) fn blind_head_anim_counter(&self) -> u8 {
+            byte(self.ram, BLIND_HEAD_ANIM_COUNTER)
+        }
+
         pub(crate) fn chr_halfslot_state(&self) -> u8 {
             byte(self.ram, SPRITE_CHR_HALFSLOT_STATE)
         }
@@ -13760,6 +13898,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_limit_instance(&mut self, value: u8) {
             self.ram[SPRITE_LIMIT_INSTANCE] = value;
+        }
+
+        pub(crate) fn set_blind_head_anim_counter(&mut self, value: u8) {
+            self.ram[BLIND_HEAD_ANIM_COUNTER] = value;
+        }
+
+        pub(crate) fn increment_blind_head_anim_counter(&mut self) {
+            self.ram[BLIND_HEAD_ANIM_COUNTER] = self.ram[BLIND_HEAD_ANIM_COUNTER].wrapping_add(1);
         }
 
         pub(crate) fn increment_limit_instance(&mut self) -> u8 {
@@ -13867,6 +14013,12 @@ pub(crate) mod semantic {
             byte(self.ram, SPRITE_RESET_SCRATCH_A)
         }
 
+        /// Alias of `reset_scratch_a`: the Armos Knights fight reuses the
+        /// shared scratch byte as the remaining-knight counter.
+        pub(crate) fn armos_knight_remaining_count(&self) -> u8 {
+            byte(self.ram, SPRITE_RESET_SCRATCH_A)
+        }
+
         pub(crate) fn reset_scratch_b(&self) -> u8 {
             byte(self.ram, SPRITE_RESET_SCRATCH_B)
         }
@@ -13949,6 +14101,21 @@ pub(crate) mod semantic {
         pub(crate) fn decrement_prep_shared_counter(&mut self) -> u8 {
             self.ram[SPRITE_RESET_SCRATCH_A] = self.ram[SPRITE_RESET_SCRATCH_A].wrapping_sub(1);
             self.ram[SPRITE_RESET_SCRATCH_A]
+        }
+
+        /// Alias of `decrement_prep_shared_counter` for the Armos Knights
+        /// fight, which reuses the shared scratch byte as the
+        /// remaining-knight counter. Returns the new value.
+        pub(crate) fn decrement_armos_knight_remaining_count(&mut self) -> u8 {
+            self.ram[SPRITE_RESET_SCRATCH_A] = self.ram[SPRITE_RESET_SCRATCH_A].wrapping_sub(1);
+            self.ram[SPRITE_RESET_SCRATCH_A]
+        }
+
+        /// Alias of `set_prep_shared_counter(0)` for the Vitreous fight,
+        /// which reuses the shared scratch byte as the eyeball release
+        /// counter.
+        pub(crate) fn clear_vitreous_eyeball_release_count(&mut self) {
+            self.ram[SPRITE_RESET_SCRATCH_A] = 0;
         }
 
         pub(crate) fn set_reset_scratch_a(&mut self, value: u8) {
@@ -16204,6 +16371,11 @@ pub(crate) mod semantic {
             self.ram[OVERLORD_X_HI + self.slot] = value;
         }
 
+        pub(crate) fn increment_x_high(&mut self) {
+            self.ram[OVERLORD_X_HI + self.slot] =
+                self.ram[OVERLORD_X_HI + self.slot].wrapping_add(1);
+        }
+
         pub(crate) fn add_x_low(&mut self, value: u8) {
             self.ram[OVERLORD_X_LO + self.slot] =
                 self.ram[OVERLORD_X_LO + self.slot].wrapping_add(value);
@@ -16258,6 +16430,11 @@ pub(crate) mod semantic {
                 self.ram[OVERLORD_GEN1 + self.slot].wrapping_add(value);
         }
 
+        pub(crate) fn add_gen1_word(&mut self, value: u16) {
+            let next = read_le_u16(self.ram, OVERLORD_GEN1 + self.slot).wrapping_add(value);
+            write_le_u16(self.ram, OVERLORD_GEN1 + self.slot, next);
+        }
+
         pub(crate) fn subtract_gen1(&mut self, value: u8) {
             self.ram[OVERLORD_GEN1 + self.slot] =
                 self.ram[OVERLORD_GEN1 + self.slot].wrapping_sub(value);
@@ -16270,6 +16447,11 @@ pub(crate) mod semantic {
         pub(crate) fn add_gen2(&mut self, value: u8) {
             self.ram[OVERLORD_GEN2 + self.slot] =
                 self.ram[OVERLORD_GEN2 + self.slot].wrapping_add(value);
+        }
+
+        pub(crate) fn add_gen2_word(&mut self, value: u16) {
+            let next = read_le_u16(self.ram, OVERLORD_GEN2 + self.slot).wrapping_add(value);
+            write_le_u16(self.ram, OVERLORD_GEN2 + self.slot, next);
         }
 
         pub(crate) fn subtract_gen2(&mut self, value: u8) {
@@ -16672,6 +16854,22 @@ pub(crate) mod semantic {
                 | self.extended_byte(index * 4)
         }
 
+        pub(crate) fn priority_value_2(&self) -> u16 {
+            word(self.ram, OAM_PRIORITY_VALUE_2)
+        }
+
+        pub(crate) fn sort_sprites_offset(&self) -> u16 {
+            word(self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER)
+        }
+
+        pub(crate) fn player_oam_computed_value(&self) -> u8 {
+            byte(self.ram, VALUE_COMPUTED_FOR_PLAYER_OAM)
+        }
+
+        pub(crate) fn turtle_rock_priority_flag(&self) -> u8 {
+            byte(self.ram, TURTLE_ROCK_OAM_PRIORITY_FLAG)
+        }
+
         pub(crate) fn entry_x(&self, addr: usize) -> u8 {
             byte(self.ram, addr)
         }
@@ -16733,6 +16931,22 @@ pub(crate) mod semantic {
             self.ram[SORT_SPRITES_SETTING] = value;
         }
 
+        pub(crate) fn set_priority_value_2(&mut self, value: u16) {
+            write_le_u16(self.ram, OAM_PRIORITY_VALUE_2, value);
+        }
+
+        pub(crate) fn set_sort_sprites_offset(&mut self, value: u16) {
+            write_le_u16(self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER, value);
+        }
+
+        pub(crate) fn clear_sort_sprites_offset(&mut self) {
+            write_le_u16(self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER, 0);
+        }
+
+        pub(crate) fn set_player_oam_computed_value(&mut self, value: u8) {
+            self.ram[VALUE_COMPUTED_FOR_PLAYER_OAM] = value;
+        }
+
         pub(crate) fn clear_sprite_sorting_setting(&mut self) {
             self.set_sprite_sorting_setting(0);
         }
@@ -16778,6 +16992,17 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_entry_y(&mut self, addr: usize, y: u8) {
             self.ram[addr + 1] = y;
+        }
+
+        pub(crate) fn set_entry_xy(&mut self, addr: usize, x: u8, y: u8) {
+            self.ram[addr] = x;
+            self.ram[addr + 1] = y;
+        }
+
+        /// Writes the char (low byte) and flags (high byte) of an entry as a
+        /// single little-endian word.
+        pub(crate) fn set_entry_char_flags(&mut self, addr: usize, value: u16) {
+            write_le_u16(self.ram, addr + 2, value);
         }
 
         /// Moves the entry off-screen by setting its y coordinate below the

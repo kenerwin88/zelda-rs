@@ -563,18 +563,18 @@ impl ZeldaState {
         let x = self
             .sprite_workspace_view()
             .current_sprite_x()
-            .wrapping_sub(read_le_u16(&self.ram, DUNG_FLOOR_X_OFFS));
+            .wrapping_sub(self.dungeon_state_view().floor_x_offset());
         let y = self
             .sprite_workspace_view()
             .current_sprite_y()
-            .wrapping_sub(read_le_u16(&self.ram, DUNG_FLOOR_Y_OFFS));
+            .wrapping_sub(self.dungeon_state_view().floor_y_offset());
         self.sprite_workspace_view_mut().set_current_sprite_x(x);
         self.sprite_workspace_view_mut().set_current_sprite_y(y);
 
         if self.sprite_slot_view(k).ai_state() >= 3 {
             self.crystal_maiden_draw(k);
         }
-        self.ram[IS_NMI_THREAD_ACTIVE] = 1;
+        self.display_nmi_view_mut().set_nmi_thread_active(1);
         if self.attract_state_view().intro_did_run_step() == 0 {
             self.crystal_maiden_run_cutscene(k);
             self.attract_state_view_mut().mark_intro_did_run_step();
@@ -724,7 +724,7 @@ impl ZeldaState {
             }
             4 => {
                 self.player_state_view_mut().clear_immobilized();
-                self.ram[WHICH_STARTING_POINT] = 2;
+                self.save_progress_view_mut().set_which_starting_point(2);
                 self.SavePalaceDeaths();
                 self.follower_state_view_mut().set_indicator(1);
                 self.Dungeon_FlagRoomData_Quadrants();
@@ -767,8 +767,9 @@ impl ZeldaState {
             1 => {
                 self.sprite_show_message_unconditional(0x1d);
                 self.sprite_slot_view_mut(k).increment_ai_state();
-                self.ram[BYTE_7FFE01] = 2;
-                self.ram[WHICH_STARTING_POINT] = 1;
+                self.follower_state_view_mut()
+                    .set_zelda_rescue_cutscene_state(2);
+                self.save_progress_view_mut().set_which_starting_point(1);
                 self.SavePalaceDeaths();
                 self.save_progress_view_mut().set_progress_indicator(2);
                 self.sprite_load_graphics_properties_light_world_only();
@@ -854,8 +855,7 @@ impl ZeldaState {
                     return;
                 }
                 self.player_state_view_mut().increment_opening_pose();
-                self.ram[PLAYER_SLEEP_IN_BED_STATE] =
-                    self.ram[PLAYER_SLEEP_IN_BED_STATE].wrapping_add(1);
+                self.player_state_view_mut().increment_sleep_in_bed_state();
                 self.player_state_view_mut().set_y(0x2157);
                 self.player_state_view_mut().immobilize();
                 self.sprite_slot_view_mut(k).increment_ai_state();
@@ -892,7 +892,7 @@ impl ZeldaState {
             }
             4 => {
                 self.follower_state_view_mut().set_indicator(5);
-                write_le_u16(&mut self.ram, SHARED_MESSAGE_TIMER, 0x0df3);
+                self.shared_message_timer_view_mut().set(0x0df3);
                 self.save_progress_view_mut().or_progress_flags(0x10);
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.player_state_view_mut().clear_immobilized();
@@ -918,7 +918,7 @@ impl ZeldaState {
                 self.link_receive_item(0, 0);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 self.sprite_slot_view_mut(k).set_graphics(1);
-                self.ram[WHICH_STARTING_POINT] = 3;
+                self.save_progress_view_mut().set_which_starting_point(3);
                 self.save_progress_view_mut().or_progress_flags(1);
                 self.save_progress_view_mut().set_progress_indicator(1);
             }
@@ -1183,14 +1183,15 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_show_message_unconditional(0x17);
                     self.sprite_slot_view_mut(k).increment_ai_state();
-                    self.ram[BYTE_7FFE01] = 1;
+                    self.follower_state_view_mut()
+                        .set_zelda_rescue_cutscene_state(1);
                     self.priest_spawn_rescued_princess();
                     self.player_state_view_mut().immobilize();
                     self.save_progress_view_mut().set_map_icons_indicator(1);
                 }
             }
             1 => {
-                if self.ram[BYTE_7FFE01] == 2 {
+                if self.follower_state_view().zelda_rescue_cutscene_state() == 2 {
                     self.sprite_show_message_unconditional(0x18);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                 }
@@ -1260,7 +1261,7 @@ impl ZeldaState {
             .set_head_direction(head_direction);
         if (self.world_state_view().dungeon_room_index() & 1) == 0 {
             self.sprite_show_solicited_message(k, 0x131);
-        } else if (read_le_u16(&self.ram, DUNG_DOOR_OPENED) & 0xff00) == 0 {
+        } else if (self.dungeon_state_view().opened_doors() & 0xff00) == 0 {
             self.sprite_show_solicited_message(k, 0x12f);
         } else {
             self.sprite_show_solicited_message(k, 0x130);
@@ -1384,7 +1385,8 @@ impl ZeldaState {
             let dy = UNCLE_AND_SAGE_Y[j] as u16;
             self.sprite_set_y(k, y.wrapping_add(dy));
             self.sprite_slot_view_mut(k).increment_ignore_projectile();
-            self.ram[BYTE_7FFE01] = 0;
+            self.follower_state_view_mut()
+                .set_zelda_rescue_cutscene_state(0);
         } else if room == 4 {
             if (self.save_progress_view().progress_flags() & 0x10) == 0 {
                 let x_low = self.sprite_slot_view(k).x_low().wrapping_add(8);
@@ -2067,7 +2069,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_x_velocity(0);
                     self.sprite_slot_view_mut(k).set_y_velocity(0);
-                    self.ram[TRIGGER_SPECIAL_ENTRANCE] = 1;
+                    self.world_state_view_mut().set_trigger_special_entrance(1);
                     self.frame_control_view_mut().set_subsubmodule(0);
                     self.world_state_view_mut()
                         .clear_entrance_sequence_counter();
@@ -2106,8 +2108,10 @@ impl ZeldaState {
         if self.sprite_slot_view(k).direction() < 8 {
             let j = (self.sprite_slot_view(k).direction() as usize) * 2
                 + self.sprite_slot_view(k).graphics() as usize;
-            self.ram[DMA_HEAD_POINTER] = KIKI_DMA[j * 2];
-            self.ram[DMA_BODY_POINTER] = KIKI_DMA[j * 2 + 1];
+            self.display_nmi_view_mut()
+                .set_dma_head_pointer(KIKI_DMA[j * 2]);
+            self.display_nmi_view_mut()
+                .set_dma_body_pointer(KIKI_DMA[j * 2 + 1]);
             self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES1[j * 2..j * 2 + 2], Some(&mut info));
             if self.sprite_slot_view(k).pause() == 0 {
                 self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -2378,7 +2382,7 @@ impl ZeldaState {
                 self.sprite_show_solicited_message_for_dn(k, 0xe3);
                 self.player_state_view_mut().clear_immobilized();
                 self.sprite_slot_view_mut(k).set_direction(1);
-                self.ram[SRAM_PROGRESS_INDICATOR_3] |= 32;
+                self.save_progress_view_mut().or_progress_indicator_3(32);
             }
             _ => {}
         }
@@ -2420,7 +2424,8 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        self.ram[DMA_BODY_POINTER] = RETURNING_SMITHY_DMA[j];
+        self.display_nmi_view_mut()
+            .set_dma_body_pointer(RETURNING_SMITHY_DMA[j]);
         self.sprite_draw_multiple_player_deferred(
             k,
             &RETURNING_SMITHY_DRAW_FRAMES[j..j + 1],
@@ -2479,7 +2484,7 @@ impl ZeldaState {
                         self.sprite_show_message_unconditional(0xe4);
                         self.sprite_slot_view_mut(k).set_delay_aux1(96);
                         self.sprite_slot_view_mut(k).increment_c();
-                    } else if (self.ram[SRAM_PROGRESS_INDICATOR_3] & 0x20) != 0 {
+                    } else if (self.save_progress_view().progress_indicator_3() & 0x20) != 0 {
                         if (self.sprite_show_solicited_message_for_dn(k, 0xd8) & 0x100) != 0 {
                             self.sprite_slot_view_mut(k).increment_ai_state();
                             self.sprite_slot_view_mut(k).increment_c();
@@ -2529,9 +2534,10 @@ impl ZeldaState {
                     let e_idx = self.sprite_slot_view(k).e() as usize;
                     self.sprite_slot_view_mut(e_idx).set_ai_state(5);
                     self.sprite_slot_view_mut(k).set_ai_state(5);
-                    self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE] = 0;
+                    self.world_state_view_mut()
+                        .clear_flag_overworld_area_changed();
                     self.inventory_state_view_mut().set_sword_type(255);
-                    self.ram[SRAM_PROGRESS_INDICATOR_3] |= 128;
+                    self.save_progress_view_mut().or_progress_indicator_3(128);
                 }
             }
             4 | 5 => {
@@ -2540,7 +2546,7 @@ impl ZeldaState {
                     self.sprite_show_message_unconditional(0xe4);
                     self.sprite_slot_view_mut(k).set_delay_aux1(96);
                     self.sprite_slot_view_mut(k).increment_c();
-                } else if self.ram[FLAG_OVERWORLD_AREA_DID_CHANGE] != 0 {
+                } else if self.world_state_view().flag_overworld_area_changed() {
                     if (self.sprite_show_solicited_message_for_dn(k, 0xde) & 0x100) != 0 {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                         self.sprite_slot_view_mut(k).set_graphics(4);
@@ -2555,7 +2561,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(e_idx).set_ai_state(0);
                 self.player_state_view_mut().set_item_receipt_method(0);
                 self.link_receive_item(2, 0);
-                self.ram[SRAM_PROGRESS_INDICATOR_3] &= !0x80;
+                self.save_progress_view_mut()
+                    .clear_progress_indicator_3_bits(0x80);
             }
             7 | 8 | 9 => {}
             10 => {
@@ -2747,8 +2754,10 @@ impl ZeldaState {
     fn thief_draw_apply_head_overrides_for_dn(&mut self, k: usize) {
         let oam = self.oam_state_view().current_pointer_usize();
         let j = self.sprite_slot_view(k).head_direction() as usize;
-        self.ram[oam + 2] = THIEF_DRAW_CHAR[j];
-        self.ram[oam + 3] = (self.ram[oam + 3] & !0x40) | THIEF_DRAW_FLAGS[j];
+        self.oam_state_view_mut()
+            .set_entry_char(oam, THIEF_DRAW_CHAR[j]);
+        self.oam_state_view_mut()
+            .merge_entry_flags(oam, !0x40, THIEF_DRAW_FLAGS[j]);
     }
 
     fn smithy_frog_draw_for_dn(&mut self, k: usize) {

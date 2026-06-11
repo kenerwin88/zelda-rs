@@ -723,7 +723,7 @@ impl ZeldaState {
                 let sprite = self.sprite_slot_view(k);
                 if sprite.a() == 0 && sprite.e() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(3);
-                } else if (self.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2) != 0 {
+                } else if (self.save_progress_view().progress_indicator_3() & 2) != 0 {
                     self.sprite_show_solicited_message(k, 0xd4);
                 } else if (self.sprite_show_solicited_message(k, 0xd1) & 0x100) != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
@@ -743,7 +743,7 @@ impl ZeldaState {
             2 => {
                 self.player_state_view_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x16, 0);
-                self.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] |= 2;
+                self.save_progress_view_mut().or_progress_indicator_3(2);
                 let rupees = self.player_resources_view().rupees_goal().wrapping_sub(100);
                 self.player_resources_view_mut().set_rupees_goal(rupees);
                 self.sprite_slot_view_mut(k).set_ai_state(0);
