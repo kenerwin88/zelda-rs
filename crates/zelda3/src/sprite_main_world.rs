@@ -246,9 +246,13 @@ impl ZeldaState {
                         }
                         if self.world_state_view().dungeon_room_index() != 36 {
                             let j = usize::from(self.sprite_slot_view(k).direction());
-                            let dx = self.player_state_view().drag_player_x()
+                            let dx = self
+                                .player_state_view()
+                                .drag_player_x()
                                 .wrapping_add(SOMARIA_PLATFORM_DRAG_X_OFFSETS[j] as i16 as u16);
-                            let dy = self.player_state_view().drag_player_y()
+                            let dy = self
+                                .player_state_view()
+                                .drag_player_y()
                                 .wrapping_add(SOMARIA_PLATFORM_DRAG_Y_OFFSETS[j] as i16 as u16);
                             self.player_state_view_mut().set_drag_player_x(dx);
                             self.player_state_view_mut().set_drag_player_y(dy);
@@ -520,7 +524,8 @@ impl ZeldaState {
         }
         match self.sprite_slot_view(k).graphics() {
             0 => {
-                self.sprite_system_view_mut().set_alt_sprite_spawned_flag(255);
+                self.sprite_system_view_mut()
+                    .set_alt_sprite_spawned_flag(255);
                 let direction = self.sprite_slot_view(k).sprite_type().wrapping_sub(0xae);
                 self.sprite_slot_view_mut(k).set_direction(direction);
                 self.somaria_platform_locate_path(k);
@@ -551,7 +556,8 @@ impl ZeldaState {
                         self.player_state_view_mut().immobilize();
                         self.player_state_view_mut()
                             .set_sprite_damage_disable_timer(1);
-                        self.sprite_system_view_mut().set_alt_sprite_spawned_flag(k as u8);
+                        self.sprite_system_view_mut()
+                            .set_alt_sprite_spawned_flag(k as u8);
                     } else {
                         self.sprite_halt_all_movement();
                     }
@@ -635,7 +641,8 @@ impl ZeldaState {
                         player.set_visibility_status(0);
                         player.clear_movement_velocity();
                     }
-                    self.sprite_system_view_mut().set_alt_sprite_spawned_flag(255);
+                    self.sprite_system_view_mut()
+                        .set_alt_sprite_spawned_flag(255);
                     self.sprite_slot_view_mut(k).set_graphics(2);
                 } else {
                     self.pipe_handle_player_movement(

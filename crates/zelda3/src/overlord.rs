@@ -846,7 +846,8 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord01_position_target(&mut self, k: usize) {
-        self.garnish_state_view_mut().set_active_overlord_index(k as u8);
+        self.garnish_state_view_mut()
+            .set_active_overlord_index(k as u8);
     }
 
     pub(super) fn overlord_check_if_active(&mut self, k: usize) {

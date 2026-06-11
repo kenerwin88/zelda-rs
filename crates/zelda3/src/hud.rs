@@ -346,18 +346,28 @@ impl ZeldaState {
     pub(super) fn hud_super_bomb_indicator(&mut self) {
         if self.hud_state_view().super_bomb_indicator_counter() == 0 {
             if (self.hud_state_view().super_bomb_indicator_timer() as i8) < 0 {
-                self.hud_state_view_mut().set_super_bomb_indicator_timer(0xff);
+                self.hud_state_view_mut()
+                    .set_super_bomb_indicator_timer(0xff);
                 self.hud_remove_super_bomb_indicator();
                 return;
             }
-            let t = self.hud_state_view().super_bomb_indicator_timer().wrapping_sub(1);
+            let t = self
+                .hud_state_view()
+                .super_bomb_indicator_timer()
+                .wrapping_sub(1);
             self.hud_state_view_mut().set_super_bomb_indicator_timer(t);
-            self.hud_state_view_mut().set_super_bomb_indicator_counter(62);
+            self.hud_state_view_mut()
+                .set_super_bomb_indicator_counter(62);
         }
-        let c = self.hud_state_view().super_bomb_indicator_counter().wrapping_sub(1);
-        self.hud_state_view_mut().set_super_bomb_indicator_counter(c);
+        let c = self
+            .hud_state_view()
+            .super_bomb_indicator_counter()
+            .wrapping_sub(1);
+        self.hud_state_view_mut()
+            .set_super_bomb_indicator_counter(c);
         if (self.hud_state_view().super_bomb_indicator_timer() as i8) < 0 {
-            self.hud_state_view_mut().set_super_bomb_indicator_timer(0xff);
+            self.hud_state_view_mut()
+                .set_super_bomb_indicator_timer(0xff);
             self.hud_remove_super_bomb_indicator();
             return;
         }
@@ -432,7 +442,8 @@ impl ZeldaState {
             self.player_resources_view_mut().set_rupees_actual(a);
             if !self.system_signals_view().has_sound_effect_1() {
                 let delay = self.hud_state_view().rupee_sfx_sound_delay();
-                self.hud_state_view_mut().set_rupee_sfx_sound_delay(delay.wrapping_add(1));
+                self.hud_state_view_mut()
+                    .set_rupee_sfx_sound_delay(delay.wrapping_add(1));
                 if delay & 7 == 0 {
                     self.system_signals_view_mut().set_sound_effect_1(41);
                 }
@@ -508,7 +519,10 @@ impl ZeldaState {
                 }
                 self.player_resources_view_mut()
                     .decrement_heart_filler_by(8);
-                let h = self.hud_state_view().is_doing_heart_animation_raw().wrapping_add(1);
+                let h = self
+                    .hud_state_view()
+                    .is_doing_heart_animation_raw()
+                    .wrapping_add(1);
                 self.hud_state_view_mut().set_is_doing_heart_animation(h);
                 self.hud_state_view_mut().set_heart_refill_countdown(7);
                 self.hud_update_magic();
@@ -722,7 +736,10 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_normal_menu(&mut self) {
-        let tc = self.hud_state_view().flashing_circle_timer().wrapping_add(1);
+        let tc = self
+            .hud_state_view()
+            .flashing_circle_timer()
+            .wrapping_add(1);
         self.hud_state_view_mut().set_flashing_circle_timer(tc);
         if self.player_state_view().joypad1h_last() == 0 {
             self.hud_state_view_mut().clear_prev_joypad_h();
@@ -830,7 +847,9 @@ impl ZeldaState {
         if self.frame_control_view().submodule() != 0 {
             self.hud_restore_torch_background();
         }
-        if self.player_state_view().current_item_y() != 5 && self.player_state_view().current_item_y() != 6 {
+        if self.player_state_view().current_item_y() != 5
+            && self.player_state_view().current_item_y() != 6
+        {
             self.hud_state_view_mut().set_equipment_menu_exit_state(2);
             self.player_state_view_mut().clear_item_debug_value_1();
         } else {
@@ -889,7 +908,10 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_bottle_menu(&mut self) {
-        let tc = self.hud_state_view().flashing_circle_timer().wrapping_add(1);
+        let tc = self
+            .hud_state_view()
+            .flashing_circle_timer()
+            .wrapping_add(1);
         self.hud_state_view_mut().set_flashing_circle_timer(tc);
         if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.system_signals_view_mut().set_sound_effect_2(18);
@@ -1405,7 +1427,10 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_animate_heart_refill(&mut self) {
-        let cd = self.hud_state_view().heart_refill_countdown().wrapping_sub(1);
+        let cd = self
+            .hud_state_view()
+            .heart_refill_countdown()
+            .wrapping_sub(1);
         self.hud_state_view_mut().set_heart_refill_countdown(cd);
         if cd != 0 {
             return;
@@ -1424,7 +1449,8 @@ impl ZeldaState {
         let subpos = self.hud_state_view().heart_refill_anim_subpos();
         self.hud_buffer_set(p + (n >> 1), PARTIAL_HEART_ANIMATION_TILES[subpos as usize]);
         let subpos = subpos.wrapping_add(1) & 3;
-        self.hud_state_view_mut().set_heart_refill_anim_subpos(subpos);
+        self.hud_state_view_mut()
+            .set_heart_refill_anim_subpos(subpos);
         if subpos == 0 {
             self.hud_rebuild();
             self.hud_state_view_mut().clear_is_doing_heart_animation();
@@ -1454,7 +1480,8 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_rebuild_indoor(&mut self) {
-        self.display_nmi_view_mut().set_overworld_fixed_color_plusminus(0);
+        self.display_nmi_view_mut()
+            .set_overworld_fixed_color_plusminus(0);
         self.player_resources_view_mut().set_keys(0xff);
         self.hud_rebuild();
     }

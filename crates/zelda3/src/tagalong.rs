@@ -1026,8 +1026,10 @@ impl ZeldaState {
                     self.shared_message_timer_view_mut().set(0);
                 } else {
                     let j = j as usize;
-                    self.shared_message_timer_view_mut().set(TAGALONG_MESSAGE_TIMERS[j]);
-                    self.dialogue_message_index_view_mut().set_value(TAGALONG_MSG[j]);
+                    self.shared_message_timer_view_mut()
+                        .set(TAGALONG_MESSAGE_TIMERS[j]);
+                    self.dialogue_message_index_view_mut()
+                        .set_value(TAGALONG_MSG[j]);
                     self.Tagalong_Main_ShowTextMessage();
                 }
             }
@@ -1085,7 +1087,8 @@ impl ZeldaState {
                 return;
             }
             self.hud_state_view_mut().set_super_bomb_indicator_timer(3);
-            self.hud_state_view_mut().set_super_bomb_indicator_counter(0xbb);
+            self.hud_state_view_mut()
+                .set_super_bomb_indicator_counter(0xbb);
         }
         self.follower_state_view_mut().set_dropped(128);
         self.follower_state_view_mut().set_reacquire_timer_low(64);
@@ -1246,8 +1249,10 @@ impl ZeldaState {
             let indoor = self.world_state_view().indoor_flag();
             self.follower_state_view_mut().set_saved_indoor_flag(indoor);
             if self.follower_state_view().indicator() == 13 {
-                self.hud_state_view_mut().set_super_bomb_indicator_timer(254);
-                self.hud_state_view_mut().set_super_bomb_indicator_counter(0);
+                self.hud_state_view_mut()
+                    .set_super_bomb_indicator_timer(254);
+                self.hud_state_view_mut()
+                    .set_super_bomb_indicator_counter(0);
             }
             self.follower_state_view_mut().set_dropped(0);
             self.tagalong_draw();
@@ -1266,7 +1271,8 @@ impl ZeldaState {
                         return;
                     }
                 } else {
-                    self.hud_state_view_mut().set_super_bomb_indicator_counter(1);
+                    self.hud_state_view_mut()
+                        .set_super_bomb_indicator_counter(1);
                 }
             }
             self.follower_do_layers();
@@ -1790,7 +1796,8 @@ impl ZeldaState {
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
         if self.frame_control_view().main_module() != 14 {
-            self.world_state_view_mut().clear_tile_interaction_shared_flag();
+            self.world_state_view_mut()
+                .clear_tile_interaction_shared_flag();
             self.messaging_state_view_mut().clear_module();
             self.frame_control_view_mut().set_submodule(2);
             self.frame_control_view_mut().save_main_module_for_menu();

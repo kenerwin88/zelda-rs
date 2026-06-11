@@ -499,11 +499,14 @@ impl ZeldaState {
         big: u8,
     ) {
         self.write_u8_ram(oam, x as u8);
-        self.write_u8_ram(oam + 1, if y.wrapping_add(0x10) < 0x100 {
-            y as u8
-        } else {
-            0xf0
-        });
+        self.write_u8_ram(
+            oam + 1,
+            if y.wrapping_add(0x10) < 0x100 {
+                y as u8
+            } else {
+                0xf0
+            },
+        );
         self.write_u8_ram(oam + 2, charnum);
         self.write_u8_ram(oam + 3, flags);
         let value = big | ((x >> 8) as u8 & 1);
@@ -599,7 +602,8 @@ impl ZeldaState {
             self.GetOverworldBgPalette(self.world_state_view().overworld_screen()),
             0x13,
         );
-        self.palette_buffer_view_mut().set_overworld_palette_aux2_hi(3);
+        self.palette_buffer_view_mut()
+            .set_overworld_palette_aux2_hi(3);
         self.palette_load_ow_bg2();
         self.overworld_copy_palettes_to_cache();
         self.Overworld_LoadOverlays2();
@@ -612,10 +616,12 @@ impl ZeldaState {
         self.enable_force_blank();
         self.erase_tile_maps_normal();
         let i = (self.frame_control_view().submodule() >> 1) as usize;
-        self.world_state_view_mut().set_which_entrance(ENDING_SCENE_ENTRANCES[i]);
+        self.world_state_view_mut()
+            .set_which_entrance(ENDING_SCENE_ENTRANCES[i]);
         self.Dungeon_LoadEntrance();
         self.dungeon_state_view_mut().clear_lit_torches();
-        self.dungeon_state_view_mut().clear_dungeon_dark_with_lantern();
+        self.dungeon_state_view_mut()
+            .clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.decompress_animated_dungeon_tiles(
             DUNG_ANIMATED_TILES[self.sprite_system_view().main_tile_theme() as usize] as usize,
@@ -623,7 +629,8 @@ impl ZeldaState {
         self.sprite_system_view_mut()
             .set_graphics_index(ENDING_SPRITE_PACKS[i]);
         self.apply_dung_pal_info(ENDING_SPRITE_PALETTES[i] & 0x3f);
-        self.sprite_system_view_mut().set_misc_sprites_graphics_index(10);
+        self.sprite_system_view_mut()
+            .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
         self.palette_buffer_view_mut().set_sp6r_indoors(10);
         self.Dungeon_LoadPalettes();
@@ -854,7 +861,8 @@ impl ZeldaState {
                     self.frame_control_view_mut().set_subsubmodule(0);
                     self.display_nmi_view_mut().set_irq_flag(0xff);
                     self.display_nmi_view_mut().set_nmi_thread_active(0);
-                    self.display_nmi_view_mut().clear_nmi_flag_update_polyhedral();
+                    self.display_nmi_view_mut()
+                        .clear_nmi_flag_update_polyhedral();
                     self.save_progress_view_mut().set_dark_world_state(0);
                 }
             }
@@ -1064,7 +1072,8 @@ impl ZeldaState {
     }
 
     pub(super) fn triforce_room_prep_gfx_slot_for_poly(&mut self) {
-        self.sprite_system_view_mut().set_misc_sprites_graphics_index(8);
+        self.sprite_system_view_mut()
+            .set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
         self.intro_actor_view_mut(0).set_init_phase(1);
@@ -1078,7 +1087,8 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_initialize_polyhedral(&mut self) {
-        self.sprite_system_view_mut().set_misc_sprites_graphics_index(8);
+        self.sprite_system_view_mut()
+            .set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
         self.poly_state_view_mut().clear_config1();
@@ -1587,8 +1597,10 @@ impl ZeldaState {
                 const CREDITS_CASE2_SPRITE_CHARS: [u8; 5] = [0x28, 0x2a, 0x2c, 0x2e, 0x2c];
                 const CREDITS_CASE2_SPRITE_GFX: [u8; 5] = [3, 3, 3, 3, 3];
                 const CASE2_DELAY: [u8; 2] = [0x30, 0x10];
-                let bird_frame_idx = ((self.frame_control_view().frame_counter() >> 2) & 1) as usize;
-                self.world_state_view_mut().set_flag_travel_bird(CREDITS_CASE2_BIRD_FLAG_FRAMES[bird_frame_idx]);
+                let bird_frame_idx =
+                    ((self.frame_control_view().frame_counter() >> 2) & 1) as usize;
+                self.world_state_view_mut()
+                    .set_flag_travel_bird(CREDITS_CASE2_BIRD_FLAG_FRAMES[bird_frame_idx]);
                 let mut k = 6usize;
                 let j = ((self.sprite_slot_view(k).x_velocity() >> 7) & 1) as usize;
                 let oam_flags = self
@@ -2342,7 +2354,9 @@ impl ZeldaState {
             } else {
                 OVERWORLD_SCROLL_UP_COUNTER
             };
-            let mut value = self.read_u16_ram(which).wrapping_add(y_vel.unsigned_abs() as u16);
+            let mut value = self
+                .read_u16_ram(which)
+                .wrapping_add(y_vel.unsigned_abs() as u16);
             if (value as i16).wrapping_sub(0x10) >= 0 {
                 value = value.wrapping_sub(0x10);
                 let bits = self
@@ -2384,7 +2398,9 @@ impl ZeldaState {
             } else {
                 OVERWORLD_SCROLL_LEFT_COUNTER
             };
-            let mut value = self.read_u16_ram(which).wrapping_add(x_vel.unsigned_abs() as u16);
+            let mut value = self
+                .read_u16_ram(which)
+                .wrapping_add(x_vel.unsigned_abs() as u16);
             if (value as i16).wrapping_sub(0x10) >= 0 {
                 value = value.wrapping_sub(0x10);
                 let bits = self
@@ -2918,7 +2934,8 @@ impl ZeldaState {
                     .set_intro_palette_flash_count(0x20);
                 self.system_signals_view_mut().set_sound_effect_1(0x2c);
             }
-            self.intro_sword_view_mut().set_ypos(sword_y.wrapping_add(16));
+            self.intro_sword_view_mut()
+                .set_ypos(sword_y.wrapping_add(16));
         }
 
         match self.intro_sword_view().anim_phase() {
@@ -2933,14 +2950,17 @@ impl ZeldaState {
                 const INTRO_SWORD_SPARKLE_TIMERS: [u8; 8] = [4, 4, 6, 6, 6, 4, 4, 0];
                 const SPARKLE_CHARS: [u8; 7] = [0x28, 0x37, 0x27, 0x36, 0x27, 0x37, 0x28];
                 if self.intro_sword_view().sparkle_timer() == 0 {
-                    if self.intro_sword_view_mut().decrement_sparkle_step_check_negative() {
+                    if self
+                        .intro_sword_view_mut()
+                        .decrement_sparkle_step_check_negative()
+                    {
                         self.intro_sword_view_mut().set_sparkle_step(0);
                         self.intro_sword_view_mut().set_sparkle_timer(2);
                         self.intro_sword_view_mut().advance_anim_step();
                         return;
                     }
-                    let timer = INTRO_SWORD_SPARKLE_TIMERS
-                        [self.intro_sword_view().sparkle_step() as usize];
+                    let timer =
+                        INTRO_SWORD_SPARKLE_TIMERS[self.intro_sword_view().sparkle_step() as usize];
                     self.intro_sword_view_mut().set_sparkle_timer(timer);
                 }
                 self.set_oam_plain(
@@ -3069,14 +3089,17 @@ impl ZeldaState {
         self.sprite_system_view_mut().set_main_tile_theme(35);
         self.sprite_system_view_mut().set_graphics_index(125);
         self.sprite_system_view_mut().set_aux_tile_theme(81);
-        self.sprite_system_view_mut().set_misc_sprites_graphics_index(8);
+        self.sprite_system_view_mut()
+            .set_misc_sprites_graphics_index(8);
         self.load_default_graphics();
         self.initialize_tilesets();
         self.decompress_animated_dungeon_tiles(0x5d);
-        self.palette_buffer_view_mut().set_bg_tile_animation_countdown(2);
+        self.palette_buffer_view_mut()
+            .set_bg_tile_animation_countdown(2);
         self.world_state_view_mut().set_overworld_screen(0);
         self.palette_buffer_view_mut().set_palette_main_indoors(0);
-        self.palette_buffer_view_mut().set_overworld_palette_aux3_lo(0);
+        self.palette_buffer_view_mut()
+            .set_overworld_palette_aux3_lo(0);
         self.ending_scratch_view_mut().set_primary_word(0);
         self.ending_scratch_view_mut().set_secondary_word(0);
         self.palette_filter_view_mut()
@@ -3087,7 +3110,8 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_initialize_triforce_poly_thread(&mut self) {
-        self.sprite_system_view_mut().set_misc_sprites_graphics_index(8);
+        self.sprite_system_view_mut()
+            .set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
         self.intro_actor_view_mut(0).set_init_phase(1);

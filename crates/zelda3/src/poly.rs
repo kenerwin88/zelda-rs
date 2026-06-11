@@ -236,7 +236,8 @@ impl ZeldaState {
             src += 1;
             self.poly_state_view_mut().set_num_vertex_in_poly(n);
             self.poly_state_view_mut().set_tmp0(n);
-            self.poly_face_coords_view_mut().set_xy_coords_count(n.wrapping_mul(2));
+            self.poly_face_coords_view_mut()
+                .set_xy_coords_count(n.wrapping_mul(2));
 
             let mut i = 1usize;
             loop {
@@ -327,8 +328,10 @@ impl ZeldaState {
             + ((min_y & 7) as u16) * 2;
         self.write_u16_ram(POLY_RASTER_DST_PTR, raster_dst_ptr);
         let total_steps = self.poly_face_coords_view().xy_coords_count() >> 1;
-        self.poly_raster_edge_view_mut().set_both_cur_vertex_idx(min_idx as u8);
-        self.poly_raster_edge_view_mut().set_total_num_steps(total_steps);
+        self.poly_raster_edge_view_mut()
+            .set_both_cur_vertex_idx(min_idx as u8);
+        self.poly_raster_edge_view_mut()
+            .set_total_num_steps(total_steps);
         let min_x = self.poly_face_coords_view().coord(min_idx - 1);
         self.poly_raster_edge_view_mut()
             .set_left_current(min_x, min_y);
@@ -438,7 +441,8 @@ impl ZeldaState {
             }
             if y != y0_cur {
                 self.poly_raster_edge_view_mut().set_left_target(x, y);
-                self.poly_raster_edge_view_mut().set_cur_vertex_idx0(i as u8);
+                self.poly_raster_edge_view_mut()
+                    .set_cur_vertex_idx0(i as u8);
                 let edge = self.poly_raster_edge_view();
                 let u = edge.x0_target() as i32 - edge.x0_cur() as i32;
                 let t = (((u.abs() & 0xff) << 8)
@@ -449,7 +453,8 @@ impl ZeldaState {
                 return false;
             }
             self.poly_raster_edge_view_mut().set_left_current_x(x);
-            self.poly_raster_edge_view_mut().set_cur_vertex_idx0(i as u8);
+            self.poly_raster_edge_view_mut()
+                .set_cur_vertex_idx0(i as u8);
         }
     }
 
@@ -471,7 +476,8 @@ impl ZeldaState {
             }
             if y != y1_cur {
                 self.poly_raster_edge_view_mut().set_right_target(x, y);
-                self.poly_raster_edge_view_mut().set_cur_vertex_idx1(i as u8);
+                self.poly_raster_edge_view_mut()
+                    .set_cur_vertex_idx1(i as u8);
                 let edge = self.poly_raster_edge_view();
                 let u = edge.x1_target() as i32 - edge.x1_cur() as i32;
                 let t = (((u.abs() & 0xff) << 8)
@@ -482,7 +488,8 @@ impl ZeldaState {
                 return false;
             }
             self.poly_raster_edge_view_mut().set_right_current_x(x);
-            self.poly_raster_edge_view_mut().set_cur_vertex_idx1(i as u8);
+            self.poly_raster_edge_view_mut()
+                .set_cur_vertex_idx1(i as u8);
         }
     }
 

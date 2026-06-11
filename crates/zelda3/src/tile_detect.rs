@@ -16,8 +16,7 @@ impl ZeldaState {
         let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
             & world.overworld_offset_mask_y())
             << 3)
-            | (x.wrapping_sub(world.overworld_offset_base_x())
-                & world.overworld_offset_mask_x());
+            | (x.wrapping_sub(world.overworld_offset_base_x()) & world.overworld_offset_mask_x());
         let map16 = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
@@ -67,7 +66,8 @@ impl ZeldaState {
         let x2 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16)
             & mask)
             >> 3;
-        self.tile_detect_position_view_mut().set_tile_probe_anchor(x2);
+        self.tile_detect_position_view_mut()
+            .set_tile_probe_anchor(x2);
         self.tile_detection_execute(x0, y, 1);
         self.tile_detection_execute(x1, y, 2);
         self.tile_detection_execute(x2, y, 4);
@@ -142,7 +142,8 @@ impl ZeldaState {
             (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[0] as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[2] as u16) & mask;
         let y1 = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[2] as u16) & mask;
-        self.tile_detect_position_view_mut().set_tile_probe_anchor(y0);
+        self.tile_detect_position_view_mut()
+            .set_tile_probe_anchor(y0);
         self.tile_detection_execute(x0, y0, 8);
         self.tile_detection_execute(x0, y1, 2);
         self.tile_detection_execute(x1, y0, 4);
@@ -248,7 +249,8 @@ impl ZeldaState {
         let x1 = (link_x.wrapping_add(13) & mask) >> 3;
         let y0 = link_y.wrapping_add(10) & mask;
         let y1 = link_y.wrapping_add(21) & mask;
-        self.tile_detect_position_view_mut().set_tile_probe_anchor(y0);
+        self.tile_detect_position_view_mut()
+            .set_tile_probe_anchor(y0);
         self.tile_detection_execute(x0, y0, 8);
         self.tile_detection_execute(x0, y1, 2);
         self.tile_detection_execute(x1, y0, 4);
@@ -279,7 +281,8 @@ impl ZeldaState {
         self.tile_detect_position_view_mut().clear_diagonal_tile();
         self.tile_detect_position_view_mut().clear_stair_tile();
         self.tile_detect_position_view_mut().clear_pit_tile();
-        self.tile_detect_position_view_mut().clear_inroom_staircase();
+        self.tile_detect_position_view_mut()
+            .clear_inroom_staircase();
         self.tile_detect_position_view_mut().clear_block_flags();
         self.tile_detect_position_view_mut()
             .clear_door_direction_flags();
@@ -310,7 +313,8 @@ impl ZeldaState {
             .clear_spike_floor_and_triggers();
         self.tile_detect_position_view_mut().clear_dashable_tiles();
         self.tile_detect_position_view_mut().clear_misc_tiles();
-        self.dungeon_state_view_mut().clear_moving_floor_check_flags();
+        self.dungeon_state_view_mut()
+            .clear_moving_floor_check_flags();
     }
 
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
