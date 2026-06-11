@@ -497,6 +497,26 @@ pub(crate) mod semantic {
     const SELECT_FILE_CURSOR_SCRATCH: usize = 0x00c8;
     const SELECT_FILE_TARGET_SCRATCH: usize = 0x00ca;
     const SELECT_FILE_REMEMBERED_CURSOR: usize = 0x0b9d;
+    const OVERWORLD_SCREEN_TRANS_DIR_BITS: usize = 0x0410;
+    const SOMARIA_BLOCK_BG_CHECK_FLAG: usize = 0x03f4;
+    const TAGALONG_SHARED_STATE_A: usize = 0x02d4;
+    const TAGALONG_ANIM_FRAME_COUNTER: usize = 0x02d7;
+    const PLAYER_POSE_DRAW_COUNTER: usize = 0x0379;
+    const PLAYER_SPECIAL_DRAW_FLAG: usize = 0x03fd;
+    const VIRQ_TRIGGER: usize = 0x00ff;
+    const GAME_OVER_CHECK_FLAG: usize = 0x010a;
+    const RESTART_CHECK_FLAG: usize = 0x04aa;
+    const WHICH_STARTING_POINT: usize = 0x0f3c8;
+    const PALETTE_SP0L: usize = 0x0aac;
+    const PALETTE_SP5L: usize = 0x0aad;
+    const PALETTE_SP6L: usize = 0x0aae;
+    const PALETTE_MAIN_INDOORS: usize = 0x0ab6;
+    const RAW_SFX_PAN_VALUE: usize = 0x0cf8;
+    const TILE_INTERACTION_SHARED_FLAG: usize = 0x0223;
+    const PUSHED_BLOCK_MODE: usize = 0x02c3;
+    const DMA_HEAD_POINTER: usize = 0x0ae8;
+    const DMA_BODY_POINTER: usize = 0x0aea;
+    const OVERWORLD_FIXED_COLOR_PLUSMINUS: usize = 0x0c017;
     const SELECT_FILE_COPY_SOURCE_SLOT_X2: usize = 0x00cc;
     const SELECT_FILE_NAME_SCROLL_X: usize = 0x0630;
     const SELECT_FILE_NAME_COLUMN: usize = 0x0b10;
@@ -1158,6 +1178,14 @@ pub(crate) mod semantic {
         pub(crate) fn should_update_hud(&self) -> bool {
             byte(self.ram, FLAG_UPDATE_HUD_IN_NMI) != 0
         }
+
+        pub(crate) fn game_over_check_flag(&self) -> u8 {
+            byte(self.ram, GAME_OVER_CHECK_FLAG)
+        }
+
+        pub(crate) fn restart_check_flag(&self) -> u8 {
+            byte(self.ram, RESTART_CHECK_FLAG)
+        }
     }
 
     pub(crate) struct SystemSignalsViewMut<'a> {
@@ -1263,6 +1291,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn save_ambient_sound_effect_as_last(&mut self) {
             self.ram[SOUND_EFFECT_AMBIENT_LAST] = self.ram[SOUND_EFFECT_AMBIENT];
+        }
+
+        pub(crate) fn clear_game_over_check_flag(&mut self) {
+            self.ram[GAME_OVER_CHECK_FLAG] = 0;
+        }
+
+        pub(crate) fn clear_restart_check_flag(&mut self) {
+            self.ram[RESTART_CHECK_FLAG] = 0;
+        }
+
+        pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
+            self.ram[RAW_SFX_PAN_VALUE] = value;
         }
     }
 
@@ -1464,6 +1504,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn flag_travel_bird(&self) -> bool {
             byte(self.ram, FLAG_TRAVEL_BIRD) != 0
+        }
+
+        pub(crate) fn travel_bird_tile_offset(&self) -> u8 {
+            byte(self.ram, FLAG_TRAVEL_BIRD)
         }
 
         pub(crate) fn w12sel_copy(&self) -> u8 {
@@ -1701,6 +1745,14 @@ pub(crate) mod semantic {
         pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
             self.ram[MOSAIC_LEVEL] = self.ram[MOSAIC_LEVEL].wrapping_sub(value);
             self.ram[MOSAIC_LEVEL]
+        }
+
+        pub(crate) fn set_overworld_fixed_color_plusminus(&mut self, value: u8) {
+            self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
+        }
+
+        pub(crate) fn set_virq_trigger(&mut self, value: u8) {
+            self.ram[VIRQ_TRIGGER] = value;
         }
     }
 
@@ -2607,6 +2659,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn drag_player_y(&self) -> u16 {
             word(self.ram, DRAG_PLAYER_Y)
+        }
+
+        pub(crate) fn pushed_block_mode(&self) -> u8 {
+            byte(self.ram, PUSHED_BLOCK_MODE)
+        }
+
+        pub(crate) fn dma_head_pointer(&self) -> u8 {
+            byte(self.ram, DMA_HEAD_POINTER)
+        }
+
+        pub(crate) fn dma_body_pointer(&self) -> u8 {
+            byte(self.ram, DMA_BODY_POINTER)
         }
     }
 
@@ -4646,6 +4710,18 @@ pub(crate) mod semantic {
             let cur = word(self.ram, DRAG_PLAYER_Y);
             write_le_u16(self.ram, DRAG_PLAYER_Y, cur.wrapping_add(delta));
         }
+
+        pub(crate) fn clear_somaria_block_bg_check_flag(&mut self) {
+            self.ram[SOMARIA_BLOCK_BG_CHECK_FLAG] = 0;
+        }
+
+        pub(crate) fn clear_player_pose_draw_counter(&mut self) {
+            self.ram[PLAYER_POSE_DRAW_COUNTER] = 0;
+        }
+
+        pub(crate) fn clear_player_special_draw_flag(&mut self) {
+            self.ram[PLAYER_SPECIAL_DRAW_FLAG] = 0;
+        }
     }
 
     pub(crate) struct SpecialExitPositionView<'a> {
@@ -5854,6 +5930,10 @@ pub(crate) mod semantic {
         pub(crate) fn dungeon_info_slice(&self) -> &[u8] {
             &self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500]
         }
+
+        pub(crate) fn which_starting_point(&self) -> u8 {
+            byte(self.ram, WHICH_STARTING_POINT)
+        }
     }
 
     pub(crate) struct SaveProgressViewMut<'a> {
@@ -6766,6 +6846,18 @@ pub(crate) mod semantic {
         pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
             self.ram[ROOM_TRANSITIONING_FLAGS] = value;
         }
+
+        pub(crate) fn set_rng_seed(&mut self, value: u8) {
+            self.ram[RNG_SEED] = value;
+        }
+
+        pub(crate) fn set_overworld_screen_trans_dir_bits(&mut self, value: u8) {
+            self.ram[OVERWORLD_SCREEN_TRANS_DIR_BITS] = value;
+        }
+
+        pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
+            self.ram[TILE_INTERACTION_SHARED_FLAG] = 0;
+        }
     }
 
     pub(crate) struct DungeonStateView<'a> {
@@ -7559,6 +7651,11 @@ pub(crate) mod semantic {
             write_le_u16(self.ram, MOVING_FLOOR_BG_CHECK_FLAGS, next);
             next
         }
+
+        pub(crate) fn copy_default_tile_attrs_head(&mut self, data: &[u8]) {
+            self.ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + 0x140]
+                .copy_from_slice(&data[..0x140]);
+        }
     }
 
     pub(crate) struct DungeonEntranceBackupViewMut<'a> {
@@ -7676,6 +7773,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn attr_index(&self) -> usize {
             usize::from(byte(self.ram, DUNGEON_TORCH_ATTR) & 0x0f)
+        }
+
+        pub(crate) fn torch_attr(&self) -> u8 {
+            byte(self.ram, DUNGEON_TORCH_ATTR)
         }
     }
 
@@ -8237,6 +8338,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
             self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + 512].copy_from_slice(palette);
+        }
+
+        pub(crate) fn set_sp0l(&mut self, value: u8) {
+            self.ram[PALETTE_SP0L] = value;
+        }
+
+        pub(crate) fn set_sp5l(&mut self, value: u8) {
+            self.ram[PALETTE_SP5L] = value;
+        }
+
+        pub(crate) fn set_sp6l(&mut self, value: u8) {
+            self.ram[PALETTE_SP6L] = value;
+        }
+
+        pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
+            self.ram[PALETTE_MAIN_INDOORS] = value;
         }
     }
 
@@ -12630,6 +12747,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_reacquire_timer(&mut self, value: u16) {
             write_le_u16(self.ram, TIMER_TAGALONG_REACQUIRE, value);
+        }
+
+        pub(crate) fn clear_tagalong_shared_state_a(&mut self) {
+            self.ram[TAGALONG_SHARED_STATE_A] = 0;
+        }
+
+        pub(crate) fn clear_tagalong_anim_frame_counter(&mut self) {
+            self.ram[TAGALONG_ANIM_FRAME_COUNTER] = 0;
         }
     }
 

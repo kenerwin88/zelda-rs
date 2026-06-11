@@ -5072,6 +5072,14 @@ impl ZeldaState {
         self.set_ram_byte(PLAYER_LAYER_COLLISION_FLAGS, flags);
     }
 
+    fn read_u8_ram(&self, offset: usize) -> u8 {
+        self.ram[offset]
+    }
+
+    fn write_u8_ram(&mut self, offset: usize, value: u8) {
+        self.ram[offset] = value;
+    }
+
     fn read_u16_ram(&self, offset: usize) -> u16 {
         read_le_u16(&self.ram, offset)
     }
