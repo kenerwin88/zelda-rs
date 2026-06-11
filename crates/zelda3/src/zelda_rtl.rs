@@ -66,8 +66,9 @@ use crate::ram::semantic::{
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
     OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldScreenSizeView,
     OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
+    PaletteBufferViewMut, PaletteFilterView,
     PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
     PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
     PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
@@ -85,8 +86,12 @@ use crate::ram::semantic::{
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    TowerSealSparkleViewMut, MosaicDirectionView, MosaicDirectionViewMut,
+    SpotlightHdmaView, SpotlightHdmaViewMut, StarTileView, StarTileViewMut,
+    TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView, VramLoadStateViewMut,
+    VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
     WeatherVaneStateViewMut, WorldStateView, WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
@@ -2671,6 +2676,58 @@ impl ZeldaState {
 
     pub(crate) fn overworld_sprite_loaded_view_mut(&mut self) -> OverworldSpriteLoadedViewMut<'_> {
         OverworldSpriteLoadedViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn vram_load_state_view(&self) -> VramLoadStateView<'_> {
+        VramLoadStateView::new(&self.ram)
+    }
+
+    pub(crate) fn vram_load_state_view_mut(&mut self) -> VramLoadStateViewMut<'_> {
+        VramLoadStateViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn star_tile_view(&self) -> StarTileView<'_> {
+        StarTileView::new(&self.ram)
+    }
+
+    pub(crate) fn star_tile_view_mut(&mut self) -> StarTileViewMut<'_> {
+        StarTileViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn trinexx_palette_view(&self) -> TrinexxPaletteView<'_> {
+        TrinexxPaletteView::new(&self.ram)
+    }
+
+    pub(crate) fn trinexx_palette_view_mut(&mut self) -> TrinexxPaletteViewMut<'_> {
+        TrinexxPaletteViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn spotlight_hdma_view(&self) -> SpotlightHdmaView<'_> {
+        SpotlightHdmaView::new(&self.ram)
+    }
+
+    pub(crate) fn spotlight_hdma_view_mut(&mut self) -> SpotlightHdmaViewMut<'_> {
+        SpotlightHdmaViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn water_hdma_window_view(&self) -> WaterHdmaWindowView<'_> {
+        WaterHdmaWindowView::new(&self.ram)
+    }
+
+    pub(crate) fn water_hdma_window_view_mut(&mut self) -> WaterHdmaWindowViewMut<'_> {
+        WaterHdmaWindowViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn mosaic_direction_view(&self) -> MosaicDirectionView<'_> {
+        MosaicDirectionView::new(&self.ram)
+    }
+
+    pub(crate) fn mosaic_direction_view_mut(&mut self) -> MosaicDirectionViewMut<'_> {
+        MosaicDirectionViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn overworld_palette_backup_view_mut(&mut self) -> OverworldPaletteBackupViewMut<'_> {
+        OverworldPaletteBackupViewMut::new(&mut self.ram)
     }
 
     pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {

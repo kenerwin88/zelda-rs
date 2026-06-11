@@ -714,6 +714,35 @@ pub(crate) mod semantic {
     const LINK_DMA_COUNTDOWN: usize = 0x0c013;
     const LINK_DMA_TILE_OFFSET: usize = 0x0c015;
     const AUX_BG_SUBSET_0: usize = 0x0c2f8;
+    const AUX_BG_SUBSET_1: usize = 0x0c2f9;
+    const AUX_BG_SUBSET_2: usize = 0x0c2fa;
+    const AUX_BG_SUBSET_3: usize = 0x0c2fb;
+    const OVERWORLD_PALETTE_AUX1_BP2TO4_HI: usize = 0x0ab4;
+    const PALETTE_MAIN_INDOORS_COPY: usize = 0x0ab7;
+    const PALETTE_SWAP_FLAG: usize = 0x0abd;
+    const OVERWORLD_PAL_MAIN_INDOORS_BACKUP: usize = 0x0c20a;
+    const OVERWORLD_PAL_AUX3_BP7_BACKUP: usize = 0x0c20b;
+    const OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP: usize = 0x0c20c;
+    const INCREMENTAL_COUNTER_FOR_VRAM: usize = 0x412;
+    const STAR_TILE_RESTORE_PHASE: usize = 0x4bc;
+    const TRINEXX_RED_SHELL_PALETTE_DELAY: usize = 0x4be;
+    const TRINEXX_BLUE_SHELL_PALETTE_DELAY: usize = 0x4bf;
+    const TRINEXX_RED_SHELL_PALETTE_STEP: usize = 0x4c0;
+    const TRINEXX_BLUE_SHELL_PALETTE_STEP: usize = 0x4c1;
+    const WATERGATE_SPOTLIGHT_Y_UPPER: usize = 0x678;
+    const SPOTLIGHT_WINDOW_X_CENTER: usize = 0x670;
+    const SPOTLIGHT_Y_LOWER: usize = 0x674;
+    const SPOTLIGHT_Y_UPPER: usize = 0x676;
+    const SPOTLIGHT_WINDOW_Y_BUFFER: usize = 0x67a;
+    const SPOTLIGHT_WINDOW_RADIUS: usize = 0x67c;
+    const SPOTLIGHT_WINDOW_STATE: usize = 0x67e;
+    const WATER_HDMA_WINDOW_X: usize = 0x680;
+    const WATER_HDMA_WINDOW_Y: usize = 0x682;
+    const WATER_HDMA_WINDOW_Y_RADIUS: usize = 0x684;
+    const WATER_HDMA_WINDOW_X_RADIUS: usize = 0x686;
+    const MOSAIC_INC_OR_DEC: usize = 0x647;
+    const OVERWORLD_MAP_FLAGS: usize = 0x636;
+    const MODE7_ZOOM_STEP_COUNTER: usize = 0x635;
     const AGAHNIM_PAL_SETTING: usize = 0x0c019;
     const PRIMARY_DECOMP_BUFFER_LOAD_GFX: usize = 0x14000;
     const SECONDARY_DECOMP_BUFFER_LOAD_GFX: usize = PRIMARY_DECOMP_BUFFER_LOAD_GFX + 0x600;
@@ -1770,6 +1799,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_load_target_addr_word(&mut self, value: u16) {
             write_le_u16(self.ram, NMI_LOAD_TARGET_ADDR, value);
+        }
+
+        pub(crate) fn set_animated_tile_vram_addr(&mut self, value: u16) {
+            write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
         }
 
         pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
@@ -7522,6 +7555,26 @@ pub(crate) mod semantic {
         pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
             self.ram[LAST_LIGHT_VS_DARK_WORLD] = value;
         }
+
+        pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
+            self.ram[MODE7_ZOOM_STEP_COUNTER] = value;
+        }
+
+        pub(crate) fn set_timer_for_mode7_zoom(&mut self, value: u8) {
+            self.ram[TIMER_FOR_MODE7_ZOOM] = value;
+        }
+
+        pub(crate) fn set_overworld_map_flags(&mut self, value: u8) {
+            self.ram[OVERWORLD_MAP_FLAGS] = value;
+        }
+
+        pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
+            self.ram[AUX_BG_SUBSET_0 + index] = value;
+        }
+
+        pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
+            self.ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = value;
+        }
     }
 
     impl<'a> WorldStateView<'a> {
@@ -7531,6 +7584,70 @@ pub(crate) mod semantic {
 
         pub(crate) fn overworld_hole_tilemap_pos(&self) -> u8 {
             byte(self.ram, OVERWORLD_HOLE_TILEMAP_POS)
+        }
+
+        pub(crate) fn aux_bg_subset(&self, index: usize) -> u8 {
+            byte(self.ram, AUX_BG_SUBSET_0 + index)
+        }
+
+        pub(crate) fn overworld_palette_aux1_hi(&self) -> u8 {
+            byte(self.ram, OVERWORLD_PALETTE_AUX1_BP2TO4_HI)
+        }
+
+        pub(crate) fn overworld_palette_mode(&self) -> u8 {
+            byte(self.ram, OVERWORLD_PALETTE_MODE)
+        }
+
+        pub(crate) fn palette_main_indoors(&self) -> u8 {
+            byte(self.ram, PALETTE_MAIN_INDOORS)
+        }
+
+        pub(crate) fn palette_main_indoors_copy(&self) -> u8 {
+            byte(self.ram, PALETTE_MAIN_INDOORS_COPY)
+        }
+
+        pub(crate) fn palette_swap_flag(&self) -> u8 {
+            byte(self.ram, PALETTE_SWAP_FLAG)
+        }
+
+        pub(crate) fn palette_sp0l(&self) -> u8 {
+            byte(self.ram, PALETTE_SP0L)
+        }
+
+        pub(crate) fn palette_sp5l(&self) -> u8 {
+            byte(self.ram, PALETTE_SP5L)
+        }
+
+        pub(crate) fn palette_sp6l(&self) -> u8 {
+            byte(self.ram, PALETTE_SP6L)
+        }
+
+        pub(crate) fn palette_sp6r_indoors(&self) -> u8 {
+            byte(self.ram, PALETTE_SP6R_INDOORS)
+        }
+
+        pub(crate) fn hud_palette(&self) -> u8 {
+            byte(self.ram, HUD_PALETTE)
+        }
+
+        pub(crate) fn overworld_palette_aux2_hi(&self) -> u8 {
+            byte(self.ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI)
+        }
+
+        pub(crate) fn overworld_palette_aux3_lo(&self) -> u8 {
+            byte(self.ram, OVERWORLD_PALETTE_AUX3_BP7_LO)
+        }
+
+        pub(crate) fn misc_sprites_graphics_index(&self) -> u8 {
+            byte(self.ram, MISC_SPRITES_GRAPHICS_INDEX)
+        }
+
+        pub(crate) fn main_tile_theme_index(&self) -> u8 {
+            byte(self.ram, MAIN_TILE_THEME_INDEX)
+        }
+
+        pub(crate) fn aux_tile_theme_index(&self) -> u8 {
+            byte(self.ram, AUX_TILE_THEME_INDEX)
         }
     }
 
@@ -9151,6 +9268,10 @@ pub(crate) mod semantic {
             self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + 512].copy_from_slice(palette);
         }
 
+        pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
+            self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + len].copy_from_slice(&src[..len]);
+        }
+
         pub(crate) fn set_sp0l(&mut self, value: u8) {
             self.ram[PALETTE_SP0L] = value;
         }
@@ -9573,6 +9694,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_agahnim_palette_settings(&mut self, len: usize) {
             self.ram[AGAHNIM_PAL_SETTING..AGAHNIM_PAL_SETTING + len].fill(0);
+        }
+
+        pub(crate) fn agahnim_palette_word(&self, index: usize) -> u16 {
+            word(self.ram, AGAHNIM_PAL_SETTING + index * 2)
+        }
+
+        pub(crate) fn set_agahnim_palette_word(&mut self, index: usize, value: u16) {
+            write_le_u16(self.ram, AGAHNIM_PAL_SETTING + index * 2, value);
         }
 
         pub(crate) fn sprite_decomp_buffer_tail(&self) -> Vec<u8> {
@@ -13932,6 +14061,10 @@ pub(crate) mod semantic {
             self.ram[FOLLOWER_PALETTE_SWAP_FLAG] = 0;
         }
 
+        pub(crate) fn set_palette_swap_flag(&mut self, value: u8) {
+            self.ram[FOLLOWER_PALETTE_SWAP_FLAG] = value;
+        }
+
         pub(crate) fn new(ram: &'a mut [u8]) -> Self {
             Self { ram }
         }
@@ -18254,6 +18387,166 @@ pub(crate) mod semantic {
                 } else {
                     self.ram[INTRO_SWORD_FLASH_RGB_CHANNEL].wrapping_add(1)
                 };
+        }
+    }
+
+    pub(crate) struct VramLoadStateView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> VramLoadStateView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn incremental_counter(&self) -> u8 { byte(self.ram, INCREMENTAL_COUNTER_FOR_VRAM) }
+    }
+    pub(crate) struct VramLoadStateViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> VramLoadStateViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn reset_incremental_counter(&mut self) { self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0; }
+        pub(crate) fn increment_counter(&mut self) {
+            self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.ram[INCREMENTAL_COUNTER_FOR_VRAM].wrapping_add(1);
+        }
+        pub(crate) fn set_nmi_tilemap_dst(&mut self, value: u8) {
+            self.ram[NMI_UPDATE_TILEMAP_DST] = value;
+        }
+        pub(crate) fn set_nmi_tilemap_src(&mut self, value: u16) {
+            write_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC, value);
+        }
+    }
+
+    pub(crate) struct StarTileView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> StarTileView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn restore_phase(&self) -> u8 { byte(self.ram, STAR_TILE_RESTORE_PHASE) }
+    }
+    pub(crate) struct StarTileViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> StarTileViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn clear_restore_phase(&mut self) { self.ram[STAR_TILE_RESTORE_PHASE] = 0; }
+    }
+
+    pub(crate) struct TrinexxPaletteView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> TrinexxPaletteView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn red_shell_delay(&self) -> u8 { byte(self.ram, TRINEXX_RED_SHELL_PALETTE_DELAY) }
+        pub(crate) fn blue_shell_delay(&self) -> u8 { byte(self.ram, TRINEXX_BLUE_SHELL_PALETTE_DELAY) }
+        pub(crate) fn red_shell_step(&self) -> u8 { byte(self.ram, TRINEXX_RED_SHELL_PALETTE_STEP) }
+        pub(crate) fn blue_shell_step(&self) -> u8 { byte(self.ram, TRINEXX_BLUE_SHELL_PALETTE_STEP) }
+    }
+    pub(crate) struct TrinexxPaletteViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> TrinexxPaletteViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn set_red_shell_delay(&mut self, v: u8) { self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = v; }
+        pub(crate) fn set_blue_shell_delay(&mut self, v: u8) { self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = v; }
+        pub(crate) fn set_red_shell_step(&mut self, v: u8) { self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = v; }
+        pub(crate) fn set_blue_shell_step(&mut self, v: u8) { self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = v; }
+        pub(crate) fn decrement_red_shell_delay(&mut self) {
+            self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        }
+        pub(crate) fn decrement_blue_shell_delay(&mut self) {
+            self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        }
+        pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
+            self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = self.ram[TRINEXX_RED_SHELL_PALETTE_STEP].wrapping_add(1);
+            self.ram[TRINEXX_RED_SHELL_PALETTE_STEP]
+        }
+        pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
+            self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP].wrapping_add(1);
+            self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP]
+        }
+    }
+
+    pub(crate) struct SpotlightHdmaView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> SpotlightHdmaView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn y_lower(&self) -> u16 { word(self.ram, SPOTLIGHT_Y_LOWER) }
+        pub(crate) fn y_upper(&self) -> u16 { word(self.ram, SPOTLIGHT_Y_UPPER) }
+        pub(crate) fn window_x_center(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_X_CENTER) }
+        pub(crate) fn window_state(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_STATE) }
+        pub(crate) fn window_radius(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_RADIUS) }
+        pub(crate) fn window_y_buffer(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER) }
+        pub(crate) fn window_y_buffer_byte(&self) -> u8 { byte(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER) }
+    }
+    pub(crate) struct SpotlightHdmaViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> SpotlightHdmaViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn set_y_lower(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_Y_LOWER, v); }
+        pub(crate) fn set_y_upper(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_Y_UPPER, v); }
+        pub(crate) fn set_window_x_center(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_WINDOW_X_CENTER, v); }
+        pub(crate) fn set_window_state(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_WINDOW_STATE, v); }
+        pub(crate) fn set_window_radius(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_WINDOW_RADIUS, v); }
+        pub(crate) fn set_window_y_buffer(&mut self, v: u16) { write_le_u16(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER, v); }
+        pub(crate) fn decrement_window_y_buffer(&mut self) -> u16 {
+            let v = word(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER).wrapping_sub(1);
+            write_le_u16(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER, v);
+            v
+        }
+    }
+
+    pub(crate) struct WaterHdmaWindowView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> WaterHdmaWindowView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn window_x(&self) -> u16 { word(self.ram, WATER_HDMA_WINDOW_X) }
+        pub(crate) fn window_y(&self) -> u16 { word(self.ram, WATER_HDMA_WINDOW_Y) }
+        pub(crate) fn window_y_radius(&self) -> u16 { word(self.ram, WATER_HDMA_WINDOW_Y_RADIUS) }
+        pub(crate) fn window_x_radius(&self) -> u16 { word(self.ram, WATER_HDMA_WINDOW_X_RADIUS) }
+        pub(crate) fn watergate_spotlight_y_upper(&self) -> u16 { word(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER) }
+    }
+    pub(crate) struct WaterHdmaWindowViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> WaterHdmaWindowViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn decrement_watergate_spotlight_y_upper(&mut self) -> u16 {
+            let v = word(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER).wrapping_sub(1);
+            write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, v);
+            v
+        }
+    }
+
+    pub(crate) struct MosaicDirectionView<'a> {
+        ram: &'a [u8],
+    }
+    impl<'a> MosaicDirectionView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self { Self { ram } }
+        pub(crate) fn inc_or_dec(&self) -> u8 { byte(self.ram, MOSAIC_INC_OR_DEC) }
+    }
+    pub(crate) struct MosaicDirectionViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> MosaicDirectionViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn set_inc_or_dec(&mut self, v: u8) { self.ram[MOSAIC_INC_OR_DEC] = v; }
+        pub(crate) fn clear(&mut self) { self.ram[MOSAIC_INC_OR_DEC] = 0; }
+    }
+
+    pub(crate) struct OverworldPaletteBackupViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+    impl<'a> OverworldPaletteBackupViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self { Self { ram } }
+        pub(crate) fn set_main_indoors_backup(&mut self, v: u8) {
+            self.ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = v;
+        }
+        pub(crate) fn set_aux3_bp7_backup(&mut self, v: u8) {
+            self.ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = v;
+        }
+        pub(crate) fn set_main_indoors_copy_backup(&mut self, v: u8) {
+            self.ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = v;
         }
     }
 
