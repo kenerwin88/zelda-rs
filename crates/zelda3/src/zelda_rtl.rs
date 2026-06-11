@@ -52,7 +52,8 @@ use crate::ram::semantic::{
     FrameControlViewMut, GarnishSlotView, GarnishSlotViewMut, GarnishStateView,
     GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
     HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
-    HudInventoryOrderViewMut, IntroActorView, IntroActorViewMut, InventoryStateView,
+    HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
+    InventoryStateView,
     InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
@@ -2043,6 +2044,14 @@ impl ZeldaState {
 
     pub(crate) fn palette_filter_view_mut(&mut self) -> PaletteFilterViewMut<'_> {
         PaletteFilterViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn hud_state_view(&self) -> HudStateView<'_> {
+        HudStateView::new(&self.ram)
+    }
+
+    pub(crate) fn hud_state_view_mut(&mut self) -> HudStateViewMut<'_> {
+        HudStateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn hud_inventory_order_view(&self) -> HudInventoryOrderView<'_> {

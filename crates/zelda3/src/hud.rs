@@ -301,7 +301,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_floor_indicator(&mut self) {
-        let mut a = u16::from(self.ram[HUD_FLOOR_CHANGED_TIMER]);
+        let mut a = u16::from(self.hud_state_view().floor_changed_timer_low());
         if a == 0 {
             self.hud_remove_super_bomb_indicator();
             return;
@@ -310,7 +310,7 @@ impl ZeldaState {
         if a == 0xc0 {
             a = 0;
         }
-        write_le_u16(&mut self.ram, HUD_FLOOR_CHANGED_TIMER, a);
+        self.hud_state_view_mut().set_floor_changed_timer(a);
 
         self.hud_buffer_set(0xf2 / 2, 0x251e);
         self.hud_buffer_set(0x134 / 2, 0x251f);
@@ -344,26 +344,26 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_super_bomb_indicator(&mut self) {
-        if self.ram[SUPER_BOMB_INDICATOR_COUNTER] == 0 {
-            if (self.ram[SUPER_BOMB_INDICATOR_TIMER] as i8) < 0 {
-                self.ram[SUPER_BOMB_INDICATOR_TIMER] = 0xff;
+        if self.hud_state_view().super_bomb_indicator_counter() == 0 {
+            if (self.hud_state_view().super_bomb_indicator_timer() as i8) < 0 {
+                self.hud_state_view_mut().set_super_bomb_indicator_timer(0xff);
                 self.hud_remove_super_bomb_indicator();
                 return;
             }
-            self.ram[SUPER_BOMB_INDICATOR_TIMER] =
-                self.ram[SUPER_BOMB_INDICATOR_TIMER].wrapping_sub(1);
-            self.ram[SUPER_BOMB_INDICATOR_COUNTER] = 62;
+            let t = self.hud_state_view().super_bomb_indicator_timer().wrapping_sub(1);
+            self.hud_state_view_mut().set_super_bomb_indicator_timer(t);
+            self.hud_state_view_mut().set_super_bomb_indicator_counter(62);
         }
-        self.ram[SUPER_BOMB_INDICATOR_COUNTER] =
-            self.ram[SUPER_BOMB_INDICATOR_COUNTER].wrapping_sub(1);
-        if (self.ram[SUPER_BOMB_INDICATOR_TIMER] as i8) < 0 {
-            self.ram[SUPER_BOMB_INDICATOR_TIMER] = 0xff;
+        let c = self.hud_state_view().super_bomb_indicator_counter().wrapping_sub(1);
+        self.hud_state_view_mut().set_super_bomb_indicator_counter(c);
+        if (self.hud_state_view().super_bomb_indicator_timer() as i8) < 0 {
+            self.hud_state_view_mut().set_super_bomb_indicator_timer(0xff);
             self.hud_remove_super_bomb_indicator();
             return;
         }
 
-        let r = self.ram[SUPER_BOMB_INDICATOR_TIMER] % 10;
-        let q = self.ram[SUPER_BOMB_INDICATOR_TIMER] / 10;
+        let r = self.hud_state_view().super_bomb_indicator_timer() % 10;
+        let q = self.hud_state_view().super_bomb_indicator_timer() / 10;
         let j = if (r.wrapping_sub(1) as i8) < 0 {
             9
         } else {
@@ -431,16 +431,16 @@ impl ZeldaState {
             }
             self.player_resources_view_mut().set_rupees_actual(a);
             if !self.system_signals_view().has_sound_effect_1() {
-                let delay = self.ram[RUPEE_SFX_SOUND_DELAY];
-                self.ram[RUPEE_SFX_SOUND_DELAY] = delay.wrapping_add(1);
+                let delay = self.hud_state_view().rupee_sfx_sound_delay();
+                self.hud_state_view_mut().set_rupee_sfx_sound_delay(delay.wrapping_add(1));
                 if delay & 7 == 0 {
                     self.system_signals_view_mut().set_sound_effect_1(41);
                 }
             } else {
-                self.ram[RUPEE_SFX_SOUND_DELAY] = 0;
+                self.hud_state_view_mut().set_rupee_sfx_sound_delay(0);
             }
         } else {
-            self.ram[RUPEE_SFX_SOUND_DELAY] = 0;
+            self.hud_state_view_mut().set_rupee_sfx_sound_delay(0);
         }
 
         if self.player_resources_view().bomb_filler() != 0 {
@@ -483,7 +483,7 @@ impl ZeldaState {
             }
         }
 
-        if self.ram[IS_DOING_HEART_ANIMATION] != 0 {
+        if self.hud_state_view().is_doing_heart_animation() {
             self.hud_update_magic();
             self.hud_update_inventory();
             self.hud_animate_heart_refill();
@@ -508,9 +508,9 @@ impl ZeldaState {
                 }
                 self.player_resources_view_mut()
                     .decrement_heart_filler_by(8);
-                self.ram[IS_DOING_HEART_ANIMATION] =
-                    self.ram[IS_DOING_HEART_ANIMATION].wrapping_add(1);
-                self.ram[ANIMATE_HEART_REFILL_COUNTDOWN] = 7;
+                let h = self.hud_state_view().is_doing_heart_animation_raw().wrapping_add(1);
+                self.hud_state_view_mut().set_is_doing_heart_animation(h);
+                self.hud_state_view_mut().set_heart_refill_countdown(7);
                 self.hud_update_magic();
                 self.hud_update_inventory();
                 self.hud_animate_heart_refill();
@@ -529,7 +529,8 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_module_run(&mut self) {
-        self.ram[HUD_MODULE_TICK_COUNTER] = self.ram[HUD_MODULE_TICK_COUNTER].wrapping_add(1);
+        let tick = self.hud_state_view().tick_counter().wrapping_add(1);
+        self.hud_state_view_mut().set_tick_counter(tick);
         match self.world_state_view().overworld_map_state() {
             0 => self.hud_clear_tile_map(),
             1 => self.hud_init(),
@@ -588,12 +589,12 @@ impl ZeldaState {
             if self.save_progress_view().hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
                 && !USE_NEW_STYLE_INVENTORY
             {
-                self.ram[TIMER_FOR_FLASHING_CIRCLE] = 16;
+                self.hud_state_view_mut().set_flashing_circle_timer(16);
                 self.hud_draw_bottle_menu();
             }
         }
 
-        self.ram[TIMER_FOR_FLASHING_CIRCLE] = 16;
+        self.hud_state_view_mut().set_flashing_circle_timer(16);
         self.display_nmi_view_mut().set_subroutine_index(1);
         self.display_nmi_view_mut().set_load_target_addr(0x22);
         self.world_state_view_mut().increment_overworld_map_state();
@@ -721,9 +722,10 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_normal_menu(&mut self) {
-        self.ram[TIMER_FOR_FLASHING_CIRCLE] = self.ram[TIMER_FOR_FLASHING_CIRCLE].wrapping_add(1);
+        let tc = self.hud_state_view().flashing_circle_timer().wrapping_add(1);
+        self.hud_state_view_mut().set_flashing_circle_timer(tc);
         if self.player_state_view().joypad1h_last() == 0 {
-            self.ram[HUD_TMP1] = 0;
+            self.hud_state_view_mut().clear_prev_joypad_h();
         }
 
         if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
@@ -754,10 +756,10 @@ impl ZeldaState {
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
                 self.hud_reorder_item(1);
             }
-        } else if self.ram[HUD_TMP1] == 0 {
+        } else if self.hud_state_view().prev_joypad_h() == 0 {
             let btn_index = self.get_current_item_button_index();
             let item_addr = self.get_current_item_button_ptr(btn_index);
-            let mut item = self.ram[item_addr];
+            let mut item = self.read_u8_ram(item_addr);
             let old_item = item;
             if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
@@ -768,10 +770,11 @@ impl ZeldaState {
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
                 self.hud_equip_next_item(&mut item, item_addr == HUD_CUR_ITEM);
             }
-            self.ram[item_addr] = item;
-            self.ram[HUD_TMP1] = self.player_state_view().filtered_joypad_h();
+            self.write_u8_ram(item_addr, item);
+            let jh = self.player_state_view().filtered_joypad_h();
+            self.hud_state_view_mut().set_prev_joypad_h(jh);
             if item != old_item {
-                self.ram[TIMER_FOR_FLASHING_CIRCLE] = 16;
+                self.hud_state_view_mut().set_flashing_circle_timer(16);
                 self.system_signals_view_mut().set_sound_effect_2(32);
             }
         }
@@ -809,8 +812,8 @@ impl ZeldaState {
                 .set_equipped_bottle_index(bottle_index);
         }
         assert!(self.save_progress_view().hud_current_item() < 25);
-        self.ram[CURRENT_ITEM_Y] =
-            self.hud_lookup_inventory_item(self.save_progress_view().hud_current_item());
+        let ciy = self.hud_lookup_inventory_item(self.save_progress_view().hud_current_item());
+        self.player_state_view_mut().set_current_item_y(ciy); // writes CURRENT_ITEM_Y (0x303)
     }
 
     pub(super) fn hud_close_menu(&mut self) {
@@ -827,29 +830,30 @@ impl ZeldaState {
         if self.frame_control_view().submodule() != 0 {
             self.hud_restore_torch_background();
         }
-        if self.ram[CURRENT_ITEM_Y] != 5 && self.ram[CURRENT_ITEM_Y] != 6 {
-            self.ram[EQUIPMENT_MENU_EXIT_STATE] = 2;
+        if self.player_state_view().current_item_y() != 5 && self.player_state_view().current_item_y() != 6 {
+            self.hud_state_view_mut().set_equipment_menu_exit_state(2);
             self.player_state_view_mut().clear_item_debug_value_1();
         } else {
             assert!(self.player_state_view().item_debug_value_1() == 0);
-            self.ram[EQUIPMENT_MENU_EXIT_STATE] = 0;
+            self.hud_state_view_mut().set_equipment_menu_exit_state(0);
         }
     }
 
     pub(super) fn hud_goto_bottle_menu(&mut self) {
-        self.ram[BOTTLE_MENU_EXPAND_ROW] = 0;
+        self.hud_state_view_mut().set_bottle_menu_row(0);
         self.world_state_view_mut().increment_overworld_map_state();
     }
 
     pub(super) fn hud_init_bottle_menu(&mut self) {
-        let r = self.ram[BOTTLE_MENU_EXPAND_ROW] as usize;
+        let r = self.hud_state_view().bottle_menu_row() as usize;
         for i in 21..=30 {
             self.menu_set(hudxy(i, 11 + r), 0x207f);
         }
-        self.ram[BOTTLE_MENU_EXPAND_ROW] = self.ram[BOTTLE_MENU_EXPAND_ROW].wrapping_add(1);
-        if self.ram[BOTTLE_MENU_EXPAND_ROW] == 19 {
+        let row = self.hud_state_view().bottle_menu_row().wrapping_add(1);
+        self.hud_state_view_mut().set_bottle_menu_row(row);
+        if row == 19 {
             self.world_state_view_mut().increment_overworld_map_state();
-            self.ram[BOTTLE_MENU_EXPAND_ROW] = 17;
+            self.hud_state_view_mut().set_bottle_menu_row(17);
         }
         self.display_nmi_view_mut().set_subroutine_index(1);
         self.display_nmi_view_mut().set_load_target_addr(0x22);
@@ -865,7 +869,7 @@ impl ZeldaState {
         const BOTTLE_MENU_BOTTOM_ROW_TILES: [u16; 10] = [
             0xa8fb, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xe8fb,
         ];
-        let r = self.ram[BOTTLE_MENU_EXPAND_ROW] as usize;
+        let r = self.hud_state_view().bottle_menu_row() as usize;
         self.hud_draw_nx_n(0x1000, hudxy(21, 11 + r), &BOTTLE_MENU_TOP_ROW_TILES, 10, 1);
         self.hud_draw_nx_n(
             0x1000,
@@ -875,8 +879,9 @@ impl ZeldaState {
             1,
         );
         self.hud_draw_nx_n(0x1000, hudxy(21, 29), &BOTTLE_MENU_BOTTOM_ROW_TILES, 10, 1);
-        self.ram[BOTTLE_MENU_EXPAND_ROW] = self.ram[BOTTLE_MENU_EXPAND_ROW].wrapping_sub(1);
-        if (self.ram[BOTTLE_MENU_EXPAND_ROW] as i8) < 0 {
+        let row = self.hud_state_view().bottle_menu_row().wrapping_sub(1);
+        self.hud_state_view_mut().set_bottle_menu_row(row);
+        if (row as i8) < 0 {
             self.world_state_view_mut().increment_overworld_map_state();
         }
         self.display_nmi_view_mut().set_subroutine_index(1);
@@ -884,7 +889,8 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_bottle_menu(&mut self) {
-        self.ram[TIMER_FOR_FLASHING_CIRCLE] = self.ram[TIMER_FOR_FLASHING_CIRCLE].wrapping_add(1);
+        let tc = self.hud_state_view().flashing_circle_timer().wrapping_add(1);
+        self.hud_state_view_mut().set_flashing_circle_timer(tc);
         if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.system_signals_view_mut().set_sound_effect_2(18);
             self.world_state_view_mut().set_overworld_map_state(5);
@@ -899,12 +905,12 @@ impl ZeldaState {
                 self.hud_equip_next_item(&mut item, true);
             }
             self.save_progress_view_mut().set_hud_current_item(item);
-            self.ram[TIMER_FOR_FLASHING_CIRCLE] = 16;
+            self.hud_state_view_mut().set_flashing_circle_timer(16);
             self.system_signals_view_mut().set_sound_effect_2(32);
             self.hud_draw_y_button_items();
             self.hud_draw_selected_y_button_item();
             self.world_state_view_mut().increment_overworld_map_state();
-            self.ram[BOTTLE_MENU_EXPAND_ROW] = 0;
+            self.hud_state_view_mut().set_bottle_menu_row(0);
             return;
         }
         self.hud_draw_bottle_menu_update();
@@ -933,7 +939,7 @@ impl ZeldaState {
             if old_val != val {
                 self.player_resources_view_mut()
                     .set_equipped_bottle_index(val + 1);
-                self.ram[TIMER_FOR_FLASHING_CIRCLE] = 16;
+                self.hud_state_view_mut().set_flashing_circle_timer(16);
                 self.system_signals_view_mut().set_sound_effect_2(32);
             }
         }
@@ -947,12 +953,13 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_erase_bottle_menu(&mut self) {
-        let r = self.ram[BOTTLE_MENU_EXPAND_ROW] as usize;
+        let r = self.hud_state_view().bottle_menu_row() as usize;
         for i in 0..10 {
             self.menu_set(hudxy(21 + i, 11 + r), 0x207f);
         }
-        self.ram[BOTTLE_MENU_EXPAND_ROW] = self.ram[BOTTLE_MENU_EXPAND_ROW].wrapping_add(1);
-        if self.ram[BOTTLE_MENU_EXPAND_ROW] == 19 {
+        let row = self.hud_state_view().bottle_menu_row().wrapping_add(1);
+        self.hud_state_view_mut().set_bottle_menu_row(row);
+        if row == 19 {
             self.world_state_view_mut().increment_overworld_map_state();
         }
         self.display_nmi_view_mut().set_subroutine_index(1);
@@ -1231,7 +1238,7 @@ impl ZeldaState {
     pub(super) fn hud_draw_selected_y_button_item(&mut self) {
         let dst_box = if USE_NEW_STYLE_INVENTORY { 1 } else { 0 };
         let btn_index = self.get_current_item_button_index();
-        let item = self.ram[self.get_current_item_button_ptr(btn_index)];
+        let item = self.read_u8_ram(self.get_current_item_button_ptr(btn_index));
         self.hud_draw_box(
             0x1000,
             21 + dst_box,
@@ -1245,7 +1252,7 @@ impl ZeldaState {
             if pos >= 0 {
                 let src = HUD_ITEM_VRAM_POSITIONS_LEGACY[pos as usize];
                 self.hud_copy2x2(0x1000, hudxy(25 + dst_box, 6), 0x1000, src);
-                if self.ram[TIMER_FOR_FLASHING_CIRCLE] & 0x10 != 0 {
+                if self.hud_state_view().flashing_circle_timer() & 0x10 != 0 {
                     self.hud_draw_flashing_circle(
                         0x1000,
                         src as i32,
@@ -1378,7 +1385,7 @@ impl ZeldaState {
             (self.player_resources_view().equipped_bottle_index() as usize).wrapping_sub(1);
         let p = HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_state_view().bottle(bottle_index) as usize];
         self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[15], &p);
-        if self.ram[TIMER_FOR_FLASHING_CIRCLE] & 0x10 != 0 {
+        if self.hud_state_view().flashing_circle_timer() & 0x10 != 0 {
             self.hud_draw_flashing_circle(0x1000, hudxy(25 + dst, 13 + bottle_index * 4) as i32, 7);
         }
     }
@@ -1391,16 +1398,16 @@ impl ZeldaState {
             let mut resources = self.player_resources_view_mut();
             resources.set_current_health(capacity);
             resources.set_heart_filler(0);
-            return self.ram[IS_DOING_HEART_ANIMATION] == 0;
+            return !self.hud_state_view().is_doing_heart_animation();
         }
         self.player_resources_view_mut().set_heart_filler(160);
         false
     }
 
     pub(super) fn hud_animate_heart_refill(&mut self) {
-        self.ram[ANIMATE_HEART_REFILL_COUNTDOWN] =
-            self.ram[ANIMATE_HEART_REFILL_COUNTDOWN].wrapping_sub(1);
-        if self.ram[ANIMATE_HEART_REFILL_COUNTDOWN] != 0 {
+        let cd = self.hud_state_view().heart_refill_countdown().wrapping_sub(1);
+        self.hud_state_view_mut().set_heart_refill_countdown(cd);
+        if cd != 0 {
             return;
         }
         let mut n =
@@ -1412,17 +1419,15 @@ impl ZeldaState {
             p += 0x20;
         }
         n &= 0xff;
-        self.ram[ANIMATE_HEART_REFILL_COUNTDOWN] = 1;
+        self.hud_state_view_mut().set_heart_refill_countdown(1);
         const PARTIAL_HEART_ANIMATION_TILES: [u16; 4] = [0x24a3, 0x24a4, 0x24a3, 0x24a0];
-        self.hud_buffer_set(
-            p + (n >> 1),
-            PARTIAL_HEART_ANIMATION_TILES[self.ram[ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS] as usize],
-        );
-        self.ram[ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS] =
-            self.ram[ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS].wrapping_add(1) & 3;
-        if self.ram[ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS] == 0 {
+        let subpos = self.hud_state_view().heart_refill_anim_subpos();
+        self.hud_buffer_set(p + (n >> 1), PARTIAL_HEART_ANIMATION_TILES[subpos as usize]);
+        let subpos = subpos.wrapping_add(1) & 3;
+        self.hud_state_view_mut().set_heart_refill_anim_subpos(subpos);
+        if subpos == 0 {
             self.hud_rebuild();
-            self.ram[IS_DOING_HEART_ANIMATION] = 0;
+            self.hud_state_view_mut().clear_is_doing_heart_animation();
         }
     }
 
@@ -1437,25 +1442,25 @@ impl ZeldaState {
     pub(super) fn hud_restore_torch_background(&mut self) {
         if self.inventory_state_view().torch() == 0
             || self.dungeon_state_view().wants_lights_out() == 0
-            || self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] != 0
+            || self.hud_state_view().dungeon_dark_with_lantern()
             || self.dungeon_state_view().lit_torches() != 0
         {
             return;
         }
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
+        self.hud_state_view_mut().set_dungeon_dark_with_lantern();
         if self.dungeon_state_view().bg2_properties() != 2 {
             self.display_nmi_view_mut().set_sub_screen_layers(1);
         }
     }
 
     pub(super) fn hud_rebuild_indoor(&mut self) {
-        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0;
+        self.display_nmi_view_mut().set_overworld_fixed_color_plusminus(0);
         self.player_resources_view_mut().set_keys(0xff);
         self.hud_rebuild();
     }
 
     pub(super) fn hud_rebuild(&mut self) {
-        if read_le_u16(&self.ram, HUD_TILE_INDICES_BUFFER + hudxy(8, 2) * 2) == 0 {
+        if self.read_u16_ram(HUD_TILE_INDICES_BUFFER + hudxy(8, 2) * 2) == 0 {
             for i in 0..165 {
                 self.hud_buffer_set(i, 0x207f);
             }
@@ -1488,11 +1493,11 @@ impl ZeldaState {
             return;
         }
         let direction = if self.player_state_view().filtered_joypad_l() & JOYPAD_LOW_L != 0
-            && self.ram[HUD_CUR_ITEM_L] == 0
+            && self.save_progress_view().hud_current_item_slot(2) == 0
         {
-            self.ram[HUD_CUR_ITEM_R] != 0
+            self.save_progress_view().hud_current_item_slot(3) != 0
         } else if self.player_state_view().filtered_joypad_l() & JOYPAD_LOW_R != 0
-            && self.ram[HUD_CUR_ITEM_R] == 0
+            && self.save_progress_view().hud_current_item_slot(3) == 0
         {
             true
         } else {
@@ -1534,9 +1539,8 @@ impl ZeldaState {
         } else if new_pos >= HUD_ITEM_COUNT as i32 {
             new_pos -= HUD_ITEM_COUNT as i32;
         }
-        let old = HUD_INVENTORY_ORDER + old_pos as usize;
-        let new = HUD_INVENTORY_ORDER + new_pos as usize;
-        self.ram.swap(old, new);
+        self.hud_inventory_order_view_mut()
+            .swap_items(old_pos as usize, new_pos as usize);
         self.hud_draw_y_button_items();
         self.system_signals_view_mut().set_sound_effect_2(32);
     }
@@ -1766,12 +1770,12 @@ impl ZeldaState {
 
     fn write_tile(&mut self, base: usize, tile: i32, value: u16) {
         let addr = (base as i32 + tile * 2) as usize;
-        write_le_u16(&mut self.ram, addr, value);
+        self.write_u16_ram(addr, value);
     }
 
     fn read_tile(&self, base: usize, tile: i32) -> u16 {
         let addr = (base as i32 + tile * 2) as usize;
-        read_le_u16(&self.ram, addr)
+        self.read_u16_ram(addr)
     }
 
     fn hud_item_box_gfx_ptr(item: u8) -> &'static [ItemBoxGfx] {
