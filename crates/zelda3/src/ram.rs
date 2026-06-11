@@ -26,9 +26,18 @@ pub(crate) mod semantic {
     const TS_COPY: usize = 0x001d;
     const BGMODE_COPY: usize = 0x0094;
     const MOSAIC_COPY: usize = 0x0095;
+    const W12SEL_COPY: usize = 0x0096;
+    const W34SEL_COPY: usize = 0x0097;
+    const WOBJSEL_COPY: usize = 0x0098;
     const HDMAEN_COPY: usize = 0x009b;
+    const NMI_BOOLEAN: usize = 0x0012;
+    const NMI_UPDATE_TILEMAP_DST: usize = 0x0019;
+    const TMW_COPY: usize = 0x001e;
+    const TSW_COPY: usize = 0x001f;
     const NMI_THREAD_ACTIVE: usize = 0x012a;
     const NMI_LOAD_TARGET_ADDR: usize = 0x0116;
+    const NMI_UPDATE_TILEMAP_SRC: usize = 0x0118;
+    const ANIMATED_TILE_VRAM_ADDR: usize = 0x0134;
     const NMI_DISABLE_CORE_UPDATES: usize = 0x0710;
     const LOAD_CHR_HALFSLOT_EVEN_ODD: usize = 0x0aaa;
     const MOSAIC_TARGET_LEVEL: usize = 0x0c00b;
@@ -41,6 +50,10 @@ pub(crate) mod semantic {
     const QUEUED_MUSIC_CONTROL: usize = 0x0132;
     const LAST_MUSIC_CONTROL: usize = 0x0133;
     const RAM_APUI00: usize = 0x0648;
+    const ANIMATED_TILE_DATA_SRC: usize = 0x0adc;
+    const FLAG_TRAVEL_BIRD: usize = 0x0af4;
+    const HUD_TILE_INDICES_BUFFER: usize = 0x0c700;
+    const NMI_FLAG_UPDATE_POLYHEDRAL: usize = 0x1f0c;
     const POLY_THREAD_STACK: usize = 0x1f0a;
     const RUN_MAIN_THREAD: u8 = 1;
     const RUN_POLY_THREAD: u8 = 2;
@@ -76,6 +89,8 @@ pub(crate) mod semantic {
     const TILEMAP_LOCATION_CALC_MASK: usize = 0x00ec;
     const JOYPAD1H_LAST: usize = 0x00f0;
     const JOYPAD1L_LAST: usize = 0x00f2;
+    const JOYPAD1H_LAST2: usize = 0x00f8;
+    const JOYPAD1L_LAST2: usize = 0x00fa;
     const FILTERED_JOYPAD_H: usize = 0x00f4;
     const FILTERED_JOYPAD_L: usize = 0x00f6;
     const LINK_DELAY_TIMER_SPIN_ATTACK: usize = 0x003d;
@@ -405,6 +420,27 @@ pub(crate) mod semantic {
     const SPRITE_RESET_SCRATCH_A: usize = 0x0ff8;
     const SPRITE_RESET_SCRATCH_B: usize = 0x0ffb;
     const GARNISH_ACTIVE: usize = 0x0fb4;
+    const SPRCOLL_Y_BASE: usize = 0x0fbe;
+    const ACTIVE_OVERLORD_INDEX: usize = 0x0fde;
+    const OVERWORLD_BOULDER_TRAP_COUNT: usize = 0x0ffd;
+    const OVERWORLD_BOULDER_TRAP_TIMER: usize = 0x0ffe;
+    const DUNGEON_TRAP_TRIGGER_LATCH: usize = 0x0b9e;
+    const DUNG_FLOOR_MOVE_FLAGS: usize = 0x041a;
+    const ACTIVATE_BOMB_TRAP_OVERLORD: usize = 0x0cf4;
+    const OVERLORD_OFFSET_SPRITE_POS: usize = 0x0b48;
+    const OVERWORLD_OFFSET_BASE_Y: usize = 0x0708;
+    const OVERWORLD_OFFSET_MASK_Y: usize = 0x070a;
+    const OVERWORLD_OFFSET_BASE_X: usize = 0x070c;
+    const OVERWORLD_OFFSET_MASK_X: usize = 0x070e;
+    const TILEDETECT_INROOM_STAIRCASE: usize = 0x02c0;
+    const SCRATCH_1: usize = 0x0074;
+    const LIFTABLE_TILE_DETECTED_INDEX_DOUBLED: usize = 0x036a;
+    const KIND_OF_IN_ROOM_STAIRCASE: usize = 0x044a;
+    const DUNG_CHEST_LOCATIONS: usize = 0x06e0;
+    const MOVING_FLOOR_BG_CHECK_FLAGS: usize = 0x03f1;
+    const FORCE_MOVE_ANY_DIRECTION: usize = 0x0049;
+    const CHEAT_WALK_THROUGH_WALLS: usize = 0x037f;
+    const ROOM_TRANSITIONING_FLAGS: usize = 0x00ef;
     const SPRITE_WHERE_IN_ROOM: usize = 0x1df80;
     const SPRITE_DRAW_PRIORITY_OVERRIDE: usize = 0x0cfe;
     const SPRITE_GFX_SUBSET_0: usize = 0x0c2fc;
@@ -670,6 +706,18 @@ pub(crate) mod semantic {
     const POLY_BASE_X: usize = 0x1f06;
     const POLY_BASE_Y: usize = 0x1f07;
     const POLY_SHAPE_DEPTH_BIAS: usize = 0x1f08;
+    const POLY_CONFIG_NUM_VERTEX: usize = 0x1f3f;
+    const POLY_CONFIG_NUM_POLYS: usize = 0x1f40;
+    const POLY_FROMLUT_Z: usize = 0x1f45;
+    const POLY_FROMLUT_Y: usize = 0x1f46;
+    const POLY_FROMLUT_X: usize = 0x1f47;
+    const POLY_F0: usize = 0x1f48;
+    const POLY_F1: usize = 0x1f4a;
+    const POLY_NUM_VERTEX_IN_POLY: usize = 0x1f4e;
+    const POLY_RASTER_COLOR_CONFIG: usize = 0x1f4f;
+    const POLY_TMP0: usize = 0x1fb0;
+    const POLY_TMP2: usize = 0x1fbc;
+    const POLYHEDRAL_BUFFER: usize = 0xe800;
     const POLY_PROJECTED_X: usize = 0x1f60;
     const POLY_PROJECTED_Y: usize = 0x1f88;
     const POLY_FACE_COORDS: usize = 0x1fc0;
@@ -681,6 +729,9 @@ pub(crate) mod semantic {
     const POLY_Y1_CUR: usize = 0x1feb;
     const POLY_X1_TARGET: usize = 0x1fec;
     const POLY_Y1_TRIG: usize = 0x1fed;
+    const POLY_TOTAL_NUM_STEPS: usize = 0x1fe0;
+    const POLY_CUR_VERTEX_IDX0: usize = 0x1fe9;
+    const POLY_CUR_VERTEX_IDX1: usize = 0x1ff2;
     const GARNISH_TYPE: usize = 0x1f800;
     const GARNISH_Y_LO: usize = 0x1f81e;
     const GARNISH_X_LO: usize = 0x1f83c;
@@ -1298,6 +1349,147 @@ pub(crate) mod semantic {
         pub(crate) fn mosaic_target_level(&self) -> u8 {
             byte(self.ram, MOSAIC_TARGET_LEVEL)
         }
+
+        pub(crate) fn nmi_boolean(&self) -> u8 {
+            byte(self.ram, NMI_BOOLEAN)
+        }
+
+        pub(crate) fn is_nmi_thread_active(&self) -> bool {
+            byte(self.ram, NMI_THREAD_ACTIVE) != 0
+        }
+
+        pub(crate) fn nmi_flag_update_polyhedral(&self) -> u8 {
+            byte(self.ram, NMI_FLAG_UPDATE_POLYHEDRAL)
+        }
+
+        pub(crate) fn thread_other_stack(&self) -> u16 {
+            word(self.ram, POLY_THREAD_STACK)
+        }
+
+        pub(crate) fn update_tilemap_dst(&self) -> u8 {
+            byte(self.ram, NMI_UPDATE_TILEMAP_DST)
+        }
+
+        pub(crate) fn update_tilemap_src_data(&self) -> &[u8] {
+            let offset = word(self.ram, NMI_UPDATE_TILEMAP_SRC) as usize;
+            let start = super::nmi::BG_CHAR_BUFFER + offset;
+            &self.ram[start.min(self.ram.len())..]
+        }
+
+        pub(crate) fn animated_tile_data_src(&self) -> u16 {
+            word(self.ram, ANIMATED_TILE_DATA_SRC)
+        }
+
+        pub(crate) fn animated_tile_vram_addr(&self) -> u16 {
+            word(self.ram, ANIMATED_TILE_VRAM_ADDR)
+        }
+
+        pub(crate) fn animated_tile_data(&self) -> &[u8] {
+            let src = word(self.ram, ANIMATED_TILE_DATA_SRC) as usize;
+            &self.ram[src.min(self.ram.len())..]
+        }
+
+        pub(crate) fn message_dma_dst_addr(&self) -> u16 {
+            word(self.ram, super::messaging::MESSAGE_DMA_DST_ADDR)
+        }
+
+        pub(crate) fn hud_tile_indices_buffer(&self) -> &[u8] {
+            &self.ram[HUD_TILE_INDICES_BUFFER..]
+        }
+
+        pub(crate) fn oam_buf(&self) -> &[u8] {
+            &self.ram[OAM_BUF..]
+        }
+
+        pub(crate) fn tilemap_upload_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::TILEMAP_UPLOAD_BUFFER..]
+        }
+
+        pub(crate) fn stripe_buffer_021b(&self) -> &[u8] {
+            &self.ram[super::nmi::STRIPE_BUFFER_021B..]
+        }
+
+        pub(crate) fn vram_upload_tile_buf(&self) -> &[u8] {
+            &self.ram[super::nmi::VRAM_UPLOAD_TILE_BUF..]
+        }
+
+        pub(crate) fn bg1_wall_top_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::BG1_WALL_TOP_BUFFER..]
+        }
+
+        pub(crate) fn bg1_wall_bottom_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::BG1_WALL_BOTTOM_BUFFER..]
+        }
+
+        pub(crate) fn bg_char_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::BG_CHAR_BUFFER..]
+        }
+
+        pub(crate) fn bg_char_buffer_1(&self) -> &[u8] {
+            &self.ram[super::nmi::BG_CHAR_BUFFER_1..]
+        }
+
+        pub(crate) fn bg_char_half_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::BG_CHAR_HALF_BUFFER..]
+        }
+
+        pub(crate) fn game_over_text_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::GAME_OVER_TEXT_BUFFER..]
+        }
+
+        pub(crate) fn game_over_text_tail_buffer(&self) -> &[u8] {
+            &self.ram[super::nmi::GAME_OVER_TEXT_TAIL_BUFFER..]
+        }
+
+        pub(crate) fn polyhedral_buffer(&self) -> &[u8] {
+            &self.ram[POLYHEDRAL_BUFFER..]
+        }
+
+        pub(crate) fn arbitrary_tilemap_dst(&self, slot: usize) -> u16 {
+            word(self.ram, super::nmi::ARBITRARY_TILEMAP_DST_BUFFER + slot * 2)
+        }
+
+        pub(crate) fn dungeon_bg2_attr_table(&self) -> &[u8] {
+            &self.ram[DUNGEON_BG2_ATTR_TABLE..]
+        }
+
+        pub(crate) fn dungeon_bg1_attr_table(&self) -> &[u8] {
+            &self.ram[DUNGEON_BG1_ATTR_TABLE..]
+        }
+
+        pub(crate) fn flag_travel_bird(&self) -> bool {
+            byte(self.ram, FLAG_TRAVEL_BIRD) != 0
+        }
+
+        pub(crate) fn w12sel_copy(&self) -> u8 {
+            byte(self.ram, W12SEL_COPY)
+        }
+
+        pub(crate) fn w34sel_copy(&self) -> u8 {
+            byte(self.ram, W34SEL_COPY)
+        }
+
+        pub(crate) fn wobjsel_copy(&self) -> u8 {
+            byte(self.ram, WOBJSEL_COPY)
+        }
+
+        pub(crate) fn tmw_copy(&self) -> u8 {
+            byte(self.ram, TMW_COPY)
+        }
+
+        pub(crate) fn tsw_copy(&self) -> u8 {
+            byte(self.ram, TSW_COPY)
+        }
+
+        pub(crate) fn word_at(&self, addr: usize) -> u16 {
+            word(self.ram, addr)
+        }
+
+        pub(crate) fn ram_slice_at(&self, addr: usize, len: usize) -> &[u8] {
+            let start = addr.min(self.ram.len());
+            let end = (addr + len).min(self.ram.len());
+            &self.ram[start..end]
+        }
     }
 
     pub(crate) struct DisplayNmiViewMut<'a> {
@@ -1468,6 +1660,26 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_chr_halfslot_state(&mut self) {
             self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
+        }
+
+        pub(crate) fn set_nmi_boolean(&mut self, value: u8) {
+            self.ram[NMI_BOOLEAN] = value;
+        }
+
+        pub(crate) fn set_nmi_flag_update_polyhedral(&mut self, value: u8) {
+            self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = value;
+        }
+
+        pub(crate) fn clear_nmi_flag_update_polyhedral(&mut self) {
+            self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
+        }
+
+        pub(crate) fn set_thread_other_stack(&mut self, value: u16) {
+            write_le_u16(self.ram, POLY_THREAD_STACK, value);
+        }
+
+        pub(crate) fn clear_update_tilemap_dst(&mut self) {
+            self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
         }
 
         pub(crate) fn increment_chr_halfslot_state(&mut self) -> u8 {
@@ -2079,6 +2291,14 @@ pub(crate) mod semantic {
             byte(self.ram, JOYPAD1L_LAST)
         }
 
+        pub(crate) fn joypad1h_last2(&self) -> u8 {
+            byte(self.ram, JOYPAD1H_LAST2)
+        }
+
+        pub(crate) fn joypad1l_last2(&self) -> u8 {
+            byte(self.ram, JOYPAD1L_LAST2)
+        }
+
         pub(crate) fn button_b_frames_index(&self) -> usize {
             usize::from(self.button_b_frames())
         }
@@ -2366,6 +2586,14 @@ pub(crate) mod semantic {
 
         pub(crate) fn equipped_item(&self) -> u8 {
             byte(self.ram, LINK_EQUIPPED_ITEM)
+        }
+
+        pub(crate) fn force_move_any_direction_lo(&self) -> u16 {
+            word(self.ram, FORCE_MOVE_ANY_DIRECTION) & 0x00ff
+        }
+
+        pub(crate) fn cheat_walk_through_walls(&self) -> u8 {
+            byte(self.ram, CHEAT_WALK_THROUGH_WALLS)
         }
     }
 
@@ -3470,6 +3698,14 @@ pub(crate) mod semantic {
             self.ram[JOYPAD1L_LAST] = value;
         }
 
+        pub(crate) fn set_joypad1h_last2(&mut self, value: u8) {
+            self.ram[JOYPAD1H_LAST2] = value;
+        }
+
+        pub(crate) fn set_joypad1l_last2(&mut self, value: u8) {
+            self.ram[JOYPAD1L_LAST2] = value;
+        }
+
         pub(crate) fn set_item_action_step_var(&mut self, value: u8) {
             self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = value;
         }
@@ -4374,6 +4610,11 @@ pub(crate) mod semantic {
             self.ram[LINK_Y_COORD_SAFE_RETURN_LO] = self.ram[LINK_Y_COORD];
             self.ram[LINK_Y_COORD_SAFE_RETURN_HI] = self.ram[LINK_Y_COORD + 1];
         }
+
+        pub(crate) fn clear_force_move_high_byte(&mut self) {
+            let lo = self.ram[FORCE_MOVE_ANY_DIRECTION];
+            write_le_u16(self.ram, FORCE_MOVE_ANY_DIRECTION, lo as u16);
+        }
     }
 
     pub(crate) struct SpecialExitPositionView<'a> {
@@ -4764,6 +5005,10 @@ pub(crate) mod semantic {
         pub(crate) fn palette_bits_high(&self) -> u8 {
             byte(self.ram, LINK_PALETTE_BITS_OF_OAM + 1)
         }
+
+        pub(crate) fn inroom_staircase(&self) -> u16 {
+            word(self.ram, TILEDETECT_INROOM_STAIRCASE)
+        }
     }
 
     pub(crate) struct TileDetectPositionViewMut<'a> {
@@ -5139,6 +5384,24 @@ pub(crate) mod semantic {
             let next = read_le_u16(self.ram, TILEDETECT_COLLISION_BITS) | value;
             write_le_u16(self.ram, TILEDETECT_COLLISION_BITS, next);
             next
+        }
+
+        pub(crate) fn set_tile_probe_anchor(&mut self, value: u16) {
+            write_le_u16(self.ram, SCRATCH_1, value);
+        }
+
+        pub(crate) fn clear_inroom_staircase(&mut self) {
+            write_le_u16(self.ram, TILEDETECT_INROOM_STAIRCASE, 0);
+        }
+
+        pub(crate) fn or_inroom_staircase(&mut self, bits: u16) -> u16 {
+            let next = read_le_u16(self.ram, TILEDETECT_INROOM_STAIRCASE) | bits;
+            write_le_u16(self.ram, TILEDETECT_INROOM_STAIRCASE, next);
+            next
+        }
+
+        pub(crate) fn set_liftable_tile_index(&mut self, value: u8) {
+            self.ram[LIFTABLE_TILE_DETECTED_INDEX_DOUBLED] = value;
         }
     }
 
@@ -6288,6 +6551,22 @@ pub(crate) mod semantic {
         pub(crate) fn rng_seed(&self) -> u8 {
             byte(self.ram, RNG_SEED)
         }
+
+        pub(crate) fn overworld_offset_base_x(&self) -> u16 {
+            word(self.ram, OVERWORLD_OFFSET_BASE_X)
+        }
+
+        pub(crate) fn overworld_offset_base_y(&self) -> u16 {
+            word(self.ram, OVERWORLD_OFFSET_BASE_Y)
+        }
+
+        pub(crate) fn overworld_offset_mask_x(&self) -> u16 {
+            word(self.ram, OVERWORLD_OFFSET_MASK_X)
+        }
+
+        pub(crate) fn overworld_offset_mask_y(&self) -> u16 {
+            word(self.ram, OVERWORLD_OFFSET_MASK_Y)
+        }
     }
 
     pub(crate) struct WorldStateViewMut<'a> {
@@ -6447,6 +6726,10 @@ pub(crate) mod semantic {
         pub(crate) fn add_bg2_x(&mut self, value: u16) {
             let x = read_le_u16(self.ram, BG2_X_SCROLL);
             write_le_u16(self.ram, BG2_X_SCROLL, x.wrapping_add(value));
+        }
+
+        pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
+            self.ram[ROOM_TRANSITIONING_FLAGS] = value;
         }
     }
 
@@ -6726,6 +7009,30 @@ pub(crate) mod semantic {
 
         pub(crate) fn door_open_counter_low(&self) -> u8 {
             byte(self.ram, DOOR_OPEN_CLOSED_COUNTER)
+        }
+
+        pub(crate) fn trap_trigger_latch(&self) -> u8 {
+            byte(self.ram, DUNGEON_TRAP_TRIGGER_LATCH)
+        }
+
+        pub(crate) fn floor_move_flags(&self) -> u8 {
+            byte(self.ram, DUNG_FLOOR_MOVE_FLAGS)
+        }
+
+        pub(crate) fn has_bomb_trap_activation(&self) -> bool {
+            byte(self.ram, ACTIVATE_BOMB_TRAP_OVERLORD) != 0
+        }
+
+        pub(crate) fn kind_of_in_room_staircase(&self) -> u8 {
+            byte(self.ram, KIND_OF_IN_ROOM_STAIRCASE)
+        }
+
+        pub(crate) fn chest_location(&self, index: usize) -> u16 {
+            word(self.ram, DUNG_CHEST_LOCATIONS + index * 2)
+        }
+
+        pub(crate) fn moving_floor_check_flags(&self) -> u16 {
+            word(self.ram, MOVING_FLOOR_BG_CHECK_FLAGS)
         }
     }
 
@@ -7197,6 +7504,25 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_changeable_object_index(&mut self, index: usize) {
             self.set_changeable_object_index(index, 0);
+        }
+
+        pub(crate) fn increment_trap_trigger_latch(&mut self) {
+            self.ram[DUNGEON_TRAP_TRIGGER_LATCH] =
+                self.ram[DUNGEON_TRAP_TRIGGER_LATCH].wrapping_add(1);
+        }
+
+        pub(crate) fn set_floor_move_flags(&mut self, value: u8) {
+            self.ram[DUNG_FLOOR_MOVE_FLAGS] = value;
+        }
+
+        pub(crate) fn clear_moving_floor_check_flags(&mut self) {
+            write_le_u16(self.ram, MOVING_FLOOR_BG_CHECK_FLAGS, 0);
+        }
+
+        pub(crate) fn or_moving_floor_check_flags(&mut self, bits: u16) -> u16 {
+            let next = read_le_u16(self.ram, MOVING_FLOOR_BG_CHECK_FLAGS) | bits;
+            write_le_u16(self.ram, MOVING_FLOOR_BG_CHECK_FLAGS, next);
+            next
         }
     }
 
@@ -8518,6 +8844,50 @@ pub(crate) mod semantic {
         pub(crate) fn shape_depth_bias(&self) -> u16 {
             word(self.ram, POLY_SHAPE_DEPTH_BIAS)
         }
+
+        pub(crate) fn num_vertices(&self) -> u8 {
+            byte(self.ram, POLY_CONFIG_NUM_VERTEX)
+        }
+
+        pub(crate) fn num_polys(&self) -> u8 {
+            byte(self.ram, POLY_CONFIG_NUM_POLYS)
+        }
+
+        pub(crate) fn fromlut_x(&self) -> i8 {
+            byte(self.ram, POLY_FROMLUT_X) as i8
+        }
+
+        pub(crate) fn fromlut_y(&self) -> i8 {
+            byte(self.ram, POLY_FROMLUT_Y) as i8
+        }
+
+        pub(crate) fn fromlut_z(&self) -> i8 {
+            byte(self.ram, POLY_FROMLUT_Z) as i8
+        }
+
+        pub(crate) fn f0(&self) -> u8 {
+            byte(self.ram, POLY_F0)
+        }
+
+        pub(crate) fn f1(&self) -> u8 {
+            byte(self.ram, POLY_F1)
+        }
+
+        pub(crate) fn num_vertex_in_poly(&self) -> u8 {
+            byte(self.ram, POLY_NUM_VERTEX_IN_POLY)
+        }
+
+        pub(crate) fn raster_color_config(&self) -> u8 {
+            byte(self.ram, POLY_RASTER_COLOR_CONFIG)
+        }
+
+        pub(crate) fn tmp0(&self) -> u8 {
+            byte(self.ram, POLY_TMP0)
+        }
+
+        pub(crate) fn tmp2(&self) -> u8 {
+            byte(self.ram, POLY_TMP2)
+        }
     }
 
     pub(crate) struct PolyStateViewMut<'a> {
@@ -8603,6 +8973,50 @@ pub(crate) mod semantic {
         pub(crate) fn set_shape_depth_bias(&mut self, value: u16) {
             write_le_u16(self.ram, POLY_SHAPE_DEPTH_BIAS, value);
         }
+
+        pub(crate) fn set_num_vertices(&mut self, value: u8) {
+            self.ram[POLY_CONFIG_NUM_VERTEX] = value;
+        }
+
+        pub(crate) fn set_num_polys(&mut self, value: u8) {
+            self.ram[POLY_CONFIG_NUM_POLYS] = value;
+        }
+
+        pub(crate) fn decrement_num_polys(&mut self) -> u8 {
+            self.ram[POLY_CONFIG_NUM_POLYS] = self.ram[POLY_CONFIG_NUM_POLYS].wrapping_sub(1);
+            self.ram[POLY_CONFIG_NUM_POLYS]
+        }
+
+        pub(crate) fn set_fromlut_position(&mut self, x: u8, y: u8, z: u8) {
+            self.ram[POLY_FROMLUT_X] = x;
+            self.ram[POLY_FROMLUT_Y] = y;
+            self.ram[POLY_FROMLUT_Z] = z;
+        }
+
+        pub(crate) fn set_num_vertex_in_poly(&mut self, value: u8) {
+            self.ram[POLY_NUM_VERTEX_IN_POLY] = value;
+        }
+
+        pub(crate) fn set_raster_color_config(&mut self, value: u8) {
+            self.ram[POLY_RASTER_COLOR_CONFIG] = value;
+        }
+
+        pub(crate) fn set_tmp0(&mut self, value: u8) {
+            self.ram[POLY_TMP0] = value;
+        }
+
+        pub(crate) fn decrement_tmp0(&mut self) -> u8 {
+            self.ram[POLY_TMP0] = self.ram[POLY_TMP0].wrapping_sub(1);
+            self.ram[POLY_TMP0]
+        }
+
+        pub(crate) fn set_tmp2(&mut self, value: u8) {
+            self.ram[POLY_TMP2] = value;
+        }
+
+        pub(crate) fn clear_poly_buffer(&mut self) {
+            self.ram[POLYHEDRAL_BUFFER..POLYHEDRAL_BUFFER + 0x800].fill(0);
+        }
     }
 
     pub(crate) struct PolyProjectedVertexView<'a> {
@@ -8650,6 +9064,10 @@ pub(crate) mod semantic {
         pub(crate) fn coord(&self, offset: usize) -> u8 {
             byte(self.ram, POLY_FACE_COORDS + offset)
         }
+
+        pub(crate) fn xy_coords_count(&self) -> u8 {
+            byte(self.ram, POLY_FACE_COORDS)
+        }
     }
 
     pub(crate) struct PolyFaceCoordsViewMut<'a> {
@@ -8663,6 +9081,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_coord(&mut self, offset: usize, value: u8) {
             self.ram[POLY_FACE_COORDS + offset] = value;
+        }
+
+        pub(crate) fn set_xy_coords_count(&mut self, value: u8) {
+            self.ram[POLY_FACE_COORDS] = value;
         }
     }
 
@@ -8706,6 +9128,22 @@ pub(crate) mod semantic {
         pub(crate) fn y1_trigger(&self) -> u8 {
             byte(self.ram, POLY_Y1_TRIG)
         }
+
+        pub(crate) fn total_num_steps(&self) -> u8 {
+            byte(self.ram, POLY_TOTAL_NUM_STEPS)
+        }
+
+        pub(crate) fn total_num_steps_signed(&self) -> i8 {
+            byte(self.ram, POLY_TOTAL_NUM_STEPS) as i8
+        }
+
+        pub(crate) fn cur_vertex_idx0(&self) -> u8 {
+            byte(self.ram, POLY_CUR_VERTEX_IDX0)
+        }
+
+        pub(crate) fn cur_vertex_idx1(&self) -> u8 {
+            byte(self.ram, POLY_CUR_VERTEX_IDX1)
+        }
     }
 
     pub(crate) struct PolyRasterEdgeViewMut<'a> {
@@ -8743,6 +9181,36 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_right_current_x(&mut self, x: u8) {
             self.ram[POLY_X1_CUR] = x;
+        }
+
+        pub(crate) fn set_total_num_steps(&mut self, value: u8) {
+            self.ram[POLY_TOTAL_NUM_STEPS] = value;
+        }
+
+        pub(crate) fn decrement_total_num_steps(&mut self) -> i8 {
+            self.ram[POLY_TOTAL_NUM_STEPS] = self.ram[POLY_TOTAL_NUM_STEPS].wrapping_sub(1);
+            self.ram[POLY_TOTAL_NUM_STEPS] as i8
+        }
+
+        pub(crate) fn set_both_cur_vertex_idx(&mut self, value: u8) {
+            self.ram[POLY_CUR_VERTEX_IDX0] = value;
+            self.ram[POLY_CUR_VERTEX_IDX1] = value;
+        }
+
+        pub(crate) fn set_cur_vertex_idx0(&mut self, value: u8) {
+            self.ram[POLY_CUR_VERTEX_IDX0] = value;
+        }
+
+        pub(crate) fn set_cur_vertex_idx1(&mut self, value: u8) {
+            self.ram[POLY_CUR_VERTEX_IDX1] = value;
+        }
+
+        pub(crate) fn increment_y0_cur(&mut self) {
+            self.ram[POLY_Y0_CUR] = self.ram[POLY_Y0_CUR].wrapping_add(1);
+        }
+
+        pub(crate) fn increment_y1_cur(&mut self) {
+            self.ram[POLY_Y1_CUR] = self.ram[POLY_Y1_CUR].wrapping_add(1);
         }
     }
 
@@ -14857,6 +15325,10 @@ pub(crate) mod semantic {
         pub(crate) fn spawned_area(&self) -> u8 {
             byte(self.ram, OVERLORD_SPAWNED_AREA + self.slot)
         }
+
+        pub(crate) fn sprite_block_pos(&self) -> u16 {
+            word(self.ram, OVERLORD_OFFSET_SPRITE_POS + self.slot * 2)
+        }
     }
 
     pub(crate) struct OverlordSlotViewMut<'a> {
@@ -15225,6 +15697,22 @@ pub(crate) mod semantic {
         pub(crate) fn active_type(&self) -> u8 {
             byte(self.ram, GARNISH_ACTIVE)
         }
+
+        pub(crate) fn boulder_trap_count(&self) -> u8 {
+            byte(self.ram, OVERWORLD_BOULDER_TRAP_COUNT)
+        }
+
+        pub(crate) fn boulder_trap_timer(&self) -> u8 {
+            byte(self.ram, OVERWORLD_BOULDER_TRAP_TIMER)
+        }
+
+        pub(crate) fn sprcoll_y_hi(&self) -> u8 {
+            byte(self.ram, SPRCOLL_Y_BASE + 1)
+        }
+
+        pub(crate) fn active_overlord_index(&self) -> u8 {
+            byte(self.ram, ACTIVE_OVERLORD_INDEX)
+        }
     }
 
     pub(crate) struct GarnishStateViewMut<'a> {
@@ -15242,6 +15730,16 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_active_type(&mut self) {
             self.ram[GARNISH_ACTIVE] = 0;
+        }
+
+        pub(crate) fn increment_boulder_trap_timer(&mut self) -> u8 {
+            let val = self.ram[OVERWORLD_BOULDER_TRAP_TIMER].wrapping_add(1);
+            self.ram[OVERWORLD_BOULDER_TRAP_TIMER] = val;
+            val
+        }
+
+        pub(crate) fn set_active_overlord_index(&mut self, value: u8) {
+            self.ram[ACTIVE_OVERLORD_INDEX] = value;
         }
     }
 

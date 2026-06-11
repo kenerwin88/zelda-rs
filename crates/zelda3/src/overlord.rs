@@ -79,20 +79,19 @@ impl ZeldaState {
 
     pub(super) fn overlord_spawn_boulder(&mut self) {
         if self.world_state_view().is_indoors()
-            || self.ram[OVERWORLD_BOULDER_TRAP_COUNT] == 0
+            || self.garnish_state_view().boulder_trap_count() == 0
             || (self.frame_control_view().submodule()
                 | self.frame_control_view().modal_pause_flag())
                 != 0
         {
             return;
         }
-        self.ram[OVERWORLD_BOULDER_TRAP_TIMER] =
-            self.ram[OVERWORLD_BOULDER_TRAP_TIMER].wrapping_add(1);
-        if self.ram[OVERWORLD_BOULDER_TRAP_TIMER] & 63 != 0 {
+        let timer = self.garnish_state_view_mut().increment_boulder_trap_timer();
+        if timer & 63 != 0 {
             return;
         }
         let camera_y_hi = (self.world_state_view().bg2_y() >> 8) as u8;
-        let coll_y_hi = (read_le_u16(&self.ram, SPRCOLL_Y_BASE) >> 8) as u8;
+        let coll_y_hi = self.garnish_state_view().sprcoll_y_hi();
         if sign8(camera_y_hi.wrapping_sub(coll_y_hi).wrapping_sub(2)) {
             return;
         }
@@ -307,8 +306,7 @@ impl ZeldaState {
         {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            self.ram[DUNGEON_TRAP_TRIGGER_LATCH] =
-                self.ram[DUNGEON_TRAP_TRIGGER_LATCH].wrapping_add(1);
+            self.dungeon_state_view_mut().increment_trap_trigger_latch();
         }
     }
 
@@ -559,7 +557,7 @@ impl ZeldaState {
             self.garnish_slot_view_mut(j).set_y_high(value);
             let value = 31;
             self.garnish_slot_view_mut(j).set_countdown(value);
-            self.ram[GARNISH_ACTIVE] = 31;
+            self.garnish_state_view_mut().set_active_type(31);
         }
     }
 
@@ -634,7 +632,7 @@ impl ZeldaState {
         if self.sprite_slot_view(0).state() == 4 {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            self.ram[DUNG_FLOOR_MOVE_FLAGS] = 1;
+            self.dungeon_state_view_mut().set_floor_move_flags(1);
             return;
         }
 
@@ -649,13 +647,14 @@ impl ZeldaState {
                 } else {
                     1
                 };
-                self.ram[DUNG_FLOOR_MOVE_FLAGS] = (self.get_random_number() & mask) * 2;
+                let flags = (self.get_random_number() & mask) * 2;
+                self.dungeon_state_view_mut().set_floor_move_flags(flags);
                 let value = (self.get_random_number() & 127).wrapping_add(128);
                 self.overlord_slot_view_mut(k).set_gen2(value);
                 let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                 self.overlord_slot_view_mut(k).set_gen1(value);
             } else {
-                self.ram[DUNG_FLOOR_MOVE_FLAGS] = 1;
+                self.dungeon_state_view_mut().set_floor_move_flags(1);
             }
         } else {
             let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
@@ -683,7 +682,7 @@ impl ZeldaState {
             return;
         }
         if self.overlord_slot_view(k).gen1() == 0 {
-            if self.ram[DUNGEON_TRAP_TRIGGER_LATCH] != 0 {
+            if self.dungeon_state_view().trap_trigger_latch() != 0 {
                 let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                 self.overlord_slot_view_mut(k).set_gen1(value);
             }
@@ -714,7 +713,7 @@ impl ZeldaState {
             [0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90];
         let a = self.overlord_slot_view(k).gen1();
         if a == 0 {
-            if self.ram[ACTIVATE_BOMB_TRAP_OVERLORD] != 0 {
+            if self.dungeon_state_view().has_bomb_trap_activation() {
                 let value = 1;
                 self.overlord_slot_view_mut(k).set_gen1(value);
             }
@@ -847,7 +846,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord01_position_target(&mut self, k: usize) {
-        self.ram[ACTIVE_OVERLORD_INDEX] = k as u8;
+        self.garnish_state_view_mut().set_active_overlord_index(k as u8);
     }
 
     pub(super) fn overlord_check_if_active(&mut self, k: usize) {
@@ -869,7 +868,7 @@ impl ZeldaState {
         if ((x >> 15) as usize) != j || ((y >> 15) as usize) != j {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            let blk = read_le_u16(&self.ram, OVERLORD_OFFSET_SPRITE_POS + k * 2);
+            let blk = self.overlord_slot_view(k).sprite_block_pos();
             if blk != 0xffff {
                 let loadedmask = 0x80 >> (blk & 7);
                 self.overworld_sprite_loaded_view_mut()

@@ -2,31 +2,25 @@
 
 use super::*;
 
-const NMI_UPDATE_TILEMAP_DST: usize = 0x19;
-const NMI_UPDATE_TILEMAP_SRC: usize = 0x118;
-
 impl ZeldaState {
     pub(super) fn interrupt_nmi(&mut self, input: u16) {
         self.interrupt_nmi_audio_parts_locked();
 
-        if self.ram[NMI_BOOLEAN] == 0 {
-            self.ram[NMI_BOOLEAN] = 1;
+        if self.display_nmi_view().nmi_boolean() == 0 {
+            self.display_nmi_view_mut().set_nmi_boolean(1);
             self.nmi_do_updates();
             self.nmi_read_joypads(input);
         }
 
-        if self.ram[IS_NMI_THREAD_ACTIVE] != 0 {
+        if self.display_nmi_view().is_nmi_thread_active() {
             self.nmi_update_irqgfx();
-            let stack = read_le_u16(&self.ram, THREAD_OTHER_STACK);
-            write_le_u16(
-                &mut self.ram,
-                THREAD_OTHER_STACK,
-                if stack != 0x1f31 { 0x1f31 } else { 0x01f2 },
-            );
+            let stack = self.display_nmi_view().thread_other_stack();
+            self.display_nmi_view_mut()
+                .set_thread_other_stack(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });
             if self.nmi_poly_upload_deferred != 0 {
                 self.nmi_poly_upload_deferred = self.nmi_poly_upload_deferred.saturating_sub(1);
                 if self.nmi_poly_upload_deferred == 0 && self.nmi_poly_upload_started {
-                    self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
+                    self.display_nmi_view_mut().set_nmi_flag_update_polyhedral(0xff);
                     self.nmi_poly_upload_from_deferred =
                         self.nmi_poly_deferred_upload_bypasses_latch;
                     self.nmi_poly_deferred_upload_bypasses_latch = false;
@@ -71,11 +65,12 @@ impl ZeldaState {
         if self.display_nmi_view().core_update_disable_flag() == 0 {
             self.nmi_core_link_graphics_update();
 
-            let src = read_le_u16(&self.ram, ANIMATED_TILE_DATA_SRC) as usize;
-            let dst = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
-            if dst + 0x200 <= self.ppu.vram.len() && src + 0x400 <= self.ram.len() {
+            let src_addr = self.display_nmi_view().animated_tile_data_src() as usize;
+            let dst = self.display_nmi_view().animated_tile_vram_addr() as usize;
+            if dst + 0x200 <= self.ppu.vram.len() && src_addr + 0x400 <= self.ram.len() {
+                let data = self.display_nmi_view().animated_tile_data().to_vec();
                 for i in 0..0x200 {
-                    self.ppu.vram[dst + i] = read_le_u16(&self.ram, src + i * 2);
+                    self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
                 }
             }
         }
@@ -87,19 +82,20 @@ impl ZeldaState {
         }
 
         if self.system_signals_view().should_update_hud() {
-            let dst = read_le_u16(&self.ram, MESSAGE_DMA_DST_ADDR) as usize;
+            let dst = self.display_nmi_view().message_dma_dst_addr() as usize;
             if dst + 165 <= self.ppu.vram.len() {
+                let hud_buf = self.display_nmi_view().hud_tile_indices_buffer().to_vec();
                 for i in 0..165 {
-                    self.ppu.vram[dst + i] =
-                        read_le_u16(&self.ram, HUD_TILE_INDICES_BUFFER + i * 2);
+                    self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
                 }
             }
         }
 
         self.system_signals_view_mut().clear_hud_update_flag();
         self.system_signals_view_mut().clear_cgram_update_flag();
+        let oam_buf = self.display_nmi_view().oam_buf().to_vec();
         for i in 0..self.ppu.oam.len() {
-            self.ppu.oam[i] = read_le_u16(&self.ram, OAM_BUF + i * 2);
+            self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
         }
 
         if self.display_nmi_view().bg_vram_load_mode() != 0 {
@@ -109,7 +105,7 @@ impl ZeldaState {
                     self.handle_stripes14_slice(&stripes);
                 }
                 2 => {
-                    let stripes = self.ram[NMI_TILEMAP_UPLOAD_BUFFER..].to_vec();
+                    let stripes = self.display_nmi_view().tilemap_upload_buffer().to_vec();
                     self.handle_stripes14_slice(&stripes);
                 }
                 3 => {
@@ -123,7 +119,7 @@ impl ZeldaState {
                     }
                 }
                 4 => {
-                    let stripes = self.ram[NMI_STRIPE_BUFFER_021B..].to_vec();
+                    let stripes = self.display_nmi_view().stripe_buffer_021b().to_vec();
                     self.handle_stripes14_slice(&stripes);
                 }
                 5..=9 => {
@@ -148,13 +144,14 @@ impl ZeldaState {
             self.display_nmi_view_mut().set_bg_vram_load_mode(0);
         }
 
-        if self.ram[NMI_UPDATE_TILEMAP_DST] != 0 {
-            let dst = (self.ram[NMI_UPDATE_TILEMAP_DST] as usize) * 256;
-            let src = NMI_BG_CHAR_BUFFER + read_le_u16(&self.ram, NMI_UPDATE_TILEMAP_SRC) as usize;
-            if src + 0x200 <= self.ram.len() {
-                self.copy_to_vram_slice(dst, &self.ram[src..].to_vec(), 0x200);
+        let update_dst_byte = self.display_nmi_view().update_tilemap_dst();
+        if update_dst_byte != 0 {
+            let dst = (update_dst_byte as usize) * 256;
+            let src_data = self.display_nmi_view().update_tilemap_src_data().to_vec();
+            if src_data.len() >= 0x200 {
+                self.copy_to_vram_slice(dst, &src_data, 0x200);
             }
-            self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
+            self.display_nmi_view_mut().clear_update_tilemap_dst();
         }
 
         if self.display_nmi_view().has_nmi_copy_packets() {
@@ -198,9 +195,9 @@ impl ZeldaState {
     pub(super) fn nmi_upload_tilemap(&mut self) {
         let target = NMI_VRAM_ADDRS[self.display_nmi_view().load_target_addr() as usize] << 8;
         if target + 0x400 <= self.ppu.vram.len() {
+            let buf = self.display_nmi_view().tilemap_upload_buffer().to_vec();
             for i in 0..0x400 {
-                self.ppu.vram[target + i] =
-                    read_le_u16(&self.ram, NMI_TILEMAP_UPLOAD_BUFFER + i * 2);
+                self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
             }
         }
         self.vram_upload_data_view_mut().clear_offset();
@@ -210,7 +207,7 @@ impl ZeldaState {
     pub(super) fn nmi_upload_tilemap_do_nothing(&mut self) {}
 
     pub(super) fn nmi_update_ow_scroll(&mut self) {
-        let data = self.ram[VRAM_UPLOAD_TILE_BUF..].to_vec();
+        let data = self.display_nmi_view().vram_upload_tile_buf().to_vec();
         if data.len() < 2 {
             return;
         }
@@ -240,30 +237,33 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_subscreen_overlay(&mut self) {
-        self.nmi_handle_arbitrary_tile_map_addr(0x12000, 0, 0x80);
+        let data = self.display_nmi_view().dungeon_bg2_attr_table().to_vec();
+        self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x80);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_former(&mut self) {
-        self.nmi_handle_arbitrary_tile_map_addr(0x12000, 0, 0x40);
+        let data = self.display_nmi_view().dungeon_bg2_attr_table().to_vec();
+        self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x40);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_latter(&mut self) {
-        self.nmi_handle_arbitrary_tile_map_addr(0x13000, 0x40, 0x80);
+        let data = self.display_nmi_view().dungeon_bg1_attr_table().to_vec();
+        self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0x40, 0x80);
     }
 
-    pub(super) fn nmi_handle_arbitrary_tile_map_addr(
+    pub(super) fn nmi_handle_arbitrary_tile_map_addr_data(
         &mut self,
-        mut src_addr: usize,
+        src_data: &[u8],
         mut i: usize,
         i_end: usize,
     ) {
+        let mut offset = 0usize;
         loop {
-            let dst =
-                read_le_u16(&self.ram, NMI_ARBITRARY_TILEMAP_DST_BUFFER + (i >> 1) * 2) as usize;
-            if src_addr + 0x80 <= self.ram.len() {
-                self.copy_to_vram_slice(dst, &self.ram[src_addr..].to_vec(), 0x80);
+            let dst = self.display_nmi_view().arbitrary_tilemap_dst(i >> 1) as usize;
+            if offset + 0x80 <= src_data.len() {
+                self.copy_to_vram_slice(dst, &src_data[offset..], 0x80);
             }
-            src_addr += 0x80;
+            offset += 0x80;
             i += 2;
             if i == i_end {
                 break;
@@ -276,10 +276,7 @@ impl ZeldaState {
     pub(super) fn nmi_handle_arbitrary_tile_map(&mut self, src: *const u8, mut i: i32, i_end: i32) {
         let mut offset = 0usize;
         loop {
-            let dst = read_le_u16(
-                &self.ram,
-                NMI_ARBITRARY_TILEMAP_DST_BUFFER + ((i as usize) >> 1) * 2,
-            ) as usize;
+            let dst = self.display_nmi_view().arbitrary_tilemap_dst((i as usize) >> 1) as usize;
             let chunk = unsafe { std::slice::from_raw_parts(src.add(offset), 0x80) };
             self.copy_to_vram_slice(dst, chunk, 0x80);
             offset += 0x80;
@@ -293,36 +290,30 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_bg1_wall(&mut self) {
         let target = self.display_nmi_view().load_target_addr_word() as usize;
-        self.copy_to_vram_vertical_slice(
-            target,
-            &self.ram[NMI_BG1_WALL_TOP_BUFFER..].to_vec(),
-            0x40,
-        );
-        self.copy_to_vram_vertical_slice(
-            target + 0x800,
-            &self.ram[NMI_BG1_WALL_BOTTOM_BUFFER..].to_vec(),
-            0x40,
-        );
+        let top_buf = self.display_nmi_view().bg1_wall_top_buffer().to_vec();
+        let bottom_buf = self.display_nmi_view().bg1_wall_bottom_buffer().to_vec();
+        self.copy_to_vram_vertical_slice(target, &top_buf, 0x40);
+        self.copy_to_vram_vertical_slice(target + 0x800, &bottom_buf, 0x40);
     }
 
     pub(super) fn nmi_tile_map_nothing(&mut self) {}
 
     pub(super) fn nmi_update_bg2_left(&mut self) {
-        self.copy_to_vram_slice(0, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x800);
-        self.copy_to_vram_slice(0x800, &self.ram[NMI_BG_CHAR_BUFFER_1..].to_vec(), 0x800);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf1 = self.display_nmi_view().bg_char_buffer_1().to_vec();
+        self.copy_to_vram_slice(0, &buf, 0x800);
+        self.copy_to_vram_slice(0x800, &buf1, 0x800);
     }
 
     pub(super) fn nmi_update_bg_char3and4(&mut self) {
-        self.copy_to_vram_slice(0x2c00, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x1000);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        self.copy_to_vram_slice(0x2c00, &buf, 0x1000);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
     pub(super) fn nmi_update_bg_char5and6(&mut self) {
-        self.copy_to_vram_slice(
-            0x3400,
-            &self.ram[NMI_BG_CHAR_HALF_BUFFER..].to_vec(),
-            0x1000,
-        );
+        let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
+        self.copy_to_vram_slice(0x3400, &buf, 0x1000);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
@@ -343,7 +334,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_obj_char0(&mut self) {
-        self.copy_to_vram_slice(0x4400, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x800);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        self.copy_to_vram_slice(0x4400, &buf, 0x800);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
@@ -356,12 +348,13 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_run_tile_map_update_dma(&mut self, dst: usize) {
-        self.copy_to_vram_slice(dst, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x1000);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        self.copy_to_vram_slice(dst, &buf, 0x1000);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
     pub(super) fn nmi_upload_dark_world_map(&mut self) {
-        let data = self.ram[NMI_TILEMAP_UPLOAD_BUFFER..].to_vec();
+        let data = self.display_nmi_view().tilemap_upload_buffer().to_vec();
         let mut src = 0usize;
         let mut dst = 0x810usize;
         for _ in 0..0x20 {
@@ -372,28 +365,24 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_game_over_text(&mut self) {
-        self.copy_to_vram_slice(
-            0x7800,
-            &self.ram[NMI_GAME_OVER_TEXT_BUFFER..].to_vec(),
-            0x800,
-        );
-        self.copy_to_vram_slice(
-            0x7d00,
-            &self.ram[NMI_GAME_OVER_TEXT_TAIL_BUFFER..].to_vec(),
-            0x600,
-        );
+        let buf = self.display_nmi_view().game_over_text_buffer().to_vec();
+        let tail_buf = self.display_nmi_view().game_over_text_tail_buffer().to_vec();
+        self.copy_to_vram_slice(0x7800, &buf, 0x800);
+        self.copy_to_vram_slice(0x7d00, &tail_buf, 0x600);
     }
 
     pub(super) fn nmi_update_peg_tiles(&mut self) {
-        self.copy_to_vram_slice(0x3d00, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x100);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        self.copy_to_vram_slice(0x3d00, &buf, 0x100);
     }
 
     pub(super) fn nmi_update_star_tiles(&mut self) {
-        self.copy_to_vram_slice(0x3ed0, &self.ram[NMI_BG_CHAR_BUFFER..].to_vec(), 0x40);
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        self.copy_to_vram_slice(0x3ed0, &buf, 0x40);
     }
 
     pub(super) fn NMI_CopyPackets(&mut self) {
-        let data = self.ram[VRAM_UPLOAD_TILE_BUF..].to_vec();
+        let data = self.display_nmi_view().vram_upload_tile_buf().to_vec();
         let mut pos = 0usize;
         while pos + 4 <= data.len() && read_word_from_slice(&data, pos) != 0xffff {
             let dst = read_word_from_slice(&data, pos) as usize;
@@ -441,7 +430,7 @@ impl ZeldaState {
         self.copy_ram_bytes_to_vram(0x4320, DMA_SOURCE_ADDR_19, 0x40);
         self.copy_ram_bytes_to_vram_absolute(0x4340, 0xbd80, 0x40);
 
-        if self.ram[FLAG_TRAVEL_BIRD] != 0 {
+        if self.display_nmi_view().flag_travel_bird() {
             self.copy_ram_bytes_to_vram(0x40e0, DMA_SOURCE_ADDR_20, 0x40);
             self.copy_ram_bytes_to_vram(0x41e0, DMA_SOURCE_ADDR_21, 0x40);
         }
@@ -495,7 +484,7 @@ impl ZeldaState {
         source_addr_var: usize,
         len: usize,
     ) {
-        let source_addr = read_le_u16(&self.ram, source_addr_var) as usize;
+        let source_addr = self.display_nmi_view().word_at(source_addr_var) as usize;
         if source_addr < 0x8000 {
             return;
         }
@@ -508,7 +497,7 @@ impl ZeldaState {
         source_addr_var: usize,
         len: usize,
     ) {
-        let source_addr = read_le_u16(&self.ram, source_addr_var) as usize;
+        let source_addr = self.display_nmi_view().word_at(source_addr_var) as usize;
         self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
     }
 
@@ -518,10 +507,10 @@ impl ZeldaState {
         source_addr: usize,
         len: usize,
     ) {
-        if source_addr + len > self.ram.len() {
+        let source = self.display_nmi_view().ram_slice_at(source_addr, len).to_vec();
+        if source.len() < len {
             return;
         }
-        let source = self.ram[source_addr..source_addr + len].to_vec();
         self.copy_bytes_to_vram(dst_word, &source, 0, len);
     }
 
@@ -547,11 +536,12 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_irqgfx(&mut self) {
-        if self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] != 0 {
+        if self.display_nmi_view().nmi_flag_update_polyhedral() != 0 {
+            let poly_buf = self.display_nmi_view().polyhedral_buffer().to_vec();
             let mut display_vram = None;
             for i in 0..0x400 {
                 let dst = 0x5800 + i;
-                let value = read_le_u16(&self.ram, POLYHEDRAL_BUFFER + i * 2);
+                let value = read_word_from_slice(&poly_buf, i * 2);
                 if self.ppu.vram[dst] != value && display_vram.is_none() {
                     display_vram = Some(self.ppu.vram.clone());
                 }
@@ -564,20 +554,22 @@ impl ZeldaState {
                 self.ppu.obj_vram_latch = Some(display_vram);
             }
             self.nmi_poly_upload_from_deferred = false;
-            self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
+            self.display_nmi_view_mut().clear_nmi_flag_update_polyhedral();
         }
     }
 
     pub(super) fn nmi_update_bg_char_half(&mut self) {
         let dst = self.display_nmi_view().load_target_addr() as usize * 256;
+        let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
         for i in 0..0x200 {
-            self.ppu.vram[dst + i] = read_le_u16(&self.ram, NMI_BG_CHAR_HALF_BUFFER + i * 2);
+            self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
         }
     }
 
     pub(super) fn nmi_upload_bg3_text(&mut self) {
+        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
         for i in 0..0x3f0 {
-            self.ppu.vram[0x7c00 + i] = read_le_u16(&self.ram, NMI_BG_CHAR_BUFFER + i * 2);
+            self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
         }
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
@@ -663,9 +655,9 @@ impl ZeldaState {
     }
 
     pub(super) fn write_ppu_registers(&mut self) {
-        self.zelda_ppu_write(0x2123, self.ram[W12SEL_COPY]);
-        self.zelda_ppu_write(0x2124, self.ram[W34SEL_COPY]);
-        self.zelda_ppu_write(0x2125, self.ram[WOBJSEL_COPY]);
+        self.zelda_ppu_write(0x2123, self.display_nmi_view().w12sel_copy());
+        self.zelda_ppu_write(0x2124, self.display_nmi_view().w34sel_copy());
+        self.zelda_ppu_write(0x2125, self.display_nmi_view().wobjsel_copy());
         self.zelda_ppu_write(0x2130, self.palette_filter_view().color_window_selection());
         self.zelda_ppu_write(0x2131, self.palette_filter_view().color_math_control());
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_red());
@@ -673,8 +665,8 @@ impl ZeldaState {
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_blue());
         self.zelda_ppu_write(0x212c, self.display_nmi_view().main_screen_layers());
         self.zelda_ppu_write(0x212d, self.display_nmi_view().sub_screen_layers());
-        self.zelda_ppu_write(0x212e, self.ram[TMW_COPY]);
-        self.zelda_ppu_write(0x212f, self.ram[TSW_COPY]);
+        self.zelda_ppu_write(0x212e, self.display_nmi_view().tmw_copy());
+        self.zelda_ppu_write(0x212f, self.display_nmi_view().tsw_copy());
         self.zelda_ppu_write(0x210d, self.ppu_scroll_copy_view().bg1_h_copy_low());
         self.zelda_ppu_write(0x210d, self.ppu_scroll_copy_view().bg1_h_high());
         self.zelda_ppu_write(0x210e, self.ppu_scroll_copy_view().bg1_v_copy_low());
@@ -727,17 +719,19 @@ impl ZeldaState {
         let r0 = reversed as u8;
         let r1 = (reversed >> 8) as u8;
 
-        let filtered_joypad_l = (r0 ^ self.ram[JOYPAD1L_LAST2]) & r0;
+        let last2_l = self.player_state_view().joypad1l_last2();
+        let filtered_joypad_l = (r0 ^ last2_l) & r0;
         self.player_state_view_mut().set_joypad1l_last(r0);
         self.player_state_view_mut()
             .set_filtered_joypad_l(filtered_joypad_l);
-        self.ram[JOYPAD1L_LAST2] = r0;
+        self.player_state_view_mut().set_joypad1l_last2(r0);
 
-        let filtered_joypad_h = (r1 ^ self.ram[JOYPAD1H_LAST2]) & r1;
+        let last2_h = self.player_state_view().joypad1h_last2();
+        let filtered_joypad_h = (r1 ^ last2_h) & r1;
         self.player_state_view_mut().set_joypad1h_last(r1);
         self.player_state_view_mut()
             .set_filtered_joypad_h(filtered_joypad_h);
-        self.ram[JOYPAD1H_LAST2] = r1;
+        self.player_state_view_mut().set_joypad1h_last2(r1);
     }
 }
 
