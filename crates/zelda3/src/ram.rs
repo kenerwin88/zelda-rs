@@ -590,6 +590,36 @@ pub(crate) mod semantic {
     const IS_IN_DARK_WORLD_FLAG: usize = 0x0fff;
     const FLAG_OVERWORLD_AREA_CHANGED: usize = 0x0abf;
     const LAST_LIGHT_VS_DARK_WORLD: usize = 0x007b;
+    const CAPE_DECREMENT_COUNTER: usize = 0x004c;
+    const INDEX_OF_DASHING_SFX: usize = 0x004f;
+    // Shares 0x61 with ATTRACT_SUBSTEP_DELAY_COUNTER (different game mode).
+    const GRAVESTONE_PUSH_TIMEOUT: usize = 0x0061;
+    const MOVING_AGAINST_DIAG_DEADLOCKED: usize = 0x006d;
+    const ALLOW_SCROLL_Z: usize = 0x0078;
+    const DUNGEON_ROOM_INDEX_PREV: usize = 0x00a2;
+    const PIT_CORRECTION_TIMER: usize = 0x02ca;
+    const ITEM_PICKUP_IN_PROGRESS_FLAG: usize = 0x02ed;
+    const CACHED_TILE_ACTION_INDEX: usize = 0x0306;
+    const TILE_COLLISION_BITS_PRIMARY: usize = 0x0316;
+    const TILE_COLLISION_BITS_SECONDARY: usize = 0x0317;
+    const PLAYER_LAYER_COLLISION_FLAGS: usize = 0x0322;
+    const SWIM_STROKE_FRAME_COUNTER: usize = 0x0326;
+    const LIFTABLE_TILE_ACTION_INDEX_PRIMARY: usize = 0x0368;
+    const LIFTABLE_TILE_ACTION_INDEX_SECONDARY: usize = 0x0369;
+    const HOOKSHOT_BG_CHECK_OFF_TIMER: usize = 0x03f9;
+    const PUSH_BLOCK_DIRECTION: usize = 0x0474;
+    const NUM_MEMORIZED_TILES: usize = 0x04ac;
+    const OVERWORLD_HOLE_TILEMAP_POS: usize = 0x04b2;
+    const DUNG_LOADE_BGOFFS_H_COPY: usize = 0x062c;
+    const DUNG_LOADE_BGOFFS_V_COPY: usize = 0x062e;
+    const CACHED_ROOM_BOUNDS_Y_START: usize = 0x0c188;
+    const CACHED_ROOM_BOUNDS_Y_END: usize = 0x0c18a;
+    const CACHED_ROOM_BOUNDS_X_START: usize = 0x0c18c;
+    const CACHED_ROOM_BOUNDS_X_END: usize = 0x0c18e;
+    const IS_STANDING_IN_DOORWAY_CACHED: usize = 0x0c1a9;
+    const MAPBAK_TS: usize = 0x0c212;
+    const MEMORIZED_TILE_ADDR: usize = 0x0f800;
+    const MEMORIZED_TILE_VALUE: usize = 0x0fa00;
     const SPRCOLL_X_BASE: usize = 0x0fbc;
     const ARCHERY_GAME_HIT_COUNTER: usize = 0x0b88;
     const ARCHERY_GAME_ARROWS_LEFT: usize = 0x0b99;
@@ -2820,6 +2850,80 @@ pub(crate) mod semantic {
             byte(self.ram, STATE_FOR_SPIN_ATTACK)
         }
 
+        pub(crate) fn cape_decrement_counter(&self) -> u8 {
+            byte(self.ram, CAPE_DECREMENT_COUNTER)
+        }
+
+        pub(crate) fn index_of_dashing_sfx(&self) -> u8 {
+            byte(self.ram, INDEX_OF_DASHING_SFX)
+        }
+
+        pub(crate) fn gravestone_push_timeout(&self) -> u8 {
+            byte(self.ram, GRAVESTONE_PUSH_TIMEOUT)
+        }
+
+        pub(crate) fn moving_against_diag_deadlocked(&self) -> u8 {
+            byte(self.ram, MOVING_AGAINST_DIAG_DEADLOCKED)
+        }
+
+        pub(crate) fn about_to_jump_off_ledge(&self) -> u8 {
+            byte(self.ram, ABOUT_TO_JUMP_OFF_LEDGE)
+        }
+
+        pub(crate) fn item_pickup_in_progress(&self) -> bool {
+            byte(self.ram, ITEM_PICKUP_IN_PROGRESS_FLAG) != 0
+        }
+
+        pub(crate) fn pit_correction_timer(&self) -> u8 {
+            byte(self.ram, PIT_CORRECTION_TIMER)
+        }
+
+        pub(crate) fn pit_correction_active(&self) -> bool {
+            byte(self.ram, PIT_CORRECTION_ACTIVE_FLAG) != 0
+        }
+
+        pub(crate) fn hookshot_bg_check_off_timer(&self) -> u8 {
+            byte(self.ram, HOOKSHOT_BG_CHECK_OFF_TIMER)
+        }
+
+        /// `offset` is the byte offset (0 = y axis, 2 = x axis), matching the
+        /// SwimAcceleration view convention.
+        pub(crate) fn swim_stroke_frame_counter(&self, offset: usize) -> u16 {
+            word(self.ram, SWIM_STROKE_FRAME_COUNTER + offset)
+        }
+
+        pub(crate) fn spin_attack_sound_latch(&self) -> u8 {
+            byte(self.ram, SPIN_ATTACK_SOUND_LATCH)
+        }
+
+        pub(crate) fn flute_countdown(&self) -> u8 {
+            byte(self.ram, FLUTE_COUNTDOWN)
+        }
+
+        pub(crate) fn tile_coll_flag(&self) -> u8 {
+            byte(self.ram, TILE_COLL_FLAG)
+        }
+
+        pub(crate) fn tile_action_index(&self) -> u8 {
+            byte(self.ram, TILE_ACTION_INDEX)
+        }
+
+        pub(crate) fn player_pose_draw_counter(&self) -> u8 {
+            byte(self.ram, PLAYER_POSE_DRAW_COUNTER)
+        }
+
+        pub(crate) fn sleep_in_bed_state(&self) -> u8 {
+            byte(self.ram, PLAYER_SLEEP_IN_BED_STATE)
+        }
+
+        pub(crate) fn moving_floor_x(&self) -> u16 {
+            word(self.ram, RELATED_TO_MOVING_FLOOR_X)
+        }
+
+        pub(crate) fn moving_floor_y(&self) -> u16 {
+            word(self.ram, RELATED_TO_MOVING_FLOOR_Y)
+        }
+
         pub(crate) fn somaria_block_bg_check_flag(&self) -> u8 {
             byte(self.ram, SOMARIA_BLOCK_BG_CHECK_FLAG)
         }
@@ -2854,6 +2958,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn force_move_any_direction_lo(&self) -> u16 {
             word(self.ram, FORCE_MOVE_ANY_DIRECTION) & 0x00ff
+        }
+
+        pub(crate) fn force_move_any_direction(&self) -> u16 {
+            word(self.ram, FORCE_MOVE_ANY_DIRECTION)
         }
 
         pub(crate) fn cheat_walk_through_walls(&self) -> u8 {
@@ -4833,6 +4941,125 @@ pub(crate) mod semantic {
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0;
         }
 
+        pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
+            self.ram[ALLOW_SCROLL_Z] = value;
+        }
+
+        pub(crate) fn set_cape_decrement_counter(&mut self, value: u8) {
+            self.ram[CAPE_DECREMENT_COUNTER] = value;
+        }
+
+        pub(crate) fn decrement_cape_decrement_counter(&mut self) {
+            self.ram[CAPE_DECREMENT_COUNTER] = self.ram[CAPE_DECREMENT_COUNTER].wrapping_sub(1);
+        }
+
+        pub(crate) fn clear_index_of_dashing_sfx(&mut self) {
+            self.ram[INDEX_OF_DASHING_SFX] = 0;
+        }
+
+        pub(crate) fn decrement_index_of_dashing_sfx(&mut self) {
+            self.ram[INDEX_OF_DASHING_SFX] = self.ram[INDEX_OF_DASHING_SFX].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_gravestone_push_timeout(&mut self, value: u8) {
+            self.ram[GRAVESTONE_PUSH_TIMEOUT] = value;
+        }
+
+        pub(crate) fn decrement_gravestone_push_timeout(&mut self) {
+            self.ram[GRAVESTONE_PUSH_TIMEOUT] = self.ram[GRAVESTONE_PUSH_TIMEOUT].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_moving_against_diag_deadlocked(&mut self, value: u8) {
+            self.ram[MOVING_AGAINST_DIAG_DEADLOCKED] = value;
+        }
+
+        pub(crate) fn clear_about_to_jump_off_ledge(&mut self) {
+            self.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 0;
+        }
+
+        pub(crate) fn increment_about_to_jump_off_ledge(&mut self) {
+            self.ram[ABOUT_TO_JUMP_OFF_LEDGE] = self.ram[ABOUT_TO_JUMP_OFF_LEDGE].wrapping_add(1);
+        }
+
+        pub(crate) fn set_item_pickup_in_progress(&mut self, value: u8) {
+            self.ram[ITEM_PICKUP_IN_PROGRESS_FLAG] = value;
+        }
+
+        pub(crate) fn set_pit_correction_timer(&mut self, value: u8) {
+            self.ram[PIT_CORRECTION_TIMER] = value;
+        }
+
+        pub(crate) fn increment_pit_correction_timer(&mut self) {
+            self.ram[PIT_CORRECTION_TIMER] = self.ram[PIT_CORRECTION_TIMER].wrapping_add(1);
+        }
+
+        pub(crate) fn set_hookshot_bg_check_off_timer(&mut self, value: u8) {
+            self.ram[HOOKSHOT_BG_CHECK_OFF_TIMER] = value;
+        }
+
+        pub(crate) fn decrement_hookshot_bg_check_off_timer(&mut self) {
+            self.ram[HOOKSHOT_BG_CHECK_OFF_TIMER] =
+                self.ram[HOOKSHOT_BG_CHECK_OFF_TIMER].wrapping_sub(1);
+        }
+
+        /// `offset` is the byte offset (0 = y axis, 2 = x axis), matching the
+        /// SwimAcceleration view convention.
+        pub(crate) fn set_swim_stroke_frame_counter(&mut self, offset: usize, value: u16) {
+            write_le_u16(self.ram, SWIM_STROKE_FRAME_COUNTER + offset, value);
+        }
+
+        pub(crate) fn set_spin_attack_sound_latch(&mut self, value: u8) {
+            self.ram[SPIN_ATTACK_SOUND_LATCH] = value;
+        }
+
+        pub(crate) fn set_state_for_spin_attack(&mut self, value: u8) {
+            self.ram[STATE_FOR_SPIN_ATTACK] = value;
+        }
+
+        pub(crate) fn set_current_item_active(&mut self, value: u8) {
+            self.ram[LINK_CURRENT_ITEM_ACTIVE] = value;
+        }
+
+        pub(crate) fn set_selected_rod(&mut self, value: u8) {
+            self.ram[EQ_SELECTED_ROD] = value;
+        }
+
+        pub(crate) fn set_pit_correction_active(&mut self) {
+            self.ram[PIT_CORRECTION_ACTIVE_FLAG] = 1;
+        }
+
+        pub(crate) fn set_flute_countdown(&mut self, value: u8) {
+            self.ram[FLUTE_COUNTDOWN] = value;
+        }
+
+        pub(crate) fn decrement_flute_countdown(&mut self) {
+            self.ram[FLUTE_COUNTDOWN] = self.ram[FLUTE_COUNTDOWN].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_layer_collision_flags(&mut self, value: u8) {
+            self.ram[PLAYER_LAYER_COLLISION_FLAGS] = value;
+        }
+
+        pub(crate) fn set_tile_coll_flag(&mut self, value: u8) {
+            self.ram[TILE_COLL_FLAG] = value;
+        }
+
+        pub(crate) fn set_tile_action_index(&mut self, value: u8) {
+            self.ram[TILE_ACTION_INDEX] = value;
+        }
+
+        pub(crate) fn set_cached_tile_action_index(&mut self, value: u8) {
+            self.ram[CACHED_TILE_ACTION_INDEX] = value;
+        }
+
+        pub(crate) fn clear_swimming_countdown(&mut self) {
+            self.ram[SWIMMING_COUNTDOWN] = 0;
+        }
+
+        pub(crate) fn set_force_move_any_direction(&mut self, value: u16) {
+            write_le_u16(self.ram, FORCE_MOVE_ANY_DIRECTION, value);
+        }
+
         pub(crate) fn set_custom_spell_animation_active(&mut self) {
             self.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 1;
         }
@@ -4953,6 +5180,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_sprite_pickup_flag(&mut self, value: u8) {
             self.ram[FLAG_IS_SPRITE_TO_PICK_UP] = value;
+        }
+
+        pub(crate) fn set_sprite_pickup_flag_cached(&mut self, value: u8) {
+            self.ram[FLAG_IS_SPRITE_TO_PICK_UP_CACHED] = value;
         }
 
         pub(crate) fn clear_sprite_pickup_flag(&mut self) {
@@ -5159,6 +5390,10 @@ pub(crate) mod semantic {
         pub(crate) fn x_subpixel(&self) -> u8 {
             byte(self.ram, BG1_MOVE_CALC_BUFFER + 1)
         }
+
+        pub(crate) fn y_subpixel(&self) -> u8 {
+            byte(self.ram, BG1_MOVE_CALC_BUFFER)
+        }
     }
 
     pub(crate) struct Bg1MoveCalcViewMut<'a> {
@@ -5166,6 +5401,10 @@ pub(crate) mod semantic {
     }
 
     impl<'a> Bg1MoveCalcViewMut<'a> {
+        pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+            self.ram[BG1_MOVE_CALC_BUFFER] = value;
+        }
+
         pub(crate) fn new(ram: &'a mut [u8]) -> Self {
             Self { ram }
         }
@@ -5192,6 +5431,26 @@ pub(crate) mod semantic {
 
         pub(crate) fn y_low_at(&self, offset: usize) -> u8 {
             byte(self.ram, TILEDETECT_WHICH_Y_POS + offset)
+        }
+
+        pub(crate) fn tile_collision_bits_primary(&self) -> u8 {
+            byte(self.ram, TILE_COLLISION_BITS_PRIMARY)
+        }
+
+        pub(crate) fn tile_collision_bits_secondary(&self) -> u8 {
+            byte(self.ram, TILE_COLLISION_BITS_SECONDARY)
+        }
+
+        pub(crate) fn liftable_tile_index(&self) -> u8 {
+            byte(self.ram, LIFTABLE_TILE_DETECTED_INDEX_DOUBLED)
+        }
+
+        pub(crate) fn liftable_action_index_primary(&self) -> u8 {
+            byte(self.ram, LIFTABLE_TILE_ACTION_INDEX_PRIMARY)
+        }
+
+        pub(crate) fn interaction_scratch_y(&self) -> u16 {
+            word(self.ram, SCRATCH_0)
         }
 
         pub(crate) fn y(&self) -> u16 {
@@ -5804,6 +6063,29 @@ pub(crate) mod semantic {
         pub(crate) fn set_liftable_tile_index(&mut self, value: u8) {
             self.ram[LIFTABLE_TILE_DETECTED_INDEX_DOUBLED] = value;
         }
+
+        pub(crate) fn set_tile_collision_bits_primary(&mut self, value: u8) {
+            self.ram[TILE_COLLISION_BITS_PRIMARY] = value;
+        }
+
+        pub(crate) fn set_liftable_action_index_primary(&mut self, value: u8) {
+            self.ram[LIFTABLE_TILE_ACTION_INDEX_PRIMARY] = value;
+        }
+
+        pub(crate) fn set_liftable_action_index_secondary(&mut self, value: u8) {
+            self.ram[LIFTABLE_TILE_ACTION_INDEX_SECONDARY] = value;
+        }
+
+        pub(crate) fn clear_interaction_scratch_x_low(&mut self) {
+            self.ram[SCRATCH_1] = 0;
+        }
+
+        /// Writes the two scratch-Y bytes separately (low, then high), as the
+        /// door-debris smash path packs y/x coordinates into the word.
+        pub(crate) fn set_interaction_scratch_y_bytes(&mut self, low: u8, high: u8) {
+            self.ram[SCRATCH_0] = low;
+            self.ram[SCRATCH_0 + 1] = high;
+        }
     }
 
     pub(crate) struct PushedBlockView<'a> {
@@ -5873,6 +6155,21 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_target_low(&mut self, slot: usize, value: u8) {
             self.ram[PUSHEDBLOCKS_TARGET + slot * 2] = value;
+        }
+
+        /// Initializes a pushed-block slot: split x/y words, zero target and
+        /// subpixel. Matches the original write order.
+        pub(crate) fn init_slot(&mut self, slot: usize, x: u16, y: u16) {
+            write_le_u16(self.ram, PUSHEDBLOCKS_X_LO + slot * 2, x & 0x00ff);
+            write_le_u16(self.ram, PUSHEDBLOCKS_X_HI + slot * 2, x >> 8);
+            write_le_u16(self.ram, PUSHEDBLOCKS_Y_LO + slot * 2, y & 0x00ff);
+            write_le_u16(self.ram, PUSHEDBLOCKS_Y_HI + slot * 2, y >> 8);
+            write_le_u16(self.ram, PUSHEDBLOCKS_TARGET + slot * 2, 0);
+            write_le_u16(self.ram, PUSHEDBLOCKS_SUBPIXEL + slot * 2, 0);
+        }
+
+        pub(crate) fn set_push_direction(&mut self, value: u8) {
+            self.ram[PUSH_BLOCK_DIRECTION] = value;
         }
 
         pub(crate) fn set_x_fixed24(&mut self, slot: usize, value: u32) {
@@ -7227,6 +7524,16 @@ pub(crate) mod semantic {
         }
     }
 
+    impl<'a> WorldStateView<'a> {
+        pub(crate) fn last_light_vs_dark_world(&self) -> u8 {
+            byte(self.ram, LAST_LIGHT_VS_DARK_WORLD)
+        }
+
+        pub(crate) fn overworld_hole_tilemap_pos(&self) -> u8 {
+            byte(self.ram, OVERWORLD_HOLE_TILEMAP_POS)
+        }
+    }
+
     pub(crate) struct DungeonStateView<'a> {
         ram: &'a [u8],
     }
@@ -7543,6 +7850,18 @@ pub(crate) mod semantic {
 
         pub(crate) fn kind_of_in_room_staircase(&self) -> u8 {
             byte(self.ram, KIND_OF_IN_ROOM_STAIRCASE)
+        }
+
+        pub(crate) fn loading_bg_offset_h(&self) -> u16 {
+            word(self.ram, DUNG_LOADE_BGOFFS_H_COPY)
+        }
+
+        pub(crate) fn loading_bg_offset_v(&self) -> u16 {
+            word(self.ram, DUNG_LOADE_BGOFFS_V_COPY)
+        }
+
+        pub(crate) fn big_rock_starting_address(&self) -> u16 {
+            word(self.ram, BIG_ROCK_STARTING_ADDRESS)
         }
 
         pub(crate) fn chest_location(&self, index: usize) -> u16 {
@@ -8102,6 +8421,27 @@ pub(crate) mod semantic {
         pub(crate) fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
             self.ram[ACTIVATE_BOMB_TRAP_OVERLORD] = value;
         }
+
+        pub(crate) fn set_room_index_prev(&mut self, value: u8) {
+            self.ram[DUNGEON_ROOM_INDEX_PREV] = value;
+        }
+
+        pub(crate) fn set_cached_room_bounds(
+            &mut self,
+            y_start: u16,
+            y_end: u16,
+            x_start: u16,
+            x_end: u16,
+        ) {
+            write_le_u16(self.ram, CACHED_ROOM_BOUNDS_Y_START, y_start);
+            write_le_u16(self.ram, CACHED_ROOM_BOUNDS_Y_END, y_end);
+            write_le_u16(self.ram, CACHED_ROOM_BOUNDS_X_START, x_start);
+            write_le_u16(self.ram, CACHED_ROOM_BOUNDS_X_END, x_end);
+        }
+
+        pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
+            self.ram[IS_STANDING_IN_DOORWAY_CACHED] = value;
+        }
     }
 
     pub(crate) struct DungeonEntranceBackupViewMut<'a> {
@@ -8140,6 +8480,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn travel_destination(&self, index: usize) -> u8 {
             byte(self.ram, DUNGEON_HEADER_TRAVEL_DESTINATIONS + index)
+        }
+
+        pub(crate) fn hole_teleporter_plane(&self, index: usize) -> u8 {
+            byte(self.ram, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + index)
         }
 
         pub(crate) fn staircase_plane(&self, index: usize) -> u8 {
@@ -12034,6 +12378,14 @@ pub(crate) mod semantic {
     }
 
     impl<'a> PpuScrollCopyViewMut<'a> {
+        pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
+            self.ram[MAPBAK_TM] = value;
+        }
+
+        pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
+            self.ram[MAPBAK_TS] = value;
+        }
+
         pub(crate) fn new(ram: &'a mut [u8]) -> Self {
             Self { ram }
         }
@@ -13576,6 +13928,10 @@ pub(crate) mod semantic {
     }
 
     impl<'a> FollowerStateViewMut<'a> {
+        pub(crate) fn clear_palette_swap_flag(&mut self) {
+            self.ram[FOLLOWER_PALETTE_SWAP_FLAG] = 0;
+        }
+
         pub(crate) fn new(ram: &'a mut [u8]) -> Self {
             Self { ram }
         }
@@ -17409,6 +17765,45 @@ pub(crate) mod semantic {
         }
     }
 
+    /// Tile-revert memory used when secrets/liftable tiles are uncovered:
+    /// parallel arrays of tilemap addresses and original tile values, plus a
+    /// running byte count.
+    pub(crate) struct MemorizedTileView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> MemorizedTileView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn count(&self) -> u16 {
+            word(self.ram, NUM_MEMORIZED_TILES)
+        }
+    }
+
+    pub(crate) struct MemorizedTileViewMut<'a> {
+        ram: &'a mut [u8],
+    }
+
+    impl<'a> MemorizedTileViewMut<'a> {
+        pub(crate) fn new(ram: &'a mut [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn set_count(&mut self, value: u16) {
+            write_le_u16(self.ram, NUM_MEMORIZED_TILES, value);
+        }
+
+        pub(crate) fn set_entry_addr(&mut self, offset: usize, pos: u16) {
+            write_le_u16(self.ram, MEMORIZED_TILE_ADDR + offset, pos);
+        }
+
+        pub(crate) fn set_entry_value(&mut self, offset: usize, tile: u16) {
+            write_le_u16(self.ram, MEMORIZED_TILE_VALUE + offset, tile);
+        }
+    }
+
     pub(crate) struct ArcheryGameView<'a> {
         ram: &'a [u8],
     }
@@ -17450,6 +17845,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_arrows_left(&mut self, value: u8) {
             self.ram[ARCHERY_GAME_ARROWS_LEFT] = value;
+        }
+
+        pub(crate) fn decrement_arrows_left(&mut self) {
+            self.ram[ARCHERY_GAME_ARROWS_LEFT] = self.ram[ARCHERY_GAME_ARROWS_LEFT].wrapping_sub(1);
         }
 
         pub(crate) fn increment_out_of_arrows(&mut self) {
@@ -17583,6 +17982,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_times_hurt_by_sprites(&mut self) {
             self.ram[TIMES_HURT_BY_SPRITES] = 0;
+        }
+
+        pub(crate) fn increment_times_hurt_by_sprites(&mut self) {
+            self.ram[TIMES_HURT_BY_SPRITES] = self.ram[TIMES_HURT_BY_SPRITES].wrapping_add(1);
         }
 
         pub(crate) fn set_item_drop_luck(&mut self, value: u8) {

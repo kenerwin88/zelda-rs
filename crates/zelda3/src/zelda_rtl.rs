@@ -61,7 +61,8 @@ use crate::ram::semantic::{
     MessagingStateView, MessagingStateViewMut, MessagingTextView, MinigameStateView,
     MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView,
     MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut, OamStateView,
-    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    MemorizedTileView, MemorizedTileViewMut, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
     OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldScreenSizeView,
     OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
@@ -2654,6 +2655,14 @@ impl ZeldaState {
         &mut self,
     ) -> OverworldSpritePresenceViewMut<'_> {
         OverworldSpritePresenceViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn memorized_tile_view(&self) -> MemorizedTileView<'_> {
+        MemorizedTileView::new(&self.ram)
+    }
+
+    pub(crate) fn memorized_tile_view_mut(&mut self) -> MemorizedTileViewMut<'_> {
+        MemorizedTileViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedView<'_> {
