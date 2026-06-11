@@ -2665,7 +2665,10 @@ impl ZeldaState {
                 } else {
                     -10
                 };
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_WIDESCREEN_VISUAL_FIXES != 0 {
+            if self
+                .enhanced_features_view()
+                .has(FEATURES0_WIDESCREEN_VISUAL_FIXES)
+            {
                 let base = (sort_sprites_offset_into_oam_buffer >> 2) as usize;
                 for i in 0..12 {
                     if (i as isize) < shadow_oam_pos || (i as isize) > shadow_oam_pos + 1 {

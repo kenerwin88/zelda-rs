@@ -443,14 +443,16 @@ impl ZeldaState {
             .wrapping_add(12);
         let radius = self.spotlight_hdma_view().window_radius_byte();
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(radius));
-        self.spotlight_hdma_view_mut().set_y_lower(spotlight_y_lower);
+        self.spotlight_hdma_view_mut()
+            .set_y_lower(spotlight_y_lower);
         let mut r4 = if sign16(spotlight_y_lower) {
             spotlight_y_lower
         } else {
             0
         };
         let spotlight_y_upper = spotlight_y_lower.wrapping_add(u16::from(radius) * 2);
-        self.spotlight_hdma_view_mut().set_y_upper(spotlight_y_upper);
+        self.spotlight_hdma_view_mut()
+            .set_y_upper(spotlight_y_upper);
         let spotlight_x_center = self
             .player_state_view()
             .x()
@@ -501,11 +503,10 @@ impl ZeldaState {
             let t7 = if r2 < 256 { r2 as u8 } else { 255 };
             let r6 = (u16::from(t7) << 8) | u16::from(t6);
             if k < 240 {
-                self.spotlight_hdma_view_mut()
-                    .set_hdma_table_dynamic_entry(
-                        k as usize,
-                        if r6 == 0xffff { 0x00ff } else { r6 },
-                    );
+                self.spotlight_hdma_view_mut().set_hdma_table_dynamic_entry(
+                    k as usize,
+                    if r6 == 0xffff { 0x00ff } else { r6 },
+                );
             }
 
             if sign16(spotlight_y_lower) || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper) {
@@ -513,13 +514,13 @@ impl ZeldaState {
                     .wrapping_sub(2)
                     .wrapping_add(r14);
                 if k < 240 {
-                    self.spotlight_hdma_view_mut()
-                        .set_hdma_table_dynamic_entry(
-                            k as usize,
-                            if r6 == 0xffff { 0x00ff } else { r6 },
-                        );
+                    self.spotlight_hdma_view_mut().set_hdma_table_dynamic_entry(
+                        k as usize,
+                        if r6 == 0xffff { 0x00ff } else { r6 },
+                    );
                 }
-                self.spotlight_hdma_view_mut().increment_window_y_buffer_byte();
+                self.spotlight_hdma_view_mut()
+                    .increment_window_y_buffer_byte();
             }
 
             r4 = r4.wrapping_add(1);
@@ -543,7 +544,8 @@ impl ZeldaState {
         if self.spotlight_hdma_view().window_state_byte() != 0 {
             self.spotlight_hdma_view_mut().add_window_radius_byte(8);
             if self.spotlight_hdma_view().window_radius_byte() >= 0xc0 {
-                self.messaging_state_view_mut().xor_message_or_sprite_state_cache(1);
+                self.messaging_state_view_mut()
+                    .xor_message_or_sprite_state_cache(1);
                 self.system_signals_view_mut().set_music_control(0xf3);
                 self.system_signals_view_mut().set_ambient_sound_effect(0);
                 self.frame_control_view_mut().clear_modal_pause_flag();
@@ -641,8 +643,11 @@ impl ZeldaState {
         if offs + 0xf00 + 0x500 <= self.sram.len() {
             self.sram[offs + 0xf00..offs + 0xf00 + 0x500].copy_from_slice(&dung_info);
         }
-        let checksum = self.save_progress_view_mut().compute_dungeon_info_checksum();
-        self.save_progress_view_mut().set_dungeon_info_checksum(checksum);
+        let checksum = self
+            .save_progress_view_mut()
+            .compute_dungeon_info_checksum();
+        self.save_progress_view_mut()
+            .set_dungeon_info_checksum(checksum);
         if offs + 0x500 <= self.sram.len() {
             write_le_u16(&mut self.sram, offs + 0x4fe, checksum);
         }
@@ -678,9 +683,11 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k)
                 .set_x_low(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]);
             k += 1;
-            self.minigame_state_view_mut().set_flag_boomerang_in_place(k as u8);
+            self.minigame_state_view_mut()
+                .set_flag_boomerang_in_place(k as u8);
             if k == 8 {
-                self.minigame_state_view_mut().set_flag_boomerang_in_place(7);
+                self.minigame_state_view_mut()
+                    .set_flag_boomerang_in_place(7);
                 self.ancilla_slot_view_mut(0).increment_ancilla_type();
                 self.messaging_state_view_mut()
                     .clear_game_over_letter_cursor();
@@ -796,8 +803,7 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_bg1_y_offset(darkening_or_lightening_screen);
         let palette = self.palette_buffer_view().aux_visible_slice().to_vec();
-        self.ppu_scroll_copy_view_mut()
-            .mapbak_palette_slice_mut()[..256]
+        self.ppu_scroll_copy_view_mut().mapbak_palette_slice_mut()[..256]
             .copy_from_slice(&palette[..palette.len().min(256)]);
         self.palette_buffer_view_mut()
             .clear_aux_visible_subpalettes();
@@ -807,7 +813,8 @@ impl ZeldaState {
         self.world_state_view_mut().set_bg1_x_offset(0);
         self.world_state_view_mut().set_bg1_y_offset(0);
         let cgwsel = self.palette_filter_view().color_window_and_math_word();
-        self.ppu_scroll_copy_view_mut().set_mapbak_cgwsel_word(cgwsel);
+        self.ppu_scroll_copy_view_mut()
+            .set_mapbak_cgwsel_word(cgwsel);
         self.messaging_state_view_mut().set_menu_animation_timer(32);
         self.hud_state_view_mut().clear_floor_changed_timer_low();
         self.hud_floor_indicator();
@@ -1007,7 +1014,8 @@ impl ZeldaState {
 
         let health = POST_DEATH_HEALTH_BY_CAPACITY
             [(self.player_resources_view().health_capacity() >> 3) as usize];
-        self.system_signals_view_mut().set_restart_check_flag(health);
+        self.system_signals_view_mut()
+            .set_restart_check_flag(health);
         self.player_resources_view_mut().set_current_health(health);
         let palace = self.save_progress_view().palace_index_x2();
         if palace != 0xff {
@@ -1020,12 +1028,13 @@ impl ZeldaState {
         if self
             .save_progress_view()
             .total_death_save_counter_is_uninitialized()
-            && (self.read_u32_ram(ENHANCED_FEATURES0) & 4096 == 0 || count_as_death)
+            && (!self.enhanced_features_view().has(4096) || count_as_death)
         {
             self.save_progress_view_mut()
                 .increment_pending_death_save_counter();
         }
-        self.system_signals_view_mut().increment_game_over_check_flag();
+        self.system_signals_view_mut()
+            .increment_game_over_check_flag();
         if self.frame_control_view().subsubmodule() != 1 {
             if self.world_state_view().is_indoors() {
                 if self.follower_state_view().indicator() != 1
@@ -1205,7 +1214,10 @@ impl ZeldaState {
                 & 0xc0
                 != 0
             {
-                if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_CANCEL_BIRD_TRAVEL != 0 {
+                if self
+                    .enhanced_features_view()
+                    .has(FEATURE_CANCEL_BIRD_TRAVEL)
+                {
                     let joypad = self.player_state_view().joypad1l_last();
                     self.messaging_state_view_mut()
                         .set_menu_animation_timer(joypad);
@@ -1464,7 +1476,8 @@ impl ZeldaState {
             self.system_signals_view_mut().set_sound_effect_2(36);
             self.dungeon_state_view_mut().set_draw_width_indicator(8);
             let t = (self.world_state_view().overworld_map_flags() ^ 1) & 1;
-            self.world_state_view_mut().set_overworld_map_flags(t | 0x80);
+            self.world_state_view_mut()
+                .set_overworld_map_flags(t | 0x80);
             self.world_state_view_mut()
                 .set_timer_for_mode7_zoom(OVERWORLD_MAP_TIMER[t as usize]);
             if self.world_state_view().timer_for_mode7_zoom() == 12 {
@@ -1819,7 +1832,10 @@ impl ZeldaState {
                 t10.wrapping_add(0x80)
             };
             let xval = t11.wrapping_sub(self.world_state_view().bg1_x());
-            let xt = if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_EXTEND_SCREEN64_MAP != 0 {
+            let xt = if self
+                .enhanced_features_view()
+                .has(FEATURE_EXTEND_SCREEN64_MAP)
+            {
                 0x48
             } else {
                 0
@@ -1855,7 +1871,10 @@ impl ZeldaState {
             x = x.wrapping_sub(4);
             y = y.wrapping_sub(4);
         }
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_EXTEND_SCREEN64_MAP != 0 {
+        if self
+            .enhanced_features_view()
+            .has(FEATURE_EXTEND_SCREEN64_MAP)
+        {
             big |= ((x >> 8) as u8) & 1;
         }
         self.set_oam_plain(spr, x as u8, y as u8, ch, flags, big);
@@ -1943,7 +1962,8 @@ impl ZeldaState {
         self.LoadActualGearPalettes();
         self.replay_trace_ram_watch("dungmap-prep-after-gear-palette");
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.dungeon_map_scratch_view_mut().increment_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .increment_dungmap_init_state();
         self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
         self.display_nmi_view_mut().set_bg_vram_load_mode(9);
         self.display_nmi_view_mut().set_core_update_disable_flag(9);
@@ -1966,7 +1986,8 @@ impl ZeldaState {
                 .set_word(30, DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES[i]);
             self.display_nmi_view_mut().set_bg_vram_load_mode(1);
         }
-        self.dungeon_map_scratch_view_mut().increment_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .increment_dungmap_init_state();
     }
 
     pub(super) fn Module0E_03_01_02_DrawFloorsBackdrop(&mut self) {
@@ -2028,7 +2049,8 @@ impl ZeldaState {
         self.DungeonMap_BuildFloorListBoxes(t5 as u8, t7_org);
         let offset = self.vram_upload_data_view().offset() as usize;
         self.vram_upload_data_view_mut().terminate_at(offset);
-        self.dungeon_map_scratch_view_mut().increment_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .increment_dungmap_init_state();
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
 
@@ -2063,7 +2085,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
-        self.dungeon_map_scratch_view_mut().clear_dungmap_floor_scroll_step();
+        self.dungeon_map_scratch_view_mut()
+            .clear_dungmap_floor_scroll_step();
         self.dungeon_map_scratch_view_mut().clear_dungmap_idx();
         let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
@@ -2071,30 +2094,41 @@ impl ZeldaState {
             (-(i16::from((DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8)) as u16) as u8;
         if self.dungeon_state_view().current_floor_word() != u16::from(t) {
             let dung_cur_floor = u16::from(self.dungeon_state_view().current_floor());
-            self.dungeon_map_scratch_view_mut().set_dungmap_cur_floor(dung_cur_floor);
+            self.dungeon_map_scratch_view_mut()
+                .set_dungmap_cur_floor(dung_cur_floor);
         } else {
             let dung_cur_floor = self
                 .dungeon_state_view()
                 .current_floor_word()
                 .wrapping_add(1);
-            let dungmap_idx = self.dungeon_map_scratch_view().dungmap_idx().wrapping_add(2);
-            self.dungeon_map_scratch_view_mut().set_dungmap_cur_floor(dung_cur_floor);
-            self.dungeon_map_scratch_view_mut().set_dungmap_idx(dungmap_idx);
+            let dungmap_idx = self
+                .dungeon_map_scratch_view()
+                .dungmap_idx()
+                .wrapping_add(2);
+            self.dungeon_map_scratch_view_mut()
+                .set_dungmap_cur_floor(dung_cur_floor);
+            self.dungeon_map_scratch_view_mut()
+                .set_dungmap_idx(dungmap_idx);
         }
         self.DungeonMap_DrawFloorNumbersByRoom(0, !0x1000);
         self.DungeonMap_DrawBorderForRooms(0, !0x1000);
         self.DungeonMap_DrawDungeonLayout(0);
-        self.dungeon_map_scratch_view_mut().decrement_dungmap_cur_floor_byte();
+        self.dungeon_map_scratch_view_mut()
+            .decrement_dungmap_cur_floor_byte();
         self.DungeonMap_DrawFloorNumbersByRoom(0x0300, !0x1000);
         self.DungeonMap_DrawBorderForRooms(0x0300, !0x1000);
         self.DungeonMap_DrawDungeonLayout(0x0300);
-        let dungmap_cur_floor =
-            self.dungeon_map_scratch_view().dungmap_cur_floor().wrapping_add(1);
-        self.dungeon_map_scratch_view_mut().set_dungmap_cur_floor(dungmap_cur_floor);
+        let dungmap_cur_floor = self
+            .dungeon_map_scratch_view()
+            .dungmap_cur_floor()
+            .wrapping_add(1);
+        self.dungeon_map_scratch_view_mut()
+            .set_dungmap_cur_floor(dungmap_cur_floor);
         self.dungeon_map_scratch_view_mut().clear_scroll_state();
         self.display_nmi_view_mut().set_subroutine_index(8);
         self.display_nmi_view_mut().set_load_target_addr(0x22);
-        self.dungeon_map_scratch_view_mut().increment_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .increment_dungmap_init_state();
     }
 
     pub(super) fn DungeonMap_DrawBorderForRooms(&mut self, pd: u16, mask: u16) {
@@ -2127,7 +2161,8 @@ impl ZeldaState {
         loop {
             let t = (((p.wrapping_add(pd)) & 0x0fff) >> 1) as usize;
             self.messaging_render_buffer_view_mut().set_word(t, 0x0f00);
-            self.messaging_render_buffer_view_mut().set_word(t + 1, 0x0f00);
+            self.messaging_render_buffer_view_mut()
+                .set_word(t + 1, 0x0f00);
             p = p.wrapping_add(0x40);
             if p == 0x039e {
                 break;
@@ -2147,7 +2182,8 @@ impl ZeldaState {
             )
         };
         self.messaging_render_buffer_view_mut().set_word(t, q1 & r8);
-        self.messaging_render_buffer_view_mut().set_word(t + 1, q2 & r8);
+        self.messaging_render_buffer_view_mut()
+            .set_word(t + 1, q2 & r8);
     }
 
     pub(super) fn DungeonMap_DrawDungeonLayout(&mut self, pd: i32) {
@@ -2208,9 +2244,12 @@ impl ZeldaState {
             );
             let idx = arg_x as usize;
             self.messaging_render_buffer_view_mut().set_word(idx, av0);
-            self.messaging_render_buffer_view_mut().set_word(idx + 1, av1);
-            self.messaging_render_buffer_view_mut().set_word(idx + 32, av2);
-            self.messaging_render_buffer_view_mut().set_word(idx + 33, av3);
+            self.messaging_render_buffer_view_mut()
+                .set_word(idx + 1, av1);
+            self.messaging_render_buffer_view_mut()
+                .set_word(idx + 32, av2);
+            self.messaging_render_buffer_view_mut()
+                .set_word(idx + 33, av3);
             arg_x += 2;
         }
     }
@@ -2267,7 +2306,8 @@ impl ZeldaState {
         let marker_x = u16::from(xcoord)
             .wrapping_add(0x90)
             .wrapping_add((self.player_state_view().x() & 0x01e0) >> 5);
-        self.dungeon_map_scratch_view_mut().set_dungmap_player_marker_x(marker_x);
+        self.dungeon_map_scratch_view_mut()
+            .set_dungmap_player_marker_x(marker_x);
         self.dungeon_map_scratch_view_mut()
             .set_location_marker_base_y(ycoord);
 
@@ -2275,7 +2315,8 @@ impl ZeldaState {
         let marker_y = u16::from(ycoord)
             .wrapping_add(DUNGEON_MAP_MARKER_Y_BASES[idx])
             .wrapping_add((self.player_state_view().y() & 0x01e0) >> 5);
-        self.dungeon_map_scratch_view_mut().set_dungmap_player_marker_y(marker_y);
+        self.dungeon_map_scratch_view_mut()
+            .set_dungmap_player_marker_y(marker_y);
 
         let floor2 = t5.wrapping_add(DUNGEON_MAP_BOSS_FLOOR_OFFSETS[dung] as u8);
         let marker_base = usize::from(floor2) * 25;
@@ -2306,7 +2347,8 @@ impl ZeldaState {
             .set_marker_y_offset(marker_y_offset);
         self.world_state_view_mut().increment_overworld_map_state();
         self.display_nmi_view_mut().set_screen_brightness(0);
-        self.dungeon_map_scratch_view_mut().clear_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .clear_dungmap_init_state();
     }
 
     pub(super) fn DungeonMap_HandleInputAndSprites(&mut self) {
@@ -2322,7 +2364,8 @@ impl ZeldaState {
                 .wrapping_add(2);
             self.world_state_view_mut()
                 .set_overworld_map_state(overworld_map_state);
-            self.dungeon_map_scratch_view_mut().clear_dungmap_init_state();
+            self.dungeon_map_scratch_view_mut()
+                .clear_dungmap_init_state();
         } else {
             self.DungeonMap_HandleMovementInput();
         }
@@ -2363,7 +2406,8 @@ impl ZeldaState {
             if r2.wrapping_sub(1) == self.dungeon_map_scratch_view().dungmap_cur_floor_byte() {
                 return;
             }
-            self.dungeon_map_scratch_view_mut().increment_dungmap_cur_floor_byte();
+            self.dungeon_map_scratch_view_mut()
+                .increment_dungmap_cur_floor_byte();
             scroll_draw_offset = scroll_draw_offset.wrapping_sub(0x300) & 0x0fff;
         } else {
             if (!r3).wrapping_add(1) == self.dungeon_map_scratch_view().dungmap_cur_floor_byte() {
@@ -2381,7 +2425,8 @@ impl ZeldaState {
         self.DungeonMap_DrawFloorNumbersByRoom(scroll_draw_offset, !0x1000);
         self.DungeonMap_DrawBorderForRooms(scroll_draw_offset, !0x1000);
         self.DungeonMap_DrawDungeonLayout(scroll_draw_offset as i32);
-        self.dungeon_map_scratch_view_mut().increment_dungmap_floor_scroll_step();
+        self.dungeon_map_scratch_view_mut()
+            .increment_dungmap_floor_scroll_step();
         let joypad_h = self.player_state_view().joypad1h_last();
         self.dungeon_map_scratch_view_mut()
             .set_scroll_input(u16::from(joypad_h));
@@ -2420,7 +2465,8 @@ impl ZeldaState {
             .wrapping_add_signed(i16::from(DUNGEON_MAP_SCROLL_BG_Y_DELTAS[x]));
         self.world_state_view_mut().set_bg2_y(bg2);
         if bg2 == self.dungeon_map_scratch_view().dungmap_scroll_target_y() {
-            self.dungeon_map_scratch_view_mut().clear_dungmap_floor_scroll_step();
+            self.dungeon_map_scratch_view_mut()
+                .clear_dungmap_floor_scroll_step();
         }
     }
 
@@ -2703,12 +2749,14 @@ impl ZeldaState {
         self.display_nmi_view_mut()
             .set_sub_screen_layers(sub_screen_layers);
         let main_tile_theme = self.ppu_scroll_copy_view().mapbak_main_tile_theme_index();
-        self.sprite_system_view_mut().set_main_tile_theme(main_tile_theme);
+        self.sprite_system_view_mut()
+            .set_main_tile_theme(main_tile_theme);
         let graphics_index = self.ppu_scroll_copy_view().mapbak_sprite_graphics_index();
         self.sprite_system_view_mut()
             .set_graphics_index(graphics_index);
         let aux_tile_theme = self.ppu_scroll_copy_view().mapbak_aux_tile_theme_index();
-        self.sprite_system_view_mut().set_aux_tile_theme(aux_tile_theme);
+        self.sprite_system_view_mut()
+            .set_aux_tile_theme(aux_tile_theme);
         self.InitializeTilesets();
         self.palette_buffer_view_mut()
             .clear_overworld_aux_or_main_offset();
@@ -2793,7 +2841,8 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut().set_mapbak_hdmaen(hdmaen);
         self.EnableForceBlank();
         self.world_state_view_mut().increment_overworld_map_state();
-        self.dungeon_map_scratch_view_mut().clear_dungmap_init_state();
+        self.dungeon_map_scratch_view_mut()
+            .clear_dungmap_init_state();
         self.palette_filter_view_mut().set_fixed_color_red(0x20);
         self.palette_filter_view_mut().set_fixed_color_green(0x40);
         self.palette_filter_view_mut().set_fixed_color_blue(0x80);
@@ -2880,7 +2929,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_InitializeGameOverLetters(&mut self) {
-        self.minigame_state_view_mut().set_flag_boomerang_in_place(0);
+        self.minigame_state_view_mut()
+            .set_flag_boomerang_in_place(0);
         for i in 0..8 {
             self.ancilla_slot_view_mut(i).set_x(0xb0);
         }
@@ -2904,8 +2954,7 @@ impl ZeldaState {
             .set_bg_tile_animation_countdown(7);
         self.player_state_view_mut()
             .reset_link_dma_animation_cycle(7);
-        self.display_nmi_view_mut()
-            .set_message_dma_dst_addr(0x6040);
+        self.display_nmi_view_mut().set_message_dma_dst_addr(0x6040);
         self.display_nmi_view_mut()
             .set_message_dma_tile_base(0x4841);
         self.display_nmi_view_mut()
@@ -2914,7 +2963,7 @@ impl ZeldaState {
             .set_message_dma_tile_sentinel(0xffff);
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
             self.display_nmi_view_mut().clear_mosaic_level();
         }
 
@@ -3065,9 +3114,8 @@ impl ZeldaState {
                     decoded.push(0x34 + if param & 1 != 0 { v >> 4 } else { v & 0x0f });
                 }
                 TEXT_CMD_POSITION => {
-                    self.messaging_state_view_mut().set_text_msgbox_topleft(
-                        TEXT_POSITIONS[param as usize & 1],
-                    );
+                    self.messaging_state_view_mut()
+                        .set_text_msgbox_topleft(TEXT_POSITIONS[param as usize & 1]);
                 }
                 TEXT_CMD_COLOR => {
                     let value = ((0x387f & 0xe300) | 0x180) | (((param as u16) << 10) & 0x3c00);
@@ -3092,7 +3140,8 @@ impl ZeldaState {
             .min(self.ram.len().saturating_sub(MESSAGING_TEXT_BUFFER));
         self.ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + len]
             .copy_from_slice(&decoded[..len]);
-        self.messaging_state_view_mut().clear_dialogue_msg_read_pos();
+        self.messaging_state_view_mut()
+            .clear_dialogue_msg_read_pos();
     }
 
     pub(super) fn Text_WritePlayerName(&mut self, dst: usize) -> usize {
@@ -3205,7 +3254,8 @@ impl ZeldaState {
             match cmd {
                 TEXT_CMD_IS_LETTER => {
                     if self.messaging_state_view().vwf_line_speed_cur() >= 2 {
-                        self.messaging_state_view_mut().decrement_vwf_line_speed_cur();
+                        self.messaging_state_view_mut()
+                            .decrement_vwf_line_speed_cur();
                     } else {
                         self.VWF_RenderSingle(param as i32);
                         command_done = true;
@@ -3259,7 +3309,8 @@ impl ZeldaState {
                 }
                 TEXT_CMD_SPEED => {
                     self.messaging_state_view_mut().set_vwf_line_speed(param);
-                    self.messaging_state_view_mut().set_vwf_line_speed_cur(param);
+                    self.messaging_state_view_mut()
+                        .set_vwf_line_speed_cur(param);
                     command_done = true;
                 }
                 TEXT_CMD_CHOOSE => self.RenderText_Draw_Choose2LowOr3(),
@@ -3332,7 +3383,8 @@ impl ZeldaState {
             self.system_signals_view_mut().set_sound_effect_2(12);
         }
         let speed = self.messaging_state_view().vwf_line_speed();
-        self.messaging_state_view_mut().set_vwf_line_speed_cur(speed);
+        self.messaging_state_view_mut()
+            .set_vwf_line_speed_cur(speed);
         if self.vwf_glyph_spacing_view().vwf_flag_next_line() != 0 {
             let line = (self.vwf_glyph_spacing_view().vwf_curline() >> 1) as usize;
             self.vwf_glyph_spacing_view_mut()
@@ -3668,8 +3720,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut()
             .write_le_u16_at(d, TEXT_BORDER_TILES[y + 2]);
         d += 2;
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(d, 0xffff);
+        self.vram_upload_data_view_mut().write_le_u16_at(d, 0xffff);
         d
     }
 
@@ -3703,20 +3754,16 @@ impl ZeldaState {
             d += 2;
             self.messaging_state_view_mut()
                 .set_text_msgbox_topleft_copy(row_top_left.wrapping_add(0x20));
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(d, 0x2900);
+            self.vram_upload_data_view_mut().write_le_u16_at(d, 0x2900);
             d += 2;
             for _ in 0..21 {
-                let tile = self
-                    .vwf_glyph_spacing_view()
-                    .vwf_tile_buffer_word_at(s);
+                let tile = self.vwf_glyph_spacing_view().vwf_tile_buffer_word_at(s);
                 self.vram_upload_data_view_mut().write_le_u16_at(d, tile);
                 d += 2;
                 s += 2;
             }
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(d, 0xffff);
+        self.vram_upload_data_view_mut().write_le_u16_at(d, 0xffff);
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
 
@@ -3808,7 +3855,7 @@ impl ZeldaState {
             self.player_state_view_mut().clear_bunny_body_state();
         }
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
             self.LoadActualGearPalettes();
         }
         let sfx = 0x27 | self.link_calculate_sfx_pan();

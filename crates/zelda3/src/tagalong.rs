@@ -71,7 +71,6 @@ const SPRITE_Z_TAGALONG: usize = 0x0f70;
 const SPRITE_Z_VEL_TAGALONG: usize = 0x0f80;
 const SPRITE_SUBTYPE2_TAGALONG: usize = 0x0e80;
 const SPRITE_N_TAGALONG: usize = 0x0bc0;
-const SPRITE_N_WORD_TAGALONG: usize = 0x0bc0;
 const SPRITE_DIE_ACTION_TAGALONG: usize = 0x0cba;
 const SPRITE_SUBTYPE_TAGALONG: usize = 0x0e30;
 const ANCILLA_Y_LO_TAGALONG: usize = 0x0bfa;
@@ -974,8 +973,9 @@ impl ZeldaState {
         self.follower_state_view_mut().clear_hookshot_interlock();
         self.follower_state_view_mut().clear_jump_timer();
         self.tagalong_link_state_mut().set_speed_setting(0);
-        if self.read_u32_ram(ENHANCED_FEATURES0_TAGALONG) & FEATURES0_TURN_WHILE_DASHING_TAGALONG
-            != 0
+        if self
+            .enhanced_features_view()
+            .has(FEATURES0_TURN_WHILE_DASHING_TAGALONG)
         {
             let mut link = self.tagalong_link_state_mut();
             link.set_ground_state();
@@ -1263,9 +1263,9 @@ impl ZeldaState {
             {
                 if self.AncillaAdd_SuperBombExplosion(0x3a, 0).is_some() {
                     self.follower_state_view_mut().set_dropped(0);
-                    if self.read_u32_ram(ENHANCED_FEATURES0_TAGALONG)
-                        & FEATURES0_MISC_BUG_FIXES_TAGALONG
-                        != 0
+                    if self
+                        .enhanced_features_view()
+                        .has(FEATURES0_MISC_BUG_FIXES_TAGALONG)
                     {
                         self.follower_state_view_mut().set_indicator(0);
                         return;
@@ -1525,14 +1525,12 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
-        self.write_u8_ram(oam, x as u8);
         let visible = x.wrapping_add(0x80) < 0x180 && {
             big |= ((x >> 8) & 1) as u8;
             y.wrapping_add(0x10) < 0x100
         };
-        self.write_u8_ram(oam + 1, if visible { y as u8 } else { 0xf0 });
-        self.write_u8_ram(oam + 2, charnum);
-        self.write_u8_ram(oam + 3, flags);
+        self.oam_state_view_mut()
+            .write_entry(oam, x as u8, if visible { y as u8 } else { 0xf0 }, charnum, flags);
         self.oam_state_view_mut()
             .set_extended_byte((oam - OAM_BUF_TAGALONG) / 4, big);
     }
@@ -1646,9 +1644,9 @@ impl ZeldaState {
             pal = 0;
         }
         if self.follower_state_view().indicator() == 13 {
-            let colorful = if self.read_u32_ram(ENHANCED_FEATURES0_TAGALONG)
-                & FEATURES0_MISC_BUG_FIXES_TAGALONG
-                != 0
+            let colorful = if self
+                .enhanced_features_view()
+                .has(FEATURES0_MISC_BUG_FIXES_TAGALONG)
             {
                 self.hud_state_view().super_bomb_indicator_timer() <= 1
             } else {
@@ -1925,8 +1923,8 @@ impl ZeldaState {
     }
 
     fn set_sprite_room_marker_word(&mut self, k: usize, value: u16) {
-        let offset = SPRITE_N_WORD_TAGALONG + k * 2;
-        self.write_u16_ram(offset, value);
+        self.sprite_workspace_view_mut()
+            .set_room_marker_word(k, value);
     }
 
     fn Tagalong_Sprite_SpawnDynamically(

@@ -9,7 +9,7 @@ use std::slice;
 
 use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 
-use crate::ram::semantic::{
+use crate::game_state::{
     AncillaSlotView, FrameControlView, PlayerStateView, SpriteSlotView, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16};

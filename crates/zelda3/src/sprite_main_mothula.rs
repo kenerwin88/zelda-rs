@@ -4247,7 +4247,10 @@ impl ZeldaState {
 
     // void Sprite_88_Mothula(int k) {  // 9ebe7e
     pub(super) fn sprite_88_mothula(&mut self, k: usize) {
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_MISC_BUG_FIXES_MOTHULA != 0 {
+        if self
+            .enhanced_features_view()
+            .has(FEATURE_MISC_BUG_FIXES_MOTHULA)
+        {
             let mut damage_data = self.enemy_damage_data_view_mut();
             damage_data.set_entry(0x884, 1);
             damage_data.set_entry(0x885, 1);

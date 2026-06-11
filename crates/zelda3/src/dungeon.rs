@@ -338,10 +338,11 @@ const DUNG_PAL_INFOS: [DungPalInfo; 41] = [
 
 impl ZeldaState {
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {
-        self.ram[WHICH_ENTRANCE] = room;
+        self.world_state_view_mut().set_which_entrance_byte(room);
         self.Dungeon_LoadEntrance();
         self.dungeon_state_view_mut().clear_lit_torches();
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 0;
+        self.dungeon_state_view_mut()
+            .clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_ResetTorchBackgroundAndPlayer();
     }
@@ -361,8 +362,8 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_LoadEntrance(&mut self) {
         self.world_state_view_mut().set_indoor_flag(1);
-        if self.ram[GAME_OVER_CHECK_FLAG] != 0 {
-            self.ram[GAME_OVER_CHECK_FLAG] = 0;
+        if self.dungeon_state_view().game_over_check_flag() != 0 {
+            self.dungeon_state_view_mut().clear_game_over_check_flag();
         } else {
             copy_le_u16(
                 &mut self.ram,
@@ -443,19 +444,20 @@ impl ZeldaState {
             self.world_state_view_mut().set_overworld_screen(0);
             self.dungeon_entrance_backup_view_mut()
                 .clear_overworld_screen_high();
-            self.ram[OVERLAY_INDEX] = 0;
+            self.world_state_view_mut().clear_overlay_index_word();
             self.dungeon_entrance_backup_view_mut().clear_overlay_high();
         }
         self.world_state_view_mut().set_bg1_y_offset(0);
         self.world_state_view_mut().set_bg1_x_offset(0);
-        write_le_u16(&mut self.ram, GAME_OVER_CHECK_FLAG, 0);
+        self.dungeon_state_view_mut().clear_game_over_check_flag();
 
         if self.follower_state_view().indicator_word() == 4
-            || read_le_u16(&self.ram, RESTART_CHECK_FLAG) != 0
+            || self.dungeon_state_view().restart_check_flag() != 0
         {
-            let i = self.ram[WHICH_STARTING_POINT] as usize;
+            let i = self.dungeon_state_view().starting_point() as usize;
             let entrance = self.asset_u8(44, i);
-            write_le_u16(&mut self.ram, WHICH_ENTRANCE, entrance as u16);
+            self.world_state_view_mut()
+                .set_which_entrance(entrance as u16);
             self.dungeon_load_entrance_fields(i, &STARTING_POINT_ASSETS);
             self.player_state_view_mut().set_facing(2);
             self.player_state_view_mut().clear_doorway_state();
@@ -466,11 +468,12 @@ impl ZeldaState {
                 self.system_signals_view_mut()
                     .set_queued_music_control(0xff);
             }
-            self.ram[RESTART_CHECK_FLAG] = 0;
+            self.dungeon_state_view_mut().clear_restart_check_flag();
         } else {
-            let i = self.ram[WHICH_ENTRANCE] as usize;
+            let i = self.world_state_view().which_entrance() as usize;
             let room = self.dungeon_load_entrance_fields(i, &ENTRANCE_DATA_ASSETS);
-            write_le_u16(&mut self.ram, BIG_ROCK_STARTING_ADDRESS, 0);
+            self.dungeon_state_view_mut()
+                .set_big_rock_starting_address(0);
             self.player_state_view_mut()
                 .set_facing(if i == 0 || i == 0x43 { 2 } else { 0 });
             let doorway_state = self.asset_u8(ENTRANCE_DATA_ASSETS.doorway_orientation, i);
@@ -578,7 +581,9 @@ impl ZeldaState {
             self.room_bounds_view_mut().set_x_bound(j, value);
         }
 
-        self.ram[MAIN_TILE_THEME_INDEX] = self.asset_u8(assets.blockset, i);
+        let main_tile_theme = self.asset_u8(assets.blockset, i);
+        self.world_state_view_mut()
+            .set_main_tile_theme_index(main_tile_theme);
         let current_floor = self.asset_u8(assets.floor, i);
         self.dungeon_state_view_mut()
             .set_current_floor(current_floor);
@@ -591,8 +596,10 @@ impl ZeldaState {
             .set_lower_level_states(starting_bg >> 4, starting_bg & 0x0f);
 
         let quadrant1 = self.asset_u8(assets.quadrant1, i);
-        self.ram[QUADRANT_FULLSIZE_X] = quadrant1 >> 4;
-        self.ram[QUADRANT_FULLSIZE_Y] = quadrant1 & 0x0f;
+        self.world_state_view_mut()
+            .set_quadrant_fullsize_x(quadrant1 >> 4);
+        self.world_state_view_mut()
+            .set_quadrant_fullsize_y(quadrant1 & 0x0f);
         let quadrant2 = self.asset_u8(assets.quadrant2, i);
         self.player_state_view_mut()
             .set_quadrants_from_packed_nibbles(quadrant2);
@@ -623,7 +630,9 @@ impl ZeldaState {
 
         const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
         if self.player_state_view().is_running()
-            && self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_TURN_WHILE_DASHING == 0
+            && !self
+                .enhanced_features_view()
+                .has(FEATURES0_TURN_WHILE_DASHING)
         {
             self.player_state_view_mut().clear_auxiliary_state();
             self.player_state_view_mut().set_incapacitated_timer(0);
@@ -6087,7 +6096,9 @@ impl ZeldaState {
 
     pub(super) fn HandleItemTileAction_Dungeon(&mut self, x: u16, y: u16) -> u8 {
         if !self.player_state_view().item_in_hand_has(2)
-            && (self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_BREAK_POTS_WITH_SWORD_DUNGEON == 0
+            && (!self
+                .enhanced_features_view()
+                .has(FEATURE_BREAK_POTS_WITH_SWORD_DUNGEON)
                 || self.player_state_view().button_b_frames() == 0
                 || self.inventory_state_view().sword_type() == 1)
         {
@@ -11255,7 +11266,7 @@ impl ZeldaState {
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
 
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES == 0
+        if !self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
             || self.frame_control_view().main_module() == 7
         {
             self.dungeon_state_view_mut().clear_misc_object_index();
@@ -11733,7 +11744,9 @@ impl ZeldaState {
         if self.ram[FLAG_SKIP_CALL_TAG_ROUTINES] == 0 {
             self.Dungeon_DetectStaircase();
 
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_MISC_BUG_FIXES_DUNGEON != 0
+            if self
+                .enhanced_features_view()
+                .has(FEATURE_MISC_BUG_FIXES_DUNGEON)
                 && self.frame_control_view().submodule() != 0
             {
                 return;

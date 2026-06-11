@@ -15,10 +15,8 @@ These names were checked against call sites and NES_Ver2 evidence. They remain w
 
 | Address | Rust name | Subsystem | Uses | Defined in | NES_Ver2 label | US-English hint | Reason |
 |---:|---|---|---:|---|---|---|---|
-| `0x00072` | `SCRATCH_0_ANCILLA` | ancilla | 1 | [`crates/zelda3/src/ancilla.rs:32`](../crates/zelda3/src/ancilla.rs#L32) | `BMWORK` | beam work | single-use ancilla coordinate scratch; source BMWORK is broader beam/work RAM |
-| `0x00074` | `SCRATCH_1_ANCILLA` | ancilla | 1 | [`crates/zelda3/src/ancilla.rs:33`](../crates/zelda3/src/ancilla.rs#L33) | `CRTNR` | right | single-use ancilla coordinate scratch; source CRTNR alias is not behavior-specific here |
-| `0x0002d` | `ATTRACT_VAR7` | shared | 2 | [`crates/zelda3/src/zelda_rtl.rs:878`](../crates/zelda3/src/zelda_rtl.rs#L878) | `PYFLCH` | player frame change | write-only attract scene work RAM; source label is the unrelated shared PYFLCH alias |
-| `0x00072` | `SCRATCH_0` | shared | 7 | [`crates/zelda3/src/zelda_rtl.rs:248`](../crates/zelda3/src/zelda_rtl.rs#L248) | `BMWORK` | beam work | shared zero-page scratch reused across unrelated player/overworld/tile code |
-| `0x00073` | `SCRATCH_A` | shared | 1 | [`crates/zelda3/src/zelda_rtl.rs:249`](../crates/zelda3/src/zelda_rtl.rs#L249) | `CRTNL` | certen left | shared zero-page scratch reused across unrelated player/overworld/tile code |
-| `0x00074` | `SCRATCH_1` | shared | 8 | [`crates/zelda3/src/zelda_rtl.rs:250`](../crates/zelda3/src/zelda_rtl.rs#L250) | `CRTNR` | right | shared zero-page scratch reused across unrelated player/overworld/tile code |
-| `0x00fa8` | `DUNGMAP_VAR7` | shared | 31 | [`crates/zelda3/src/zelda_rtl.rs:987`](../crates/zelda3/src/zelda_rtl.rs#L987) | `DMWRK0` | dungeon map work ram ! | shared DMWRK0 work RAM used by dungeon-map and sprite drawing code |
+| `0x00072` | `SCRATCH_0_ANCILLA` | ancilla | 0 | [`crates/zelda3/src/ancilla.rs:23`](../crates/zelda3/src/ancilla.rs#L23) | `BMWORK` | beam work | single-use ancilla coordinate scratch; source BMWORK is broader beam/work RAM |
+| `0x00074` | `SCRATCH_1_ANCILLA` | ancilla | 0 | [`crates/zelda3/src/ancilla.rs:24`](../crates/zelda3/src/ancilla.rs#L24) | `CRTNR` | right | single-use ancilla coordinate scratch; source CRTNR alias is not behavior-specific here |
+| `0x00072` | `SCRATCH_0` | shared | 5 | [`crates/zelda3/src/zelda_rtl.rs:297`](../crates/zelda3/src/zelda_rtl.rs#L297) | `BMWORK` | beam work | shared zero-page scratch reused across unrelated player/overworld/tile code |
+| `0x00073` | `SCRATCH_A` | shared | 1 | [`crates/zelda3/src/zelda_rtl.rs:298`](../crates/zelda3/src/zelda_rtl.rs#L298) | `CRTNL` | certen left | shared zero-page scratch reused across unrelated player/overworld/tile code |
+| `0x00074` | `SCRATCH_1` | shared | 6 | [`crates/zelda3/src/zelda_rtl.rs:299`](../crates/zelda3/src/zelda_rtl.rs#L299) | `CRTNR` | right | shared zero-page scratch reused across unrelated player/overworld/tile code |

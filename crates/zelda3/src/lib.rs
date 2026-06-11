@@ -7,8 +7,8 @@
 #![allow(dead_code)]
 
 pub mod config;
+pub(crate) mod game_state;
 pub mod oracle;
-pub(crate) mod ram;
 pub mod spc_player;
 pub mod types;
 pub mod util;

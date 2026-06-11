@@ -67,7 +67,11 @@ class RamConst:
 
 
 def rust_files() -> list[Path]:
-    return sorted(SRC_ROOT.glob("*.rs"))
+    return sorted(SRC_ROOT.rglob("*.rs"))
+
+
+def is_public_ram_constant_registry(path: Path) -> bool:
+    return path == SRC_ROOT / "game_state" / "constants.rs"
 
 
 def line_for_offset(text: str, offset: int) -> int:
@@ -93,7 +97,7 @@ def scan_consts() -> list[RamConst]:
     for path in rust_files():
         text = path.read_text()
         patterns = [PRIVATE_CONST_RE]
-        if path.name == "ram.rs":
+        if is_public_ram_constant_registry(path):
             patterns.append(RAM_MODULE_CONST_RE)
         for pattern in patterns:
             for match in pattern.finditer(text):
@@ -111,7 +115,7 @@ def scan_consts() -> list[RamConst]:
 def const_offset(path: Path, name: str) -> int | None:
     text = path.read_text()
     patterns = [PRIVATE_CONST_RE]
-    if path.name == "ram.rs":
+    if is_public_ram_constant_registry(path):
         patterns.append(RAM_MODULE_CONST_RE)
     for pattern in patterns:
         for match in pattern.finditer(text):
@@ -128,27 +132,37 @@ def module_for_line(text: str, offset: int) -> str | None:
     return module_match.group(1) if module_match else None
 
 
+def subsystem_from_name(name: str, default: str = "game_state") -> str:
+    prefix = name.split("_", 1)[0].lower()
+    if prefix in {"link", "player", "swim", "swimcoll", "tiledetect", "button", "cape", "pit"}:
+        return "player"
+    if prefix in {"sprite", "overlord", "garnish", "oam", "alt", "cached", "enemy", "prize"}:
+        return "sprite"
+    if prefix in {"dung", "dungeon", "door", "room", "crush", "invisible", "big"}:
+        return "dungeon"
+    if prefix in {"message", "messaging", "dialogue", "text", "vwf", "select"}:
+        return "messaging"
+    if prefix in {"overworld", "ow", "map16", "camera", "quadrant", "bird", "bg1", "bg2"}:
+        return "overworld"
+    if prefix in {"nmi", "tm", "ts", "tmw", "tsw", "bgmode", "mosaic", "w12sel", "w34sel", "wobjsel", "hdmaen", "vram", "palette", "cgram", "hud", "spotlight", "water"}:
+        return "display"
+    if prefix == "poly":
+        return "poly"
+    if prefix in {"attract", "intro", "ending"}:
+        return "attract"
+    return default
+
+
 def subsystem_for(path: Path, name: str) -> str:
     stem = path.stem
-    if stem == "ram":
+    if is_public_ram_constant_registry(path):
         text = path.read_text()
         offset = const_offset(path, name)
-        if offset is not None:
-            return module_for_line(text, offset) or "ram"
-        return "ram"
+        if offset is not None and offset < text.find("// Source addresses"):
+            return module_for_line(text, offset) or "game_state"
+        return subsystem_from_name(name)
     if stem == "zelda_rtl":
-        prefix = name.split("_", 1)[0].lower()
-        if prefix in {"link", "player", "swim", "swimcoll", "tiledetect"}:
-            return "player"
-        if prefix in {"sprite", "overlord", "garnish"}:
-            return "sprite"
-        if prefix in {"dung", "dungeon", "door"}:
-            return "dungeon"
-        if prefix in {"message", "dialogue"}:
-            return "messaging"
-        if prefix in {"overworld", "ow"}:
-            return "overworld"
-        return "shared"
+        return subsystem_from_name(name, default="shared")
     return stem
 
 

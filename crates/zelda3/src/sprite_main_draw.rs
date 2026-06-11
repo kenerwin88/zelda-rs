@@ -99,8 +99,6 @@ const ACTIVATE_BOMB_TRAP_OVERLORD_DRAW: usize = 0x0cf4;
 // variables.h:1208 — sprite_I.
 const SPRITE_I_DRAW: usize = 0x1f9c2;
 // variables.h:1241..1242 — chainchomp history buffer aliases the moldorm pages.
-const CHAINCHOMP_X_HIST_DRAW: usize = 0x1fc00;
-const CHAINCHOMP_Y_HIST_DRAW: usize = 0x1fd00;
 // variables.h:679..683 — ancilla_*.
 const ANCILLA_Y_LO_DRAW: usize = 0x0bfa;
 const ANCILLA_X_LO_DRAW: usize = 0x0c04;
@@ -115,10 +113,6 @@ const MINIGAME_CREDITS_DRAW: usize = 0x04c4;
 // variables.h:741 — flag_overworld_area_did_change.
 const FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW: usize = 0x0abf;
 // sprite_main.c local scratch words.
-const MAZE_GAME_TIMER_LO: usize = 0x1fe00;
-const MAZE_GAME_TIMER_HI: usize = 0x1fe02;
-const MAZE_GAME_TIMER_SNAPSHOT_LO: usize = 0x1fe04;
-const MAZE_GAME_TIMER_SNAPSHOT_HI: usize = 0x1fe06;
 // variables.h:488 — enhanced_features0.
 const ENHANCED_FEATURES0_DRAW: usize = 0x064c;
 const FEATURE_MISC_BUG_FIXES_DRAW: u32 = 4096;
@@ -686,18 +680,18 @@ impl ZeldaState {
                     let spawn_anyway = self.sprite_workspace_view().tile_type() == 8
                         || (self.sprite_workspace_view().tile_type() == 9
                             && self.sprite_slot_view(k).delay_aux2() == 1
-                            && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW)
-                                & FEATURE_GAME_CHANGING_BUG_FIXES_DRAW)
-                                != 0);
+                            && self
+                                .enhanced_features_view()
+                                .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW));
                     if spawn_anyway {
                         let value = 127;
                         self.sprite_slot_view_mut(k).set_delay_main(value);
                         let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_ai_state(value);
                         self.sprite_slot_view_mut(k).or_flags3(0x40);
-                    } else if (self.read_u32_ram(ENHANCED_FEATURES0_DRAW)
-                        & FEATURE_GAME_CHANGING_BUG_FIXES_DRAW)
-                        != 0
+                    } else if self
+                        .enhanced_features_view()
+                        .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW)
                     {
                         self.sprite_set_x(k, org_x);
                         self.sprite_set_y(k, org_y);
@@ -3230,8 +3224,6 @@ impl ZeldaState {
             0x90, 0xa0,
         ];
         const GFX3: [u8; 7] = [0, 8, 10, 2, 2, 6, 4];
-        const AGAHNIM_PHASE_SCRATCH: usize = 0x0ff8;
-
         self.agahnim_draw(k);
         if self.sprite_slot_view(k).pause() != 0 {
             let value = 32;
@@ -3266,7 +3258,8 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.write_u8_ram(AGAHNIM_PHASE_SCRATCH, 0);
+                self.sprite_workspace_view_mut()
+                    .clear_agahnim_phase_scratch();
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let value = 255;
@@ -3971,12 +3964,14 @@ impl ZeldaState {
             player.set_incapacitated_timer(24);
             let value = 48;
             self.sprite_slot_view_mut(k).set_delay_aux1(value);
-            let effect =
-                if self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & FEATURE_MISC_BUG_FIXES_DRAW != 0 {
-                    0x32
-                } else {
-                    0
-                };
+            let effect = if self
+                .enhanced_features_view()
+                .has(FEATURE_MISC_BUG_FIXES_DRAW)
+            {
+                0x32
+            } else {
+                0
+            };
             self.set_sound_effect_2_with_sprite_pan(k, effect);
         }
 
@@ -9858,7 +9853,9 @@ impl ZeldaState {
             return;
         }
 
-        if self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & FEATURE_MISC_BUG_FIXES_DRAW != 0
+        if self
+            .enhanced_features_view()
+            .has(FEATURE_MISC_BUG_FIXES_DRAW)
             && self.frame_control_view().submodule() != 0
         {
             return;
@@ -12457,7 +12454,9 @@ impl ZeldaState {
         self.sprite_check_absorption_by_player(k);
 
         if self.sprite_slot_view(k).state() == 0
-            && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & FEATURE_MISC_BUG_FIXES_DRAW) != 0
+            && self
+                .enhanced_features_view()
+                .has(FEATURE_MISC_BUG_FIXES_DRAW)
         {
             return;
         }
@@ -12563,8 +12562,9 @@ impl ZeldaState {
                     }
                 }
                 if self.sprite_slot_view(k).state() == 0
-                    && (self.read_u32_ram(ENHANCED_FEATURES0_DRAW) & FEATURE_MISC_BUG_FIXES_DRAW)
-                        != 0
+                    && self
+                        .enhanced_features_view()
+                        .has(FEATURE_MISC_BUG_FIXES_DRAW)
                 {
                     return;
                 }
@@ -17110,8 +17110,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_head_direction(value);
                         let value = 1;
                         self.sprite_slot_view_mut(k).set_ai_state(value);
-                        self.write_u16_ram(MAZE_GAME_TIMER_LO, 0);
-                        self.write_u16_ram(MAZE_GAME_TIMER_HI, 0);
+                        self.maze_game_timer_view_mut().clear_elapsed();
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_a(value);
                         self.world_state_view_mut()
@@ -17131,11 +17130,9 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).a() == 63 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_a(value);
-                    let t = self.read_u16_ram(MAZE_GAME_TIMER_LO).wrapping_add(1);
-                    self.write_u16_ram(MAZE_GAME_TIMER_LO, t);
+                    let t = self.maze_game_timer_view_mut().increment_elapsed_low();
                     if t == 0 {
-                        let high = self.read_u16_ram(MAZE_GAME_TIMER_HI).wrapping_add(1);
-                        self.write_u16_ram(MAZE_GAME_TIMER_HI, high);
+                        self.maze_game_timer_view_mut().increment_elapsed_high();
                     }
                 }
             }
@@ -17162,10 +17159,8 @@ impl ZeldaState {
         }
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                let elapsed = self.read_u16_ram(MAZE_GAME_TIMER_LO);
-                let elapsed_hi = self.read_u16_ram(MAZE_GAME_TIMER_HI);
-                self.write_u16_ram(MAZE_GAME_TIMER_SNAPSHOT_LO, elapsed);
-                self.write_u16_ram(MAZE_GAME_TIMER_SNAPSHOT_HI, elapsed_hi);
+                let elapsed = self.maze_game_timer_view().elapsed_low();
+                self.maze_game_timer_view_mut().capture_snapshot();
                 let mut t = elapsed % 6000;
                 let a = t / 600;
                 t %= 600;
@@ -17192,7 +17187,7 @@ impl ZeldaState {
                     self.sprite_show_message_unconditional(0x00cf);
                     let value = 4;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                } else if self.read_u16_ram(MAZE_GAME_TIMER_SNAPSHOT_LO) < 16 {
+                } else if self.maze_game_timer_view().snapshot_low() < 16 {
                     self.sprite_show_message_unconditional(0x00cd);
                     let dir = self.player_state_view().handler_state();
                     let value = dir;
@@ -20273,10 +20268,10 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).ai_state() == 0 {
-            if self.read_u8_ram(MESSAGE_OR_SPRITE_STATE_CACHE) == 0 {
+            if self.messaging_state_view().message_or_sprite_state_cache() == 0 {
                 return;
             }
-            let value = self.read_u8_ram(MESSAGE_OR_SPRITE_STATE_CACHE);
+            let value = self.messaging_state_view().message_or_sprite_state_cache();
             self.sprite_slot_view_mut(k).set_ai_state(value);
             let value = 128;
             self.sprite_slot_view_mut(k).set_delay_main(value);
@@ -20667,7 +20662,8 @@ impl ZeldaState {
                 let entry_y = y0.wrapping_add(((i >> 2) as u8) * 0x10);
                 self.oam_state_view_mut().set_entry_x(oam + i * 4, entry_x);
                 self.oam_state_view_mut().set_entry_y(oam + i * 4, entry_y);
-                self.write_u16_ram(oam + i * 4 + 2, CHAR_FLAGS[i]);
+                self.oam_state_view_mut()
+                    .set_entry_char_flags(oam + i * 4, CHAR_FLAGS[i]);
             }
         } else {
             let j = usize::from(self.sprite_slot_view(k).subtype2() - 1);
@@ -26086,11 +26082,13 @@ impl ZeldaState {
         let mut pos = k * 8;
         for _ in (0..6).rev() {
             let x = self
-                .read_u16_ram(CHAINCHOMP_X_HIST_DRAW + pos * 2)
+                .chain_chomp_history_view()
+                .x(pos)
                 .wrapping_add(r8)
                 .wrapping_sub(self.world_state_view().bg2_x());
             let y = self
-                .read_u16_ram(CHAINCHOMP_Y_HIST_DRAW + pos * 2)
+                .chain_chomp_history_view()
+                .y(pos)
                 .wrapping_add(r8)
                 .wrapping_sub(self.world_state_view().bg2_y());
             self.set_oam_helper0_at_for_draw(oam, x, y, 0x8b, (flags & 0xf0) | 0x0d, 0);
@@ -26827,15 +26825,24 @@ impl ZeldaState {
         let tile1 = self.asset_u16(70, src + 1);
         let tile2 = self.asset_u16(70, src + 2);
         let tile3 = self.asset_u16(70, src + 3);
-        self.write_u16_ram(dst, vram_pos.swap_bytes());
-        self.write_u16_ram(dst + 2, 0x0300);
-        self.write_u16_ram(dst + 4, tile0);
-        self.write_u16_ram(dst + 6, tile1);
-        self.write_u16_ram(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
-        self.write_u16_ram(dst + 10, 0x0300);
-        self.write_u16_ram(dst + 12, tile2);
-        self.write_u16_ram(dst + 14, tile3);
-        self.write_u16_ram(dst + 16, 0xffff);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst, vram_pos.swap_bytes());
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 2, 0x0300);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 4, tile0);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 6, tile1);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 10, 0x0300);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 12, tile2);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 14, tile3);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 16, 0xffff);
         self.vram_upload_data_view_mut()
             .set_offset((upload + 16) as u16);
     }

@@ -1090,7 +1090,7 @@ impl ZeldaState {
             ancilla.set_g(0);
         }
 
-        let xt: u16 = if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
+        let xt: u16 = if self.enhanced_features_view().has(1) {
             0x40
         } else {
             0
@@ -1547,7 +1547,7 @@ impl ZeldaState {
                 if self.player_state_view().is_bunny_mirror()
                     || self.player_state_view().has_auxiliary_state()
                     || !self.player_state_view().has_item_in_hand()
-                        && self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0
+                        && self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
                 {
                     self.boomerang_terminate(k);
                     return;
@@ -3585,7 +3585,7 @@ impl ZeldaState {
             let value = 1;
             self.ancilla_slot_view_mut(k).set_l(value);
 
-            let enhanced_bird_travel = self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0;
+            let enhanced_bird_travel = self.enhanced_features_view().has(1);
             let mut bird = self.ancilla_slot_view_mut(k);
             if enhanced_bird_travel {
                 bird.set_z_velocity(58);
@@ -5247,7 +5247,7 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() == 3
             && self.ancilla_slot_view(k).work_byte_3() == 1
         {
-            let old = if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+            let old = if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
                 self.follower_state_view().indicator()
             } else {
                 0
@@ -6582,7 +6582,7 @@ impl ZeldaState {
     fn ancilla27_duck(&mut self, k: usize) {
         if self.frame_control_view().submodule() == 0 {
             if self.ancilla_slot_view(k).timer() != 0 {
-                let xt: u16 = if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
+                let xt: u16 = if self.enhanced_features_view().has(1) {
                     0x40
                 } else {
                     0
@@ -7732,7 +7732,7 @@ impl ZeldaState {
 
     fn hapiness_pond_rupees_save_state(&mut self, k: usize, j: usize) {
         let ancilla = self.ancilla_slot_view(j);
-        let snapshot = crate::ram::semantic::HappinessPondRupeeState {
+        let snapshot = crate::game_state::HappinessPondRupeeState {
             y_low: ancilla.y_low(),
             y_high: ancilla.y_high(),
             x_low: ancilla.x_low(),
@@ -9192,14 +9192,8 @@ impl ZeldaState {
         let Some(k) = k else {
             // C writes through k = -1 on allocation failure; preserve those
             // aliasing writes explicitly instead of silently returning.
-            self.write_u8_ram(ANCILLA_ITEM_TO_LINK - 1, 0);
-            self.write_u8_ram(ANCILLA_STEP - 1, x);
-            self.write_u8_ram(ANCILLA_TIMER - 1, 4);
-            self.write_u8_ram(ANCILLA_AUX_TIMER - 1, 3);
-            self.write_u8_ram(ANCILLA_X_LO - 1, spark_x as u8);
-            self.write_u8_ram(ANCILLA_X_HI - 1, (spark_x >> 8) as u8);
-            self.write_u8_ram(ANCILLA_Y_LO - 1, spark_y as u8);
-            self.write_u8_ram(ANCILLA_Y_HI - 1, (spark_y >> 8) as u8);
+            self.ancilla_spawn_scratch_view_mut()
+                .write_failed_spin_sparkle(x, spark_x, spark_y);
             return;
         };
         {
@@ -10005,7 +9999,7 @@ impl ZeldaState {
             } else if self.player_state_view().is_bunny() {
                 self.player_state_view_mut().set_handler_state(23);
                 self.player_state_view_mut().set_bunny_state(1);
-                if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+                if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
                     self.LoadGearPalettes_bunny();
                 }
             } else {
@@ -10329,7 +10323,7 @@ impl ZeldaState {
     }
 
     fn ancilla_terminate_if_offscreen(&mut self, j: usize) {
-        let xt: u16 = if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
+        let xt: u16 = if self.enhanced_features_view().has(1) {
             0x40
         } else {
             0
@@ -11477,7 +11471,7 @@ impl ZeldaState {
 
     fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
         let mut yval = 0xf0;
-        let xt: u16 = if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
+        let xt: u16 = if self.enhanced_features_view().has(1) {
             0x40
         } else {
             0
@@ -11524,7 +11518,7 @@ impl ZeldaState {
     ) {
         let mut yval = 0xf0;
         self.oam_state_view_mut().set_entry_x(oam, x as u8);
-        let xt: u16 = if self.read_u32_ram(ENHANCED_FEATURES0) & 1 != 0 {
+        let xt: u16 = if self.enhanced_features_view().has(1) {
             0x48
         } else {
             0

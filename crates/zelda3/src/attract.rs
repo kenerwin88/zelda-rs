@@ -387,10 +387,8 @@ impl ZeldaState {
         ];
         let zoom = self.attract_state_view().mode7_zoom_timer() as u16;
         for (i, value) in MAP_MODE_ZOOMS1.iter().enumerate() {
-            self.write_u16_ram(
-                HDMA_TABLE_DYNAMIC + i * 2,
-                ((*value as u32 * zoom as u32) >> 8) as u16,
-            );
+            self.spotlight_hdma_view_mut()
+                .set_hdma_table_dynamic_entry(i, ((*value as u32 * zoom as u32) >> 8) as u16);
         }
     }
 

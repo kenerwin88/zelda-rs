@@ -132,16 +132,16 @@ impl ZeldaState {
             .wrapping_add(0x80);
         self.poly_state_view_mut()
             .set_shape_depth_bias(shape_depth_bias);
-        self.write_u16_ram(
-            POLY_TMP0,
-            (self.poly_state_view().model() as u16).wrapping_mul(2),
-        );
+        let model_offset = (self.poly_state_view().model() as u16).wrapping_mul(2);
+        self.poly_state_view_mut().set_tmp0_word(model_offset);
 
         let config = self.poly_config();
         self.poly_state_view_mut().set_num_vertices(config.num_vtx);
         self.poly_state_view_mut().set_num_polys(config.num_poly);
-        self.write_u16_ram(POLY_FROMLUT_PTR2, config.vtx_val);
-        self.write_u16_ram(POLY_FROMLUT_PTR4, config.polys_val);
+        self.poly_state_view_mut()
+            .set_vertex_table_pointer(config.vtx_val);
+        self.poly_state_view_mut()
+            .set_face_table_pointer(config.polys_val);
     }
 
     pub(super) fn polyhedral_set_rotation_matrix(&mut self) {
@@ -152,14 +152,16 @@ impl ZeldaState {
         let sin_b = POLY_ROTATION_SIN_COS[angle_b];
         let cos_b = POLY_ROTATION_SIN_COS[angle_b + 64];
 
-        self.write_i16_ram(POLY_SIN_A, sin_a as i16);
-        self.write_i16_ram(POLY_COS_A, cos_a as i16);
-        self.write_i16_ram(POLY_SIN_B, sin_b as i16);
-        self.write_i16_ram(POLY_COS_B, cos_b as i16);
-        self.write_i16_ram(POLY_E0, (((sin_b as i32 * sin_a as i32) >> 8) << 2) as i16);
-        self.write_i16_ram(POLY_E1, (((cos_b as i32 * cos_a as i32) >> 8) << 2) as i16);
-        self.write_i16_ram(POLY_E2, (((cos_b as i32 * sin_a as i32) >> 8) << 2) as i16);
-        self.write_i16_ram(POLY_E3, (((sin_b as i32 * cos_a as i32) >> 8) << 2) as i16);
+        self.poly_state_view_mut().set_rotation_sin_a(sin_a as i16);
+        self.poly_state_view_mut().set_rotation_cos_a(cos_a as i16);
+        self.poly_state_view_mut().set_rotation_sin_b(sin_b as i16);
+        self.poly_state_view_mut().set_rotation_cos_b(cos_b as i16);
+        self.poly_state_view_mut().set_rotation_matrix_terms(
+            (((sin_b as i32 * sin_a as i32) >> 8) << 2) as i16,
+            (((cos_b as i32 * cos_a as i32) >> 8) << 2) as i16,
+            (((cos_b as i32 * sin_a as i32) >> 8) << 2) as i16,
+            (((sin_b as i32 * cos_a as i32) >> 8) << 2) as i16,
+        );
     }
 
     pub(super) fn polyhedral_operate_rotation(&mut self) {
@@ -184,42 +186,51 @@ impl ZeldaState {
         let x = self.poly_state_view().fromlut_x() as i32;
         let y = self.poly_state_view().fromlut_y() as i32;
         let z = self.poly_state_view().fromlut_z() as i32;
-        let sin_a = self.read_i16_ram(POLY_SIN_A) as i32;
-        let cos_a = self.read_i16_ram(POLY_COS_A) as i32;
-        let sin_b = self.read_i16_ram(POLY_SIN_B) as i32;
-        let cos_b = self.read_i16_ram(POLY_COS_B) as i32;
-        let e0 = self.read_i16_ram(POLY_E0) as i32;
-        let e1 = self.read_i16_ram(POLY_E1) as i32;
-        let e2 = self.read_i16_ram(POLY_E2) as i32;
-        let e3 = self.read_i16_ram(POLY_E3) as i32;
+        let poly_state = self.poly_state_view();
+        let sin_a = poly_state.rotation_sin_a() as i32;
+        let cos_a = poly_state.rotation_cos_a() as i32;
+        let sin_b = poly_state.rotation_sin_b() as i32;
+        let cos_b = poly_state.rotation_cos_b() as i32;
+        let e0 = poly_state.rotation_e0() as i32;
+        let e1 = poly_state.rotation_e1() as i32;
+        let e2 = poly_state.rotation_e2() as i32;
+        let e3 = poly_state.rotation_e3() as i32;
         let shape_depth_bias = self.poly_state_view().shape_depth_bias() as i32;
 
-        self.write_i16_ram(POLY_F0, (cos_b * z - sin_b * x) as i16);
-        self.write_i16_ram(POLY_F1, (e0 * z + cos_a * y + e2 * x) as i16);
-        self.write_i16_ram(
-            POLY_F2,
-            (((e3 * z) >> 8) - ((sin_a * y) >> 8) + ((e1 * x) >> 8) + shape_depth_bias) as i16,
+        self.poly_state_view_mut()
+            .set_f0_word((cos_b * z - sin_b * x) as i16 as u16);
+        self.poly_state_view_mut()
+            .set_f1_word((e0 * z + cos_a * y + e2 * x) as i16 as u16);
+        self.poly_state_view_mut().set_f2_word(
+            (((e3 * z) >> 8) - ((sin_a * y) >> 8) + ((e1 * x) >> 8) + shape_depth_bias) as i16
+                as u16,
         );
     }
 
     pub(super) fn polyhedral_project_point(&mut self) {
-        let f0 = self.poly_divide(self.read_u16_ram(POLY_F0), self.read_u16_ram(POLY_F2));
-        let f1 = self.poly_divide(self.read_u16_ram(POLY_F1), self.read_u16_ram(POLY_F2));
-        self.write_u16_ram(POLY_F0, f0);
-        self.write_u16_ram(POLY_F1, f1);
+        let f0 = self.poly_divide(
+            self.poly_state_view().f0_word(),
+            self.poly_state_view().f2_word(),
+        );
+        let f1 = self.poly_divide(
+            self.poly_state_view().f1_word(),
+            self.poly_state_view().f2_word(),
+        );
+        self.poly_state_view_mut().set_f0_word(f0);
+        self.poly_state_view_mut().set_f1_word(f1);
     }
 
     pub(super) fn poly_divide(&mut self, a: u16, b: u16) -> u16 {
         let mut tmp1 = if (a as i16) < 0 { a.wrapping_neg() } else { a };
         let mut tmp0 = b;
-        self.write_u16_ram(POLY_TMP1, tmp1);
-        self.write_u16_ram(POLY_TMP0, tmp0);
+        self.poly_state_view_mut().set_tmp1_word(tmp1);
+        self.poly_state_view_mut().set_tmp0_word(tmp0);
         while tmp0 >= 256 {
             tmp0 >>= 1;
             tmp1 >>= 1;
         }
-        self.write_u16_ram(POLY_TMP1, tmp1);
-        self.write_u16_ram(POLY_TMP0, tmp0);
+        self.poly_state_view_mut().set_tmp1_word(tmp1);
+        self.poly_state_view_mut().set_tmp0_word(tmp0);
         let q = tmp1 / tmp0;
         if (a as i16) < 0 {
             q.wrapping_neg()
@@ -279,7 +290,7 @@ impl ZeldaState {
             (a as i32).wrapping_mul((face.coord(4).wrapping_sub(face.coord(2)) as i8) as i32)
                 as u16,
         );
-        self.write_u16_ram(POLY_TMP0, tmp0);
+        self.poly_state_view_mut().set_tmp0_word(tmp0);
         tmp0 as i16
     }
 
@@ -290,7 +301,7 @@ impl ZeldaState {
         } else {
             0
         };
-        let a = (((self.read_u16_ram(POLY_TMP0) as u32) << (t + 1)) >> 8) as u8;
+        let a = (((self.poly_state_view().tmp0_word() as u32) << (t + 1)) >> 8) as u8;
         let color = if a <= 1 {
             1
         } else if a >= 7 {
@@ -303,8 +314,8 @@ impl ZeldaState {
 
     pub(super) fn polyhedral_set_color_mask(&mut self, color: usize) {
         let value = POLY_RASTER_COLORS[color];
-        self.write_u16_ram(POLY_RASTER_COLOR0, value as u16);
-        self.write_u16_ram(POLY_RASTER_COLOR1, (value >> 16) as u16);
+        self.poly_state_view_mut()
+            .set_raster_colors(value as u16, (value >> 16) as u16);
     }
 
     pub(super) fn polyhedral_draw_face(&mut self) {
@@ -326,7 +337,8 @@ impl ZeldaState {
         let raster_dst_ptr = POLYHEDRAL_BUFFER as u16
             + (((min_y & 0x38) ^ if min_y & 0x20 != 0 { 0x24 } else { 0 }) as u16) * 64
             + ((min_y & 7) as u16) * 2;
-        self.write_u16_ram(POLY_RASTER_DST_PTR, raster_dst_ptr);
+        self.poly_state_view_mut()
+            .set_raster_dst_ptr(raster_dst_ptr);
         let total_steps = self.poly_face_coords_view().xy_coords_count() >> 1;
         self.poly_raster_edge_view_mut()
             .set_both_cur_vertex_idx(min_idx as u8);
@@ -343,14 +355,15 @@ impl ZeldaState {
 
         loop {
             self.polyhedral_fill_line();
-            let mut raster_dst_ptr = self.read_u16_ram(POLY_RASTER_DST_PTR);
+            let mut raster_dst_ptr = self.poly_state_view().raster_dst_ptr();
             if raster_dst_ptr as u8 != 0x0e {
                 raster_dst_ptr = raster_dst_ptr.wrapping_add(2);
             } else {
                 let a = (raster_dst_ptr >> 8).wrapping_add(2) as u8;
                 raster_dst_ptr = ((a ^ if a & 8 != 0 { 0 } else { 0x19 }) as u16) << 8;
             }
-            self.write_u16_ram(POLY_RASTER_DST_PTR, raster_dst_ptr);
+            self.poly_state_view_mut()
+                .set_raster_dst_ptr(raster_dst_ptr);
 
             let edge = self.poly_raster_edge_view();
             if edge.y0_cur() == edge.y0_trigger() {
@@ -372,32 +385,25 @@ impl ZeldaState {
                 }
             }
             self.poly_raster_edge_view_mut().increment_y1_cur();
-            self.write_u16_ram(
-                POLY_X0_FRAC,
-                self.read_u16_ram(POLY_X0_FRAC)
-                    .wrapping_add(self.read_u16_ram(POLY_X0_STEP)),
-            );
-            self.write_u16_ram(
-                POLY_X1_FRAC,
-                self.read_u16_ram(POLY_X1_FRAC)
-                    .wrapping_add(self.read_u16_ram(POLY_X1_STEP)),
-            );
+            self.poly_state_view_mut().add_x0_step_to_fraction();
+            self.poly_state_view_mut().add_x1_step_to_fraction();
         }
     }
 
     pub(super) fn polyhedral_fill_line(&mut self) {
-        let left = POLY_LEFT_EDGE_MASKS[((self.read_u16_ram(POLY_X0_FRAC) >> 8) & 7) as usize];
-        let right = POLY_RIGHT_EDGE_MASKS[((self.read_u16_ram(POLY_X1_FRAC) >> 8) & 7) as usize];
-        let tmp2 = ((self.read_u16_ram(POLY_X0_FRAC) >> 8) & 0x38) as u8;
+        let left = POLY_LEFT_EDGE_MASKS[((self.poly_state_view().x0_fraction() >> 8) & 7) as usize];
+        let right =
+            POLY_RIGHT_EDGE_MASKS[((self.poly_state_view().x1_fraction() >> 8) & 7) as usize];
+        let tmp2 = ((self.poly_state_view().x0_fraction() >> 8) & 0x38) as u8;
         self.poly_state_view_mut().set_tmp2(tmp2);
-        let mut d0 = ((self.read_u16_ram(POLY_X1_FRAC) >> 8) & 0x38) as i32;
-        let mut ptr = self.read_u16_ram(POLY_RASTER_DST_PTR) as usize + d0 as usize * 4;
+        let mut d0 = ((self.poly_state_view().x1_fraction() >> 8) & 0x38) as i32;
+        let mut ptr = self.poly_state_view().raster_dst_ptr() as usize + d0 as usize * 4;
         d0 -= self.poly_state_view().tmp2() as i32;
         if d0 == 0 {
             let mask = left & right;
-            self.write_u16_ram(POLY_TMP1, mask);
-            self.blend_poly_word(ptr, self.read_u16_ram(POLY_RASTER_COLOR0), mask);
-            self.blend_poly_word(ptr + 16, self.read_u16_ram(POLY_RASTER_COLOR1), mask);
+            self.poly_state_view_mut().set_tmp1_word(mask);
+            self.blend_poly_word(ptr, self.poly_state_view().raster_color0(), mask);
+            self.blend_poly_word(ptr + 16, self.poly_state_view().raster_color1(), mask);
             return;
         }
         if d0 < 0 {
@@ -405,22 +411,24 @@ impl ZeldaState {
         }
 
         let mut n = d0 >> 3;
-        self.blend_poly_word(ptr, self.read_u16_ram(POLY_RASTER_COLOR0), right);
-        self.blend_poly_word(ptr + 16, self.read_u16_ram(POLY_RASTER_COLOR1), right);
+        self.blend_poly_word(ptr, self.poly_state_view().raster_color0(), right);
+        self.blend_poly_word(ptr + 16, self.poly_state_view().raster_color1(), right);
         ptr = ptr.wrapping_sub(0x20);
         loop {
             n -= 1;
             if n == 0 {
                 break;
             }
-            self.write_u16_ram(ptr, self.read_u16_ram(POLY_RASTER_COLOR0));
-            self.write_u16_ram(ptr + 16, self.read_u16_ram(POLY_RASTER_COLOR1));
+            let color0 = self.poly_state_view().raster_color0();
+            let color1 = self.poly_state_view().raster_color1();
+            self.poly_state_view_mut().set_bitmap_word(ptr, color0);
+            self.poly_state_view_mut().set_bitmap_word(ptr + 16, color1);
             ptr = ptr.wrapping_sub(0x20);
         }
-        self.blend_poly_word(ptr, self.read_u16_ram(POLY_RASTER_COLOR0), left);
-        self.blend_poly_word(ptr + 16, self.read_u16_ram(POLY_RASTER_COLOR1), left);
-        self.write_u16_ram(POLY_TMP1, left);
-        self.write_u16_ram(POLY_RASTER_NUMFULL, 0);
+        self.blend_poly_word(ptr, self.poly_state_view().raster_color0(), left);
+        self.blend_poly_word(ptr + 16, self.poly_state_view().raster_color1(), left);
+        self.poly_state_view_mut().set_tmp1_word(left);
+        self.poly_state_view_mut().clear_raster_full_word_count();
     }
 
     pub(super) fn polyhedral_set_left(&mut self) -> bool {
@@ -444,12 +452,15 @@ impl ZeldaState {
                 self.poly_raster_edge_view_mut()
                     .set_cur_vertex_idx0(i as u8);
                 let edge = self.poly_raster_edge_view();
-                let u = edge.x0_target() as i32 - edge.x0_cur() as i32;
-                let t = (((u.abs() & 0xff) << 8)
-                    / edge.y0_trigger().wrapping_sub(edge.y0_cur()) as i32)
-                    as u16;
-                self.write_u16_ram(POLY_X0_FRAC, ((edge.x0_cur() as u16) << 8) | 0x80);
-                self.write_u16_ram(POLY_X0_STEP, if u < 0 { t.wrapping_neg() } else { t });
+                let x0_cur = edge.x0_cur();
+                let y0_cur = edge.y0_cur();
+                let y0_trigger = edge.y0_trigger();
+                let u = edge.x0_target() as i32 - x0_cur as i32;
+                let t = (((u.abs() & 0xff) << 8) / y0_trigger.wrapping_sub(y0_cur) as i32) as u16;
+                self.poly_state_view_mut()
+                    .set_x0_fraction(((x0_cur as u16) << 8) | 0x80);
+                self.poly_state_view_mut()
+                    .set_x0_step(if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
             self.poly_raster_edge_view_mut().set_left_current_x(x);
@@ -479,12 +490,15 @@ impl ZeldaState {
                 self.poly_raster_edge_view_mut()
                     .set_cur_vertex_idx1(i as u8);
                 let edge = self.poly_raster_edge_view();
-                let u = edge.x1_target() as i32 - edge.x1_cur() as i32;
-                let t = (((u.abs() & 0xff) << 8)
-                    / edge.y1_trigger().wrapping_sub(edge.y1_cur()) as i32)
-                    as u16;
-                self.write_u16_ram(POLY_X1_FRAC, ((edge.x1_cur() as u16) << 8) | 0x80);
-                self.write_u16_ram(POLY_X1_STEP, if u < 0 { t.wrapping_neg() } else { t });
+                let x1_cur = edge.x1_cur();
+                let y1_cur = edge.y1_cur();
+                let y1_trigger = edge.y1_trigger();
+                let u = edge.x1_target() as i32 - x1_cur as i32;
+                let t = (((u.abs() & 0xff) << 8) / y1_trigger.wrapping_sub(y1_cur) as i32) as u16;
+                self.poly_state_view_mut()
+                    .set_x1_fraction(((x1_cur as u16) << 8) | 0x80);
+                self.poly_state_view_mut()
+                    .set_x1_step(if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
             self.poly_raster_edge_view_mut().set_right_current_x(x);
@@ -494,8 +508,8 @@ impl ZeldaState {
     }
 
     fn blend_poly_word(&mut self, offset: usize, color: u16, mask: u16) {
-        let current = self.read_u16_ram(offset);
-        self.write_u16_ram(offset, current ^ ((current ^ color) & mask));
+        self.poly_state_view_mut()
+            .blend_bitmap_word(offset, color, mask);
     }
 
     fn poly_config(&self) -> &'static PolyConfig {

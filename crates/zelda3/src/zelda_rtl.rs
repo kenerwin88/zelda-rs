@@ -17,53 +17,54 @@ use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 
 use crate::config::config_value_bytes;
 #[cfg(test)]
-use crate::ram::messaging::MODULE as MESSAGING_MODULE;
-use crate::ram::messaging::TEXT_BUFFER as MESSAGING_TEXT_BUFFER;
-use crate::ram::nmi::{
+use crate::game_state::constants::messaging::MODULE as MESSAGING_MODULE;
+use crate::game_state::constants::messaging::TEXT_BUFFER as MESSAGING_TEXT_BUFFER;
+use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
     VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET,
 };
-use crate::ram::player::LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS;
-use crate::ram::semantic::{
-    AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, ArcheryGameView, ArcheryGameViewMut,
-    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractStateView,
-    AttractStateViewMut, AttractVramTargetView, AttractVramTargetViewMut, BeamosLaserHistoryView,
-    BeamosLaserHistoryViewMut, Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationView,
-    BirdTravelDestinationViewMut, BirdTravelStatusViewMut, BlastWallExplosionView,
-    BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
-    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut,
-    BombosBlastView, BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut,
-    BombosSpellScratchView, BombosSpellScratchViewMut, CachedSpriteSlotView,
-    CachedSpriteSlotViewMut, DialogueMessageIndexView, DialogueMessageIndexViewMut,
-    DialogueNumberView, DialogueNumberViewMut, DialogueSourceOffsetViewMut, DiggingGamePrizeView,
-    DiggingGamePrizeViewMut, DisplayNmiView, DisplayNmiViewMut, DoorDebrisView, DoorDebrisViewMut,
-    DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
-    DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
-    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
-    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
-    DungeonSecretScratchViewMut, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
-    DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut, EndingCreditStateView,
-    EndingCreditStateViewMut, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
-    EnemyDamageDataViewMut, EtherOrbitView, EtherOrbitViewMut, FollowerStateView,
-    FollowerStateViewMut, FrameControlView, FrameControlViewMut, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
-    HitboxScratchOffsetViewMut, HudInventoryOrderView, HudInventoryOrderViewMut, HudStateView,
-    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroStateView, IntroStateViewMut,
-    IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, MessagingRenderBufferView,
-    MessagingRenderBufferViewMut,
-    MessagingStateView, MessagingStateViewMut, MessagingTextView, MinigameStateView,
-    MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView,
-    MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut, OamStateView,
-    MemorizedTileView, MemorizedTileViewMut, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView,
+use crate::game_state::constants::player::LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS;
+use crate::game_state::{
+    AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, AncillaSpawnScratchViewMut,
+    ArcheryGameView, ArcheryGameViewMut, ArmosKnightHomeView, ArmosKnightHomeViewMut,
+    ArrghusPuffHomeView, AttractStateView, AttractStateViewMut, AttractVramTargetView,
+    AttractVramTargetViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut, Bg1MoveCalcView,
+    Bg1MoveCalcViewMut, BirdTravelDestinationView, BirdTravelDestinationViewMut,
+    BirdTravelStatusViewMut, BlastWallExplosionView, BlastWallExplosionViewMut,
+    BlastWallFireballView, BlastWallFireballViewMut, BlastWallFragmentView,
+    BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView,
+    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
+    BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
+    ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
+    DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
+    DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayNmiView,
+    DisplayNmiViewMut, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
+    DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
+    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
+    DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
+    DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStateView, DungeonStateViewMut,
+    DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
+    EndingCreditStateView, EndingCreditStateViewMut, EndingScratchView, EndingScratchViewMut,
+    EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesView, EnhancedFeaturesViewMut,
+    EtherOrbitView, EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameControlView,
+    FrameControlViewMut, GarnishSlotView, GarnishSlotViewMut, GarnishStateView,
+    GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
+    HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
+    IntroStateView, IntroStateViewMut, IntroSwordView, IntroSwordViewMut, InventoryStateView,
+    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    MazeGameTimerView, MazeGameTimerViewMut, MemorizedTileView, MemorizedTileViewMut,
+    MessagingRenderBufferView, MessagingRenderBufferViewMut, MessagingStateView,
+    MessagingStateViewMut, MessagingTextView, MinigameStateView, MinigameStateViewMut,
+    MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
+    MosaicDirectionView, MosaicDirectionViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldScreenSizeView,
-    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteBufferViewMut, PaletteFilterView,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut,
+    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
+    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
+    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
     PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
     PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
     PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
@@ -74,20 +75,19 @@ use crate::ram::semantic::{
     ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
     SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
     SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpriteBattleView, SpriteBattleViewMut,
-    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
+    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
     SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, MosaicDirectionView, MosaicDirectionViewMut,
-    SpotlightHdmaView, SpotlightHdmaViewMut, StarTileView, StarTileViewMut,
-    TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView, VramLoadStateViewMut,
-    VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
-    WeatherVaneStateViewMut, WorldStateView, WorldStateViewMut,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
+    VramLoadStateViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldStateView,
+    WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1747,6 +1747,14 @@ impl ZeldaState {
         PlayerStateViewMut::new(&mut self.ram)
     }
 
+    pub(crate) fn enhanced_features_view(&self) -> EnhancedFeaturesView<'_> {
+        EnhancedFeaturesView::new(&self.ram)
+    }
+
+    pub(crate) fn enhanced_features_view_mut(&mut self) -> EnhancedFeaturesViewMut<'_> {
+        EnhancedFeaturesViewMut::new(&mut self.ram)
+    }
+
     pub(crate) fn system_signals_view(&self) -> SystemSignalsView<'_> {
         SystemSignalsView::new(&self.ram)
     }
@@ -2559,6 +2567,26 @@ impl ZeldaState {
         FollowerStateViewMut::new(&mut self.ram)
     }
 
+    pub(crate) fn chain_chomp_history_view(&self) -> ChainChompHistoryView<'_> {
+        ChainChompHistoryView::new(&self.ram)
+    }
+
+    pub(crate) fn chain_chomp_history_view_mut(&mut self) -> ChainChompHistoryViewMut<'_> {
+        ChainChompHistoryViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn ancilla_spawn_scratch_view_mut(&mut self) -> AncillaSpawnScratchViewMut<'_> {
+        AncillaSpawnScratchViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn maze_game_timer_view(&self) -> MazeGameTimerView<'_> {
+        MazeGameTimerView::new(&self.ram)
+    }
+
+    pub(crate) fn maze_game_timer_view_mut(&mut self) -> MazeGameTimerViewMut<'_> {
+        MazeGameTimerViewMut::new(&mut self.ram)
+    }
+
     pub(crate) fn enemy_damage_data_view(&self) -> EnemyDamageDataView<'_> {
         EnemyDamageDataView::new(&self.ram)
     }
@@ -2685,6 +2713,14 @@ impl ZeldaState {
         VramLoadStateViewMut::new(&mut self.ram)
     }
 
+    pub(crate) fn overworld_tile_update_view(&self) -> OverworldTileUpdateView<'_> {
+        OverworldTileUpdateView::new(&self.ram)
+    }
+
+    pub(crate) fn overworld_tile_update_view_mut(&mut self) -> OverworldTileUpdateViewMut<'_> {
+        OverworldTileUpdateViewMut::new(&mut self.ram)
+    }
+
     pub(crate) fn star_tile_view(&self) -> StarTileView<'_> {
         StarTileView::new(&self.ram)
     }
@@ -2725,7 +2761,9 @@ impl ZeldaState {
         MosaicDirectionViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn overworld_palette_backup_view_mut(&mut self) -> OverworldPaletteBackupViewMut<'_> {
+    pub(crate) fn overworld_palette_backup_view_mut(
+        &mut self,
+    ) -> OverworldPaletteBackupViewMut<'_> {
         OverworldPaletteBackupViewMut::new(&mut self.ram)
     }
 
@@ -4115,14 +4153,16 @@ impl ZeldaState {
                         );
                     }
                 }
-                let enhanced_features0 = self.read_u32_ram(ENHANCED_FEATURES0);
-                if enhanced_features0 != self.wanted_zelda_features {
-                    self.write_u32_ram(ENHANCED_FEATURES0, self.wanted_zelda_features);
+                let enhanced_features0 = self.enhanced_features_view().bits();
+                let wanted_zelda_features = self.wanted_zelda_features;
+                if enhanced_features0 != wanted_zelda_features {
+                    self.enhanced_features_view_mut()
+                        .set_bits(wanted_zelda_features);
                     self.emu_sync_memory_region(ENHANCED_FEATURES0, 4);
                     Self::state_recorder_record_patch_byte(
                         &mut state_recorder,
                         ENHANCED_FEATURES0 as u32,
-                        &self.wanted_zelda_features.to_le_bytes(),
+                        &wanted_zelda_features.to_le_bytes(),
                         4,
                     );
                 }
@@ -4188,7 +4228,7 @@ impl ZeldaState {
                 }
             };
         if self.emu_runframe.is_none()
-            || self.read_u32_ram(ENHANCED_FEATURES0) != 0
+            || self.enhanced_features_view().bits() != 0
             || self.dialogue_flags != 0
         {
             self.replay_trace_ram_watch("before-run-frame-internal");
@@ -4625,7 +4665,7 @@ impl ZeldaState {
         self.replay_trace_submodule("pits-after-tile-detect");
         self.replay_trace_player_state("pits-after-tile-detect");
         if self.tile_detect_position_view().pit_tile() & 1 == 0 {
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+            if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
                 self.player_state_view_mut().clear_near_pit_state();
             }
             if self.player_state_view().is_running() {
@@ -4869,9 +4909,7 @@ impl ZeldaState {
 
     fn finish_ground_movement_camera_tail(&mut self) {
         self.ram[PIT_CORRECTION_ACTIVE_FLAG] = 0;
-        if self.apply_links_movement_to_camera_called
-            && self.read_u32_ram(ENHANCED_FEATURES0) & 4096 != 0
-        {
+        if self.apply_links_movement_to_camera_called && self.enhanced_features_view().has(4096) {
             return;
         }
         self.handle_indoor_camera_and_doors();
@@ -4994,8 +5032,7 @@ impl ZeldaState {
     }
 
     fn set_link_z_coord_mirror_low_ff(&mut self) {
-        let z = self.read_u16_ram(LINK_Z_COORD_MIRROR) | 0x00ff;
-        self.write_u16_ram(LINK_Z_COORD_MIRROR, z);
+        self.player_state_view_mut().force_z_mirror_low_ff();
     }
 
     fn set_backdrop_color_black(&mut self) {
@@ -5641,17 +5678,32 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[PLAYER_LAYER_COLLISION_FLAGS] = 0xf0;
 
-        state.set_player_layer_collision(crate::ram::player::LAYER_COLLISION_BG1, true);
+        state.set_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BG1,
+            true,
+        );
         assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf1);
-        assert!(!state.has_player_layer_collision(crate::ram::player::LAYER_COLLISION_BOTH));
+        assert!(!state.has_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH
+        ));
 
-        state.set_player_layer_collision(crate::ram::player::LAYER_COLLISION_BG2, true);
+        state.set_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BG2,
+            true,
+        );
         assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf3);
-        assert!(state.has_player_layer_collision(crate::ram::player::LAYER_COLLISION_BOTH));
+        assert!(state.has_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH
+        ));
 
-        state.set_player_layer_collision(crate::ram::player::LAYER_COLLISION_BG1, false);
+        state.set_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BG1,
+            false,
+        );
         assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf2);
-        assert!(!state.has_player_layer_collision(crate::ram::player::LAYER_COLLISION_BOTH));
+        assert!(!state.has_player_layer_collision(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH
+        ));
     }
 
     #[test]
@@ -6766,7 +6818,8 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
         state.ram[DUNG_HDR_COLLISION] = 1;
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] = crate::ram::player::LAYER_COLLISION_BOTH;
+        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
         write_le_u16(&mut state.ram, DUNG_FLOOR_X_VEL, 2);
         write_le_u16(&mut state.ram, DUNG_FLOOR_Y_VEL, 0xffff);
 
@@ -7484,7 +7537,8 @@ mod tests {
     fn halt_link_when_using_items_stops_floor_and_platform_motion() {
         let mut state = ZeldaState::new();
         state.ram[DUNG_HDR_COLLISION_2] = 2;
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] = crate::ram::player::LAYER_COLLISION_BOTH;
+        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
         set_link_test_byte(&mut state, LINK_Y_VEL, 0x80);
         set_link_test_byte(&mut state, LINK_X_VEL, 0x40);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
@@ -7620,7 +7674,8 @@ mod tests {
         set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 2);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
         state.ram[DUNG_HDR_COLLISION_2] = 2;
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] = crate::ram::player::LAYER_COLLISION_BOTH;
+        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
         set_link_test_byte(&mut state, LINK_Y_VEL, 7);
 
         state.link_item_cape();

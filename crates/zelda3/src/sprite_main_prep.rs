@@ -1004,10 +1004,8 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.write_u8_ram(oam, x);
-        self.write_u8_ram(oam + 1, y);
-        self.write_u8_ram(oam + 2, charnum);
-        self.write_u8_ram(oam + 3, flags);
+        self.oam_state_view_mut()
+            .write_entry(oam, x, y, charnum, flags);
         let value = big;
         self.oam_state_view_mut()
             .set_extended_byte((oam - OAM_BUF) / 4, value);
@@ -3663,8 +3661,8 @@ impl ZeldaState {
         let cur_x = self.sprite_workspace_view().current_sprite_x();
         let cur_y = self.sprite_workspace_view().current_sprite_y();
         for _ in (0..=5).rev() {
-            self.write_u16_ram(CHAINCHOMP_X_HIST_PREP + i * 2, cur_x);
-            self.write_u16_ram(CHAINCHOMP_Y_HIST_PREP + i * 2, cur_y);
+            self.chain_chomp_history_view_mut().set_x(i, cur_x);
+            self.chain_chomp_history_view_mut().set_y(i, cur_y);
             i += 1;
         }
         let x_low = self.sprite_slot_view(k).x_low();
@@ -3685,12 +3683,8 @@ impl ZeldaState {
         let y = u16::from(self.sprite_slot_view(k).c())
             | (u16::from(self.sprite_slot_view(k).g()) << 8);
         let mut pos = k * 8;
-        let x2 = self
-            .read_u16_ram(CHAINCHOMP_X_HIST_PREP + pos * 2)
-            .wrapping_sub(x);
-        let y2 = self
-            .read_u16_ram(CHAINCHOMP_Y_HIST_PREP + pos * 2)
-            .wrapping_sub(y);
+        let x2 = self.chain_chomp_history_view().x(pos).wrapping_sub(x);
+        let y2 = self.chain_chomp_history_view().y(pos).wrapping_sub(y);
         pos += 1;
 
         for _ in (0..=5).rev() {
@@ -3698,8 +3692,7 @@ impl ZeldaState {
             let x3 = x.wrapping_add_signed(chain_chomp_one_mult_prep(x2 as u8, mul) as i16);
             let y3 = y.wrapping_add_signed(chain_chomp_one_mult_prep(y2 as u8, mul) as i16);
 
-            let x_addr = CHAINCHOMP_X_HIST_PREP + pos * 2;
-            let old_x = self.read_u16_ram(x_addr);
+            let old_x = self.chain_chomp_history_view().x(pos);
             let dx = old_x.wrapping_sub(x3);
             if dx != 0 {
                 let new_x = if sign16(dx) {
@@ -3707,11 +3700,10 @@ impl ZeldaState {
                 } else {
                     old_x.wrapping_sub(1)
                 };
-                self.write_u16_ram(x_addr, new_x);
+                self.chain_chomp_history_view_mut().set_x(pos, new_x);
             }
 
-            let y_addr = CHAINCHOMP_Y_HIST_PREP + pos * 2;
-            let old_y = self.read_u16_ram(y_addr);
+            let old_y = self.chain_chomp_history_view().y(pos);
             let dy = old_y.wrapping_sub(y3);
             if dy != 0 {
                 let new_y = if sign16(dy) {
@@ -3719,7 +3711,7 @@ impl ZeldaState {
                 } else {
                     old_y.wrapping_sub(1)
                 };
-                self.write_u16_ram(y_addr, new_y);
+                self.chain_chomp_history_view_mut().set_y(pos, new_y);
             }
 
             pos += 1;
@@ -3730,30 +3722,30 @@ impl ZeldaState {
         let mut pos = k * 8;
         let cur_x = self.sprite_workspace_view().current_sprite_x();
         let cur_y = self.sprite_workspace_view().current_sprite_y();
-        self.write_u16_ram(CHAINCHOMP_X_HIST_PREP + pos * 2, cur_x);
-        self.write_u16_ram(CHAINCHOMP_Y_HIST_PREP + pos * 2, cur_y);
+        self.chain_chomp_history_view_mut().set_x(pos, cur_x);
+        self.chain_chomp_history_view_mut().set_y(pos, cur_y);
 
         for _ in 0..6 {
-            let x_addr = CHAINCHOMP_X_HIST_PREP + pos * 2;
-            let next_x_addr = CHAINCHOMP_X_HIST_PREP + (pos + 1) * 2;
-            let x = self.read_u16_ram(x_addr);
-            let next_x = self.read_u16_ram(next_x_addr);
+            let x = self.chain_chomp_history_view().x(pos);
+            let next_x = self.chain_chomp_history_view().x(pos + 1);
             let dx = x.wrapping_sub(next_x);
             if !sign16(dx.wrapping_sub(8)) {
-                self.write_u16_ram(next_x_addr, x.wrapping_sub(8));
+                self.chain_chomp_history_view_mut()
+                    .set_x(pos + 1, x.wrapping_sub(8));
             } else if sign16(dx.wrapping_add(8)) {
-                self.write_u16_ram(next_x_addr, x.wrapping_add(8));
+                self.chain_chomp_history_view_mut()
+                    .set_x(pos + 1, x.wrapping_add(8));
             }
 
-            let y_addr = CHAINCHOMP_Y_HIST_PREP + pos * 2;
-            let next_y_addr = CHAINCHOMP_Y_HIST_PREP + (pos + 1) * 2;
-            let y = self.read_u16_ram(y_addr);
-            let next_y = self.read_u16_ram(next_y_addr);
+            let y = self.chain_chomp_history_view().y(pos);
+            let next_y = self.chain_chomp_history_view().y(pos + 1);
             let dy = y.wrapping_sub(next_y);
             if !sign16(dy.wrapping_sub(8)) {
-                self.write_u16_ram(next_y_addr, y.wrapping_sub(8));
+                self.chain_chomp_history_view_mut()
+                    .set_y(pos + 1, y.wrapping_sub(8));
             } else if sign16(dy.wrapping_add(8)) {
-                self.write_u16_ram(next_y_addr, y.wrapping_add(8));
+                self.chain_chomp_history_view_mut()
+                    .set_y(pos + 1, y.wrapping_add(8));
             }
 
             pos += 1;
@@ -4058,7 +4050,10 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_swamola_initialize_segments(&mut self, k: usize) {
         const BUGGY_SWAMOLA_LOOKUP: [usize; 6] = [0x1c, 0xa9, 0x03, 0x9d, 0x90, 0x0d];
-        let mut j = if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_MISC_BUG_FIXES_PREP != 0 {
+        let mut j = if self
+            .enhanced_features_view()
+            .has(FEATURE_MISC_BUG_FIXES_PREP)
+        {
             k * 32
         } else {
             BUGGY_SWAMOLA_LOOKUP[k]

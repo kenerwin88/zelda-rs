@@ -268,7 +268,7 @@ impl ZeldaState {
         let mp = &self.audio.msu_player;
         if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
-        } else if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_MISC_BUG_FIXES != 0 {
+        } else if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
             track == self.system_signals_view().current_music_control()
         } else {
             track == self.system_signals_view().last_music_control()

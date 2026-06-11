@@ -1345,7 +1345,10 @@ impl ZeldaState {
             .set_oam_prep_coords(x, prep_y);
         let flags =
             self.sprite_slot_view(k).oam_flags() ^ self.sprite_slot_view(k).object_priority();
-        let xt = if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_EXTEND_SCREEN64_SPRITE != 0 {
+        let xt = if self
+            .enhanced_features_view()
+            .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
+        {
             0x40
         } else {
             0
@@ -1614,12 +1617,14 @@ impl ZeldaState {
         let bak1 = self.overworld_scroll_delta_view().high();
         self.overworld_scroll_delta_view_mut().set_high(0xff);
 
-        let xt: u16 =
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_EXTEND_SCREEN64_SPRITE != 0 {
-                0x40
-            } else {
-                0
-            };
+        let xt: u16 = if self
+            .enhanced_features_view()
+            .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
+        {
+            0x40
+        } else {
+            0
+        };
         self.world_state_view_mut().set_bg2_x(bak0.wrapping_sub(xt));
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_activate_when_proximal();
@@ -1650,12 +1655,14 @@ impl ZeldaState {
         if self.overworld_scroll_delta_view().high() == 0 {
             return;
         }
-        let xt: u16 =
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_EXTEND_SCREEN64_SPRITE != 0 {
-                0x40
-            } else {
-                0
-            };
+        let xt: u16 = if self
+            .enhanced_features_view()
+            .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
+        {
+            0x40
+        } else {
+            0
+        };
         let x = self.world_state_view().bg2_x().wrapping_add(
             if sign8(self.overworld_scroll_delta_view().high()) {
                 0u16.wrapping_sub(0x10).wrapping_sub(xt)
@@ -1674,12 +1681,14 @@ impl ZeldaState {
         if self.overworld_scroll_delta_view().low() == 0 {
             return;
         }
-        let xt: u16 =
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_EXTEND_SCREEN64_SPRITE != 0 {
-                0x40
-            } else {
-                0
-            };
+        let xt: u16 = if self
+            .enhanced_features_view()
+            .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
+        {
+            0x40
+        } else {
+            0
+        };
         let mut x = self
             .world_state_view()
             .bg2_x()
@@ -3353,7 +3362,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_c(12);
         }
         if self.sprite_slot_view(k).e() != 0 {
-            if self.read_u32_ram(ENHANCED_FEATURES0) & 4096 != 0 {
+            if self.enhanced_features_view().has(4096) {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_b(value);
             }
@@ -5276,7 +5285,7 @@ impl ZeldaState {
             14 => {
                 let shield = self.sprite_slot_view(k).subtype();
                 self.inventory_state_view_mut().set_shield_type(shield);
-                if self.read_u32_ram(ENHANCED_FEATURES0) & 4096 != 0 {
+                if self.enhanced_features_view().has(4096) {
                     self.Palette_Load_Shield();
                 }
             }
@@ -5381,7 +5390,7 @@ impl ZeldaState {
                 self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
                 let value = 48;
                 self.sprite_slot_view_mut(k).set_delay_aux1(value);
-                let effect = if self.read_u32_ram(ENHANCED_FEATURES0) & 4096 != 0 {
+                let effect = if self.enhanced_features_view().has(4096) {
                     0x32
                 } else {
                     0
@@ -5480,8 +5489,9 @@ impl ZeldaState {
             let mut hitbox = empty_sprite_hit_box();
             self.link_setup_hit_box(&mut hitbox);
             if (0xd8..=0xe6).contains(&self.sprite_slot_view(k).sprite_type())
-                && self.read_u32_ram(ENHANCED_FEATURES0) & FEATURES0_COLLECT_ITEMS_WITH_SWORD_SPRITE
-                    != 0
+                && self
+                    .enhanced_features_view()
+                    .has(FEATURES0_COLLECT_ITEMS_WITH_SWORD_SPRITE)
             {
                 self.link_update_hit_box_with_sword(&mut hitbox);
             }
@@ -5988,7 +5998,7 @@ impl ZeldaState {
                 && !sign8(self.sprite_slot_view(k).incoming_damage())
             {
                 if self.sprite_slot_view(k).sprite_type() == 0x88
-                    && self.read_u32_ram(ENHANCED_FEATURES0) & 4096 != 0
+                    && self.enhanced_features_view().has(4096)
                 {
                     if self.sprite_slot_view(k).hit_timer() == 0 {
                         self.ancilla_check_damage_to_sprite_preset(k, 6);

@@ -392,7 +392,7 @@ impl ZeldaState {
     }
 
     fn max_rupees(&self) -> u16 {
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_CARRY_MORE_RUPEES != 0 {
+        if self.enhanced_features_view().has(FEATURE_CARRY_MORE_RUPEES) {
             9999
         } else {
             999
@@ -486,7 +486,10 @@ impl ZeldaState {
                 self.player_resources_view_mut()
                     .decrement_low_health_beep_timer();
             } else if !self.system_signals_view().has_sound_effect_1() {
-                if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_DISABLE_LOW_HEALTH_BEEP == 0 {
+                if !self
+                    .enhanced_features_view()
+                    .has(FEATURE_DISABLE_LOW_HEALTH_BEEP)
+                {
                     self.system_signals_view_mut().set_sound_effect_1(43);
                 }
                 self.player_resources_view_mut()
@@ -711,7 +714,7 @@ impl ZeldaState {
     }
 
     pub(super) fn get_current_item_button_index(&self) -> usize {
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_SWITCH_LR != 0 {
+        if self.enhanced_features_view().has(FEATURE_SWITCH_LR) {
             if self.player_state_view().joypad1l_last() & JOYPAD_LOW_X != 0 {
                 1
             } else if self.player_state_view().joypad1l_last() & JOYPAD_LOW_L != 0 {
@@ -723,15 +726,6 @@ impl ZeldaState {
             }
         } else {
             0
-        }
-    }
-
-    fn get_current_item_button_ptr(&self, i: usize) -> usize {
-        match i {
-            0 => HUD_CUR_ITEM,
-            1 => HUD_CUR_ITEM_X,
-            2 => HUD_CUR_ITEM_L,
-            _ => HUD_CUR_ITEM_R,
         }
     }
 
@@ -762,7 +756,7 @@ impl ZeldaState {
 
         if self.player_state_view().joypad1h_last() & JOYPAD_HIGH_Y != 0
             && self.player_state_view().joypad1l_last() & JOYPAD_LOW_X == 0
-            && self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_SWITCH_LR != 0
+            && self.enhanced_features_view().has(FEATURE_SWITCH_LR)
         {
             if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_reorder_item(if USE_NEW_STYLE_INVENTORY { -6 } else { -5 });
@@ -775,19 +769,19 @@ impl ZeldaState {
             }
         } else if self.hud_state_view().prev_joypad_h() == 0 {
             let btn_index = self.get_current_item_button_index();
-            let item_addr = self.get_current_item_button_ptr(btn_index);
-            let mut item = self.read_u8_ram(item_addr);
+            let mut item = self.inventory_state_view().equipped_button_item(btn_index);
             let old_item = item;
             if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
                 self.hud_equip_item_below(&mut item);
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
-                self.hud_equip_prev_item(&mut item, item_addr == HUD_CUR_ITEM);
+                self.hud_equip_prev_item(&mut item, btn_index == 0);
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
-                self.hud_equip_next_item(&mut item, item_addr == HUD_CUR_ITEM);
+                self.hud_equip_next_item(&mut item, btn_index == 0);
             }
-            self.write_u8_ram(item_addr, item);
+            self.inventory_state_view_mut()
+                .set_equipped_button_item(btn_index, item);
             let jh = self.player_state_view().filtered_joypad_h();
             self.hud_state_view_mut().set_prev_joypad_h(jh);
             if item != old_item {
@@ -1260,7 +1254,7 @@ impl ZeldaState {
     pub(super) fn hud_draw_selected_y_button_item(&mut self) {
         let dst_box = if USE_NEW_STYLE_INVENTORY { 1 } else { 0 };
         let btn_index = self.get_current_item_button_index();
-        let item = self.read_u8_ram(self.get_current_item_button_ptr(btn_index));
+        let item = self.inventory_state_view().equipped_button_item(btn_index);
         self.hud_draw_box(
             0x1000,
             21 + dst_box,
@@ -1487,7 +1481,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_rebuild(&mut self) {
-        if self.read_u16_ram(HUD_TILE_INDICES_BUFFER + hudxy(8, 2) * 2) == 0 {
+        if self.hud_state_view().tile_word(hudxy(8, 2)) == 0 {
             for i in 0..165 {
                 self.hud_buffer_set(i, 0x207f);
             }
@@ -1516,7 +1510,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_handle_item_switch_inputs(&mut self) {
-        if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_SWITCH_LR == 0 {
+        if !self.enhanced_features_view().has(FEATURE_SWITCH_LR) {
             return;
         }
         let direction = if self.player_state_view().filtered_joypad_l() & JOYPAD_LOW_L != 0
@@ -1539,7 +1533,7 @@ impl ZeldaState {
                 self.hud_goto_next_item(&mut item, 1);
             }
             if self.hud_do_we_have_this_item(item)
-                && (self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_SWITCH_LR_LIMIT == 0
+                && (!self.enhanced_features_view().has(FEATURE_SWITCH_LR_LIMIT)
                     || self.hud_get_item_position(item) <= 3)
             {
                 if item != self.save_progress_view().hud_current_item() {
@@ -1643,7 +1637,10 @@ impl ZeldaState {
 
         let base_tiles = [
             0x2400,
-            if self.read_u32_ram(ENHANCED_FEATURES0) & FEATURE_SHOW_MAX_ITEMS_IN_YELLOW != 0 {
+            if self
+                .enhanced_features_view()
+                .has(FEATURE_SHOW_MAX_ITEMS_IN_YELLOW)
+            {
                 0x3400
             } else {
                 0x2400
@@ -1797,12 +1794,22 @@ impl ZeldaState {
 
     fn write_tile(&mut self, base: usize, tile: i32, value: u16) {
         let addr = (base as i32 + tile * 2) as usize;
-        self.write_u16_ram(addr, value);
+        if base == HUD_TILE_INDICES_BUFFER {
+            self.hud_state_view_mut()
+                .set_tile_word(tile as usize, value);
+        } else {
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(addr, value);
+        }
     }
 
     fn read_tile(&self, base: usize, tile: i32) -> u16 {
         let addr = (base as i32 + tile * 2) as usize;
-        self.read_u16_ram(addr)
+        if base == HUD_TILE_INDICES_BUFFER {
+            self.hud_state_view().tile_word(tile as usize)
+        } else {
+            self.vram_upload_data_view().tilemap_word(addr - 0x1000)
+        }
     }
 
     fn hud_item_box_gfx_ptr(item: u8) -> &'static [ItemBoxGfx] {

@@ -179,29 +179,45 @@ def module_for_line(text: str, offset: int) -> str | None:
     return module_match.group(1) if module_match else None
 
 
-def rust_subsystem(path: Path, text: str, offset: int, name: str) -> str:
-    if path.name == "ram.rs":
-        return module_for_line(text, offset) or "ram"
+def is_public_ram_constant_registry(path: Path) -> bool:
+    return path == SRC_ROOT / "game_state" / "constants.rs"
+
+
+def subsystem_from_name(name: str, default: str = "game_state") -> str:
     prefix = name.split("_", 1)[0].lower()
-    if prefix in {"link", "player", "swim", "swimcoll", "tiledetect"}:
+    if prefix in {"link", "player", "swim", "swimcoll", "tiledetect", "button", "cape", "pit"}:
         return "player"
-    if prefix in {"sprite", "overlord", "garnish"}:
+    if prefix in {"sprite", "overlord", "garnish", "oam", "alt", "cached", "enemy", "prize"}:
         return "sprite"
-    if prefix in {"dung", "dungeon", "door"}:
+    if prefix in {"dung", "dungeon", "door", "room", "crush", "invisible", "big"}:
         return "dungeon"
-    if prefix in {"message", "messaging", "dialogue", "text", "vwf"}:
+    if prefix in {"message", "messaging", "dialogue", "text", "vwf", "select"}:
         return "messaging"
-    if prefix in {"overworld", "ow"}:
+    if prefix in {"overworld", "ow", "map16", "camera", "quadrant", "bird", "bg1", "bg2"}:
         return "overworld"
-    return path.stem if path.stem != "zelda_rtl" else "shared"
+    if prefix in {"nmi", "tm", "ts", "tmw", "tsw", "bgmode", "mosaic", "w12sel", "w34sel", "wobjsel", "hdmaen", "vram", "palette", "cgram", "hud", "spotlight", "water"}:
+        return "display"
+    if prefix == "poly":
+        return "poly"
+    if prefix in {"attract", "intro", "ending"}:
+        return "attract"
+    return default
+
+
+def rust_subsystem(path: Path, text: str, offset: int, name: str) -> str:
+    if is_public_ram_constant_registry(path):
+        if offset < text.find("// Source addresses"):
+            return module_for_line(text, offset) or "game_state"
+        return subsystem_from_name(name)
+    return subsystem_from_name(name, default=path.stem if path.stem != "zelda_rtl" else "shared")
 
 
 def scan_rust_consts() -> list[RustConst]:
     constants: list[RustConst] = []
-    for path in sorted(SRC_ROOT.glob("*.rs")):
+    for path in sorted(SRC_ROOT.rglob("*.rs")):
         text = path.read_text()
         patterns = [RUST_PRIVATE_CONST_RE]
-        if path.name == "ram.rs":
+        if is_public_ram_constant_registry(path):
             patterns.append(RUST_RAM_MODULE_CONST_RE)
         for pattern in patterns:
             for match in pattern.finditer(text):

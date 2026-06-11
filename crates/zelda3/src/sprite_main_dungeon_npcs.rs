@@ -1815,7 +1815,7 @@ impl ZeldaState {
             return;
         }
         if self.sprite_check_damage_to_link_same_layer_for_dn(k) {
-            let features = self.read_u32_ram(ENHANCED_FEATURES0);
+            let features = self.enhanced_features_view().bits();
             if features & FEATURES0_MISC_BUG_FIXES != 0 {
                 self.follower_state_view_mut().set_dropped(0);
             }

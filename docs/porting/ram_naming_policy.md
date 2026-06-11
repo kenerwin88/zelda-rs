@@ -16,7 +16,7 @@ Do not use leaked-source labels blindly. Treat them as naming evidence, then ver
 
 - Do not introduce address-derived names such as `BYTE_7E1234`.
 - Do not introduce direct hex RAM indexing such as `self.ram[0x1234]`; add a named offset first.
-- Put new subsystem-owned offsets in `crates/zelda3/src/ram.rs`.
+- Put new subsystem-owned offsets in `crates/zelda3/src/game_state/constants.rs`.
 - Preserve old call-site names through imports when that keeps a move mechanical.
 - Rename weak names only when surrounding behavior proves a better name.
 - Leave uncertain weak names in place and track them with:
