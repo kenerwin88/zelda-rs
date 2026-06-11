@@ -513,7 +513,20 @@ pub(crate) mod semantic {
     const MULTISELECT_CHOICE: usize = 0x1ce8;
     const MULTISELECT_CHOICE_BACKUP: usize = 0x1cf4;
     const DIALOGUE_MSG_SRC_OFFS: usize = 0x1cdd;
+    const DIALOGUE_SCROLL_SPEED: usize = 0x1cea;
+    const TEXT_INCREMENTAL_STATE: usize = 0x1cd7;
+    const VWF_LINE_SPEED_CUR: usize = 0x1cd5;
+    const VWF_LINE_SPEED: usize = 0x1cd6;
+    const TEXT_WAIT_COUNTDOWN: usize = 0x1ce0;
     const VWF_GLYPH_CURSOR: usize = 0x0724;
+    const VWF_FLAG_NEXT_LINE: usize = 0x720;
+    const VWF_CURLINE: usize = 0x722;
+    const VWF_LINE_PTR: usize = 0x726;
+    const TEXT_MSGBOX_TOPLEFT: usize = 0x1cd2;
+    const TEXT_MSGBOX_TOPLEFT_COPY: usize = 0x1cd0;
+    const TEXT_TILEMAP_CUR: usize = 0x1ce2;
+    const DIALOGUE_MSG_READ_POS: usize = 0x1cd9;
+    const VWF_TILE_BUFFER: usize = 0x1300;
     const VWF_ARR: usize = 0x0c230;
     const ETHER_ANGLE: usize = 0x15800;
     const ETHER_RADIUS: usize = 0x15808;
@@ -740,10 +753,29 @@ pub(crate) mod semantic {
     const WATER_HDMA_WINDOW_Y: usize = 0x682;
     const WATER_HDMA_WINDOW_Y_RADIUS: usize = 0x684;
     const WATER_HDMA_WINDOW_X_RADIUS: usize = 0x686;
+    const HDMA_TABLE_DYNAMIC: usize = 0x1dba0;
     const MOSAIC_INC_OR_DEC: usize = 0x647;
     const OVERWORLD_MAP_FLAGS: usize = 0x636;
     const MODE7_ZOOM_STEP_COUNTER: usize = 0x635;
     const AGAHNIM_PAL_SETTING: usize = 0x0c019;
+    const DUNGMAP_INIT_STATE: usize = 0x020d;
+    const DUNGMAP_CUR_FLOOR: usize = 0x020e;
+    const DUNGMAP_FLOOR_SCROLL_STEP: usize = 0x0210;
+    const DUNGMAP_IDX: usize = 0x0211;
+    const DUNGMAP_SCROLL_TARGET_Y: usize = 0x0213;
+    const DUNGMAP_PLAYER_MARKER_X: usize = 0x0215;
+    const DUNGMAP_PLAYER_MARKER_Y: usize = 0x0217;
+    const MAPBAK_MAIN_TILE_THEME_INDEX: usize = 0x0c20e;
+    const MAPBAK_SPRITE_GRAPHICS_INDEX: usize = 0x0c20f;
+    const MAPBAK_AUX_TILE_THEME_INDEX: usize = 0x0c210;
+    const MAPBAK_CGWSEL: usize = 0x0c225;
+    const MAPBAK_BG1_X_OFFSET: usize = 0x0c221;
+    const MAPBAK_BG1_Y_OFFSET: usize = 0x0c223;
+    const MAPBAK_HDMAEN: usize = 0x0c229;
+    const MAPBAK_PALETTE: usize = 0x1dd80;
+    const DEATH_BACKUP_CURRENT_MUSIC: usize = 0x0c227;
+    const DEATH_BACKUP_AMBIENT_SOUND: usize = 0x0c228;
+    const FLAG_WHICH_MUSIC_TYPE_MESSAGING: usize = 0x0136;
     const PRIMARY_DECOMP_BUFFER_LOAD_GFX: usize = 0x14000;
     const SECONDARY_DECOMP_BUFFER_LOAD_GFX: usize = PRIMARY_DECOMP_BUFFER_LOAD_GFX + 0x600;
     const BG_DECOMP_BUFFER_LOAD_GFX: usize = 0x6000;
@@ -1181,6 +1213,10 @@ pub(crate) mod semantic {
             byte(self.ram, MAIN_MODULE)
         }
 
+        pub(crate) fn main_module_word(&self) -> u16 {
+            word(self.ram, MAIN_MODULE)
+        }
+
         pub(crate) fn submodule(&self) -> u8 {
             byte(self.ram, SUBMODULE)
         }
@@ -1225,6 +1261,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_main_module(&mut self, value: u8) {
             self.ram[MAIN_MODULE] = value;
+        }
+
+        pub(crate) fn set_main_module_word(&mut self, value: u16) {
+            write_le_u16(self.ram, MAIN_MODULE, value);
         }
 
         pub(crate) fn set_submodule(&mut self, value: u8) {
@@ -1369,6 +1409,14 @@ pub(crate) mod semantic {
         pub(crate) fn bugs_fixed(&self) -> u8 {
             byte(self.ram, RAM_BUGS_FIXED)
         }
+
+        pub(crate) fn death_backup_current_music(&self) -> u8 {
+            byte(self.ram, DEATH_BACKUP_CURRENT_MUSIC)
+        }
+
+        pub(crate) fn death_backup_ambient_sound(&self) -> u8 {
+            byte(self.ram, DEATH_BACKUP_AMBIENT_SOUND)
+        }
     }
 
     pub(crate) struct SystemSignalsViewMut<'a> {
@@ -1490,6 +1538,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
             self.ram[RAW_SFX_PAN_VALUE] = value;
+        }
+
+        pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
+            self.ram[GAME_OVER_CHECK_FLAG] = value;
+        }
+
+        pub(crate) fn increment_game_over_check_flag(&mut self) {
+            self.ram[GAME_OVER_CHECK_FLAG] = self.ram[GAME_OVER_CHECK_FLAG].wrapping_add(1);
+        }
+
+        pub(crate) fn set_death_backup_current_music(&mut self, value: u8) {
+            self.ram[DEATH_BACKUP_CURRENT_MUSIC] = value;
+        }
+
+        pub(crate) fn set_death_backup_ambient_sound(&mut self, value: u8) {
+            self.ram[DEATH_BACKUP_AMBIENT_SOUND] = value;
         }
     }
 
@@ -1718,6 +1782,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn tsw_copy(&self) -> u8 {
             byte(self.ram, TSW_COPY)
+        }
+
+        pub(crate) fn overworld_fixed_color_plusminus(&self) -> u8 {
+            byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
         }
 
         pub(crate) fn word_at(&self, addr: usize) -> u16 {
@@ -1983,6 +2051,30 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_tsw_copy(&mut self, value: u8) {
             self.ram[TSW_COPY] = value;
+        }
+
+        pub(crate) fn tilemap_upload_buffer_mut(&mut self) -> &mut [u8] {
+            &mut self.ram[super::nmi::TILEMAP_UPLOAD_BUFFER..]
+        }
+
+        pub(crate) fn set_message_dma_dst_addr(&mut self, value: u16) {
+            write_le_u16(self.ram, super::messaging::MESSAGE_DMA_DST_ADDR, value);
+        }
+
+        pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
+            write_le_u16(self.ram, super::messaging::MESSAGE_DMA_TILE_BASE, value);
+        }
+
+        pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
+            write_le_u16(self.ram, super::messaging::MESSAGE_DMA_TILE_LIMIT, value);
+        }
+
+        pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
+            write_le_u16(
+                self.ram,
+                super::messaging::MESSAGE_DMA_TILE_SENTINEL,
+                value,
+            );
         }
     }
 
@@ -6678,6 +6770,18 @@ pub(crate) mod semantic {
             write_le_u16(self.ram, SAVE_DUNG_INFO + room * 2, word);
             word
         }
+
+        pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
+            write_le_u16(self.ram, SAVE_DUNG_INFO + 0x4fe, value);
+        }
+
+        pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
+            let mut checksum = 0x5a5au16;
+            for i in (0..0x4fe).step_by(2) {
+                checksum = checksum.wrapping_sub(read_le_u16(self.ram, SAVE_DUNG_INFO + i));
+            }
+            checksum
+        }
     }
 
     pub(crate) struct PlayerResourcesView<'a> {
@@ -7207,6 +7311,10 @@ pub(crate) mod semantic {
             byte(self.ram, OVERWORLD_MAP_STATE)
         }
 
+        pub(crate) fn overworld_map_state_word(&self) -> u16 {
+            word(self.ram, OVERWORLD_MAP_STATE)
+        }
+
         pub(crate) fn entrance_sequence_counter(&self) -> u8 {
             byte(self.ram, OVERWORLD_ENTRANCE_SEQUENCE_COUNTER)
         }
@@ -7395,6 +7503,10 @@ pub(crate) mod semantic {
             self.ram[OVERWORLD_MAP_STATE] = value;
         }
 
+        pub(crate) fn set_overworld_map_state_word(&mut self, value: u16) {
+            write_le_u16(self.ram, OVERWORLD_MAP_STATE, value);
+        }
+
         pub(crate) fn increment_overworld_map_state(&mut self) {
             self.ram[OVERWORLD_MAP_STATE] = self.ram[OVERWORLD_MAP_STATE].wrapping_add(1);
         }
@@ -7575,6 +7687,30 @@ pub(crate) mod semantic {
         pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
             self.ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = value;
         }
+
+        pub(crate) fn and_overworld_map_flags(&mut self, value: u8) {
+            self.ram[OVERWORLD_MAP_FLAGS] &= value;
+        }
+
+        pub(crate) fn or_overworld_map_flags(&mut self, value: u8) {
+            self.ram[OVERWORLD_MAP_FLAGS] |= value;
+        }
+
+        pub(crate) fn decrement_timer_for_mode7_zoom(&mut self) {
+            self.ram[TIMER_FOR_MODE7_ZOOM] = self.ram[TIMER_FOR_MODE7_ZOOM].wrapping_sub(1);
+        }
+
+        pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
+            self.ram[BIRDTRAVEL_STATUS] &= value;
+        }
+
+        pub(crate) fn decrement_birdtravel_status(&mut self) {
+            self.ram[BIRDTRAVEL_STATUS] = self.ram[BIRDTRAVEL_STATUS].wrapping_sub(1);
+        }
+
+        pub(crate) fn increment_birdtravel_status(&mut self) {
+            self.ram[BIRDTRAVEL_STATUS] = self.ram[BIRDTRAVEL_STATUS].wrapping_add(1);
+        }
     }
 
     impl<'a> WorldStateView<'a> {
@@ -7648,6 +7784,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn aux_tile_theme_index(&self) -> u8 {
             byte(self.ram, AUX_TILE_THEME_INDEX)
+        }
+
+        pub(crate) fn overworld_map_flags(&self) -> u8 {
+            byte(self.ram, OVERWORLD_MAP_FLAGS)
+        }
+
+        pub(crate) fn timer_for_mode7_zoom(&self) -> u8 {
+            byte(self.ram, TIMER_FOR_MODE7_ZOOM)
+        }
+
+        pub(crate) fn birdtravel_status(&self) -> u8 {
+            byte(self.ram, BIRDTRAVEL_STATUS)
+        }
+
+        pub(crate) fn hud_cur_item_x(&self) -> u8 {
+            byte(self.ram, HUD_CUR_ITEM_X)
         }
     }
 
@@ -8930,6 +9082,42 @@ pub(crate) mod semantic {
         pub(crate) fn location_marker_base_y(&self) -> u8 {
             byte(self.ram, DUNGEON_MAP_LOCATION_MARKER_BASE_Y)
         }
+
+        pub(crate) fn dungmap_init_state(&self) -> u8 {
+            byte(self.ram, DUNGMAP_INIT_STATE)
+        }
+
+        pub(crate) fn dungmap_cur_floor(&self) -> u16 {
+            word(self.ram, DUNGMAP_CUR_FLOOR)
+        }
+
+        pub(crate) fn dungmap_cur_floor_byte(&self) -> u8 {
+            byte(self.ram, DUNGMAP_CUR_FLOOR)
+        }
+
+        pub(crate) fn dungmap_floor_scroll_step(&self) -> u8 {
+            byte(self.ram, DUNGMAP_FLOOR_SCROLL_STEP)
+        }
+
+        pub(crate) fn dungmap_idx(&self) -> u16 {
+            word(self.ram, DUNGMAP_IDX)
+        }
+
+        pub(crate) fn dungmap_scroll_target_y(&self) -> u16 {
+            word(self.ram, DUNGMAP_SCROLL_TARGET_Y)
+        }
+
+        pub(crate) fn dungmap_player_marker_x(&self) -> u16 {
+            word(self.ram, DUNGMAP_PLAYER_MARKER_X)
+        }
+
+        pub(crate) fn dungmap_player_marker_x_byte(&self) -> u8 {
+            byte(self.ram, DUNGMAP_PLAYER_MARKER_X)
+        }
+
+        pub(crate) fn dungmap_player_marker_y(&self) -> u16 {
+            word(self.ram, DUNGMAP_PLAYER_MARKER_Y)
+        }
     }
 
     pub(crate) struct DungeonMapScratchViewMut<'a> {
@@ -8991,6 +9179,65 @@ pub(crate) mod semantic {
             let value = word(self.ram, DUNGEON_MAP_MARKER_Y_OFFSET).wrapping_add_signed(value);
             write_le_u16(self.ram, DUNGEON_MAP_MARKER_Y_OFFSET, value);
             value
+        }
+
+        pub(crate) fn increment_dungmap_init_state(&mut self) {
+            self.ram[DUNGMAP_INIT_STATE] = self.ram[DUNGMAP_INIT_STATE].wrapping_add(1);
+        }
+
+        pub(crate) fn clear_dungmap_init_state(&mut self) {
+            self.ram[DUNGMAP_INIT_STATE] = 0;
+        }
+
+        pub(crate) fn set_dungmap_cur_floor(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNGMAP_CUR_FLOOR, value);
+        }
+
+        pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
+            self.ram[DUNGMAP_CUR_FLOOR] = self.ram[DUNGMAP_CUR_FLOOR].wrapping_sub(1);
+        }
+
+        pub(crate) fn increment_dungmap_cur_floor(&mut self) -> u16 {
+            let value = word(self.ram, DUNGMAP_CUR_FLOOR).wrapping_add(1);
+            write_le_u16(self.ram, DUNGMAP_CUR_FLOOR, value);
+            value
+        }
+
+        pub(crate) fn increment_dungmap_cur_floor_byte(&mut self) {
+            self.ram[DUNGMAP_CUR_FLOOR] = self.ram[DUNGMAP_CUR_FLOOR].wrapping_add(1);
+        }
+
+        pub(crate) fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
+            self.ram[DUNGMAP_FLOOR_SCROLL_STEP] = value;
+        }
+
+        pub(crate) fn clear_dungmap_floor_scroll_step(&mut self) {
+            self.ram[DUNGMAP_FLOOR_SCROLL_STEP] = 0;
+        }
+
+        pub(crate) fn increment_dungmap_floor_scroll_step(&mut self) {
+            self.ram[DUNGMAP_FLOOR_SCROLL_STEP] =
+                self.ram[DUNGMAP_FLOOR_SCROLL_STEP].wrapping_add(1);
+        }
+
+        pub(crate) fn set_dungmap_idx(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNGMAP_IDX, value);
+        }
+
+        pub(crate) fn clear_dungmap_idx(&mut self) {
+            write_le_u16(self.ram, DUNGMAP_IDX, 0);
+        }
+
+        pub(crate) fn set_dungmap_scroll_target_y(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNGMAP_SCROLL_TARGET_Y, value);
+        }
+
+        pub(crate) fn set_dungmap_player_marker_x(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNGMAP_PLAYER_MARKER_X, value);
+        }
+
+        pub(crate) fn set_dungmap_player_marker_y(&mut self, value: u16) {
+            write_le_u16(self.ram, DUNGMAP_PLAYER_MARKER_Y, value);
         }
     }
 
@@ -9592,12 +9839,21 @@ pub(crate) mod semantic {
             self.ram[BOTTLE_MENU_ROW] = value;
         }
 
+        pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
+            self.ram[BOTTLE_MENU_ROW] = self.ram[BOTTLE_MENU_ROW].wrapping_sub(1);
+            self.ram[BOTTLE_MENU_ROW]
+        }
+
         pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
             self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
         }
 
         pub(crate) fn set_tick_counter(&mut self, value: u8) {
             self.ram[HUD_MODULE_TICK_COUNTER] = value;
+        }
+
+        pub(crate) fn clear_floor_changed_timer_low(&mut self) {
+            self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
         }
     }
 
@@ -10033,6 +10289,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_word(&mut self, offset: usize, value: u16) {
             write_le_u16(self.ram, VRAM_UPLOAD_DATA + offset, value);
+        }
+
+        pub(crate) fn write_le_u16_at(&mut self, abs_addr: usize, value: u16) {
+            write_le_u16(self.ram, abs_addr, value);
         }
 
         pub(crate) fn set_tilemap_word(&mut self, offset: usize, value: u16) {
@@ -12500,6 +12760,50 @@ pub(crate) mod semantic {
         pub(crate) fn bg1_v_subpixel(&self) -> u16 {
             word(self.ram, BG1_V_SCROLL_SUBPIXEL)
         }
+
+        pub(crate) fn mapbak_main_tile_theme_index(&self) -> u8 {
+            byte(self.ram, MAPBAK_MAIN_TILE_THEME_INDEX)
+        }
+
+        pub(crate) fn mapbak_sprite_graphics_index(&self) -> u8 {
+            byte(self.ram, MAPBAK_SPRITE_GRAPHICS_INDEX)
+        }
+
+        pub(crate) fn mapbak_aux_tile_theme_index(&self) -> u8 {
+            byte(self.ram, MAPBAK_AUX_TILE_THEME_INDEX)
+        }
+
+        pub(crate) fn mapbak_tm_word(&self) -> u16 {
+            word(self.ram, MAPBAK_TM)
+        }
+
+        pub(crate) fn mapbak_ts(&self) -> u8 {
+            byte(self.ram, MAPBAK_TS)
+        }
+
+        pub(crate) fn mapbak_bg1_x_offset(&self) -> u16 {
+            word(self.ram, MAPBAK_BG1_X_OFFSET)
+        }
+
+        pub(crate) fn mapbak_bg1_y_offset(&self) -> u16 {
+            word(self.ram, MAPBAK_BG1_Y_OFFSET)
+        }
+
+        pub(crate) fn mapbak_cgwsel(&self) -> u8 {
+            byte(self.ram, MAPBAK_CGWSEL)
+        }
+
+        pub(crate) fn mapbak_cgwsel_word(&self) -> u16 {
+            word(self.ram, MAPBAK_CGWSEL)
+        }
+
+        pub(crate) fn mapbak_hdmaen(&self) -> u8 {
+            byte(self.ram, MAPBAK_HDMAEN)
+        }
+
+        pub(crate) fn mapbak_palette_slice(&self) -> &[u8] {
+            &self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 0x200]
+        }
     }
 
     pub(crate) struct PpuScrollCopyViewMut<'a> {
@@ -12513,6 +12817,10 @@ pub(crate) mod semantic {
 
         pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
             self.ram[MAPBAK_TS] = value;
+        }
+
+        pub(crate) fn set_mapbak_tm_word(&mut self, value: u16) {
+            write_le_u16(self.ram, MAPBAK_TM, value);
         }
 
         pub(crate) fn new(ram: &'a mut [u8]) -> Self {
@@ -12890,6 +13198,42 @@ pub(crate) mod semantic {
 
         pub(crate) fn copy_bg2_v_live_to_bg1_v_live(&mut self) {
             copy_word(self.ram, BG1_Y_SCROLL, BG2_Y_SCROLL);
+        }
+
+        pub(crate) fn set_mapbak_main_tile_theme_index(&mut self, value: u8) {
+            self.ram[MAPBAK_MAIN_TILE_THEME_INDEX] = value;
+        }
+
+        pub(crate) fn set_mapbak_sprite_graphics_index(&mut self, value: u8) {
+            self.ram[MAPBAK_SPRITE_GRAPHICS_INDEX] = value;
+        }
+
+        pub(crate) fn set_mapbak_aux_tile_theme_index(&mut self, value: u8) {
+            self.ram[MAPBAK_AUX_TILE_THEME_INDEX] = value;
+        }
+
+        pub(crate) fn set_mapbak_bg1_x_offset(&mut self, value: u16) {
+            write_le_u16(self.ram, MAPBAK_BG1_X_OFFSET, value);
+        }
+
+        pub(crate) fn set_mapbak_bg1_y_offset(&mut self, value: u16) {
+            write_le_u16(self.ram, MAPBAK_BG1_Y_OFFSET, value);
+        }
+
+        pub(crate) fn set_mapbak_cgwsel(&mut self, value: u8) {
+            self.ram[MAPBAK_CGWSEL] = value;
+        }
+
+        pub(crate) fn set_mapbak_cgwsel_word(&mut self, value: u16) {
+            write_le_u16(self.ram, MAPBAK_CGWSEL, value);
+        }
+
+        pub(crate) fn set_mapbak_hdmaen(&mut self, value: u8) {
+            self.ram[MAPBAK_HDMAEN] = value;
+        }
+
+        pub(crate) fn mapbak_palette_slice_mut(&mut self) -> &mut [u8] {
+            &mut self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 0x200]
         }
     }
 
@@ -13500,6 +13844,46 @@ pub(crate) mod semantic {
         pub(crate) fn effect_index(&self) -> u8 {
             byte(self.ram, GAME_OVER_LETTER_CURSOR)
         }
+
+        pub(crate) fn flag_which_music_type_messaging(&self) -> u8 {
+            byte(self.ram, FLAG_WHICH_MUSIC_TYPE_MESSAGING)
+        }
+
+        pub(crate) fn dialogue_scroll_speed(&self) -> u8 {
+            byte(self.ram, DIALOGUE_SCROLL_SPEED)
+        }
+
+        pub(crate) fn text_incremental_state(&self) -> u8 {
+            byte(self.ram, TEXT_INCREMENTAL_STATE)
+        }
+
+        pub(crate) fn vwf_line_speed_cur(&self) -> u8 {
+            byte(self.ram, VWF_LINE_SPEED_CUR)
+        }
+
+        pub(crate) fn vwf_line_speed(&self) -> u8 {
+            byte(self.ram, VWF_LINE_SPEED)
+        }
+
+        pub(crate) fn text_wait_countdown(&self) -> u16 {
+            word(self.ram, TEXT_WAIT_COUNTDOWN)
+        }
+
+        pub(crate) fn text_msgbox_topleft(&self) -> u16 {
+            word(self.ram, TEXT_MSGBOX_TOPLEFT)
+        }
+
+        pub(crate) fn text_msgbox_topleft_copy(&self) -> u16 {
+            word(self.ram, TEXT_MSGBOX_TOPLEFT_COPY)
+        }
+
+        pub(crate) fn text_tilemap_cur(&self) -> u16 {
+            word(self.ram, TEXT_TILEMAP_CUR)
+        }
+
+        pub(crate) fn dialogue_msg_read_pos(&self) -> u16 {
+            word(self.ram, DIALOGUE_MSG_READ_POS)
+        }
     }
 
     pub(crate) struct MessagingStateViewMut<'a> {
@@ -13583,6 +13967,69 @@ pub(crate) mod semantic {
             self.ram[GAME_OVER_LETTER_CURSOR] = self.ram[GAME_OVER_LETTER_CURSOR].wrapping_sub(1);
             self.ram[GAME_OVER_LETTER_CURSOR]
         }
+
+        pub(crate) fn clear_flag_which_music_type_messaging(&mut self) {
+            self.ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = 0;
+        }
+
+        pub(crate) fn xor_message_or_sprite_state_cache(&mut self, value: u8) {
+            self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] ^= value;
+        }
+
+        pub(crate) fn increment_text_incremental_state(&mut self) {
+            self.ram[TEXT_INCREMENTAL_STATE] =
+                self.ram[TEXT_INCREMENTAL_STATE].wrapping_add(1);
+        }
+
+        pub(crate) fn decrement_vwf_line_speed_cur(&mut self) {
+            self.ram[VWF_LINE_SPEED_CUR] =
+                self.ram[VWF_LINE_SPEED_CUR].wrapping_sub(1);
+        }
+
+        pub(crate) fn set_vwf_line_speed(&mut self, value: u8) {
+            self.ram[VWF_LINE_SPEED] = value;
+        }
+
+        pub(crate) fn set_vwf_line_speed_cur(&mut self, value: u8) {
+            self.ram[VWF_LINE_SPEED_CUR] = value;
+        }
+
+        pub(crate) fn set_dialogue_scroll_speed(&mut self, value: u8) {
+            self.ram[DIALOGUE_SCROLL_SPEED] = value;
+        }
+
+        pub(crate) fn set_text_wait_countdown(&mut self, value: u16) {
+            write_le_u16(self.ram, TEXT_WAIT_COUNTDOWN, value);
+        }
+
+        pub(crate) fn clear_text_wait_countdown(&mut self) {
+            self.ram[TEXT_WAIT_COUNTDOWN] = 0;
+        }
+
+        pub(crate) fn set_text_msgbox_topleft(&mut self, value: u16) {
+            write_le_u16(self.ram, TEXT_MSGBOX_TOPLEFT, value);
+        }
+
+        pub(crate) fn set_text_msgbox_topleft_copy(&mut self, value: u16) {
+            write_le_u16(self.ram, TEXT_MSGBOX_TOPLEFT_COPY, value);
+        }
+
+        pub(crate) fn set_text_tilemap_cur(&mut self, value: u16) {
+            write_le_u16(self.ram, TEXT_TILEMAP_CUR, value);
+        }
+
+        pub(crate) fn clear_dialogue_msg_read_pos(&mut self) {
+            write_le_u16(self.ram, DIALOGUE_MSG_READ_POS, 0);
+        }
+
+        pub(crate) fn set_dialogue_msg_read_pos(&mut self, value: u16) {
+            write_le_u16(self.ram, DIALOGUE_MSG_READ_POS, value);
+        }
+
+        pub(crate) fn init_msgbox_state_from(&mut self, data: &[u8]) {
+            self.ram[TEXT_MSGBOX_TOPLEFT_COPY..TEXT_MSGBOX_TOPLEFT_COPY + data.len()]
+                .copy_from_slice(data);
+        }
     }
 
     pub(crate) struct MessagingTextView<'a> {
@@ -13603,6 +14050,24 @@ pub(crate) mod semantic {
         }
     }
 
+    pub(crate) struct MessagingRenderBufferView<'a> {
+        ram: &'a [u8],
+    }
+
+    impl<'a> MessagingRenderBufferView<'a> {
+        pub(crate) fn new(ram: &'a [u8]) -> Self {
+            Self { ram }
+        }
+
+        pub(crate) fn word(&self, index: usize) -> u16 {
+            word(self.ram, MESSAGING_RENDER_BUFFER + index * 2)
+        }
+
+        pub(crate) fn word_at_byte_offset(&self, byte_offset: usize) -> u16 {
+            word(self.ram, MESSAGING_RENDER_BUFFER + byte_offset)
+        }
+    }
+
     pub(crate) struct MessagingRenderBufferViewMut<'a> {
         ram: &'a mut [u8],
     }
@@ -13618,6 +14083,28 @@ pub(crate) mod semantic {
 
         pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
             self.ram[MESSAGING_RENDER_BUFFER + offset] &= !mask;
+        }
+
+        pub(crate) fn set_word(&mut self, index: usize, value: u16) {
+            write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + index * 2, value);
+        }
+
+        pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+            write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + byte_offset, value);
+        }
+
+        pub(crate) fn clear_range(&mut self, byte_count: usize) {
+            self.ram[MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + byte_count].fill(0);
+        }
+
+        pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
+            for i in 0..count {
+                write_le_u16(
+                    self.ram,
+                    MESSAGING_RENDER_BUFFER + (start_index + i) * 2,
+                    value,
+                );
+            }
         }
     }
 
@@ -13640,6 +14127,22 @@ pub(crate) mod semantic {
 
         pub(crate) fn cursor_usize(&self) -> usize {
             usize::from(self.cursor())
+        }
+
+        pub(crate) fn vwf_flag_next_line(&self) -> u16 {
+            word(self.ram, VWF_FLAG_NEXT_LINE)
+        }
+
+        pub(crate) fn vwf_curline(&self) -> u16 {
+            word(self.ram, VWF_CURLINE)
+        }
+
+        pub(crate) fn vwf_line_ptr(&self) -> u16 {
+            word(self.ram, VWF_LINE_PTR)
+        }
+
+        pub(crate) fn vwf_tile_buffer_word_at(&self, byte_offset: usize) -> u16 {
+            word(self.ram, VWF_TILE_BUFFER + byte_offset)
         }
     }
 
@@ -13668,6 +14171,26 @@ pub(crate) mod semantic {
             let value = word(self.ram, VWF_GLYPH_CURSOR).wrapping_add(1);
             self.set_cursor(value);
             value
+        }
+
+        pub(crate) fn set_vwf_flag_next_line(&mut self, value: u16) {
+            write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, value);
+        }
+
+        pub(crate) fn clear_vwf_flag_next_line(&mut self) {
+            write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, 0);
+        }
+
+        pub(crate) fn set_vwf_curline(&mut self, value: u16) {
+            write_le_u16(self.ram, VWF_CURLINE, value);
+        }
+
+        pub(crate) fn set_vwf_line_ptr(&mut self, value: u16) {
+            write_le_u16(self.ram, VWF_LINE_PTR, value);
+        }
+
+        pub(crate) fn set_vwf_tile_buffer_word(&mut self, byte_offset: usize, value: u16) {
+            write_le_u16(self.ram, VWF_TILE_BUFFER + byte_offset, value);
         }
     }
 
@@ -18473,7 +18996,9 @@ pub(crate) mod semantic {
         pub(crate) fn y_upper(&self) -> u16 { word(self.ram, SPOTLIGHT_Y_UPPER) }
         pub(crate) fn window_x_center(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_X_CENTER) }
         pub(crate) fn window_state(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_STATE) }
+        pub(crate) fn window_state_byte(&self) -> u8 { byte(self.ram, SPOTLIGHT_WINDOW_STATE) }
         pub(crate) fn window_radius(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_RADIUS) }
+        pub(crate) fn window_radius_byte(&self) -> u8 { byte(self.ram, SPOTLIGHT_WINDOW_RADIUS) }
         pub(crate) fn window_y_buffer(&self) -> u16 { word(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER) }
         pub(crate) fn window_y_buffer_byte(&self) -> u8 { byte(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER) }
     }
@@ -18492,6 +19017,42 @@ pub(crate) mod semantic {
             let v = word(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER).wrapping_sub(1);
             write_le_u16(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER, v);
             v
+        }
+
+        pub(crate) fn set_window_radius_byte(&mut self, v: u8) {
+            self.ram[SPOTLIGHT_WINDOW_RADIUS] = v;
+        }
+
+        pub(crate) fn set_window_state_byte(&mut self, v: u8) {
+            self.ram[SPOTLIGHT_WINDOW_STATE] = v;
+        }
+
+        pub(crate) fn set_window_y_buffer_byte(&mut self, v: u8) {
+            self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = v;
+        }
+
+        pub(crate) fn increment_window_y_buffer_byte(&mut self) {
+            self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] =
+                self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(1);
+        }
+
+        pub(crate) fn shr_window_radius_byte(&mut self, shift: u8) {
+            self.ram[SPOTLIGHT_WINDOW_RADIUS] >>= shift;
+        }
+
+        pub(crate) fn add_window_radius_byte(&mut self, v: u8) {
+            self.ram[SPOTLIGHT_WINDOW_RADIUS] =
+                self.ram[SPOTLIGHT_WINDOW_RADIUS].wrapping_add(v);
+        }
+
+        pub(crate) fn set_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
+            write_le_u16(self.ram, HDMA_TABLE_DYNAMIC + index * 2, value);
+        }
+
+        pub(crate) fn clear_hdma_table_dynamic(&mut self, count: usize) {
+            for i in 0..count {
+                write_le_u16(self.ram, HDMA_TABLE_DYNAMIC + i * 2, 0);
+            }
         }
     }
 

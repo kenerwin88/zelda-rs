@@ -18,16 +18,10 @@ use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 use crate::config::config_value_bytes;
 #[cfg(test)]
 use crate::ram::messaging::MODULE as MESSAGING_MODULE;
-use crate::ram::messaging::{
-    DIALOGUE_MSG_READ_POS, DIALOGUE_SCROLL_SPEED, MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE,
-    MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL, TEXT_BUFFER as MESSAGING_TEXT_BUFFER,
-    TEXT_INCREMENTAL_STATE, TEXT_MSGBOX_TOPLEFT, TEXT_MSGBOX_TOPLEFT_COPY, TEXT_TILEMAP_CUR,
-    TEXT_WAIT_COUNTDOWN, VWF_CURLINE, VWF_FLAG_NEXT_LINE, VWF_LINE_PTR, VWF_LINE_SPEED,
-    VWF_LINE_SPEED_CUR,
-};
+use crate::ram::messaging::TEXT_BUFFER as MESSAGING_TEXT_BUFFER;
 use crate::ram::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
-    TILEMAP_UPLOAD_BUFFER as NMI_TILEMAP_UPLOAD_BUFFER, VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET,
+    VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET,
 };
 use crate::ram::player::LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS;
 use crate::ram::semantic::{
@@ -57,7 +51,8 @@ use crate::ram::semantic::{
     HitboxScratchOffsetViewMut, HudInventoryOrderView, HudInventoryOrderViewMut, HudStateView,
     HudStateViewMut, IntroActorView, IntroActorViewMut, IntroStateView, IntroStateViewMut,
     IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, MessagingRenderBufferViewMut,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, MessagingRenderBufferView,
+    MessagingRenderBufferViewMut,
     MessagingStateView, MessagingStateViewMut, MessagingTextView, MinigameStateView,
     MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView,
     MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut, OamStateView,
@@ -2491,6 +2486,10 @@ impl ZeldaState {
 
     pub(crate) fn messaging_text_view(&self) -> MessagingTextView<'_> {
         MessagingTextView::new(&self.ram)
+    }
+
+    pub(crate) fn messaging_render_buffer_view(&self) -> MessagingRenderBufferView<'_> {
+        MessagingRenderBufferView::new(&self.ram)
     }
 
     pub(crate) fn messaging_render_buffer_view_mut(&mut self) -> MessagingRenderBufferViewMut<'_> {
