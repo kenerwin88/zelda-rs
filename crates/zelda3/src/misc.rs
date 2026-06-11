@@ -447,7 +447,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_overworld_map_state(0);
         self.player_state_view_mut().clear_somaria_block_bg_check_flag();
         self.follower_state_view_mut().clear_tagalong_shared_state_a();
-        self.follower_state_view_mut().clear_tagalong_anim_frame_counter();
+        self.follower_state_view_mut().clear_draw_anim_frame();
         self.follower_state_view_mut().set_appearance_none_flag(0);
         self.player_state_view_mut().clear_player_pose_draw_counter();
         self.player_state_view_mut().clear_player_special_draw_flag();

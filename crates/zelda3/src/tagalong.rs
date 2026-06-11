@@ -1602,21 +1602,21 @@ impl ZeldaState {
             } else if (ain & 0x80) == 0 {
                 sk_index += 12;
                 if sc != 0 {
-                    self.follower_state_view_mut().clear_tagalong_anim_frame_counter();
+                    self.follower_state_view_mut().clear_draw_anim_frame();
                 } else if self.frame_control_view().frame_counter() & 7 == 0 {
                     self.follower_state_view_mut()
-                        .increment_and_cycle_anim_frame_counter();
+                        .increment_and_cycle_draw_anim_frame();
                 }
             } else if self.frame_control_view().frame_counter() & 7 == 0 {
                 self.follower_state_view_mut()
-                    .increment_and_cycle_anim_frame_counter();
+                    .increment_and_cycle_draw_anim_frame();
             }
         } else if self.frame_control_view().frame_counter() & 7 == 0 {
             self.follower_state_view_mut()
-                .increment_and_cycle_anim_frame_counter();
+                .increment_and_cycle_draw_anim_frame();
         }
         if !skip_first_sprites {
-            sk_index += self.follower_state_view().anim_frame_counter() as usize * 4;
+            sk_index += self.follower_state_view().draw_anim_frame() as usize * 4;
             self.set_oam_follower_at(
                 oam,
                 scrollx,

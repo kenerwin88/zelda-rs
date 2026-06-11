@@ -12893,7 +12893,7 @@ pub(crate) mod semantic {
             word(self.ram, TIMER_TAGALONG_REACQUIRE)
         }
 
-        pub(crate) fn anim_frame_counter(&self) -> u8 {
+        pub(crate) fn draw_anim_frame(&self) -> u8 {
             byte(self.ram, TAGALONG_ANIM_FRAME_COUNTER)
         }
 
@@ -13008,11 +13008,11 @@ pub(crate) mod semantic {
             self.ram[TAGALONG_SHARED_STATE_A] = 0;
         }
 
-        pub(crate) fn clear_tagalong_anim_frame_counter(&mut self) {
+        pub(crate) fn clear_draw_anim_frame(&mut self) {
             self.ram[TAGALONG_ANIM_FRAME_COUNTER] = 0;
         }
 
-        pub(crate) fn increment_and_cycle_anim_frame_counter(&mut self) {
+        pub(crate) fn increment_and_cycle_draw_anim_frame(&mut self) {
             self.ram[TAGALONG_ANIM_FRAME_COUNTER] =
                 self.ram[TAGALONG_ANIM_FRAME_COUNTER].wrapping_add(1);
             if self.ram[TAGALONG_ANIM_FRAME_COUNTER] == 3 {
