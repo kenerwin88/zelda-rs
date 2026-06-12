@@ -1047,14 +1047,13 @@ impl ZeldaState {
     fn animate_scene_sprite_add_objects_to_oam_buffer_with_offset(&mut self, k: usize, entries: &[IntroSpriteEnt], x_delta: i16, y_delta: i16) {
         let x = self.intro_actor_view(k).x();
         let y = self.intro_actor_view(k).y();
-        let mut oam = self.intro_state_view().sprite_alloc() as usize;
+        let mut oam = self.allocate_intro_sprite_oam_entries(entries.len());
         for &(x_off, y_off, charnum, flags, ext) in entries {
             let obj_x = x.wrapping_add((x_off as i16).wrapping_add(x_delta) as u16);
             let obj_y = y.wrapping_add((y_off as i16).wrapping_add(y_delta) as u16);
             self.set_oam_helper0_at(oam, obj_x, obj_y, charnum, flags, ext);
             oam += 4;
         }
-        self.intro_state_view_mut().set_sprite_alloc(oam as u16);
     }
 
     pub(super) fn AnimateSceneSprite_MoveTriangle(&mut self, k: usize) {
@@ -1097,7 +1096,7 @@ impl ZeldaState {
 
     pub(super) fn triforce_room_handle_poly(&mut self) {
         self.activate_nmi_thread();
-        self.intro_state_view_mut().set_want_double_ret(1);
+        self.pause_intro_triangle_motion();
         if self.attract_state_view().intro_did_run_step() != 0 {
             return;
         }
@@ -1125,7 +1124,7 @@ impl ZeldaState {
                 self.poly_state_view_mut().add_angle_a(1);
             }
             2 => {
-                self.intro_state_view_mut().set_triforce_ctr(0x1c0);
+                self.start_triforce_countdown(0x1c0);
                 if self.poly_state_view().config1() < 128 {
                     self.poly_state_view_mut().increment_config1();
                 } else if (self.poly_state_view().angle_b().wrapping_sub(10) & 0x7f) >= 92
@@ -1156,7 +1155,7 @@ impl ZeldaState {
             _ => {}
         }
         self.attract_state_view_mut().mark_intro_did_run_step();
-        self.intro_state_view_mut().set_want_double_ret(0);
+        self.resume_intro_triangle_motion();
         self.attract_state_view_mut()
             .increment_intro_frame_counter();
     }
@@ -1189,7 +1188,7 @@ impl ZeldaState {
 
     pub(super) fn intro_sprite_type_b_456(&mut self, k: usize) {
         self.intro_copy_sprite_type4_to_oam(k);
-        if self.intro_state_view().want_double_ret() != 0 {
+        if self.intro_scene_state().triangle_motion_is_paused() {
             return;
         }
         self.animate_scene_sprite_move_triangle(k);
@@ -1223,11 +1222,11 @@ impl ZeldaState {
             }
             3 | 4 => {
                 const YFINAL2: [u8; 3] = [0x72, 0x66, 0x72];
-                let ctr = self.intro_state_view().triforce_ctr();
+                let ctr = self.intro_scene_state().triforce_countdown;
                 if ctr == 0 {
                     self.intro_actor_view_mut(k).set_y_low(YFINAL2[k]);
                 } else {
-                    self.intro_state_view_mut().decrement_triforce_ctr();
+                    self.decrement_triforce_countdown();
                 }
             }
             _ => {}
@@ -2733,7 +2732,7 @@ fn copy_word(ram: &mut [u8], dst: usize, src: usize) {
 
 fn break_triforce_handle_poly(state: &mut ZeldaState) {
     state.attract_state_view_mut().mark_intro_did_run_step();
-    state.intro_state_view_mut().set_want_double_ret(0);
+    state.resume_intro_triangle_motion();
     state
         .attract_state_view_mut()
         .increment_intro_frame_counter();
@@ -3241,7 +3240,7 @@ impl ZeldaState {
     }
 
     pub(super) fn scene_animate_every_sprite(&mut self) {
-        self.intro_state_view_mut().set_sprite_alloc(0x0800);
+        self.reset_intro_sprite_oam_cursor();
         for k in (0..8).rev() {
             self.intro_anim_one_obj(k);
         }

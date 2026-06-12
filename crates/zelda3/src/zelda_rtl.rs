@@ -51,20 +51,19 @@ use crate::game_state::{
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
     HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
     HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
-    IntroStateView, IntroStateViewMut, IntroSwordView, IntroSwordViewMut, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut, MemorizedTileView,
-    MemorizedTileViewMut, MessagingRenderBufferView, MessagingRenderBufferViewMut,
-    MessagingStateView, MessagingStateViewMut, MessagingTextView, MessagingTextViewMut,
-    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
-    MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeFrameStateBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
+    IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    MazeGameTimerViewMut, MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
+    MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
+    MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
+    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
+    MultiselectChoiceViewMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
+    NativeFrameStateBridgeMut, NativeIntroSceneBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
     OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
@@ -3252,12 +3251,37 @@ impl ZeldaState {
         self.shared_message_timer_bridge_mut().tick()
     }
 
-    pub(crate) fn intro_state_view(&self) -> IntroStateView<'_> {
-        IntroStateView::new(&self.ram)
+    pub(crate) fn intro_scene_state(&self) -> IntroSceneState {
+        self.game_state.ending.intro_scene
     }
 
-    pub(crate) fn intro_state_view_mut(&mut self) -> IntroStateViewMut<'_> {
-        IntroStateViewMut::new(&mut self.ram)
+    fn intro_scene_bridge_mut(&mut self) -> NativeIntroSceneBridgeMut<'_> {
+        NativeIntroSceneBridgeMut::new(&mut self.game_state.ending.intro_scene, &mut self.ram)
+    }
+
+    pub(crate) fn pause_intro_triangle_motion(&mut self) {
+        self.intro_scene_bridge_mut().pause_triangle_motion();
+    }
+
+    pub(crate) fn resume_intro_triangle_motion(&mut self) {
+        self.intro_scene_bridge_mut().resume_triangle_motion();
+    }
+
+    pub(crate) fn reset_intro_sprite_oam_cursor(&mut self) {
+        self.intro_scene_bridge_mut().set_sprite_oam_cursor(0x0800);
+    }
+
+    pub(crate) fn allocate_intro_sprite_oam_entries(&mut self, entry_count: usize) -> usize {
+        self.intro_scene_bridge_mut()
+            .allocate_oam_entries(entry_count)
+    }
+
+    pub(crate) fn start_triforce_countdown(&mut self, value: u16) {
+        self.intro_scene_bridge_mut().set_triforce_countdown(value);
+    }
+
+    pub(crate) fn decrement_triforce_countdown(&mut self) {
+        self.intro_scene_bridge_mut().decrement_triforce_countdown();
     }
 
     pub(crate) fn ending_credit_state(&self) -> EndingCreditState {

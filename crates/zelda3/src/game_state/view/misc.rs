@@ -331,55 +331,6 @@ impl<'a> SpriteBattleViewMut<'a> {
     }
 }
 
-pub(crate) struct IntroStateView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> IntroStateView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn want_double_ret(&self) -> u8 {
-        byte(self.ram, INTRO_WANT_DOUBLE_RET)
-    }
-
-    pub(crate) fn sprite_alloc(&self) -> u16 {
-        word(self.ram, INTRO_SPRITE_ALLOC)
-    }
-
-    pub(crate) fn triforce_ctr(&self) -> u16 {
-        word(self.ram, TRIFORCE_CTR)
-    }
-}
-
-pub(crate) struct IntroStateViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> IntroStateViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_want_double_ret(&mut self, value: u8) {
-        self.ram[INTRO_WANT_DOUBLE_RET] = value;
-    }
-
-    pub(crate) fn set_sprite_alloc(&mut self, value: u16) {
-        write_le_u16(self.ram, INTRO_SPRITE_ALLOC, value);
-    }
-
-    pub(crate) fn set_triforce_ctr(&mut self, value: u16) {
-        write_le_u16(self.ram, TRIFORCE_CTR, value);
-    }
-
-    pub(crate) fn decrement_triforce_ctr(&mut self) {
-        let v = read_le_u16(self.ram, TRIFORCE_CTR).wrapping_sub(1);
-        write_le_u16(self.ram, TRIFORCE_CTR, v);
-    }
-}
-
 pub(crate) struct IntroSwordView<'a> {
     ram: &'a [u8],
 }

@@ -15,7 +15,10 @@ pub(crate) use display::{
     NativeDisplayStateBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
     TrinexxPaletteState,
 };
-pub(crate) use ending::{EndingCreditState, EndingState, NativeEndingCreditBridgeMut};
+pub(crate) use ending::{
+    EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
+    NativeIntroSceneBridgeMut,
+};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use messaging::{
     MessagingState, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
@@ -1409,6 +1412,59 @@ mod tests {
 
         assert_eq!(read_le_u16(&ram, ENDING_WHICH_DUNG), 1);
         assert_eq!(read_le_u16(&ram, ENDING_CREDIT_DIGIT_CHAR), 0x3ce6);
+    }
+
+    #[test]
+    fn intro_scene_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[INTRO_WANT_DOUBLE_RET] = 1;
+        write_le_u16(&mut ram, INTRO_SPRITE_ALLOC, 0x0800);
+        write_le_u16(&mut ram, TRIFORCE_CTR, 0x01c0);
+
+        let mut intro = IntroSceneState::load_from_ram(&ram);
+        assert!(intro.triangle_motion_is_paused());
+        assert_eq!(intro.sprite_oam_cursor, 0x0800);
+        assert_eq!(intro.triforce_countdown, 0x01c0);
+        assert_eq!(intro.allocate_oam_entries(3), 0x0800);
+        assert_eq!(intro.sprite_oam_cursor, 0x080c);
+        intro.resume_triangle_motion();
+        intro.decrement_triforce_countdown();
+        intro.write_to_ram(&mut ram);
+
+        assert_eq!(ram[INTRO_WANT_DOUBLE_RET], 0);
+        assert_eq!(read_le_u16(&ram, INTRO_SPRITE_ALLOC), 0x080c);
+        assert_eq!(read_le_u16(&ram, TRIFORCE_CTR), 0x01bf);
+    }
+
+    #[test]
+    fn native_intro_scene_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[INTRO_WANT_DOUBLE_RET] = 0;
+        write_le_u16(&mut ram, INTRO_SPRITE_ALLOC, 0x0800);
+        write_le_u16(&mut ram, TRIFORCE_CTR, 0);
+
+        let mut intro = IntroSceneState::default();
+        {
+            let mut bridge = NativeIntroSceneBridgeMut::new(&mut intro, &mut ram);
+            bridge.pause_triangle_motion();
+            assert_eq!(bridge.allocate_oam_entries(2), 0x0800);
+            bridge.set_triforce_countdown(0x0001);
+            bridge.decrement_triforce_countdown();
+            bridge.resume_triangle_motion();
+            bridge.set_sprite_oam_cursor(0x0900);
+        }
+
+        assert_eq!(
+            intro,
+            IntroSceneState {
+                triangle_motion_pause: 0,
+                sprite_oam_cursor: 0x0900,
+                triforce_countdown: 0,
+            }
+        );
+        assert_eq!(ram[INTRO_WANT_DOUBLE_RET], 0);
+        assert_eq!(read_le_u16(&ram, INTRO_SPRITE_ALLOC), 0x0900);
+        assert_eq!(read_le_u16(&ram, TRIFORCE_CTR), 0);
     }
 
     #[test]
