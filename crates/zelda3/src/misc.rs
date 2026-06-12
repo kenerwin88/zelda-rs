@@ -485,7 +485,7 @@ impl ZeldaState {
             self.hud_rebuild();
             self.hud_update_equipped_item();
             self.system_signals_view_mut().clear_game_over_check_flag();
-            self.world_state_view_mut().set_dungeon_room(32);
+            self.set_dungeon_room(32);
             self.set_main_module(8);
             self.set_submodule(0);
             self.set_subsubmodule(0);

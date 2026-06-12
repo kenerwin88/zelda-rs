@@ -156,8 +156,7 @@ impl ZeldaState {
         let bak1 = self.player_state_view().lower_level_state();
         if self.ancilla_slot_view(k).work_byte_1() != 0 {
             if self.dungeon_state_view().kind_of_in_room_staircase() == 0 {
-                self.world_state_view_mut()
-                    .increment_dungeon_room_index_by(0x10);
+                self.increment_dungeon_room_index_by(0x10);
             }
             self.player_state_view_mut().set_lower_level_state(bak1 ^ 1);
         }
@@ -179,7 +178,7 @@ impl ZeldaState {
         }
         self.hookshot_check_single_layer_tile_collision(x, y, dir);
         self.player_state_view_mut().set_lower_level_state(bak1);
-        self.world_state_view_mut().set_dungeon_room_index(bak0);
+        self.set_dungeon_room_index(bak0);
     }
 
     pub(super) fn hookshot_check_single_layer_tile_collision(&mut self, x: u16, y: u16, dir: i32) {

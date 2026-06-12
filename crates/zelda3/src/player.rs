@@ -146,8 +146,7 @@ impl ZeldaState {
     pub(super) fn dungeon_handle_layer_change(&mut self) {
         self.player_state_view_mut().mark_lower_level_mirror();
         if self.dungeon_state_view().kind_of_in_room_staircase() == 0 {
-            self.world_state_view_mut()
-                .increment_dungeon_room_index_by(16);
+            self.increment_dungeon_room_index_by(16);
         }
         if self.dungeon_state_view().kind_of_in_room_staircase() != 2 {
             self.player_state_view_mut().mark_lower_level();
@@ -2176,7 +2175,7 @@ impl ZeldaState {
                     let prev_room = self.world_location_state().dungeon_room_index();
                     self.dungeon_state_view_mut().set_room_index_prev(prev_room);
                     let room = self.dungeon_header_view().travel_destination(0);
-                    self.world_state_view_mut().set_dungeon_room_index(room);
+                    self.set_dungeon_room_index(room);
                     self.handle_layer_of_destination();
                 } else if !self.player_state_view_mut().whirlpool_triggered() {
                     self.do_sword_interaction_with_tiles_mirror();
@@ -5840,8 +5839,7 @@ impl ZeldaState {
                 let dungeon_room_index = self.world_location_state().dungeon_room_index();
                 self.dungeon_state_view_mut()
                     .set_room_index2(dungeon_room_index);
-                self.world_state_view_mut()
-                    .increment_dungeon_room_index_by(0x10);
+                self.increment_dungeon_room_index_by(0x10);
             }
             if self.dungeon_state_view().kind_of_in_room_staircase() != 2 {
                 self.player_state_view_mut().toggle_lower_level_state();

@@ -475,7 +475,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadOverworldFromDungeon(&mut self) {
-        self.world_state_view_mut().set_indoor_flag(0);
+        self.set_indoor_flag(0);
         self.dungeon_state_view_mut()
             .clear_dungeon_dark_with_lantern();
         self.display_nmi_view_mut()
@@ -585,8 +585,7 @@ impl ZeldaState {
             let screen = exit_screen[k] as u16;
             self.world_state_view_mut()
                 .set_overworld_area_index_word(screen);
-            self.world_state_view_mut()
-                .set_overworld_screen_word(screen);
+            self.set_overworld_screen_word(screen);
 
             let scroll_up_seed = exit_scroll_up_seed[k] as i8 as i16 as u16;
             let scroll_left_seed = exit_scroll_left_seed[k] as i8 as i16 as u16;
@@ -650,12 +649,11 @@ impl ZeldaState {
 
         self.LoadOverworldFromDungeon();
         if self.world_location_state().dungeon_room == 0x1010 {
-            self.world_state_view_mut().set_dungeon_room(0x182);
+            self.set_dungeon_room(0x182);
         }
 
         let room_bak = self.world_location_state().dungeon_room_index();
-        self.world_state_view_mut()
-            .decrement_dungeon_room_index_by(0x80);
+        self.decrement_dungeon_room_index_by(0x80);
         let i = self.world_location_state().dungeon_room_index() as usize;
         self.player_state_view_mut()
             .set_facing(SPECIAL_EXIT_DIRECTIONS[i]);
@@ -692,7 +690,7 @@ impl ZeldaState {
         self.world_state_view_mut()
             .set_left_right_scroll_target_end(SPECIAL_EXIT_SCROLL_X_END[k]);
 
-        self.world_state_view_mut().set_dungeon_room_index(room_bak);
+        self.set_dungeon_room_index(room_bak);
         self.Palette_SpecialOw();
     }
 
@@ -871,7 +869,7 @@ impl ZeldaState {
 
         self.set_overworld_map16_src_off(0x0390);
         self.world_state_view_mut().set_overlay_index_word(xv);
-        self.world_state_view_mut().set_overworld_screen_word(xv);
+        self.set_overworld_screen_word(xv);
         let src = self.overworld_map16_src_off();
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
         self.set_overworld_map16_dst_off((src.wrapping_sub(0x10) & 0x003e) >> 1);
@@ -915,8 +913,7 @@ impl ZeldaState {
         }
 
         let overworld_screen = self.world_state_view().prev_screen_index_word();
-        self.world_state_view_mut()
-            .set_overworld_screen_word(overworld_screen);
+        self.set_overworld_screen_word(overworld_screen);
         self.store_overworld_map16_load_state(self.overworld_prev_map16_load_state());
         let screen_transition = self.world_state_view().prev_screen_transition();
         self.world_state_view_mut()
@@ -2428,7 +2425,7 @@ impl ZeldaState {
                     .set_overworld_peg_puzzle_progress(0);
                 let screen = (self.world_location_state().overworld_screen_index() & 0x3f)
                     | self.save_progress_view().dark_world_state();
-                self.world_state_view_mut().set_overworld_screen(screen);
+                self.set_overworld_screen(screen);
                 self.world_state_view_mut().set_overworld_area_index(screen);
                 self.world_state_view_mut().set_overworld_map_state(0);
                 self.PaletteFilter_InitializeWhiteFilter();
@@ -2883,8 +2880,7 @@ impl ZeldaState {
         let screen = read_word_from_slice(&screen_index, k * 2);
         self.world_state_view_mut()
             .set_overworld_area_index_word(screen);
-        self.world_state_view_mut()
-            .set_overworld_screen_word(screen);
+        self.set_overworld_screen_word(screen);
 
         let src = read_word_from_slice(&map16_src, k * 2);
         self.set_overworld_map16_src_off(src);
@@ -2981,8 +2977,7 @@ impl ZeldaState {
         }
 
         let overworld_screen = self.world_state_view().exit_screen_index();
-        self.world_state_view_mut()
-            .set_overworld_screen_word(overworld_screen);
+        self.set_overworld_screen_word(overworld_screen);
         self.set_overworld_map16_src_off(self.overworld_exit_map16_src_off());
         let src = self.overworld_map16_src_off();
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
@@ -3066,8 +3061,7 @@ impl ZeldaState {
         self.special_exit_position_view_mut()
             .restore_player_position();
         let overworld_screen = self.world_state_view().spexit_screen_index();
-        self.world_state_view_mut()
-            .set_overworld_screen_word(overworld_screen);
+        self.set_overworld_screen_word(overworld_screen);
         self.set_overworld_map16_src_off(self.overworld_spexit_map16_src_off());
         let src = self.overworld_map16_src_off();
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
@@ -4307,7 +4301,7 @@ impl ZeldaState {
 
         let new_area =
             OVERWORLD_AREA_TILEMAP_HEADS[pushed] | self.save_progress_view().dark_world_state();
-        self.world_state_view_mut().set_overworld_screen(new_area);
+        self.set_overworld_screen(new_area);
         self.world_state_view_mut()
             .set_overworld_area_index(new_area);
         if self.save_progress_view().dark_world_state() == 0
@@ -5156,8 +5150,7 @@ impl ZeldaState {
                 && SPECIAL_SWITCH_AREA_SCREENS[i]
                     == u16::from(self.world_location_state().overworld_screen_index())
             {
-                self.world_state_view_mut()
-                    .set_dungeon_room(SPECIAL_SWITCH_AREA_EXITS[i]);
+                self.set_dungeon_room(SPECIAL_SWITCH_AREA_EXITS[i]);
                 self.world_state_view_mut()
                     .set_screen_transition_direction_bits(SPECIAL_SWITCH_AREA_DIRECTIONS[i]);
                 let direction = SPECIAL_SWITCH_AREA_DIRECTIONS[i];
@@ -5224,7 +5217,7 @@ impl ZeldaState {
                     .set_transition_dir_enum(trans as u8);
                 self.set_submodule(36);
                 self.set_subsubmodule(0);
-                self.world_state_view_mut().set_dungeon_room_index(0);
+                self.set_dungeon_room_index(0);
                 if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
                     println!(
                         "spexit-hit frame={} i={} screen=0x{:04x} map8=0x{:04x} dir=0x{:02x} trans=0x{:04x} x=0x{:04x} y=0x{:04x}",

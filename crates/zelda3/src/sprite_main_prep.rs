@@ -4755,12 +4755,12 @@ mod tests {
     fn room_lookup_prep_sets_subtype_and_ignore_projectile() {
         let mut s = fresh_state();
         let k = 7;
-        s.world_state_view_mut().set_dungeon_room_index(0x12);
+        s.set_dungeon_room_index(0x12);
         s.sprite_prep_storyteller(k);
         assert_eq!(s.sprite_slot_view(k).subtype2(), 2);
         assert_eq!(s.sprite_slot_view(k).ignore_projectile(), 1);
 
-        s.world_state_view_mut().set_dungeon_room_index(0x03);
+        s.set_dungeon_room_index(0x03);
         s.sprite_slot_view_mut(k).set_ignore_projectile(0);
         s.sprite_prep_adults(k);
         assert_eq!(s.sprite_slot_view(k).subtype2(), 0);
@@ -4929,7 +4929,7 @@ mod tests {
     fn barrier_catfish_and_mini_vitreous_prep_match_simple_branches() {
         let mut s = fresh_state();
         let k = 12;
-        s.world_state_view_mut().set_overworld_screen(5);
+        s.set_overworld_screen(5);
         s.overworld_event_info_view_mut().set_event_info(5, 0x40);
         s.sprite_slot_view_mut(k).set_x_low(0x10);
         s.sprite_slot_view_mut(k).set_y_low(0x20);
@@ -5154,7 +5154,7 @@ mod tests {
         assert_eq!(outdoor.sprite_slot_view(k).graphics(), 2);
 
         let mut indoor = fresh_state();
-        indoor.world_state_view_mut().set_indoor_flag(1);
+        indoor.set_indoor_flag(1);
         indoor.ram[ITEM_DROP_COUNTER] = 1;
         indoor.sprite_slot_view_mut(k).set_graphics(4);
         indoor
@@ -5452,7 +5452,7 @@ mod tests {
 
         let mut overworld = fresh_state();
         overworld.sprite_slot_view_mut(k).set_state(9);
-        overworld.world_state_view_mut().set_overworld_screen(0x22);
+        overworld.set_overworld_screen(0x22);
         overworld
             .overworld_event_info_view_mut()
             .set_event_info(0x22, 0x40);
@@ -5466,7 +5466,7 @@ mod tests {
 
         let mut lumberjack = fresh_state();
         lumberjack.sprite_slot_view_mut(k).set_state(9);
-        lumberjack.world_state_view_mut().set_overworld_screen(0x3b);
+        lumberjack.set_overworld_screen(0x3b);
         lumberjack
             .overworld_event_info_view_mut()
             .set_event_info(0x3b, 0);
@@ -5474,7 +5474,7 @@ mod tests {
         assert_eq!(lumberjack.sprite_slot_view(k).state(), 0);
 
         let mut dungeon = fresh_state();
-        dungeon.world_state_view_mut().set_indoor_flag(1);
+        dungeon.set_indoor_flag(1);
         dungeon.sprite_slot_view_mut(k).set_state(9);
         dungeon.sprite_slot_view_mut(k).set_x_high(0);
         dungeon
@@ -5497,7 +5497,7 @@ mod tests {
 
         let mut untouched = fresh_state();
         untouched.sprite_slot_view_mut(k).set_state(9);
-        untouched.world_state_view_mut().set_overworld_screen(0x11);
+        untouched.set_overworld_screen(0x11);
         untouched.heart_upgrade_check_if_already_obtained(k);
         assert_eq!(untouched.sprite_slot_view(k).state(), 9);
     }
@@ -5592,7 +5592,7 @@ mod tests {
 
         let mut cell = fresh_state();
         cell.sprite_slot_view_mut(k).set_state(9);
-        cell.world_state_view_mut().set_dungeon_room_index(0x12);
+        cell.set_dungeon_room_index(0x12);
         cell.ram[SRAM_PROGRESS_FLAGS] = 4;
         cell.follower_state_view_mut().set_indicator(7);
         cell.sprite_set_x(k, 0x0100);
@@ -6748,7 +6748,7 @@ mod tests {
 
         let mut shop = fresh_state();
         shop.sprite_slot_view_mut(k).set_state(9);
-        shop.world_state_view_mut().set_dungeon_room_index(0x0f);
+        shop.set_dungeon_room_index(0x0f);
         shop.sprite_set_x(k, 0x0200);
         shop.sprite_set_y(k, 0x0100);
         shop.sprite_prep_shopkeeper(k);
@@ -6772,7 +6772,7 @@ mod tests {
 
         let mut minigame = fresh_state();
         minigame.sprite_slot_view_mut(k).set_state(9);
-        minigame.world_state_view_mut().set_dungeon_room_index(0x06);
+        minigame.set_dungeon_room_index(0x06);
         minigame.sprite_prep_shopkeeper(k);
         assert_eq!(minigame.sprite_slot_view(k).subtype2(), 1);
         assert_eq!(minigame.sprite_slot_view(k).graphics(), 1);
@@ -6912,7 +6912,7 @@ mod tests {
         let k = 7;
 
         let mut bombos = fresh_state();
-        bombos.world_state_view_mut().set_overworld_screen(2);
+        bombos.set_overworld_screen(2);
         bombos.inventory_state_view_mut().set_bombos(1);
         bombos.sprite_slot_view_mut(k).set_x_low(0xf9);
         bombos.sprite_prep_medallion_table(k);
@@ -6945,7 +6945,7 @@ mod tests {
         );
 
         let mut ether = fresh_state();
-        ether.world_state_view_mut().set_overworld_screen(3);
+        ether.set_overworld_screen(3);
         ether.inventory_state_view_mut().set_ether(1);
         ether.sprite_slot_view_mut(k).set_x_low(0x20);
         ether.sprite_prep_medallion_table(k);

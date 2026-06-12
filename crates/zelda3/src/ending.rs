@@ -524,8 +524,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_color_window_selection(0x82);
         let k = (self.frame_state().submodule >> 1) as usize;
-        self.world_state_view_mut()
-            .set_dungeon_room(ENDING_SCENE_ENTRANCES[k]);
+        self.set_dungeon_room(ENDING_SCENE_ENTRANCES[k]);
         if k != 6 && k != 15 {
             self.LoadOverworldFromDungeon();
         } else {
@@ -593,7 +592,7 @@ impl ZeldaState {
         self.sprite_system_view_mut().set_aux_tile_theme(59);
         self.sprite_system_view_mut().set_graphics_index(45);
         self.initialize_tilesets();
-        self.world_state_view_mut().set_overworld_screen(0x5b);
+        self.set_overworld_screen(0x5b);
         self.Overworld_LoadPalettes(
             self.GetOverworldBgPalette(self.world_location_state().overworld_screen_index()),
             0x13,
@@ -666,8 +665,8 @@ impl ZeldaState {
             1 => {
                 self.dungeon_handle_layer_effect();
                 if self.frame_state().submodule == 10 {
-                    self.world_state_view_mut().set_overworld_screen(91);
-                    self.world_state_view_mut().set_indoor_flag(0);
+                    self.set_overworld_screen(91);
+                    self.set_indoor_flag(0);
                     self.set_main_module(24);
                     self.set_submodule(0);
                     self.world_state_view_mut().set_overworld_map_state(2);
@@ -702,7 +701,7 @@ impl ZeldaState {
                     self.Sprite_SpawnBatCrashCutscene();
                     self.player_state_view_mut().set_facing(2);
                     self.set_saved_module_for_menu(9);
-                    self.world_state_view_mut().set_indoor_flag(0);
+                    self.set_indoor_flag(0);
                     self.world_state_view_mut().increment_overworld_map_state();
                     self.set_subsubmodule(128);
                     self.save_progress_view_mut().set_palace_index_x2(255);
@@ -737,7 +736,7 @@ impl ZeldaState {
             2 => {
                 self.enable_force_blank();
                 self.load_credits_songs();
-                self.world_state_view_mut().set_dungeon_room(0x189);
+                self.set_dungeon_room(0x189);
                 self.erase_tile_maps_normal();
                 self.Palette_RevertTranslucencySwap();
                 self.Overworld_EnterSpecialArea();
@@ -2757,7 +2756,7 @@ impl ZeldaState {
         self.set_irq_control_flag(0xff);
         self.set_main_screen_layers(0x15);
         self.set_sub_screen_layers(0);
-        self.world_state_view_mut().set_indoor_flag(0);
+        self.set_indoor_flag(0);
         self.system_signals_view_mut().set_music_control(0xf1);
         self.set_backdrop_color_black();
         self.player_state_view_mut()
@@ -3086,7 +3085,7 @@ impl ZeldaState {
         self.decompress_animated_dungeon_tiles(0x5d);
         self.palette_buffer_view_mut()
             .set_bg_tile_animation_countdown(2);
-        self.world_state_view_mut().set_overworld_screen(0);
+        self.set_overworld_screen(0);
         self.palette_buffer_view_mut().set_palette_main_indoors(0);
         self.palette_buffer_view_mut()
             .set_overworld_palette_aux3_lo(0);

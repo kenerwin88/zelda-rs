@@ -2010,6 +2010,41 @@ impl ZeldaState {
         &self.game_state.world_location
     }
 
+    pub(crate) fn set_dungeon_room(&mut self, value: u16) {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .set_dungeon_room(value);
+    }
+
+    pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .set_dungeon_room_index(value);
+    }
+
+    pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .increment_dungeon_room_index_by(value)
+    }
+
+    pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .decrement_dungeon_room_index_by(value)
+    }
+
+    pub(crate) fn set_overworld_screen(&mut self, value: u8) {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .set_overworld_screen(value);
+    }
+
+    pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .set_overworld_screen_word(value);
+    }
+
+    pub(crate) fn set_indoor_flag(&mut self, value: u8) {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
+            .set_indoor_flag(value);
+    }
+
     pub(crate) fn display_state(&self) -> &DisplayState {
         &self.game_state.display
     }
@@ -5386,7 +5421,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             let room = self.dungeon_header_view().travel_destination(0);
-            self.world_state_view_mut().set_dungeon_room_index(room);
+            self.set_dungeon_room_index(room);
             let player_y = self.player_state_view().y();
             self.tile_detect_position_view_mut().set_y(player_y);
             let new_y = self
@@ -6952,7 +6987,7 @@ mod tests {
     #[test]
     fn outdoor_y_collision_starts_falling_into_pit() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(0);
+        state.set_indoor_flag(0);
         state.tile_detect_position_view_mut().or_pit_tile(5);
 
         state.start_movement_collision_checks_y_handle_outdoors();
@@ -6965,7 +7000,7 @@ mod tests {
     #[test]
     fn outdoor_x_deepwater_without_flippers_hops_from_safe_return() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(0);
+        state.set_indoor_flag(0);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 3);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 3);
         write_le_u16(&mut state.ram, TILEDETECT_DEEPWATER, 4);
@@ -7139,7 +7174,7 @@ mod tests {
     #[test]
     fn handle_nudging_reverts_perpendicular_step_when_probe_blocks() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         set_link_test_word(&mut state, LINK_X_COORD, 0x20);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x20);
@@ -7392,9 +7427,9 @@ mod tests {
     #[test]
     fn apply_links_movement_to_camera_adjusts_crossed_x_quadrant() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         state.ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] = 0x20;
-        state.world_state_view_mut().set_dungeon_room(2);
+        state.set_dungeon_room(2);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
         state.room_bounds_view_mut().set_x_bound(2, 0x0120);
         set_link_test_word(&mut state, LINK_X_COORD, 0x0102);
@@ -7414,7 +7449,7 @@ mod tests {
     #[test]
     fn doorway_east_transition_offsets_link_and_starts_subtile_transition() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
@@ -7422,7 +7457,7 @@ mod tests {
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
-        state.world_state_view_mut().set_dungeon_room(0x0104);
+        state.set_dungeon_room(0x0104);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
         state.room_bounds_view_mut().set_x_bound(1, 0x0120);
 
@@ -7440,7 +7475,7 @@ mod tests {
     #[test]
     fn doorway_south_transition_uses_vertical_camera_target_pair() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         state.ram[IS_STANDING_IN_DOORWAY] = 1;
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 4);
@@ -7448,7 +7483,7 @@ mod tests {
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
-        state.world_state_view_mut().set_dungeon_room(0x0104);
+        state.set_dungeon_room(0x0104);
         state.room_bounds_view_mut().set_y_bound(0, 0x0100);
         state.room_bounds_view_mut().set_y_bound(1, 0x0120);
 
@@ -7470,7 +7505,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
-        state.world_state_view_mut().set_dungeon_room(0x0104);
+        state.set_dungeon_room(0x0104);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
         state.room_bounds_view_mut().set_x_bound(1, 0x0120);
 
@@ -7590,7 +7625,7 @@ mod tests {
 
         set_link_test_byte(&mut state, LINK_IS_BUNNY_MIRROR, 1);
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         state.check_ability_to_swim();
 
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
@@ -7601,7 +7636,7 @@ mod tests {
     #[test]
     fn dungeon_layer_change_updates_floor_room_and_visited_flags() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_dungeon_room(0x0104);
+        state.set_dungeon_room(0x0104);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
         state.ram[QUADRANT_FULLSIZE_Y] = 1;
         state.ram[QUADRANT_FULLSIZE_X] = 1;
@@ -8340,7 +8375,7 @@ mod tests {
         let mut flute = ZeldaState::new();
         flute.player_state_view_mut().set_filtered_joypad_h(0x40);
         set_link_test_byte(&mut flute, LINK_ITEM_FLUTE, 2);
-        flute.world_state_view_mut().set_overworld_screen_word(0x18);
+        flute.set_overworld_screen_word(0x18);
         set_link_test_word(&mut flute, LINK_Y_COORD, 0x780);
         set_link_test_word(&mut flute, LINK_X_COORD, 0x200);
         flute.link_item_flute();
@@ -8713,7 +8748,7 @@ mod tests {
     #[test]
     fn tile_main_handler_shallow_water_sets_ripple_and_slosh_sound() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         state
@@ -8730,7 +8765,7 @@ mod tests {
     #[test]
     fn tile_main_handler_spike_trigger_applies_damage_and_bunny_reset() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_IS_BUNNY, 1);
         set_link_test_byte(&mut state, LINK_IS_BUNNY_MIRROR, 1);
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
@@ -8753,7 +8788,7 @@ mod tests {
     #[test]
     fn tile_main_handler_icy_floor_starts_sliding_state() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
@@ -9101,7 +9136,7 @@ mod tests {
         state.set_subsubmodule(0xf3);
         state.palette_filter_view_mut().set_countdown(0);
         state.player_state_view_mut().set_filtered_joypad_h(0x10);
-        state.world_state_view_mut().set_indoor_flag(1);
+        state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_Y_COORD, 0x12);
         state.ram[LINK_Y_COORD + 0x6f] = 0x34;
         state.ram[SAVE_DUNG_INFO] = 0x56;

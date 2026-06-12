@@ -1645,7 +1645,7 @@ mod tests {
     fn master_sword_main_clears_state_when_event_bit_set() {
         let mut s = fresh_state();
         s.ram[MAIN_MODULE_INDEX] = 9; // not 26
-        s.world_state_view_mut().set_overworld_screen(0x02);
+        s.set_overworld_screen(0x02);
         s.overworld_event_info_view_mut().set_event_info(0x02, 0x40);
         s.sprite_slot_view_mut(4).set_state(9);
         s.master_sword_main(4);
@@ -1797,7 +1797,7 @@ mod tests {
     #[test]
     fn pipe_handle_player_movement_sets_direction_and_runs_player_motion_tail() {
         let mut s = fresh_state();
-        s.world_state_view_mut().set_indoor_flag(0);
+        s.set_indoor_flag(0);
         s.player_state_view_mut().set_speed_setting(0);
         s.player_state_view_mut().set_facing(0);
         s.player_state_view_mut()

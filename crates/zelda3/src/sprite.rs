@@ -8683,7 +8683,7 @@ mod tests {
     fn sprite_inactive_sprite_invalidates_room_or_overworld_slot_marker() {
         let mut outdoor = fresh_state();
         let k = 5;
-        outdoor.world_state_view_mut().set_indoor_flag(0);
+        outdoor.set_indoor_flag(0);
         let n_word = outdoor.sprite_slot_view(k).n_word();
         outdoor
             .sprite_slot_view_mut(k)
@@ -8696,7 +8696,7 @@ mod tests {
         assert_eq!(outdoor.sprite_slot_view(k).n_word(), 0xffff);
 
         let mut indoor = fresh_state();
-        indoor.world_state_view_mut().set_indoor_flag(1);
+        indoor.set_indoor_flag(1);
         indoor.sprite_slot_view_mut(k).set_n(0x34);
         indoor.sprite_inactive_sprite(k);
         assert_eq!(indoor.sprite_slot_view(k).n(), 0xff);
@@ -8706,7 +8706,7 @@ mod tests {
     fn sprite_get_tile_attribute_reads_indoor_floor_table_and_caches_type() {
         let mut s = fresh_state();
         let k = 5;
-        s.world_state_view_mut().set_indoor_flag(1);
+        s.set_indoor_flag(1);
         s.sprite_slot_view_mut(k).set_floor(1);
         let mut x = 0x0128;
         let y = 0x0030;
@@ -8724,7 +8724,7 @@ mod tests {
         assert_eq!(floor0_x, 0x0008);
         assert_eq!(s.sprite_workspace_view().tile_type(), 0x34);
 
-        s.world_state_view_mut().set_indoor_flag(0);
+        s.set_indoor_flag(0);
         let mut outdoor_x = 0x0128;
         let outdoor_y = 0x0040;
         let expected = s.overworld_get_tile_attribute_at_location(outdoor_x >> 3, outdoor_y);
@@ -8984,7 +8984,7 @@ mod tests {
         let k = 5;
 
         let mut guarded = fresh_state();
-        guarded.world_state_view_mut().set_indoor_flag(1);
+        guarded.set_indoor_flag(1);
         guarded.sprite_slot_view_mut(k).set_state(9);
         guarded.sprite_slot_view_mut(k).set_n(0x12);
         guarded.sprite_kill_self(k);
@@ -8992,7 +8992,7 @@ mod tests {
         assert_eq!(guarded.sprite_slot_view(k).n(), 0x12);
 
         let mut indoor_allowed = fresh_state();
-        indoor_allowed.world_state_view_mut().set_indoor_flag(1);
+        indoor_allowed.set_indoor_flag(1);
         indoor_allowed
             .sprite_slot_view_mut(k)
             .set_deflection_bits(0x40);
@@ -9529,7 +9529,7 @@ mod tests {
     fn sprite_manually_set_death_flag_uw_sets_room_bit_only_when_allowed() {
         let mut s = fresh_state();
         let k = 8;
-        s.world_state_view_mut().set_indoor_flag(1);
+        s.set_indoor_flag(1);
         s.sprite_slot_view_mut(k).set_n(8);
         s.dungeon_state_view_mut().set_room_index2_word(0x0123);
 
@@ -9546,7 +9546,7 @@ mod tests {
         assert_eq!(outdoors.sprite_workspace_view().where_in_room(0x0123), 0);
 
         let mut ignored = fresh_state();
-        ignored.world_state_view_mut().set_indoor_flag(1);
+        ignored.set_indoor_flag(1);
         ignored.sprite_slot_view_mut(k).set_deflection_bits(1);
         ignored.sprite_slot_view_mut(k).set_n(8);
         ignored
@@ -9556,7 +9556,7 @@ mod tests {
         assert_eq!(ignored.sprite_workspace_view().where_in_room(0x0123), 0);
 
         let mut signed = fresh_state();
-        signed.world_state_view_mut().set_indoor_flag(1);
+        signed.set_indoor_flag(1);
         signed.sprite_slot_view_mut(k).set_n(0x80);
         signed.dungeon_state_view_mut().set_room_index2_word(0x0123);
         signed.sprite_manually_set_death_flag_uw(k);

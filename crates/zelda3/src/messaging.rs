@@ -985,7 +985,7 @@ impl ZeldaState {
             }
         }
         if self.world_location_state().dungeon_room == 0 {
-            self.world_state_view_mut().set_indoor_flag(0);
+            self.set_indoor_flag(0);
         }
 
         self.reset_some_things_after_death(self.world_location_state().dungeon_room as u8);
@@ -1024,13 +1024,13 @@ impl ZeldaState {
                     self.system_signals_view_mut().clear_restart_check_flag();
                 } else {
                     self.system_signals_view_mut().set_queued_music_control(0);
-                    self.world_state_view_mut().set_indoor_flag(0);
+                    self.set_indoor_flag(0);
                     if self.save_progress_view().dark_world_state() != 0 {
-                        self.world_state_view_mut().set_dungeon_room(32);
+                        self.set_dungeon_room(32);
                     }
                 }
             } else if self.save_progress_view().dark_world_state() != 0 {
-                self.world_state_view_mut().set_dungeon_room(32);
+                self.set_dungeon_room(32);
             }
 
             if self.save_progress_view().progress_indicator() != 0 {
@@ -1051,7 +1051,7 @@ impl ZeldaState {
                 self.SaveGameFile();
             }
             self.set_main_screen_layers(16);
-            self.world_state_view_mut().set_indoor_flag(0);
+            self.set_indoor_flag(0);
             self.death_func31();
             self.system_signals_view_mut().clear_restart_check_flag();
             self.system_signals_view_mut().clear_game_over_check_flag();
