@@ -348,7 +348,7 @@ impl ZeldaState {
         self.room_draw_adjust_torch_lighting_change(x, 0x0eca, x);
         let sfx = 42 | self.calculate_sfx_pan_arbitrary(((x & 0x7f) * 2) as u8);
         self.system_signals_view_mut().set_sound_effect_1(sfx);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
 
         if self.dungeon_state_view().wants_lights_out() != 0 {
             let lit = self.dungeon_state_view().lit_torches();

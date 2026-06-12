@@ -1980,6 +1980,21 @@ impl ZeldaState {
             .clear_bg_vram_load_mode();
     }
 
+    pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_nmi_copy_packets_request(value);
+    }
+
+    pub(crate) fn request_nmi_copy_packets(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .request_nmi_copy_packets();
+    }
+
+    pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_nmi_copy_packets_request();
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }

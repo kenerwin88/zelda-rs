@@ -1498,7 +1498,7 @@ impl ZeldaState {
 
         r8 &= 0x3fff;
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
 
         if self.dungeon_state_view().wants_lights_out() != 0
             && self.dungeon_state_view().lit_torches() != 0

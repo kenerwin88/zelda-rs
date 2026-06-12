@@ -109,6 +109,7 @@ impl WorldLocationState {
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) bg_vram_load_mode: u8,
+    pub(crate) nmi_copy_packets_request: u8,
     pub(crate) vram_upload_cursor: u16,
 }
 
@@ -117,6 +118,7 @@ impl DisplayState {
         Self {
             screen_brightness: ram_byte(ram, INIDISP_COPY),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
+            nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
     }
@@ -124,11 +126,16 @@ impl DisplayState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[INIDISP_COPY] = self.screen_brightness;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
+        ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
 
     pub(crate) fn has_bg_vram_load(&self) -> bool {
         self.bg_vram_load_mode != 0
+    }
+
+    pub(crate) fn has_nmi_copy_packets_request(&self) -> bool {
+        self.nmi_copy_packets_request != 0
     }
 
     pub(crate) fn vram_upload_cursor_usize(&self) -> usize {
@@ -456,6 +463,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_nmi_copy_packets_request_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.nmi_copy_packets_request,
+            ram_byte(self.ram, NMI_COPY_PACKETS_FLAG)
+        );
+    }
+
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
         self.display.screen_brightness = value;
         self.ram[INIDISP_COPY] = value;
@@ -482,6 +496,20 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
         self.set_bg_vram_load_mode(0);
+    }
+
+    pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
+        self.display.nmi_copy_packets_request = value;
+        self.ram[NMI_COPY_PACKETS_FLAG] = value;
+        self.debug_assert_nmi_copy_packets_request_matches_ram();
+    }
+
+    pub(crate) fn request_nmi_copy_packets(&mut self) {
+        self.set_nmi_copy_packets_request(1);
+    }
+
+    pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
+        self.set_nmi_copy_packets_request(0);
     }
 }
 
@@ -597,12 +625,15 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[INIDISP_COPY] = 0x0f;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
+        ram[NMI_COPY_PACKETS_FLAG] = 1;
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
         let mut display = DisplayState::load_from_ram(&ram);
         assert_eq!(display.screen_brightness, 0x0f);
         assert_eq!(display.bg_vram_load_mode, 3);
         assert!(display.has_bg_vram_load());
+        assert_eq!(display.nmi_copy_packets_request, 1);
+        assert!(display.has_nmi_copy_packets_request());
         assert_eq!(display.vram_upload_cursor, 0x0124);
         assert_eq!(display.vram_upload_cursor_usize(), 0x0124);
         assert_eq!(
@@ -612,11 +643,13 @@ mod tests {
 
         display.screen_brightness = 0x80;
         display.bg_vram_load_mode = 0;
+        display.nmi_copy_packets_request = 0;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
+        assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
 
@@ -642,6 +675,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[INIDISP_COPY] = 4;
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
+        ram[NMI_COPY_PACKETS_FLAG] = 1;
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
         let mut display = DisplayState::default();
@@ -652,13 +686,18 @@ mod tests {
             view.set_screen_brightness(0x80);
             view.clear_bg_vram_load_mode();
             view.set_bg_vram_load_mode(5);
+            view.clear_nmi_copy_packets_request();
+            view.request_nmi_copy_packets();
+            view.set_nmi_copy_packets_request(3);
         }
 
         assert_eq!(display.screen_brightness, 0x80);
         assert_eq!(display.bg_vram_load_mode, 5);
+        assert_eq!(display.nmi_copy_packets_request, 3);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
+        assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }
 }

@@ -5197,7 +5197,7 @@ impl ZeldaState {
             dma_ptr = self.dungeon_prep_overlay_dma_watergate(dma_ptr, pos, 0x0881, 4);
             pos = pos.wrapping_add(6);
         }
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn FloodDam_Fill(&mut self) {
@@ -6705,7 +6705,7 @@ impl ZeldaState {
         self.dungeon_prep_overlay_dma_next_prep(0, dsto.wrapping_mul(2));
         self.system_signals_view_mut().set_sound_effect_2(0x1b);
         self.system_signals_view_mut().set_sound_effect_1(0x2e);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn RoomTag_WaterGate(&mut self, _k: usize) {
@@ -7693,7 +7693,7 @@ impl ZeldaState {
                     return;
                 }
                 self.frame_control_view_mut().set_submodule(0);
-                self.display_nmi_view_mut().clear_nmi_copy_packets_flag();
+                self.clear_nmi_copy_packets_request();
                 return;
             }
         }
@@ -7743,13 +7743,13 @@ impl ZeldaState {
 
         if anim_dst != 0 {
             self.display_nmi_view_mut().set_core_update_disable_flag(1);
-            self.display_nmi_view_mut().request_nmi_copy_packets();
+            self.request_nmi_copy_packets();
             if self.dungeon_state_view().door_animation_step_low() != 0x10 {
                 return;
             }
         }
         self.frame_control_view_mut().set_submodule(0);
-        self.display_nmi_view_mut().clear_nmi_copy_packets_flag();
+        self.clear_nmi_copy_packets_request();
     }
 
     pub(super) fn OpenCrackedDoor(&mut self) {
@@ -7793,7 +7793,7 @@ impl ZeldaState {
         let addr = self.dungeon_state_view().door_tilemap_address(k);
         self.dungeon_prep_overlay_dma_next_prep(dma_ptr, addr);
         self.system_signals_view_mut().set_sound_effect_2(21);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
 
         if step == 16 {
             self.finish_locked_door_opening();
@@ -9344,7 +9344,7 @@ impl ZeldaState {
         }
         self.Dungeon_FlagRoomData_Quadrants();
         self.system_signals_view_mut().set_sound_effect_2(14);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
         self.dungeon_state_view_mut().mark_trap_trigger_latched();
         loc + 2
     }
@@ -9994,7 +9994,7 @@ impl ZeldaState {
             self.Dungeon_DrawRoomOverlay_Apply(p);
             offset += 3;
         }
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
         self.frame_control_view_mut().set_submodule(0);
     }
 
@@ -10284,7 +10284,7 @@ impl ZeldaState {
             self.frame_control_view_mut().set_submodule(0);
             self.frame_control_view_mut().set_subsubmodule(0);
         }
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn DungeonTransition_ScrollRoom(&mut self) {
@@ -10465,7 +10465,7 @@ impl ZeldaState {
 
         r8 &= 0x3fff;
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
 
         if self.dungeon_state_view().wants_lights_out() != 0
             && self.dungeon_state_view().lit_torches() != 0
@@ -10512,7 +10512,7 @@ impl ZeldaState {
         self.set_spiral_stair_wall_priority(pos, true);
         let dma_ptr = self.dungeon_prep_overlay_dma_next_prep(0, pos.wrapping_mul(2));
         self.dungeon_prep_overlay_dma_next_prep(dma_ptr, pos.wrapping_mul(2).wrapping_add(8));
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn SpiralStairs_MakeNearbyWallsLowPriority(&mut self) {
@@ -10520,7 +10520,7 @@ impl ZeldaState {
         self.set_spiral_stair_wall_priority(pos, false);
         let dma_ptr = self.dungeon_prep_overlay_dma_next_prep(0, pos.wrapping_mul(2));
         self.dungeon_prep_overlay_dma_next_prep(dma_ptr, pos.wrapping_mul(2).wrapping_add(8));
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn SpiralStairs_MakeNearbyWallsHighPriority_Exiting(&mut self) {
@@ -12049,7 +12049,7 @@ impl ZeldaState {
                 let addr = self.dungeon_state_view().door_tilemap_address(j);
                 self.dungeon_prep_overlay_dma_next_prep(0, addr);
                 self.Dungeon_LoadToggleDoorAttr_OtherEntry(j as i32);
-                self.display_nmi_view_mut().request_nmi_copy_packets();
+                self.request_nmi_copy_packets();
                 self.system_signals_view_mut().set_sound_effect_2(21);
                 return;
             }
@@ -12137,7 +12137,7 @@ impl ZeldaState {
         let sound_effect_1 = 30 | self.calculate_sfx_pan_arbitrary(((addr & 0x007f) * 2) as u8);
         self.system_signals_view_mut()
             .set_sound_effect_1(sound_effect_1);
-        self.display_nmi_view_mut().request_nmi_copy_packets();
+        self.request_nmi_copy_packets();
     }
 
     pub(super) fn dungeon_clear_away_exploding_wall(&mut self) {
@@ -12201,7 +12201,7 @@ impl ZeldaState {
             self.player_state_view_mut().clear_immobilized();
             self.frame_control_view_mut().clear_modal_pause_flag();
         }
-        self.display_nmi_view_mut().set_nmi_copy_packets_flag(3);
+        self.set_nmi_copy_packets_request(3);
     }
 
     pub(super) fn orient_lamp_light_cone(&mut self) {

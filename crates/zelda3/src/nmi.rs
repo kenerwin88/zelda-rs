@@ -155,9 +155,9 @@ impl ZeldaState {
             self.display_nmi_view_mut().clear_update_tilemap_dst();
         }
 
-        if self.display_nmi_view().has_nmi_copy_packets() {
+        if self.display_state().has_nmi_copy_packets_request() {
             self.NMI_CopyPackets();
-            self.display_nmi_view_mut().clear_nmi_copy_packets_flag();
+            self.clear_nmi_copy_packets_request();
             self.display_nmi_view_mut().set_core_update_disable_flag(0);
         }
 
