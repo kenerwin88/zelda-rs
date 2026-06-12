@@ -9,7 +9,8 @@ mod frame;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, LinkDmaSourceSlot, NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
+    DisplayState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
+    NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
@@ -789,6 +790,7 @@ mod tests {
         ram[STAR_TILE_RESTORE_PHASE] = 1;
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
+        write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x0168);
         ram[0xa680] = 0xde;
         ram[0xa681] = 0xad;
 
@@ -917,6 +919,8 @@ mod tests {
         assert!(display.has_animated_tile_data_source());
         assert_eq!(display.animated_tile_vram_destination_address, 0x3b00);
         assert_eq!(display.animated_tile_vram_destination_usize(), 0x3b00);
+        assert_eq!(display.attract_vram_destination_address, 0x0168);
+        assert!(!display.attract_vram_destination_high_is_clear());
 
         display.screen_brightness = 0x80;
         display.nmi_update_latch = 0;
@@ -956,6 +960,7 @@ mod tests {
         display.star_tile_restore_phase = 0;
         display.animated_tile_data_source_address = 0xac80;
         display.animated_tile_vram_destination_address = 0x3c00;
+        display.attract_vram_destination_address = 0x0068;
         display.write_to_ram(&mut ram);
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -999,6 +1004,28 @@ mod tests {
         assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
+        assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn native_attract_vram_destination_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x0160);
+
+        let mut display = DisplayState::default();
+        {
+            let mut bridge = NativeAttractVramDestinationBridgeMut::new(&mut display, &mut ram);
+            bridge.set_page_offset(0x70);
+            bridge.decrement_page_offset();
+            bridge.set_address(0x0068);
+            assert_eq!(bridge.decrement_address(), 0x0067);
+            bridge.clear_address();
+            bridge.set_address(0x0068);
+        }
+
+        assert_eq!(display.attract_vram_destination_address, 0x0068);
+        assert!(display.attract_vram_destination_high_is_clear());
+        assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
     }
 
     #[test]

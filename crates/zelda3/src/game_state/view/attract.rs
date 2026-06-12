@@ -124,12 +124,6 @@ impl<'a> AttractStateView<'a> {
     pub(crate) fn maiden_warp_timer_b(&self) -> u8 {
         byte(self.ram, ATTRACT_MAIDEN_WARP_TIMER_B)
     }
-    pub(crate) fn vram_dst_byte(&self) -> u8 {
-        byte(self.ram, ATTRACT_VRAM_DST)
-    }
-    pub(crate) fn vram_dst_word(&self) -> u16 {
-        word(self.ram, ATTRACT_VRAM_DST)
-    }
     pub(crate) fn mode7_zoom_timer(&self) -> u8 {
         byte(self.ram, TIMER_FOR_MODE7_ZOOM)
     }
@@ -399,56 +393,10 @@ impl<'a> AttractStateViewMut<'a> {
             self.ram[ATTRACT_MAIDEN_WARP_TIMER_B].wrapping_sub(1);
         self.ram[ATTRACT_MAIDEN_WARP_TIMER_B]
     }
-    pub(crate) fn set_vram_dst_byte(&mut self, value: u8) {
-        self.ram[ATTRACT_VRAM_DST] = value;
-    }
-    pub(crate) fn decrement_vram_dst_byte(&mut self) {
-        self.ram[ATTRACT_VRAM_DST] = self.ram[ATTRACT_VRAM_DST].wrapping_sub(1);
-    }
-    pub(crate) fn set_vram_dst_word(&mut self, value: u16) {
-        write_le_u16(self.ram, ATTRACT_VRAM_DST, value);
-    }
-    pub(crate) fn decrement_vram_dst_word(&mut self) -> u16 {
-        let v = read_le_u16(self.ram, ATTRACT_VRAM_DST).wrapping_sub(1);
-        write_le_u16(self.ram, ATTRACT_VRAM_DST, v);
-        v
-    }
     pub(crate) fn set_mode7_zoom_timer(&mut self, value: u8) {
         self.ram[TIMER_FOR_MODE7_ZOOM] = value;
     }
     pub(crate) fn decrement_mode7_zoom_timer(&mut self) {
         self.ram[TIMER_FOR_MODE7_ZOOM] = self.ram[TIMER_FOR_MODE7_ZOOM].wrapping_sub(1);
-    }
-}
-
-pub(crate) struct AttractVramTargetView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> AttractVramTargetView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn high(&self) -> u8 {
-        byte(self.ram, ATTRACT_VRAM_DST + 1)
-    }
-}
-
-pub(crate) struct AttractVramTargetViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> AttractVramTargetViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_low(&mut self, value: u8) {
-        self.ram[ATTRACT_VRAM_DST] = value;
-    }
-
-    pub(crate) fn clear_high(&mut self) {
-        self.ram[ATTRACT_VRAM_DST + 1] = 0;
     }
 }

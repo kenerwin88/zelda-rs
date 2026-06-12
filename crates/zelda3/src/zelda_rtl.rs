@@ -28,21 +28,21 @@ use crate::game_state::constants::{
 use crate::game_state::{
     AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, AncillaSpawnScratchViewMut,
     ArcheryGameView, ArcheryGameViewMut, ArmosKnightHomeView, ArmosKnightHomeViewMut,
-    ArrghusPuffHomeView, AttractStateView, AttractStateViewMut, AttractVramTargetView,
-    AttractVramTargetViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut, Bg1MoveCalcView,
-    Bg1MoveCalcViewMut, BirdTravelDestinationView, BirdTravelDestinationViewMut,
-    BirdTravelStatusViewMut, BlastWallExplosionView, BlastWallExplosionViewMut,
-    BlastWallFireballView, BlastWallFireballViewMut, BlastWallFragmentView,
-    BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView,
-    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
-    BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
-    ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
-    DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
-    DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
-    DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView, DrawScratchPositionViewMut,
-    DualLayerTileCacheView, DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut,
-    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
+    ArrghusPuffHomeView, AttractStateView, AttractStateViewMut, BeamosLaserHistoryView,
+    BeamosLaserHistoryViewMut, Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationView,
+    BirdTravelDestinationViewMut, BirdTravelStatusViewMut, BlastWallExplosionView,
+    BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
+    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut,
+    BombosBlastView, BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut,
+    BombosSpellScratchView, BombosSpellScratchViewMut, CachedSpriteSlotView,
+    CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
+    DialogueMessageIndexView, DialogueMessageIndexViewMut, DialogueNumberView,
+    DialogueNumberViewMut, DialogueSourceOffsetViewMut, DiggingGamePrizeView,
+    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut,
+    DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
+    DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
+    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
     EndingCreditStateView, EndingCreditStateViewMut, EndingScratchView, EndingScratchViewMut,
@@ -59,39 +59,39 @@ use crate::game_state::{
     MessagingStateView, MessagingStateViewMut, MessagingTextView, MessagingTextViewMut,
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
     MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
-    NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldPaletteBackupViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
-    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
-    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
-    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
-    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpecialExitPositionViewMut,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView,
-    SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
-    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
-    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
-    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView,
+    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
+    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldScrollDeltaView,
+    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
+    PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView,
+    PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
+    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
+    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
+    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
+    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
+    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
+    TrinexxPaletteViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1799,14 +1799,6 @@ impl ZeldaState {
         PpuScrollCopyViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn attract_vram_target_view(&self) -> AttractVramTargetView<'_> {
-        AttractVramTargetView::new(&self.ram)
-    }
-
-    pub(crate) fn attract_vram_target_view_mut(&mut self) -> AttractVramTargetViewMut<'_> {
-        AttractVramTargetViewMut::new(&mut self.ram)
-    }
-
     pub(crate) fn attract_state_view(&self) -> AttractStateView<'_> {
         AttractStateView::new(&self.ram)
     }
@@ -2476,6 +2468,50 @@ impl ZeldaState {
 
     pub(crate) fn display_state(&self) -> &DisplayState {
         &self.game_state.display
+    }
+
+    pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
+        self.game_state
+            .display
+            .attract_vram_destination_high_is_clear()
+    }
+
+    pub(crate) fn attract_vram_destination_page_offset(&self) -> u8 {
+        self.game_state
+            .display
+            .attract_vram_destination_page_offset()
+    }
+
+    pub(crate) fn attract_vram_destination_address(&self) -> u16 {
+        self.game_state.display.attract_vram_destination_address
+    }
+
+    fn attract_vram_destination_bridge_mut(&mut self) -> NativeAttractVramDestinationBridgeMut<'_> {
+        NativeAttractVramDestinationBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
+    pub(crate) fn set_attract_vram_destination_address(&mut self, value: u16) {
+        self.attract_vram_destination_bridge_mut()
+            .set_address(value);
+    }
+
+    pub(crate) fn clear_attract_vram_destination_address(&mut self) {
+        self.attract_vram_destination_bridge_mut().clear_address();
+    }
+
+    pub(crate) fn set_attract_vram_destination_page_offset(&mut self, value: u8) {
+        self.attract_vram_destination_bridge_mut()
+            .set_page_offset(value);
+    }
+
+    pub(crate) fn decrement_attract_vram_destination_page_offset(&mut self) {
+        self.attract_vram_destination_bridge_mut()
+            .decrement_page_offset();
+    }
+
+    pub(crate) fn decrement_attract_vram_destination_address(&mut self) -> u16 {
+        self.attract_vram_destination_bridge_mut()
+            .decrement_address()
     }
 
     fn display_state_bridge_mut(&mut self) -> NativeDisplayStateBridgeMut<'_> {

@@ -191,6 +191,7 @@ pub(crate) struct DisplayState {
     pub(crate) star_tile_restore_phase: u8,
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
+    pub(crate) attract_vram_destination_address: u16,
 }
 
 impl DisplayState {
@@ -239,6 +240,7 @@ impl DisplayState {
             star_tile_restore_phase: ram_byte(ram, STAR_TILE_RESTORE_PHASE),
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
+            attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
         }
     }
 
@@ -310,6 +312,7 @@ impl DisplayState {
             ANIMATED_TILE_VRAM_ADDR,
             self.animated_tile_vram_destination_address,
         );
+        write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -559,6 +562,67 @@ impl DisplayState {
 
     pub(crate) fn animated_tile_vram_destination_usize(&self) -> usize {
         usize::from(self.animated_tile_vram_destination_address)
+    }
+
+    pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
+        self.attract_vram_destination_address < 0x0100
+    }
+
+    pub(crate) fn attract_vram_destination_page_offset(&self) -> u8 {
+        self.attract_vram_destination_address as u8
+    }
+}
+
+pub(crate) struct NativeAttractVramDestinationBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DisplayState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.attract_vram_destination_address,
+            read_le_u16(self.ram, ATTRACT_VRAM_DST)
+        );
+    }
+
+    pub(crate) fn set_address(&mut self, value: u16) {
+        self.display.attract_vram_destination_address = value;
+        write_le_u16(self.ram, ATTRACT_VRAM_DST, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_address(&mut self) {
+        self.set_address(0);
+    }
+
+    pub(crate) fn set_page_offset(&mut self, value: u8) {
+        self.display.attract_vram_destination_address =
+            (self.display.attract_vram_destination_address & 0xff00) | u16::from(value);
+        self.ram[ATTRACT_VRAM_DST] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_page_offset(&mut self) {
+        let next = self
+            .display
+            .attract_vram_destination_page_offset()
+            .wrapping_sub(1);
+        self.set_page_offset(next);
+    }
+
+    pub(crate) fn decrement_address(&mut self) -> u16 {
+        let next = self
+            .display
+            .attract_vram_destination_address
+            .wrapping_sub(1);
+        self.set_address(next);
+        next
     }
 }
 
