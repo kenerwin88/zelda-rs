@@ -343,8 +343,9 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
             return;
         }
-        let screen = u16::from(self.world_state_view().overworld_screen());
-        let screen_byte = self.world_state_view().overworld_screen();
+        let world_location = self.world_location_state();
+        let screen = world_location.overworld_screen;
+        let screen_byte = world_location.overworld_screen_index();
         if screen_byte != 0x5b && pos != 0x0e2e {
             return;
         }
@@ -395,8 +396,9 @@ impl ZeldaState {
         self.player_resources_view_mut().set_keys(0xff);
         self.hud_refill_logic();
 
-        let sc = self.world_state_view().overworld_screen();
-        let dr = self.world_state_view().dungeon_room_index();
+        let world_location = self.world_location_state();
+        let sc = world_location.overworld_screen_index();
+        let dr = world_location.dungeon_room_index();
         let (xt, ow_anim_tiles) = pre_overworld_music_selection(
             sc,
             dr,
@@ -427,12 +429,12 @@ impl ZeldaState {
             .set_overworld_fixed_color_plusminus(0);
         self.follower_initialize();
 
-        if self.world_state_view().overworld_screen() & 0x3f == 0 {
+        if sc & 0x3f == 0 {
             self.DecodeAnimatedSpriteTile_variable(0x1e);
         }
         self.frame_control_view_mut().set_saved_module_for_menu(9);
         self.sprite_reload_all_overworld();
-        if u16::from(self.world_state_view().overworld_screen()) & 0x40 == 0 {
+        if sc & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
         }
         let ambient_sound_effect = if self.save_progress_view().progress_indicator() < 2 {

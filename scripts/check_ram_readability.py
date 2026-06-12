@@ -86,6 +86,10 @@ def is_semantic_view_source(path: Path) -> bool:
     return path.is_relative_to(SRC_ROOT / "game_state" / "view")
 
 
+def is_game_state_access_layer(path: Path) -> bool:
+    return is_semantic_view_source(path) or path == SRC_ROOT / "game_state" / "native.rs"
+
+
 def is_public_ram_constant_registry(path: Path) -> bool:
     return path == SRC_ROOT / "game_state" / "constants.rs"
 
@@ -128,7 +132,7 @@ def check_file(path: Path) -> list[Finding]:
         (ADDRESS_NAME_RE, "address-derived RAM constant name"),
         (C_ADDRESS_NAME_RE, "C-style address-derived RAM name in Rust source"),
     ]
-    if not is_semantic_view_source(path):
+    if not is_game_state_access_layer(path):
         checks.append((DIRECT_RAM_RE, "direct hex RAM access; use a named constant"))
     for pattern, message in checks:
         for match in pattern.finditer(text):
@@ -139,7 +143,7 @@ def check_file(path: Path) -> list[Finding]:
 def direct_ram_findings() -> list[Finding]:
     findings: list[Finding] = []
     for path in rust_files():
-        if is_semantic_view_source(path):
+        if is_game_state_access_layer(path):
             continue
         text = path.read_text()
         for match in DIRECT_RAM_ANY_RE.finditer(text):
@@ -185,7 +189,7 @@ ALLOWED_NATIVE_BRIDGE_FUNCTIONS = {
 
 
 def is_allowed_native_bridge_use(path: Path, text: str, offset: int) -> bool:
-    if is_semantic_view_source(path):
+    if is_game_state_access_layer(path):
         return True
     if is_inside_simple_string_literal(text, offset):
         return True
