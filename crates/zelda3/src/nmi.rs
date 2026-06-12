@@ -110,7 +110,10 @@ impl ZeldaState {
                     self.handle_stripes14_slice(&stripes);
                 }
                 2 => {
-                    let stripes = self.display_nmi_view().tilemap_upload_buffer().to_vec();
+                    let stripes = self
+                        .display_state()
+                        .tilemap_upload_stripe_buffer(&self.ram)
+                        .to_vec();
                     self.handle_stripes14_slice(&stripes);
                 }
                 3 => {
@@ -124,7 +127,10 @@ impl ZeldaState {
                     }
                 }
                 4 => {
-                    let stripes = self.display_nmi_view().stripe_buffer_021b().to_vec();
+                    let stripes = self
+                        .display_state()
+                        .secondary_stripe_upload_buffer(&self.ram)
+                        .to_vec();
                     self.handle_stripes14_slice(&stripes);
                 }
                 5..=9 => {
@@ -203,7 +209,10 @@ impl ZeldaState {
     pub(super) fn nmi_upload_tilemap(&mut self) {
         let target = NMI_VRAM_ADDRS[self.display_state().nmi_load_target_page() as usize] << 8;
         if target + 0x400 <= self.ppu.vram.len() {
-            let buf = self.display_nmi_view().tilemap_upload_buffer().to_vec();
+            let buf = self
+                .display_state()
+                .tilemap_upload_stripe_buffer(&self.ram)
+                .to_vec();
             for i in 0..0x400 {
                 self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
             }
@@ -365,7 +374,10 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_dark_world_map(&mut self) {
-        let data = self.display_nmi_view().tilemap_upload_buffer().to_vec();
+        let data = self
+            .display_state()
+            .tilemap_upload_stripe_buffer(&self.ram)
+            .to_vec();
         let mut src = 0usize;
         let mut dst = 0x810usize;
         for _ in 0..0x20 {

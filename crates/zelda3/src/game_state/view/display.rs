@@ -9,14 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn tilemap_upload_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
-    }
-
-    pub(crate) fn stripe_buffer_021b(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B..]
-    }
-
     pub(crate) fn bg1_wall_top_buffer(&self) -> &[u8] {
         &self.ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER..]
     }

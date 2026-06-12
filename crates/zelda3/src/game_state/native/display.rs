@@ -275,6 +275,14 @@ impl DisplayState {
         &ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..]
     }
 
+    pub(crate) fn tilemap_upload_stripe_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
+    }
+
+    pub(crate) fn secondary_stripe_upload_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B..]
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }
