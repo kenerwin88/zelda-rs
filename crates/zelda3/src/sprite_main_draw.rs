@@ -26810,24 +26810,15 @@ impl ZeldaState {
         let tile1 = self.asset_u16(70, src + 1);
         let tile2 = self.asset_u16(70, src + 2);
         let tile3 = self.asset_u16(70, src + 3);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst, vram_pos.swap_bytes());
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 2, 0x0300);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 4, tile0);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 6, tile1);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 10, 0x0300);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 12, tile2);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 14, tile3);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 16, 0xffff);
+        self.write_vram_upload_absolute_word(dst, vram_pos.swap_bytes());
+        self.write_vram_upload_absolute_word(dst + 2, 0x0300);
+        self.write_vram_upload_absolute_word(dst + 4, tile0);
+        self.write_vram_upload_absolute_word(dst + 6, tile1);
+        self.write_vram_upload_absolute_word(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
+        self.write_vram_upload_absolute_word(dst + 10, 0x0300);
+        self.write_vram_upload_absolute_word(dst + 12, tile2);
+        self.write_vram_upload_absolute_word(dst + 14, tile3);
+        self.write_vram_upload_absolute_word(dst + 16, 0xffff);
         self.advance_vram_upload_cursor_by(16);
     }
 }

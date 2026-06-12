@@ -2546,13 +2546,10 @@ impl ZeldaState {
         let mut dst = self.display_state().current_vram_upload_data_address();
         let mut r16 = self.ending_scratch_view().primary_word();
 
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst, r16.swap_bytes());
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 2, 0x3e40);
+        self.write_vram_upload_absolute_word(dst, r16.swap_bytes());
+        self.write_vram_upload_absolute_word(dst + 2, 0x3e40);
         let blank_tile = self.ending_asset_u16(76, 159);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 4, blank_tile);
+        self.write_vram_upload_absolute_word(dst + 4, blank_tile);
         dst += 6;
 
         let r18 = self.ending_scratch_view().secondary_word() as usize;
@@ -2565,16 +2562,17 @@ impl ZeldaState {
             if text[text_off] != 0xff {
                 let addr_delta = text[text_off] as u16;
                 let n = text[text_off + 1];
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst, r16.wrapping_add(addr_delta).swap_bytes());
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst + 2, (n as u16).swap_bytes());
+                self.write_vram_upload_absolute_word(
+                    dst,
+                    r16.wrapping_add(addr_delta).swap_bytes(),
+                );
+                self.write_vram_upload_absolute_word(dst + 2, (n as u16).swap_bytes());
                 dst += 4;
                 let count = ((n.wrapping_add(1)) >> 1) as usize;
                 for q in 0..count {
                     let ch = text[text_off + 2 + q] as usize;
                     let tile = self.ending_asset_u16(76, ch);
-                    self.vram_upload_data_view_mut().write_le_u16_at(dst, tile);
+                    self.write_vram_upload_absolute_word(dst, tile);
                     dst += 2;
                 }
             }
@@ -2584,23 +2582,18 @@ impl ZeldaState {
             if (which & 1) != 0 || (r18 as u16).wrapping_mul(2) == DIGITS_SCROLL_Y[which_idx] {
                 let t = DIGIT_CHAR[(which & 1) as usize];
                 self.ending_credit_state_view_mut().set_credit_digit_char(t);
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst, r16.wrapping_add(0x19).swap_bytes());
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst + 2, 0x0500);
+                self.write_vram_upload_absolute_word(dst, r16.wrapping_add(0x19).swap_bytes());
+                self.write_vram_upload_absolute_word(dst + 2, 0x0500);
                 let palace = ATTRIBUTION_PALACE_ORDER[which_idx];
                 let mut deaths = self.save_progress_view().death_count_for_palace(palace);
                 if deaths >= 1000 {
                     deaths = 999;
                 }
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst + 8, t.wrapping_add(deaths % 10));
+                self.write_vram_upload_absolute_word(dst + 8, t.wrapping_add(deaths % 10));
                 deaths /= 10;
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst + 6, t.wrapping_add(deaths % 10));
+                self.write_vram_upload_absolute_word(dst + 6, t.wrapping_add(deaths % 10));
                 deaths /= 10;
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(dst + 4, t.wrapping_add(deaths));
+                self.write_vram_upload_absolute_word(dst + 4, t.wrapping_add(deaths));
                 dst += 10;
                 which = which.wrapping_add(1);
                 self.ending_credit_state_view_mut().set_which_dung(which);
@@ -2614,19 +2607,16 @@ impl ZeldaState {
         self.ending_scratch_view_mut().set_primary_word(r16);
         let upload_base = self.display_state().vram_upload_buffer_base();
         self.set_vram_upload_cursor((dst - upload_base) as u16);
-        self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
+        self.write_vram_upload_absolute_byte(dst, 0xff);
         self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn credits_add_ending_sequence_text(&mut self) {
         let mut dst = self.display_state().vram_upload_buffer_base();
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst, 0x0060);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 2, 0xfe47);
+        self.write_vram_upload_absolute_word(dst, 0x0060);
+        self.write_vram_upload_absolute_word(dst + 2, 0xfe47);
         let blank_tile = self.ending_asset_u16(76, 159);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 4, blank_tile);
+        self.write_vram_upload_absolute_word(dst + 4, blank_tile);
         dst += 6;
 
         let scene = (self.frame_state().submodule >> 1) as usize;
@@ -2639,22 +2629,22 @@ impl ZeldaState {
         while curo != endo {
             let a = u16::from_le_bytes([data[curo], data[curo + 1]]);
             let b = u16::from_le_bytes([data[curo + 2], data[curo + 3]]);
-            self.vram_upload_data_view_mut().write_le_u16_at(dst, a);
-            self.vram_upload_data_view_mut().write_le_u16_at(dst + 2, b);
+            self.write_vram_upload_absolute_word(dst, a);
+            self.write_vram_upload_absolute_word(dst + 2, b);
             let m = ((b >> 9) & 0x7f) as usize;
             dst += 4;
             curo += 4;
             for _ in 0..=m {
                 let ch = data[curo] as usize;
                 let tile = self.ending_asset_u16(76, ch);
-                self.vram_upload_data_view_mut().write_le_u16_at(dst, tile);
+                self.write_vram_upload_absolute_word(dst, tile);
                 dst += 2;
                 curo += 1;
             }
         }
         let upload_base = self.display_state().vram_upload_buffer_base();
         self.set_vram_upload_cursor((dst - upload_base) as u16);
-        self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
+        self.write_vram_upload_absolute_byte(dst, 0xff);
         self.set_bg_vram_load_mode(1);
     }
 

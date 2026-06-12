@@ -1231,7 +1231,7 @@ impl ZeldaState {
                 .len()
                 .saturating_sub(self.display_state().vram_upload_buffer_base()),
         );
-        self.vram_upload_data_view_mut().copy_bytes(0, &data[..len]);
+        self.copy_vram_upload_buffer_bytes(0, &data[..len]);
         self.set_bg_vram_load_mode(1);
     }
 
@@ -1253,8 +1253,7 @@ impl ZeldaState {
         loop {
             let mut j = k & 3;
             loop {
-                self.vram_upload_data_view_mut()
-                    .set_word(4 + k * 2, BACKGROUND_TILE_PATTERN[p + j]);
+                self.write_vram_upload_buffer_word(4 + k * 2, BACKGROUND_TILE_PATTERN[p + j]);
                 k += 1;
                 j += 1;
                 if j & 3 == 0 {
@@ -1275,8 +1274,7 @@ impl ZeldaState {
             let mut j = k & 1;
             let p = (k & 0x20) >> 4;
             loop {
-                self.vram_upload_data_view_mut()
-                    .set_word(4 + k * 2, BACKGROUND_CORNER_TILES[p + j]);
+                self.write_vram_upload_buffer_word(4 + k * 2, BACKGROUND_CORNER_TILES[p + j]);
                 k += 1;
                 j += 1;
                 if j & 1 == 0 {

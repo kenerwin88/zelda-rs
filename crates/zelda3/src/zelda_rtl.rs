@@ -2738,6 +2738,76 @@ impl ZeldaState {
         NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
+    pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
+        self.vram_upload_data_view_mut().set_byte(offset, value);
+    }
+
+    pub(crate) fn write_vram_upload_buffer_word(&mut self, offset: usize, value: u16) {
+        self.vram_upload_data_view_mut().set_word(offset, value);
+    }
+
+    pub(crate) fn write_vram_upload_tilemap_word(&mut self, offset: usize, value: u16) {
+        self.vram_upload_data_view_mut()
+            .set_tilemap_word(offset, value);
+    }
+
+    pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
+        self.vram_upload_data_view_mut()
+            .write_overworld_vram_word(word_index, value);
+    }
+
+    pub(crate) fn write_vram_upload_absolute_byte(&mut self, address: usize, value: u8) {
+        self.vram_upload_data_view_mut()
+            .write_byte_at(address, value);
+    }
+
+    pub(crate) fn write_vram_upload_absolute_word(&mut self, address: usize, value: u16) {
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(address, value);
+    }
+
+    pub(crate) fn copy_vram_upload_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
+        self.vram_upload_data_view_mut().copy_bytes(offset, data);
+    }
+
+    pub(crate) fn terminate_vram_upload_buffer_at(&mut self, offset: usize) {
+        self.vram_upload_data_view_mut().terminate_at(offset);
+    }
+
+    pub(crate) fn write_vram_upload_level_label_tiles(
+        &mut self,
+        left: &[u8; 14],
+        right: &[u8; 14],
+    ) {
+        self.vram_upload_data_view_mut()
+            .set_level_label_tiles(left, right);
+    }
+
+    pub(crate) fn write_vram_upload_map16_update_packet(
+        &mut self,
+        address: usize,
+        vram_pos: u16,
+        tiles: [u16; 4],
+    ) {
+        self.vram_upload_data_view_mut()
+            .write_map16_update_packet(address, vram_pos, tiles);
+    }
+
+    pub(crate) fn write_vram_upload_single_tile_stripe_packet(
+        &mut self,
+        address: usize,
+        stripe: u16,
+        tile: u16,
+    ) {
+        self.vram_upload_data_view_mut()
+            .write_single_tile_stripe_packet(address, stripe, tile);
+    }
+
+    pub(crate) fn write_vram_upload_tile_stripe_sentinel(&mut self, address: usize) {
+        self.vram_upload_data_view_mut()
+            .write_tile_stripe_sentinel(address);
+    }
+
     pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
         NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_offset(value);
@@ -5600,14 +5670,11 @@ impl ZeldaState {
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
             let addr = self.Dungeon_MapVramAddr(tile_pos);
-            self.vram_upload_data_view_mut().write_le_u16_at(base, addr);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(base + 2, 0x0100);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(base + 4, src[i]);
+            self.write_vram_upload_absolute_word(base, addr);
+            self.write_vram_upload_absolute_word(base + 2, 0x0100);
+            self.write_vram_upload_absolute_word(base + 4, src[i]);
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 24, 0xffff);
+        self.write_vram_upload_absolute_word(dst + 24, 0xffff);
         self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();

@@ -1953,14 +1953,12 @@ impl ZeldaState {
         let i = DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON[dung] >> 1;
         if i >= 0 {
             let i = i as usize;
-            self.vram_upload_data_view_mut().set_level_label_tiles(
+            self.write_vram_upload_level_label_tiles(
                 &DUNGEON_MAP_LEVEL_LABEL_TOP_STRIPE,
                 &DUNGEON_MAP_LEVEL_LABEL_BOTTOM_STRIPE,
             );
-            self.vram_upload_data_view_mut()
-                .set_word(14, DUNGEON_MAP_LEVEL_LABEL_TOP_TILES[i]);
-            self.vram_upload_data_view_mut()
-                .set_word(30, DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES[i]);
+            self.write_vram_upload_buffer_word(14, DUNGEON_MAP_LEVEL_LABEL_TOP_TILES[i]);
+            self.write_vram_upload_buffer_word(30, DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES[i]);
             self.set_bg_vram_load_mode(1);
         }
         self.dungeon_map_scratch_view_mut()
@@ -1975,17 +1973,14 @@ impl ZeldaState {
 
         if t5 & 0x0100 != 0 {
             for &tile in &DUNGEON_MAP_FLOOR_LIST_HEADER_STRIPE {
-                self.vram_upload_data_view_mut().set_word(offs * 2, tile);
+                self.write_vram_upload_buffer_word(offs * 2, tile);
                 offs += 1;
             }
             let mut t = 0x1123u16;
             for _ in 0..16 {
-                self.vram_upload_data_view_mut()
-                    .set_word(offs * 2, t.swap_bytes());
-                self.vram_upload_data_view_mut()
-                    .set_word((offs + 1) * 2, 0x0e40);
-                self.vram_upload_data_view_mut()
-                    .set_word((offs + 2) * 2, 0x1b2e);
+                self.write_vram_upload_buffer_word(offs * 2, t.swap_bytes());
+                self.write_vram_upload_buffer_word((offs + 1) * 2, 0x0e40);
+                self.write_vram_upload_buffer_word((offs + 2) * 2, 0x1b2e);
                 t = t.wrapping_add(0x20);
                 offs += 3;
             }
@@ -2003,12 +1998,11 @@ impl ZeldaState {
         let t7_org = t7;
         let mut j = 0usize;
         loop {
-            self.vram_upload_data_view_mut()
-                .set_word(offs * 2, t7.swap_bytes());
+            self.write_vram_upload_buffer_word(offs * 2, t7.swap_bytes());
             offs += 1;
-            self.vram_upload_data_view_mut().set_word(offs * 2, 0x0e40);
+            self.write_vram_upload_buffer_word(offs * 2, 0x0e40);
             offs += 1;
-            self.vram_upload_data_view_mut().set_word(
+            self.write_vram_upload_buffer_word(
                 offs * 2,
                 DUNGEON_MAP_FLOOR_LIST_LABEL_TILES[j] + if t5 & 0x0200 != 0 { 0x0400 } else { 0 },
             );
@@ -2024,7 +2018,7 @@ impl ZeldaState {
         self.set_vram_upload_cursor((offs * 2) as u16);
         self.DungeonMap_BuildFloorListBoxes(t5 as u8, t7_org);
         let offset = self.display_state().vram_upload_cursor_usize();
-        self.vram_upload_data_view_mut().terminate_at(offset);
+        self.terminate_vram_upload_buffer_at(offset);
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
         self.set_bg_vram_load_mode(1);
@@ -2037,20 +2031,18 @@ impl ZeldaState {
             .wrapping_add(u16::from(t5 & 0x0f) * 0x40);
         let mut offs = self.display_state().vram_upload_cursor_usize() >> 1;
         for _ in 0..n {
-            self.vram_upload_data_view_mut()
-                .set_word(offs * 2, r14.swap_bytes());
+            self.write_vram_upload_buffer_word(offs * 2, r14.swap_bytes());
             offs += 1;
-            self.vram_upload_data_view_mut().set_word(offs * 2, 0x0700);
+            self.write_vram_upload_buffer_word(offs * 2, 0x0700);
             offs += 1;
             for (x, &tile) in DUNGEON_MAP_FLOOR_LIST_BOX_TILES.iter().enumerate() {
-                self.vram_upload_data_view_mut().set_word(offs * 2, tile);
+                self.write_vram_upload_buffer_word(offs * 2, tile);
                 offs += 1;
                 if x == 3 {
                     r14 = r14.wrapping_add(0x20);
-                    self.vram_upload_data_view_mut()
-                        .set_word(offs * 2, r14.swap_bytes());
+                    self.write_vram_upload_buffer_word(offs * 2, r14.swap_bytes());
                     offs += 1;
-                    self.vram_upload_data_view_mut().set_word(offs * 2, 0x0700);
+                    self.write_vram_upload_buffer_word(offs * 2, 0x0700);
                     offs += 1;
                 }
             }
@@ -3332,11 +3324,10 @@ impl ZeldaState {
     pub(super) fn RenderText_Draw_Finish(&mut self) {
         self.RenderText_DrawBorderInitialize();
         let top_left = self.messaging_state_view().text_msgbox_topleft_copy();
-        self.vram_upload_data_view_mut()
-            .set_word(0, top_left.swap_bytes());
-        self.vram_upload_data_view_mut().set_word(2, 0x2e42);
-        self.vram_upload_data_view_mut().set_word(4, 0x387f);
-        self.vram_upload_data_view_mut().set_word(6, 0xffff);
+        self.write_vram_upload_buffer_word(0, top_left.swap_bytes());
+        self.write_vram_upload_buffer_word(2, 0x2e42);
+        self.write_vram_upload_buffer_word(4, 0x387f);
+        self.write_vram_upload_buffer_word(6, 0xffff);
         self.set_bg_vram_load_mode(1);
         self.messaging_state_view_mut().clear_module();
         self.set_submodule(0);
@@ -3669,25 +3660,21 @@ impl ZeldaState {
     pub(super) fn RenderText_DrawBorderRow(&mut self, mut d: usize, y: usize) -> usize {
         let y = y >> 1;
         let top_left = self.messaging_state_view().text_msgbox_topleft_copy();
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(d, top_left.swap_bytes());
+        self.write_vram_upload_absolute_word(d, top_left.swap_bytes());
         d += 2;
         self.messaging_state_view_mut()
             .set_text_msgbox_topleft_copy(top_left.wrapping_add(0x20));
-        self.vram_upload_data_view_mut().write_le_u16_at(d, 0x2f00);
+        self.write_vram_upload_absolute_word(d, 0x2f00);
         d += 2;
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(d, TEXT_BORDER_TILES[y]);
+        self.write_vram_upload_absolute_word(d, TEXT_BORDER_TILES[y]);
         d += 2;
         for _ in 0..22 {
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(d, TEXT_BORDER_TILES[y + 1]);
+            self.write_vram_upload_absolute_word(d, TEXT_BORDER_TILES[y + 1]);
             d += 2;
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(d, TEXT_BORDER_TILES[y + 2]);
+        self.write_vram_upload_absolute_word(d, TEXT_BORDER_TILES[y + 2]);
         d += 2;
-        self.vram_upload_data_view_mut().write_le_u16_at(d, 0xffff);
+        self.write_vram_upload_absolute_word(d, 0xffff);
         d
     }
 
@@ -3716,21 +3703,20 @@ impl ZeldaState {
         let mut s = 0usize; // offset into VWF_TILE_BUFFER
         for _ in 0..6 {
             let row_top_left = self.messaging_state_view().text_msgbox_topleft_copy();
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(d, row_top_left.swap_bytes());
+            self.write_vram_upload_absolute_word(d, row_top_left.swap_bytes());
             d += 2;
             self.messaging_state_view_mut()
                 .set_text_msgbox_topleft_copy(row_top_left.wrapping_add(0x20));
-            self.vram_upload_data_view_mut().write_le_u16_at(d, 0x2900);
+            self.write_vram_upload_absolute_word(d, 0x2900);
             d += 2;
             for _ in 0..21 {
                 let tile = self.vwf_glyph_spacing_view().vwf_tile_buffer_word_at(s);
-                self.vram_upload_data_view_mut().write_le_u16_at(d, tile);
+                self.write_vram_upload_absolute_word(d, tile);
                 d += 2;
                 s += 2;
             }
         }
-        self.vram_upload_data_view_mut().write_le_u16_at(d, 0xffff);
+        self.write_vram_upload_absolute_word(d, 0xffff);
         self.set_bg_vram_load_mode(1);
     }
 

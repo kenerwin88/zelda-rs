@@ -1582,11 +1582,11 @@ impl ZeldaState {
                 let mut off = 0usize;
                 while off != end {
                     let v0 = self.vram_upload_buffer_word(off) | 0x10;
-                    self.vram_upload_data_view_mut().set_word(off, v0);
+                    self.write_vram_upload_buffer_word(off, v0);
                     for word in [2usize, 3] {
                         let offset = off + word * 2;
                         if self.vram_upload_buffer_word(offset) == 0x08aa {
-                            self.vram_upload_data_view_mut().set_word(offset, 0x01e3);
+                            self.write_vram_upload_buffer_word(offset, 0x01e3);
                         }
                     }
                     off += 8;
@@ -1636,10 +1636,10 @@ impl ZeldaState {
     }
 
     fn turtle_rock_vram_common(&mut self, first: u16) {
-        self.vram_upload_data_view_mut().set_word(0, first);
-        self.vram_upload_data_view_mut().set_word(2, 0xfe47);
-        self.vram_upload_data_view_mut().set_word(4, 0x01e3);
-        self.vram_upload_data_view_mut().set_byte(6, 0xff);
+        self.write_vram_upload_buffer_word(0, first);
+        self.write_vram_upload_buffer_word(2, 0xfe47);
+        self.write_vram_upload_buffer_word(4, 0x01e3);
+        self.write_vram_upload_buffer_byte(6, 0xff);
         self.increment_subsubmodule();
         self.set_bg_vram_load_mode(1);
     }
@@ -3236,11 +3236,6 @@ impl ZeldaState {
         ) != 0
     }
 
-    fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
-        self.vram_upload_data_view_mut()
-            .write_overworld_vram_word(word_index, value);
-    }
-
     fn overworld_bg2_word(&self, word_index: usize) -> u16 {
         self.dungeon_state_view().bg2_tile(word_index)
     }
@@ -3886,8 +3881,7 @@ impl ZeldaState {
 
         let mut tmp = 0usize;
         for _ in 0..2 {
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(r10, r0 | r20);
+            self.write_vram_upload_absolute_word(r10, r0 | r20);
             r10 += 2;
             for _ in 0..16 {
                 let k = self.world_state_view().dung_replacement_tile_state(tmp);
@@ -5482,7 +5476,7 @@ impl ZeldaState {
             self.overworld_draw_map16_persist(pos, tile);
         }
         let upload = self.display_state().vram_upload_cursor_usize();
-        self.vram_upload_data_view_mut().set_word(upload, 0xffff);
+        self.write_vram_upload_buffer_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
         let step = self.world_state_view().door_animation_step().wrapping_add(
             if self.dungeon_state_view().door_open_counter() == 32 {
@@ -5515,11 +5509,7 @@ impl ZeldaState {
         let tile1 = u16::from(map8[(src + 1) * 2]) | (u16::from(map8[(src + 1) * 2 + 1]) << 8);
         let tile2 = u16::from(map8[(src + 2) * 2]) | (u16::from(map8[(src + 2) * 2 + 1]) << 8);
         let tile3 = u16::from(map8[(src + 3) * 2]) | (u16::from(map8[(src + 3) * 2 + 1]) << 8);
-        self.vram_upload_data_view_mut().write_map16_update_packet(
-            dst,
-            vram_pos,
-            [tile0, tile1, tile2, tile3],
-        );
+        self.write_vram_upload_map16_update_packet(dst, vram_pos, [tile0, tile1, tile2, tile3]);
         self.advance_vram_upload_cursor_by(16);
     }
 
@@ -5950,7 +5940,7 @@ mod tests {
     #[test]
     fn turtle_rock_vram_common_terminates_nmi_upload_data() {
         let mut state = ZeldaState::new();
-        state.vram_upload_data_view_mut().set_byte(6, 0);
+        state.write_vram_upload_buffer_byte(6, 0);
         state.ram[UVRAM_DATA_OVERWORLD + 6] = 0;
 
         state.turtle_rock_vram_common(0x10);

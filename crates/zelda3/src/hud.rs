@@ -569,8 +569,7 @@ impl ZeldaState {
 
     pub(super) fn hud_clear_tile_map(&mut self) {
         for i in 0..1024 {
-            self.vram_upload_data_view_mut()
-                .set_tilemap_word(i * 2, 0x207f);
+            self.write_vram_upload_tilemap_word(i * 2, 0x207f);
         }
         self.system_signals_view_mut().set_sound_effect_2(17);
         self.set_pending_nmi_subroutine(1);
@@ -1797,8 +1796,7 @@ impl ZeldaState {
             self.hud_state_view_mut()
                 .set_tile_word(tile as usize, value);
         } else {
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(addr, value);
+            self.write_vram_upload_absolute_word(addr, value);
         }
     }
 

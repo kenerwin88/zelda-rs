@@ -5067,8 +5067,7 @@ impl ZeldaState {
                         let value = self
                             .dungeon_state_view()
                             .room_tilemap_word_by_byte_offset(source_base, src + xy(x, y) * 2);
-                        self.vram_upload_data_view_mut()
-                            .set_tilemap_word((p + y * 32 + x) * 2, value);
+                        self.write_vram_upload_tilemap_word((p + y * 32 + x) * 2, value);
                     }
                 }
                 src += 2 * 2;
@@ -5147,19 +5146,15 @@ impl ZeldaState {
         for i in 0..4u16 {
             let col = base_dsto.wrapping_add(i);
             let vram_addr = self.Dungeon_MapVramAddr(col);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(upload, vram_addr);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(upload + 2, 0x0980);
+            self.write_vram_upload_absolute_word(upload, vram_addr);
+            self.write_vram_upload_absolute_word(upload + 2, 0x0980);
             for y in 0..5usize {
                 let tile = self.dungeon_state_view().bg2_tile(col as usize + y * 64);
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(upload + 4 + y * 2, tile);
+                self.write_vram_upload_absolute_word(upload + 4 + y * 2, tile);
             }
             upload += 14;
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(upload, 0xffff);
+        self.write_vram_upload_absolute_word(upload, 0xffff);
         self.set_bg_vram_load_mode(1);
     }
 
@@ -5785,11 +5780,9 @@ impl ZeldaState {
         for (i, (&tile_pos, &tile)) in positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
             let addr = self.Dungeon_MapVramAddr(tile_pos);
-            self.vram_upload_data_view_mut()
-                .write_single_tile_stripe_packet(base, addr, tile);
+            self.write_vram_upload_single_tile_stripe_packet(base, addr, tile);
         }
-        self.vram_upload_data_view_mut()
-            .write_tile_stripe_sentinel(dst + 24);
+        self.write_vram_upload_tile_stripe_sentinel(dst + 24);
         self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
     }
@@ -5859,11 +5852,9 @@ impl ZeldaState {
         for (i, (&tile_pos, &tile)) in tile_positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
             let vram_addr = self.Dungeon_MapVramAddr(tile_pos);
-            self.vram_upload_data_view_mut()
-                .write_single_tile_stripe_packet(base, vram_addr, tile);
+            self.write_vram_upload_single_tile_stripe_packet(base, vram_addr, tile);
         }
-        self.vram_upload_data_view_mut()
-            .write_tile_stripe_sentinel(dst + 24);
+        self.write_vram_upload_tile_stripe_sentinel(dst + 24);
         self.advance_vram_upload_cursor_by(24);
     }
 
@@ -5885,12 +5876,9 @@ impl ZeldaState {
 
         let vram_addr_0 = self.Dungeon_MapVramAddr(pos);
         let vram_addr_1 = self.Dungeon_MapVramAddr(pos + 64);
-        self.vram_upload_data_view_mut()
-            .write_single_tile_stripe_packet(dst, vram_addr_0, tile);
-        self.vram_upload_data_view_mut()
-            .write_single_tile_stripe_packet(dst + 6, vram_addr_1, tile);
-        self.vram_upload_data_view_mut()
-            .write_tile_stripe_sentinel(dst + 12);
+        self.write_vram_upload_single_tile_stripe_packet(dst, vram_addr_0, tile);
+        self.write_vram_upload_single_tile_stripe_packet(dst + 6, vram_addr_1, tile);
+        self.write_vram_upload_tile_stripe_sentinel(dst + 12);
         self.advance_vram_upload_cursor_by(24);
 
         let state = self.dungeon_state_view().savegame_state_bits() | 0x1000;
@@ -6999,11 +6987,9 @@ impl ZeldaState {
             for (i, (&offset, &tile)) in [0u16, 128, 2, 130].iter().zip(tiles.iter()).enumerate() {
                 let stripe = self.RoomTag_BuildChestStripes(offset, yy);
                 let base = dst + i * 6;
-                self.vram_upload_data_view_mut()
-                    .write_single_tile_stripe_packet(base, stripe, tile);
+                self.write_vram_upload_single_tile_stripe_packet(base, stripe, tile);
             }
-            self.vram_upload_data_view_mut()
-                .write_tile_stripe_sentinel(dst + 24);
+            self.write_vram_upload_tile_stripe_sentinel(dst + 24);
             self.advance_vram_upload_cursor_by(24);
 
             let next = yy.wrapping_add(2);
@@ -7500,23 +7486,17 @@ impl ZeldaState {
             let mut cols = r10;
             loop {
                 let vram_addr = self.Dungeon_MapVramAddrNoSwap(dsto);
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(upload, vram_addr);
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(upload + 2, r6 | 0x0a00);
+                self.write_vram_upload_absolute_word(upload, vram_addr);
+                self.write_vram_upload_absolute_word(upload + 2, r6 | 0x0a00);
                 for y in 0..5u16 {
                     let tile = self.room_read_bg2(dsto + y * 64);
-                    self.vram_upload_data_view_mut()
-                        .write_le_u16_at(upload + 4 + y as usize * 2, tile);
+                    self.write_vram_upload_absolute_word(upload + 4 + y as usize * 2, tile);
                 }
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(upload + 14, vram_addr.wrapping_add(0x04a0));
-                self.vram_upload_data_view_mut()
-                    .write_le_u16_at(upload + 16, r6 | 0x0e00);
+                self.write_vram_upload_absolute_word(upload + 14, vram_addr.wrapping_add(0x04a0));
+                self.write_vram_upload_absolute_word(upload + 16, r6 | 0x0e00);
                 for y in 0..7u16 {
                     let tile = self.room_read_bg2(dsto + (y + 5) * 64);
-                    self.vram_upload_data_view_mut()
-                        .write_le_u16_at(upload + 18 + y as usize * 2, tile);
+                    self.write_vram_upload_absolute_word(upload + 18 + y as usize * 2, tile);
                 }
                 dsto = dsto.wrapping_add(1);
                 upload += 32;
@@ -7533,8 +7513,7 @@ impl ZeldaState {
             dsto = dsto.wrapping_add(BLAST_WALL_STRIPE_ROW_ADVANCES[tab_index] >> 1);
             r10 = 3;
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(upload, 0xffff);
+        self.write_vram_upload_absolute_word(upload, 0xffff);
     }
 
     pub(super) fn Dungeon_DrawRoomOverlay(&mut self, src: &[u8]) {
@@ -9259,15 +9238,11 @@ impl ZeldaState {
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
             let vram_addr = self.Dungeon_MapVramAddr(tile_pos);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(base, vram_addr);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(base + 2, 0x0100);
-            self.vram_upload_data_view_mut()
-                .write_le_u16_at(base + 4, src[i]);
+            self.write_vram_upload_absolute_word(base, vram_addr);
+            self.write_vram_upload_absolute_word(base + 2, 0x0100);
+            self.write_vram_upload_absolute_word(base + 4, src[i]);
         }
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 24, 0xffff);
+        self.write_vram_upload_absolute_word(dst + 24, 0xffff);
         let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
         self.set_vram_upload_cursor(next_upload);
 

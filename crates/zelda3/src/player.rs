@@ -3330,10 +3330,8 @@ impl ZeldaState {
     fn dungeon_delete_rupee_tile_for_player(&mut self, x: u16, y: u16) {
         let pos = ((y & 0x01f8) * 8) | ((x & 0x01f8) >> 3);
         let dst = self.display_state().current_vram_upload_data_address();
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 4, 0x190f);
-        self.vram_upload_data_view_mut()
-            .write_le_u16_at(dst + 10, 0x190f);
+        self.write_vram_upload_absolute_word(dst + 4, 0x190f);
+        self.write_vram_upload_absolute_word(dst + 10, 0x190f);
         self.dungeon_state_view_mut()
             .set_bg2_tile(pos as usize, 0x190f);
         self.dungeon_state_view_mut()
@@ -3345,14 +3343,11 @@ impl ZeldaState {
             .set_bg2_attr_word(pos as usize, attr);
         self.dungeon_state_view_mut()
             .set_bg2_attr_word((pos + 64) as usize, attr);
-        {
-            let mut upload = self.vram_upload_data_view_mut();
-            upload.write_le_u16_at(dst, vram0);
-            upload.write_le_u16_at(dst + 6, vram1);
-            upload.write_le_u16_at(dst + 2, 0x0100);
-            upload.write_le_u16_at(dst + 8, 0x0100);
-            upload.write_le_u16_at(dst + 12, 0xffff);
-        }
+        self.write_vram_upload_absolute_word(dst, vram0);
+        self.write_vram_upload_absolute_word(dst + 6, vram1);
+        self.write_vram_upload_absolute_word(dst + 2, 0x0100);
+        self.write_vram_upload_absolute_word(dst + 8, 0x0100);
+        self.write_vram_upload_absolute_word(dst + 12, 0xffff);
         self.advance_vram_upload_cursor_by(24);
         self.dungeon_state_view_mut()
             .set_savegame_state_high_bits(0x10);
@@ -3641,18 +3636,7 @@ impl ZeldaState {
         let tile1 = u16::from(map8[(src + 1) * 2]) | (u16::from(map8[(src + 1) * 2 + 1]) << 8);
         let tile2 = u16::from(map8[(src + 2) * 2]) | (u16::from(map8[(src + 2) * 2 + 1]) << 8);
         let tile3 = u16::from(map8[(src + 3) * 2]) | (u16::from(map8[(src + 3) * 2 + 1]) << 8);
-        {
-            let mut upload = self.vram_upload_data_view_mut();
-            upload.write_le_u16_at(dst, vram_pos.swap_bytes());
-            upload.write_le_u16_at(dst + 2, 0x0300);
-            upload.write_le_u16_at(dst + 4, tile0);
-            upload.write_le_u16_at(dst + 6, tile1);
-            upload.write_le_u16_at(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
-            upload.write_le_u16_at(dst + 10, 0x0300);
-            upload.write_le_u16_at(dst + 12, tile2);
-            upload.write_le_u16_at(dst + 14, tile3);
-            upload.write_le_u16_at(dst + 16, 0xffff);
-        }
+        self.write_vram_upload_map16_update_packet(dst, vram_pos, [tile0, tile1, tile2, tile3]);
         self.advance_vram_upload_cursor_by(16);
     }
 
@@ -3694,7 +3678,7 @@ impl ZeldaState {
             self.overworld_draw_map16_persist_for_smash(pos, tile);
         }
         let upload = self.display_state().vram_upload_cursor_usize();
-        self.vram_upload_data_view_mut().set_word(upload, 0xffff);
+        self.write_vram_upload_buffer_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
         let step = self
             .dungeon_state_view()
