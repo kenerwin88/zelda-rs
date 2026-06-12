@@ -49,21 +49,22 @@ use crate::game_state::{
     EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
     GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
-    HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
-    IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MazeGameTimerViewMut, MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
+    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView,
+    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView,
+    IntroSwordViewMut, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
+    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeAttractVramDestinationBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
-    NativeFrameStateBridgeMut, NativeIntroSceneBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
     OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
@@ -3196,12 +3197,22 @@ impl ZeldaState {
         HudStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn hud_inventory_order_view(&self) -> HudInventoryOrderView<'_> {
-        HudInventoryOrderView::new(&self.ram)
+    pub(crate) fn hud_inventory_order_state(&self) -> HudInventoryOrderState {
+        self.game_state.display.hud_inventory_order
     }
 
-    pub(crate) fn hud_inventory_order_view_mut(&mut self) -> HudInventoryOrderViewMut<'_> {
-        HudInventoryOrderViewMut::new(&mut self.ram)
+    fn hud_inventory_order_bridge_mut(&mut self) -> NativeHudInventoryOrderBridgeMut<'_> {
+        NativeHudInventoryOrderBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
+    pub(crate) fn initialize_default_hud_inventory_order(&mut self, count: usize) {
+        self.hud_inventory_order_bridge_mut()
+            .initialize_default_order(count);
+    }
+
+    pub(crate) fn swap_hud_inventory_order_items(&mut self, old_pos: usize, new_pos: usize) {
+        self.hud_inventory_order_bridge_mut()
+            .swap_items(old_pos, new_pos);
     }
 
     pub(crate) fn archery_game_view(&self) -> ArcheryGameView<'_> {

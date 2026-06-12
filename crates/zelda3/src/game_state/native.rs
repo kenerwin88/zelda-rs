@@ -11,9 +11,9 @@ mod messaging;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    TrinexxPaletteState,
+    DisplayState, HudInventoryOrderState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
+    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, TrinexxPaletteState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1390,6 +1390,45 @@ mod tests {
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
         assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 2);
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 5);
+    }
+
+    #[test]
+    fn hud_inventory_order_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        for index in 0..24 {
+            ram[HUD_INVENTORY_ORDER + index] = 24 - index as u8;
+        }
+
+        let mut order = HudInventoryOrderState::load_from_ram(&ram);
+        assert!(order.is_custom());
+        assert_eq!(order.item(0), 24);
+        assert_eq!(order.item(23), 1);
+        assert_eq!(order.item(24), 0);
+
+        order.initialize_default_order(24);
+        order.swap_items(0, 23);
+        order.write_to_ram(&mut ram);
+
+        assert_eq!(ram[HUD_INVENTORY_ORDER], 24);
+        assert_eq!(ram[HUD_INVENTORY_ORDER + 23], 1);
+    }
+
+    #[test]
+    fn native_hud_inventory_order_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut display = DisplayState::default();
+
+        {
+            let mut bridge = NativeHudInventoryOrderBridgeMut::new(&mut display, &mut ram);
+            bridge.initialize_default_order(24);
+            bridge.swap_items(1, 22);
+        }
+
+        assert_eq!(display.hud_inventory_order.item(0), 1);
+        assert_eq!(display.hud_inventory_order.item(1), 23);
+        assert_eq!(display.hud_inventory_order.item(22), 2);
+        assert_eq!(read_le_u16(&ram, HUD_INVENTORY_ORDER), 0x1701);
+        assert_eq!(ram[HUD_INVENTORY_ORDER + 22], 2);
     }
 
     #[test]

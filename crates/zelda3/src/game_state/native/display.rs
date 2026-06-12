@@ -112,6 +112,49 @@ const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
     LinkDmaSourceSlot::TravelBirdLower,
 ];
 
+const HUD_INVENTORY_ORDER_CAPACITY: usize = 24;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HudInventoryOrderState {
+    order: [u8; HUD_INVENTORY_ORDER_CAPACITY],
+}
+
+impl HudInventoryOrderState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut order = [0; HUD_INVENTORY_ORDER_CAPACITY];
+        for (index, value) in order.iter_mut().enumerate() {
+            *value = ram_byte(ram, HUD_INVENTORY_ORDER + index);
+        }
+        Self { order }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, value) in self.order.iter().copied().enumerate() {
+            ram[HUD_INVENTORY_ORDER + index] = value;
+        }
+    }
+
+    pub(crate) fn is_custom(&self) -> bool {
+        self.order[0] != 0
+    }
+
+    pub(crate) fn item(&self, index: usize) -> u8 {
+        self.order.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn initialize_default_order(&mut self, count: usize) {
+        for index in 0..count.min(HUD_INVENTORY_ORDER_CAPACITY) {
+            self.order[index] = index as u8 + 1;
+        }
+    }
+
+    pub(crate) fn swap_items(&mut self, old_pos: usize, new_pos: usize) {
+        if old_pos < HUD_INVENTORY_ORDER_CAPACITY && new_pos < HUD_INVENTORY_ORDER_CAPACITY {
+            self.order.swap(old_pos, new_pos);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TrinexxPaletteState {
     pub(crate) red_shell_delay: u8,
@@ -237,6 +280,7 @@ pub(crate) struct DisplayState {
     pub(crate) animated_tile_vram_destination_address: u16,
     pub(crate) attract_vram_destination_address: u16,
     pub(crate) trinexx_palette: TrinexxPaletteState,
+    pub(crate) hud_inventory_order: HudInventoryOrderState,
 }
 
 impl DisplayState {
@@ -287,6 +331,7 @@ impl DisplayState {
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
+            hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
         }
     }
 
@@ -360,6 +405,7 @@ impl DisplayState {
         );
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
         self.trinexx_palette.write_to_ram(ram);
+        self.hud_inventory_order.write_to_ram(ram);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -670,6 +716,46 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
             .wrapping_sub(1);
         self.set_address(next);
         next
+    }
+}
+
+pub(crate) struct NativeHudInventoryOrderBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeHudInventoryOrderBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DisplayState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.hud_inventory_order,
+            HudInventoryOrderState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn initialize_default_order(&mut self, count: usize) {
+        self.display
+            .hud_inventory_order
+            .initialize_default_order(count);
+        for index in 0..count.min(HUD_INVENTORY_ORDER_CAPACITY) {
+            self.ram[HUD_INVENTORY_ORDER + index] = index as u8 + 1;
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn swap_items(&mut self, old_pos: usize, new_pos: usize) {
+        self.display
+            .hud_inventory_order
+            .swap_items(old_pos, new_pos);
+        if old_pos < HUD_INVENTORY_ORDER_CAPACITY && new_pos < HUD_INVENTORY_ORDER_CAPACITY {
+            self.ram
+                .swap(HUD_INVENTORY_ORDER + old_pos, HUD_INVENTORY_ORDER + new_pos);
+        }
+        self.debug_assert_matches_ram();
     }
 }
 

@@ -252,9 +252,9 @@ impl ZeldaState {
         if item == 0 {
             return -1;
         }
-        if self.hud_inventory_order_view().is_custom() {
+        if self.hud_inventory_order_state().is_custom() {
             for i in 0..HUD_ITEM_COUNT - 1 {
-                if self.hud_inventory_order_view().item(i) == item {
+                if self.hud_inventory_order_state().item(i) == item {
                     return i as i32;
                 }
             }
@@ -265,13 +265,13 @@ impl ZeldaState {
     }
 
     fn hud_goto_prev_item(&self, item: &mut u8, first_item_index: u8) {
-        if self.hud_inventory_order_view().is_custom() {
+        if self.hud_inventory_order_state().is_custom() {
             let pos = self.hud_get_item_position(*item);
             *item = if pos == 0 && first_item_index == 0 {
                 0
             } else {
                 let idx = ((if pos <= 0 { HUD_ITEM_COUNT as i32 } else { pos }) - 1) as usize;
-                self.hud_inventory_order_view().item(idx)
+                self.hud_inventory_order_state().item(idx)
             };
         } else {
             *item = if *item > first_item_index {
@@ -283,14 +283,14 @@ impl ZeldaState {
     }
 
     fn hud_goto_next_item(&self, item: &mut u8, first_item_index: u8) {
-        if self.hud_inventory_order_view().is_custom() {
+        if self.hud_inventory_order_state().is_custom() {
             let i = self.hud_get_item_position(*item);
             let idx = if i as usize >= HUD_ITEM_COUNT - 1 {
                 0
             } else {
                 i as usize + 1
             };
-            *item = self.hud_inventory_order_view().item(idx);
+            *item = self.hud_inventory_order_state().item(idx);
         } else {
             *item = if *item < HUD_ITEM_COUNT as u8 {
                 item.wrapping_add(1)
@@ -1050,7 +1050,7 @@ impl ZeldaState {
         self.menu_set(hudxy(x + 3, 5), 0x246f);
 
         for i in 0..HUD_ITEM_COUNT {
-            let j = self.hud_inventory_order_view().item(i);
+            let j = self.hud_inventory_order_state().item(i);
             let item = if j == 0 { i as u8 + 1 } else { j };
             let icon = self.hud_get_icon_for_item(item);
             self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[i], &icon);
@@ -1546,9 +1546,8 @@ impl ZeldaState {
     }
 
     fn hud_reorder_item(&mut self, direction: i32) {
-        if !self.hud_inventory_order_view().is_custom() {
-            self.hud_inventory_order_view_mut()
-                .initialize_default_order(24);
+        if !self.hud_inventory_order_state().is_custom() {
+            self.initialize_default_hud_inventory_order(24);
         }
         let old_pos = self.hud_get_item_position(self.save_progress_view().hud_current_item());
         let mut new_pos = old_pos + direction;
@@ -1557,8 +1556,7 @@ impl ZeldaState {
         } else if new_pos >= HUD_ITEM_COUNT as i32 {
             new_pos -= HUD_ITEM_COUNT as i32;
         }
-        self.hud_inventory_order_view_mut()
-            .swap_items(old_pos as usize, new_pos as usize);
+        self.swap_hud_inventory_order_items(old_pos as usize, new_pos as usize);
         self.hud_draw_y_button_items();
         self.system_signals_view_mut().set_sound_effect_2(32);
     }

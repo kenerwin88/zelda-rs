@@ -454,45 +454,6 @@ impl<'a> HudStateViewMut<'a> {
     }
 }
 
-pub(crate) struct HudInventoryOrderView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> HudInventoryOrderView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn is_custom(&self) -> bool {
-        byte(self.ram, HUD_INVENTORY_ORDER) != 0
-    }
-
-    pub(crate) fn item(&self, index: usize) -> u8 {
-        byte(self.ram, HUD_INVENTORY_ORDER + index)
-    }
-}
-
-pub(crate) struct HudInventoryOrderViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> HudInventoryOrderViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn initialize_default_order(&mut self, count: usize) {
-        for i in 0..count {
-            self.ram[HUD_INVENTORY_ORDER + i] = i as u8 + 1;
-        }
-    }
-
-    pub(crate) fn swap_items(&mut self, old_pos: usize, new_pos: usize) {
-        self.ram
-            .swap(HUD_INVENTORY_ORDER + old_pos, HUD_INVENTORY_ORDER + new_pos);
-    }
-}
-
 pub(crate) struct GraphicsScratchViewMut<'a> {
     ram: &'a mut [u8],
 }
