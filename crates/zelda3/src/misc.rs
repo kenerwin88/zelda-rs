@@ -83,7 +83,7 @@ impl ZeldaState {
         let mut t = self
             .world_state_view()
             .rng_seed()
-            .wrapping_add(self.frame_control_view().frame_counter());
+            .wrapping_add(self.frame_state().frame_counter);
         t = if t & 1 != 0 { t >> 1 } else { (t >> 1) ^ 0xb8 };
         self.world_state_view_mut().set_rng_seed(t);
         let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
@@ -97,12 +97,12 @@ impl ZeldaState {
                     trimmed.parse::<u8>().ok()
                 }
             })
-            .is_none_or(|frame| frame == self.frame_control_view().frame_counter());
+            .is_none_or(|frame| frame == self.frame_state().frame_counter);
         if trace_rng && trace_frame_matches {
             let loc = std::panic::Location::caller();
             eprintln!(
                 "R rng fc={} before=0x{:02x} after=0x{:02x} site={}:{} link=0x{:04x},0x{:04x}",
-                self.frame_control_view().frame_counter(),
+                self.frame_state().frame_counter,
                 before,
                 t,
                 loc.file(),
@@ -228,7 +228,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func3(&mut self) {
         self.MirrorWarp_BuildWavingHDMATable();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             self.frame_control_view_mut().set_subsubmodule(0);
             self.frame_control_view_mut().increment_submodule();
         }
@@ -236,7 +236,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func4(&mut self) {
         self.MirrorWarp_BuildDewavingHDMATable();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             self.frame_control_view_mut().set_subsubmodule(0);
             self.frame_control_view_mut().increment_submodule();
         }
@@ -263,7 +263,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func6(&mut self) {
         self.frame_control_view_mut().decrement_subsubmodule();
-        if self.frame_control_view().subsubmodule() == 0 {
+        if self.frame_state().subsubmodule == 0 {
             self.frame_control_view_mut().increment_submodule();
             self.system_signals_view_mut().set_ambient_sound_effect(9);
         }
@@ -271,7 +271,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func7(&mut self) {
         self.RenderText();
-        if self.frame_control_view().submodule() == 0 {
+        if self.frame_state().submodule == 0 {
             self.world_state_view_mut().set_overworld_map_state(0);
             self.system_signals_view_mut().set_ambient_sound_effect(5);
             if !self.inventory_state_view().has_moon_pearl() {
@@ -288,7 +288,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func8(&mut self) {
         self.RenderText();
-        if self.frame_control_view().submodule() == 0 {
+        if self.frame_state().submodule == 0 {
             self.frame_control_view_mut().set_subsubmodule(32);
             self.frame_control_view_mut().set_submodule(12);
         }
@@ -296,7 +296,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func12(&mut self) {
         self.frame_control_view_mut().decrement_subsubmodule();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             return;
         }
         self.ResetAncillaAndCutscene();
@@ -324,7 +324,7 @@ impl ZeldaState {
             return;
         }
 
-        let r8 = if (self.world_state_view().dungeon_room() as u8) == 0 {
+        let r8 = if (self.world_location_state().dungeon_room as u8) == 0 {
             0x80
         } else {
             0xc0
@@ -433,8 +433,8 @@ impl ZeldaState {
     pub(super) fn module05_load_file(&mut self) {
         if self.state_recorder.replay_mode
             && std::env::var_os("ZELDA3_SMV_LOADFILE_TIMING_HACKS").is_some()
-            && self.frame_control_view().main_module() == 5
-            && self.frame_control_view().submodule() == 0
+            && self.frame_state().main_module == 5
+            && self.frame_state().submodule == 0
             && self.frame_control_view().saved_module_for_menu() == 0
             && self.dialogue_message_index_view().value() == 0x000a
         {
@@ -477,7 +477,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_virq_trigger(48);
 
         if self.save_progress_view().dark_world_state() != 0 {
-            if self.world_state_view().is_indoors() {
+            if self.world_location_state().is_indoors() {
                 self.load_dungeon_room_rebuild_hud();
                 return;
             }
@@ -573,7 +573,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module13_boss_victory_pendant(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.boss_victory_heal(),
             1 => self.dungeon_start_victory_spin(),
             2 => self.dungeon_run_victory_spin(),
@@ -610,7 +610,7 @@ impl ZeldaState {
 
     pub(super) fn dungeon_start_victory_spin(&mut self) {
         self.frame_control_view_mut().decrement_subsubmodule();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             return;
         }
         self.player_state_view_mut().clear_immobilized();
@@ -636,7 +636,7 @@ impl ZeldaState {
 
     pub(super) fn dungeon_close_victory_spin(&mut self) {
         self.frame_control_view_mut().decrement_subsubmodule();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             return;
         }
         self.frame_control_view_mut().increment_submodule();
@@ -646,7 +646,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module15_mirror_warp_from_aga(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.kill_agahnim_load_music(),
             1 => self.kill_aghanim_init(),
             2 => self.kill_aghanim_func2(),
@@ -662,14 +662,14 @@ impl ZeldaState {
             12 => self.kill_aghanim_func12(),
             _ => {}
         }
-        if self.frame_control_view().submodule() < 2 || self.frame_control_view().submodule() >= 5 {
+        if self.frame_state().submodule < 2 || self.frame_state().submodule >= 5 {
             self.sprite_main();
             self.link_oam_main();
         }
     }
 
     pub(super) fn module16_boss_victory_crystal(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.boss_victory_heal(),
             1 => self.dungeon_start_victory_spin(),
             2 => self.dungeon_run_victory_spin(),
@@ -945,14 +945,14 @@ impl ZeldaState {
     }
 
     pub(super) fn module17_save_and_quit(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => {
                 self.frame_control_view_mut().increment_submodule();
             }
             1 => {}
             _ => {}
         }
-        if self.frame_control_view().submodule() == 1 {
+        if self.frame_state().submodule == 1 {
             self.display_nmi_view_mut().decrement_screen_brightness();
             if self.display_nmi_view().screen_brightness() == 0 {
                 self.display_nmi_view_mut().set_mosaic_copy(15);
@@ -995,7 +995,7 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_item_tile_action_overworld(&mut self, x: u16, y: u16) -> u8 {
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             self.HandleItemTileAction_Dungeon(x, y)
         } else {
             self.Overworld_ToolAndTileInteraction(x, y) as u8
@@ -1089,7 +1089,7 @@ impl ZeldaState {
     }
 
     pub(super) fn main_show_text_message(&mut self) {
-        if self.frame_control_view().main_module() != 14 {
+        if self.frame_state().main_module != 14 {
             self.world_state_view_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_view_mut().clear_module();
@@ -1334,7 +1334,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module_main_routing(&mut self) {
-        match self.frame_control_view().main_module() {
+        match self.frame_state().main_module {
             0 => self.Module00_Intro(),
             1 => self.module01_file_select(),
             2 => self.module02_copy_file(),
