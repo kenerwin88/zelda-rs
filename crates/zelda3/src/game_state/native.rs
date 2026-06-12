@@ -682,6 +682,27 @@ mod tests {
         ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER_1 + 1] = 0xf0;
         ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER] = 0x13;
         ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER + 1] = 0x57;
+        ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER] = 0x24;
+        ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER + 1] = 0x68;
+        ram[crate::game_state::constants::nmi::BG1_WALL_BOTTOM_BUFFER] = 0xac;
+        ram[crate::game_state::constants::nmi::BG1_WALL_BOTTOM_BUFFER + 1] = 0xe0;
+        ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_BUFFER] = 0x31;
+        ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_BUFFER + 1] = 0x42;
+        ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_TAIL_BUFFER] = 0x53;
+        ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_TAIL_BUFFER + 1] = 0x64;
+        ram[POLYHEDRAL_BUFFER] = 0x75;
+        ram[POLYHEDRAL_BUFFER + 1] = 0x86;
+        write_le_u16(
+            &mut ram,
+            crate::game_state::constants::nmi::ARBITRARY_TILEMAP_DST_BUFFER + 4,
+            0x789a,
+        );
+        ram[DUNGEON_BG2_ATTR_TABLE] = 0xa5;
+        ram[DUNGEON_BG2_ATTR_TABLE + 1] = 0x5a;
+        ram[DUNGEON_BG1_ATTR_TABLE] = 0xc3;
+        ram[DUNGEON_BG1_ATTR_TABLE + 1] = 0x3c;
+        ram[0x4567] = 0x81;
+        ram[0x4568] = 0x18;
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
@@ -772,6 +793,36 @@ mod tests {
         assert_eq!(
             &display.background_character_half_buffer(&ram)[..2],
             &[0x13, 0x57]
+        );
+        assert_eq!(
+            &display.bg1_wall_top_tilemap_buffer(&ram)[..2],
+            &[0x24, 0x68]
+        );
+        assert_eq!(
+            &display.bg1_wall_bottom_tilemap_buffer(&ram)[..2],
+            &[0xac, 0xe0]
+        );
+        assert_eq!(
+            &display.game_over_text_tile_buffer(&ram)[..2],
+            &[0x31, 0x42]
+        );
+        assert_eq!(
+            &display.game_over_text_tail_tile_buffer(&ram)[..2],
+            &[0x53, 0x64]
+        );
+        assert_eq!(&display.polyhedral_tile_buffer(&ram)[..2], &[0x75, 0x86]);
+        assert_eq!(display.arbitrary_tilemap_destination(&ram, 2), 0x789a);
+        assert_eq!(
+            &display.dungeon_bg2_attribute_table(&ram)[..2],
+            &[0xa5, 0x5a]
+        );
+        assert_eq!(
+            &display.dungeon_bg1_attribute_table(&ram)[..2],
+            &[0xc3, 0x3c]
+        );
+        assert_eq!(
+            display.vram_dma_source_bytes(&ram, 0x4567, 2),
+            &[0x81, 0x18]
         );
         assert_eq!(display.message_dma_destination_address, 0x6040);
         assert_eq!(display.message_dma_tile_base, 0x4841);

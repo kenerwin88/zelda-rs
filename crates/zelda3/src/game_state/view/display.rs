@@ -1,56 +1,5 @@
 use super::*;
 
-pub(crate) struct DisplayNmiView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DisplayNmiView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn bg1_wall_top_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER..]
-    }
-
-    pub(crate) fn bg1_wall_bottom_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::BG1_WALL_BOTTOM_BUFFER..]
-    }
-
-    pub(crate) fn game_over_text_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_BUFFER..]
-    }
-
-    pub(crate) fn game_over_text_tail_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_TAIL_BUFFER..]
-    }
-
-    pub(crate) fn polyhedral_buffer(&self) -> &[u8] {
-        &self.ram[POLYHEDRAL_BUFFER..]
-    }
-
-    pub(crate) fn arbitrary_tilemap_dst(&self, slot: usize) -> u16 {
-        word(
-            self.ram,
-            crate::game_state::constants::nmi::ARBITRARY_TILEMAP_DST_BUFFER + slot * 2,
-        )
-    }
-
-    pub(crate) fn dungeon_bg2_attr_table(&self) -> &[u8] {
-        &self.ram[DUNGEON_BG2_ATTR_TABLE..]
-    }
-
-    pub(crate) fn dungeon_bg1_attr_table(&self) -> &[u8] {
-        &self.ram[DUNGEON_BG1_ATTR_TABLE..]
-    }
-
-    pub(crate) fn ram_slice_at(&self, addr: usize, len: usize) -> &[u8] {
-        let start = addr.min(self.ram.len());
-        let end = (addr + len).min(self.ram.len());
-        &self.ram[start..end]
-    }
-}
-
 pub(crate) struct DisplayNmiViewMut<'a> {
     ram: &'a mut [u8],
 }

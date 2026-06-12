@@ -38,8 +38,8 @@ use crate::game_state::{
     BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
     ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
     DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
-    DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayNmiView,
-    DisplayNmiViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
+    DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayNmiViewMut,
+    DisplayState, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
     DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
     DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
     DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
@@ -1715,10 +1715,6 @@ impl ZeldaState {
 
     pub(crate) fn system_signals_view_mut(&mut self) -> SystemSignalsViewMut<'_> {
         SystemSignalsViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn display_nmi_view(&self) -> DisplayNmiView<'_> {
-        DisplayNmiView::new(&self.ram)
     }
 
     pub(crate) fn display_nmi_view_mut(&mut self) -> DisplayNmiViewMut<'_> {

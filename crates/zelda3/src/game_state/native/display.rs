@@ -295,6 +295,52 @@ impl DisplayState {
         &ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER..]
     }
 
+    pub(crate) fn bg1_wall_top_tilemap_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER..]
+    }
+
+    pub(crate) fn bg1_wall_bottom_tilemap_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::BG1_WALL_BOTTOM_BUFFER..]
+    }
+
+    pub(crate) fn game_over_text_tile_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_BUFFER..]
+    }
+
+    pub(crate) fn game_over_text_tail_tile_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_TAIL_BUFFER..]
+    }
+
+    pub(crate) fn polyhedral_tile_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[POLYHEDRAL_BUFFER..]
+    }
+
+    pub(crate) fn arbitrary_tilemap_destination(&self, ram: &[u8], slot: usize) -> u16 {
+        read_le_u16(
+            ram,
+            crate::game_state::constants::nmi::ARBITRARY_TILEMAP_DST_BUFFER + slot * 2,
+        )
+    }
+
+    pub(crate) fn dungeon_bg2_attribute_table<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[DUNGEON_BG2_ATTR_TABLE..]
+    }
+
+    pub(crate) fn dungeon_bg1_attribute_table<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[DUNGEON_BG1_ATTR_TABLE..]
+    }
+
+    pub(crate) fn vram_dma_source_bytes<'a>(
+        &self,
+        ram: &'a [u8],
+        source_addr: usize,
+        len: usize,
+    ) -> &'a [u8] {
+        let start = source_addr.min(ram.len());
+        let end = source_addr.saturating_add(len).min(ram.len());
+        &ram[start..end]
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }

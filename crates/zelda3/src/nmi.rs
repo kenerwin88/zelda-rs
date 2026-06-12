@@ -257,17 +257,26 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_subscreen_overlay(&mut self) {
-        let data = self.display_nmi_view().dungeon_bg2_attr_table().to_vec();
+        let data = self
+            .display_state()
+            .dungeon_bg2_attribute_table(&self.ram)
+            .to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x80);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_former(&mut self) {
-        let data = self.display_nmi_view().dungeon_bg2_attr_table().to_vec();
+        let data = self
+            .display_state()
+            .dungeon_bg2_attribute_table(&self.ram)
+            .to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x40);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_latter(&mut self) {
-        let data = self.display_nmi_view().dungeon_bg1_attr_table().to_vec();
+        let data = self
+            .display_state()
+            .dungeon_bg1_attribute_table(&self.ram)
+            .to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0x40, 0x80);
     }
 
@@ -279,7 +288,9 @@ impl ZeldaState {
     ) {
         let mut offset = 0usize;
         loop {
-            let dst = self.display_nmi_view().arbitrary_tilemap_dst(i >> 1) as usize;
+            let dst = self
+                .display_state()
+                .arbitrary_tilemap_destination(&self.ram, i >> 1) as usize;
             if offset + 0x80 <= src_data.len() {
                 self.copy_to_vram_slice(dst, &src_data[offset..], 0x80);
             }
@@ -296,7 +307,9 @@ impl ZeldaState {
     pub(super) fn nmi_handle_arbitrary_tile_map(&mut self, src: *const u8, mut i: i32, i_end: i32) {
         let mut offset = 0usize;
         loop {
-            let dst = self.display_nmi_view().arbitrary_tilemap_dst((i as usize) >> 1) as usize;
+            let dst = self
+                .display_state()
+                .arbitrary_tilemap_destination(&self.ram, (i as usize) >> 1) as usize;
             let chunk = unsafe { std::slice::from_raw_parts(src.add(offset), 0x80) };
             self.copy_to_vram_slice(dst, chunk, 0x80);
             offset += 0x80;
@@ -310,8 +323,14 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_bg1_wall(&mut self) {
         let target = self.display_state().nmi_load_target_address as usize;
-        let top_buf = self.display_nmi_view().bg1_wall_top_buffer().to_vec();
-        let bottom_buf = self.display_nmi_view().bg1_wall_bottom_buffer().to_vec();
+        let top_buf = self
+            .display_state()
+            .bg1_wall_top_tilemap_buffer(&self.ram)
+            .to_vec();
+        let bottom_buf = self
+            .display_state()
+            .bg1_wall_bottom_tilemap_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_vertical_slice(target, &top_buf, 0x40);
         self.copy_to_vram_vertical_slice(target + 0x800, &bottom_buf, 0x40);
     }
@@ -406,10 +425,13 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_game_over_text(&mut self) {
-        let buf = self.display_nmi_view().game_over_text_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .game_over_text_tile_buffer(&self.ram)
+            .to_vec();
         let tail_buf = self
-            .display_nmi_view()
-            .game_over_text_tail_buffer()
+            .display_state()
+            .game_over_text_tail_tile_buffer(&self.ram)
             .to_vec();
         self.copy_to_vram_slice(0x7800, &buf, 0x800);
         self.copy_to_vram_slice(0x7d00, &tail_buf, 0x600);
@@ -577,8 +599,8 @@ impl ZeldaState {
         len: usize,
     ) {
         let source = self
-            .display_nmi_view()
-            .ram_slice_at(source_addr, len)
+            .display_state()
+            .vram_dma_source_bytes(&self.ram, source_addr, len)
             .to_vec();
         if source.len() < len {
             return;
@@ -609,7 +631,10 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_irqgfx(&mut self) {
         if self.display_state().has_pending_polyhedral_update() {
-            let poly_buf = self.display_nmi_view().polyhedral_buffer().to_vec();
+            let poly_buf = self
+                .display_state()
+                .polyhedral_tile_buffer(&self.ram)
+                .to_vec();
             let mut display_vram = None;
             for i in 0..0x400 {
                 let dst = 0x5800 + i;
