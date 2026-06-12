@@ -93,7 +93,7 @@ impl ZeldaState {
     pub(super) fn attract_fade(&mut self) {
         self.intro_handle_all_triforce_animations();
         self.attract_state_view_mut().clear_intro_did_run_step();
-        self.display_nmi_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
         if self.display_state().screen_brightness != 0 {
             self.decrement_screen_brightness();
@@ -102,7 +102,7 @@ impl ZeldaState {
 
         self.enable_force_blank();
         self.display_nmi_view_mut().set_irq_flag(0xff);
-        self.display_nmi_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.display_nmi_view_mut()
             .clear_nmi_flag_update_polyhedral();
         self.attract_state_view_mut().increment_state();

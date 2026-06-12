@@ -12,11 +12,10 @@ impl ZeldaState {
             self.nmi_read_joypads(input);
         }
 
-        if self.display_nmi_view().is_nmi_thread_active() {
+        if self.display_state().nmi_thread_active {
             self.nmi_update_irqgfx();
-            let stack = self.display_nmi_view().thread_other_stack();
-            self.display_nmi_view_mut()
-                .set_thread_other_stack(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });
+            let stack = self.display_state().nmi_thread_stack_pointer;
+            self.set_nmi_thread_stack_pointer(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });
             if self.nmi_poly_upload_deferred != 0 {
                 self.nmi_poly_upload_deferred = self.nmi_poly_upload_deferred.saturating_sub(1);
                 if self.nmi_poly_upload_deferred == 0 && self.nmi_poly_upload_started {

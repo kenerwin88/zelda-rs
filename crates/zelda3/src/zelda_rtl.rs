@@ -418,7 +418,6 @@ const VIRQ_TRIGGER: usize = 0xff;
 const WHICH_ENTRANCE: usize = 0x10e;
 const OVERWORLD_HOLE_SCAN_STEP: usize = 0x10f;
 const OAM_PRIORITY_VALUE: usize = 0x64;
-const IS_NMI_THREAD_ACTIVE: usize = 0x12a;
 const IRQ_FLAG: usize = 0x128;
 // NES_Ver2: GOVRCFG, game-over check flag.
 const GAME_OVER_CHECK_FLAG: usize = 0x10a;
@@ -978,7 +977,6 @@ const BYTEWISE_EXTENDED_OAM: usize = 0x0a20;
 const LINK_ABILITY_FLAGS: usize = 0xf379;
 const SAVEGAME_MAP_ICONS_INDICATOR: usize = 0x0f3c7;
 const SELECTED_SAVE_SLOT_X2: usize = 0x1ffe;
-const THREAD_OTHER_STACK: usize = 0x1f0a;
 const TEXT_DIALOGUE_POINTERS: usize = 0x171c0;
 const FOLLOWER_INDICATOR: usize = 0x0f3cc;
 const FOLLOWER_DROPPED: usize = 0x0f3d3;
@@ -2048,6 +2046,21 @@ impl ZeldaState {
     pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .increment_chr_halfslot_request()
+    }
+
+    pub(crate) fn activate_nmi_thread(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .activate_nmi_thread();
+    }
+
+    pub(crate) fn deactivate_nmi_thread(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .deactivate_nmi_thread();
+    }
+
+    pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_nmi_thread_stack_pointer(value);
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
@@ -4428,16 +4441,14 @@ impl ZeldaState {
         let run_what = if self.system_signals_view().bugs_fixed() < BUGFIX_POLY_RENDERER
             && !use_bsnes_poly_scheduler
         {
-            if self.display_nmi_view().is_nmi_thread_active()
-                && self.native_ram_bridge_view().word_at(THREAD_OTHER_STACK) != 0x1f31
-            {
+            if self.display_state().nmi_thread_uses_poly_stack() {
                 2
             } else {
                 1
             }
         } else {
             let virq = self.display_nmi_view().virq_trigger();
-            let carry = if self.display_nmi_view().is_nmi_thread_active() {
+            let carry = if self.display_state().nmi_thread_active {
                 if use_bsnes_poly_scheduler {
                     let previous_counter = self.bsnes_poly_scheduler_counter;
                     let step_waiting = self.attract_state_view().intro_step_index() == 1

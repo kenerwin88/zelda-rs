@@ -114,6 +114,8 @@ pub(crate) struct DisplayState {
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) nmi_copy_packets_request: u8,
     pub(crate) chr_halfslot_request: u8,
+    pub(crate) nmi_thread_active: bool,
+    pub(crate) nmi_thread_stack_pointer: u16,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
@@ -128,6 +130,8 @@ impl DisplayState {
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
             chr_halfslot_request: ram_byte(ram, LOAD_CHR_HALFSLOT_EVEN_ODD),
+            nmi_thread_active: ram_byte(ram, NMI_THREAD_ACTIVE) != 0,
+            nmi_thread_stack_pointer: read_le_u16(ram, POLY_THREAD_STACK),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
@@ -141,6 +145,8 @@ impl DisplayState {
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
+        ram[NMI_THREAD_ACTIVE] = u8::from(self.nmi_thread_active);
+        write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
@@ -163,6 +169,10 @@ impl DisplayState {
 
     pub(crate) fn has_chr_halfslot_request(&self) -> bool {
         self.chr_halfslot_request != 0
+    }
+
+    pub(crate) fn nmi_thread_uses_poly_stack(&self) -> bool {
+        self.nmi_thread_active && self.nmi_thread_stack_pointer != 0x1f31
     }
 
     pub(crate) fn nmi_load_target_page(&self) -> u8 {
@@ -529,6 +539,17 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_nmi_thread_control_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.nmi_thread_active,
+            ram_byte(self.ram, NMI_THREAD_ACTIVE) != 0
+        );
+        debug_assert_eq!(
+            self.display.nmi_thread_stack_pointer,
+            read_le_u16(self.ram, POLY_THREAD_STACK)
+        );
+    }
+
     fn debug_assert_nmi_load_target_address_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
@@ -644,6 +665,26 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         let value = self.display.chr_halfslot_request.wrapping_add(1);
         self.set_chr_halfslot_request(value);
         value
+    }
+
+    pub(crate) fn set_nmi_thread_active(&mut self, active: bool) {
+        self.display.nmi_thread_active = active;
+        self.ram[NMI_THREAD_ACTIVE] = u8::from(active);
+        self.debug_assert_nmi_thread_control_matches_ram();
+    }
+
+    pub(crate) fn activate_nmi_thread(&mut self) {
+        self.set_nmi_thread_active(true);
+    }
+
+    pub(crate) fn deactivate_nmi_thread(&mut self) {
+        self.set_nmi_thread_active(false);
+    }
+
+    pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
+        self.display.nmi_thread_stack_pointer = value;
+        write_le_u16(self.ram, POLY_THREAD_STACK, value);
+        self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
@@ -777,6 +818,8 @@ mod tests {
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
+        ram[NMI_THREAD_ACTIVE] = 1;
+        write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
@@ -793,6 +836,9 @@ mod tests {
         assert!(display.has_nmi_copy_packets_request());
         assert_eq!(display.chr_halfslot_request, 9);
         assert!(display.has_chr_halfslot_request());
+        assert!(display.nmi_thread_active);
+        assert_eq!(display.nmi_thread_stack_pointer, 0x01f2);
+        assert!(display.nmi_thread_uses_poly_stack());
         assert_eq!(display.nmi_load_target_address, 0x2146);
         assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
@@ -809,6 +855,8 @@ mod tests {
         display.bg_vram_load_mode = 0;
         display.nmi_copy_packets_request = 0;
         display.chr_halfslot_request = 0;
+        display.nmi_thread_active = false;
+        display.nmi_thread_stack_pointer = 0x1f31;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
@@ -820,6 +868,8 @@ mod tests {
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
+        assert_eq!(ram[NMI_THREAD_ACTIVE], 0);
+        assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
@@ -851,6 +901,8 @@ mod tests {
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 3;
+        ram[NMI_THREAD_ACTIVE] = 1;
+        write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
@@ -874,6 +926,9 @@ mod tests {
             view.increment_chr_halfslot_request();
             view.clear_chr_halfslot_request();
             view.set_chr_halfslot_request(12);
+            view.deactivate_nmi_thread();
+            view.activate_nmi_thread();
+            view.set_nmi_thread_stack_pointer(0x1f31);
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
         }
@@ -885,6 +940,9 @@ mod tests {
         assert_eq!(display.bg_vram_load_mode, 5);
         assert_eq!(display.nmi_copy_packets_request, 3);
         assert_eq!(display.chr_halfslot_request, 12);
+        assert!(display.nmi_thread_active);
+        assert_eq!(display.nmi_thread_stack_pointer, 0x1f31);
+        assert!(!display.nmi_thread_uses_poly_stack());
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -894,6 +952,8 @@ mod tests {
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 12);
+        assert_eq!(ram[NMI_THREAD_ACTIVE], 1);
+        assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }

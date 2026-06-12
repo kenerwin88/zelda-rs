@@ -574,7 +574,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() >= 3 {
             self.crystal_maiden_draw(k);
         }
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         if self.attract_state_view().intro_did_run_step() == 0 {
             self.crystal_maiden_run_cutscene(k);
             self.attract_state_view_mut().mark_intro_did_run_step();

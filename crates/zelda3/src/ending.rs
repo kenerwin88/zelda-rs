@@ -856,7 +856,7 @@ impl ZeldaState {
                     self.frame_control_view_mut().set_submodule(0);
                     self.frame_control_view_mut().set_subsubmodule(0);
                     self.display_nmi_view_mut().set_irq_flag(0xff);
-                    self.display_nmi_view_mut().set_nmi_thread_active(0);
+                    self.deactivate_nmi_thread();
                     self.display_nmi_view_mut()
                         .clear_nmi_flag_update_polyhedral();
                     self.save_progress_view_mut().set_dark_world_state(0);
@@ -1099,7 +1099,7 @@ impl ZeldaState {
     }
 
     pub(super) fn triforce_room_handle_poly(&mut self) {
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         self.intro_state_view_mut().set_want_double_ret(1);
         if self.attract_state_view().intro_did_run_step() != 0 {
             return;
@@ -1167,7 +1167,7 @@ impl ZeldaState {
     pub(super) fn credits_animate_the_triangles(&mut self) {
         self.attract_state_view_mut()
             .increment_intro_frame_counter();
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         if self.attract_state_view().intro_did_run_step() == 0 {
             self.poly_state_view_mut().add_angle_b(3);
             self.poly_state_view_mut().add_angle_a(1);
@@ -2725,7 +2725,7 @@ impl ZeldaState {
     pub(super) fn crystal_cutscene_initialize_polyhedral(&mut self) {
         self.poly_state_view_mut().set_config1(156);
         self.poly_state_view_mut().set_color_mode(1);
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         self.attract_state_view_mut().mark_intro_did_run_step();
         self.poly_state_view_mut().set_base_x(32);
         self.poly_state_view_mut().set_base_y(32);
@@ -2837,7 +2837,7 @@ impl ZeldaState {
     pub(super) fn intro_sword_coming_down(&mut self) {
         self.intro_handle_all_triforce_animations();
         self.attract_state_view_mut().clear_intro_did_run_step();
-        self.display_nmi_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
         self.frame_control_view_mut().decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
@@ -2873,7 +2873,7 @@ impl ZeldaState {
     pub(super) fn intro_wait_player(&mut self) {
         self.intro_handle_all_triforce_animations();
         self.attract_state_view_mut().clear_intro_did_run_step();
-        self.display_nmi_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
         self.frame_control_view_mut().decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
@@ -3131,7 +3131,7 @@ impl ZeldaState {
         self.poly_state_view_mut().set_angle_b(0x60);
         self.poly_state_view_mut().set_color_mode(1);
         self.poly_state_view_mut().set_model(1);
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         self.attract_state_view_mut().mark_intro_did_run_step();
         if self.rom_startup_timing() {
             self.intro_poly_upload_delay = configured_intro_thread_start_delay();
@@ -3149,7 +3149,7 @@ impl ZeldaState {
     pub(super) fn polyhedral_initialize_thread(&mut self) {
         const POLY_THREAD_INIT: [u8; 13] = [9, 0, 0x1f, 0, 0, 0, 0, 0, 0, 0x30, 0x1d, 0xf8, 9];
         self.fill_ram(POLY_THREAD_RAM_START, POLY_THREAD_RAM_LEN, 0);
-        self.display_nmi_view_mut().set_thread_other_stack(0x1f31);
+        self.set_nmi_thread_stack_pointer(0x1f31);
         self.copy_to_ram(POLY_THREAD_INIT_BYTES, &POLY_THREAD_INIT);
     }
 
@@ -3167,7 +3167,7 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_animate_triforce(&mut self) {
-        self.display_nmi_view_mut().set_nmi_thread_active(1);
+        self.activate_nmi_thread();
         if self.rom_startup_timing() && self.intro_memory_darken_frame_delay == 0 {
             if self.intro_poly_upload_delay != 0 {
                 self.intro_poly_upload_delay = self.intro_poly_upload_delay.saturating_sub(1);
