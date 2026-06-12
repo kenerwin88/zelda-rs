@@ -115,6 +115,103 @@ const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
 const HUD_INVENTORY_ORDER_CAPACITY: usize = 24;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PaletteFilterState {
+    countdown: u8,
+    countdown_high: u8,
+    darkening_or_lightening_screen: u8,
+    darkening_or_lightening_screen_high: u8,
+    color_window_selection: u8,
+    color_math_control: u8,
+    color_math_control_high: u8,
+    fixed_color_red: u8,
+    fixed_color_green: u8,
+    fixed_color_blue: u8,
+}
+
+impl PaletteFilterState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            countdown: ram_byte(ram, PALETTE_FILTER_COUNTDOWN),
+            countdown_high: ram_byte(ram, PALETTE_FILTER_COUNTDOWN + 1),
+            darkening_or_lightening_screen: ram_byte(ram, DARKENING_OR_LIGHTENING_SCREEN),
+            darkening_or_lightening_screen_high: ram_byte(ram, DARKENING_OR_LIGHTENING_SCREEN + 1),
+            color_window_selection: ram_byte(ram, CGWSEL_COPY),
+            color_math_control: ram_byte(ram, CGADSUB_COPY),
+            color_math_control_high: ram_byte(ram, CGADSUB_COPY + 1),
+            fixed_color_red: ram_byte(ram, COLDATA_COPY0),
+            fixed_color_green: ram_byte(ram, COLDATA_COPY1),
+            fixed_color_blue: ram_byte(ram, COLDATA_COPY2),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[PALETTE_FILTER_COUNTDOWN] = self.countdown;
+        ram[PALETTE_FILTER_COUNTDOWN + 1] = self.countdown_high;
+        ram[DARKENING_OR_LIGHTENING_SCREEN] = self.darkening_or_lightening_screen;
+        ram[DARKENING_OR_LIGHTENING_SCREEN + 1] = self.darkening_or_lightening_screen_high;
+        ram[CGWSEL_COPY] = self.color_window_selection;
+        ram[CGADSUB_COPY] = self.color_math_control;
+        ram[COLDATA_COPY0] = self.fixed_color_red;
+        ram[COLDATA_COPY1] = self.fixed_color_green;
+        ram[COLDATA_COPY2] = self.fixed_color_blue;
+    }
+
+    pub(crate) fn countdown(&self) -> u8 {
+        self.countdown
+    }
+
+    pub(crate) fn countdown_word(&self) -> u16 {
+        u16::from(self.countdown) | (u16::from(self.countdown_high) << 8)
+    }
+
+    pub(crate) fn darkening_or_lightening_screen(&self) -> u8 {
+        self.darkening_or_lightening_screen
+    }
+
+    pub(crate) fn darkening_or_lightening_screen_word(&self) -> u16 {
+        u16::from(self.darkening_or_lightening_screen)
+            | (u16::from(self.darkening_or_lightening_screen_high) << 8)
+    }
+
+    pub(crate) fn color_window_selection(&self) -> u8 {
+        self.color_window_selection
+    }
+
+    pub(crate) fn color_window_and_math_word(&self) -> u16 {
+        u16::from(self.color_window_selection) | (u16::from(self.color_math_control) << 8)
+    }
+
+    pub(crate) fn color_math_control(&self) -> u8 {
+        self.color_math_control
+    }
+
+    pub(crate) fn color_math_control_word(&self) -> u16 {
+        u16::from(self.color_math_control) | (u16::from(self.color_math_control_high) << 8)
+    }
+
+    pub(crate) fn fixed_color_red(&self) -> u8 {
+        self.fixed_color_red
+    }
+
+    pub(crate) fn fixed_color_green(&self) -> u8 {
+        self.fixed_color_green
+    }
+
+    pub(crate) fn fixed_color_blue(&self) -> u8 {
+        self.fixed_color_blue
+    }
+
+    pub(crate) fn fixed_color_component(&self, index: usize) -> u8 {
+        match index {
+            0 => self.fixed_color_red,
+            1 => self.fixed_color_green,
+            2 => self.fixed_color_blue,
+            _ => 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct HudInventoryOrderState {
     order: [u8; HUD_INVENTORY_ORDER_CAPACITY],
 }
@@ -279,6 +376,7 @@ pub(crate) struct DisplayState {
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
     pub(crate) attract_vram_destination_address: u16,
+    pub(crate) palette_filter: PaletteFilterState,
     pub(crate) trinexx_palette: TrinexxPaletteState,
     pub(crate) hud_inventory_order: HudInventoryOrderState,
 }
@@ -330,6 +428,7 @@ impl DisplayState {
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
+            palette_filter: PaletteFilterState::load_from_ram(ram),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
         }
@@ -404,6 +503,7 @@ impl DisplayState {
             self.animated_tile_vram_destination_address,
         );
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
+        self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
         self.hud_inventory_order.write_to_ram(ram);
     }
@@ -716,6 +816,164 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
             .wrapping_sub(1);
         self.set_address(next);
         next
+    }
+}
+
+pub(crate) struct NativePaletteFilterBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativePaletteFilterBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        display.palette_filter = PaletteFilterState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn sync(&mut self) {
+        self.display.palette_filter.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.palette_filter,
+            PaletteFilterState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.display.palette_filter.countdown = value;
+        self.sync();
+    }
+
+    pub(crate) fn increment_countdown(&mut self) {
+        self.display.palette_filter.countdown =
+            self.display.palette_filter.countdown.wrapping_add(1);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_countdown(&mut self) {
+        self.display.palette_filter.countdown =
+            self.display.palette_filter.countdown.wrapping_sub(1);
+        self.sync();
+    }
+
+    pub(crate) fn set_countdown_word(&mut self, value: u16) {
+        self.display.palette_filter.countdown = value as u8;
+        self.display.palette_filter.countdown_high = (value >> 8) as u8;
+        self.sync();
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.display.palette_filter.darkening_or_lightening_screen = value;
+        self.sync();
+    }
+
+    pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.display.palette_filter.darkening_or_lightening_screen ^= value;
+        self.sync();
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
+        self.display.palette_filter.darkening_or_lightening_screen = value as u8;
+        self.display
+            .palette_filter
+            .darkening_or_lightening_screen_high = (value >> 8) as u8;
+        self.sync();
+    }
+
+    pub(crate) fn set_color_window_selection(&mut self, value: u8) {
+        self.display.palette_filter.color_window_selection = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
+        self.display.palette_filter.color_window_selection = value as u8;
+        self.display.palette_filter.color_math_control = (value >> 8) as u8;
+        self.sync();
+    }
+
+    pub(crate) fn set_color_math_control(&mut self, value: u8) {
+        self.display.palette_filter.color_math_control = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_red = value;
+        self.sync();
+    }
+
+    pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_red |= value;
+        self.sync();
+    }
+
+    pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_red = self
+            .display
+            .palette_filter
+            .fixed_color_red
+            .wrapping_sub(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_green = value;
+        self.sync();
+    }
+
+    pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_green |= value;
+        self.sync();
+    }
+
+    pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_green = self
+            .display
+            .palette_filter
+            .fixed_color_green
+            .wrapping_sub(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_blue = value;
+        self.sync();
+    }
+
+    pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_blue |= value;
+        self.sync();
+    }
+
+    pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
+        self.display.palette_filter.fixed_color_blue = self
+            .display
+            .palette_filter
+            .fixed_color_blue
+            .wrapping_sub(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
+        match index {
+            0 => self.display.palette_filter.fixed_color_red = value,
+            1 => self.display.palette_filter.fixed_color_green = value,
+            2 => self.display.palette_filter.fixed_color_blue = value,
+            _ => return,
+        }
+        self.sync();
+    }
+
+    pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) {
+        match index {
+            0 => self.display.palette_filter.fixed_color_red |= value,
+            1 => self.display.palette_filter.fixed_color_green |= value,
+            2 => self.display.palette_filter.fixed_color_blue |= value,
+            _ => return,
+        }
+        self.sync();
     }
 }
 

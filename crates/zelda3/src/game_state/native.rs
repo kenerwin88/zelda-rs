@@ -13,8 +13,9 @@ mod world;
 
 pub(crate) use display::{
     DisplayState, HudInventoryOrderState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, TrinexxPaletteState,
+    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativePaletteFilterBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, PaletteFilterState,
+    TrinexxPaletteState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1491,6 +1492,103 @@ mod tests {
         assert_eq!(display.attract_vram_destination_address, 0x0068);
         assert!(display.attract_vram_destination_high_is_clear());
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn palette_filter_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, PALETTE_FILTER_COUNTDOWN, 0x1204);
+        write_le_u16(&mut ram, DARKENING_OR_LIGHTENING_SCREEN, 0x34ff);
+        ram[CGWSEL_COPY] = 0x20;
+        ram[CGADSUB_COPY] = 0x31;
+        ram[CGADSUB_COPY + 1] = 0x42;
+        ram[COLDATA_COPY0] = 0x21;
+        ram[COLDATA_COPY1] = 0x43;
+        ram[COLDATA_COPY2] = 0x85;
+
+        let palette_filter = PaletteFilterState::load_from_ram(&ram);
+        assert_eq!(palette_filter.countdown(), 4);
+        assert_eq!(palette_filter.countdown_word(), 0x1204);
+        assert_eq!(palette_filter.darkening_or_lightening_screen(), 0xff);
+        assert_eq!(palette_filter.darkening_or_lightening_screen_word(), 0x34ff);
+        assert_eq!(palette_filter.color_window_selection(), 0x20);
+        assert_eq!(palette_filter.color_math_control(), 0x31);
+        assert_eq!(palette_filter.color_window_and_math_word(), 0x3120);
+        assert_eq!(palette_filter.color_math_control_word(), 0x4231);
+        assert_eq!(palette_filter.fixed_color_red(), 0x21);
+        assert_eq!(palette_filter.fixed_color_green(), 0x43);
+        assert_eq!(palette_filter.fixed_color_blue(), 0x85);
+        assert_eq!(palette_filter.fixed_color_component(0), 0x21);
+        assert_eq!(palette_filter.fixed_color_component(3), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        palette_filter.write_to_ram(&mut projected);
+        assert_eq!(read_le_u16(&projected, PALETTE_FILTER_COUNTDOWN), 0x1204);
+        assert_eq!(
+            read_le_u16(&projected, DARKENING_OR_LIGHTENING_SCREEN),
+            0x34ff
+        );
+        assert_eq!(projected[CGWSEL_COPY], 0x20);
+        assert_eq!(projected[CGADSUB_COPY], 0x31);
+        assert_eq!(projected[COLDATA_COPY0], 0x21);
+        assert_eq!(projected[COLDATA_COPY1], 0x43);
+        assert_eq!(projected[COLDATA_COPY2], 0x85);
+    }
+
+    #[test]
+    fn native_palette_filter_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, PALETTE_FILTER_COUNTDOWN, 0x1200);
+        write_le_u16(&mut ram, DARKENING_OR_LIGHTENING_SCREEN, 0x3401);
+        ram[CGWSEL_COPY] = 0x20;
+        ram[CGADSUB_COPY] = 0x31;
+        ram[CGADSUB_COPY + 1] = 0x42;
+        ram[COLDATA_COPY0] = 0x20;
+        ram[COLDATA_COPY1] = 0x40;
+        ram[COLDATA_COPY2] = 0x80;
+
+        let mut display = DisplayState::default();
+        {
+            let mut bridge = NativePaletteFilterBridgeMut::new(&mut display, &mut ram);
+            bridge.increment_countdown();
+            bridge.decrement_countdown();
+            bridge.set_countdown_word(0x5607);
+            bridge.xor_darkening_or_lightening_screen(0xff);
+            bridge.set_darkening_or_lightening_screen_word(0x7809);
+            bridge.set_color_window_and_math_word(0x3322);
+            bridge.set_color_window_selection(0x24);
+            bridge.set_color_math_control(0x35);
+            bridge.or_fixed_color_red(0x01);
+            bridge.subtract_fixed_color_red(2);
+            bridge.set_fixed_color_green(0x50);
+            bridge.or_fixed_color_green(0x0f);
+            bridge.subtract_fixed_color_green(1);
+            bridge.set_fixed_color_blue(0x90);
+            bridge.or_fixed_color_blue(0x0f);
+            bridge.subtract_fixed_color_blue(1);
+            bridge.set_fixed_color_component(2, 0x88);
+            bridge.or_fixed_color_component(0, 0x10);
+            bridge.set_fixed_color_red(0x22);
+        }
+
+        assert_eq!(display.palette_filter.countdown_word(), 0x5607);
+        assert_eq!(
+            display.palette_filter.darkening_or_lightening_screen_word(),
+            0x7809
+        );
+        assert_eq!(display.palette_filter.color_window_and_math_word(), 0x3524);
+        assert_eq!(display.palette_filter.color_math_control_word(), 0x4235);
+        assert_eq!(display.palette_filter.fixed_color_red(), 0x22);
+        assert_eq!(display.palette_filter.fixed_color_green(), 0x5e);
+        assert_eq!(display.palette_filter.fixed_color_blue(), 0x88);
+        assert_eq!(read_le_u16(&ram, PALETTE_FILTER_COUNTDOWN), 0x5607);
+        assert_eq!(read_le_u16(&ram, DARKENING_OR_LIGHTENING_SCREEN), 0x7809);
+        assert_eq!(ram[CGWSEL_COPY], 0x24);
+        assert_eq!(ram[CGADSUB_COPY], 0x35);
+        assert_eq!(ram[CGADSUB_COPY + 1], 0x42);
+        assert_eq!(ram[COLDATA_COPY0], 0x22);
+        assert_eq!(ram[COLDATA_COPY1], 0x5e);
+        assert_eq!(ram[COLDATA_COPY2], 0x88);
     }
 
     #[test]

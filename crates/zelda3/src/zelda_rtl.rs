@@ -63,23 +63,24 @@ use crate::game_state::{
     NativeIntroSceneBridgeMut, NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut,
     NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
-    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
+    PaletteBufferViewMut, PaletteFilterState, PlayerResourcesView, PlayerResourcesViewMut,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
     SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
     SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
     SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView,
@@ -3181,12 +3182,12 @@ impl ZeldaState {
         PaletteBufferViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn palette_filter_view(&self) -> PaletteFilterView<'_> {
-        PaletteFilterView::new(&self.ram)
+    pub(crate) fn palette_filter_view(&self) -> &PaletteFilterState {
+        &self.game_state.display.palette_filter
     }
 
-    pub(crate) fn palette_filter_view_mut(&mut self) -> PaletteFilterViewMut<'_> {
-        PaletteFilterViewMut::new(&mut self.ram)
+    pub(crate) fn palette_filter_view_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
+        NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn hud_state_view(&self) -> HudStateView<'_> {
