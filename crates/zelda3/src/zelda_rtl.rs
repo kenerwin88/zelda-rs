@@ -2312,6 +2312,26 @@ impl ZeldaState {
         .increment_transition_counter()
     }
 
+    pub(crate) fn overworld_transition_countdown(&self) -> u8 {
+        self.game_state.overworld_transition.countdown()
+    }
+
+    pub(crate) fn set_overworld_transition_countdown(&mut self, value: u8) {
+        NativeOverworldTransitionBridgeMut::new(
+            &mut self.game_state.overworld_transition,
+            &mut self.ram,
+        )
+        .set_countdown(value);
+    }
+
+    pub(crate) fn decrement_overworld_transition_countdown(&mut self) -> u8 {
+        NativeOverworldTransitionBridgeMut::new(
+            &mut self.game_state.overworld_transition,
+            &mut self.ram,
+        )
+        .decrement_countdown()
+    }
+
     pub(crate) fn save_previous_screen_transition_direction_bits(&mut self) {
         NativeOverworldTransitionBridgeMut::new(
             &mut self.game_state.overworld_transition,

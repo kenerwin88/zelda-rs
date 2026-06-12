@@ -2626,7 +2626,7 @@ impl ZeldaState {
                 };
                 self.set_submodule(submodule);
             }
-            self.world_state_view_mut().set_ow_countdown_transition(16);
+            self.set_overworld_transition_countdown(16);
             let big_rock = self.dungeon_state_view().big_rock_starting_address();
             if (self.world_state_view_mut().ow_entrance_value() as u8 | big_rock as u8) != 0
                 && big_rock & 0xff00 != 0
@@ -4602,11 +4602,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_y(link_y);
             self.player_state_view_mut().set_y_velocity(vel as u8);
         }
-        if self
-            .world_state_view_mut()
-            .decrement_ow_countdown_transition()
-            == 0
-        {
+        if self.decrement_overworld_transition_countdown() == 0 {
             self.set_main_module(9);
             self.set_subsubmodule(0);
             self.set_submodule(0);
@@ -4925,7 +4921,7 @@ impl ZeldaState {
                 if self.frame_state().main_module == 11 {
                     self.set_main_module(9);
                     self.set_submodule(31);
-                    self.world_state_view_mut().set_ow_countdown_transition(12);
+                    self.set_overworld_transition_countdown(12);
                 }
             }
         }
@@ -5346,7 +5342,7 @@ impl ZeldaState {
             self.Overworld_DoMapUpdate32x32_conditional();
             return;
         }
-        self.world_state_view_mut().set_ow_countdown_transition(36);
+        self.set_overworld_transition_countdown(36);
         self.clear_screen_transition_direction_bits();
         self.increment_submodule();
     }
@@ -5366,11 +5362,7 @@ impl ZeldaState {
         self.link_handle_moving_animation_full_long_entry();
         let link_y = self.player_state_view().y().wrapping_add(1);
         self.player_state_view_mut().set_y(link_y);
-        if self
-            .world_state_view_mut()
-            .decrement_ow_countdown_transition()
-            != 0
-        {
+        if self.decrement_overworld_transition_countdown() != 0 {
             return;
         }
         self.set_submodule(0);
@@ -5390,11 +5382,7 @@ impl ZeldaState {
         self.link_handle_moving_animation_full_long_entry();
         let link_y = self.player_state_view().y().wrapping_sub(1);
         self.player_state_view_mut().set_y(link_y);
-        if self
-            .world_state_view_mut()
-            .decrement_ow_countdown_transition()
-            == 0
-        {
+        if self.decrement_overworld_transition_countdown() == 0 {
             self.set_submodule(0);
         }
     }

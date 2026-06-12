@@ -280,6 +280,7 @@ mod tests {
         ram[OVERWORLD_TRANSITION_DIR] = 6;
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANSITION, 0x0203);
         ram[TRANSITION_COUNTER] = 9;
+        ram[OW_COUNTDOWN_TRANSITION] = 12;
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV, 0x0004);
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV, 0x0002);
         ram[OVERWORLD_SCREEN_TRANSITION_PREV] = 7;
@@ -294,6 +295,7 @@ mod tests {
         assert_eq!(transition.screen_transition(), 3);
         assert_eq!(transition.screen_transition_word(), 0x0203);
         assert_eq!(transition.transition_counter, 9);
+        assert_eq!(transition.countdown(), 12);
         assert_eq!(transition.previous_direction_bits, 4);
         assert_eq!(transition.previous_direction_bits2, 2);
         assert_eq!(transition.previous_screen_transition, 7);
@@ -303,6 +305,7 @@ mod tests {
         transition.direction_enum = 4;
         transition.screen_transition = 0x0002;
         transition.transition_counter = 5;
+        transition.countdown = 11;
         transition.previous_direction_bits = 0x0008;
         transition.previous_direction_bits2 = 0x0004;
         transition.previous_screen_transition = 6;
@@ -313,6 +316,7 @@ mod tests {
         assert_eq!(ram[OVERWORLD_TRANSITION_DIR], 4);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANSITION), 2);
         assert_eq!(ram[TRANSITION_COUNTER], 5);
+        assert_eq!(ram[OW_COUNTDOWN_TRANSITION], 11);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV), 8);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV), 4);
         assert_eq!(ram[OVERWORLD_SCREEN_TRANSITION_PREV], 6);
@@ -326,6 +330,7 @@ mod tests {
         ram[OVERWORLD_TRANSITION_DIR] = 6;
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANSITION, 0x0203);
         ram[TRANSITION_COUNTER] = 9;
+        ram[OW_COUNTDOWN_TRANSITION] = 1;
 
         let mut transition = OverworldTransitionState::default();
         {
@@ -336,6 +341,8 @@ mod tests {
             bridge.set_direction_enum(4);
             bridge.set_screen_transition(5);
             bridge.increment_transition_counter();
+            assert_eq!(bridge.decrement_countdown(), 0);
+            bridge.set_countdown(12);
             bridge.save_previous_direction_bits();
             bridge.set_edge_direction_bits(0x04);
             bridge.clear_direction_bits_word();
@@ -349,6 +356,7 @@ mod tests {
         assert_eq!(transition.direction_enum(), 4);
         assert_eq!(transition.screen_transition_word(), 0x0205);
         assert_eq!(transition.transition_counter, 10);
+        assert_eq!(transition.countdown(), 12);
         assert_eq!(transition.previous_direction_bits, 2);
         assert_eq!(transition.previous_direction_bits2, 0x010c);
         assert_eq!(transition.previous_screen_transition, 6);
@@ -357,6 +365,7 @@ mod tests {
         assert_eq!(ram[OVERWORLD_TRANSITION_DIR], 4);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANSITION), 0x0205);
         assert_eq!(ram[TRANSITION_COUNTER], 10);
+        assert_eq!(ram[OW_COUNTDOWN_TRANSITION], 12);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV), 2);
         assert_eq!(
             read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV),

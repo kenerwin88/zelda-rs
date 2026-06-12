@@ -109,6 +109,7 @@ pub(crate) struct OverworldTransitionState {
     pub(crate) direction_enum: u8,
     pub(crate) screen_transition: u16,
     pub(crate) transition_counter: u8,
+    pub(crate) countdown: u8,
     pub(crate) previous_direction_bits: u16,
     pub(crate) previous_direction_bits2: u16,
     pub(crate) previous_screen_transition: u8,
@@ -122,6 +123,7 @@ impl OverworldTransitionState {
             direction_enum: ram_byte(ram, OVERWORLD_TRANSITION_DIR),
             screen_transition: read_le_u16(ram, OVERWORLD_SCREEN_TRANSITION),
             transition_counter: ram_byte(ram, TRANSITION_COUNTER),
+            countdown: ram_byte(ram, OW_COUNTDOWN_TRANSITION),
             previous_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV),
             previous_direction_bits2: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV),
             previous_screen_transition: ram_byte(ram, OVERWORLD_SCREEN_TRANSITION_PREV),
@@ -138,6 +140,7 @@ impl OverworldTransitionState {
         ram[OVERWORLD_TRANSITION_DIR] = self.direction_enum;
         write_le_u16(ram, OVERWORLD_SCREEN_TRANSITION, self.screen_transition);
         ram[TRANSITION_COUNTER] = self.transition_counter;
+        ram[OW_COUNTDOWN_TRANSITION] = self.countdown;
         write_le_u16(
             ram,
             OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV,
@@ -177,6 +180,10 @@ impl OverworldTransitionState {
 
     pub(crate) fn screen_transition_word(&self) -> u16 {
         self.screen_transition
+    }
+
+    pub(crate) fn countdown(&self) -> u8 {
+        self.countdown
     }
 }
 
@@ -495,6 +502,18 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     pub(crate) fn increment_transition_counter(&mut self) -> u8 {
         let next = self.transition.transition_counter.wrapping_add(1);
         self.set_transition_counter(next);
+        next
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.transition.countdown = value;
+        self.ram[OW_COUNTDOWN_TRANSITION] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_countdown(&mut self) -> u8 {
+        let next = self.transition.countdown.wrapping_sub(1);
+        self.set_countdown(next);
         next
     }
 
