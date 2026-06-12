@@ -1227,16 +1227,14 @@ impl ZeldaState {
             link_dma_graphics_index,
             "LINK_DMA_SOURCES1",
         );
-        self.vram_load_state_view_mut()
-            .set_link_body_dma_sources(source3, source3.wrapping_add(0x200));
+        self.set_link_body_dma_sources(source3, source3.wrapping_add(0x200));
 
         let source4 = link_dma_table_value(
             &LINK_DMA_SOURCES2,
             link_dma_graphics_index,
             "LINK_DMA_SOURCES2",
         );
-        self.vram_load_state_view_mut()
-            .set_link_head_dma_sources(source4, source4.wrapping_add(0x200));
+        self.set_link_head_dma_sources(source4, source4.wrapping_add(0x200));
 
         let left_hand_source = link_dma_table_value(
             &LINK_DMA_SOURCES3,
@@ -1248,16 +1246,14 @@ impl ZeldaState {
             link_dma_right_sprite_bank,
             "LINK_DMA_SOURCES3/right_sprite_bank",
         );
-        self.vram_load_state_view_mut()
-            .set_link_hand_dma_sources(left_hand_source, right_hand_source);
+        self.set_link_hand_dma_sources(left_hand_source, right_hand_source);
 
         let source6 = link_dma_table_value(
             &LINK_DMA_SOURCES4,
             link_dma_sword_sprite_bank,
             "LINK_DMA_SOURCES4",
         );
-        self.vram_load_state_view_mut()
-            .set_link_sword_dma_sources(source6, source6.wrapping_add(0x180));
+        self.set_link_sword_dma_sources(source6, source6.wrapping_add(0x180));
 
         let source7 = if self.player_state_view().shield_dma_graphics_index() == 0x8b {
             0xe099
@@ -1268,8 +1264,7 @@ impl ZeldaState {
                 "LINK_DMA_SOURCES5",
             )
         };
-        self.vram_load_state_view_mut()
-            .set_link_shield_dma_sources(source7, source7.wrapping_add(0x00c0));
+        self.set_link_shield_dma_sources(source7, source7.wrapping_add(0x00c0));
 
         let source8 = link_dma_table_value(
             &LINK_DMA_SOURCES6,
@@ -1281,13 +1276,11 @@ impl ZeldaState {
             link_dma_staging_group,
             "LINK_DMA_SOURCES7",
         ));
-        self.vram_load_state_view_mut()
-            .set_link_aux_dma_sources(source8, aux_source_lower);
+        self.set_link_aux_dma_sources(source8, aux_source_lower);
 
         let source10 =
             LINK_DMA_SOURCES8[(self.player_state_view().pushed_block_mode() & 3) as usize];
-        self.vram_load_state_view_mut()
-            .set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
+        self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
 
         if self.decrement_word(BG_TILE_ANIMATION_COUNTDOWN) == 0 {
             let overlay = self.world_state_view().overlay_index() as u16;
@@ -1296,14 +1289,12 @@ impl ZeldaState {
             } else {
                 9
             };
-            self.vram_load_state_view_mut()
-                .reset_bg_tile_animation_countdown(countdown);
+            self.reset_bg_tile_animation_countdown(countdown);
 
             let source_offset = self
                 .player_state_view_mut()
                 .advance_link_dma_source_offset();
-            self.vram_load_state_view_mut()
-                .set_animated_tile_data_src(0xa680u16.wrapping_add(source_offset));
+            self.set_animated_tile_data_src(0xa680u16.wrapping_add(source_offset));
         }
         if self.player_state_view_mut().decrement_link_dma_countdown() == 0 {
             let t = self.player_state_view_mut().advance_link_dma_tile_offset();
@@ -1312,25 +1303,21 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_link_dma_countdown(LINK_DMA_CTRS0[index]);
             let source9 = LINK_DMA_SOURCES9[index].wrapping_add(0xb280);
-            self.vram_load_state_view_mut()
-                .set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
+            self.set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
         }
 
         let source16 = 0xb940u16
             .wrapping_add((self.player_state_view().dma_head_pointer() as u16).wrapping_mul(2));
-        self.vram_load_state_view_mut()
-            .set_link_head_pointer_dma_sources(source16, source16.wrapping_add(0x200));
+        self.set_link_head_pointer_dma_sources(source16, source16.wrapping_add(0x200));
 
         let source17 = 0xb940u16
             .wrapping_add((self.player_state_view().dma_body_pointer() as u16).wrapping_mul(2));
-        self.vram_load_state_view_mut()
-            .set_link_body_pointer_dma_sources(source17, source17.wrapping_add(0x200));
+        self.set_link_body_pointer_dma_sources(source17, source17.wrapping_add(0x200));
 
         let source20 = 0xb540u16.wrapping_add(
             (self.display_nmi_view().travel_bird_tile_offset() as u16).wrapping_mul(2),
         );
-        self.vram_load_state_view_mut()
-            .set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
+        self.set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
     }
 
     pub(super) fn module_main_routing(&mut self) {

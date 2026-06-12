@@ -36,6 +36,7 @@ pub(crate) struct DisplayState {
     pub(crate) mosaic_direction: u8,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
+    pub(crate) incremental_vram_upload_counter: u8,
 }
 
 impl DisplayState {
@@ -71,6 +72,7 @@ impl DisplayState {
             mosaic_direction: ram_byte(ram, MOSAIC_INC_OR_DEC),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
+            incremental_vram_upload_counter: ram_byte(ram, INCREMENTAL_COUNTER_FOR_VRAM),
         }
     }
 
@@ -105,6 +107,7 @@ impl DisplayState {
         ram[MOSAIC_INC_OR_DEC] = self.mosaic_direction;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
+        ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.incremental_vram_upload_counter;
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -173,6 +176,10 @@ impl DisplayState {
 
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         VRAM_UPLOAD_DATA + self.vram_upload_cursor_usize()
+    }
+
+    pub(crate) fn incremental_vram_upload_counter_usize(&self) -> usize {
+        usize::from(self.incremental_vram_upload_counter)
     }
 }
 
@@ -385,6 +392,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
             read_le_u16(self.ram, NMI_LOAD_TARGET_ADDR)
+        );
+    }
+
+    fn debug_assert_incremental_vram_upload_counter_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.incremental_vram_upload_counter,
+            ram_byte(self.ram, INCREMENTAL_COUNTER_FOR_VRAM)
         );
     }
 
@@ -780,5 +794,19 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.nmi_load_target_address = value;
         write_le_u16(self.ram, NMI_LOAD_TARGET_ADDR, value);
         self.debug_assert_nmi_load_target_address_matches_ram();
+    }
+
+    pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
+        self.display.incremental_vram_upload_counter = 0;
+        self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0;
+        self.debug_assert_incremental_vram_upload_counter_matches_ram();
+    }
+
+    pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
+        let value = self.display.incremental_vram_upload_counter.wrapping_add(1);
+        self.display.incremental_vram_upload_counter = value;
+        self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = value;
+        self.debug_assert_incremental_vram_upload_counter_matches_ram();
+        value
     }
 }

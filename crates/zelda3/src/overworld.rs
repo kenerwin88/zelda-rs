@@ -657,7 +657,7 @@ impl ZeldaState {
         let i = self.world_location_state().dungeon_room_index() as usize;
         self.player_state_view_mut()
             .set_facing(SPECIAL_EXIT_DIRECTIONS[i]);
-        self.vram_load_state_view_mut().reset_incremental_counter();
+        self.reset_incremental_vram_upload_counter();
         self.sprite_system_view_mut()
             .set_graphics_index(SPECIAL_EXIT_SPRITE_GRAPHICS[i]);
         self.world_state_view_mut()
@@ -3166,7 +3166,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_LoadGFXAndScreenSize(&mut self) {
         let i = self.world_location_state().overworld_screen_index() as usize;
-        self.vram_load_state_view_mut().reset_incremental_counter();
+        self.reset_incremental_vram_upload_counter();
         let graphics_index = self.overworld_config_table_view().sprite_graphics(i);
         self.sprite_system_view_mut()
             .set_graphics_index(graphics_index);

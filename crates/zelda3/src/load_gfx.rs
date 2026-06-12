@@ -1824,7 +1824,7 @@ impl ZeldaState {
                 0x600
             );
         }
-        self.vram_load_state_view_mut().reset_incremental_counter();
+        self.reset_incremental_vram_upload_counter();
     }
 
     pub(super) fn ReloadPreviouslyLoadedSheets(&mut self) {
@@ -1848,7 +1848,7 @@ impl ZeldaState {
             0x8a00,
             self.sprite_workspace_view().graphics_subset(3) as usize,
         );
-        self.vram_load_state_view_mut().reset_incremental_counter();
+        self.reset_incremental_vram_upload_counter();
     }
 
     pub(super) fn Attract_DecompressStoryGFX(&mut self) {
@@ -2074,12 +2074,12 @@ impl ZeldaState {
             0x1600, 0x1800, 0x1a00, 0x1c00, 0x1e00,
         ];
 
-        let k = self.vram_load_state_view().incremental_counter() as usize;
+        let k = self.display_state().incremental_vram_upload_counter_usize();
         if k == 16 {
             return;
         }
         self.queue_tilemap_update(DST[k], SRC[k]);
-        self.vram_load_state_view_mut().increment_counter();
+        self.increment_vram_upload_counter();
     }
 
     pub(super) fn PrepTransAuxGfx(&mut self) {

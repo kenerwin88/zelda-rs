@@ -372,6 +372,7 @@ mod tests {
         ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
+        ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0xfe;
 
         let mut display = DisplayState::default();
         {
@@ -436,6 +437,9 @@ mod tests {
             view.clear_mosaic_direction();
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
+            assert_eq!(view.increment_vram_upload_counter(), 0xff);
+            assert_eq!(view.increment_vram_upload_counter(), 0);
+            view.reset_incremental_vram_upload_counter();
         }
 
         assert_eq!(display.screen_brightness, 0x80);
@@ -476,6 +480,8 @@ mod tests {
         assert_eq!(display.mosaic_direction, 0);
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
+        assert_eq!(display.incremental_vram_upload_counter, 0);
+        assert_eq!(display.incremental_vram_upload_counter_usize(), 0);
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 1);
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
@@ -507,5 +513,6 @@ mod tests {
         assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
+        assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
     }
 }

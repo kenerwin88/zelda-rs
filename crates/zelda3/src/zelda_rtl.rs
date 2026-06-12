@@ -86,10 +86,10 @@ use crate::game_state::{
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
-    VramLoadStateViewMut, VramUploadDataView, VwfGlyphSpacingView, VwfGlyphSpacingViewMut,
-    WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateViewMut,
+    VramUploadDataView, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2392,6 +2392,68 @@ impl ZeldaState {
             .set_nmi_load_target_address(value);
     }
 
+    pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .reset_incremental_vram_upload_counter();
+    }
+
+    pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .increment_vram_upload_counter()
+    }
+
+    pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_body_dma_sources(top, bottom);
+    }
+
+    pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_head_dma_sources(top, bottom);
+    }
+
+    pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_hand_dma_sources(left, right);
+    }
+
+    pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_sword_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_shield_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_aux_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_push_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_animated_tile_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_head_pointer_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_link_body_pointer_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_travel_bird_dma_sources(upper, lower);
+    }
+
+    pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).reset_bg_tile_animation_countdown(value);
+    }
+
+    pub(crate) fn set_animated_tile_data_src(&mut self, value: u16) {
+        VramLoadStateViewMut::new(&mut self.ram).set_animated_tile_data_src(value);
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }
@@ -3194,14 +3256,6 @@ impl ZeldaState {
 
     pub(crate) fn overworld_sprite_loaded_view_mut(&mut self) -> OverworldSpriteLoadedViewMut<'_> {
         OverworldSpriteLoadedViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn vram_load_state_view(&self) -> VramLoadStateView<'_> {
-        VramLoadStateView::new(&self.ram)
-    }
-
-    pub(crate) fn vram_load_state_view_mut(&mut self) -> VramLoadStateViewMut<'_> {
-        VramLoadStateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn overworld_tile_update_view(&self) -> OverworldTileUpdateView<'_> {
