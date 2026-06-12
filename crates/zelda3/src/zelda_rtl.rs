@@ -35,13 +35,13 @@ use crate::game_state::{
     BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView, BombosBlastViewMut,
     BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
     BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
-    ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
-    DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
-    DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
-    DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView, DrawScratchPositionViewMut,
-    DualLayerTileCacheView, DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut,
-    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
+    ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexState,
+    DialogueNumberState, DialogueSourceOffsetViewMut, DiggingGamePrizeView,
+    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut,
+    DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
+    DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
+    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
     EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
@@ -56,31 +56,32 @@ use crate::game_state::{
     MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
-    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
-    MultiselectChoiceViewMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeIntroSceneBridgeMut, NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteFilterBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoState, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteBufferViewMut, PaletteFilterState, PlayerResourcesView, PlayerResourcesViewMut,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceState,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterState,
+    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
+    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
+    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
+    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
+    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
+    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
     SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
     SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
     SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView,
@@ -1808,20 +1809,28 @@ impl ZeldaState {
         AttractStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn dialogue_message_index_view(&self) -> DialogueMessageIndexView<'_> {
-        DialogueMessageIndexView::new(&self.ram)
+    pub(crate) fn dialogue_message_index_view(&self) -> &DialogueMessageIndexState {
+        &self.game_state.messaging.dialogue_message_index
     }
 
-    pub(crate) fn dialogue_message_index_view_mut(&mut self) -> DialogueMessageIndexViewMut<'_> {
-        DialogueMessageIndexViewMut::new(&mut self.ram)
+    pub(crate) fn dialogue_message_index_view_mut(
+        &mut self,
+    ) -> NativeDialogueMessageIndexBridgeMut<'_> {
+        NativeDialogueMessageIndexBridgeMut::new(
+            &mut self.game_state.messaging.dialogue_message_index,
+            &mut self.ram,
+        )
     }
 
-    pub(crate) fn multiselect_choice_view(&self) -> MultiselectChoiceView<'_> {
-        MultiselectChoiceView::new(&self.ram)
+    pub(crate) fn multiselect_choice_view(&self) -> &MultiselectChoiceState {
+        &self.game_state.messaging.multiselect_choice
     }
 
-    pub(crate) fn multiselect_choice_view_mut(&mut self) -> MultiselectChoiceViewMut<'_> {
-        MultiselectChoiceViewMut::new(&mut self.ram)
+    pub(crate) fn multiselect_choice_view_mut(&mut self) -> NativeMultiselectChoiceBridgeMut<'_> {
+        NativeMultiselectChoiceBridgeMut::new(
+            &mut self.game_state.messaging.multiselect_choice,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn pushed_block_view(&self) -> PushedBlockView<'_> {
@@ -3806,12 +3815,15 @@ impl ZeldaState {
         HitboxScratchOffsetViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn dialogue_number_view_mut(&mut self) -> DialogueNumberViewMut<'_> {
-        DialogueNumberViewMut::new(&mut self.ram)
+    pub(crate) fn dialogue_number_view_mut(&mut self) -> NativeDialogueNumberBridgeMut<'_> {
+        NativeDialogueNumberBridgeMut::new(
+            &mut self.game_state.messaging.dialogue_number,
+            &mut self.ram,
+        )
     }
 
-    pub(crate) fn dialogue_number_view(&self) -> DialogueNumberView<'_> {
-        DialogueNumberView::new(&self.ram)
+    pub(crate) fn dialogue_number_view(&self) -> &DialogueNumberState {
+        &self.game_state.messaging.dialogue_number
     }
 
     pub(crate) fn messaging_state_view(&self) -> MessagingStateView<'_> {

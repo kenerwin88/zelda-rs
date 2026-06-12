@@ -25,7 +25,9 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use messaging::{
-    MessagingState, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
+    DialogueMessageIndexState, DialogueNumberState, MessagingState, MultiselectChoiceState,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
 };
 pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
 pub(crate) use world::{
@@ -409,6 +411,11 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0008);
         ram[OVERWORLD_TRANSITION_DIR] = 2;
         ram[OVERWORLD_EVENT_INFO + 0x5b] = 0x20;
+        write_le_u16(&mut ram, DIALOGUE_MESSAGE_INDEX, 0x0123);
+        write_le_u16(&mut ram, MULTISELECT_CHOICE, 0x0204);
+        ram[MULTISELECT_CHOICE_BACKUP] = 0x07;
+        ram[DIALOGUE_NUMBER_LO] = 0x12;
+        ram[DIALOGUE_NUMBER_HI] = 0x34;
 
         let mut state = GameState::load_from_ram(&ram);
         assert_eq!(state.world.location.dungeon_room, 0x0124);
@@ -458,6 +465,12 @@ mod tests {
             0x0008
         );
         assert_eq!(state.world.overworld.event_info.event_info(0x5b), 0x20);
+        assert_eq!(state.messaging.dialogue_message_index.value(), 0x0123);
+        assert_eq!(state.messaging.multiselect_choice.value(), 0x04);
+        assert_eq!(state.messaging.multiselect_choice.value_word(), 0x0204);
+        assert_eq!(state.messaging.multiselect_choice.backup(), 0x07);
+        assert_eq!(state.messaging.dialogue_number.packed_digits(0), 0x12);
+        assert_eq!(state.messaging.dialogue_number.packed_digits(1), 0x34);
 
         state.world.location.dungeon_room = 0x0181;
         state.world.location.overworld_screen = 0x005b;
@@ -491,6 +504,13 @@ mod tests {
         state.world.overworld.entrance.sequence_counter = 9;
         state.world.overworld.exit.exit_screen = 0x0044;
         state.world.overworld.transition.direction_enum = 3;
+        state.messaging.dialogue_message_index.set_value(0x0140);
+        state.messaging.multiselect_choice.set_value(0x05);
+        state.messaging.multiselect_choice.save_backup();
+        state
+            .messaging
+            .dialogue_number
+            .set_packed_digits(0x56, 0x78);
         state.write_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0181);
@@ -520,6 +540,11 @@ mod tests {
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
         assert_eq!(ram[OVERWORLD_TRANSITION_DIR], 3);
+        assert_eq!(read_le_u16(&ram, DIALOGUE_MESSAGE_INDEX), 0x0140);
+        assert_eq!(read_le_u16(&ram, MULTISELECT_CHOICE), 0x0205);
+        assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 0x05);
+        assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x56);
+        assert_eq!(ram[DIALOGUE_NUMBER_HI], 0x78);
     }
 
     #[test]
@@ -1708,6 +1733,118 @@ mod tests {
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
         assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 2);
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 5);
+    }
+
+    #[test]
+    fn dialogue_message_index_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DIALOGUE_MESSAGE_INDEX, 0x0123);
+
+        let mut message_index = DialogueMessageIndexState::load_from_ram(&ram);
+        assert_eq!(message_index.value(), 0x0123);
+
+        message_index.set_value(0x0140);
+        message_index.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, DIALOGUE_MESSAGE_INDEX), 0x0140);
+    }
+
+    #[test]
+    fn native_dialogue_message_index_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DIALOGUE_MESSAGE_INDEX, 0x0123);
+
+        let mut message_index = DialogueMessageIndexState::default();
+        {
+            let mut bridge = NativeDialogueMessageIndexBridgeMut::new(&mut message_index, &mut ram);
+            bridge.set_value(0x0140);
+        }
+
+        assert_eq!(message_index.value(), 0x0140);
+        assert_eq!(read_le_u16(&ram, DIALOGUE_MESSAGE_INDEX), 0x0140);
+    }
+
+    #[test]
+    fn multiselect_choice_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MULTISELECT_CHOICE, 0x0204);
+        ram[MULTISELECT_CHOICE_BACKUP] = 0x07;
+
+        let mut choice = MultiselectChoiceState::load_from_ram(&ram);
+        assert_eq!(choice.value(), 0x04);
+        assert_eq!(choice.value_word(), 0x0204);
+        assert_eq!(choice.backup(), 0x07);
+
+        choice.increment_value();
+        choice.save_backup();
+        choice.decrement_value();
+        choice.restore_backup();
+        choice.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, MULTISELECT_CHOICE), 0x0205);
+        assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 0x05);
+    }
+
+    #[test]
+    fn native_multiselect_choice_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MULTISELECT_CHOICE, 0x0204);
+        ram[MULTISELECT_CHOICE_BACKUP] = 0x07;
+
+        let mut choice = MultiselectChoiceState::default();
+        {
+            let mut bridge = NativeMultiselectChoiceBridgeMut::new(&mut choice, &mut ram);
+            bridge.increment_value();
+            bridge.save_backup();
+            bridge.set_value(0x01);
+            bridge.restore_backup();
+            bridge.decrement_value();
+        }
+
+        assert_eq!(choice.value(), 0x04);
+        assert_eq!(choice.value_word(), 0x0204);
+        assert_eq!(choice.backup(), 0x05);
+        assert_eq!(read_le_u16(&ram, MULTISELECT_CHOICE), 0x0204);
+        assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 0x05);
+    }
+
+    #[test]
+    fn dialogue_number_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_NUMBER_LO] = 0x12;
+        ram[DIALOGUE_NUMBER_HI] = 0x34;
+
+        let mut number = DialogueNumberState::load_from_ram(&ram);
+        assert_eq!(number.packed_digits(0), 0x12);
+        assert_eq!(number.packed_digits(1), 0x34);
+        assert_eq!(number.packed_digits(2), 0);
+
+        number.set_low_pair(0x56);
+        number.set_high_pair(0x78);
+        number.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x56);
+        assert_eq!(ram[DIALOGUE_NUMBER_HI], 0x78);
+    }
+
+    #[test]
+    fn native_dialogue_number_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_NUMBER_LO] = 0x12;
+        ram[DIALOGUE_NUMBER_HI] = 0x34;
+
+        let mut number = DialogueNumberState::default();
+        {
+            let mut bridge = NativeDialogueNumberBridgeMut::new(&mut number, &mut ram);
+            bridge.set_low_pair(0x56);
+            bridge.set_high_pair(0x78);
+            bridge.set_packed_digits(0x9a, 0xbc);
+        }
+
+        assert_eq!(number.packed_digits(0), 0x9a);
+        assert_eq!(number.packed_digits(1), 0xbc);
+        assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x9a);
+        assert_eq!(ram[DIALOGUE_NUMBER_HI], 0xbc);
     }
 
     #[test]
