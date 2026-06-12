@@ -2624,7 +2624,7 @@ impl ZeldaState {
 
     pub(super) fn Spotlight_ConfigureTableAndControl(&mut self) {
         self.IrisSpotlight_ConfigureTable();
-        self.world_state_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
         if self.frame_state().submodule != 0 {
             return;
@@ -2735,7 +2735,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {
-        self.world_state_view_mut().set_nmi_thread_active(0);
+        self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
         if self.world_location_state().is_outdoors() {
             self.Ancilla_TerminateWaterfallSplashes();

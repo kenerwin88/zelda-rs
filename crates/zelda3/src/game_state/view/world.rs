@@ -588,15 +588,6 @@ impl<'a> WorldStateViewMut<'a> {
         self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
     }
 
-    pub(crate) fn set_nmi_thread_active(&mut self, value: u8) {
-        self.ram[IS_NMI_THREAD_ACTIVE] = value;
-    }
-
-    pub(crate) fn increment_nmi_thread_active(&mut self) -> u8 {
-        self.ram[IS_NMI_THREAD_ACTIVE] = self.ram[IS_NMI_THREAD_ACTIVE].wrapping_add(1);
-        self.ram[IS_NMI_THREAD_ACTIVE]
-    }
-
     pub(crate) fn clear_nmi_flag_update_polyhedral(&mut self) {
         self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
     }

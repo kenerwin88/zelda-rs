@@ -576,7 +576,6 @@ pub(crate) const CAMERA_X_COORD_SCROLL_LOW: usize = 0x061c;
 pub(crate) const CAMERA_X_COORD_SCROLL_HI: usize = 0x061e;
 pub(crate) const DOOR_ANIMATION_STEP_INDICATOR: usize = 0x0690;
 pub(crate) const SAVEGAME_HAS_MASTER_SWORD_FLAGS: usize = 0x0f300;
-pub(crate) const IS_NMI_THREAD_ACTIVE: usize = 0x012a;
 pub(crate) const MOVE_OVERLAY_CTR: usize = 0x0494;
 pub(crate) const OVERWORLD_HOLE_SCAN_STEP: usize = 0x010f;
 pub(crate) const RESET_XY_CHECK_FLAGS: usize = 0x00fc;

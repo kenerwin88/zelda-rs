@@ -10184,7 +10184,7 @@ impl ZeldaState {
             2 | 4 | 6 | 8 => self.Dungeon_InterRoomTrans_notDarkRoom(),
             3 | 5 | 7 | 9 => self.Dungeon_InterRoomTrans_State4(),
             10 => {
-                self.world_state_view_mut().increment_nmi_thread_active();
+                self.activate_nmi_thread();
                 self.Polyhedral_InitializeThread();
                 self.CrystalCutscene_Initialize();
                 self.set_submodule(0);
