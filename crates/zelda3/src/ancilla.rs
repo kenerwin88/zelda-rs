@@ -57,7 +57,6 @@ const TAGALONG_Y_LO_ANCILLA: usize = 0x1a00;
 const TAGALONG_Y_HI_ANCILLA: usize = 0x1a14;
 const TAGALONG_X_LO_ANCILLA: usize = 0x1a28;
 const TAGALONG_X_HI_ANCILLA: usize = 0x1a3c;
-const FLAG_TRAVEL_BIRD: usize = 0x0af4;
 const MILESTONE_ITEM_GFX_SWAP_COUNTDOWN: usize = 0x04c2;
 const TRIGGER_SPECIAL_ENTRANCE_ANCILLA: usize = 0x04c6;
 const MAGIC_SPELL_PLAYER_LOCK_FLAG: usize = 0x0325;
@@ -6862,7 +6861,7 @@ impl ZeldaState {
         self.ancilla_move_x(k);
         self.ancilla_move_z(k);
         let value = TRAVEL_BIRD_DMA_TILE_OFFSETS[self.ancilla_slot_view(k).k() as usize + 1];
-        self.world_state_view_mut().set_flag_travel_bird(value);
+        self.set_travel_bird_tile_offset(value);
         let (x, y) = self.ancilla_prep_oam_coord(k);
         let oam = self.oam_state_view().current_pointer_usize();
         self.ancilla_set_oam(

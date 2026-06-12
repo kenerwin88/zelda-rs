@@ -432,7 +432,7 @@ impl ZeldaState {
         self.copy_ram_bytes_to_vram(0x4320, DMA_SOURCE_ADDR_19, 0x40);
         self.copy_ram_bytes_to_vram_absolute(0x4340, 0xbd80, 0x40);
 
-        if self.display_nmi_view().flag_travel_bird() {
+        if self.display_state().has_travel_bird_tile_upload() {
             self.copy_ram_bytes_to_vram(0x40e0, DMA_SOURCE_ADDR_20, 0x40);
             self.copy_ram_bytes_to_vram(0x41e0, DMA_SOURCE_ADDR_21, 0x40);
         }

@@ -1312,9 +1312,8 @@ impl ZeldaState {
             .wrapping_add((self.player_state_view().dma_body_pointer() as u16).wrapping_mul(2));
         self.set_link_body_pointer_dma_sources(source17, source17.wrapping_add(0x200));
 
-        let source20 = 0xb540u16.wrapping_add(
-            (self.display_nmi_view().travel_bird_tile_offset() as u16).wrapping_mul(2),
-        );
+        let source20 = 0xb540u16
+            .wrapping_add((self.display_state().travel_bird_tile_offset as u16).wrapping_mul(2));
         self.set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
     }
 

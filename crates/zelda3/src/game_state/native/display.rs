@@ -40,6 +40,7 @@ pub(crate) struct DisplayState {
     pub(crate) incremental_vram_upload_counter: u8,
     pub(crate) message_dma_destination_address: u16,
     pub(crate) overworld_fixed_color_adjustment: u8,
+    pub(crate) travel_bird_tile_offset: u8,
 }
 
 impl DisplayState {
@@ -78,6 +79,7 @@ impl DisplayState {
             incremental_vram_upload_counter: ram_byte(ram, INCREMENTAL_COUNTER_FOR_VRAM),
             message_dma_destination_address: read_le_u16(ram, MESSAGE_DMA_DST_ADDR),
             overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
+            travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
         }
     }
 
@@ -119,6 +121,7 @@ impl DisplayState {
             self.message_dma_destination_address,
         );
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
+        ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -195,6 +198,10 @@ impl DisplayState {
 
     pub(crate) fn message_dma_destination_address_usize(&self) -> usize {
         usize::from(self.message_dma_destination_address)
+    }
+
+    pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
+        self.travel_bird_tile_offset != 0
     }
 }
 
@@ -428,6 +435,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.overworld_fixed_color_adjustment,
             ram_byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
+        );
+    }
+
+    fn debug_assert_travel_bird_tile_offset_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.travel_bird_tile_offset,
+            ram_byte(self.ram, FLAG_TRAVEL_BIRD)
         );
     }
 
@@ -849,5 +863,11 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.overworld_fixed_color_adjustment = value;
         self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
         self.debug_assert_overworld_fixed_color_adjustment_matches_ram();
+    }
+
+    pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
+        self.display.travel_bird_tile_offset = value;
+        self.ram[FLAG_TRAVEL_BIRD] = value;
+        self.debug_assert_travel_bird_tile_offset_matches_ram();
     }
 }

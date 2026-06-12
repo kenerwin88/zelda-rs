@@ -2464,6 +2464,11 @@ impl ZeldaState {
             .set_overworld_fixed_color_adjustment(value);
     }
 
+    pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_travel_bird_tile_offset(value);
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }

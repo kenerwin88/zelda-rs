@@ -375,6 +375,7 @@ mod tests {
         ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0xfe;
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x20;
+        ram[FLAG_TRAVEL_BIRD] = 0x04;
 
         let mut display = DisplayState::default();
         {
@@ -444,6 +445,7 @@ mod tests {
             view.reset_incremental_vram_upload_counter();
             view.set_message_dma_destination_address(0x6080);
             view.set_overworld_fixed_color_adjustment(0x30);
+            view.set_travel_bird_tile_offset(0x08);
         }
 
         assert_eq!(display.screen_brightness, 0x80);
@@ -489,6 +491,8 @@ mod tests {
         assert_eq!(display.message_dma_destination_address, 0x6080);
         assert_eq!(display.message_dma_destination_address_usize(), 0x6080);
         assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
+        assert_eq!(display.travel_bird_tile_offset, 0x08);
+        assert!(display.has_travel_bird_tile_upload());
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 1);
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
@@ -523,5 +527,6 @@ mod tests {
         assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
         assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
         assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);
+        assert_eq!(ram[FLAG_TRAVEL_BIRD], 0x08);
     }
 }
