@@ -1,4 +1,6 @@
-use crate::game_state::constants::{DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y};
+use crate::game_state::constants::{
+    DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
+};
 use crate::types::{read_le_u16, write_le_u16};
 
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
@@ -6,17 +8,140 @@ const DOOR_DEBRIS_BANK_LEN: usize = 10;
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EffectState {
     pub(crate) door_debris: DoorDebrisState,
+    pub(crate) angle_scratch: EffectAngleScratchState,
 }
 
 impl EffectState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             door_debris: DoorDebrisState::load_from_ram(ram),
+            angle_scratch: EffectAngleScratchState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.door_debris.write_to_ram(ram);
+        self.angle_scratch.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EffectAngleScratchState {
+    angles: [u8; EFFECT_ANGLE_WORK_LEN],
+}
+
+const EFFECT_ANGLE_WORK_LEN: usize = 9;
+
+impl EffectAngleScratchState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut angles = [0; EFFECT_ANGLE_WORK_LEN];
+        for (slot, value) in angles.iter_mut().enumerate() {
+            *value = ram.get(EFFECT_ANGLE_WORK + slot).copied().unwrap_or(0);
+        }
+        Self { angles }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[EFFECT_ANGLE_WORK..EFFECT_ANGLE_WORK + EFFECT_ANGLE_WORK_LEN]
+            .copy_from_slice(&self.angles);
+    }
+
+    pub(crate) fn angle(&self, slot: usize) -> u8 {
+        self.angles.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn trailing_angle(&self) -> u8 {
+        self.angle(4)
+    }
+
+    pub(crate) fn radial_radius(&self) -> u8 {
+        self.angle(8)
+    }
+
+    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
+        if let Some(angle) = self.angles.get_mut(slot) {
+            *angle = value;
+        }
+    }
+
+    pub(crate) fn set_angles4(&mut self, values: &[u8], start: usize) {
+        for slot in 0..4 {
+            self.set_angle(slot, values[start + slot]);
+        }
+    }
+
+    pub(crate) fn add_angle_mod64(&mut self, slot: usize, value: u8) -> u8 {
+        let angle = self.angle(slot).wrapping_add(value) & 0x3f;
+        self.set_angle(slot, angle);
+        angle
+    }
+
+    pub(crate) fn set_trailing_angle(&mut self, value: u8) {
+        self.set_angle(4, value);
+    }
+
+    pub(crate) fn add_trailing_angle_mod64(&mut self, value: u8) -> u8 {
+        self.add_angle_mod64(4, value)
+    }
+
+    pub(crate) fn set_radial_radius(&mut self, value: u8) {
+        self.set_angle(8, value);
+    }
+}
+
+pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
+    state: &'a mut EffectAngleScratchState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EffectAngleScratchState, ram: &'a mut [u8]) -> Self {
+        *state = EffectAngleScratchState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            EffectAngleScratchState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
+        self.state.set_angle(slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_angles4(&mut self, values: &[u8], start: usize) {
+        self.state.set_angles4(values, start);
+        self.sync();
+    }
+
+    pub(crate) fn add_angle_mod64(&mut self, slot: usize, value: u8) -> u8 {
+        let angle = self.state.add_angle_mod64(slot, value);
+        self.sync();
+        angle
+    }
+
+    pub(crate) fn set_trailing_angle(&mut self, value: u8) {
+        self.state.set_trailing_angle(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_trailing_angle_mod64(&mut self, value: u8) -> u8 {
+        let angle = self.state.add_trailing_angle_mod64(value);
+        self.sync();
+        angle
+    }
+
+    pub(crate) fn set_radial_radius(&mut self, value: u8) {
+        self.state.set_radial_radius(value);
+        self.sync();
     }
 }
 

@@ -25,7 +25,10 @@ pub(crate) use display::{
     NativeWaterHdmaWindowBridgeMut, PaletteBufferView, PaletteFilterState, TrinexxPaletteState,
     WaterHdmaWindowState,
 };
-pub(crate) use effects::{DoorDebrisView, EffectState, NativeDoorDebrisBridgeMut};
+pub(crate) use effects::{
+    DoorDebrisView, EffectAngleScratchState, EffectState, NativeDoorDebrisBridgeMut,
+    NativeEffectAngleScratchBridgeMut,
+};
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
     NativeIntroSceneBridgeMut,
@@ -1310,6 +1313,57 @@ mod tests {
         assert_eq!(ram[HITBOX_WORK_Y_OFFSET], 0xfc);
         assert_eq!(ram[HITBOX_WORK_X_OFFSET], 0x08);
         assert_eq!(ram[DRAW_WORK_FLAGS_HI], 0x08);
+    }
+
+    #[test]
+    fn effect_angle_scratch_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        for slot in 0..9 {
+            ram[EFFECT_ANGLE_WORK + slot] = slot as u8;
+        }
+
+        let mut angles = EffectAngleScratchState::load_from_ram(&ram);
+        assert_eq!(angles.angle(2), 2);
+        assert_eq!(angles.trailing_angle(), 4);
+        assert_eq!(angles.radial_radius(), 8);
+
+        angles.set_angles4(&[10, 20, 30, 40], 0);
+        assert_eq!(angles.add_angle_mod64(1, 50), 6);
+        assert_eq!(angles.add_trailing_angle_mod64(63), 3);
+        angles.set_radial_radius(14);
+        angles.write_to_ram(&mut ram);
+
+        assert_eq!(ram[EFFECT_ANGLE_WORK], 10);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 1], 6);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 4], 3);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 8], 14);
+    }
+
+    #[test]
+    fn native_effect_angle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[EFFECT_ANGLE_WORK + 1] = 60;
+        ram[EFFECT_ANGLE_WORK + 4] = 2;
+        ram[EFFECT_ANGLE_WORK + 8] = 9;
+
+        let mut angles = EffectAngleScratchState::default();
+        {
+            let mut bridge = NativeEffectAngleScratchBridgeMut::new(&mut angles, &mut ram);
+            bridge.set_angle(0, 12);
+            bridge.set_angles4(&[1, 2, 3, 4, 5], 1);
+            assert_eq!(bridge.add_angle_mod64(1, 63), 2);
+            assert_eq!(bridge.add_trailing_angle_mod64(10), 12);
+            bridge.set_radial_radius(20);
+        }
+
+        assert_eq!(angles.angle(0), 2);
+        assert_eq!(angles.angle(1), 2);
+        assert_eq!(angles.trailing_angle(), 12);
+        assert_eq!(angles.radial_radius(), 20);
+        assert_eq!(ram[EFFECT_ANGLE_WORK], 2);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 1], 2);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 4], 12);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 8], 20);
     }
 
     #[test]
