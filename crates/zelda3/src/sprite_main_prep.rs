@@ -382,7 +382,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k)
                 .set_direction(((subtype & 7).wrapping_sub(1)) ^ 1);
         }
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             self.sprite_slot_view_mut(k).and_flags5(!0x80);
             return;
         }
@@ -396,7 +396,7 @@ impl ZeldaState {
 
     // void SpritePrep_TrooperAndArcherSoldier(int k) {  // 869001
     pub(super) fn sprite_prep_trooper_and_archer_soldier(&mut self, k: usize) {
-        let bak0 = self.frame_control_view().submodule();
+        let bak0 = self.frame_state().submodule;
         self.frame_control_view_mut().set_submodule(0);
         let deflection_bits = (self.sprite_slot_view(k).deflection_bits() >> 1) | 0x80;
         self.sprite_slot_view_mut(k)
@@ -502,7 +502,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_agahnims_barrier(&mut self, k: usize) {
-        let screen = self.world_state_view().overworld_screen() as usize;
+        let screen = self.world_location_state().overworld_screen_index() as usize;
         if self.overworld_event_info_view().event_info(screen) & 0x40 != 0 {
             self.sprite_slot_view_mut(k).set_graphics(4);
         }
@@ -818,7 +818,7 @@ impl ZeldaState {
         } else {
             const LOCAL_GRAPHICS: [u8; 4] = [3, 4, 3, 2];
             let idx = if self.sprite_slot_view(k).ai_state() != 0 {
-                ((self.frame_control_view().frame_counter() >> 5) & 3) as usize
+                ((self.frame_state().frame_counter >> 5) & 3) as usize
             } else {
                 0
             };
@@ -945,8 +945,7 @@ impl ZeldaState {
                 .subtract_current_sprite_y_low(3);
             self.sprite_draw_single_large(k);
             if self.sprite_slot_view(k).delay_aux2() != 0 {
-                if self.sprite_slot_view(k).delay_aux2() == 96
-                    && self.frame_control_view().submodule() == 0
+                if self.sprite_slot_view(k).delay_aux2() == 96 && self.frame_state().submodule == 0
                 {
                     self.sprite_slot_view_mut(0).set_delay_main(112);
                     let prize =
@@ -1107,7 +1106,7 @@ impl ZeldaState {
     // void Sprite_SpawnSparkleGarnish(int k) {  // 858008
     pub(super) fn sprite_spawn_sparkle_garnish(&mut self, k: usize) {
         const COORD: [i8; 4] = [-4, 0, 4, 8];
-        if (self.frame_control_view().frame_counter() & 3) != 0 {
+        if (self.frame_state().frame_counter & 3) != 0 {
             return;
         }
         let j = self.garnish_alloc_force() as usize;
@@ -1202,7 +1201,7 @@ impl ZeldaState {
 
     pub(super) fn kholdstare_spawn_puff_cloud_garnish(&mut self, k: usize) {
         const XY: [i8; 8] = [-8, -6, -4, -2, 0, 2, 4, 6];
-        if (k as u8 ^ self.frame_control_view().frame_counter()) & 3 != 0 {
+        if (k as u8 ^ self.frame_state().frame_counter) & 3 != 0 {
             return;
         }
         let j = self.garnish_alloc_low();
@@ -1274,7 +1273,7 @@ impl ZeldaState {
     }
 
     pub(super) fn fireball_spawn_trail_garnish(&mut self, k: usize) {
-        if (k as u8 ^ self.frame_control_view().frame_counter()) & 3 != 0 {
+        if (k as u8 ^ self.frame_state().frame_counter) & 3 != 0 {
             return;
         }
         let j = self.garnish_alloc() as usize;
@@ -1295,7 +1294,7 @@ impl ZeldaState {
     }
 
     pub(super) fn firesnake_spawn_fireball(&mut self, j: usize) {
-        if ((j as u8) ^ self.frame_control_view().frame_counter()) & 7 != 0 {
+        if ((j as u8) ^ self.frame_state().frame_counter) & 7 != 0 {
             return;
         }
 
@@ -1879,7 +1878,7 @@ impl ZeldaState {
 
     pub(super) fn pirogusu_spawn_splash(&mut self, k: usize) {
         const SPLASH_JITTER_OFFSETS: [u8; 4] = [3, 4, 5, 4];
-        if (k as u8 ^ self.frame_control_view().frame_counter()) & 3 != 0 {
+        if (k as u8 ^ self.frame_state().frame_counter) & 3 != 0 {
             return;
         }
         let x = SPLASH_JITTER_OFFSETS[(self.get_random_number() & 3) as usize];
@@ -2002,7 +2001,7 @@ impl ZeldaState {
         } else {
             self.sprite_show_solicited_message(k, 0x31);
         }
-        let graphics = self.frame_control_view().frame_counter() >> 5 & 1;
+        let graphics = self.frame_state().frame_counter >> 5 & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
     }
 
@@ -2086,8 +2085,7 @@ impl ZeldaState {
                         if self.sprite_slot_view(k).delay_main() == 0 {
                             self.sprite_slot_view_mut(k).increment_ai_state();
                         }
-                        let graphics =
-                            ((k as u8) ^ self.frame_control_view().frame_counter()) >> 3 & 1;
+                        let graphics = ((k as u8) ^ self.frame_state().frame_counter) >> 3 & 1;
                         self.sprite_slot_view_mut(k).set_graphics(graphics);
                     }
                     2 => {
@@ -2105,8 +2103,7 @@ impl ZeldaState {
                             let pt = self.sprite_project_speed_towards_location(k, x, y, 8);
                             self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                             self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
-                            let graphics =
-                                ((k as u8) ^ self.frame_control_view().frame_counter()) >> 3 & 1;
+                            let graphics = ((k as u8) ^ self.frame_state().frame_counter) >> 3 & 1;
                             self.sprite_slot_view_mut(k).set_graphics(graphics);
                             self.old_man_enable_cutscene();
                         }
@@ -2317,9 +2314,9 @@ impl ZeldaState {
         }
         if self.sprite_slot_view(k).b() != 0 {
             self.faerie_queen_draw(k);
-            let graphics = self.frame_control_view().frame_counter() >> 4 & 1;
+            let graphics = self.frame_state().frame_counter >> 4 & 1;
             self.sprite_slot_view_mut(k).set_graphics(graphics);
-            if self.frame_control_view().frame_counter() & 15 != 0 {
+            if self.frame_state().frame_counter & 15 != 0 {
                 return;
             }
             let mut info = SpriteSpawnInfo::default();
@@ -2350,7 +2347,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.world_state_view().dungeon_room() as u8 != 21 {
+        if self.world_location_state().dungeon_room as u8 != 21 {
             self.sprite_wish_pond3(k);
         } else {
             self.sprite_happiness_pond(k);
@@ -2421,7 +2418,7 @@ impl ZeldaState {
                 }
             }
             4 => {
-                if self.frame_control_view().frame_counter() & 7 == 0 {
+                if self.frame_state().frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
                     if self.palette_filter_view().countdown() == 0 {
                         self.sprite_show_message_unconditional(0x8b);
@@ -2500,7 +2497,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(8);
             }
             8 => {
-                if self.frame_control_view().frame_counter() & 7 == 0 {
+                if self.frame_state().frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
                     if self.palette_filter_view().countdown() == 30 {
                         let j = self.sprite_slot_view(k).e() as usize;
@@ -2641,7 +2638,7 @@ impl ZeldaState {
                 }
             }
             6 => {
-                if self.frame_control_view().frame_counter() & 7 == 0 {
+                if self.frame_state().frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
                     if self.palette_filter_view().countdown() == 0 {
                         self.sprite_show_message_unconditional(0x95);
@@ -2688,7 +2685,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(10);
             }
             10 => {
-                if self.frame_control_view().frame_counter() & 7 == 0 {
+                if self.frame_state().frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
                     if self.palette_filter_view().countdown() == 30 {
                         let j = self.sprite_slot_view(k).e() as usize;
@@ -2799,7 +2796,7 @@ impl ZeldaState {
                 ext: 2,
             },
         ];
-        if self.world_state_view().dungeon_room() as u8 == 21 {
+        if self.world_location_state().dungeon_room as u8 == 21 {
             return;
         }
         let t = self.sprite_slot_view(k).ai_state();
@@ -2848,7 +2845,7 @@ impl ZeldaState {
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        self.sprite_draw_distress_custom(x, y, self.frame_control_view().frame_counter());
+        self.sprite_draw_distress_custom(x, y, self.frame_state().frame_counter);
     }
 
     pub(super) fn spawn_apple(&mut self, k: usize) {
@@ -2958,7 +2955,7 @@ impl ZeldaState {
 
     pub(super) fn fairy_check_if_touchable(&mut self, k: usize) {
         let msg = self.dialogue_message_index_view().value();
-        if self.frame_control_view().submodule() == 2 && (msg == 0xc9 || msg == 0xca) {
+        if self.frame_state().submodule == 2 && (msg == 0xc9 || msg == 0xca) {
             self.sprite_slot_view_mut(k).set_delay_aux4(40);
         }
     }
@@ -3261,13 +3258,13 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_bonk_item(&mut self, k: usize) {
         const DASH_ITEM_MASK: [u16; 2] = [0x4000, 0x2000];
-        if self.world_state_view().is_outdoors() {
+        if self.world_location_state().is_outdoors() {
             self.sprite_slot_view_mut(k).set_graphics(2);
             return;
         }
 
         self.sprite_slot_view_mut(k).set_floor(2);
-        if self.world_state_view().dungeon_room() == 0x0107 {
+        if self.world_location_state().dungeon_room == 0x0107 {
             if self.inventory_state_view().book() != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
             } else {
@@ -3496,7 +3493,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).or_oam_flags(12);
         self.sprite_slot_view_mut(k).or_flags3(16);
 
-        let room = self.world_state_view().dungeon_room_index();
+        let room = self.world_location_state().dungeon_room_index();
         let j = SHOP_KEEPER_WHERE
             .iter()
             .position(|&candidate| candidate == room)
@@ -3585,7 +3582,7 @@ impl ZeldaState {
         const ROOMS: [u8; 5] = [0x0e, 0x0e, 0x12, 0x1a, 0x14];
         let mut r = ROOMS
             .iter()
-            .position(|&room| room == self.world_state_view().dungeon_room_index())
+            .position(|&room| room == self.world_location_state().dungeon_room_index())
             .map_or(0xff, |idx| idx as u8);
         if r == 0 && self.sprite_slot_view(k).x_high() & 1 != 0 {
             r = 1;
@@ -3597,7 +3594,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_adults(&mut self, k: usize) {
         const HUMAN_MULTI_TYPES: [u8; 3] = [3, 0xe1, 0x19];
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        let dungeon_room = self.world_state_view().dungeon_room_index();
+        let dungeon_room = self.world_location_state().dungeon_room_index();
         let subtype2 = HUMAN_MULTI_TYPES
             .iter()
             .position(|&room| room == dungeon_room)
@@ -3607,7 +3604,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_sage(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        if self.world_state_view().dungeon_room_index() == 10 {
+        if self.world_location_state().dungeon_room_index() == 10 {
             self.sprite_slot_view_mut(k).increment_subtype2();
             self.sprite_slot_view_mut(k).set_oam_flags(11);
         }
@@ -3615,7 +3612,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_kiki(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        let screen = self.world_state_view().overworld_screen() as usize;
+        let screen = self.world_location_state().overworld_screen_index() as usize;
         if self.overworld_event_info_view().event_info(screen) & 0x20 != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
@@ -4095,7 +4092,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_pedestal_plaque(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        if self.world_state_view().overworld_screen() == 48 {
+        if self.world_location_state().overworld_screen_index() == 48 {
             self.sprite_slot_view_mut(k).add_x_low(7);
         }
     }
@@ -4300,7 +4297,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_absorbable(&mut self, k: usize) {
-        if self.world_state_view().is_outdoors() {
+        if self.world_location_state().is_outdoors() {
             self.sprite_slot_view_mut(k).increment_e();
             self.sprite_slot_view_mut(k).increment_ignore_projectile();
         }
@@ -4400,13 +4397,13 @@ impl ZeldaState {
             .wrapping_add(self.overlord_slot_view(4).x_low() as u16);
         self.overlord_slot_view_mut(0).set_x(base);
 
-        if self.frame_control_view().frame_counter() & 3 == 0 {
+        if self.frame_state().frame_counter & 3 == 0 {
             self.sprite_slot_view_mut(k).increment_a();
             if self.sprite_slot_view(k).a() == 13 {
                 self.sprite_slot_view_mut(k).set_a(0);
             }
         }
-        if self.frame_control_view().frame_counter() & 7 == 0 {
+        if self.frame_state().frame_counter & 7 == 0 {
             self.sprite_slot_view_mut(k).increment_b();
             if self.sprite_slot_view(k).b() == 13 {
                 self.sprite_slot_view_mut(k).set_b(0);
@@ -4451,8 +4448,8 @@ impl ZeldaState {
     pub(super) fn sprite_prep_do_nothing_h(&mut self, _k: usize) {}
 
     pub(super) fn heart_upgrade_check_if_already_obtained(&mut self, k: usize) {
-        if self.world_state_view().is_outdoors() {
-            let screen = self.world_state_view().overworld_screen() as usize;
+        if self.world_location_state().is_outdoors() {
+            let screen = self.world_location_state().overworld_screen_index() as usize;
             if (screen == 0x3b && self.overworld_event_info_view().event_info(0x3b) & 0x20 == 0)
                 || self.overworld_event_info_view().event_info(screen) & 0x40 != 0
             {
@@ -4468,8 +4465,8 @@ impl ZeldaState {
     }
 
     pub(super) fn heart_upgrade_set_obtained_flag(&mut self, k: usize) {
-        if self.world_state_view().is_outdoors() {
-            let screen = self.world_state_view().overworld_screen() as usize;
+        if self.world_location_state().is_outdoors() {
+            let screen = self.world_location_state().overworld_screen_index() as usize;
             self.overworld_event_info_view_mut()
                 .set_event_bits(screen, 0x40);
         } else {
@@ -4524,7 +4521,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_old_man_bounce(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        if self.world_state_view().dungeon_room_index() == 0xe4 {
+        if self.world_location_state().dungeon_room_index() == 0xe4 {
             self.sprite_slot_view_mut(k).set_subtype2(2);
             return;
         }
@@ -4568,7 +4565,7 @@ impl ZeldaState {
         self.load_follower_graphics();
         self.follower_state_view_mut().set_indicator(follower);
 
-        if self.world_state_view().dungeon_room_index() == 0x12 {
+        if self.world_location_state().dungeon_room_index() == 0x12 {
             self.sprite_slot_view_mut(k).set_subtype2(2);
             if self.save_progress_view().progress_flags() & 4 == 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
@@ -4591,7 +4588,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_medallion_table(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        if self.world_state_view().overworld_screen() != 3 {
+        if self.world_location_state().overworld_screen_index() != 3 {
             self.sprite_slot_view_mut(k).add_x_low(8);
             if self.inventory_state_view().bombos() != 0 {
                 self.sprite_slot_view_mut(k).set_graphics(4);
@@ -6554,7 +6551,7 @@ mod tests {
         assert_eq!(logic.dialogue_message_index_view().value(), 0xfe);
         assert_eq!(logic.sprite_slot_view(k).ai_state(), 0);
 
-        logic.ram[SUBMODULE_INDEX] = 2;
+        logic.frame_control_view_mut().set_submodule(2);
         logic.dialogue_message_index_view_mut().set_value(0xc9);
         logic.fairy_check_if_touchable(k);
         assert_eq!(logic.sprite_slot_view(k).delay_aux4(), 40);
