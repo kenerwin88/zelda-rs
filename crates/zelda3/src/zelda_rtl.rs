@@ -89,8 +89,8 @@ use crate::game_state::{
     TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
     VramLoadStateViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
     VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldStateView,
-    WorldStateViewMut,
+    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
+    WorldStateView, WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1944,6 +1944,10 @@ impl ZeldaState {
 
     pub(crate) fn frame_state(&self) -> &FrameState {
         &self.game_state.frame
+    }
+
+    pub(crate) fn world_location_state(&self) -> &WorldLocationState {
+        &self.game_state.world_location
     }
 
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {

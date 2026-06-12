@@ -5,7 +5,7 @@
 //! projected to or loaded from WRAM during the transition.
 
 use crate::game_state::constants::*;
-use crate::types::write_le_u16;
+use crate::types::{read_le_u16, write_le_u16};
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)
@@ -14,17 +14,20 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
+    pub(crate) world_location: WorldLocationState,
 }
 
 impl GameState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             frame: FrameState::load_from_ram(ram),
+            world_location: WorldLocationState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
+        self.world_location.write_to_ram(ram);
     }
 }
 
@@ -55,6 +58,45 @@ impl FrameState {
 
     pub(crate) fn main_module_word(&self) -> u16 {
         u16::from(self.main_module) | (u16::from(self.submodule) << 8)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldLocationState {
+    pub(crate) dungeon_room: u16,
+    pub(crate) overworld_screen: u16,
+    pub(crate) indoor_flag: u8,
+}
+
+impl WorldLocationState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            dungeon_room: read_le_u16(ram, DUNGEON_ROOM),
+            overworld_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX),
+            indoor_flag: ram_byte(ram, PLAYER_IS_INDOORS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_ROOM, self.dungeon_room);
+        write_le_u16(ram, OVERWORLD_SCREEN_INDEX, self.overworld_screen);
+        ram[PLAYER_IS_INDOORS] = self.indoor_flag;
+    }
+
+    pub(crate) fn dungeon_room_index(&self) -> u8 {
+        self.dungeon_room as u8
+    }
+
+    pub(crate) fn overworld_screen_index(&self) -> u8 {
+        self.overworld_screen as u8
+    }
+
+    pub(crate) fn is_indoors(&self) -> bool {
+        self.indoor_flag != 0
+    }
+
+    pub(crate) fn is_outdoors(&self) -> bool {
+        !self.is_indoors()
     }
 }
 
@@ -264,5 +306,30 @@ mod tests {
         assert_eq!(ram[SUBSUBMODULE], 9);
         assert_eq!(ram[FRAME_COUNTER], 5);
         assert_eq!(ram[SAVED_MODULE_FOR_MENU], 1);
+    }
+
+    #[test]
+    fn world_location_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_ROOM, 0x0124);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX, 0x0040);
+        ram[PLAYER_IS_INDOORS] = 1;
+
+        let mut world = WorldLocationState::load_from_ram(&ram);
+        assert_eq!(world.dungeon_room, 0x0124);
+        assert_eq!(world.dungeon_room_index(), 0x24);
+        assert_eq!(world.overworld_screen, 0x0040);
+        assert_eq!(world.overworld_screen_index(), 0x40);
+        assert!(world.is_indoors());
+        assert!(!world.is_outdoors());
+
+        world.dungeon_room = 0x0181;
+        world.overworld_screen = 0x005b;
+        world.indoor_flag = 0;
+        world.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0181);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
+        assert_eq!(ram[PLAYER_IS_INDOORS], 0);
     }
 }
