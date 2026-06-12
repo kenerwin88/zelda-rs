@@ -54,14 +54,14 @@ use crate::game_state::{
     InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
     MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
-    MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
-    MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
-    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceState,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeOverworldEntranceBridgeMut,
+    MessagingRenderBufferViewMut, MessagingRuntimeState, MessagingTextView, MessagingTextViewMut,
+    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeIntroSceneBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
+    NativeMultiselectChoiceView, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
@@ -1822,8 +1822,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn multiselect_choice_view(&self) -> &MultiselectChoiceState {
-        &self.game_state.messaging.multiselect_choice
+    pub(crate) fn multiselect_choice_view(&self) -> NativeMultiselectChoiceView<'_> {
+        NativeMultiselectChoiceView::new(
+            &self.game_state.messaging.multiselect_choice,
+            &self.game_state.messaging.runtime,
+        )
     }
 
     pub(crate) fn multiselect_choice_view_mut(&mut self) -> NativeMultiselectChoiceBridgeMut<'_> {
@@ -3826,12 +3829,12 @@ impl ZeldaState {
         &self.game_state.messaging.dialogue_number
     }
 
-    pub(crate) fn messaging_state_view(&self) -> MessagingStateView<'_> {
-        MessagingStateView::new(&self.ram)
+    pub(crate) fn messaging_state_view(&self) -> &MessagingRuntimeState {
+        &self.game_state.messaging.runtime
     }
 
-    pub(crate) fn messaging_state_view_mut(&mut self) -> MessagingStateViewMut<'_> {
-        MessagingStateViewMut::new(&mut self.ram)
+    pub(crate) fn messaging_state_view_mut(&mut self) -> NativeMessagingRuntimeBridgeMut<'_> {
+        NativeMessagingRuntimeBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
     pub(crate) fn messaging_text_view(&self) -> MessagingTextView<'_> {

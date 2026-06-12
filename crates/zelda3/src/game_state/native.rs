@@ -25,9 +25,10 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use messaging::{
-    DialogueMessageIndexState, DialogueNumberState, MessagingState, MultiselectChoiceState,
+    DialogueMessageIndexState, DialogueNumberState, MessagingRuntimeState, MessagingState,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
 };
 pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
 pub(crate) use world::{
@@ -45,6 +46,8 @@ pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
+#[cfg(test)]
+use messaging::MultiselectChoiceState;
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -467,7 +470,14 @@ mod tests {
         assert_eq!(state.world.overworld.event_info.event_info(0x5b), 0x20);
         assert_eq!(state.messaging.dialogue_message_index.value(), 0x0123);
         assert_eq!(state.messaging.multiselect_choice.value(), 0x04);
-        assert_eq!(state.messaging.multiselect_choice.value_word(), 0x0204);
+        assert_eq!(
+            NativeMultiselectChoiceView::new(
+                &state.messaging.multiselect_choice,
+                &state.messaging.runtime
+            )
+            .value_word(),
+            0x0204
+        );
         assert_eq!(state.messaging.multiselect_choice.backup(), 0x07);
         assert_eq!(state.messaging.dialogue_number.packed_digits(0), 0x12);
         assert_eq!(state.messaging.dialogue_number.packed_digits(1), 0x34);
@@ -1772,7 +1782,11 @@ mod tests {
 
         let mut choice = MultiselectChoiceState::load_from_ram(&ram);
         assert_eq!(choice.value(), 0x04);
-        assert_eq!(choice.value_word(), 0x0204);
+        assert_eq!(
+            NativeMultiselectChoiceView::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
+                .value_word(),
+            0x0204
+        );
         assert_eq!(choice.backup(), 0x07);
 
         choice.increment_value();
@@ -1802,7 +1816,11 @@ mod tests {
         }
 
         assert_eq!(choice.value(), 0x04);
-        assert_eq!(choice.value_word(), 0x0204);
+        assert_eq!(
+            NativeMultiselectChoiceView::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
+                .value_word(),
+            0x0204
+        );
         assert_eq!(choice.backup(), 0x05);
         assert_eq!(read_le_u16(&ram, MULTISELECT_CHOICE), 0x0204);
         assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 0x05);
