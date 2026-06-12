@@ -371,11 +371,11 @@ impl ZeldaState {
         if self.frame_state().subsubmodule < 3 {
             self.frame_control_view_mut().increment_subsubmodule();
         } else {
-            self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+            self.clear_bg_vram_load_mode();
         }
         if self.frame_state().submodule == 0 {
             self.frame_control_view_mut().set_subsubmodule(0);
-            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            self.set_bg_vram_load_mode(1);
             if self.multiselect_choice_view().value() != 0 {
                 self.system_signals_view_mut().set_ambient_sound_effect(15);
                 self.frame_control_view_mut().set_main_module(23);
@@ -395,7 +395,7 @@ impl ZeldaState {
         if self.frame_state().submodule != 0 {
             return;
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+        self.clear_bg_vram_load_mode();
         self.EnableForceBlank();
         self.EraseTileMaps_normal();
         let bak = self.save_progress_view().which_starting_point();
@@ -1057,7 +1057,7 @@ impl ZeldaState {
                 }
                 self.frame_control_view_mut().set_main_module(5);
                 self.frame_control_view_mut().set_submodule(0);
-                self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+                self.clear_bg_vram_load_mode();
             } else {
                 let offset = self.selected_save_slot_source_offset();
                 self.save_load_scratch_view_mut().set_source_offset(offset);
@@ -1964,7 +1964,7 @@ impl ZeldaState {
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
         self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(9);
+        self.set_bg_vram_load_mode(9);
         self.display_nmi_view_mut().set_core_update_disable_flag(9);
         self.replay_trace_ram_watch("dungmap-prep-exit");
     }
@@ -1983,7 +1983,7 @@ impl ZeldaState {
                 .set_word(14, DUNGEON_MAP_LEVEL_LABEL_TOP_TILES[i]);
             self.vram_upload_data_view_mut()
                 .set_word(30, DUNGEON_MAP_LEVEL_LABEL_BOTTOM_TILES[i]);
-            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            self.set_bg_vram_load_mode(1);
         }
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
@@ -2049,7 +2049,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut().terminate_at(offset);
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn DungeonMap_BuildFloorListBoxes(&mut self, t5: u8, mut r14: u16) {
@@ -3202,12 +3202,12 @@ impl ZeldaState {
             d = self.RenderText_DrawBorderRow(d, 6);
         }
         self.RenderText_DrawBorderRow(d, 12);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.messaging_state_view_mut().set_text_render_state(2);
     }
 
     pub(super) fn RenderText_Draw_BorderIncremental(&mut self) {
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         let mut a = self.messaging_state_view().text_incremental_state();
         let d = 0x1002;
         if a != 0 {
@@ -3366,7 +3366,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut().set_word(2, 0x2e42);
         self.vram_upload_data_view_mut().set_word(4, 0x387f);
         self.vram_upload_data_view_mut().set_word(6, 0xffff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.messaging_state_view_mut().clear_module();
         self.frame_control_view_mut().set_submodule(0);
         let saved_module = self.frame_control_view().saved_module_for_menu();
@@ -3760,7 +3760,7 @@ impl ZeldaState {
             }
         }
         self.vram_upload_data_view_mut().write_le_u16_at(d, 0xffff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Text_GenerateMessagePointers(&mut self) {

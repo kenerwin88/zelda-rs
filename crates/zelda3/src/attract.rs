@@ -1234,7 +1234,7 @@ impl ZeldaState {
                 .saturating_sub(self.vram_upload_data_view().data_base()),
         );
         self.vram_upload_data_view_mut().copy_bytes(0, &data[..len]);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn attract_build_backgrounds(&mut self) {

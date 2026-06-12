@@ -10132,7 +10132,7 @@ impl ZeldaState {
             pos.wrapping_add(2),
             if unlocked { 0x0da7 } else { 0x0da6 },
         );
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     // -----------------------------------------------------------------------
@@ -26773,7 +26773,7 @@ impl ZeldaState {
         self.overworld_event_info_view_mut()
             .set_event_bits(0x58, 0x20);
         self.system_signals_view_mut().set_sound_effect_2(0x1b);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     /// CreatePyramidHole (overworld.c:3539) — local bridge for
@@ -26794,7 +26794,7 @@ impl ZeldaState {
         self.overworld_event_info_view_mut()
             .set_event_bits(0x5b, 0x20);
         self.system_signals_view_mut().set_sound_effect_2(3);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     fn overworld_draw_map16_persist_for_draw(&mut self, pos: u16, value: u16) {

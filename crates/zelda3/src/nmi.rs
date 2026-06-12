@@ -99,8 +99,8 @@ impl ZeldaState {
             self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
         }
 
-        if self.display_nmi_view().bg_vram_load_mode() != 0 {
-            match self.display_nmi_view().bg_vram_load_mode() {
+        if self.display_state().has_bg_vram_load() {
+            match self.display_state().bg_vram_load_mode {
                 1 => {
                     let stripes = self.vram_upload_data_view().remaining_data().to_vec();
                     self.handle_stripes14_slice(&stripes);
@@ -124,7 +124,7 @@ impl ZeldaState {
                     self.handle_stripes14_slice(&stripes);
                 }
                 5..=9 => {
-                    let asset = 95 + self.display_nmi_view().bg_vram_load_mode() as usize;
+                    let asset = 95 + self.display_state().bg_vram_load_mode as usize;
                     if let Some(stripes) = self
                         .assets
                         .as_ref()
@@ -136,13 +136,13 @@ impl ZeldaState {
                 }
                 _ => panic!(
                     "invalid nmi_load_bg_from_vram {}",
-                    self.display_nmi_view().bg_vram_load_mode()
+                    self.display_state().bg_vram_load_mode
                 ),
             }
-            if self.display_nmi_view().bg_vram_load_mode() == 1 {
+            if self.display_state().bg_vram_load_mode == 1 {
                 self.clear_vram_upload_cursor();
             }
-            self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+            self.clear_bg_vram_load_mode();
         }
 
         let update_dst_byte = self.display_nmi_view().update_tilemap_dst();

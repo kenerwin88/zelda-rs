@@ -238,7 +238,7 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn select_file_func1(&mut self) -> usize {
@@ -264,7 +264,7 @@ impl ZeldaState {
         self.select_file_scratch_view_mut()
             .restore_remembered_cursor();
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(6);
+        self.set_bg_vram_load_mode(6);
     }
 
     pub(super) fn file_select_trigger_name_stripes_and_advance(&mut self) {
@@ -293,7 +293,7 @@ impl ZeldaState {
         self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(6);
+        self.set_bg_vram_load_mode(6);
     }
 
     pub(super) fn file_select_main(&mut self) {
@@ -316,7 +316,7 @@ impl ZeldaState {
 
         let y = FAERIE_Y[self.select_file_scratch_view().cursor_usize()];
         self.file_select_draw_fairy(0x1c, y);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
 
         let a = (self.player_state_view().filtered_joypad_l() & 0xc0
             | self.player_state_view().filtered_joypad_h())
@@ -578,7 +578,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module_copy_file_2(&mut self) {
-        self.display_nmi_view_mut().set_bg_vram_load_mode(7);
+        self.set_bg_vram_load_mode(7);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
@@ -594,7 +594,7 @@ impl ZeldaState {
         if self.frame_state().submodule == 3 && self.frame_state().frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn copy_file_choose_target(&mut self) {
@@ -602,12 +602,12 @@ impl ZeldaState {
         if self.frame_state().submodule == 4 && self.frame_state().frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn copy_file_confirm_selection(&mut self) {
         self.copy_file_handle_confirmation();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn file_picker_delete_header_stripe(&mut self) {
@@ -876,7 +876,7 @@ impl ZeldaState {
     }
 
     pub(super) fn kill_file_set_up(&mut self) {
-        self.display_nmi_view_mut().set_bg_vram_load_mode(8);
+        self.set_bg_vram_load_mode(8);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
@@ -893,12 +893,12 @@ impl ZeldaState {
                 .remember_current_cursor();
         }
         self.kill_file_choose_target();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn kill_file_handle_confirmation(&mut self) {
         self.select_file_func16();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn kill_file_choose_target(&mut self) {
@@ -1028,12 +1028,12 @@ impl ZeldaState {
         let dst = self.select_file_func1();
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst, 0xffff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.frame_control_view_mut().increment_submodule();
     }
 
     pub(super) fn module_name_player_2(&mut self) {
-        self.display_nmi_view_mut().set_bg_vram_load_mode(5);
+        self.set_bg_vram_load_mode(5);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
@@ -1213,7 +1213,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut()
             .set_word(10, (0x1800 | chr).wrapping_add(0x10));
         self.vram_upload_data_view_mut().terminate_at(12);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn name_file_check_for_scroll_input_x(&mut self) {

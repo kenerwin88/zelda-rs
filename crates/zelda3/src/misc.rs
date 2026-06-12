@@ -971,7 +971,7 @@ impl ZeldaState {
         self.system_signals_view_mut().clear_restart_check_flag();
         self.frame_control_view_mut().set_main_module(17);
         self.frame_control_view_mut().set_submodule(0);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+        self.clear_bg_vram_load_mode();
         self.reset_some_things_after_death(17);
     }
 

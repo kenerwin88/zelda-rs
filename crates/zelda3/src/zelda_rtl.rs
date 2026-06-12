@@ -1970,6 +1970,16 @@ impl ZeldaState {
             .decrement_screen_brightness()
     }
 
+    pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_bg_vram_load_mode(value);
+    }
+
+    pub(crate) fn clear_bg_vram_load_mode(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_bg_vram_load_mode();
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }
@@ -5122,7 +5132,7 @@ impl ZeldaState {
             .write_le_u16_at(dst + 24, 0xffff);
         self.vram_upload_data_view_mut()
             .set_offset(upload.wrapping_add(24) as u16);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
         if self.system_signals_view().sound_effect_2() == 0 {
             self.system_signals_view_mut().set_sound_effect_2(14);

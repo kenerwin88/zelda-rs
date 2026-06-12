@@ -3359,7 +3359,7 @@ impl ZeldaState {
             .set_offset((upload + 24) as u16);
         self.dungeon_state_view_mut()
             .set_savegame_state_high_bits(0x10);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn link_handle_liftables(&mut self) -> u8 {
@@ -3525,7 +3525,7 @@ impl ZeldaState {
             .set_bg2_tile_by_byte_pos(pos, tile);
         self.overworld_memorize_map16_change_for_smash(pos, tile);
         self.overworld_draw_map16_for_smash(pos, tile);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.map16_quadrant_attr(a, x, y)
     }
 
@@ -3710,7 +3710,7 @@ impl ZeldaState {
                 1
             });
         self.dungeon_state_view_mut().set_door_animation_step(step);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.dungeon_state_view_mut()
             .increment_door_open_counter_low();
     }

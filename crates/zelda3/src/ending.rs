@@ -2619,7 +2619,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut()
             .set_offset((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn credits_add_ending_sequence_text(&mut self) {
@@ -2660,7 +2660,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut()
             .set_offset((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn credits_brighten_triangles(&mut self) {
@@ -3249,7 +3249,7 @@ impl ZeldaState {
                     self.palette_filter_view_mut().set_color_math_control(0x31);
                     self.frame_control_view_mut().set_subsubmodule(0);
                     self.system_signals_view_mut().increment_cgram_update_flag();
-                    self.display_nmi_view_mut().set_bg_vram_load_mode(3);
+                    self.set_bg_vram_load_mode(3);
                     self.frame_control_view_mut().increment_submodule();
                 }
             }

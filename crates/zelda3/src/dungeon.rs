@@ -5162,7 +5162,7 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_le_u16_at(upload, 0xffff);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn FloodDam_Expand(&mut self) {
@@ -5799,7 +5799,7 @@ impl ZeldaState {
             .write_tile_stripe_sentinel(dst + 24);
         self.vram_upload_data_view_mut()
             .set_offset(upload.wrapping_add(24) as u16);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Dungeon_UpdateTileMapWithCommonTile(&mut self, x: i32, y: i32, v: u8) {
@@ -5807,7 +5807,7 @@ impl ZeldaState {
             self.Dungeon_PrepSpriteInducedDma(x + 16, y, v + 2);
         }
         self.Dungeon_PrepSpriteInducedDma(x, y, v);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Dungeon_PrepSpriteInducedDma(&mut self, x: i32, y: i32, v: u8) {
@@ -5907,7 +5907,7 @@ impl ZeldaState {
 
         let state = self.dungeon_state_view().savegame_state_bits() | 0x1000;
         self.dungeon_state_view_mut().set_savegame_state_bits(state);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn RoomDraw_16x16Single(&mut self, index: u8) {
@@ -6952,7 +6952,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_PushBlockForChest(&mut self, k: usize) {
-        if self.display_nmi_view().bg_vram_load_mode() == 0
+        if self.display_state().bg_vram_load_mode == 0
             && self.dungeon_state_view().movable_block_was_pushed() != 0
         {
             self.RoomTag_OperateChestReveal(k);
@@ -7035,7 +7035,7 @@ impl ZeldaState {
 
         self.dungeon_state_view_mut().clear_chest_reveal_cursor();
         self.system_signals_view_mut().set_sound_effect_2(26);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn RoomTag_BuildChestStripes(&self, pos: u16, y: u16) -> u16 {
@@ -9317,7 +9317,7 @@ impl ZeldaState {
         };
         self.scratch_word_view_mut()
             .set_minigame_previous_chest_choice(choice);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.system_signals_view_mut().set_sound_effect_2(14);
         Some((item, pos * 2))
     }
@@ -10211,7 +10211,7 @@ impl ZeldaState {
         }
         self.frame_control_view_mut().set_main_module(5);
         self.frame_control_view_mut().set_submodule(0);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(0);
+        self.clear_bg_vram_load_mode();
         self.system_signals_view_mut().save_current_music_as_last();
         if self.world_state_view().palette_swap_flag() != 0 {
             self.Palette_RevertTranslucencySwap();

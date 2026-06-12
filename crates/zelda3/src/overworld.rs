@@ -1184,7 +1184,7 @@ impl ZeldaState {
                 self.overworld_draw_map16_persist(pos, 0x0da4);
                 self.overworld_draw_map16_persist(pos.wrapping_add(2), 0x0da6);
                 self.system_signals_view_mut().set_sound_effect_2(21);
-                self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+                self.set_bg_vram_load_mode(1);
                 return;
             }
             if a != 0x0149 && a != 0x0169 {
@@ -1198,7 +1198,7 @@ impl ZeldaState {
                     self.overworld_draw_map16_persist(pos, 0x0da4);
                     self.overworld_draw_map16_persist(pos.wrapping_add(2), 0x0da6);
                     self.system_signals_view_mut().set_sound_effect_2(21);
-                    self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+                    self.set_bg_vram_load_mode(1);
                     return;
                 }
                 if a == 0x4149 || a == 0x4169 {
@@ -1297,7 +1297,7 @@ impl ZeldaState {
         for &(pos, tile) in entries {
             self.overworld_draw_map16_persist(pos, tile);
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn OverworldEntrance_AdvanceAndBoom(&mut self) {
@@ -1327,7 +1327,7 @@ impl ZeldaState {
         for (i, pos) in POS.into_iter().enumerate() {
             self.overworld_draw_map16_persist(pos, 0x0e78 + i as u16);
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.display_nmi_view_mut().set_core_update_disable_flag(1);
     }
 
@@ -1462,7 +1462,7 @@ impl ZeldaState {
         for (i, pos) in POS.into_iter().enumerate() {
             self.overworld_draw_map16_persist(pos, start + i as u16);
         }
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     fn draw_mire_row(&mut self, row: u16, start: u16) -> u16 {
@@ -1646,7 +1646,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut().set_word(4, 0x01e3);
         self.vram_upload_data_view_mut().set_byte(6, 0xff);
         self.frame_control_view_mut().increment_subsubmodule();
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Overworld_AnimateEntrance_GanonsTower(&mut self) {
@@ -2073,7 +2073,7 @@ impl ZeldaState {
                 .set_bg2_tile_by_byte_pos(pos, yv);
             self.Overworld_Memorize_Map16_Change(pos, yv);
             self.overworld_draw_map16(pos, yv);
-            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            self.set_bg_vram_load_mode(1);
         }
 
         let map8_index = attr as usize * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
@@ -5114,7 +5114,7 @@ impl ZeldaState {
             .set_bg2_tile_by_byte_pos(0x0720 as u16, 0x0212);
         self.Overworld_Memorize_Map16_Change(0x0720, 0x0212);
         self.overworld_draw_map16(0x0720, 0x0212);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.frame_control_view_mut().set_submodule(0);
     }
 
@@ -5128,7 +5128,7 @@ impl ZeldaState {
         self.overworld_event_info_view_mut()
             .set_event_bits(0x58, 0x20);
         self.system_signals_view_mut().set_sound_effect_2(0x1b);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn CreatePyramidHole(&mut self) {
@@ -5146,7 +5146,7 @@ impl ZeldaState {
         self.overworld_event_info_view_mut()
             .set_event_bits(0x5b, 0x20);
         self.system_signals_view_mut().set_sound_effect_2(3);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Overworld_AlterTileHardcore(&mut self, pos: u16, value: u16) {
@@ -5396,7 +5396,7 @@ impl ZeldaState {
 
         self.overworld_event_info_view_mut()
             .set_event_bits(0x18, 0x20);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
     }
 
     fn overworld_do_map_update32x32_b(&mut self) {
@@ -5515,7 +5515,7 @@ impl ZeldaState {
         );
         self.world_state_view_mut()
             .set_door_animation_step_word(step);
-        self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+        self.set_bg_vram_load_mode(1);
         self.dungeon_state_view_mut()
             .increment_door_open_counter_low();
     }
@@ -5596,7 +5596,7 @@ impl ZeldaState {
             self.overworld_memorize_map16_change_for_smash(pos, a);
             self.overworld_draw_map16_for_smash(pos, a);
             self.sprite_spawn_immediately_smashed_terrain(k, x & !7, y & !7);
-            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            self.set_bg_vram_load_mode(1);
             return;
         }
 
@@ -5615,7 +5615,7 @@ impl ZeldaState {
                 .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0db5);
             self.overworld_memorize_map16_change_for_smash(pos, 0x0db5);
             self.overworld_draw_map16_for_smash(pos.wrapping_add(2), 0x0db5);
-            self.display_nmi_view_mut().set_bg_vram_load_mode(1);
+            self.set_bg_vram_load_mode(1);
             let screen = self.world_location_state().overworld_screen_index() as usize;
             self.overworld_event_info_view_mut()
                 .set_event_bits(screen, 2);
