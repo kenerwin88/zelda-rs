@@ -59,10 +59,10 @@ use crate::game_state::{
     MessagingStateView, MessagingStateViewMut, MessagingTextView, MessagingTextViewMut,
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
     MoldormHistoryView, MoldormHistoryViewMut, MosaicDirectionView, MosaicDirectionViewMut,
-    MultiselectChoiceView, MultiselectChoiceViewMut, NativeFrameStateView, NativeFrameStateViewMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadDataViewMut,
-    NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    MultiselectChoiceView, MultiselectChoiceViewMut, NativeDisplayStateViewMut,
+    NativeFrameStateView, NativeFrameStateViewMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadDataViewMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
     OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
@@ -1953,6 +1953,21 @@ impl ZeldaState {
 
     pub(crate) fn display_state(&self) -> &DisplayState {
         &self.game_state.display
+    }
+
+    pub(crate) fn set_screen_brightness(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_screen_brightness(value);
+    }
+
+    pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .increment_screen_brightness()
+    }
+
+    pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .decrement_screen_brightness()
     }
 
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
@@ -4701,7 +4716,7 @@ impl ZeldaState {
             }
         }
 
-        self.display_nmi_view_mut().set_screen_brightness(0x80);
+        self.set_screen_brightness(0x80);
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
@@ -5894,12 +5909,12 @@ mod tests {
     fn credits_scene_fade_advances_scratch_when_fade_not_complete() {
         let mut state = ZeldaState::new();
         state.ram[SUBMODULE_INDEX] = 0;
-        state.display_nmi_view_mut().set_screen_brightness(2);
+        state.set_screen_brightness(2);
         state.ending_scratch_view_mut().set_primary_word(0x0300);
 
         state.credits_handle_scene_fade();
 
-        assert_eq!(state.display_nmi_view().screen_brightness(), 1);
+        assert_eq!(state.display_state().screen_brightness, 1);
         assert_eq!(state.ending_scratch_view().primary_word(), 0x0301);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);
     }
@@ -5908,12 +5923,12 @@ mod tests {
     fn credits_scene_fade_holds_scratch_when_fade_completes() {
         let mut state = ZeldaState::new();
         state.ram[SUBMODULE_INDEX] = 0;
-        state.display_nmi_view_mut().set_screen_brightness(1);
+        state.set_screen_brightness(1);
         state.ending_scratch_view_mut().set_primary_word(0x0300);
 
         state.credits_handle_scene_fade();
 
-        assert_eq!(state.display_nmi_view().screen_brightness(), 0);
+        assert_eq!(state.display_state().screen_brightness, 0);
         assert_eq!(state.ending_scratch_view().primary_word(), 0x0300);
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
     }
@@ -8429,7 +8444,7 @@ mod tests {
         assert_eq!(read_le_u16(&state.ram, ANIMATED_TILE_DATA_SRC), 0xa680);
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0xb280);
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0xb2e0);
-        assert_eq!(state.display_nmi_view().screen_brightness(), 15);
+        assert_eq!(state.display_state().screen_brightness, 15);
         assert_eq!(state.ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
         assert_eq!(read_le_u16(&state.sram, 0x03e5), 0x55aa);
         assert_eq!(read_le_u16(&state.sram, 0x08e5), 0);
@@ -8593,7 +8608,7 @@ mod tests {
 
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 1);
-        assert_eq!(state.display_nmi_view().screen_brightness(), 15);
+        assert_eq!(state.display_state().screen_brightness, 15);
         assert_eq!(state.ram[TM_COPY], 16);
         assert_eq!(state.ram[BGMODE_COPY], 9);
         assert_eq!(state.palette_filter_view().color_window_selection(), 0x20);

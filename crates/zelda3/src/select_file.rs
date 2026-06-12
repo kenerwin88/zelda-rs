@@ -290,7 +290,7 @@ impl ZeldaState {
         data.push(0xff);
         debug_assert_eq!(data.len(), 253);
         self.vram_upload_data_view_mut().copy_bytes(0, &data);
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
         self.frame_control_view_mut().increment_submodule();
         self.display_nmi_view_mut().set_bg_vram_load_mode(6);
@@ -580,7 +580,7 @@ impl ZeldaState {
     pub(super) fn module_copy_file_2(&mut self) {
         self.display_nmi_view_mut().set_bg_vram_load_mode(7);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
         let mut i = 0usize;
         while self.select_file_scratch_view().save_slot_flag(i) == 0 {
@@ -878,7 +878,7 @@ impl ZeldaState {
     pub(super) fn kill_file_set_up(&mut self) {
         self.display_nmi_view_mut().set_bg_vram_load_mode(8);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
         let mut i = 0usize;
         while self.select_file_scratch_view().save_slot_flag(i) == 0 {
@@ -1035,7 +1035,7 @@ impl ZeldaState {
     pub(super) fn module_name_player_2(&mut self) {
         self.display_nmi_view_mut().set_bg_vram_load_mode(5);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 

@@ -506,7 +506,7 @@ impl ZeldaState {
             self.dialogue_message_index_view_mut().set_value(message);
             self.main_show_text_message();
             self.dungeon_load_palettes();
-            self.display_nmi_view_mut().set_screen_brightness(15);
+            self.set_screen_brightness(15);
             self.display_nmi_view_mut().set_main_screen_layers(4);
             self.display_nmi_view_mut().set_sub_screen_layers(0);
             self.frame_control_view_mut().set_main_module(27);
@@ -682,8 +682,8 @@ impl ZeldaState {
     }
 
     pub(super) fn module16_04_fade_and_end(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.world_state_view_mut().set_bg1_x_offset(0);
@@ -953,8 +953,8 @@ impl ZeldaState {
             _ => {}
         }
         if self.frame_state().submodule == 1 {
-            self.display_nmi_view_mut().decrement_screen_brightness();
-            if self.display_nmi_view().screen_brightness() == 0 {
+            self.decrement_screen_brightness();
+            if self.display_state().screen_brightness == 0 {
                 self.display_nmi_view_mut().set_mosaic_copy(15);
                 self.frame_control_view_mut().set_subsubmodule(1);
                 self.Death_Func15(false);

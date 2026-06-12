@@ -107,17 +107,20 @@ impl WorldLocationState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
+    pub(crate) screen_brightness: u8,
     pub(crate) vram_upload_cursor: u16,
 }
 
 impl DisplayState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            screen_brightness: ram_byte(ram, INIDISP_COPY),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[INIDISP_COPY] = self.screen_brightness;
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
 
@@ -387,12 +390,7 @@ impl<'a> NativeVramUploadDataViewMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.display,
-            DisplayState {
-                vram_upload_cursor: self.ram_view.offset(),
-            }
-        );
+        debug_assert_eq!(self.display.vram_upload_cursor, self.ram_view.offset());
     }
 
     pub(crate) fn set_offset(&mut self, value: u16) {
@@ -423,6 +421,43 @@ impl<'a> Deref for NativeVramUploadDataViewMut<'a> {
 impl<'a> DerefMut for NativeVramUploadDataViewMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ram_view
+    }
+}
+
+pub(crate) struct NativeDisplayStateViewMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDisplayStateViewMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DisplayState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn debug_assert_screen_brightness_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.screen_brightness,
+            ram_byte(self.ram, INIDISP_COPY)
+        );
+    }
+
+    pub(crate) fn set_screen_brightness(&mut self, value: u8) {
+        self.display.screen_brightness = value;
+        self.ram[INIDISP_COPY] = value;
+        self.debug_assert_screen_brightness_matches_ram();
+    }
+
+    pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
+        let value = self.display.screen_brightness.wrapping_add(1);
+        self.set_screen_brightness(value);
+        value
+    }
+
+    pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
+        let value = self.display.screen_brightness.wrapping_sub(1);
+        self.set_screen_brightness(value);
+        value
     }
 }
 
@@ -536,9 +571,11 @@ mod tests {
     #[test]
     fn display_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
+        ram[INIDISP_COPY] = 0x0f;
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
         let mut display = DisplayState::load_from_ram(&ram);
+        assert_eq!(display.screen_brightness, 0x0f);
         assert_eq!(display.vram_upload_cursor, 0x0124);
         assert_eq!(display.vram_upload_cursor_usize(), 0x0124);
         assert_eq!(
@@ -546,9 +583,11 @@ mod tests {
             VRAM_UPLOAD_DATA + 0x0124
         );
 
+        display.screen_brightness = 0x80;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
 
+        assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
 
@@ -567,5 +606,25 @@ mod tests {
 
         assert_eq!(display.vram_upload_cursor, 0x0034);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0034);
+    }
+
+    #[test]
+    fn native_display_mut_view_syncs_seeded_ram_and_dual_writes_brightness() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[INIDISP_COPY] = 4;
+        write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
+
+        let mut display = DisplayState::default();
+        {
+            let mut view = NativeDisplayStateViewMut::new(&mut display, &mut ram);
+            view.increment_screen_brightness();
+            view.decrement_screen_brightness();
+            view.set_screen_brightness(0x80);
+        }
+
+        assert_eq!(display.screen_brightness, 0x80);
+        assert_eq!(display.vram_upload_cursor, 0x0010);
+        assert_eq!(ram[INIDISP_COPY], 0x80);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }
 }

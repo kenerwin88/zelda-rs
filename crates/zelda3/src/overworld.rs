@@ -956,7 +956,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_subroutine_index(4);
         self.display_nmi_view_mut().set_core_update_disable_flag(4);
         self.frame_control_view_mut().increment_submodule();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
     }
 
     pub(super) fn Overworld_LoadAmbientOverlayFalse(&mut self) {
@@ -2225,8 +2225,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_Func22(&mut self) {
-        self.display_nmi_view_mut().increment_screen_brightness();
-        if self.display_nmi_view().screen_brightness() == 15 {
+        self.increment_screen_brightness();
+        if self.display_state().screen_brightness == 15 {
             self.frame_control_view_mut().set_submodule(0);
             self.frame_control_view_mut().set_subsubmodule(0);
         }
@@ -2540,7 +2540,7 @@ impl ZeldaState {
                 self.display_nmi_view_mut().set_subroutine_index(12);
                 self.system_signals_view_mut().clear_cgram_update_flag();
                 self.palette_filter_view_mut().set_fixed_color_blue(0x80);
-                self.display_nmi_view_mut().set_screen_brightness(0x0f);
+                self.set_screen_brightness(0x0f);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
                 self.frame_control_view_mut().increment_subsubmodule();
@@ -2554,7 +2554,7 @@ impl ZeldaState {
             5 => {
                 self.Overworld_LoadOverlayAndMap();
                 self.display_nmi_view_mut().set_subroutine_index(12);
-                self.display_nmi_view_mut().set_screen_brightness(0x0f);
+                self.set_screen_brightness(0x0f);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
                 self.frame_control_view_mut().increment_subsubmodule();
@@ -2566,7 +2566,7 @@ impl ZeldaState {
             }
             8 => {
                 self.Overworld_FinishTransGfx();
-                self.display_nmi_view_mut().set_screen_brightness(0x0f);
+                self.set_screen_brightness(0x0f);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
                 self.frame_control_view_mut().decrement_submodule();
@@ -2589,7 +2589,7 @@ impl ZeldaState {
                 self.Overworld_SetFixedColAndScroll();
                 self.LoadNewSpriteGFXSet();
                 self.palette_filter_view_mut().set_fixed_color_blue(0x80);
-                self.display_nmi_view_mut().set_screen_brightness(0x0f);
+                self.set_screen_brightness(0x0f);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
                 self.frame_control_view_mut().increment_subsubmodule();
@@ -5039,7 +5039,7 @@ impl ZeldaState {
             }
             1 => self.ApplyPaletteFilter_bounce(),
             _ => {
-                self.display_nmi_view_mut().set_screen_brightness(0x80);
+                self.set_screen_brightness(0x80);
                 self.frame_control_view_mut().set_subsubmodule(0);
                 if u16::from(self.world_location_state().overworld_screen_index()) & 0x3f == 0 {
                     self.DecodeAnimatedSpriteTile_variable(0x1e);
@@ -5068,7 +5068,7 @@ impl ZeldaState {
 
     pub(super) fn OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic(&mut self) {
         self.LoadNewSpriteGFXSet();
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
         let countdown = self
             .display_nmi_view()

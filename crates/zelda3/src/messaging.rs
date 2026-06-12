@@ -862,7 +862,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_wobjsel_copy(0);
         self.frame_control_view_mut().set_submodule(4);
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.set_screen_brightness(15);
         self.display_nmi_view_mut().set_main_screen_layers(20);
         self.display_nmi_view_mut().set_sub_screen_layers(0);
         self.palette_filter_view_mut().set_color_math_control(32);
@@ -1330,8 +1330,8 @@ impl ZeldaState {
     }
 
     pub(super) fn FluteMenu_FadeInAndQuack(&mut self) {
-        self.display_nmi_view_mut().increment_screen_brightness();
-        if self.display_nmi_view().screen_brightness() == 15 {
+        self.increment_screen_brightness();
+        if self.display_state().screen_brightness == 15 {
             self.BirdTravel_Finish_Doit();
         } else {
             self.sprite_main();
@@ -1366,8 +1366,8 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_FadeOut(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         let hdmaen = self.display_nmi_view().hdma_enable_mask();
@@ -1432,8 +1432,8 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_Brighten(&mut self) {
-        self.display_nmi_view_mut().increment_screen_brightness();
-        if self.display_nmi_view().screen_brightness() == 15 {
+        self.increment_screen_brightness();
+        if self.display_state().screen_brightness == 15 {
             self.world_state_view_mut().increment_overworld_map_state();
         }
     }
@@ -1527,8 +1527,8 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_RestoreGraphics(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.EnableForceBlank();
@@ -2344,7 +2344,7 @@ impl ZeldaState {
         self.dungeon_map_scratch_view_mut()
             .set_marker_y_offset(marker_y_offset);
         self.world_state_view_mut().increment_overworld_map_state();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.dungeon_map_scratch_view_mut()
             .clear_dungmap_init_state();
     }
@@ -2792,7 +2792,7 @@ impl ZeldaState {
         self.RecoverPegGFXFromMapping();
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.world_state_view_mut().increment_overworld_map_state();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
@@ -2823,15 +2823,15 @@ impl ZeldaState {
     }
 
     pub(super) fn DungMap_LightenUpMap(&mut self) {
-        self.display_nmi_view_mut().increment_screen_brightness();
-        if self.display_nmi_view().screen_brightness() == 0x0f {
+        self.increment_screen_brightness();
+        if self.display_state().screen_brightness == 0x0f {
             self.world_state_view_mut().increment_overworld_map_state();
         }
     }
 
     pub(super) fn DungMap_Backup(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.display_nmi_view_mut().set_mosaic_copy(3);
@@ -2883,8 +2883,8 @@ impl ZeldaState {
     }
 
     pub(super) fn DungMap_FadeMapToBlack(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.EnableForceBlank();
@@ -2911,8 +2911,8 @@ impl ZeldaState {
 
     pub(super) fn DungMap_RestoreOld(&mut self) {
         self.OrientLampLightCone();
-        self.display_nmi_view_mut().increment_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0x0f {
+        self.increment_screen_brightness();
+        if self.display_state().screen_brightness != 0x0f {
             return;
         }
         let saved_module = self.frame_control_view().saved_module_for_menu();
@@ -2920,7 +2920,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(0);
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
         self.display_nmi_view_mut()
             .set_hdma_enable_mask(hdma_enable_mask);
@@ -3887,7 +3887,7 @@ impl ZeldaState {
         self.load_actual_gear_palettes();
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.display_nmi_view_mut().set_subroutine_index(7);
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.display_nmi_view_mut()
             .increment_core_update_disable_flag();
         self.world_state_view_mut().increment_overworld_map_state();

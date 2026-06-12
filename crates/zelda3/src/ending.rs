@@ -632,7 +632,7 @@ impl ZeldaState {
         self.Dungeon_LoadPalettes();
         self.display_nmi_view_mut().set_bg_mode(9);
         self.ending_scratch_view_mut().clear_primary_word();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.frame_control_view_mut().increment_submodule();
         self.credits_prep_and_load_sprites();
     }
@@ -675,8 +675,8 @@ impl ZeldaState {
             }
             2 => {
                 self.dungeon_handle_layer_effect();
-                self.display_nmi_view_mut().decrement_screen_brightness();
-                if self.display_nmi_view().screen_brightness() == 0 {
+                self.decrement_screen_brightness();
+                if self.display_state().screen_brightness == 0 {
                     self.enable_force_blank();
                     self.world_state_view_mut().increment_overworld_map_state();
                     self.hud_rebuild_indoor();
@@ -695,8 +695,8 @@ impl ZeldaState {
                 self.frame_control_view_mut().set_subsubmodule(0);
             }
             5 => {
-                self.display_nmi_view_mut().increment_screen_brightness();
-                if self.display_nmi_view().screen_brightness() == 15 {
+                self.increment_screen_brightness();
+                if self.display_state().screen_brightness == 15 {
                     self.dungeon_state_view_mut().clear_savegame_state_bits();
                     self.frame_control_view_mut().clear_modal_pause_flag();
                     self.Sprite_SpawnBatCrashCutscene();
@@ -761,7 +761,7 @@ impl ZeldaState {
                 self.Module08_02_LoadAndAdvance();
                 self.frame_control_view_mut()
                     .set_subsubmodule(bak0.wrapping_add(1));
-                self.display_nmi_view_mut().set_screen_brightness(15);
+                self.set_screen_brightness(15);
                 self.palette_filter_view_mut().set_countdown(31);
                 self.display_nmi_view_mut().clear_mosaic_target_level();
                 self.ppu_scroll_copy_view_mut().set_bg1_h_high(1);
@@ -850,8 +850,8 @@ impl ZeldaState {
                 }
             }
             14 => {
-                self.display_nmi_view_mut().decrement_screen_brightness();
-                if self.display_nmi_view().screen_brightness() == 0 {
+                self.decrement_screen_brightness();
+                if self.display_state().screen_brightness == 0 {
                     self.frame_control_view_mut().set_main_module(26);
                     self.frame_control_view_mut().set_submodule(0);
                     self.frame_control_view_mut().set_subsubmodule(0);
@@ -1075,7 +1075,7 @@ impl ZeldaState {
         self.intro_actor_view_mut(0).set_subtype(4);
         self.intro_actor_view_mut(1).set_subtype(5);
         self.intro_actor_view_mut(2).set_subtype(6);
-        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.set_screen_brightness(15);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -1089,7 +1089,7 @@ impl ZeldaState {
             self.intro_actor_view_mut(k).set_init_phase(1);
             self.intro_actor_view_mut(k).set_subtype(7);
         }
-        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.set_screen_brightness(15);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -2125,8 +2125,8 @@ impl ZeldaState {
         let r16 = self.ending_scratch_view().primary_word();
         if r16 >= CREDITS_SCENE_FADE_SCROLL_LIMITS[k] {
             if r16 & 1 == 0 {
-                self.display_nmi_view_mut().decrement_screen_brightness();
-                if self.display_nmi_view().screen_brightness() == 0 {
+                self.decrement_screen_brightness();
+                if self.display_state().screen_brightness == 0 {
                     self.frame_control_view_mut().increment_submodule();
                 } else {
                     self.ending_scratch_view_mut()
@@ -2137,8 +2137,8 @@ impl ZeldaState {
                     .set_primary_word(r16.wrapping_add(1));
             }
         } else {
-            if r16 & 1 == 0 && self.display_nmi_view().screen_brightness() != 15 {
-                self.display_nmi_view_mut().increment_screen_brightness();
+            if r16 & 1 == 0 && self.display_state().screen_brightness != 15 {
+                self.increment_screen_brightness();
             }
             self.ending_scratch_view_mut()
                 .set_primary_word(r16.wrapping_add(1));
@@ -2440,7 +2440,7 @@ impl ZeldaState {
         self.transfer_font_to_vram();
         self.credits_load_cool_background();
         self.credits_initialize_polyhedral();
-        self.display_nmi_view_mut().set_screen_brightness(128);
+        self.set_screen_brightness(128);
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
         self.palette_buffer_view_mut().set_hud_palette(1);
@@ -2489,7 +2489,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_fixed_color_green(0x5f);
         self.palette_filter_view_mut().set_fixed_color_blue(0x9f);
         self.frame_control_view_mut().set_subsubmodule(64);
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.hdma_setup(0, 0xebd53, 0x42, 0, BG2HOFS as u8, 0);
         self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
         self.ppu_scroll_copy_view_mut().copy_live_to_ppu_copy();
@@ -2665,8 +2665,8 @@ impl ZeldaState {
 
     pub(super) fn credits_brighten_triangles(&mut self) {
         if self.frame_state().frame_counter & 15 == 0 {
-            self.display_nmi_view_mut().increment_screen_brightness();
-            if self.display_nmi_view().screen_brightness() == 15 {
+            self.increment_screen_brightness();
+            if self.display_state().screen_brightness == 15 {
                 self.frame_control_view_mut().increment_submodule();
             }
         }
@@ -2994,7 +2994,7 @@ impl ZeldaState {
 
     pub(super) fn intro_init(&mut self) {
         self.intro_setup_screen();
-        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.set_screen_brightness(15);
         self.frame_control_view_mut().set_subsubmodule(0);
         self.intro_startup_delay = 0;
         self.system_signals_view_mut().increment_cgram_update_flag();
@@ -3049,8 +3049,8 @@ impl ZeldaState {
             9 => self.load_item_gfx_into_wram_4bpp_buffer(),
             10 => self.load_follower_graphics(),
             _ => {
-                self.display_nmi_view_mut().decrement_screen_brightness();
-                if self.display_nmi_view().screen_brightness() == 0 {
+                self.decrement_screen_brightness();
+                if self.display_state().screen_brightness == 0 {
                     if self.rom_startup_timing() {
                         self.enable_force_blank();
                         let delay = configured_intro_memory_darken_frame_delay();
@@ -3115,7 +3115,7 @@ impl ZeldaState {
         self.intro_actor_view_mut(2).set_subtype(0);
         self.intro_actor_view_mut(4).set_init_phase(1);
         self.intro_actor_view_mut(4).set_subtype(2);
-        self.display_nmi_view_mut().set_screen_brightness(15);
+        self.set_screen_brightness(15);
         self.frame_control_view_mut().increment_submodule();
     }
 

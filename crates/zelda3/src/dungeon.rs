@@ -9624,10 +9624,9 @@ impl ZeldaState {
             3 => self.DungeonTransition_LoadSpriteGFX(),
             4 => {
                 let screen_brightness =
-                    self.display_nmi_view().screen_brightness().wrapping_add(1) & 0x0f;
-                self.display_nmi_view_mut()
-                    .set_screen_brightness(screen_brightness);
-                if self.display_nmi_view().screen_brightness() == 15 {
+                    self.display_state().screen_brightness.wrapping_add(1) & 0x0f;
+                self.set_screen_brightness(screen_brightness);
+                if self.display_state().screen_brightness == 15 {
                     self.frame_control_view_mut().increment_subsubmodule();
                 }
                 self.Module11_DungeonFallingEntrance_land();
@@ -10206,8 +10205,8 @@ impl ZeldaState {
 
     pub(super) fn Module07_19_MirrorFade(&mut self) {
         self.Overworld_ResetMosaic_alwaysIncrease();
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.frame_control_view_mut().set_main_module(5);

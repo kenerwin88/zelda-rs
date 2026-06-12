@@ -68,8 +68,8 @@ pub(super) const SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
 impl ZeldaState {
     pub(super) fn module14_attract(&mut self) {
         let mut state = self.attract_state_view().state();
-        if self.display_nmi_view().screen_brightness() != 0
-            && self.display_nmi_view().screen_brightness() != 128
+        if self.display_state().screen_brightness != 0
+            && self.display_state().screen_brightness != 128
             && state != 0
             && state != 2
             && state != 6
@@ -95,8 +95,8 @@ impl ZeldaState {
         self.attract_state_view_mut().clear_intro_did_run_step();
         self.display_nmi_view_mut().set_nmi_thread_active(0);
         self.intro_periodic_sword_and_intro_flash();
-        if self.display_nmi_view().screen_brightness() != 0 {
-            self.display_nmi_view_mut().decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
+            self.decrement_screen_brightness();
             return;
         }
 
@@ -164,7 +164,7 @@ impl ZeldaState {
     pub(super) fn attract_scene_polka_dots(&mut self) {
         self.attract_state_view_mut().clear_next_legend_gfx();
         self.attract_state_view_mut().increment_state();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
     }
 
     pub(super) fn attract_scene_world_map(&mut self) {
@@ -183,7 +183,7 @@ impl ZeldaState {
         self.attract_control_map_zoom();
         self.attract_state_view_mut().set_scene_timer(1);
         self.attract_state_view_mut().increment_state();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
     }
 
     pub(super) fn attract_scene_throne_room(&mut self) {
@@ -337,8 +337,8 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_skip_to_file_select(&mut self) {
-        self.display_nmi_view_mut().decrement_screen_brightness();
-        if self.display_nmi_view().screen_brightness() != 0 {
+        self.decrement_screen_brightness();
+        if self.display_state().screen_brightness != 0 {
             return;
         }
         self.enable_force_blank();
@@ -355,7 +355,7 @@ impl ZeldaState {
 
     pub(super) fn attract_prep_finish(&mut self) {
         self.attract_state_view_mut().increment_state();
-        self.display_nmi_view_mut().set_screen_brightness(0);
+        self.set_screen_brightness(0);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2_low(0);
         let bg2_hofs = self.ppu_scroll_copy_view().bg2_h_copy() & 0x01ff;
         let bg2_vofs = self.ppu_scroll_copy_view().bg2_v_copy() & 0x01ff;
@@ -393,9 +393,9 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_in_sequence(&mut self) {
-        if self.display_nmi_view().screen_brightness() != 15 {
+        if self.display_state().screen_brightness != 15 {
             if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
-                self.display_nmi_view_mut().increment_screen_brightness();
+                self.increment_screen_brightness();
                 self.player_state_view_mut().set_speed_setting(1);
             }
         } else {
@@ -404,9 +404,9 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_out_sequence(&mut self) {
-        if self.display_nmi_view().screen_brightness() != 0 {
+        if self.display_state().screen_brightness != 0 {
             if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
-                self.display_nmi_view_mut().decrement_screen_brightness();
+                self.decrement_screen_brightness();
                 self.player_state_view_mut().set_speed_setting(1);
             }
         } else {
@@ -430,7 +430,7 @@ impl ZeldaState {
     pub(super) fn attract_dramatize_world_map(&mut self) {
         if self.attract_state_view().mode7_zoom_timer() != 0 {
             if self.attract_state_view().mode7_zoom_timer() < 15 {
-                self.display_nmi_view_mut().decrement_screen_brightness();
+                self.decrement_screen_brightness();
             }
             self.attract_state_view_mut().decrement_scene_timer();
             if self.attract_state_view().scene_timer() == 0 {
@@ -466,8 +466,8 @@ impl ZeldaState {
 
         self.attract_state_view_mut().set_oam_index(0);
         if self.attract_state_view().fade_in_complete_flag() == 0 {
-            if self.display_nmi_view().screen_brightness() != 15 {
-                self.display_nmi_view_mut().increment_screen_brightness();
+            if self.display_state().screen_brightness != 15 {
+                self.increment_screen_brightness();
             } else {
                 self.attract_state_view_mut()
                     .increment_fade_in_complete_flag();
@@ -480,7 +480,7 @@ impl ZeldaState {
                 if self.attract_state_view().throne_fade_timer() < 31
                     && self.attract_state_view().throne_fade_timer() & 1 == 0
                 {
-                    self.display_nmi_view_mut().decrement_screen_brightness();
+                    self.decrement_screen_brightness();
                 }
                 let throne_fade = self.attract_state_view_mut().decrement_throne_fade_timer();
                 if throne_fade == 0 {
@@ -854,7 +854,7 @@ impl ZeldaState {
             if self.attract_state_view().maiden_warp_step() < 31
                 && self.attract_state_view().maiden_warp_step() & 1 == 0
             {
-                self.display_nmi_view_mut().decrement_screen_brightness();
+                self.decrement_screen_brightness();
             }
             self.attract_state_view_mut().decrement_maiden_warp_step();
             if self.attract_state_view().maiden_warp_step() == 0 {
@@ -939,9 +939,9 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_in_step(&mut self) {
-        if self.display_nmi_view().screen_brightness() != 15 {
+        if self.display_state().screen_brightness != 15 {
             if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
-                self.display_nmi_view_mut().increment_screen_brightness();
+                self.increment_screen_brightness();
                 self.player_state_view_mut().set_speed_setting(1);
             }
         } else {
@@ -1121,7 +1121,7 @@ impl ZeldaState {
         if self.attract_state_view().scene_timer() < 31
             && self.attract_state_view().scene_timer() & 1 == 0
         {
-            self.display_nmi_view_mut().decrement_screen_brightness();
+            self.decrement_screen_brightness();
         }
         self.attract_state_view_mut().decrement_scene_timer();
         if self.attract_state_view().scene_timer() == 0 {
@@ -1215,7 +1215,7 @@ impl ZeldaState {
             self.attract_state_view_mut().increment_sequence();
             self.attract_state_view_mut().subtract_state(3);
         } else if legend_ctr < 0x18 && legend_ctr & 1 != 0 {
-            self.display_nmi_view_mut().decrement_screen_brightness();
+            self.decrement_screen_brightness();
         }
     }
 

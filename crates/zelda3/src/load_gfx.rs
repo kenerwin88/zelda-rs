@@ -3324,7 +3324,7 @@ impl ZeldaState {
         }
         self.iris_spotlight_configure_table();
         self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
-        self.display_nmi_view_mut().set_screen_brightness(0x0f);
+        self.set_screen_brightness(0x0f);
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) {
@@ -3392,7 +3392,7 @@ impl ZeldaState {
         self.spotlight_hdma_view_mut().set_window_radius(next);
         if next == SPOTLIGHT_GOAL[idx] {
             if self.spotlight_hdma_view().window_state() == 0 {
-                self.display_nmi_view_mut().set_screen_brightness(0x80);
+                self.set_screen_brightness(0x80);
             } else {
                 self.iris_spotlight_reset_table();
             }
@@ -3474,7 +3474,7 @@ impl ZeldaState {
     }
 
     pub(super) fn enable_force_blank(&mut self) {
-        self.display_nmi_view_mut().set_screen_brightness(0x80);
+        self.set_screen_brightness(0x80);
         self.display_nmi_view_mut().clear_hdma_enable_mask();
     }
 
