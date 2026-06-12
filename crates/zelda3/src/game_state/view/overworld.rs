@@ -1,45 +1,5 @@
 use super::*;
 
-pub(crate) struct OverworldEventInfoView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> OverworldEventInfoView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn event_info(&self, screen: usize) -> u8 {
-        byte(self.ram, OVERWORLD_EVENT_INFO + screen)
-    }
-
-    pub(crate) fn has_event_bits(&self, screen: usize, mask: u8) -> bool {
-        self.event_info(screen) & mask != 0
-    }
-}
-
-pub(crate) struct OverworldEventInfoViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> OverworldEventInfoViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_event_info(&mut self, screen: usize, value: u8) {
-        self.ram[OVERWORLD_EVENT_INFO + screen] = value;
-    }
-
-    pub(crate) fn set_event_bits(&mut self, screen: usize, mask: u8) {
-        self.ram[OVERWORLD_EVENT_INFO + screen] |= mask;
-    }
-
-    pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
-        self.ram[OVERWORLD_EVENT_INFO + screen] &= !mask;
-    }
-}
-
 pub(crate) struct OverworldConfigTableView<'a> {
     ram: &'a [u8],
 }

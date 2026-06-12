@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 
 const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
 const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
+const OVERWORLD_EVENT_INFO_SCREENS: usize = 160;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldLocationState {
@@ -128,6 +129,55 @@ impl BirdTravelStatusesState {
     pub(crate) fn set_status_word(&mut self, value: u16) {
         self.set_status(0, value as u8);
         self.set_status(1, (value >> 8) as u8);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldEventInfoState {
+    info: Vec<u8>,
+}
+
+impl OverworldEventInfoState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut info = vec![0; OVERWORLD_EVENT_INFO_SCREENS];
+        for (screen, value) in info.iter_mut().enumerate() {
+            *value = ram_byte(ram, OVERWORLD_EVENT_INFO + screen);
+        }
+        Self { info }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (screen, value) in self.info.iter().enumerate() {
+            ram[OVERWORLD_EVENT_INFO + screen] = *value;
+        }
+    }
+
+    pub(crate) fn event_info(&self, screen: usize) -> u8 {
+        self.info.get(screen).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn has_event_bits(&self, screen: usize, mask: u8) -> bool {
+        self.event_info(screen) & mask != 0
+    }
+
+    pub(crate) fn set_event_info(&mut self, screen: usize, value: u8) {
+        self.info[screen] = value;
+    }
+
+    pub(crate) fn set_event_bits(&mut self, screen: usize, mask: u8) {
+        self.info[screen] |= mask;
+    }
+
+    pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
+        self.info[screen] &= !mask;
+    }
+}
+
+impl Default for OverworldEventInfoState {
+    fn default() -> Self {
+        Self {
+            info: vec![0; OVERWORLD_EVENT_INFO_SCREENS],
+        }
     }
 }
 
@@ -584,8 +634,9 @@ impl OverworldTransitionState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldState {
+    pub(crate) event_info: OverworldEventInfoState,
     pub(crate) map_ui: OverworldMapUiState,
     pub(crate) weather_vane: WeatherVaneState,
     pub(crate) bird_travel_destinations: BirdTravelDestinationsState,
@@ -601,6 +652,7 @@ pub(crate) struct OverworldState {
 impl OverworldState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            event_info: OverworldEventInfoState::load_from_ram(ram),
             map_ui: OverworldMapUiState::load_from_ram(ram),
             weather_vane: WeatherVaneState::load_from_ram(ram),
             bird_travel_destinations: BirdTravelDestinationsState::load_from_ram(ram),
@@ -615,6 +667,7 @@ impl OverworldState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.event_info.write_to_ram(ram);
         self.map_ui.write_to_ram(ram);
         self.weather_vane.write_to_ram(ram);
         self.bird_travel_destinations.write_to_ram(ram);
@@ -628,7 +681,7 @@ impl OverworldState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldState {
     pub(crate) location: WorldLocationState,
     pub(crate) overworld: OverworldState,
@@ -729,6 +782,43 @@ impl<'a> Deref for NativeWorldLocationBridgeMut<'a> {
 impl<'a> DerefMut for NativeWorldLocationBridgeMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ram_view
+    }
+}
+
+pub(crate) struct NativeOverworldEventInfoBridgeMut<'a> {
+    event_info: &'a mut OverworldEventInfoState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldEventInfoBridgeMut<'a> {
+    pub(crate) fn new(event_info: &'a mut OverworldEventInfoState, ram: &'a mut [u8]) -> Self {
+        *event_info = OverworldEventInfoState::load_from_ram(ram);
+        Self { event_info, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.event_info,
+            OverworldEventInfoState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_event_info(&mut self, screen: usize, value: u8) {
+        self.event_info.set_event_info(screen, value);
+        self.ram[OVERWORLD_EVENT_INFO + screen] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_event_bits(&mut self, screen: usize, mask: u8) {
+        self.event_info.set_event_bits(screen, mask);
+        self.ram[OVERWORLD_EVENT_INFO + screen] |= mask;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
+        self.event_info.clear_event_bits(screen, mask);
+        self.ram[OVERWORLD_EVENT_INFO + screen] &= !mask;
+        self.debug_assert_matches_ram();
     }
 }
 

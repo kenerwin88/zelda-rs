@@ -30,10 +30,11 @@ pub(crate) use messaging::{
 pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OverworldEventInfoState,
     OverworldMap16State, WeatherVaneState, WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
@@ -407,6 +408,7 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, 0x0004);
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0008);
         ram[OVERWORLD_TRANSITION_DIR] = 2;
+        ram[OVERWORLD_EVENT_INFO + 0x5b] = 0x20;
 
         let mut state = GameState::load_from_ram(&ram);
         assert_eq!(state.world.location.dungeon_room, 0x0124);
@@ -455,10 +457,12 @@ mod tests {
             state.world.overworld.transition.direction_bits_word(),
             0x0008
         );
+        assert_eq!(state.world.overworld.event_info.event_info(0x5b), 0x20);
 
         state.world.location.dungeon_room = 0x0181;
         state.world.location.overworld_screen = 0x005b;
         state.world.location.indoor_flag = 0;
+        state.world.overworld.event_info.set_event_bits(0x5b, 0x40);
         state.world.overworld.map_ui.map_flags = 0x81;
         state.world.overworld.map_zoom.timer = 4;
         state.world.overworld.screen_size.big_area = 0x0020;
@@ -492,6 +496,7 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0181);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x5b], 0x60);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x81);
         assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 4);
         assert_eq!(read_le_u16(&ram, OVERWORLD_AREA_IS_BIG), 0x0020);
@@ -515,6 +520,53 @@ mod tests {
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
         assert_eq!(ram[OVERWORLD_TRANSITION_DIR], 3);
+    }
+
+    #[test]
+    fn overworld_event_info_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_EVENT_INFO + 0x02] = 0x40;
+        ram[OVERWORLD_EVENT_INFO + 0x5b] = 0x20;
+        ram[OVERWORLD_EVENT_INFO + 0x9f] = 0x02;
+
+        let mut event_info = OverworldEventInfoState::load_from_ram(&ram);
+        assert_eq!(event_info.event_info(0x02), 0x40);
+        assert_eq!(event_info.event_info(0x5b), 0x20);
+        assert_eq!(event_info.event_info(0x9f), 0x02);
+        assert_eq!(event_info.event_info(0xa0), 0);
+        assert!(event_info.has_event_bits(0x5b, 0x20));
+
+        event_info.set_event_info(0x02, 0x10);
+        event_info.set_event_bits(0x5b, 0x40);
+        event_info.clear_event_bits(0x9f, 0x02);
+        event_info.write_to_ram(&mut ram);
+
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x02], 0x10);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x5b], 0x60);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x9f], 0);
+    }
+
+    #[test]
+    fn native_overworld_event_info_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_EVENT_INFO + 0x02] = 0x40;
+        ram[OVERWORLD_EVENT_INFO + 0x5b] = 0x20;
+        ram[OVERWORLD_EVENT_INFO + 0x9f] = 0x02;
+
+        let mut event_info = OverworldEventInfoState::default();
+        {
+            let mut bridge = NativeOverworldEventInfoBridgeMut::new(&mut event_info, &mut ram);
+            bridge.set_event_info(0x02, 0x10);
+            bridge.set_event_bits(0x5b, 0x40);
+            bridge.clear_event_bits(0x9f, 0x02);
+        }
+
+        assert_eq!(event_info.event_info(0x02), 0x10);
+        assert_eq!(event_info.event_info(0x5b), 0x60);
+        assert_eq!(event_info.event_info(0x9f), 0);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x02], 0x10);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x5b], 0x60);
+        assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x9f], 0);
     }
 
     #[test]
