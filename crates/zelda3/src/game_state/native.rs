@@ -8,12 +8,12 @@ mod display;
 mod frame;
 mod world;
 
-pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
+pub(crate) use display::{DisplayState, NativeDisplayStateBridgeMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut, OverworldMap16State,
+    NativeOverworldTransitionBridgeMut, NativeWorldLocationBridgeMut, OverworldMap16State,
     WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
@@ -166,7 +166,7 @@ mod tests {
 
         let mut world = WorldLocationState::default();
         {
-            let mut view = NativeWorldLocationViewMut::new(&mut world, &mut ram);
+            let mut view = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
             view.increment_dungeon_room_index_by(2);
             view.set_overworld_screen(0x5b);
             view.set_indoor_flag(0);
@@ -876,7 +876,7 @@ mod tests {
 
         let mut display = DisplayState::default();
         {
-            let mut view = NativeDisplayStateViewMut::new(&mut display, &mut ram);
+            let mut view = NativeDisplayStateBridgeMut::new(&mut display, &mut ram);
             view.increment_screen_brightness();
             view.decrement_screen_brightness();
             view.set_screen_brightness(0x80);

@@ -59,11 +59,11 @@ use crate::game_state::{
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
-    MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
+    MultiselectChoiceViewMut, NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
+    NativeVramUploadBufferMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
     OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
@@ -1873,128 +1873,117 @@ impl ZeldaState {
         &self.game_state.frame
     }
 
-    pub(crate) fn set_main_module(&mut self, value: u8) {
+    fn frame_state_bridge_mut(&mut self) -> NativeFrameStateBridgeMut<'_> {
         NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_main_module(value);
+    }
+
+    pub(crate) fn set_main_module(&mut self, value: u8) {
+        self.frame_state_bridge_mut().set_main_module(value);
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_main_module_word(value);
+        self.frame_state_bridge_mut().set_main_module_word(value);
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_submodule(value);
+        self.frame_state_bridge_mut().set_submodule(value);
     }
 
     pub(crate) fn increment_submodule(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .increment_submodule();
+        self.frame_state_bridge_mut().increment_submodule();
     }
 
     pub(crate) fn decrement_submodule(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .decrement_submodule();
+        self.frame_state_bridge_mut().decrement_submodule();
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_subsubmodule(value);
+        self.frame_state_bridge_mut().set_subsubmodule(value);
     }
 
     pub(crate) fn increment_subsubmodule(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .increment_subsubmodule();
+        self.frame_state_bridge_mut().increment_subsubmodule();
     }
 
     pub(crate) fn decrement_subsubmodule(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .decrement_subsubmodule();
+        self.frame_state_bridge_mut().decrement_subsubmodule();
     }
 
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_frame_counter(value);
+        self.frame_state_bridge_mut().set_frame_counter(value);
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .increment_frame_counter();
+        self.frame_state_bridge_mut().increment_frame_counter();
     }
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
+        self.frame_state_bridge_mut()
             .set_saved_module_for_menu(value);
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .clear_saved_module_for_menu();
+        self.frame_state_bridge_mut().clear_saved_module_for_menu();
     }
 
     pub(crate) fn save_main_module_for_menu(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .save_main_module_for_menu();
+        self.frame_state_bridge_mut().save_main_module_for_menu();
     }
 
     pub(crate) fn save_submodule_for_menu(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .save_submodule_for_menu();
+        self.frame_state_bridge_mut().save_submodule_for_menu();
     }
 
     pub(crate) fn clear_modal_pause_flag(&mut self) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .clear_modal_pause_flag();
+        self.frame_state_bridge_mut().clear_modal_pause_flag();
     }
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .set_modal_pause_flag(value);
+        self.frame_state_bridge_mut().set_modal_pause_flag(value);
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
-            .increment_modal_pause_flag()
+        self.frame_state_bridge_mut().increment_modal_pause_flag()
     }
 
     pub(crate) fn world_location_state(&self) -> &WorldLocationState {
         &self.game_state.world.location
     }
 
+    fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
+        NativeWorldLocationBridgeMut::new(&mut self.game_state.world.location, &mut self.ram)
+    }
+
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
-            .set_dungeon_room(value);
+        self.world_location_bridge_mut().set_dungeon_room(value);
     }
 
     pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
+        self.world_location_bridge_mut()
             .set_dungeon_room_index(value);
     }
 
     pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
+        self.world_location_bridge_mut()
             .increment_dungeon_room_index_by(value)
     }
 
     pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
+        self.world_location_bridge_mut()
             .decrement_dungeon_room_index_by(value)
     }
 
     pub(crate) fn set_overworld_screen(&mut self, value: u8) {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
-            .set_overworld_screen(value);
+        self.world_location_bridge_mut().set_overworld_screen(value);
     }
 
     pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
+        self.world_location_bridge_mut()
             .set_overworld_screen_word(value);
     }
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
-            .set_indoor_flag(value);
+        self.world_location_bridge_mut().set_indoor_flag(value);
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {
@@ -2439,148 +2428,142 @@ impl ZeldaState {
         &self.game_state.display
     }
 
+    fn display_state_bridge_mut(&mut self) -> NativeDisplayStateBridgeMut<'_> {
+        NativeDisplayStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_screen_brightness(value);
+        self.display_state_bridge_mut().set_screen_brightness(value);
     }
 
     pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .increment_screen_brightness()
     }
 
     pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .decrement_screen_brightness()
     }
 
     pub(crate) fn latch_nmi_update(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .latch_nmi_update();
+        self.display_state_bridge_mut().latch_nmi_update();
     }
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_nmi_update_latch();
+        self.display_state_bridge_mut().clear_nmi_update_latch();
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_core_update_disable_flag(value);
     }
 
     pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_core_update_disable_flag_word(value);
     }
 
     pub(crate) fn clear_core_update_disable_flag(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_core_update_disable_flag();
     }
 
     pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .increment_core_update_disable_flag()
     }
 
     pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_pending_nmi_subroutine(value);
     }
 
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_pending_nmi_subroutine();
     }
 
     pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .take_pending_nmi_subroutine()
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_bg_vram_load_mode(value);
+        self.display_state_bridge_mut().set_bg_vram_load_mode(value);
     }
 
     pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .queue_tilemap_update(destination_page, source_offset);
     }
 
     pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_pending_tilemap_update_destination();
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_bg_mode(value);
+        self.display_state_bridge_mut().set_bg_mode(value);
     }
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_main_screen_layers(value);
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .and_main_screen_layers(value);
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .or_main_screen_layers(value);
+        self.display_state_bridge_mut().or_main_screen_layers(value);
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_sub_screen_layers(value);
+        self.display_state_bridge_mut().set_sub_screen_layers(value);
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_sub_screen_layers_word();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .and_sub_screen_layers(value);
+        self.display_state_bridge_mut().and_sub_screen_layers(value);
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .or_sub_screen_layers(value);
+        self.display_state_bridge_mut().or_sub_screen_layers(value);
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_layer_masks_word(value);
+        self.display_state_bridge_mut().set_layer_masks_word(value);
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_bg12_window_selection(value);
     }
 
     pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_bg34_window_selection(value);
     }
 
     pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_object_color_window_selection(value);
     }
 
     pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_main_screen_window_layers(value);
     }
 
     pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_sub_screen_window_layers(value);
     }
 
@@ -2592,203 +2575,185 @@ impl ZeldaState {
         main_screen_window_layers: u8,
         sub_screen_window_layers: u8,
     ) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_window_layer_masks(
-                bg12_window_selection,
-                bg34_window_selection,
-                object_color_window_selection,
-                main_screen_window_layers,
-                sub_screen_window_layers,
-            );
+        self.display_state_bridge_mut().set_window_layer_masks(
+            bg12_window_selection,
+            bg34_window_selection,
+            object_color_window_selection,
+            main_screen_window_layers,
+            sub_screen_window_layers,
+        );
     }
 
     pub(crate) fn clear_window_layer_masks(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_window_layer_masks();
+        self.display_state_bridge_mut().clear_window_layer_masks();
     }
 
     pub(crate) fn clear_window_main_sub_masks(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_window_main_sub_masks();
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_bg_vram_load_mode();
+        self.display_state_bridge_mut().clear_bg_vram_load_mode();
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_nmi_copy_packets_request(value);
     }
 
     pub(crate) fn request_nmi_copy_packets(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .request_nmi_copy_packets();
+        self.display_state_bridge_mut().request_nmi_copy_packets();
     }
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_nmi_copy_packets_request();
     }
 
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .request_polyhedral_nmi_update();
     }
 
     pub(crate) fn clear_pending_polyhedral_update(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_pending_polyhedral_update();
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_chr_halfslot_request(value);
     }
 
     pub(crate) fn clear_chr_halfslot_request(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_chr_halfslot_request();
+        self.display_state_bridge_mut().clear_chr_halfslot_request();
     }
 
     pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .increment_chr_halfslot_request()
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .activate_nmi_thread();
+        self.display_state_bridge_mut().activate_nmi_thread();
     }
 
     pub(crate) fn deactivate_nmi_thread(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .deactivate_nmi_thread();
+        self.display_state_bridge_mut().deactivate_nmi_thread();
     }
 
     pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_nmi_thread_stack_pointer(value);
     }
 
     pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_irq_control_flag(value);
+        self.display_state_bridge_mut().set_irq_control_flag(value);
     }
 
     pub(crate) fn clear_irq_control_flag(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_irq_control_flag();
+        self.display_state_bridge_mut().clear_irq_control_flag();
     }
 
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_vertical_irq_trigger(value);
     }
 
     pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_sprite_dma_head_pointer(value);
     }
 
     pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_sprite_dma_body_pointer(value);
     }
 
     pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_hdma_enable_mask(value);
+        self.display_state_bridge_mut().set_hdma_enable_mask(value);
     }
 
     pub(crate) fn clear_hdma_enable_mask(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_hdma_enable_mask();
+        self.display_state_bridge_mut().clear_hdma_enable_mask();
     }
 
     pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_mosaic_copy(value);
+        self.display_state_bridge_mut().set_mosaic_copy(value);
     }
 
     pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_mosaic_copy_from_level_or(mask);
     }
 
     pub(crate) fn set_mosaic_level(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_mosaic_level(value);
+        self.display_state_bridge_mut().set_mosaic_level(value);
     }
 
     pub(crate) fn clear_mosaic_level(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_mosaic_level();
+        self.display_state_bridge_mut().clear_mosaic_level();
     }
 
     pub(crate) fn clear_mosaic_level_word(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_mosaic_level_word();
+        self.display_state_bridge_mut().clear_mosaic_level_word();
     }
 
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .increment_mosaic_level_by(value)
     }
 
     pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .decrement_mosaic_level_by(value)
     }
 
     pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_mosaic_target_level(value);
     }
 
     pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_mosaic_target_level_word(value);
     }
 
     pub(crate) fn clear_mosaic_target_level(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_mosaic_target_level();
+        self.display_state_bridge_mut().clear_mosaic_target_level();
     }
 
     pub(crate) fn clear_mosaic_target_level_word(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .clear_mosaic_target_level_word();
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_mosaic_direction(value);
+        self.display_state_bridge_mut().set_mosaic_direction(value);
     }
 
     pub(crate) fn clear_mosaic_direction(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_mosaic_direction();
+        self.display_state_bridge_mut().clear_mosaic_direction();
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_nmi_load_target_page(value);
     }
 
     pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_nmi_load_target_address(value);
     }
 
     pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .reset_incremental_vram_upload_counter();
     }
 
     pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .increment_vram_upload_counter()
     }
 
@@ -2841,42 +2806,42 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_animated_tile_data_source_address(value);
     }
 
     pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_animated_tile_vram_destination_address(value);
     }
 
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_message_dma_destination_address(value);
     }
 
     pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_message_dma_tile_base(value);
     }
 
     pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_message_dma_tile_limit(value);
     }
 
     pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_message_dma_tile_sentinel(value);
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_overworld_fixed_color_adjustment(value);
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
-        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+        self.display_state_bridge_mut()
             .set_travel_bird_tile_offset(value);
     }
 
@@ -2884,8 +2849,8 @@ impl ZeldaState {
         WorldStateView::new(&self.ram)
     }
 
-    pub(crate) fn world_state_view_mut(&mut self) -> NativeWorldLocationViewMut<'_> {
-        NativeWorldLocationViewMut::new(&mut self.game_state.world.location, &mut self.ram)
+    pub(crate) fn world_state_view_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
+        self.world_location_bridge_mut()
     }
 
     pub(crate) fn dungeon_state_view(&self) -> DungeonStateView<'_> {

@@ -43,6 +43,10 @@ NATIVE_BRIDGE_RE = re.compile(
     r"move_link_axis_by_velocity|move_link_axis_by_subpixel_delta"
     r")\b"
 )
+NATIVE_TRANSITION_VIEW_MUT_RE = re.compile(r"\bNative[A-Za-z0-9]*ViewMut\b")
+ALLOWED_NATIVE_TRANSITION_VIEW_MUT_NAMES = {
+    "NativeRamBridgeViewMut",
+}
 WEAK_NAME_RE = re.compile(r"(?:^|_)(UNK\d*|SOME|VAR\d*|TMP|SCRATCH)(?:_|$)")
 REVIEWED_WEAK_RAM_NAMES = {
     "ATTRACT_VAR7": "write-only attract scene work RAM; source label is the unrelated shared PYFLCH alias",
@@ -141,6 +145,17 @@ def check_file(path: Path) -> list[Finding]:
     for pattern, message in checks:
         for match in pattern.finditer(text):
             findings.append(Finding(path, line_for_offset(text, match.start()), message))
+    for match in NATIVE_TRANSITION_VIEW_MUT_RE.finditer(text):
+        name = match.group(0)
+        if name in ALLOWED_NATIVE_TRANSITION_VIEW_MUT_NAMES:
+            continue
+        findings.append(
+            Finding(
+                path,
+                line_for_offset(text, match.start()),
+                f"native transition wrapper should be named BridgeMut, not ViewMut: {name}",
+            )
+        )
     return findings
 
 

@@ -390,12 +390,12 @@ impl WorldState {
     }
 }
 
-pub(crate) struct NativeWorldLocationViewMut<'a> {
+pub(crate) struct NativeWorldLocationBridgeMut<'a> {
     world_location: &'a mut WorldLocationState,
     ram_view: WorldStateViewMut<'a>,
 }
 
-impl<'a> NativeWorldLocationViewMut<'a> {
+impl<'a> NativeWorldLocationBridgeMut<'a> {
     pub(crate) fn new(world_location: &'a mut WorldLocationState, ram: &'a mut [u8]) -> Self {
         *world_location = WorldLocationState::load_from_ram(ram);
         Self {
@@ -460,7 +460,7 @@ impl<'a> NativeWorldLocationViewMut<'a> {
     }
 }
 
-impl<'a> Deref for NativeWorldLocationViewMut<'a> {
+impl<'a> Deref for NativeWorldLocationBridgeMut<'a> {
     type Target = WorldStateViewMut<'a>;
 
     fn deref(&self) -> &Self::Target {
@@ -468,7 +468,7 @@ impl<'a> Deref for NativeWorldLocationViewMut<'a> {
     }
 }
 
-impl<'a> DerefMut for NativeWorldLocationViewMut<'a> {
+impl<'a> DerefMut for NativeWorldLocationBridgeMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ram_view
     }
