@@ -64,7 +64,7 @@ use crate::game_state::{
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
     OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
@@ -86,12 +86,12 @@ use crate::game_state::{
     SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut,
     SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut,
     SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut,
-    SystemSignalsView, SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut,
-    TempCounterView, TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut,
-    TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
+    SystemSignalsState, TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
+    TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
+    TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
+    TrinexxPaletteState, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1707,12 +1707,12 @@ impl ZeldaState {
         EnhancedFeaturesViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn system_signals_view(&self) -> SystemSignalsView<'_> {
-        SystemSignalsView::new(&self.ram)
+    pub(crate) fn system_signals_view(&self) -> &SystemSignalsState {
+        &self.game_state.system_signals
     }
 
-    pub(crate) fn system_signals_view_mut(&mut self) -> SystemSignalsViewMut<'_> {
-        SystemSignalsViewMut::new(&mut self.ram)
+    pub(crate) fn system_signals_view_mut(&mut self) -> NativeSystemSignalsBridgeMut<'_> {
+        NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
     pub(crate) fn native_ram_bridge_view(&self) -> NativeRamBridgeView<'_> {
@@ -5512,7 +5512,7 @@ impl ZeldaState {
             let apui00 = self.zelda_is_music_playing() as u8;
             if apui00 != self.system_signals_view().apui00() {
                 self.system_signals_view_mut().set_apui00(apui00);
-                let apui00_offset = SystemSignalsView::apui00_offset();
+                let apui00_offset = SystemSignalsState::apui00_offset();
                 self.emu_sync_memory_region(apui00_offset, 1);
                 Self::state_recorder_record_patch_byte(
                     &mut state_recorder,

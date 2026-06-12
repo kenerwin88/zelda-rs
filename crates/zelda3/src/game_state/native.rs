@@ -19,7 +19,9 @@ pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
     NativeIntroSceneBridgeMut,
 };
-pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
+pub(crate) use frame::{
+    FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
+};
 pub(crate) use messaging::{
     MessagingState, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
 };
@@ -51,6 +53,7 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
+    pub(crate) system_signals: SystemSignalsState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
     pub(crate) ending: EndingState,
@@ -61,6 +64,7 @@ impl GameState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             frame: FrameState::load_from_ram(ram),
+            system_signals: SystemSignalsState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
@@ -70,6 +74,7 @@ impl GameState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
+        self.system_signals.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.ending.write_to_ram(ram);
@@ -153,6 +158,127 @@ mod tests {
         assert_eq!(ram[FRAME_COUNTER], 5);
         assert_eq!(ram[SAVED_MODULE_FOR_MENU], 3);
         assert_eq!(ram[MODAL_PAUSE_FLAG], 6);
+    }
+
+    #[test]
+    fn system_signals_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MUSIC_CONTROL] = 0xf2;
+        ram[CURRENT_MUSIC_CONTROL] = 0x13;
+        ram[LAST_MUSIC_CONTROL] = 0x12;
+        ram[QUEUED_MUSIC_CONTROL] = 0x09;
+        ram[SOUND_EFFECT_1] = 0x2d;
+        ram[SOUND_EFFECT_2] = 0x1b;
+        ram[SOUND_EFFECT_AMBIENT] = 0x05;
+        ram[SOUND_EFFECT_AMBIENT_LAST] = 0x07;
+        ram[MSU_VOLUME] = 0x80;
+        ram[RAM_APUI00] = 1;
+        ram[RAW_SFX_PAN_VALUE] = 0xc0;
+        ram[FLAG_UPDATE_CGRAM_IN_NMI] = 2;
+        ram[FLAG_UPDATE_HUD_IN_NMI] = 3;
+        ram[GAME_OVER_CHECK_FLAG] = 4;
+        ram[RESTART_CHECK_FLAG] = 5;
+        ram[RAM_BUGS_FIXED] = 0x42;
+        ram[DEATH_BACKUP_CURRENT_MUSIC] = 0x22;
+        ram[DEATH_BACKUP_AMBIENT_SOUND] = 0x33;
+
+        let system_signals = SystemSignalsState::load_from_ram(&ram);
+        assert_eq!(system_signals.music_control(), 0xf2);
+        assert_eq!(system_signals.current_music_control(), 0x13);
+        assert_eq!(system_signals.last_music_control(), 0x12);
+        assert_eq!(system_signals.queued_music_control(), 0x09);
+        assert_eq!(system_signals.sound_effect_1(), 0x2d);
+        assert_eq!(system_signals.sound_effect_2(), 0x1b);
+        assert_eq!(system_signals.ambient_sound_effect(), 0x05);
+        assert_eq!(system_signals.last_ambient_sound_effect(), 0x07);
+        assert_eq!(system_signals.msu_volume(), 0x80);
+        assert_eq!(system_signals.apui00(), 1);
+        assert_eq!(system_signals.raw_sfx_pan_value(), 0xc0);
+        assert!(system_signals.should_update_cgram());
+        assert!(system_signals.should_update_hud());
+        assert_eq!(system_signals.game_over_check_flag(), 4);
+        assert_eq!(system_signals.restart_check_flag(), 5);
+        assert_eq!(system_signals.bugs_fixed(), 0x42);
+        assert_eq!(system_signals.death_backup_current_music(), 0x22);
+        assert_eq!(system_signals.death_backup_ambient_sound(), 0x33);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        system_signals.write_to_ram(&mut projected);
+        for offset in [
+            MUSIC_CONTROL,
+            CURRENT_MUSIC_CONTROL,
+            LAST_MUSIC_CONTROL,
+            QUEUED_MUSIC_CONTROL,
+            SOUND_EFFECT_1,
+            SOUND_EFFECT_2,
+            SOUND_EFFECT_AMBIENT,
+            SOUND_EFFECT_AMBIENT_LAST,
+            MSU_VOLUME,
+            RAM_APUI00,
+            RAW_SFX_PAN_VALUE,
+            FLAG_UPDATE_CGRAM_IN_NMI,
+            FLAG_UPDATE_HUD_IN_NMI,
+            GAME_OVER_CHECK_FLAG,
+            RESTART_CHECK_FLAG,
+            RAM_BUGS_FIXED,
+            DEATH_BACKUP_CURRENT_MUSIC,
+            DEATH_BACKUP_AMBIENT_SOUND,
+        ] {
+            assert_eq!(projected[offset], ram[offset]);
+        }
+    }
+
+    #[test]
+    fn native_system_signals_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[CURRENT_MUSIC_CONTROL] = 0x12;
+        ram[SOUND_EFFECT_AMBIENT] = 0x05;
+        ram[SOUND_EFFECT_1] = 0;
+        ram[SOUND_EFFECT_2] = 0;
+        ram[FLAG_UPDATE_CGRAM_IN_NMI] = 0xff;
+        ram[FLAG_UPDATE_HUD_IN_NMI] = 1;
+        ram[GAME_OVER_CHECK_FLAG] = 7;
+
+        let mut system_signals = SystemSignalsState::default();
+        {
+            let mut bridge = NativeSystemSignalsBridgeMut::new(&mut system_signals, &mut ram);
+            assert!(bridge.queue_sound_effect_1_if_empty(0x2d));
+            assert!(bridge.queue_sound_effect_2_if_empty(0x1b));
+            assert!(!bridge.queue_sound_effect_1_if_empty(0x33));
+            bridge.set_sound_effect_1_word(0x3412);
+            bridge.set_ambient_sound_effect_word(0x5607);
+            bridge.save_current_music_as_last();
+            bridge.save_ambient_sound_effect_as_last();
+            bridge.increment_cgram_update_flag();
+            bridge.increment_hud_update_flag();
+            bridge.clear_game_over_check_flag();
+            bridge.set_restart_check_flag(9);
+            bridge.set_raw_sfx_pan_value(0x80);
+            bridge.set_death_backup_current_music(0x21);
+            bridge.set_death_backup_ambient_sound(0x22);
+        }
+
+        assert_eq!(system_signals.sound_effect_1(), 0x56);
+        assert_eq!(system_signals.sound_effect_2(), 0x34);
+        assert_eq!(system_signals.ambient_sound_effect(), 0x07);
+        assert_eq!(system_signals.last_music_control(), 0x12);
+        assert_eq!(system_signals.last_ambient_sound_effect(), 0x07);
+        assert_eq!(system_signals.raw_sfx_pan_value(), 0x80);
+        assert_eq!(system_signals.restart_check_flag(), 9);
+        assert_eq!(system_signals.death_backup_current_music(), 0x21);
+        assert_eq!(system_signals.death_backup_ambient_sound(), 0x22);
+        assert_eq!(ram[SOUND_EFFECT_1], 0x56);
+        assert_eq!(ram[SOUND_EFFECT_2], 0x34);
+        assert_eq!(ram[SOUND_EFFECT_AMBIENT], 0x07);
+        assert_eq!(ram[LAST_MUSIC_CONTROL], 0x12);
+        assert_eq!(ram[SOUND_EFFECT_AMBIENT_LAST], 0x07);
+        assert_eq!(ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
+        assert_eq!(ram[FLAG_UPDATE_HUD_IN_NMI], 2);
+        assert_eq!(ram[GAME_OVER_CHECK_FLAG], 0);
+        assert_eq!(ram[RESTART_CHECK_FLAG], 9);
+        assert_eq!(ram[RAW_SFX_PAN_VALUE], 0x80);
+        assert_eq!(ram[DEATH_BACKUP_CURRENT_MUSIC], 0x21);
+        assert_eq!(ram[DEATH_BACKUP_AMBIENT_SOUND], 0x22);
     }
 
     #[test]
