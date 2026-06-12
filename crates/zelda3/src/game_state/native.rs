@@ -27,8 +27,9 @@ pub(crate) use frame::{
 pub(crate) use messaging::{
     DialogueMessageIndexState, DialogueNumberState, MessagingRenderBufferState,
     MessagingRuntimeState, MessagingState, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SharedMessageTimerState,
     VwfRenderState,
 };
@@ -49,7 +50,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use messaging::MultiselectChoiceState;
+use messaging::{DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -1984,6 +1985,44 @@ mod tests {
         assert_eq!(number.packed_digits(1), 0xbc);
         assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x9a);
         assert_eq!(ram[DIALOGUE_NUMBER_HI], 0xbc);
+    }
+
+    #[test]
+    fn dialogue_source_offset_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_MSG_SRC_OFFS] = 0xaa;
+        ram[DIALOGUE_MSG_SRC_OFFS + 1] = 0xbb;
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0x0e;
+
+        let mut source_offset = DialogueSourceOffsetState::load_from_ram(&ram);
+        assert_eq!(source_offset.bank_offset_low_nibble(), 0x0e);
+        assert_eq!(source_offset.increment_bank_offset_low_nibble(), 0x0f);
+        assert_eq!(source_offset.increment_bank_offset_low_nibble(), 0x10);
+        source_offset.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS], 0xaa);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 1], 0xbb);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 0x10);
+    }
+
+    #[test]
+    fn native_dialogue_source_offset_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_MSG_SRC_OFFS] = 0xaa;
+        ram[DIALOGUE_MSG_SRC_OFFS + 1] = 0xbb;
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0xff;
+
+        let mut source_offset = DialogueSourceOffsetState::default();
+        {
+            let mut bridge = NativeDialogueSourceOffsetBridgeMut::new(&mut source_offset, &mut ram);
+            assert_eq!(bridge.increment_bank_offset_low_nibble(), 0);
+            assert_eq!(bridge.increment_bank_offset_low_nibble(), 1);
+        }
+
+        assert_eq!(source_offset.bank_offset_low_nibble(), 1);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS], 0xaa);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 1], 0xbb);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 1);
     }
 
     #[test]

@@ -120,6 +120,32 @@ impl DialogueNumberState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DialogueSourceOffsetState {
+    bank_offset_low_nibble: u8,
+}
+
+impl DialogueSourceOffsetState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            bank_offset_low_nibble: ram.get(DIALOGUE_MSG_SRC_OFFS + 2).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = self.bank_offset_low_nibble;
+    }
+
+    pub(crate) fn bank_offset_low_nibble(&self) -> u8 {
+        self.bank_offset_low_nibble
+    }
+
+    pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
+        self.bank_offset_low_nibble = self.bank_offset_low_nibble.wrapping_add(1);
+        self.bank_offset_low_nibble
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MessagingRuntimeState {
     pub(crate) module: u8,
     pub(crate) text_render_state: u8,
@@ -485,6 +511,7 @@ pub(crate) struct MessagingState {
     pub(crate) dialogue_message_index: DialogueMessageIndexState,
     pub(crate) multiselect_choice: MultiselectChoiceState,
     pub(crate) dialogue_number: DialogueNumberState,
+    pub(crate) dialogue_source_offset: DialogueSourceOffsetState,
     pub(crate) runtime: MessagingRuntimeState,
     pub(crate) shared_message_timer: SharedMessageTimerState,
     pub(crate) render_buffer: MessagingRenderBufferState,
@@ -497,6 +524,7 @@ impl MessagingState {
             dialogue_message_index: DialogueMessageIndexState::load_from_ram(ram),
             multiselect_choice: MultiselectChoiceState::load_from_ram(ram),
             dialogue_number: DialogueNumberState::load_from_ram(ram),
+            dialogue_source_offset: DialogueSourceOffsetState::load_from_ram(ram),
             runtime: MessagingRuntimeState::load_from_ram(ram),
             shared_message_timer: SharedMessageTimerState::load_from_ram(ram),
             render_buffer: MessagingRenderBufferState::load_from_ram(ram),
@@ -508,6 +536,7 @@ impl MessagingState {
         self.dialogue_message_index.write_to_ram(ram);
         self.multiselect_choice.write_to_ram(ram);
         self.dialogue_number.write_to_ram(ram);
+        self.dialogue_source_offset.write_to_ram(ram);
         self.shared_message_timer.write_to_ram(ram);
         self.render_buffer.write_to_ram(ram);
         self.vwf_render.write_to_ram(ram);
@@ -646,6 +675,32 @@ impl<'a> NativeDialogueNumberBridgeMut<'a> {
         self.number.set_high_pair(value);
         self.ram[DIALOGUE_NUMBER_HI] = value;
         self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeDialogueSourceOffsetBridgeMut<'a> {
+    source_offset: &'a mut DialogueSourceOffsetState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
+    pub(crate) fn new(source_offset: &'a mut DialogueSourceOffsetState, ram: &'a mut [u8]) -> Self {
+        *source_offset = DialogueSourceOffsetState::load_from_ram(ram);
+        Self { source_offset, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.source_offset,
+            DialogueSourceOffsetState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
+        let next = self.source_offset.increment_bank_offset_low_nibble();
+        self.ram[DIALOGUE_MSG_SRC_OFFS + 2] = next;
+        self.debug_assert_matches_ram();
+        next
     }
 }
 

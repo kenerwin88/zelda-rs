@@ -50,22 +50,6 @@ impl<'a> MessagingTextViewMut<'a> {
     }
 }
 
-pub(crate) struct DialogueSourceOffsetViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DialogueSourceOffsetViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
-        let next = self.ram[DIALOGUE_MSG_SRC_OFFS + 2].wrapping_add(1);
-        self.ram[DIALOGUE_MSG_SRC_OFFS + 2] = next;
-        next
-    }
-}
-
 pub(crate) struct SelectFileScratchView<'a> {
     ram: &'a [u8],
 }

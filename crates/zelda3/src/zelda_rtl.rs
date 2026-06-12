@@ -36,12 +36,11 @@ use crate::game_state::{
     BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
     BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
     ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexState,
-    DialogueNumberState, DialogueSourceOffsetViewMut, DiggingGamePrizeView,
-    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut,
-    DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
-    DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
-    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
-    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
+    DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
+    DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView, DrawScratchPositionViewMut,
+    DualLayerTileCacheView, DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut,
+    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut,
+    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
     EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
@@ -58,10 +57,10 @@ use crate::game_state::{
     MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
     NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeIntroSceneBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -3866,8 +3865,13 @@ impl ZeldaState {
         NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
 
-    pub(crate) fn dialogue_source_offset_view_mut(&mut self) -> DialogueSourceOffsetViewMut<'_> {
-        DialogueSourceOffsetViewMut::new(&mut self.ram)
+    pub(crate) fn dialogue_source_offset_view_mut(
+        &mut self,
+    ) -> NativeDialogueSourceOffsetBridgeMut<'_> {
+        NativeDialogueSourceOffsetBridgeMut::new(
+            &mut self.game_state.messaging.dialogue_source_offset,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn select_file_scratch_view(&self) -> SelectFileScratchView<'_> {
