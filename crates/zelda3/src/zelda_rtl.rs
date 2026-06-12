@@ -1637,7 +1637,7 @@ impl ZeldaState {
             }
         }
         if let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_OW") {
-            if u16::from(self.world_state_view().overworld_screen()) as u32 != target {
+            if u32::from(self.world_location_state().overworld_screen) != target {
                 return false;
             }
         }
@@ -1681,6 +1681,7 @@ impl ZeldaState {
             return;
         }
         let frame = self.frame_state();
+        let world_location = self.world_location_state();
         eprintln!(
             "replay-sub frame={} {label} main={} sub={} subsub={} state=0x{:02x} nearpit=0x{:02x} pit=0x{:02x} water=0x{:04x} deep=0x{:04x} flippers=0x{:02x} bunny=0x{:02x} pearl=0x{:02x} indoors={} ow=0x{:04x} vis=0x{:02x} x=0x{:04x} y=0x{:04x} subpix=0x{:02x}/0x{:02x} vel=0x{:02x}/0x{:02x} yvel=0x{:02x} dir=0x{:02x} last=0x{:02x} dlast=0x{:02x} r14=0x{:04x} r12=0x{:04x} normal=0x{:04x} vledge=0x{:02x} stair=0x{:02x} drag=0x{:02x} hp=0x{:02x}",
             frame.frame_counter,
@@ -1695,8 +1696,8 @@ impl ZeldaState {
             self.player_state_view().flippers(),
             self.player_state_view().is_bunny_mirror() as u8,
             self.player_state_view().moon_pearl(),
-            self.world_state_view().indoor_flag(),
-            u16::from(self.world_state_view().overworld_screen()),
+            world_location.indoor_flag,
+            world_location.overworld_screen,
             self.player_state_view().visibility_status(),
             self.player_state_view().x(),
             self.player_state_view().y(),
@@ -4958,8 +4959,8 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .clear_state_item_and_grab_flags();
             self.player_state_view_mut().set_y_button_action_timer(0);
-            if self.world_state_view().is_indoors() {
-                let room = self.world_state_view().dungeon_room_index();
+            if self.world_location_state().is_indoors() {
+                let room = self.world_location_state().dungeon_room_index();
                 self.dungeon_state_view_mut().set_room_index_prev(room);
                 self.Dungeon_FlagRoomData_Quadrants();
                 if self.Dungeon_IsPitThatHurtsPlayer() {
@@ -4967,7 +4968,7 @@ impl ZeldaState {
                     return;
                 }
             }
-            let previous_room = self.world_state_view().dungeon_room_index();
+            let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             let room = self.dungeon_header_view().travel_destination(0);
@@ -4980,9 +4981,9 @@ impl ZeldaState {
                 .wrapping_sub(y as u16)
                 .wrapping_sub(0x10);
             self.player_state_view_mut().set_y(new_y);
-            if self.world_state_view().is_indoors() {
+            if self.world_location_state().is_indoors() {
                 self.handle_layer_of_destination();
-            } else if self.world_state_view().overworld_screen() != 5 {
+            } else if self.world_location_state().overworld_screen_index() != 5 {
                 self.Overworld_GetPitDestination();
                 self.frame_control_view_mut().set_main_module(17);
                 self.frame_control_view_mut().set_submodule(0);
@@ -7195,7 +7196,7 @@ mod tests {
 
         state.dungeon_handle_layer_change();
 
-        assert_eq!(state.world_state_view().dungeon_room(), 0x0114);
+        assert_eq!(state.world_location_state().dungeon_room, 0x0114);
         assert_eq!(link_test_byte(&state, LINK_IS_ON_LOWER_LEVEL_MIRROR), 1);
         assert_eq!(state.player_state_view().lower_level_state(), 1);
         assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
@@ -8696,7 +8697,7 @@ mod tests {
         assert_eq!(state.ram[IRQ_FLAG], 0xff);
         assert_eq!(state.ram[TM_COPY], 0x15);
         assert_eq!(state.ram[TS_COPY], 0);
-        assert_eq!(state.world_state_view().indoor_flag(), 0);
+        assert_eq!(state.world_location_state().indoor_flag, 0);
         assert_eq!(state.system_signals_view().music_control(), 0xf1);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 1);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);
