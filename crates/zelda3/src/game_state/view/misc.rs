@@ -58,62 +58,6 @@ impl<'a> MemorizedTileViewMut<'a> {
     }
 }
 
-pub(crate) struct ArcheryGameView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> ArcheryGameView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn hit_counter(&self) -> u8 {
-        byte(self.ram, ARCHERY_GAME_HIT_COUNTER)
-    }
-
-    pub(crate) fn arrows_left(&self) -> u8 {
-        byte(self.ram, ARCHERY_GAME_ARROWS_LEFT)
-    }
-
-    pub(crate) fn out_of_arrows(&self) -> u8 {
-        byte(self.ram, ARCHERY_GAME_OUT_OF_ARROWS)
-    }
-}
-
-pub(crate) struct ArcheryGameViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> ArcheryGameViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_hit_counter(&mut self) {
-        self.ram[ARCHERY_GAME_HIT_COUNTER] = 0;
-    }
-
-    pub(crate) fn increment_hit_counter(&mut self) {
-        self.ram[ARCHERY_GAME_HIT_COUNTER] = self.ram[ARCHERY_GAME_HIT_COUNTER].wrapping_add(1);
-    }
-
-    pub(crate) fn set_arrows_left(&mut self, value: u8) {
-        self.ram[ARCHERY_GAME_ARROWS_LEFT] = value;
-    }
-
-    pub(crate) fn decrement_arrows_left(&mut self) {
-        self.ram[ARCHERY_GAME_ARROWS_LEFT] = self.ram[ARCHERY_GAME_ARROWS_LEFT].wrapping_sub(1);
-    }
-
-    pub(crate) fn increment_out_of_arrows(&mut self) {
-        self.ram[ARCHERY_GAME_OUT_OF_ARROWS] = self.ram[ARCHERY_GAME_OUT_OF_ARROWS].wrapping_add(1);
-    }
-
-    pub(crate) fn clear_out_of_arrows(&mut self) {
-        self.ram[ARCHERY_GAME_OUT_OF_ARROWS] = 0;
-    }
-}
-
 pub(crate) struct MinigameStateView<'a> {
     ram: &'a [u8],
 }

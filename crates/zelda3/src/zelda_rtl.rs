@@ -27,40 +27,41 @@ use crate::game_state::constants::{
 };
 use crate::game_state::{
     AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, AncillaSpawnScratchViewMut,
-    ArcheryGameView, ArcheryGameViewMut, ArmosKnightHomeView, ArmosKnightHomeViewMut,
-    ArrghusPuffHomeView, AttractStateView, AttractStateViewMut, BeamosLaserHistoryView,
-    BeamosLaserHistoryViewMut, Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationState,
-    BlastWallExplosionView, BlastWallExplosionViewMut, BlastWallFireballView,
-    BlastWallFireballViewMut, BlastWallFragmentView, BlastWallFragmentViewMut,
-    BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView, BombosBlastViewMut,
-    BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
-    BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
-    ChainChompHistoryView, ChainChompHistoryViewMut, DecodedMessageTextState,
-    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut,
-    DisplayState, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
-    DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
-    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
-    DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
-    DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView,
-    DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView,
-    EffectAngleScratchViewMut, EndingCreditState, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView,
-    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
-    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
-    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView,
-    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView,
-    IntroSwordViewMut, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
+    AttractStateView, AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
+    Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationState, BlastWallExplosionView,
+    BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
+    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut,
+    BombosBlastView, BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut,
+    BombosSpellScratchView, BombosSpellScratchViewMut, CachedSpriteSlotView,
+    CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView,
+    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut,
+    DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
+    DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
+    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
+    DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
+    DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
+    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
+    EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
+    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
+    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
+    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, HudStateViewMut,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
+    InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
     MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState,
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
-    MoldormHistoryView, MoldormHistoryViewMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeIntroSceneBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -3232,12 +3233,12 @@ impl ZeldaState {
             .swap_items(old_pos, new_pos);
     }
 
-    pub(crate) fn archery_game_view(&self) -> ArcheryGameView<'_> {
-        ArcheryGameView::new(&self.ram)
+    pub(crate) fn archery_game_view(&self) -> &ArcheryGameState {
+        &self.game_state.archery_game
     }
 
-    pub(crate) fn archery_game_view_mut(&mut self) -> ArcheryGameViewMut<'_> {
-        ArcheryGameViewMut::new(&mut self.ram)
+    pub(crate) fn archery_game_view_mut(&mut self) -> NativeArcheryGameBridgeMut<'_> {
+        NativeArcheryGameBridgeMut::new(&mut self.game_state.archery_game, &mut self.ram)
     }
 
     pub(crate) fn minigame_state_view(&self) -> MinigameStateView<'_> {

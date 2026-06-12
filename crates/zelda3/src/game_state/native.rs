@@ -35,7 +35,10 @@ pub(crate) use messaging::{
     NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SharedMessageTimerState,
     VwfRenderState,
 };
-pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
+pub(crate) use misc::{
+    ArcheryGameState, EnhancedFeaturesState, NativeArcheryGameBridgeMut,
+    NativeEnhancedFeaturesBridgeMut,
+};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
@@ -71,6 +74,7 @@ pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
+    pub(crate) archery_game: ArcheryGameState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
     pub(crate) ending: EndingState,
@@ -83,6 +87,7 @@ impl GameState {
             frame: FrameState::load_from_ram(ram),
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
+            archery_game: ArcheryGameState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
@@ -94,6 +99,7 @@ impl GameState {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
+        self.archery_game.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.ending.write_to_ram(ram);
@@ -335,6 +341,54 @@ mod tests {
         assert_eq!(features.bits(), 0x1234_5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS), 0x5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS + 2), 0x1234);
+    }
+
+    #[test]
+    fn archery_game_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ARCHERY_GAME_HIT_COUNTER] = 8;
+        ram[ARCHERY_GAME_ARROWS_LEFT] = 5;
+        ram[ARCHERY_GAME_OUT_OF_ARROWS] = 1;
+
+        let mut archery = ArcheryGameState::load_from_ram(&ram);
+        assert_eq!(archery.hit_counter(), 8);
+        assert_eq!(archery.arrows_left(), 5);
+        assert_eq!(archery.out_of_arrows(), 1);
+
+        archery.increment_hit_counter();
+        archery.decrement_arrows_left();
+        archery.clear_out_of_arrows();
+        archery.write_to_ram(&mut ram);
+
+        assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 9);
+        assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
+        assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 0);
+    }
+
+    #[test]
+    fn native_archery_game_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ARCHERY_GAME_HIT_COUNTER] = 0xff;
+        ram[ARCHERY_GAME_ARROWS_LEFT] = 0;
+        ram[ARCHERY_GAME_OUT_OF_ARROWS] = 0xff;
+
+        let mut archery = ArcheryGameState::default();
+        {
+            let mut bridge = NativeArcheryGameBridgeMut::new(&mut archery, &mut ram);
+            bridge.increment_hit_counter();
+            bridge.clear_hit_counter();
+            bridge.set_arrows_left(5);
+            bridge.decrement_arrows_left();
+            bridge.increment_out_of_arrows();
+            bridge.clear_out_of_arrows();
+        }
+
+        assert_eq!(archery.hit_counter(), 0);
+        assert_eq!(archery.arrows_left(), 4);
+        assert_eq!(archery.out_of_arrows(), 0);
+        assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 0);
+        assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
+        assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 0);
     }
 
     #[test]
