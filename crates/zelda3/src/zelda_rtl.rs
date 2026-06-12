@@ -7857,7 +7857,7 @@ mod tests {
         let mut prayer = ZeldaState::new();
         prayer.player_state_view_mut().set_filtered_joypad_h(0x40);
         prayer.ram[ITEM_PICKUP_IN_PROGRESS_FLAG] = 1;
-        prayer.ram[MAIN_MODULE_INDEX] = 9;
+        prayer.frame_control_view_mut().set_main_module(9);
         set_link_test_byte(&mut prayer, LINK_DIRECTION, 0x0f);
         prayer.link_item_book();
         assert_eq!(prayer.ram[SUBMODULE_INDEX], 5);
