@@ -25,10 +25,12 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use messaging::{
-    DialogueMessageIndexState, DialogueNumberState, MessagingRuntimeState, MessagingState,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    DialogueMessageIndexState, DialogueNumberState, MessagingRenderBufferState,
+    MessagingRuntimeState, MessagingState, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeMessagingRenderBufferBridgeMut,
     NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
+    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SharedMessageTimerState,
+    VwfRenderState,
 };
 pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
 pub(crate) use world::{
@@ -1982,6 +1984,131 @@ mod tests {
         assert_eq!(number.packed_digits(1), 0xbc);
         assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x9a);
         assert_eq!(ram[DIALOGUE_NUMBER_HI], 0xbc);
+    }
+
+    #[test]
+    fn messaging_render_buffer_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MESSAGING_RENDER_BUFFER + 4, 0x1234);
+        ram[MESSAGING_RENDER_BUFFER + 8] = 0xaa;
+
+        let mut render_buffer = MessagingRenderBufferState::load_from_ram(&ram);
+        assert_eq!(render_buffer.word(2), 0x1234);
+        assert_eq!(render_buffer.word_at_byte_offset(8), 0x00aa);
+        assert_eq!(render_buffer.word_at_byte_offset(0x7df), 0);
+
+        render_buffer.set_word(2, 0x5678);
+        render_buffer.xor_mask(8, 0x0f);
+        render_buffer.clear_mask(8, 0xf0);
+        render_buffer.fill_word_range(4, 2, 0x1111);
+        render_buffer.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 4), 0x5678);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 8), 0x1111);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 10), 0x1111);
+    }
+
+    #[test]
+    fn native_messaging_render_buffer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MESSAGING_RENDER_BUFFER + 2, 0x1111);
+        ram[MESSAGING_RENDER_BUFFER + 6] = 0xf0;
+
+        let mut render_buffer = MessagingRenderBufferState::default();
+        {
+            let mut bridge =
+                NativeMessagingRenderBufferBridgeMut::new(&mut render_buffer, &mut ram);
+            bridge.set_word(1, 0x2222);
+            bridge.set_word_at_byte_offset(4, 0x3333);
+            bridge.xor_mask(6, 0x0f);
+            bridge.clear_mask(6, 0xf0);
+            bridge.fill_word_range(4, 2, 0x4444);
+            bridge.clear_range(2);
+        }
+
+        assert_eq!(render_buffer.word(0), 0);
+        assert_eq!(render_buffer.word(1), 0x2222);
+        assert_eq!(render_buffer.word_at_byte_offset(4), 0x3333);
+        assert_eq!(render_buffer.word_at_byte_offset(8), 0x4444);
+        assert_eq!(render_buffer.word_at_byte_offset(10), 0x4444);
+        assert_eq!(ram[MESSAGING_RENDER_BUFFER], 0);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 2), 0x2222);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 4), 0x3333);
+        assert_eq!(ram[MESSAGING_RENDER_BUFFER + 6], 0x0f);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 8), 0x4444);
+    }
+
+    #[test]
+    fn vwf_render_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[VWF_ARR + 3] = 0x22;
+        write_le_u16(&mut ram, VWF_GLYPH_CURSOR, 0x0040);
+        write_le_u16(&mut ram, VWF_FLAG_NEXT_LINE, 1);
+        write_le_u16(&mut ram, VWF_CURLINE, 4);
+        write_le_u16(&mut ram, VWF_LINE_PTR, 0x0540);
+        write_le_u16(&mut ram, VWF_TILE_BUFFER + 0x0c2, 0x3456);
+
+        let mut vwf = VwfRenderState::load_from_ram(&ram);
+        assert_eq!(vwf.glyph_advance_prefix_sum(3), 0x22);
+        assert_eq!(vwf.glyph_cursor(), 0x0040);
+        assert_eq!(vwf.glyph_cursor_usize(), 0x40);
+        assert_eq!(vwf.next_line_requested(), 1);
+        assert_eq!(vwf.current_line(), 4);
+        assert_eq!(vwf.line_render_offset(), 0x0540);
+        assert_eq!(vwf.tile_word_at_byte_offset(0x0c2), 0x3456);
+        assert_eq!(vwf.tile_word_at_byte_offset(0x0fb), 0);
+
+        vwf.set_next_glyph_advance_prefix_sum(3, 0x33);
+        vwf.set_glyph_cursor(0x0080);
+        vwf.request_next_line(1);
+        vwf.set_current_line(2);
+        vwf.set_line_render_offset(0x02a0);
+        vwf.set_tile_word_at_byte_offset(0x0c4, 0x789a);
+        vwf.write_to_ram(&mut ram);
+
+        assert_eq!(ram[VWF_ARR + 4], 0x33);
+        assert_eq!(read_le_u16(&ram, VWF_GLYPH_CURSOR), 0x0080);
+        assert_eq!(read_le_u16(&ram, VWF_FLAG_NEXT_LINE), 1);
+        assert_eq!(read_le_u16(&ram, VWF_CURLINE), 2);
+        assert_eq!(read_le_u16(&ram, VWF_LINE_PTR), 0x02a0);
+        assert_eq!(read_le_u16(&ram, VWF_TILE_BUFFER + 0x0c4), 0x789a);
+    }
+
+    #[test]
+    fn native_vwf_render_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[VWF_ARR + 2] = 0x10;
+        write_le_u16(&mut ram, VWF_GLYPH_CURSOR, 0x0002);
+        write_le_u16(&mut ram, VWF_FLAG_NEXT_LINE, 1);
+        write_le_u16(&mut ram, VWF_CURLINE, 2);
+        write_le_u16(&mut ram, VWF_LINE_PTR, 0x02a0);
+
+        let mut vwf = VwfRenderState::default();
+        {
+            let mut bridge = NativeVwfRenderBridgeMut::new(&mut vwf, &mut ram);
+            bridge.set_next_glyph_advance_prefix_sum(2, 0x18);
+            assert_eq!(bridge.increment_glyph_cursor(), 3);
+            bridge.set_glyph_cursor(0x0040);
+            bridge.clear_glyph_cursor();
+            bridge.request_next_line(1);
+            bridge.clear_next_line_request();
+            bridge.set_current_line(4);
+            bridge.set_line_render_offset(0x0540);
+            bridge.set_tile_word_at_byte_offset(0x0ec, 0xabcd);
+        }
+
+        assert_eq!(vwf.glyph_advance_prefix_sum(3), 0x18);
+        assert_eq!(vwf.glyph_cursor(), 0);
+        assert_eq!(vwf.next_line_requested(), 0);
+        assert_eq!(vwf.current_line(), 4);
+        assert_eq!(vwf.line_render_offset(), 0x0540);
+        assert_eq!(vwf.tile_word_at_byte_offset(0x0ec), 0xabcd);
+        assert_eq!(ram[VWF_ARR + 3], 0x18);
+        assert_eq!(read_le_u16(&ram, VWF_GLYPH_CURSOR), 0);
+        assert_eq!(read_le_u16(&ram, VWF_FLAG_NEXT_LINE), 0);
+        assert_eq!(read_le_u16(&ram, VWF_CURLINE), 4);
+        assert_eq!(read_le_u16(&ram, VWF_LINE_PTR), 0x0540);
+        assert_eq!(read_le_u16(&ram, VWF_TILE_BUFFER + 0x0ec), 0xabcd);
     }
 
     #[test]

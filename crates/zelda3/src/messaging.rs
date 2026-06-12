@@ -2963,10 +2963,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
-        self.vwf_glyph_spacing_view_mut().set_vwf_curline(0);
-        self.vwf_glyph_spacing_view_mut().clear_vwf_flag_next_line();
-        self.vwf_glyph_spacing_view_mut().clear_cursor();
-        self.vwf_glyph_spacing_view_mut().set_vwf_line_ptr(0);
+        self.vwf_glyph_spacing_view_mut().set_current_line(0);
+        self.vwf_glyph_spacing_view_mut().clear_next_line_request();
+        self.vwf_glyph_spacing_view_mut().clear_glyph_cursor();
+        self.vwf_glyph_spacing_view_mut().set_line_render_offset(0);
     }
 
     pub(super) fn Text_DecodeCmd(&self, a: u8, src: &[u8]) -> u32 {
@@ -3225,8 +3225,8 @@ impl ZeldaState {
                 TEXT_CMD_1 | TEXT_CMD_2 | TEXT_CMD_3 => {
                     let idx = (cmd - TEXT_CMD_1) as usize;
                     self.vwf_glyph_spacing_view_mut()
-                        .set_vwf_curline(VWF_ROW_POSITIONS[idx]);
-                    self.vwf_glyph_spacing_view_mut().set_vwf_flag_next_line(1);
+                        .set_current_line(VWF_ROW_POSITIONS[idx]);
+                    self.vwf_glyph_spacing_view_mut().request_next_line(1);
                     command_done = true;
                 }
                 TEXT_CMD_WAIT => {
@@ -3329,13 +3329,13 @@ impl ZeldaState {
         let speed = self.messaging_state_view().vwf_line_speed();
         self.messaging_state_view_mut()
             .set_vwf_line_speed_cur(speed);
-        if self.vwf_glyph_spacing_view().vwf_flag_next_line() != 0 {
-            let line = (self.vwf_glyph_spacing_view().vwf_curline() >> 1) as usize;
+        if self.vwf_glyph_spacing_view().next_line_requested() != 0 {
+            let line = (self.vwf_glyph_spacing_view().current_line() >> 1) as usize;
             self.vwf_glyph_spacing_view_mut()
-                .set_vwf_line_ptr(VWF_RENDER_CHARACTER_RENDER_POS[line]);
+                .set_line_render_offset(VWF_RENDER_CHARACTER_RENDER_POS[line]);
             self.vwf_glyph_spacing_view_mut()
-                .set_cursor(VWF_RENDER_CHARACTER_LINE_POSITIONS[line]);
-            self.vwf_glyph_spacing_view_mut().clear_vwf_flag_next_line();
+                .set_glyph_cursor(VWF_RENDER_CHARACTER_LINE_POSITIONS[line]);
+            self.vwf_glyph_spacing_view_mut().clear_next_line_request();
         }
         let Some(dialogue_font) = self.asset_memblk(95, self.dialogue_font_blk_index) else {
             return;
@@ -3344,14 +3344,14 @@ impl ZeldaState {
         let widths = find_index_in_memblk(dialogue_font, 1).ptr.to_vec();
         let width = widths.get(c as usize).copied().unwrap_or(0);
         assert!(width <= 8);
-        let i = self.vwf_glyph_spacing_view().cursor_usize();
-        self.vwf_glyph_spacing_view_mut().increment_cursor();
-        let arrval = self.vwf_glyph_spacing_view().offset(i);
+        let i = self.vwf_glyph_spacing_view().glyph_cursor_usize();
+        self.vwf_glyph_spacing_view_mut().increment_glyph_cursor();
+        let arrval = self.vwf_glyph_spacing_view().glyph_advance_prefix_sum(i);
         self.vwf_glyph_spacing_view_mut()
-            .set_next_offset(i, arrval.wrapping_add(width));
+            .set_next_glyph_advance_prefix_sum(i, arrval.wrapping_add(width));
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;
-        let line_ptr = self.vwf_glyph_spacing_view().vwf_line_ptr() as usize;
+        let line_ptr = self.vwf_glyph_spacing_view().line_render_offset() as usize;
         self.messaging_vwf_render_half(&font_data, r10, r0, line_ptr, width);
         self.messaging_vwf_render_half(&font_data, r10 + 16, r0, line_ptr + 0x150, width);
     }
@@ -3481,13 +3481,13 @@ impl ZeldaState {
         };
         let p = self.hud_get_item_box_table(item)[variant];
         self.vwf_glyph_spacing_view_mut()
-            .set_vwf_tile_buffer_word(0x0c2, p[0]);
+            .set_tile_word_at_byte_offset(0x0c2, p[0]);
         self.vwf_glyph_spacing_view_mut()
-            .set_vwf_tile_buffer_word(0x0c4, p[1]);
+            .set_tile_word_at_byte_offset(0x0c4, p[1]);
         self.vwf_glyph_spacing_view_mut()
-            .set_vwf_tile_buffer_word(0x0ec, p[2]);
+            .set_tile_word_at_byte_offset(0x0ec, p[2]);
         self.vwf_glyph_spacing_view_mut()
-            .set_vwf_tile_buffer_word(0x0ee, p[3]);
+            .set_tile_word_at_byte_offset(0x0ee, p[3]);
     }
 
     pub(super) fn RenderText_Draw_Choose2HiOr3(&mut self) {
@@ -3615,8 +3615,8 @@ impl ZeldaState {
                 .dialogue_source_offset_view_mut()
                 .increment_bank_offset_low_nibble();
             if source_bank_offset & 0x0f == 0 {
-                self.vwf_glyph_spacing_view_mut().set_vwf_curline(4);
-                self.vwf_glyph_spacing_view_mut().set_vwf_flag_next_line(1);
+                self.vwf_glyph_spacing_view_mut().set_current_line(4);
+                self.vwf_glyph_spacing_view_mut().request_next_line(1);
                 return true;
             }
             let old = r2;
@@ -3668,7 +3668,7 @@ impl ZeldaState {
         let mut tile = self.messaging_state_view().text_tilemap_cur();
         for i in 0..126 {
             self.vwf_glyph_spacing_view_mut()
-                .set_vwf_tile_buffer_word(i * 2, tile);
+                .set_tile_word_at_byte_offset(i * 2, tile);
             tile = tile.wrapping_add(1);
         }
         self.messaging_state_view_mut().set_text_tilemap_cur(tile);
@@ -3696,7 +3696,7 @@ impl ZeldaState {
             self.write_vram_upload_absolute_word(d, 0x2900);
             d += 2;
             for _ in 0..21 {
-                let tile = self.vwf_glyph_spacing_view().vwf_tile_buffer_word_at(s);
+                let tile = self.vwf_glyph_spacing_view().tile_word_at_byte_offset(s);
                 self.write_vram_upload_absolute_word(d, tile);
                 d += 2;
                 s += 2;

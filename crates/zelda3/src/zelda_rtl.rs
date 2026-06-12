@@ -53,21 +53,22 @@ use crate::game_state::{
     IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
     InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
-    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
-    MessagingRenderBufferViewMut, MessagingRuntimeState, MessagingTextView, MessagingTextViewMut,
-    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
-    MoldormHistoryView, MoldormHistoryViewMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeIntroSceneBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeMultiselectChoiceView, NativeOverworldEntranceBridgeMut,
-    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState,
+    MessagingTextView, MessagingTextViewMut, MinigameStateView, MinigameStateViewMut,
+    MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteFilterBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
     NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
     OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
@@ -91,9 +92,8 @@ use crate::game_state::{
     SystemSignalsState, TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
     TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
     TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TrinexxPaletteState, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3845,20 +3845,25 @@ impl ZeldaState {
         MessagingTextViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn messaging_render_buffer_view(&self) -> MessagingRenderBufferView<'_> {
-        MessagingRenderBufferView::new(&self.ram)
+    pub(crate) fn messaging_render_buffer_view(&self) -> &MessagingRenderBufferState {
+        &self.game_state.messaging.render_buffer
     }
 
-    pub(crate) fn messaging_render_buffer_view_mut(&mut self) -> MessagingRenderBufferViewMut<'_> {
-        MessagingRenderBufferViewMut::new(&mut self.ram)
+    pub(crate) fn messaging_render_buffer_view_mut(
+        &mut self,
+    ) -> NativeMessagingRenderBufferBridgeMut<'_> {
+        NativeMessagingRenderBufferBridgeMut::new(
+            &mut self.game_state.messaging.render_buffer,
+            &mut self.ram,
+        )
     }
 
-    pub(crate) fn vwf_glyph_spacing_view(&self) -> VwfGlyphSpacingView<'_> {
-        VwfGlyphSpacingView::new(&self.ram)
+    pub(crate) fn vwf_glyph_spacing_view(&self) -> &VwfRenderState {
+        &self.game_state.messaging.vwf_render
     }
 
-    pub(crate) fn vwf_glyph_spacing_view_mut(&mut self) -> VwfGlyphSpacingViewMut<'_> {
-        VwfGlyphSpacingViewMut::new(&mut self.ram)
+    pub(crate) fn vwf_glyph_spacing_view_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
+        NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
 
     pub(crate) fn dialogue_source_offset_view_mut(&mut self) -> DialogueSourceOffsetViewMut<'_> {

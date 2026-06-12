@@ -1,6 +1,10 @@
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
+const MESSAGING_RENDER_BUFFER_LEN: usize = 0x7e0;
+const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
+const VWF_TILE_BUFFER_LEN: usize = 6 * 21 * 2;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DialogueMessageIndexState {
     value: u16,
@@ -281,6 +285,201 @@ impl SharedMessageTimerState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MessagingRenderBufferState {
+    bytes: Vec<u8>,
+}
+
+impl Default for MessagingRenderBufferState {
+    fn default() -> Self {
+        Self {
+            bytes: vec![0; MESSAGING_RENDER_BUFFER_LEN],
+        }
+    }
+}
+
+impl MessagingRenderBufferState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut bytes = vec![0; MESSAGING_RENDER_BUFFER_LEN];
+        if let Some(src) = ram.get(MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + bytes.len()) {
+            bytes.copy_from_slice(src);
+        }
+        Self { bytes }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + self.bytes.len()]
+            .copy_from_slice(&self.bytes);
+    }
+
+    pub(crate) fn word(&self, index: usize) -> u16 {
+        self.word_at_byte_offset(index * 2)
+    }
+
+    pub(crate) fn word_at_byte_offset(&self, byte_offset: usize) -> u16 {
+        if byte_offset + 1 < self.bytes.len() {
+            read_le_u16(&self.bytes, byte_offset)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn xor_mask(&mut self, offset: usize, mask: u8) {
+        self.bytes[offset] ^= mask;
+    }
+
+    pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
+        self.bytes[offset] &= !mask;
+    }
+
+    pub(crate) fn set_word(&mut self, index: usize, value: u16) {
+        self.set_word_at_byte_offset(index * 2, value);
+    }
+
+    pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+        write_le_u16(&mut self.bytes, byte_offset, value);
+    }
+
+    pub(crate) fn clear_range(&mut self, byte_count: usize) {
+        self.bytes[..byte_count].fill(0);
+    }
+
+    pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
+        for i in 0..count {
+            self.set_word(start_index + i, value);
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct VwfRenderState {
+    glyph_advance_prefix_sums: Vec<u8>,
+    glyph_cursor: u16,
+    next_line_requested: u16,
+    current_line: u16,
+    line_render_offset: u16,
+    tile_words: Vec<u8>,
+}
+
+impl Default for VwfRenderState {
+    fn default() -> Self {
+        Self {
+            glyph_advance_prefix_sums: vec![0; VWF_GLYPH_ADVANCE_BUFFER_LEN],
+            glyph_cursor: 0,
+            next_line_requested: 0,
+            current_line: 0,
+            line_render_offset: 0,
+            tile_words: vec![0; VWF_TILE_BUFFER_LEN],
+        }
+    }
+}
+
+impl VwfRenderState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut glyph_advance_prefix_sums = vec![0; VWF_GLYPH_ADVANCE_BUFFER_LEN];
+        if let Some(src) = ram.get(VWF_ARR..VWF_ARR + glyph_advance_prefix_sums.len()) {
+            glyph_advance_prefix_sums.copy_from_slice(src);
+        }
+
+        let mut tile_words = vec![0; VWF_TILE_BUFFER_LEN];
+        if let Some(src) = ram.get(VWF_TILE_BUFFER..VWF_TILE_BUFFER + tile_words.len()) {
+            tile_words.copy_from_slice(src);
+        }
+
+        Self {
+            glyph_advance_prefix_sums,
+            glyph_cursor: read_le_u16(ram, VWF_GLYPH_CURSOR),
+            next_line_requested: read_le_u16(ram, VWF_FLAG_NEXT_LINE),
+            current_line: read_le_u16(ram, VWF_CURLINE),
+            line_render_offset: read_le_u16(ram, VWF_LINE_PTR),
+            tile_words,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[VWF_ARR..VWF_ARR + self.glyph_advance_prefix_sums.len()]
+            .copy_from_slice(&self.glyph_advance_prefix_sums);
+        write_le_u16(ram, VWF_GLYPH_CURSOR, self.glyph_cursor);
+        write_le_u16(ram, VWF_FLAG_NEXT_LINE, self.next_line_requested);
+        write_le_u16(ram, VWF_CURLINE, self.current_line);
+        write_le_u16(ram, VWF_LINE_PTR, self.line_render_offset);
+        ram[VWF_TILE_BUFFER..VWF_TILE_BUFFER + self.tile_words.len()]
+            .copy_from_slice(&self.tile_words);
+    }
+
+    pub(crate) fn glyph_advance_prefix_sum(&self, index: usize) -> u8 {
+        self.glyph_advance_prefix_sums
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn glyph_cursor(&self) -> u16 {
+        self.glyph_cursor
+    }
+
+    pub(crate) fn glyph_cursor_usize(&self) -> usize {
+        usize::from(self.glyph_cursor())
+    }
+
+    pub(crate) fn next_line_requested(&self) -> u16 {
+        self.next_line_requested
+    }
+
+    pub(crate) fn current_line(&self) -> u16 {
+        self.current_line
+    }
+
+    pub(crate) fn line_render_offset(&self) -> u16 {
+        self.line_render_offset
+    }
+
+    pub(crate) fn tile_word_at_byte_offset(&self, byte_offset: usize) -> u16 {
+        if byte_offset + 1 < self.tile_words.len() {
+            read_le_u16(&self.tile_words, byte_offset)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
+        self.glyph_advance_prefix_sums[index + 1] = value;
+    }
+
+    pub(crate) fn set_glyph_cursor(&mut self, value: u16) {
+        self.glyph_cursor = value;
+    }
+
+    pub(crate) fn clear_glyph_cursor(&mut self) {
+        self.set_glyph_cursor(0);
+    }
+
+    pub(crate) fn increment_glyph_cursor(&mut self) -> u16 {
+        self.glyph_cursor = self.glyph_cursor.wrapping_add(1);
+        self.glyph_cursor
+    }
+
+    pub(crate) fn request_next_line(&mut self, value: u16) {
+        self.next_line_requested = value;
+    }
+
+    pub(crate) fn clear_next_line_request(&mut self) {
+        self.next_line_requested = 0;
+    }
+
+    pub(crate) fn set_current_line(&mut self, value: u16) {
+        self.current_line = value;
+    }
+
+    pub(crate) fn set_line_render_offset(&mut self, value: u16) {
+        self.line_render_offset = value;
+    }
+
+    pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+        write_le_u16(&mut self.tile_words, byte_offset, value);
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MessagingState {
     pub(crate) dialogue_message_index: DialogueMessageIndexState,
@@ -288,6 +487,8 @@ pub(crate) struct MessagingState {
     pub(crate) dialogue_number: DialogueNumberState,
     pub(crate) runtime: MessagingRuntimeState,
     pub(crate) shared_message_timer: SharedMessageTimerState,
+    pub(crate) render_buffer: MessagingRenderBufferState,
+    pub(crate) vwf_render: VwfRenderState,
 }
 
 impl MessagingState {
@@ -298,6 +499,8 @@ impl MessagingState {
             dialogue_number: DialogueNumberState::load_from_ram(ram),
             runtime: MessagingRuntimeState::load_from_ram(ram),
             shared_message_timer: SharedMessageTimerState::load_from_ram(ram),
+            render_buffer: MessagingRenderBufferState::load_from_ram(ram),
+            vwf_render: VwfRenderState::load_from_ram(ram),
         }
     }
 
@@ -306,6 +509,8 @@ impl MessagingState {
         self.multiselect_choice.write_to_ram(ram);
         self.dialogue_number.write_to_ram(ram);
         self.shared_message_timer.write_to_ram(ram);
+        self.render_buffer.write_to_ram(ram);
+        self.vwf_render.write_to_ram(ram);
     }
 }
 
@@ -658,6 +863,145 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
         self.messaging.runtime = MessagingRuntimeState::load_from_ram(self.ram);
         self.messaging.multiselect_choice = MultiselectChoiceState::load_from_ram(self.ram);
         self.debug_assert_runtime_matches_ram();
+    }
+}
+
+pub(crate) struct NativeMessagingRenderBufferBridgeMut<'a> {
+    render_buffer: &'a mut MessagingRenderBufferState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
+    pub(crate) fn new(
+        render_buffer: &'a mut MessagingRenderBufferState,
+        ram: &'a mut [u8],
+    ) -> Self {
+        *render_buffer = MessagingRenderBufferState::load_from_ram(ram);
+        Self { render_buffer, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.render_buffer,
+            MessagingRenderBufferState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn xor_mask(&mut self, offset: usize, mask: u8) {
+        self.render_buffer.xor_mask(offset, mask);
+        self.ram[MESSAGING_RENDER_BUFFER + offset] ^= mask;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
+        self.render_buffer.clear_mask(offset, mask);
+        self.ram[MESSAGING_RENDER_BUFFER + offset] &= !mask;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_word(&mut self, index: usize, value: u16) {
+        self.render_buffer.set_word(index, value);
+        write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + index * 2, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+        self.render_buffer
+            .set_word_at_byte_offset(byte_offset, value);
+        write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + byte_offset, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_range(&mut self, byte_count: usize) {
+        self.render_buffer.clear_range(byte_count);
+        self.ram[MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + byte_count].fill(0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
+        self.render_buffer
+            .fill_word_range(start_index, count, value);
+        for i in 0..count {
+            write_le_u16(
+                self.ram,
+                MESSAGING_RENDER_BUFFER + (start_index + i) * 2,
+                value,
+            );
+        }
+        self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeVwfRenderBridgeMut<'a> {
+    vwf_render: &'a mut VwfRenderState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeVwfRenderBridgeMut<'a> {
+    pub(crate) fn new(vwf_render: &'a mut VwfRenderState, ram: &'a mut [u8]) -> Self {
+        *vwf_render = VwfRenderState::load_from_ram(ram);
+        Self { vwf_render, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.vwf_render, VwfRenderState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
+        self.vwf_render
+            .set_next_glyph_advance_prefix_sum(index, value);
+        self.ram[VWF_ARR + index + 1] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_glyph_cursor(&mut self, value: u16) {
+        self.vwf_render.set_glyph_cursor(value);
+        write_le_u16(self.ram, VWF_GLYPH_CURSOR, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_glyph_cursor(&mut self) {
+        self.vwf_render.clear_glyph_cursor();
+        write_le_u16(self.ram, VWF_GLYPH_CURSOR, 0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_glyph_cursor(&mut self) -> u16 {
+        let value = self.vwf_render.increment_glyph_cursor();
+        write_le_u16(self.ram, VWF_GLYPH_CURSOR, value);
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn request_next_line(&mut self, value: u16) {
+        self.vwf_render.request_next_line(value);
+        write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_next_line_request(&mut self) {
+        self.vwf_render.clear_next_line_request();
+        write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, 0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_current_line(&mut self, value: u16) {
+        self.vwf_render.set_current_line(value);
+        write_le_u16(self.ram, VWF_CURLINE, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_line_render_offset(&mut self, value: u16) {
+        self.vwf_render.set_line_render_offset(value);
+        write_le_u16(self.ram, VWF_LINE_PTR, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+        self.vwf_render
+            .set_tile_word_at_byte_offset(byte_offset, value);
+        write_le_u16(self.ram, VWF_TILE_BUFFER + byte_offset, value);
+        self.debug_assert_matches_ram();
     }
 }
 
