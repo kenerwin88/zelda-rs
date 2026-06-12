@@ -325,6 +325,56 @@ impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonMapDisplayState {
+    current_floor: u16,
+}
+
+impl DungeonMapDisplayState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            current_floor: read_le_u16(ram, DUNGEON_MAP_CURRENT_FLOOR),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_MAP_CURRENT_FLOOR, self.current_floor);
+    }
+
+    pub(crate) fn current_floor(&self) -> u16 {
+        self.current_floor
+    }
+
+    pub(crate) fn clear_current_floor_high(&mut self) {
+        self.current_floor &= 0x00ff;
+    }
+}
+
+pub(crate) struct NativeDungeonMapDisplayBridgeMut<'a> {
+    display: &'a mut DungeonMapDisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DungeonMapDisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DungeonMapDisplayState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.display,
+            DungeonMapDisplayState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_current_floor_high(&mut self) {
+        self.display.clear_current_floor_high();
+        self.ram[DUNGEON_MAP_CURRENT_FLOOR + 1] = 0;
+        self.debug_assert_matches_ram();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {
     hit_counter: u8,
     arrows_left: u8,

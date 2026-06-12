@@ -26,11 +26,11 @@ impl<'a> OverworldConfigTableRawView<'a> {
     }
 }
 
-pub(crate) struct DungeonMapViewMut<'a> {
+pub(crate) struct DungeonMapDisplayRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> DungeonMapViewMut<'a> {
+impl<'a> DungeonMapDisplayRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

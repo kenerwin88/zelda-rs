@@ -46,10 +46,11 @@ pub(crate) use messaging::{
     VwfRenderState,
 };
 pub(crate) use misc::{
-    ArcheryGameState, DungeonSecretState, EnhancedFeaturesState, MemorizedTileState,
-    NativeArcheryGameBridgeMut, NativeDungeonSecretBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut,
-    SaveLoadTransferState, SpriteBattleState,
+    ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
+    MemorizedTileState, NativeArcheryGameBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDungeonSecretBridgeMut, NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut, SaveLoadTransferState,
+    SpriteBattleState,
 };
 pub(crate) use player::{
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
@@ -109,6 +110,7 @@ pub(crate) struct GameState {
     pub(crate) memorized_tiles: MemorizedTileState,
     pub(crate) dungeon_secret: DungeonSecretState,
     pub(crate) save_load_transfer: SaveLoadTransferState,
+    pub(crate) dungeon_map_display: DungeonMapDisplayState,
     pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
@@ -130,6 +132,7 @@ impl GameState {
             memorized_tiles: MemorizedTileState::load_from_ram(ram),
             dungeon_secret: DungeonSecretState::load_from_ram(ram),
             save_load_transfer: SaveLoadTransferState::load_from_ram(ram),
+            dungeon_map_display: DungeonMapDisplayState::load_from_ram(ram),
             sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
@@ -150,6 +153,7 @@ impl GameState {
         self.memorized_tiles.write_to_ram(ram);
         self.dungeon_secret.write_to_ram(ram);
         self.save_load_transfer.write_to_ram(ram);
+        self.dungeon_map_display.write_to_ram(ram);
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
@@ -531,6 +535,35 @@ mod tests {
 
         assert_eq!(transfer.source_offset(), 0x4567);
         assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x4567);
+    }
+
+    #[test]
+    fn dungeon_map_display_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_MAP_CURRENT_FLOOR, 0x1234);
+
+        let mut display = DungeonMapDisplayState::load_from_ram(&ram);
+        assert_eq!(display.current_floor(), 0x1234);
+
+        display.clear_current_floor_high();
+        display.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
+    }
+
+    #[test]
+    fn native_dungeon_map_display_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_MAP_CURRENT_FLOOR, 0x1234);
+
+        let mut display = DungeonMapDisplayState::default();
+        {
+            let mut bridge = NativeDungeonMapDisplayBridgeMut::new(&mut display, &mut ram);
+            bridge.clear_current_floor_high();
+        }
+
+        assert_eq!(display.current_floor(), 0x0034);
+        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
     }
 
     #[test]
