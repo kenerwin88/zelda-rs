@@ -44,10 +44,10 @@ use crate::game_state::{
     DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
-    EndingCreditStateView, EndingCreditStateViewMut, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesView, EnhancedFeaturesViewMut,
-    EtherOrbitView, EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState,
-    GameState, GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
+    EnemyDamageDataViewMut, EnhancedFeaturesView, EnhancedFeaturesViewMut, EtherOrbitView,
+    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
+    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
     HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderView,
     HudInventoryOrderViewMut, HudStateView, HudStateViewMut, IntroActorView, IntroActorViewMut,
@@ -59,13 +59,14 @@ use crate::game_state::{
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
     MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
     NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeFrameStateBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
     OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
@@ -3245,12 +3246,32 @@ impl ZeldaState {
         IntroStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn ending_credit_state_view(&self) -> EndingCreditStateView<'_> {
-        EndingCreditStateView::new(&self.ram)
+    pub(crate) fn ending_credit_state(&self) -> EndingCreditState {
+        self.game_state.ending.credits
     }
 
-    pub(crate) fn ending_credit_state_view_mut(&mut self) -> EndingCreditStateViewMut<'_> {
-        EndingCreditStateViewMut::new(&mut self.ram)
+    fn ending_credit_bridge_mut(&mut self) -> NativeEndingCreditBridgeMut<'_> {
+        NativeEndingCreditBridgeMut::new(&mut self.game_state.ending.credits, &mut self.ram)
+    }
+
+    pub(crate) fn clear_ending_palace_death_count_digit_step(&mut self) {
+        self.ending_credit_bridge_mut()
+            .clear_palace_death_count_digit_step();
+    }
+
+    pub(crate) fn set_ending_palace_death_count_digit_step(&mut self, value: u16) {
+        self.ending_credit_bridge_mut()
+            .set_palace_death_count_digit_step(value);
+    }
+
+    pub(crate) fn advance_ending_palace_death_count_digit_step(&mut self) {
+        self.ending_credit_bridge_mut()
+            .advance_palace_death_count_digit_step();
+    }
+
+    pub(crate) fn set_ending_death_count_digit_tile_base(&mut self, value: u16) {
+        self.ending_credit_bridge_mut()
+            .set_death_count_digit_tile_base(value);
     }
 
     pub(crate) fn intro_sword_view(&self) -> IntroSwordView<'_> {

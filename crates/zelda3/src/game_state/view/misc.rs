@@ -408,42 +408,6 @@ impl<'a> IntroStateViewMut<'a> {
     }
 }
 
-pub(crate) struct EndingCreditStateView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> EndingCreditStateView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn which_dung(&self) -> u16 {
-        word(self.ram, ENDING_WHICH_DUNG)
-    }
-}
-
-pub(crate) struct EndingCreditStateViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> EndingCreditStateViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_which_dung(&mut self, value: u16) {
-        write_le_u16(self.ram, ENDING_WHICH_DUNG, value);
-    }
-
-    pub(crate) fn clear_which_dung(&mut self) {
-        write_le_u16(self.ram, ENDING_WHICH_DUNG, 0);
-    }
-
-    pub(crate) fn set_credit_digit_char(&mut self, value: u16) {
-        write_le_u16(self.ram, ENDING_CREDIT_DIGIT_CHAR, value);
-    }
-}
-
 pub(crate) struct IntroSwordView<'a> {
     ram: &'a [u8],
 }

@@ -2470,7 +2470,7 @@ impl ZeldaState {
         self.set_sub_screen_layers(0);
         self.ending_scratch_view_mut().set_primary_word(0x6800);
         self.ending_scratch_view_mut().set_secondary_word(0);
-        self.ending_credit_state_view_mut().clear_which_dung();
+        self.clear_ending_palace_death_count_digit_step();
         self.world_state_view_mut().set_bg2_y((-0x48i16) as u16);
         self.world_state_view_mut().set_bg2_x(0x90);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
@@ -2575,11 +2575,14 @@ impl ZeldaState {
                 }
             }
 
-            let mut which = self.ending_credit_state_view().which_dung();
-            let which_idx = (which >> 1) as usize;
-            if (which & 1) != 0 || (r18 as u16).wrapping_mul(2) == DIGITS_SCROLL_Y[which_idx] {
-                let t = DIGIT_CHAR[(which & 1) as usize];
-                self.ending_credit_state_view_mut().set_credit_digit_char(t);
+            let credits = self.ending_credit_state();
+            let which_idx = credits.palace_death_count_index();
+            if credits.should_write_digit_for_scroll_y(
+                (r18 as u16).wrapping_mul(2),
+                DIGITS_SCROLL_Y[which_idx],
+            ) {
+                let t = DIGIT_CHAR[credits.digit_tile_base_index()];
+                self.set_ending_death_count_digit_tile_base(t);
                 self.write_vram_upload_absolute_word(dst, r16.wrapping_add(0x19).swap_bytes());
                 self.write_vram_upload_absolute_word(dst + 2, 0x0500);
                 let palace = ATTRIBUTION_PALACE_ORDER[which_idx];
@@ -2593,8 +2596,7 @@ impl ZeldaState {
                 deaths /= 10;
                 self.write_vram_upload_absolute_word(dst + 4, t.wrapping_add(deaths));
                 dst += 10;
-                which = which.wrapping_add(1);
-                self.ending_credit_state_view_mut().set_which_dung(which);
+                self.advance_ending_palace_death_count_digit_step();
             }
         }
 

@@ -5,6 +5,7 @@
 //! projected to or loaded from WRAM during the transition.
 
 mod display;
+mod ending;
 mod frame;
 mod world;
 
@@ -13,6 +14,7 @@ pub(crate) use display::{
     NativeDisplayStateBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
     TrinexxPaletteState,
 };
+pub(crate) use ending::{EndingCreditState, EndingState, NativeEndingCreditBridgeMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -44,6 +46,7 @@ pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
+    pub(crate) ending: EndingState,
 }
 
 impl GameState {
@@ -52,6 +55,7 @@ impl GameState {
             frame: FrameState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
+            ending: EndingState::load_from_ram(ram),
         }
     }
 
@@ -59,6 +63,7 @@ impl GameState {
         self.frame.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
+        self.ending.write_to_ram(ram);
     }
 }
 
@@ -1357,6 +1362,49 @@ mod tests {
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
         assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 2);
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 5);
+    }
+
+    #[test]
+    fn ending_credit_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ENDING_WHICH_DUNG, 5);
+        write_le_u16(&mut ram, ENDING_CREDIT_DIGIT_CHAR, 0x3cf6);
+
+        let mut credits = EndingCreditState::load_from_ram(&ram);
+        assert_eq!(credits.palace_death_count_digit_step, 5);
+        assert_eq!(credits.palace_death_count_index(), 2);
+        assert_eq!(credits.digit_tile_base_index(), 1);
+        assert!(credits.should_write_digit_for_scroll_y(0x200, 0x290));
+        assert_eq!(credits.death_count_digit_tile_base, 0x3cf6);
+
+        credits.clear_palace_death_count_digit_step();
+        credits.death_count_digit_tile_base = 0x3ce6;
+        credits.advance_palace_death_count_digit_step();
+        credits.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, ENDING_WHICH_DUNG), 1);
+        assert_eq!(read_le_u16(&ram, ENDING_CREDIT_DIGIT_CHAR), 0x3ce6);
+    }
+
+    #[test]
+    fn native_ending_credit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ENDING_WHICH_DUNG, 0xffff);
+        write_le_u16(&mut ram, ENDING_CREDIT_DIGIT_CHAR, 0x1111);
+
+        let mut credits = EndingCreditState::default();
+        {
+            let mut bridge = NativeEndingCreditBridgeMut::new(&mut credits, &mut ram);
+            bridge.clear_palace_death_count_digit_step();
+            bridge.advance_palace_death_count_digit_step();
+            bridge.set_death_count_digit_tile_base(0x3cf6);
+            bridge.set_palace_death_count_digit_step(4);
+        }
+
+        assert_eq!(credits.palace_death_count_digit_step, 4);
+        assert_eq!(credits.death_count_digit_tile_base, 0x3cf6);
+        assert_eq!(read_le_u16(&ram, ENDING_WHICH_DUNG), 4);
+        assert_eq!(read_le_u16(&ram, ENDING_CREDIT_DIGIT_CHAR), 0x3cf6);
     }
 
     #[test]
