@@ -5312,7 +5312,7 @@ impl ZeldaState {
         let vram_page = NMI_VRAM_ADDRS[target];
         let dst = vram_page << 8;
         for i in 0..0x400 {
-            self.ppu.vram[dst + i] = self.vram_upload_data_view().tilemap_word(i * 2);
+            self.ppu.vram[dst + i] = self.vram_upload_tilemap_word(i * 2);
         }
         self.clear_vram_upload_cursor();
         self.clear_core_update_disable_flag();

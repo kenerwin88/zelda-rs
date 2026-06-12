@@ -1581,11 +1581,11 @@ impl ZeldaState {
                 let end = self.display_state().vram_upload_cursor_usize();
                 let mut off = 0usize;
                 while off != end {
-                    let v0 = self.vram_upload_data_view().word(off) | 0x10;
+                    let v0 = self.vram_upload_buffer_word(off) | 0x10;
                     self.vram_upload_data_view_mut().set_word(off, v0);
                     for word in [2usize, 3] {
                         let offset = off + word * 2;
-                        if self.vram_upload_data_view().word(offset) == 0x08aa {
+                        if self.vram_upload_buffer_word(offset) == 0x08aa {
                             self.vram_upload_data_view_mut().set_word(offset, 0x01e3);
                         }
                     }
@@ -5955,7 +5955,7 @@ mod tests {
 
         state.turtle_rock_vram_common(0x10);
 
-        assert_eq!(state.vram_upload_data_view().byte(6), 0xff);
+        assert_eq!(state.vram_upload_buffer_byte(6), 0xff);
         assert_eq!(state.ram[UVRAM_DATA_OVERWORLD + 6], 0);
     }
 }

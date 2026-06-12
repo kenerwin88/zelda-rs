@@ -225,6 +225,34 @@ impl DisplayState {
         self.vram_upload_buffer_base() + offset
     }
 
+    pub(crate) fn vram_upload_buffer_word(&self, ram: &[u8], offset: usize) -> u16 {
+        let address = self.vram_upload_buffer_address(offset);
+        if address + 1 < ram.len() {
+            read_le_u16(ram, address)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn vram_upload_tilemap_word(&self, ram: &[u8], offset: usize) -> u16 {
+        let address = VRAM_UPLOAD_OFFSET + offset;
+        if address + 1 < ram.len() {
+            read_le_u16(ram, address)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn vram_upload_buffer_byte(&self, ram: &[u8], offset: usize) -> u8 {
+        ram.get(self.vram_upload_buffer_address(offset))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn vram_upload_buffer_remaining<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[self.vram_upload_buffer_base()..]
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }

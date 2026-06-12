@@ -397,32 +397,6 @@ impl<'a> RoomBoundsViewMut<'a> {
     }
 }
 
-pub(crate) struct VramUploadDataView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> VramUploadDataView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn word(&self, offset: usize) -> u16 {
-        word(self.ram, VRAM_UPLOAD_DATA + offset)
-    }
-
-    pub(crate) fn tilemap_word(&self, offset: usize) -> u16 {
-        word(self.ram, VRAM_UPLOAD_OFFSET + offset)
-    }
-
-    pub(crate) fn byte(&self, offset: usize) -> u8 {
-        byte(self.ram, VRAM_UPLOAD_DATA + offset)
-    }
-
-    pub(crate) fn remaining_data(&self) -> &[u8] {
-        &self.ram[VRAM_UPLOAD_DATA..]
-    }
-}
-
 pub(crate) struct VramUploadDataViewMut<'a> {
     ram: &'a mut [u8],
 }

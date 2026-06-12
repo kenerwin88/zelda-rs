@@ -1295,7 +1295,7 @@ impl ZeldaState {
         for row in 0..8 {
             let dst = dstv + row * 0x80;
             for i in 0..0x80 {
-                self.ppu.vram[dst + i] = self.vram_upload_data_view().word(4 + i * 2);
+                self.ppu.vram[dst + i] = self.vram_upload_buffer_word(4 + i * 2);
             }
         }
     }

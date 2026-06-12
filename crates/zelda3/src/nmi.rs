@@ -100,7 +100,7 @@ impl ZeldaState {
         if self.display_state().has_bg_vram_load() {
             match self.display_state().bg_vram_load_mode {
                 1 => {
-                    let stripes = self.vram_upload_data_view().remaining_data().to_vec();
+                    let stripes = self.vram_upload_buffer_remaining().to_vec();
                     self.handle_stripes14_slice(&stripes);
                 }
                 2 => {

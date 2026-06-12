@@ -88,9 +88,9 @@ use crate::game_state::{
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
     TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
-    VramLoadStateViewMut, VramUploadDataView, VwfGlyphSpacingView, VwfGlyphSpacingViewMut,
-    WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
+    VramLoadStateViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2715,8 +2715,23 @@ impl ZeldaState {
         RoomBoundsViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn vram_upload_data_view(&self) -> VramUploadDataView<'_> {
-        VramUploadDataView::new(&self.ram)
+    pub(crate) fn vram_upload_buffer_word(&self, offset: usize) -> u16 {
+        self.display_state()
+            .vram_upload_buffer_word(&self.ram, offset)
+    }
+
+    pub(crate) fn vram_upload_tilemap_word(&self, offset: usize) -> u16 {
+        self.display_state()
+            .vram_upload_tilemap_word(&self.ram, offset)
+    }
+
+    pub(crate) fn vram_upload_buffer_byte(&self, offset: usize) -> u8 {
+        self.display_state()
+            .vram_upload_buffer_byte(&self.ram, offset)
+    }
+
+    pub(crate) fn vram_upload_buffer_remaining(&self) -> &[u8] {
+        self.display_state().vram_upload_buffer_remaining(&self.ram)
     }
 
     pub(crate) fn vram_upload_data_view_mut(&mut self) -> NativeVramUploadDataViewMut<'_> {

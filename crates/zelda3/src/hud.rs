@@ -1807,7 +1807,7 @@ impl ZeldaState {
         if base == HUD_TILE_INDICES_BUFFER {
             self.hud_state_view().tile_word(tile as usize)
         } else {
-            self.vram_upload_data_view().tilemap_word(addr - 0x1000)
+            self.vram_upload_tilemap_word(addr - 0x1000)
         }
     }
 
