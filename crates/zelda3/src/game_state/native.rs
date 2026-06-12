@@ -62,7 +62,8 @@ pub(crate) use sprites::{
     NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteState,
+    NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
+    SpriteState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -93,7 +94,7 @@ use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use sprites::{
     DualLayerTileCacheState, EnemyDamageSubclassTableState, MazeGameTimerState,
-    PrizeDropCycleState, SpriteDrawHitboxWorkState,
+    PrizeDropCycleState, SpriteDrawHitboxWorkState, TagalongTrailState,
 };
 #[cfg(test)]
 use world::{
@@ -1002,6 +1003,64 @@ mod tests {
         assert_eq!(cache.tile_type(4), 0x2a);
         assert_eq!(cache.tile_type(18), 0);
         assert_eq!(ram[DUAL_LAYER_TILE_CACHE + 4], 0x2a);
+    }
+
+    #[test]
+    fn tagalong_trail_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TAGALONG_X_LO + 3] = 0x34;
+        ram[TAGALONG_X_HI + 3] = 0x12;
+        ram[TAGALONG_Y_LO + 3] = 0x78;
+        ram[TAGALONG_Y_HI + 3] = 0x56;
+        ram[TAGALONG_Z + 3] = 0xf0;
+        ram[TAGALONG_LAYERBITS + 3] = 0x23;
+
+        let trail = TagalongTrailState::load_from_ram(&ram);
+        assert_eq!(trail.x(3), 0x1234);
+        assert_eq!(trail.y(3), 0x5678);
+        assert_eq!(trail.z(3), 0xf0);
+        assert_eq!(trail.layer_bits(3), 0x23);
+        assert_eq!(trail.x(20), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        trail.write_to_ram(&mut projected);
+        assert_eq!(TagalongTrailState::load_from_ram(&projected), trail);
+    }
+
+    #[test]
+    fn native_tagalong_slot_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TAGALONG_X_LO + 2] = 1;
+        ram[TAGALONG_X_HI + 2] = 2;
+
+        let mut trail = TagalongTrailState::default();
+        {
+            let mut slot = NativeTagalongSlotBridgeMut::new(&mut trail, &mut ram, 2);
+            slot.set_position(0x1234, 0x5678);
+            slot.set_y_high(0x9a);
+            slot.set_z(0xf8);
+            slot.set_layer_bits(0x23);
+        }
+
+        assert_eq!(trail.x(2), 0x1234);
+        assert_eq!(trail.y(2), 0x9a78);
+        assert_eq!(trail.z(2), 0xf8);
+        assert_eq!(trail.layer_bits(2), 0x23);
+        assert_eq!(ram[TAGALONG_X_LO + 2], 0x34);
+        assert_eq!(ram[TAGALONG_X_HI + 2], 0x12);
+        assert_eq!(ram[TAGALONG_Y_LO + 2], 0x78);
+        assert_eq!(ram[TAGALONG_Y_HI + 2], 0x9a);
+        assert_eq!(ram[TAGALONG_Z + 2], 0xf8);
+        assert_eq!(ram[TAGALONG_LAYERBITS + 2], 0x23);
+
+        {
+            let mut out_of_range = NativeTagalongSlotBridgeMut::new(&mut trail, &mut ram, 20);
+            out_of_range.set_position(0xffff, 0xffff);
+            out_of_range.set_z(0xff);
+        }
+
+        assert_eq!(trail.x(20), 0);
+        assert_eq!(trail.z(20), 0);
     }
 
     #[test]

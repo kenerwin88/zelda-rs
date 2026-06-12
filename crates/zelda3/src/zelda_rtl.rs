@@ -71,28 +71,28 @@ use crate::game_state::{
     NativeSaveLoadTransferBridgeMut, NativeSharedMessageTimerBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
-    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
-    SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
     SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
+    SystemSignalsState, TagalongSlotView, TempCounterView, TempCounterViewMut,
     TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
     TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
     TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
@@ -3949,11 +3949,18 @@ impl ZeldaState {
     }
 
     pub(crate) fn tagalong_slot_view(&self, slot: usize) -> TagalongSlotView<'_> {
-        TagalongSlotView::new(&self.ram, slot)
+        TagalongSlotView::new(&self.game_state.sprites.tagalong_trail, slot)
     }
 
-    pub(crate) fn tagalong_slot_view_mut(&mut self, slot: usize) -> TagalongSlotViewMut<'_> {
-        TagalongSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn tagalong_slot_view_mut(
+        &mut self,
+        slot: usize,
+    ) -> NativeTagalongSlotBridgeMut<'_> {
+        NativeTagalongSlotBridgeMut::new(
+            &mut self.game_state.sprites.tagalong_trail,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn follower_state_view(&self) -> FollowerStateView<'_> {

@@ -2,10 +2,12 @@ use crate::game_state::constants::{
     DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
     ENEMY_DAMAGE_DATA, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI,
     MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
+    TAGALONG_LAYERBITS, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
+const TAGALONG_SLOT_COUNT: usize = 20;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -15,6 +17,7 @@ pub(crate) struct SpriteState {
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
     pub(crate) draw_hitbox_work: SpriteDrawHitboxWorkState,
     pub(crate) enemy_damage_subclasses: EnemyDamageSubclassTableState,
+    pub(crate) tagalong_trail: TagalongTrailState,
 }
 
 impl SpriteState {
@@ -25,6 +28,7 @@ impl SpriteState {
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
             draw_hitbox_work: SpriteDrawHitboxWorkState::load_from_ram(ram),
             enemy_damage_subclasses: EnemyDamageSubclassTableState::load_from_ram(ram),
+            tagalong_trail: TagalongTrailState::load_from_ram(ram),
         }
     }
 
@@ -34,6 +38,186 @@ impl SpriteState {
         self.dual_layer_tile_cache.write_to_ram(ram);
         self.draw_hitbox_work.write_to_ram(ram);
         self.enemy_damage_subclasses.write_to_ram(ram);
+        self.tagalong_trail.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TagalongTrailState {
+    x_low: [u8; TAGALONG_SLOT_COUNT],
+    x_high: [u8; TAGALONG_SLOT_COUNT],
+    y_low: [u8; TAGALONG_SLOT_COUNT],
+    y_high: [u8; TAGALONG_SLOT_COUNT],
+    z: [u8; TAGALONG_SLOT_COUNT],
+    layer_bits: [u8; TAGALONG_SLOT_COUNT],
+}
+
+impl TagalongTrailState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            x_low: read_tagalong_bank(ram, TAGALONG_X_LO),
+            x_high: read_tagalong_bank(ram, TAGALONG_X_HI),
+            y_low: read_tagalong_bank(ram, TAGALONG_Y_LO),
+            y_high: read_tagalong_bank(ram, TAGALONG_Y_HI),
+            z: read_tagalong_bank(ram, TAGALONG_Z),
+            layer_bits: read_tagalong_bank(ram, TAGALONG_LAYERBITS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_tagalong_bank(ram, TAGALONG_X_LO, self.x_low);
+        write_tagalong_bank(ram, TAGALONG_X_HI, self.x_high);
+        write_tagalong_bank(ram, TAGALONG_Y_LO, self.y_low);
+        write_tagalong_bank(ram, TAGALONG_Y_HI, self.y_high);
+        write_tagalong_bank(ram, TAGALONG_Z, self.z);
+        write_tagalong_bank(ram, TAGALONG_LAYERBITS, self.layer_bits);
+    }
+
+    pub(crate) fn x(&self, slot: usize) -> u16 {
+        packed_slot_position(self.x_low, self.x_high, slot)
+    }
+
+    pub(crate) fn y(&self, slot: usize) -> u16 {
+        packed_slot_position(self.y_low, self.y_high, slot)
+    }
+
+    pub(crate) fn z(&self, slot: usize) -> u8 {
+        self.z.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn layer_bits(&self, slot: usize) -> u8 {
+        self.layer_bits.get(slot).copied().unwrap_or(0)
+    }
+}
+
+fn read_tagalong_bank(ram: &[u8], base: usize) -> [u8; TAGALONG_SLOT_COUNT] {
+    let mut bank = [0; TAGALONG_SLOT_COUNT];
+    for (slot, value) in bank.iter_mut().enumerate() {
+        *value = ram.get(base + slot).copied().unwrap_or(0);
+    }
+    bank
+}
+
+fn write_tagalong_bank(ram: &mut [u8], base: usize, bank: [u8; TAGALONG_SLOT_COUNT]) {
+    for (slot, value) in bank.iter().copied().enumerate() {
+        ram[base + slot] = value;
+    }
+}
+
+fn packed_slot_position(
+    low_bank: [u8; TAGALONG_SLOT_COUNT],
+    high_bank: [u8; TAGALONG_SLOT_COUNT],
+    slot: usize,
+) -> u16 {
+    u16::from(low_bank.get(slot).copied().unwrap_or(0))
+        | (u16::from(high_bank.get(slot).copied().unwrap_or(0)) << 8)
+}
+
+pub(crate) struct TagalongSlotView<'a> {
+    state: &'a TagalongTrailState,
+    slot: usize,
+}
+
+impl<'a> TagalongSlotView<'a> {
+    pub(crate) fn new(state: &'a TagalongTrailState, slot: usize) -> Self {
+        Self { state, slot }
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.state.x(self.slot)
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.state.y(self.slot)
+    }
+
+    pub(crate) fn z(&self) -> u8 {
+        self.state.z(self.slot)
+    }
+
+    pub(crate) fn z_signed(&self) -> i8 {
+        self.z() as i8
+    }
+
+    pub(crate) fn is_above_ground(&self) -> bool {
+        self.z_signed() > 0
+    }
+
+    pub(crate) fn layer_bits(&self) -> u8 {
+        self.state.layer_bits(self.slot)
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.layer_bits() & 3
+    }
+}
+
+pub(crate) struct NativeTagalongSlotBridgeMut<'a> {
+    state: &'a mut TagalongTrailState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeTagalongSlotBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut TagalongTrailState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = TagalongTrailState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        if self.slot < TAGALONG_SLOT_COUNT {
+            self.state.x_low[self.slot] = value as u8;
+            self.state.x_high[self.slot] = (value >> 8) as u8;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        if self.slot < TAGALONG_SLOT_COUNT {
+            self.state.y_low[self.slot] = value as u8;
+            self.state.y_high[self.slot] = (value >> 8) as u8;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        if let Some(y_high) = self.state.y_high.get_mut(self.slot) {
+            *y_high = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        if self.slot < TAGALONG_SLOT_COUNT {
+            self.state.x_low[self.slot] = x as u8;
+            self.state.x_high[self.slot] = (x >> 8) as u8;
+            self.state.y_low[self.slot] = y as u8;
+            self.state.y_high[self.slot] = (y >> 8) as u8;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_z(&mut self, value: u8) {
+        if let Some(z) = self.state.z.get_mut(self.slot) {
+            *z = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_layer_bits(&mut self, value: u8) {
+        if let Some(layer_bits) = self.state.layer_bits.get_mut(self.slot) {
+            *layer_bits = value;
+            self.sync();
+        }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, TagalongTrailState::load_from_ram(self.ram));
     }
 }
 

@@ -6384,11 +6384,10 @@ mod tests {
 
         let mut old_man = fresh_state();
         let t = 2;
-        old_man.ram[TAGALONG_LAYERBITS + t] = 2;
-        old_man.ram[TAGALONG_Y_LO + t] = 0x40;
-        old_man.ram[TAGALONG_Y_HI + t] = 0x03;
-        old_man.ram[TAGALONG_X_LO + t] = 0x20;
-        old_man.ram[TAGALONG_X_HI + t] = 0x04;
+        old_man.tagalong_slot_view_mut(t).set_layer_bits(2);
+        old_man
+            .tagalong_slot_view_mut(t)
+            .set_position(0x0420, 0x0340);
         old_man.player_state_view_mut().mark_lower_level();
         old_man.follower_state_view_mut().set_indicator(6);
         old_man.player_state_view_mut().set_speed_setting(9);
