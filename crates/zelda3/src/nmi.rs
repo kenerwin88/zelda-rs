@@ -147,7 +147,10 @@ impl ZeldaState {
             let dst = self
                 .display_state()
                 .pending_tilemap_update_vram_destination();
-            let src_data = self.display_nmi_view().update_tilemap_src_data().to_vec();
+            let src_data = self
+                .display_state()
+                .pending_tilemap_update_source_data(&self.ram)
+                .to_vec();
             if src_data.len() >= 0x200 {
                 self.copy_to_vram_slice(dst, &src_data, 0x200);
             }

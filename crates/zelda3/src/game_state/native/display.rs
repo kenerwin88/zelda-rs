@@ -13,6 +13,7 @@ pub(crate) struct DisplayState {
     pub(crate) pending_nmi_subroutine: u8,
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) pending_tilemap_update_destination_page: u8,
+    pub(crate) pending_tilemap_update_source_offset: u16,
     pub(crate) bg_mode: u8,
     pub(crate) main_screen_layers: u8,
     pub(crate) sub_screen_layers: u8,
@@ -57,6 +58,7 @@ impl DisplayState {
             pending_nmi_subroutine: ram_byte(ram, NMI_SUBROUTINE_INDEX),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             pending_tilemap_update_destination_page: ram_byte(ram, NMI_UPDATE_TILEMAP_DST),
+            pending_tilemap_update_source_offset: read_le_u16(ram, NMI_UPDATE_TILEMAP_SRC),
             bg_mode: ram_byte(ram, BGMODE_COPY),
             main_screen_layers: ram_byte(ram, TM_COPY),
             sub_screen_layers: ram_byte(ram, TS_COPY),
@@ -100,6 +102,11 @@ impl DisplayState {
         ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[NMI_UPDATE_TILEMAP_DST] = self.pending_tilemap_update_destination_page;
+        write_le_u16(
+            ram,
+            NMI_UPDATE_TILEMAP_SRC,
+            self.pending_tilemap_update_source_offset,
+        );
         ram[BGMODE_COPY] = self.bg_mode;
         ram[TM_COPY] = self.main_screen_layers;
         ram[TS_COPY] = self.sub_screen_layers;
@@ -169,6 +176,15 @@ impl DisplayState {
 
     pub(crate) fn pending_tilemap_update_vram_destination(&self) -> usize {
         usize::from(self.pending_tilemap_update_destination_page) * 256
+    }
+
+    pub(crate) fn pending_tilemap_update_source_address(&self) -> usize {
+        crate::game_state::constants::nmi::BG_CHAR_BUFFER
+            + usize::from(self.pending_tilemap_update_source_offset)
+    }
+
+    pub(crate) fn pending_tilemap_update_source_data<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[self.pending_tilemap_update_source_address().min(ram.len())..]
     }
 
     pub(crate) fn layer_masks_word(&self) -> u16 {
@@ -421,10 +437,14 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         );
     }
 
-    fn debug_assert_pending_tilemap_update_destination_matches_ram(&self) {
+    fn debug_assert_pending_tilemap_update_matches_ram(&self) {
         debug_assert_eq!(
             self.display.pending_tilemap_update_destination_page,
             ram_byte(self.ram, NMI_UPDATE_TILEMAP_DST)
+        );
+        debug_assert_eq!(
+            self.display.pending_tilemap_update_source_offset,
+            read_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC)
         );
     }
 
@@ -674,16 +694,16 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
         self.display.pending_tilemap_update_destination_page = destination_page;
+        self.display.pending_tilemap_update_source_offset = source_offset;
         self.ram[NMI_UPDATE_TILEMAP_DST] = destination_page;
         write_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC, source_offset);
-        self.debug_assert_pending_tilemap_update_destination_matches_ram();
-        debug_assert_eq!(read_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC), source_offset);
+        self.debug_assert_pending_tilemap_update_matches_ram();
     }
 
     pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
         self.display.pending_tilemap_update_destination_page = 0;
         self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
-        self.debug_assert_pending_tilemap_update_destination_matches_ram();
+        self.debug_assert_pending_tilemap_update_matches_ram();
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {

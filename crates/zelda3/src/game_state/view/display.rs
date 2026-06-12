@@ -9,12 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn update_tilemap_src_data(&self) -> &[u8] {
-        let offset = word(self.ram, NMI_UPDATE_TILEMAP_SRC) as usize;
-        let start = crate::game_state::constants::nmi::BG_CHAR_BUFFER + offset;
-        &self.ram[start.min(self.ram.len())..]
-    }
-
     pub(crate) fn animated_tile_data(&self) -> &[u8] {
         let src = word(self.ram, ANIMATED_TILE_DATA_SRC) as usize;
         &self.ram[src.min(self.ram.len())..]

@@ -645,6 +645,7 @@ mod tests {
         ram[NMI_SUBROUTINE_INDEX] = 11;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[NMI_UPDATE_TILEMAP_DST] = 0x50;
+        write_le_u16(&mut ram, NMI_UPDATE_TILEMAP_SRC, 0x0200);
         ram[BGMODE_COPY] = 7;
         ram[TM_COPY] = 0x16;
         ram[TS_COPY] = 0x01;
@@ -688,6 +689,11 @@ mod tests {
         assert_eq!(display.pending_tilemap_update_destination_page, 0x50);
         assert!(display.has_pending_tilemap_update());
         assert_eq!(display.pending_tilemap_update_vram_destination(), 0x5000);
+        assert_eq!(display.pending_tilemap_update_source_offset, 0x0200);
+        assert_eq!(
+            display.pending_tilemap_update_source_address(),
+            crate::game_state::constants::nmi::BG_CHAR_BUFFER + 0x0200
+        );
         assert_eq!(display.bg_mode, 7);
         assert_eq!(display.main_screen_layers, 0x16);
         assert_eq!(display.sub_screen_layers, 0x01);
@@ -745,6 +751,7 @@ mod tests {
         display.pending_nmi_subroutine = 0;
         display.bg_vram_load_mode = 0;
         display.pending_tilemap_update_destination_page = 0x40;
+        display.pending_tilemap_update_source_offset = 0x0600;
         display.bg_mode = 9;
         display.main_screen_layers = 0x11;
         display.sub_screen_layers = 0;
@@ -783,6 +790,7 @@ mod tests {
         assert_eq!(ram[NMI_SUBROUTINE_INDEX], 0);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[NMI_UPDATE_TILEMAP_DST], 0x40);
+        assert_eq!(read_le_u16(&ram, NMI_UPDATE_TILEMAP_SRC), 0x0600);
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[TM_COPY], 0x11);
         assert_eq!(ram[TS_COPY], 0);
@@ -960,6 +968,11 @@ mod tests {
         assert_eq!(display.pending_tilemap_update_destination_page, 0x54);
         assert!(display.has_pending_tilemap_update());
         assert_eq!(display.pending_tilemap_update_vram_destination(), 0x5400);
+        assert_eq!(display.pending_tilemap_update_source_offset, 0x0800);
+        assert_eq!(
+            display.pending_tilemap_update_source_address(),
+            crate::game_state::constants::nmi::BG_CHAR_BUFFER + 0x0800
+        );
         assert_eq!(display.bg_mode, 9);
         assert_eq!(display.main_screen_layers, 0x11);
         assert_eq!(display.sub_screen_layers, 0x02);
