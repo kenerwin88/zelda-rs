@@ -16,7 +16,7 @@ impl ZeldaState {
             && self.frame_control_view().saved_module_for_menu() == 0
             && self.dialogue_message_index_view().value() == 0x000a
         {
-            let stall = match self.frame_control_view().submodule() {
+            let stall = match self.frame_state().submodule {
                 1 => 58,
                 2 => 1,
                 _ => 0,
@@ -34,7 +34,7 @@ impl ZeldaState {
                     println!(
                         "file-select-stall frame={} sub={} msg=0x{:04x} stall={} before={} seeded={} after={} return={} save_slot_flags={},{},{}",
                         self.frame_ctr_dbg,
-                        self.frame_control_view().submodule(),
+                        self.frame_state().submodule,
                         self.dialogue_message_index_view().value(),
                         stall,
                         before,
@@ -56,7 +56,7 @@ impl ZeldaState {
                     println!(
                         "file-select-stall frame={} sub={} msg=0x{:04x} stall=0 before={} seeded={} after=0 return=0 save_slot_flags={},{},{}",
                         self.frame_ctr_dbg,
-                        self.frame_control_view().submodule(),
+                        self.frame_state().submodule,
                         self.dialogue_message_index_view().value(),
                         self.replay_reload_file_select_stall,
                         self.replay_reload_file_select_stall,
@@ -74,7 +74,7 @@ impl ZeldaState {
                 println!(
                     "file-select-stall frame={} sub={} msg=0x{:04x} stall=0 before={} seeded={} after=0 return=0 save_slot_flags={},{},{}",
                     self.frame_ctr_dbg,
-                    self.frame_control_view().submodule(),
+                    self.frame_state().submodule,
                     self.dialogue_message_index_view().value(),
                     self.replay_reload_file_select_stall,
                     self.replay_reload_file_select_stall,
@@ -88,7 +88,7 @@ impl ZeldaState {
 
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.module_select_file_0(),
             1 => self.file_select_re_init_save_flags_and_erase_triforce(),
             2 => self.module_erase_file_1(),
@@ -377,7 +377,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_draw_fairy(&mut self, x: u8, y: u8) {
-        let charnum = if self.frame_control_view().frame_counter() & 8 != 0 {
+        let charnum = if self.frame_state().frame_counter & 8 != 0 {
             0xaa
         } else {
             0xa8
@@ -551,7 +551,7 @@ impl ZeldaState {
             if self.select_file_scratch_view().cursor() == 0 {
                 self.system_signals_view_mut().set_sound_effect_2(0x22);
                 self.system_signals_view_mut().set_sound_effect_1(0);
-                let k = self.frame_control_view().subsubmodule() as usize;
+                let k = self.frame_state().subsubmodule as usize;
                 self.select_file_scratch_view_mut().clear_save_slot_flag(k);
                 let base = k * 0x500;
                 self.sram[base..base + 0x500].fill(0);
@@ -566,7 +566,7 @@ impl ZeldaState {
     pub(super) fn module02_copy_file(&mut self) {
         self.select_file_scratch_view_mut()
             .clear_remembered_cursor();
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
             2 => self.module_copy_file_2(),
@@ -591,9 +591,7 @@ impl ZeldaState {
 
     pub(super) fn copy_file_choose_selection(&mut self) {
         self.copy_file_selection_and_blinker();
-        if self.frame_control_view().submodule() == 3
-            && self.frame_control_view().frame_counter() & 0x30 == 0
-        {
+        if self.frame_state().submodule == 3 && self.frame_state().frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
@@ -601,9 +599,7 @@ impl ZeldaState {
 
     pub(super) fn copy_file_choose_target(&mut self) {
         self.copy_file_target_selection_and_blink();
-        if self.frame_control_view().submodule() == 4
-            && self.frame_control_view().frame_counter() & 0x30 == 0
-        {
+        if self.frame_state().submodule == 4 && self.frame_state().frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
@@ -869,7 +865,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module03_kill_file(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
             2 => self.kill_file_set_up(),
@@ -1005,7 +1001,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module04_name_file(&mut self) {
-        match self.frame_control_view().submodule() {
+        match self.frame_state().submodule {
             0 => self.name_file_erase_save(),
             1 => self.module_name_player_1(),
             2 => self.module_name_player_2(),
