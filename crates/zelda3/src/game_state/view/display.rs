@@ -9,78 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn screen_brightness(&self) -> u8 {
-        byte(self.ram, INIDISP_COPY)
-    }
-
-    pub(crate) fn bg_vram_load_mode(&self) -> u8 {
-        byte(self.ram, NMI_LOAD_BG_FROM_VRAM)
-    }
-
-    pub(crate) fn has_bg_vram_load(&self) -> bool {
-        self.bg_vram_load_mode() != 0
-    }
-
-    pub(crate) fn core_update_disable_flag(&self) -> u8 {
-        byte(self.ram, NMI_DISABLE_CORE_UPDATES)
-    }
-
-    pub(crate) fn subroutine_index(&self) -> u8 {
-        byte(self.ram, NMI_SUBROUTINE_INDEX)
-    }
-
-    pub(crate) fn load_target_addr(&self) -> u8 {
-        byte(self.ram, NMI_LOAD_TARGET_ADDR)
-    }
-
-    pub(crate) fn load_target_addr_word(&self) -> u16 {
-        word(self.ram, NMI_LOAD_TARGET_ADDR)
-    }
-
-    pub(crate) fn main_screen_layers(&self) -> u8 {
-        byte(self.ram, TM_COPY)
-    }
-
-    pub(crate) fn sub_screen_layers(&self) -> u8 {
-        byte(self.ram, TS_COPY)
-    }
-
-    pub(crate) fn layer_masks_word(&self) -> u16 {
-        word(self.ram, TM_COPY)
-    }
-
-    pub(crate) fn bg_mode(&self) -> u8 {
-        byte(self.ram, BGMODE_COPY)
-    }
-
-    pub(crate) fn mosaic_copy(&self) -> u8 {
-        byte(self.ram, MOSAIC_COPY)
-    }
-
-    pub(crate) fn hdma_enable_mask(&self) -> u8 {
-        byte(self.ram, HDMAEN_COPY)
-    }
-
-    pub(crate) fn is_hdma_channel_enabled(&self, channel: usize) -> bool {
-        self.hdma_enable_mask() & (1 << channel) != 0
-    }
-
-    pub(crate) fn mosaic_level(&self) -> u8 {
-        byte(self.ram, MOSAIC_LEVEL)
-    }
-
-    pub(crate) fn chr_halfslot_state(&self) -> u8 {
-        byte(self.ram, LOAD_CHR_HALFSLOT_EVEN_ODD)
-    }
-
-    pub(crate) fn mosaic_target_level(&self) -> u8 {
-        byte(self.ram, MOSAIC_TARGET_LEVEL)
-    }
-
-    pub(crate) fn nmi_flag_update_polyhedral(&self) -> u8 {
-        byte(self.ram, NMI_FLAG_UPDATE_POLYHEDRAL)
-    }
-
     pub(crate) fn update_tilemap_src_data(&self) -> &[u8] {
         let offset = word(self.ram, NMI_UPDATE_TILEMAP_SRC) as usize;
         let start = crate::game_state::constants::nmi::BG_CHAR_BUFFER + offset;
@@ -157,14 +85,6 @@ impl<'a> DisplayNmiView<'a> {
 
     pub(crate) fn dungeon_bg1_attr_table(&self) -> &[u8] {
         &self.ram[DUNGEON_BG1_ATTR_TABLE..]
-    }
-
-    pub(crate) fn flag_travel_bird(&self) -> bool {
-        byte(self.ram, FLAG_TRAVEL_BIRD) != 0
-    }
-
-    pub(crate) fn travel_bird_tile_offset(&self) -> u8 {
-        byte(self.ram, FLAG_TRAVEL_BIRD)
     }
 
     pub(crate) fn ram_slice_at(&self, addr: usize, len: usize) -> &[u8] {
