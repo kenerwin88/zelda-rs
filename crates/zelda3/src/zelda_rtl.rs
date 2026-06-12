@@ -51,17 +51,17 @@ use crate::game_state::{
     IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView,
     InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
     LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
-    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
-    NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    MessagingRuntimeState, MinigameStateView, MinigameStateViewMut, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
+    NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
@@ -3095,12 +3095,12 @@ impl ZeldaState {
         SaveProgressViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn mirror_warp_scratch_view(&self) -> MirrorWarpScratchView<'_> {
-        MirrorWarpScratchView::new(&self.ram)
+    pub(crate) fn mirror_warp_scratch_view(&self) -> &MirrorWarpState {
+        &self.game_state.inventory.mirror_warp
     }
 
-    pub(crate) fn mirror_warp_scratch_view_mut(&mut self) -> MirrorWarpScratchViewMut<'_> {
-        MirrorWarpScratchViewMut::new(&mut self.ram)
+    pub(crate) fn mirror_warp_scratch_view_mut(&mut self) -> NativeMirrorWarpBridgeMut<'_> {
+        NativeMirrorWarpBridgeMut::new(&mut self.game_state.inventory.mirror_warp, &mut self.ram)
     }
 
     pub(crate) fn dungeon_entrance_backup_view_mut(&mut self) -> DungeonEntranceBackupViewMut<'_> {

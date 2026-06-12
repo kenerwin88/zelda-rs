@@ -32,8 +32,8 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use inventory::{
-    DungeonKeySlotsView, InventoryState, NativeDungeonKeySlotsBridgeMut,
-    NativePlayerResourcesBridgeMut, PlayerResourcesState,
+    DungeonKeySlotsView, InventoryState, MirrorWarpState, NativeDungeonKeySlotsBridgeMut,
+    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, PlayerResourcesState,
 };
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
@@ -968,6 +968,88 @@ mod tests {
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 2], 7);
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 5], 9);
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 15], 0);
+    }
+
+    #[test]
+    fn mirror_warp_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MIRROR_WARP_TARGET_INDEX, 2);
+        write_le_u16(&mut ram, MIRROR_WARP_TARGET_OFFSETS, 0xfe00);
+        write_le_u16(&mut ram, MIRROR_WARP_TARGET_OFFSETS + 2, 0x0200);
+        write_le_u16(&mut ram, MIRROR_WARP_VELOCITY_DELTAS, 0xffc0);
+        write_le_u16(&mut ram, MIRROR_WARP_VELOCITY_DELTAS + 2, 0x0040);
+        write_le_u16(&mut ram, MIRROR_WARP_WAVE_OFFSET, 0x0012);
+        write_le_u16(&mut ram, MIRROR_WARP_DISPLACEMENT, 0x0034);
+        write_le_u16(&mut ram, MIRROR_WARP_SUBPIXEL, 0x0056);
+        ram[MIRROR_WARP_LOAD_STEP_COUNTER] = 7;
+        ram[MIRROR_WARP_ANIMATION_COUNTER] = 8;
+
+        let mut mirror = MirrorWarpState::load_from_ram(&ram);
+        assert_eq!(mirror.target_index(), 1);
+        assert_eq!(mirror.target_offset(), 0x0200);
+        assert_eq!(mirror.velocity_delta(), 0x0040);
+        assert_eq!(mirror.wave_offset(), 0x0012);
+        assert_eq!(mirror.displacement(), 0x0034);
+        assert_eq!(mirror.subpixel(), 0x0056);
+        assert_eq!(mirror.animation_counter(), 8);
+
+        mirror.reset_wave_and_subpixel();
+        mirror.toggle_target_index();
+        mirror.set_displacement(0x0078);
+        mirror.set_subpixel_low_from(0x019a);
+        mirror.set_wave_offset(0x00bc);
+        mirror.shrink_target_offsets_for_dewaving();
+        assert_eq!(mirror.increment_load_step_counter(), 8);
+        assert_eq!(mirror.decrement_animation_counter(), 7);
+        mirror.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_INDEX), 0);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_OFFSETS), 0xff00);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_OFFSETS + 2), 0x0100);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_WAVE_OFFSET), 0x00bc);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_DISPLACEMENT), 0x0078);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x009a);
+        assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 8);
+        assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 7);
+    }
+
+    #[test]
+    fn native_mirror_warp_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MIRROR_WARP_TARGET_INDEX, 2);
+        ram[MIRROR_WARP_LOAD_STEP_COUNTER] = 0xff;
+        ram[MIRROR_WARP_ANIMATION_COUNTER] = 0;
+
+        let mut mirror = MirrorWarpState::default();
+        {
+            let mut bridge = NativeMirrorWarpBridgeMut::new(&mut mirror, &mut ram);
+            bridge.initialize_hdma_wave_state();
+            bridge.toggle_target_index();
+            bridge.set_displacement(0x0044);
+            bridge.set_subpixel_low_from(0x0166);
+            bridge.set_wave_offset(0x0088);
+            bridge.shrink_target_offsets_for_dewaving();
+            assert_eq!(bridge.increment_load_step_counter(), 0);
+            bridge.reset_load_step_counter();
+            bridge.set_animation_counter(2);
+            assert_eq!(bridge.decrement_animation_counter(), 1);
+        }
+
+        assert_eq!(mirror.target_index(), 1);
+        assert_eq!(mirror.target_offset(), 0x0100);
+        assert_eq!(mirror.velocity_delta(), 0x0040);
+        assert_eq!(mirror.wave_offset(), 0x0088);
+        assert_eq!(mirror.displacement(), 0x0044);
+        assert_eq!(mirror.subpixel(), 0x0066);
+        assert_eq!(mirror.animation_counter(), 1);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_INDEX), 2);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_OFFSETS), 0xff00);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_OFFSETS + 2), 0x0100);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_WAVE_OFFSET), 0x0088);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_DISPLACEMENT), 0x0044);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0066);
+        assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 0);
+        assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 1);
     }
 
     #[test]

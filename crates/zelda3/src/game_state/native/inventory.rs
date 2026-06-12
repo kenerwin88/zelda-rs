@@ -8,6 +8,7 @@ const DUNGEON_KEY_SLOT_COUNT: usize = 16;
 pub(crate) struct InventoryState {
     pub(crate) dungeon_key_slots: DungeonKeySlotsState,
     pub(crate) player_resources: PlayerResourcesState,
+    pub(crate) mirror_warp: MirrorWarpState,
 }
 
 impl InventoryState {
@@ -15,12 +16,240 @@ impl InventoryState {
         Self {
             dungeon_key_slots: DungeonKeySlotsState::load_from_ram(ram),
             player_resources: PlayerResourcesState::load_from_ram(ram),
+            mirror_warp: MirrorWarpState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.dungeon_key_slots.write_to_ram(ram);
         self.player_resources.write_to_ram(ram);
+        self.mirror_warp.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MirrorWarpState {
+    target_index: u16,
+    target_offsets: [u16; 2],
+    velocity_deltas: [u16; 2],
+    wave_offset: u16,
+    displacement: u16,
+    subpixel: u16,
+    reserved: u16,
+    wave_length: u16,
+    spacing_a: u16,
+    spacing_b: u16,
+    load_step_counter: u8,
+    animation_counter: u8,
+}
+
+impl MirrorWarpState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            target_index: read_le_u16(ram, MIRROR_WARP_TARGET_INDEX),
+            target_offsets: [
+                read_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS),
+                read_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS + 2),
+            ],
+            velocity_deltas: [
+                read_le_u16(ram, MIRROR_WARP_VELOCITY_DELTAS),
+                read_le_u16(ram, MIRROR_WARP_VELOCITY_DELTAS + 2),
+            ],
+            wave_offset: read_le_u16(ram, MIRROR_WARP_WAVE_OFFSET),
+            displacement: read_le_u16(ram, MIRROR_WARP_DISPLACEMENT),
+            subpixel: read_le_u16(ram, MIRROR_WARP_SUBPIXEL),
+            reserved: read_le_u16(ram, MIRROR_WARP_RESERVED),
+            wave_length: read_le_u16(ram, MIRROR_WARP_WAVE_LENGTH),
+            spacing_a: read_le_u16(ram, MIRROR_WARP_SPACING_A),
+            spacing_b: read_le_u16(ram, MIRROR_WARP_SPACING_B),
+            load_step_counter: ram_byte(ram, MIRROR_WARP_LOAD_STEP_COUNTER),
+            animation_counter: ram_byte(ram, MIRROR_WARP_ANIMATION_COUNTER),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, MIRROR_WARP_TARGET_INDEX, self.target_index);
+        write_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS, self.target_offsets[0]);
+        write_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS + 2, self.target_offsets[1]);
+        write_le_u16(ram, MIRROR_WARP_VELOCITY_DELTAS, self.velocity_deltas[0]);
+        write_le_u16(
+            ram,
+            MIRROR_WARP_VELOCITY_DELTAS + 2,
+            self.velocity_deltas[1],
+        );
+        write_le_u16(ram, MIRROR_WARP_WAVE_OFFSET, self.wave_offset);
+        write_le_u16(ram, MIRROR_WARP_DISPLACEMENT, self.displacement);
+        write_le_u16(ram, MIRROR_WARP_SUBPIXEL, self.subpixel);
+        write_le_u16(ram, MIRROR_WARP_RESERVED, self.reserved);
+        write_le_u16(ram, MIRROR_WARP_WAVE_LENGTH, self.wave_length);
+        write_le_u16(ram, MIRROR_WARP_SPACING_A, self.spacing_a);
+        write_le_u16(ram, MIRROR_WARP_SPACING_B, self.spacing_b);
+        ram[MIRROR_WARP_LOAD_STEP_COUNTER] = self.load_step_counter;
+        ram[MIRROR_WARP_ANIMATION_COUNTER] = self.animation_counter;
+    }
+
+    pub(crate) fn target_index(&self) -> usize {
+        usize::from(self.target_index >> 1)
+    }
+
+    pub(crate) fn target_offset(&self) -> u16 {
+        self.target_offsets
+            .get(self.target_index())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn velocity_delta(&self) -> u16 {
+        self.velocity_deltas
+            .get(self.target_index())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn wave_offset(&self) -> u16 {
+        self.wave_offset
+    }
+
+    pub(crate) fn displacement(&self) -> u16 {
+        self.displacement
+    }
+
+    pub(crate) fn subpixel(&self) -> u16 {
+        self.subpixel
+    }
+
+    pub(crate) fn animation_counter(&self) -> u8 {
+        self.animation_counter
+    }
+
+    pub(crate) fn initialize_hdma_wave_state(&mut self) {
+        self.target_index = 0;
+        self.wave_offset = 0;
+        self.displacement = 0;
+        self.subpixel = 0;
+        self.reserved = 0;
+        self.spacing_a = 8;
+        self.spacing_b = 8;
+        self.wave_length = 21;
+        self.target_offsets = [0xfe00, 0x0200];
+        self.velocity_deltas = [0xffc0, 0x0040];
+    }
+
+    pub(crate) fn reset_wave_and_subpixel(&mut self) {
+        self.wave_offset = 0;
+        self.subpixel = 0;
+    }
+
+    pub(crate) fn toggle_target_index(&mut self) {
+        self.target_index ^= 2;
+    }
+
+    pub(crate) fn set_displacement(&mut self, value: u16) {
+        self.displacement = value;
+    }
+
+    pub(crate) fn set_subpixel_low_from(&mut self, value: u16) {
+        self.subpixel = value & 0x00ff;
+    }
+
+    pub(crate) fn set_wave_offset(&mut self, value: u16) {
+        self.wave_offset = value;
+    }
+
+    pub(crate) fn shrink_target_offsets_for_dewaving(&mut self) {
+        self.target_offsets = [0xff00, 0x0100];
+    }
+
+    pub(crate) fn increment_load_step_counter(&mut self) -> u8 {
+        self.load_step_counter = self.load_step_counter.wrapping_add(1);
+        self.load_step_counter
+    }
+
+    pub(crate) fn reset_load_step_counter(&mut self) {
+        self.load_step_counter = 0;
+    }
+
+    pub(crate) fn set_animation_counter(&mut self, value: u8) {
+        self.animation_counter = value;
+    }
+
+    pub(crate) fn decrement_animation_counter(&mut self) -> u8 {
+        self.animation_counter = self.animation_counter.wrapping_sub(1);
+        self.animation_counter
+    }
+}
+
+pub(crate) struct NativeMirrorWarpBridgeMut<'a> {
+    mirror_warp: &'a mut MirrorWarpState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeMirrorWarpBridgeMut<'a> {
+    pub(crate) fn new(mirror_warp: &'a mut MirrorWarpState, ram: &'a mut [u8]) -> Self {
+        *mirror_warp = MirrorWarpState::load_from_ram(ram);
+        Self { mirror_warp, ram }
+    }
+
+    fn sync(&mut self) {
+        self.mirror_warp.write_to_ram(self.ram);
+        debug_assert_eq!(*self.mirror_warp, MirrorWarpState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn initialize_hdma_wave_state(&mut self) {
+        self.mirror_warp.initialize_hdma_wave_state();
+        self.sync();
+    }
+
+    pub(crate) fn reset_wave_and_subpixel(&mut self) {
+        self.mirror_warp.reset_wave_and_subpixel();
+        self.sync();
+    }
+
+    pub(crate) fn toggle_target_index(&mut self) {
+        self.mirror_warp.toggle_target_index();
+        self.sync();
+    }
+
+    pub(crate) fn set_displacement(&mut self, value: u16) {
+        self.mirror_warp.set_displacement(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_subpixel_low_from(&mut self, value: u16) {
+        self.mirror_warp.set_subpixel_low_from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_wave_offset(&mut self, value: u16) {
+        self.mirror_warp.set_wave_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn shrink_target_offsets_for_dewaving(&mut self) {
+        self.mirror_warp.shrink_target_offsets_for_dewaving();
+        self.sync();
+    }
+
+    pub(crate) fn increment_load_step_counter(&mut self) -> u8 {
+        let value = self.mirror_warp.increment_load_step_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn reset_load_step_counter(&mut self) {
+        self.mirror_warp.reset_load_step_counter();
+        self.sync();
+    }
+
+    pub(crate) fn set_animation_counter(&mut self, value: u8) {
+        self.mirror_warp.set_animation_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_animation_counter(&mut self) -> u8 {
+        let value = self.mirror_warp.decrement_animation_counter();
+        self.sync();
+        value
     }
 }
 

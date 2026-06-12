@@ -511,11 +511,11 @@ impl<'a> SaveProgressViewMut<'a> {
     }
 }
 
-pub(crate) struct MirrorWarpScratchView<'a> {
+pub(crate) struct MirrorWarpScratchRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> MirrorWarpScratchView<'a> {
+impl<'a> MirrorWarpScratchRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -555,11 +555,11 @@ impl<'a> MirrorWarpScratchView<'a> {
     }
 }
 
-pub(crate) struct MirrorWarpScratchViewMut<'a> {
+pub(crate) struct MirrorWarpScratchRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> MirrorWarpScratchViewMut<'a> {
+impl<'a> MirrorWarpScratchRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
