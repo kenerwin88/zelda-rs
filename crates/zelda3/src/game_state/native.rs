@@ -10,6 +10,7 @@ mod frame;
 mod inventory;
 mod messaging;
 mod misc;
+mod player;
 mod world;
 
 pub(crate) use display::{
@@ -42,6 +43,7 @@ pub(crate) use misc::{
     ArcheryGameState, EnhancedFeaturesState, NativeArcheryGameBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
 };
+pub(crate) use player::{NativeSpecialExitPositionBridgeMut, PlayerState, SpecialExitPositionView};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
@@ -62,6 +64,8 @@ use display::{HudRuntimeState, OverworldPaletteBackupState};
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
+use player::SpecialExitPositionState;
+#[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
     OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
@@ -79,6 +83,7 @@ pub(crate) struct GameState {
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
+    pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
@@ -94,6 +99,7 @@ impl GameState {
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
+            player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
@@ -108,6 +114,7 @@ impl GameState {
         self.enhanced_features.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
+        self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
@@ -466,6 +473,52 @@ mod tests {
         assert_eq!(ram[ITEM_DROP_COUNTER], 1);
         assert_eq!(ram[DAMAGE_TYPE_DETERMINER], 10);
         assert_eq!(ram[SET_WHEN_DAMAGING_ENEMIES], 0);
+    }
+
+    #[test]
+    fn special_exit_position_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, LINK_X_COORD_SPEXIT, 0x0900);
+        write_le_u16(&mut ram, LINK_Y_COORD_SPEXIT, 0x0500);
+
+        let mut position = SpecialExitPositionState::load_from_ram(&ram);
+        assert_eq!(position.x(), 0x0900);
+        assert_eq!(position.y(), 0x0500);
+        assert_eq!(position.map_zoom_x_offset(), 0x0010);
+        assert_eq!(position.map_zoom_y(), 0x0008);
+
+        position = SpecialExitPositionState::load_from_ram(&[0]);
+        let mut projected = vec![0; WRAM_SIZE];
+        position.write_to_ram(&mut projected);
+        assert_eq!(read_le_u16(&projected, LINK_X_COORD_SPEXIT), 0);
+        assert_eq!(read_le_u16(&projected, LINK_Y_COORD_SPEXIT), 0);
+    }
+
+    #[test]
+    fn native_special_exit_position_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, LINK_X_COORD_SPEXIT, 0x0100);
+        write_le_u16(&mut ram, LINK_Y_COORD_SPEXIT, 0x0200);
+        write_le_u16(&mut ram, LINK_X_COORD, 0x0300);
+        write_le_u16(&mut ram, LINK_Y_COORD, 0x0400);
+
+        let mut position = SpecialExitPositionState::default();
+        {
+            let mut bridge = NativeSpecialExitPositionBridgeMut::new(&mut position, &mut ram);
+            bridge.set_x(0x0500);
+            bridge.set_y(0x0600);
+            bridge.offset_position(0x0010, 0x0020);
+            bridge.store_from_player();
+            bridge.set_position(0x0700, 0x0800);
+            bridge.restore_player_position();
+        }
+
+        assert_eq!(position.x(), 0x0700);
+        assert_eq!(position.y(), 0x0800);
+        assert_eq!(read_le_u16(&ram, LINK_X_COORD_SPEXIT), 0x0700);
+        assert_eq!(read_le_u16(&ram, LINK_Y_COORD_SPEXIT), 0x0800);
+        assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x0700);
+        assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x0800);
     }
 
     #[test]

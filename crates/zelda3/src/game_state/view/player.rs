@@ -3270,11 +3270,11 @@ impl<'a> PlayerStateViewMut<'a> {
     }
 }
 
-pub(crate) struct SpecialExitPositionView<'a> {
+pub(crate) struct SpecialExitPositionRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> SpecialExitPositionView<'a> {
+impl<'a> SpecialExitPositionRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -3296,11 +3296,11 @@ impl<'a> SpecialExitPositionView<'a> {
     }
 }
 
-pub(crate) struct SpecialExitPositionViewMut<'a> {
+pub(crate) struct SpecialExitPositionRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> SpecialExitPositionViewMut<'a> {
+impl<'a> SpecialExitPositionRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
