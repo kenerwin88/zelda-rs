@@ -46,8 +46,9 @@ pub(crate) use messaging::{
     VwfRenderState,
 };
 pub(crate) use misc::{
-    ArcheryGameState, EnhancedFeaturesState, NativeArcheryGameBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
+    ArcheryGameState, EnhancedFeaturesState, MemorizedTileState, NativeArcheryGameBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut, NativeSpriteBattleBridgeMut,
+    SpriteBattleState,
 };
 pub(crate) use player::{
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
@@ -104,6 +105,7 @@ pub(crate) struct GameState {
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
+    pub(crate) memorized_tiles: MemorizedTileState,
     pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
@@ -122,6 +124,7 @@ impl GameState {
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
+            memorized_tiles: MemorizedTileState::load_from_ram(ram),
             sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
@@ -139,6 +142,7 @@ impl GameState {
         self.enhanced_features.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
+        self.memorized_tiles.write_to_ram(ram);
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
@@ -384,6 +388,62 @@ mod tests {
         assert_eq!(features.bits(), 0x1234_5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS), 0x5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS + 2), 0x1234);
+    }
+
+    #[test]
+    fn memorized_tile_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 4);
+        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR, 0x1111);
+        write_le_u16(&mut ram, MEMORIZED_TILE_VALUE, 0x2222);
+        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR + 2, 0x3333);
+        write_le_u16(&mut ram, MEMORIZED_TILE_VALUE + 2, 0x4444);
+
+        let mut memorized_tiles = MemorizedTileState::load_from_ram(&ram);
+        assert_eq!(memorized_tiles.count(), 4);
+        assert_eq!(memorized_tiles.entry_addr(0), 0x1111);
+        assert_eq!(memorized_tiles.entry_value(0), 0x2222);
+        assert_eq!(memorized_tiles.entry_addr(1), 0x3333);
+        assert_eq!(memorized_tiles.entry_value(1), 0x4444);
+        assert_eq!(memorized_tiles.entry_addr(0x80), 0);
+
+        memorized_tiles.append_entry(0x5555, 0x6666);
+        memorized_tiles.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 6);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 4), 0x5555);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 4), 0x6666);
+    }
+
+    #[test]
+    fn native_memorized_tile_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 2);
+        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR, 0x1111);
+        write_le_u16(&mut ram, MEMORIZED_TILE_VALUE, 0x2222);
+        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR + 0xfe, 0xffff);
+
+        let mut memorized_tiles = MemorizedTileState::default();
+        {
+            let mut bridge = NativeMemorizedTileBridgeMut::new(&mut memorized_tiles, &mut ram);
+            bridge.append_entry(0x3333, 0x4444);
+            bridge.set_entry_addr(4, 0x5555);
+            bridge.set_entry_value(4, 0x6666);
+            bridge.set_count(6);
+            bridge.clear_entry_addresses();
+        }
+
+        assert_eq!(memorized_tiles.count(), 6);
+        assert_eq!(memorized_tiles.entry_addr(0), 0);
+        assert_eq!(memorized_tiles.entry_addr(1), 0);
+        assert_eq!(memorized_tiles.entry_addr(2), 0);
+        assert_eq!(memorized_tiles.entry_value(1), 0x4444);
+        assert_eq!(memorized_tiles.entry_value(2), 0x6666);
+        assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 6);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR), 0);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0xfe), 0);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 2), 0x4444);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 4), 0x6666);
     }
 
     #[test]

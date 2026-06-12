@@ -5,8 +5,6 @@ use super::*;
 use crate::types::Point16U;
 
 const DOOR_ANIMATION_STEP_INDICATOR_PLAYER: usize = 0x0690;
-const MEMORIZED_TILE_ADDR_PLAYER: usize = 0x0f800;
-const MEMORIZED_TILE_VALUE_PLAYER: usize = 0x0fa00;
 const PUSH_BLOCK_DIRECTION_PLAYER: usize = 0x0474;
 const SPRITE_C_PLAYER: usize = 0x0db0;
 const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =

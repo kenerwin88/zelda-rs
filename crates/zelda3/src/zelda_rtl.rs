@@ -50,9 +50,9 @@ use crate::game_state::{
     HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
     IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView,
     InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileView, MemorizedTileViewMut,
-    MessagingRenderBufferState, MessagingRuntimeState, MinigameStateView, MinigameStateViewMut,
-    MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
+    MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
     NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
@@ -60,8 +60,8 @@ use crate::game_state::{
     NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
@@ -4083,12 +4083,12 @@ impl ZeldaState {
         OverworldSpritePresenceViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn memorized_tile_view(&self) -> MemorizedTileView<'_> {
-        MemorizedTileView::new(&self.ram)
+    pub(crate) fn memorized_tile_view(&self) -> &MemorizedTileState {
+        &self.game_state.memorized_tiles
     }
 
-    pub(crate) fn memorized_tile_view_mut(&mut self) -> MemorizedTileViewMut<'_> {
-        MemorizedTileViewMut::new(&mut self.ram)
+    pub(crate) fn memorized_tile_view_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
+        NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
     pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedView<'_> {

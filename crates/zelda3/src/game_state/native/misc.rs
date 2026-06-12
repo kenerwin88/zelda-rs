@@ -1,5 +1,149 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
+use crate::types::{read_le_u16, write_le_u16};
+
+const MEMORIZED_TILE_ENTRY_SLOTS: usize = 0x80;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MemorizedTileState {
+    count: u16,
+    addresses: Vec<u16>,
+    values: Vec<u16>,
+}
+
+impl MemorizedTileState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut addresses = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
+        let mut values = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
+        for slot in 0..MEMORIZED_TILE_ENTRY_SLOTS {
+            addresses[slot] = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
+            values[slot] = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
+        }
+        Self {
+            count: read_le_u16(ram, NUM_MEMORIZED_TILES),
+            addresses,
+            values,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, NUM_MEMORIZED_TILES, self.count);
+        for slot in 0..MEMORIZED_TILE_ENTRY_SLOTS {
+            write_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2, self.addresses[slot]);
+            write_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2, self.values[slot]);
+        }
+    }
+
+    pub(crate) fn count(&self) -> u16 {
+        self.count
+    }
+
+    pub(crate) fn entry_addr(&self, index: usize) -> u16 {
+        self.addresses.get(index).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn entry_value(&self, index: usize) -> u16 {
+        self.values.get(index).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn set_count(&mut self, value: u16) {
+        self.count = value;
+    }
+
+    pub(crate) fn clear_count(&mut self) {
+        self.count = 0;
+    }
+
+    pub(crate) fn set_entry_addr(&mut self, byte_offset: usize, pos: u16) {
+        self.addresses[byte_offset / 2] = pos;
+    }
+
+    pub(crate) fn set_entry_value(&mut self, byte_offset: usize, tile: u16) {
+        self.values[byte_offset / 2] = tile;
+    }
+
+    pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
+        let byte_offset = usize::from(self.count);
+        self.set_entry_value(byte_offset, tile);
+        self.set_entry_addr(byte_offset, pos);
+        self.set_count(byte_offset as u16 + 2);
+    }
+
+    pub(crate) fn clear_entry_addresses(&mut self) {
+        self.addresses.fill(0);
+    }
+}
+
+impl Default for MemorizedTileState {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            addresses: vec![0; MEMORIZED_TILE_ENTRY_SLOTS],
+            values: vec![0; MEMORIZED_TILE_ENTRY_SLOTS],
+        }
+    }
+}
+
+pub(crate) struct NativeMemorizedTileBridgeMut<'a> {
+    memorized_tiles: &'a mut MemorizedTileState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeMemorizedTileBridgeMut<'a> {
+    pub(crate) fn new(memorized_tiles: &'a mut MemorizedTileState, ram: &'a mut [u8]) -> Self {
+        *memorized_tiles = MemorizedTileState::load_from_ram(ram);
+        Self {
+            memorized_tiles,
+            ram,
+        }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.memorized_tiles,
+            MemorizedTileState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_count(&mut self, value: u16) {
+        self.memorized_tiles.set_count(value);
+        write_le_u16(self.ram, NUM_MEMORIZED_TILES, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_count(&mut self) {
+        self.memorized_tiles.clear_count();
+        write_le_u16(self.ram, NUM_MEMORIZED_TILES, 0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_entry_addr(&mut self, byte_offset: usize, pos: u16) {
+        self.memorized_tiles.set_entry_addr(byte_offset, pos);
+        write_le_u16(self.ram, MEMORIZED_TILE_ADDR + byte_offset, pos);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_entry_value(&mut self, byte_offset: usize, tile: u16) {
+        self.memorized_tiles.set_entry_value(byte_offset, tile);
+        write_le_u16(self.ram, MEMORIZED_TILE_VALUE + byte_offset, tile);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
+        let byte_offset = usize::from(self.memorized_tiles.count());
+        self.memorized_tiles.append_entry(pos, tile);
+        write_le_u16(self.ram, MEMORIZED_TILE_VALUE + byte_offset, tile);
+        write_le_u16(self.ram, MEMORIZED_TILE_ADDR + byte_offset, pos);
+        write_le_u16(self.ram, NUM_MEMORIZED_TILES, byte_offset as u16 + 2);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_entry_addresses(&mut self) {
+        self.memorized_tiles.clear_entry_addresses();
+        self.ram[MEMORIZED_TILE_ADDR..MEMORIZED_TILE_ADDR + 0x100].fill(0);
+        self.debug_assert_matches_ram();
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {

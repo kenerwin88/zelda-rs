@@ -3,11 +3,11 @@ use super::*;
 /// Tile-revert memory used when secrets/liftable tiles are uncovered:
 /// parallel arrays of tilemap addresses and original tile values, plus a
 /// running byte count.
-pub(crate) struct MemorizedTileView<'a> {
+pub(crate) struct MemorizedTileRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> MemorizedTileView<'a> {
+impl<'a> MemorizedTileRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -25,11 +25,11 @@ impl<'a> MemorizedTileView<'a> {
     }
 }
 
-pub(crate) struct MemorizedTileViewMut<'a> {
+pub(crate) struct MemorizedTileRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> MemorizedTileViewMut<'a> {
+impl<'a> MemorizedTileRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

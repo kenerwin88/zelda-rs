@@ -98,7 +98,6 @@ const FLAG_WHICH_MUSIC_TYPE_DUNGEON: usize = 0x136;
 const MESSAGING_BUF_DUNGEON: usize = 0x10000;
 const DUNG_TORCH_TIMERS_DUNGEON: usize = 0x04f0;
 const DUNG_TORCH_DATA_DUNGEON: usize = 0x0fb40;
-const DUNG_MEMORIZED_TILE_ADDR: usize = 0x0f800;
 const POTS_REVEALED_IN_ROOM_DUNGEON: usize = 0x0f580;
 const UVRAM_DATA_DUNGEON: usize = 0x1100;
 const FEATURE_MISC_BUG_FIXES_DUNGEON: u32 = 4096;
@@ -515,7 +514,7 @@ impl ZeldaState {
             .to_vec();
         self.dungeon_torch_view_mut().copy_torch_junk(&torch_junk);
         self.fill_ram(POTS_REVEALED_IN_ROOM_DUNGEON, 0x280, 0);
-        self.fill_ram(DUNG_MEMORIZED_TILE_ADDR, 0x100, 0);
+        self.memorized_tile_view_mut().clear_entry_addresses();
     }
 
     fn dungeon_load_entrance_fields(&mut self, i: usize, assets: &EntranceAssetSet) -> u16 {
