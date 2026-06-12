@@ -10,7 +10,8 @@ mod world;
 
 pub(crate) use display::{
     DisplayState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeDisplayStateBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    TrinexxPaletteState,
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
@@ -1289,6 +1290,73 @@ mod tests {
         assert_eq!(display.attract_vram_destination_address, 0x0068);
         assert!(display.attract_vram_destination_high_is_clear());
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn trinexx_palette_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = 2;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = 4;
+        ram[TRINEXX_RED_SHELL_PALETTE_STEP] = 6;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = 8;
+
+        let mut palette = TrinexxPaletteState::load_from_ram(&ram);
+        assert_eq!(
+            palette,
+            TrinexxPaletteState {
+                red_shell_delay: 2,
+                blue_shell_delay: 4,
+                red_shell_step: 6,
+                blue_shell_step: 8,
+            }
+        );
+
+        palette.decrement_red_shell_delay();
+        palette.decrement_blue_shell_delay();
+        assert_eq!(palette.increment_red_shell_step(), 7);
+        assert_eq!(palette.increment_blue_shell_step(), 9);
+        palette.write_to_ram(&mut ram);
+
+        assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_DELAY], 1);
+        assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
+        assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 7);
+        assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 9);
+    }
+
+    #[test]
+    fn native_trinexx_palette_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = 0;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = 0;
+        ram[TRINEXX_RED_SHELL_PALETTE_STEP] = 0xff;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = 0xfe;
+
+        let mut display = DisplayState::default();
+        {
+            let mut bridge = NativeTrinexxPaletteBridgeMut::new(&mut display, &mut ram);
+            bridge.set_red_shell_delay(3);
+            bridge.set_blue_shell_delay(4);
+            bridge.decrement_red_shell_delay();
+            bridge.decrement_blue_shell_delay();
+            assert_eq!(bridge.increment_red_shell_step(), 0);
+            assert_eq!(bridge.increment_blue_shell_step(), 0xff);
+            bridge.set_red_shell_step(2);
+            bridge.set_blue_shell_step(5);
+        }
+
+        assert_eq!(
+            display.trinexx_palette,
+            TrinexxPaletteState {
+                red_shell_delay: 2,
+                blue_shell_delay: 3,
+                red_shell_step: 2,
+                blue_shell_step: 5,
+            }
+        );
+        assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_DELAY], 2);
+        assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
+        assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 2);
+        assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 5);
     }
 
     #[test]

@@ -615,65 +615,6 @@ impl<'a> GraphicsScratchViewMut<'a> {
     }
 }
 
-pub(crate) struct TrinexxPaletteView<'a> {
-    ram: &'a [u8],
-}
-impl<'a> TrinexxPaletteView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn red_shell_delay(&self) -> u8 {
-        byte(self.ram, TRINEXX_RED_SHELL_PALETTE_DELAY)
-    }
-    pub(crate) fn blue_shell_delay(&self) -> u8 {
-        byte(self.ram, TRINEXX_BLUE_SHELL_PALETTE_DELAY)
-    }
-    pub(crate) fn red_shell_step(&self) -> u8 {
-        byte(self.ram, TRINEXX_RED_SHELL_PALETTE_STEP)
-    }
-    pub(crate) fn blue_shell_step(&self) -> u8 {
-        byte(self.ram, TRINEXX_BLUE_SHELL_PALETTE_STEP)
-    }
-}
-pub(crate) struct TrinexxPaletteViewMut<'a> {
-    ram: &'a mut [u8],
-}
-impl<'a> TrinexxPaletteViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn set_red_shell_delay(&mut self, v: u8) {
-        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = v;
-    }
-    pub(crate) fn set_blue_shell_delay(&mut self, v: u8) {
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = v;
-    }
-    pub(crate) fn set_red_shell_step(&mut self, v: u8) {
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = v;
-    }
-    pub(crate) fn set_blue_shell_step(&mut self, v: u8) {
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = v;
-    }
-    pub(crate) fn decrement_red_shell_delay(&mut self) {
-        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] =
-            self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY].wrapping_sub(1);
-    }
-    pub(crate) fn decrement_blue_shell_delay(&mut self) {
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] =
-            self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY].wrapping_sub(1);
-    }
-    pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] =
-            self.ram[TRINEXX_RED_SHELL_PALETTE_STEP].wrapping_add(1);
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP]
-    }
-    pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] =
-            self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP].wrapping_add(1);
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP]
-    }
-}
-
 pub(crate) struct SpotlightHdmaView<'a> {
     ram: &'a [u8],
 }

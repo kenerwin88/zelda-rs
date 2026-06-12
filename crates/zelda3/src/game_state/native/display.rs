@@ -113,6 +113,50 @@ const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
 ];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TrinexxPaletteState {
+    pub(crate) red_shell_delay: u8,
+    pub(crate) blue_shell_delay: u8,
+    pub(crate) red_shell_step: u8,
+    pub(crate) blue_shell_step: u8,
+}
+
+impl TrinexxPaletteState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            red_shell_delay: ram_byte(ram, TRINEXX_RED_SHELL_PALETTE_DELAY),
+            blue_shell_delay: ram_byte(ram, TRINEXX_BLUE_SHELL_PALETTE_DELAY),
+            red_shell_step: ram_byte(ram, TRINEXX_RED_SHELL_PALETTE_STEP),
+            blue_shell_step: ram_byte(ram, TRINEXX_BLUE_SHELL_PALETTE_STEP),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = self.red_shell_delay;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.blue_shell_delay;
+        ram[TRINEXX_RED_SHELL_PALETTE_STEP] = self.red_shell_step;
+        ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = self.blue_shell_step;
+    }
+
+    pub(crate) fn decrement_red_shell_delay(&mut self) {
+        self.red_shell_delay = self.red_shell_delay.wrapping_sub(1);
+    }
+
+    pub(crate) fn decrement_blue_shell_delay(&mut self) {
+        self.blue_shell_delay = self.blue_shell_delay.wrapping_sub(1);
+    }
+
+    pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
+        self.red_shell_step = self.red_shell_step.wrapping_add(1);
+        self.red_shell_step
+    }
+
+    pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
+        self.blue_shell_step = self.blue_shell_step.wrapping_add(1);
+        self.blue_shell_step
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LinkDmaSources {
     sources: [u16; LINK_DMA_SOURCE_SLOTS.len()],
 }
@@ -192,6 +236,7 @@ pub(crate) struct DisplayState {
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
     pub(crate) attract_vram_destination_address: u16,
+    pub(crate) trinexx_palette: TrinexxPaletteState,
 }
 
 impl DisplayState {
@@ -241,6 +286,7 @@ impl DisplayState {
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
+            trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
         }
     }
 
@@ -313,6 +359,7 @@ impl DisplayState {
             self.animated_tile_vram_destination_address,
         );
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
+        self.trinexx_palette.write_to_ram(ram);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -623,6 +670,79 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
             .wrapping_sub(1);
         self.set_address(next);
         next
+    }
+}
+
+pub(crate) struct NativeTrinexxPaletteBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DisplayState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.trinexx_palette,
+            TrinexxPaletteState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
+        self.display.trinexx_palette.red_shell_delay = value;
+        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_blue_shell_delay(&mut self, value: u8) {
+        self.display.trinexx_palette.blue_shell_delay = value;
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_red_shell_step(&mut self, value: u8) {
+        self.display.trinexx_palette.red_shell_step = value;
+        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_blue_shell_step(&mut self, value: u8) {
+        self.display.trinexx_palette.blue_shell_step = value;
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_red_shell_delay(&mut self) {
+        self.display.trinexx_palette.decrement_red_shell_delay();
+        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] =
+            self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_blue_shell_delay(&mut self) {
+        self.display.trinexx_palette.decrement_blue_shell_delay();
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] =
+            self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
+        let value = self.display.trinexx_palette.increment_red_shell_step();
+        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] =
+            self.ram[TRINEXX_RED_SHELL_PALETTE_STEP].wrapping_add(1);
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
+        let value = self.display.trinexx_palette.increment_blue_shell_step();
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] =
+            self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP].wrapping_add(1);
+        self.debug_assert_matches_ram();
+        value
     }
 }
 

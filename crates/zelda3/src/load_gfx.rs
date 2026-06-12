@@ -2527,7 +2527,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Trinexx_FlashShellPalette_Red(&mut self) {
-        if self.trinexx_palette_view().red_shell_delay() == 0 {
+        if self.trinexx_palette_state().red_shell_delay == 0 {
             for i in 0..7 {
                 let v = self.palette_buffer_view().main_color(0x41 + i);
                 let red = (v & 0x1f).wrapping_add(u16::from((v & 0x1f) != 0x1f));
@@ -2535,19 +2535,19 @@ impl ZeldaState {
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
             self.system_signals_view_mut().increment_cgram_update_flag();
-            let step = self.trinexx_palette_view_mut().increment_red_shell_step();
+            let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
-                self.trinexx_palette_view_mut().set_red_shell_step(0);
-                self.trinexx_palette_view_mut().set_red_shell_delay(0);
+                self.set_trinexx_red_shell_palette_step(0);
+                self.set_trinexx_red_shell_palette_delay(0);
                 return;
             }
-            self.trinexx_palette_view_mut().set_red_shell_delay(3);
+            self.set_trinexx_red_shell_palette_delay(3);
         }
-        self.trinexx_palette_view_mut().decrement_red_shell_delay();
+        self.decrement_trinexx_red_shell_palette_delay();
     }
 
     pub(super) fn Trinexx_UnflashShellPalette_Red(&mut self) {
-        if self.trinexx_palette_view().red_shell_delay() == 0 {
+        if self.trinexx_palette_state().red_shell_delay == 0 {
             for i in 0..7 {
                 let u = self.palette_buffer_view().aux_color(0x41 + i);
                 let v = self.palette_buffer_view().main_color(0x41 + i);
@@ -2556,19 +2556,19 @@ impl ZeldaState {
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
             self.system_signals_view_mut().increment_cgram_update_flag();
-            let step = self.trinexx_palette_view_mut().increment_red_shell_step();
+            let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
-                self.trinexx_palette_view_mut().set_red_shell_step(0);
-                self.trinexx_palette_view_mut().set_red_shell_delay(0);
+                self.set_trinexx_red_shell_palette_step(0);
+                self.set_trinexx_red_shell_palette_delay(0);
                 return;
             }
-            self.trinexx_palette_view_mut().set_red_shell_delay(3);
+            self.set_trinexx_red_shell_palette_delay(3);
         }
-        self.trinexx_palette_view_mut().decrement_red_shell_delay();
+        self.decrement_trinexx_red_shell_palette_delay();
     }
 
     pub(super) fn Trinexx_FlashShellPalette_Blue(&mut self) {
-        if self.trinexx_palette_view().blue_shell_delay() == 0 {
+        if self.trinexx_palette_state().blue_shell_delay == 0 {
             for i in 0..7 {
                 let v = self.palette_buffer_view().main_color(0x41 + i);
                 let blue =
@@ -2577,19 +2577,19 @@ impl ZeldaState {
                     .set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
             self.system_signals_view_mut().increment_cgram_update_flag();
-            let step = self.trinexx_palette_view_mut().increment_blue_shell_step();
+            let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
-                self.trinexx_palette_view_mut().set_blue_shell_step(0);
-                self.trinexx_palette_view_mut().set_blue_shell_delay(0);
+                self.set_trinexx_blue_shell_palette_step(0);
+                self.set_trinexx_blue_shell_palette_delay(0);
                 return;
             }
-            self.trinexx_palette_view_mut().set_blue_shell_delay(3);
+            self.set_trinexx_blue_shell_palette_delay(3);
         }
-        self.trinexx_palette_view_mut().decrement_blue_shell_delay();
+        self.decrement_trinexx_blue_shell_palette_delay();
     }
 
     pub(super) fn Trinexx_UnflashShellPalette_Blue(&mut self) {
-        if self.trinexx_palette_view().blue_shell_delay() == 0 {
+        if self.trinexx_palette_state().blue_shell_delay == 0 {
             for i in 0..7 {
                 let u = self.palette_buffer_view().aux_color(0x41 + i);
                 let v = self.palette_buffer_view().main_color(0x41 + i);
@@ -2602,15 +2602,15 @@ impl ZeldaState {
                     .set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
             self.system_signals_view_mut().increment_cgram_update_flag();
-            let step = self.trinexx_palette_view_mut().increment_blue_shell_step();
+            let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
-                self.trinexx_palette_view_mut().set_blue_shell_step(0);
-                self.trinexx_palette_view_mut().set_blue_shell_delay(0);
+                self.set_trinexx_blue_shell_palette_step(0);
+                self.set_trinexx_blue_shell_palette_delay(0);
                 return;
             }
-            self.trinexx_palette_view_mut().set_blue_shell_delay(3);
+            self.set_trinexx_blue_shell_palette_delay(3);
         }
-        self.trinexx_palette_view_mut().decrement_blue_shell_delay();
+        self.decrement_trinexx_blue_shell_palette_delay();
     }
 
     pub(super) fn IrisSpotlight_close(&mut self) {

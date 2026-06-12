@@ -63,9 +63,9 @@ use crate::game_state::{
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    NativeRamBridgeViewMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
     OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
@@ -88,10 +88,10 @@ use crate::game_state::{
     SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
     TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
     TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
-    TrinexxPaletteViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
-    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView,
+    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState,
+    VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3963,12 +3963,48 @@ impl ZeldaState {
         OverworldSpriteLoadedViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn trinexx_palette_view(&self) -> TrinexxPaletteView<'_> {
-        TrinexxPaletteView::new(&self.ram)
+    pub(crate) fn trinexx_palette_state(&self) -> TrinexxPaletteState {
+        self.game_state.display.trinexx_palette
     }
 
-    pub(crate) fn trinexx_palette_view_mut(&mut self) -> TrinexxPaletteViewMut<'_> {
-        TrinexxPaletteViewMut::new(&mut self.ram)
+    fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {
+        NativeTrinexxPaletteBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
+    pub(crate) fn set_trinexx_red_shell_palette_delay(&mut self, value: u8) {
+        self.trinexx_palette_bridge_mut().set_red_shell_delay(value);
+    }
+
+    pub(crate) fn set_trinexx_blue_shell_palette_delay(&mut self, value: u8) {
+        self.trinexx_palette_bridge_mut()
+            .set_blue_shell_delay(value);
+    }
+
+    pub(crate) fn set_trinexx_red_shell_palette_step(&mut self, value: u8) {
+        self.trinexx_palette_bridge_mut().set_red_shell_step(value);
+    }
+
+    pub(crate) fn set_trinexx_blue_shell_palette_step(&mut self, value: u8) {
+        self.trinexx_palette_bridge_mut().set_blue_shell_step(value);
+    }
+
+    pub(crate) fn decrement_trinexx_red_shell_palette_delay(&mut self) {
+        self.trinexx_palette_bridge_mut()
+            .decrement_red_shell_delay();
+    }
+
+    pub(crate) fn decrement_trinexx_blue_shell_palette_delay(&mut self) {
+        self.trinexx_palette_bridge_mut()
+            .decrement_blue_shell_delay();
+    }
+
+    pub(crate) fn increment_trinexx_red_shell_palette_step(&mut self) -> u8 {
+        self.trinexx_palette_bridge_mut().increment_red_shell_step()
+    }
+
+    pub(crate) fn increment_trinexx_blue_shell_palette_step(&mut self) -> u8 {
+        self.trinexx_palette_bridge_mut()
+            .increment_blue_shell_step()
     }
 
     pub(crate) fn spotlight_hdma_view(&self) -> SpotlightHdmaView<'_> {
