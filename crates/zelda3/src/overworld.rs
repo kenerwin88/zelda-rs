@@ -803,7 +803,7 @@ impl ZeldaState {
 
         self.LoadTransAuxGFX();
         self.PrepTransAuxGfx();
-        self.display_nmi_view_mut().set_core_update_disable_flag(9);
+        self.set_core_update_disable_flag(9);
         self.display_nmi_view_mut().set_subroutine_index(9);
         self.frame_control_view_mut().increment_submodule();
     }
@@ -954,7 +954,7 @@ impl ZeldaState {
         self.set_overworld_map16_dst_off(bak_dst_off);
         self.set_overworld_map16_src_off(bak_src_off);
         self.display_nmi_view_mut().set_subroutine_index(4);
-        self.display_nmi_view_mut().set_core_update_disable_flag(4);
+        self.set_core_update_disable_flag(4);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0);
     }
@@ -971,7 +971,7 @@ impl ZeldaState {
         self.OverworldLoad_LoadSubOverlayMap32();
         self.Map16ToMap8(0x4000, 0x1000);
         self.display_nmi_view_mut().set_subroutine_index(4);
-        self.display_nmi_view_mut().set_core_update_disable_flag(4);
+        self.set_core_update_disable_flag(4);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -1276,7 +1276,7 @@ impl ZeldaState {
         let j = self.world_state_view().trigger_special_entrance();
         self.player_state_view_mut().set_immobilized_flag(j);
         self.frame_control_view_mut().set_modal_pause_flag(j);
-        self.display_nmi_view_mut().set_core_update_disable_flag(j);
+        self.set_core_update_disable_flag(j);
         match j {
             1 => self.Overworld_AnimateEntrance_PoD(),
             2 => self.Overworld_AnimateEntrance_Skull(),
@@ -1312,7 +1312,7 @@ impl ZeldaState {
         self.system_signals_view_mut().set_sound_effect_2(27);
         self.world_state_view_mut().clear_trigger_special_entrance();
         self.frame_control_view_mut().set_subsubmodule(0);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         self.player_state_view_mut().clear_immobilized();
         self.frame_control_view_mut().clear_modal_pause_flag();
         self.world_state_view_mut().set_bg1_x_offset(0);
@@ -1328,7 +1328,7 @@ impl ZeldaState {
             self.overworld_draw_map16_persist(pos, 0x0e78 + i as u16);
         }
         self.set_bg_vram_load_mode(1);
-        self.display_nmi_view_mut().set_core_update_disable_flag(1);
+        self.set_core_update_disable_flag(1);
     }
 
     pub(super) fn Overworld_AnimateEntrance_PoD(&mut self) {
@@ -2219,7 +2219,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_FinishTransGfx(&mut self) {
-        self.display_nmi_view_mut().set_core_update_disable_flag(10);
+        self.set_core_update_disable_flag(10);
         self.display_nmi_view_mut().set_subroutine_index(10);
         self.frame_control_view_mut().increment_submodule();
     }
@@ -2406,7 +2406,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(0);
         self.frame_control_view_mut().set_subsubmodule(0);
         self.world_state_view_mut().set_overworld_map_state(0);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn Module09_MirrorWarp(&mut self) {
@@ -2623,7 +2623,7 @@ impl ZeldaState {
                 self.frame_control_view_mut().set_submodule(0);
                 self.frame_control_view_mut().set_subsubmodule(0);
                 self.world_state_view_mut().set_overworld_map_state(0);
-                self.display_nmi_view_mut().set_core_update_disable_flag(0);
+                self.clear_core_update_disable_flag();
             }
             _ => {}
         }

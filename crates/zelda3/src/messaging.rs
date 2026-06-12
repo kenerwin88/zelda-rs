@@ -367,7 +367,7 @@ impl ZeldaState {
         }
         self.RenderText();
         self.system_signals_view_mut().clear_hud_update_flag();
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         if self.frame_state().subsubmodule < 3 {
             self.frame_control_view_mut().increment_subsubmodule();
         } else {
@@ -905,7 +905,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .clear_changeable_object_index(1);
         self.display_nmi_view_mut().set_subroutine_index(22);
-        self.display_nmi_view_mut().set_core_update_disable_flag(22);
+        self.set_core_update_disable_flag(22);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -1557,7 +1557,7 @@ impl ZeldaState {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
         self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn WorldMap_ExitMap(&mut self) {
@@ -1965,7 +1965,7 @@ impl ZeldaState {
             .increment_dungmap_init_state();
         self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
         self.set_bg_vram_load_mode(9);
-        self.display_nmi_view_mut().set_core_update_disable_flag(9);
+        self.set_core_update_disable_flag(9);
         self.replay_trace_ram_watch("dungmap-prep-exit");
     }
 
@@ -2793,7 +2793,7 @@ impl ZeldaState {
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.world_state_view_mut().increment_overworld_map_state();
         self.set_screen_brightness(0);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn ToggleStarTilesAndAdvance(&mut self) {
@@ -2969,7 +2969,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_main_module(5);
         self.frame_control_view_mut().set_submodule(0);
         self.world_state_view_mut().set_which_entrance(0);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         self.palette_buffer_view_mut().set_hud_palette(0);
     }
 
@@ -3010,7 +3010,7 @@ impl ZeldaState {
         self.Text_LoadCharacterBuffer();
         self.messaging_render_buffer_view_mut().clear_range(0x7e0);
         self.display_nmi_view_mut().set_subroutine_index(2);
-        self.display_nmi_view_mut().set_core_update_disable_flag(2);
+        self.set_core_update_disable_flag(2);
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
@@ -3355,7 +3355,7 @@ impl ZeldaState {
             }
         }
         self.display_nmi_view_mut().set_subroutine_index(2);
-        self.display_nmi_view_mut().set_core_update_disable_flag(2);
+        self.set_core_update_disable_flag(2);
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {

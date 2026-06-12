@@ -5087,7 +5087,7 @@ impl ZeldaState {
         self.display_nmi_view_mut()
             .set_load_target_addr(UPLOAD_BG_DSTS[ofs] + dst_bias);
         self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_core_update_disable_flag(1);
+        self.set_core_update_disable_flag(1);
     }
 
     pub(super) fn WaterFlood_BuildOneQuadrantForVRAM(&mut self) {
@@ -5317,7 +5317,7 @@ impl ZeldaState {
             self.ppu.vram[dst + i] = self.vram_upload_data_view().tilemap_word(i * 2);
         }
         self.clear_vram_upload_cursor();
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn dungeon_room_layout(&self, room: usize) -> Option<&[u8]> {
@@ -7742,7 +7742,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut().set_current_door_pos(0x16);
 
         if anim_dst != 0 {
-            self.display_nmi_view_mut().set_core_update_disable_flag(1);
+            self.set_core_update_disable_flag(1);
             self.request_nmi_copy_packets();
             if self.dungeon_state_view().door_animation_step_low() != 0x10 {
                 return;
@@ -10331,13 +10331,13 @@ impl ZeldaState {
     pub(super) fn DungeonTransition_TriggerBGC34UpdateAndAdvance(&mut self) {
         self.PrepTransAuxGfx();
         self.display_nmi_view_mut().set_subroutine_index(9);
-        self.display_nmi_view_mut().set_core_update_disable_flag(9);
+        self.set_core_update_disable_flag(9);
         self.frame_control_view_mut().increment_subsubmodule();
     }
 
     pub(super) fn DungeonTransition_TriggerBGC56UpdateAndAdvance(&mut self) {
         self.display_nmi_view_mut().set_subroutine_index(10);
-        self.display_nmi_view_mut().set_core_update_disable_flag(10);
+        self.set_core_update_disable_flag(10);
         self.frame_control_view_mut().increment_subsubmodule();
     }
 

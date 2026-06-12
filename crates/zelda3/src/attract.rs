@@ -314,7 +314,7 @@ impl ZeldaState {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
         self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn death_func31(&mut self) {

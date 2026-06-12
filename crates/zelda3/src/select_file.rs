@@ -109,7 +109,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
         self.palette_buffer_view_mut().set_palette_main_indoors(6);
-        self.display_nmi_view_mut().set_core_update_disable_flag(6);
+        self.set_core_update_disable_flag(6);
         self.palette_load_dungeon_set();
         self.palette_load_ow_bg3();
         self.world_state_view_mut().set_hud_palette(0);
@@ -291,7 +291,7 @@ impl ZeldaState {
         debug_assert_eq!(data.len(), 253);
         self.vram_upload_data_view_mut().copy_bytes(0, &data);
         self.set_screen_brightness(0x0f);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         self.frame_control_view_mut().increment_submodule();
         self.set_bg_vram_load_mode(6);
     }
@@ -581,7 +581,7 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(7);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         let mut i = 0usize;
         while self.select_file_scratch_view().save_slot_flag(i) == 0 {
             i += 1;
@@ -879,7 +879,7 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(8);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         let mut i = 0usize;
         while self.select_file_scratch_view().save_slot_flag(i) == 0 {
             i += 1;
@@ -1036,7 +1036,7 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(5);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0x0f);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn name_file_do_the_naming(&mut self) {

@@ -63,7 +63,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_do_updates(&mut self) {
-        if self.display_nmi_view().core_update_disable_flag() == 0 {
+        if !self.display_state().core_updates_are_disabled() {
             self.nmi_core_link_graphics_update();
 
             let src_addr = self.display_nmi_view().animated_tile_data_src() as usize;
@@ -158,7 +158,7 @@ impl ZeldaState {
         if self.display_state().has_nmi_copy_packets_request() {
             self.NMI_CopyPackets();
             self.clear_nmi_copy_packets_request();
-            self.display_nmi_view_mut().set_core_update_disable_flag(0);
+            self.clear_core_update_disable_flag();
         }
 
         let nmi_subroutine_index = self.display_nmi_view().subroutine_index();
@@ -202,7 +202,7 @@ impl ZeldaState {
             }
         }
         self.clear_vram_upload_cursor();
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_upload_tilemap_do_nothing(&mut self) {}
@@ -234,7 +234,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_subscreen_overlay(&mut self) {
@@ -270,7 +270,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     #[rustfmt::skip]
@@ -286,7 +286,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_bg1_wall(&mut self) {
@@ -309,13 +309,13 @@ impl ZeldaState {
     pub(super) fn nmi_update_bg_char3and4(&mut self) {
         let buf = self.display_nmi_view().bg_char_buffer().to_vec();
         self.copy_to_vram_slice(0x2c00, &buf, 0x1000);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_bg_char5and6(&mut self) {
         let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
         self.copy_to_vram_slice(0x3400, &buf, 0x1000);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_bg_char0(&mut self) {
@@ -337,7 +337,7 @@ impl ZeldaState {
     pub(super) fn nmi_update_obj_char0(&mut self) {
         let buf = self.display_nmi_view().bg_char_buffer().to_vec();
         self.copy_to_vram_slice(0x4400, &buf, 0x800);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_obj_char2(&mut self) {
@@ -351,7 +351,7 @@ impl ZeldaState {
     pub(super) fn nmi_run_tile_map_update_dma(&mut self, dst: usize) {
         let buf = self.display_nmi_view().bg_char_buffer().to_vec();
         self.copy_to_vram_slice(dst, &buf, 0x1000);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_upload_dark_world_map(&mut self) {
@@ -579,7 +579,7 @@ impl ZeldaState {
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
         }
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_load_light_world_map(&mut self) {
@@ -765,7 +765,7 @@ mod tests {
     #[should_panic(expected = "invalid nmi_subroutine_index")]
     fn nmi_do_updates_panics_on_invalid_subroutine_like_c_table_index() {
         let mut s = ZeldaState::new();
-        s.display_nmi_view_mut().set_core_update_disable_flag(1);
+        s.set_core_update_disable_flag(1);
         s.display_nmi_view_mut().set_subroutine_index(25);
 
         s.nmi_do_updates();

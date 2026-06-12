@@ -2511,7 +2511,7 @@ impl ZeldaState {
 
     pub(super) fn credits_fade_color_and_begin_animating(&mut self) {
         self.credits_fade_out_fixed_col();
-        self.display_nmi_view_mut().set_core_update_disable_flag(1);
+        self.set_core_update_disable_flag(1);
         self.credits_animate_the_triangles();
         if self.frame_state().frame_counter & 3 == 0 {
             let bg2 = self.world_state_view().bg2_x().wrapping_add(1);

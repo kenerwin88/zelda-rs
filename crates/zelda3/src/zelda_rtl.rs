@@ -698,7 +698,6 @@ const REPLACEMENT_TILEMAP_LR: usize = 0x5c0;
 const DUNG_INTER_STARCASES: usize = 0x6b0;
 const DUNG_STAIRS_TABLE_1: usize = 0x6b8;
 const DUNG_CHEST_LOCATIONS: usize = 0x6e0;
-const NMI_DISABLE_CORE_UPDATES: usize = 0x710;
 const LOAD_CHR_HALFSLOT_EVEN_ODD: usize = 0xaaa;
 const MAIN_TILE_THEME_INDEX: usize = 0x0aa1;
 const AUX_TILE_THEME_INDEX: usize = 0x0aa2;
@@ -1977,6 +1976,26 @@ impl ZeldaState {
     pub(crate) fn clear_nmi_update_latch(&mut self) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .clear_nmi_update_latch();
+    }
+
+    pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_core_update_disable_flag(value);
+    }
+
+    pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_core_update_disable_flag_word(value);
+    }
+
+    pub(crate) fn clear_core_update_disable_flag(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_core_update_disable_flag();
+    }
+
+    pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .increment_core_update_disable_flag()
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
@@ -8650,7 +8669,7 @@ mod tests {
         assert_eq!(state.palette_filter_view().fixed_color_red(), 0x20);
         assert_eq!(state.palette_filter_view().fixed_color_green(), 0x40);
         assert_eq!(state.palette_filter_view().fixed_color_blue(), 0x80);
-        assert_eq!(state.display_nmi_view().core_update_disable_flag(), 0x80);
+        assert_eq!(state.display_state().core_update_disable_flag, 0x80);
         assert_eq!(state.display_nmi_view().load_target_addr(), 0x46);
         assert_eq!(state.display_nmi_view().subroutine_index(), 0);
         assert_eq!(state.system_signals_view().sound_effect_2(), 0);

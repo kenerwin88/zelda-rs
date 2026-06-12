@@ -109,6 +109,7 @@ impl WorldLocationState {
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) nmi_update_latch: u8,
+    pub(crate) core_update_disable_flag: u8,
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) nmi_copy_packets_request: u8,
     pub(crate) vram_upload_cursor: u16,
@@ -119,6 +120,7 @@ impl DisplayState {
         Self {
             screen_brightness: ram_byte(ram, INIDISP_COPY),
             nmi_update_latch: ram_byte(ram, NMI_BOOLEAN),
+            core_update_disable_flag: ram_byte(ram, NMI_DISABLE_CORE_UPDATES),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
@@ -128,6 +130,7 @@ impl DisplayState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[INIDISP_COPY] = self.screen_brightness;
         ram[NMI_BOOLEAN] = self.nmi_update_latch;
+        ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
@@ -135,6 +138,10 @@ impl DisplayState {
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
         self.nmi_update_latch != 0
+    }
+
+    pub(crate) fn core_updates_are_disabled(&self) -> bool {
+        self.core_update_disable_flag != 0
     }
 
     pub(crate) fn has_bg_vram_load(&self) -> bool {
@@ -470,6 +477,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_core_update_disable_flag_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.core_update_disable_flag,
+            ram_byte(self.ram, NMI_DISABLE_CORE_UPDATES)
+        );
+    }
+
     fn debug_assert_bg_vram_load_mode_matches_ram(&self) {
         debug_assert_eq!(
             self.display.bg_vram_load_mode,
@@ -514,6 +528,28 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
         self.set_nmi_update_latch(0);
+    }
+
+    pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
+        self.display.core_update_disable_flag = value;
+        self.ram[NMI_DISABLE_CORE_UPDATES] = value;
+        self.debug_assert_core_update_disable_flag_matches_ram();
+    }
+
+    pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
+        self.display.core_update_disable_flag = value as u8;
+        write_le_u16(self.ram, NMI_DISABLE_CORE_UPDATES, value);
+        self.debug_assert_core_update_disable_flag_matches_ram();
+    }
+
+    pub(crate) fn clear_core_update_disable_flag(&mut self) {
+        self.set_core_update_disable_flag(0);
+    }
+
+    pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
+        let value = self.display.core_update_disable_flag.wrapping_add(1);
+        self.set_core_update_disable_flag(value);
+        value
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
@@ -653,6 +689,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[INIDISP_COPY] = 0x0f;
         ram[NMI_BOOLEAN] = 1;
+        ram[NMI_DISABLE_CORE_UPDATES] = 4;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
@@ -661,6 +698,8 @@ mod tests {
         assert_eq!(display.screen_brightness, 0x0f);
         assert_eq!(display.nmi_update_latch, 1);
         assert!(display.nmi_update_is_latched());
+        assert_eq!(display.core_update_disable_flag, 4);
+        assert!(display.core_updates_are_disabled());
         assert_eq!(display.bg_vram_load_mode, 3);
         assert!(display.has_bg_vram_load());
         assert_eq!(display.nmi_copy_packets_request, 1);
@@ -674,6 +713,7 @@ mod tests {
 
         display.screen_brightness = 0x80;
         display.nmi_update_latch = 0;
+        display.core_update_disable_flag = 0;
         display.bg_vram_load_mode = 0;
         display.nmi_copy_packets_request = 0;
         display.vram_upload_cursor = 0x0042;
@@ -681,6 +721,7 @@ mod tests {
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 0);
+        assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 0);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
@@ -708,6 +749,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[INIDISP_COPY] = 4;
         ram[NMI_BOOLEAN] = 1;
+        ram[NMI_DISABLE_CORE_UPDATES] = 2;
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
@@ -720,6 +762,8 @@ mod tests {
             view.set_screen_brightness(0x80);
             view.clear_nmi_update_latch();
             view.latch_nmi_update();
+            view.clear_core_update_disable_flag();
+            view.set_core_update_disable_flag(7);
             view.clear_bg_vram_load_mode();
             view.set_bg_vram_load_mode(5);
             view.clear_nmi_copy_packets_request();
@@ -729,11 +773,13 @@ mod tests {
 
         assert_eq!(display.screen_brightness, 0x80);
         assert_eq!(display.nmi_update_latch, 1);
+        assert_eq!(display.core_update_disable_flag, 7);
         assert_eq!(display.bg_vram_load_mode, 5);
         assert_eq!(display.nmi_copy_packets_request, 3);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 1);
+        assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);

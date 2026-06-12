@@ -193,7 +193,7 @@ impl ZeldaState {
     }
 
     fn kill_agahnim_load_music(&mut self) {
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         self.world_state_view_mut().increment_overworld_map_state();
         self.frame_control_view_mut().increment_submodule();
         self.LoadOWMusicIfNeeded();
@@ -306,7 +306,7 @@ impl ZeldaState {
         self.save_progress_view_mut().set_palace_index_x2(255);
         self.frame_control_view_mut().set_submodule(0);
         self.world_state_view_mut().set_overworld_map_state(0);
-        self.display_nmi_view_mut().set_core_update_disable_flag(0);
+        self.clear_core_update_disable_flag();
         self.frame_control_view_mut().set_main_module(9);
         self.world_state_view_mut().set_bg1_y_low(0);
         let music = if self.inventory_state_view().has_moon_pearl() {

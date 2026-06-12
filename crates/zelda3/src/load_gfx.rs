@@ -1942,11 +1942,11 @@ impl ZeldaState {
                 }
                 self.frame_control_view_mut().decrement_submodule();
                 self.display_nmi_view_mut().set_subroutine_index(12);
-                self.display_nmi_view_mut().set_core_update_disable_flag(12);
+                self.set_core_update_disable_flag(12);
             }
             6 | 9 => {
                 self.display_nmi_view_mut().set_subroutine_index(13);
-                self.display_nmi_view_mut().set_core_update_disable_flag(13);
+                self.set_core_update_disable_flag(13);
             }
             7 => {
                 self.Overworld_DrawScreenAtCurrentMirrorPosition();
@@ -1956,7 +1956,7 @@ impl ZeldaState {
             8 => {
                 self.MirrorWarp_LoadSpritesAndColors();
                 self.display_nmi_view_mut().set_subroutine_index(12);
-                self.display_nmi_view_mut().set_core_update_disable_flag(12);
+                self.set_core_update_disable_flag(12);
             }
             10 => {
                 let t = self.world_location_state().overworld_screen_index() & 0xbf;
