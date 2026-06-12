@@ -3000,8 +3000,7 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_setup_screen(&mut self) {
-        self.display_nmi_view_mut()
-            .set_core_update_disable_flag(0x80);
+        self.set_core_update_disable_flag(0x80);
         self.enable_force_blank();
         self.set_main_screen_layers(16);
         self.set_sub_screen_layers(0);

@@ -1,5 +1,7 @@
 use super::ram_byte;
-use crate::game_state::constants::messaging::MESSAGE_DMA_DST_ADDR;
+use crate::game_state::constants::messaging::{
+    MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE, MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL,
+};
 use crate::game_state::constants::*;
 use crate::game_state::VramUploadDataViewMut;
 use crate::types::{read_le_u16, write_le_u16};
@@ -39,6 +41,9 @@ pub(crate) struct DisplayState {
     pub(crate) vram_upload_cursor: u16,
     pub(crate) incremental_vram_upload_counter: u8,
     pub(crate) message_dma_destination_address: u16,
+    pub(crate) message_dma_tile_base: u16,
+    pub(crate) message_dma_tile_limit: u16,
+    pub(crate) message_dma_tile_sentinel: u16,
     pub(crate) overworld_fixed_color_adjustment: u8,
     pub(crate) travel_bird_tile_offset: u8,
     pub(crate) animated_tile_data_source_address: u16,
@@ -80,6 +85,9 @@ impl DisplayState {
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
             incremental_vram_upload_counter: ram_byte(ram, INCREMENTAL_COUNTER_FOR_VRAM),
             message_dma_destination_address: read_le_u16(ram, MESSAGE_DMA_DST_ADDR),
+            message_dma_tile_base: read_le_u16(ram, MESSAGE_DMA_TILE_BASE),
+            message_dma_tile_limit: read_le_u16(ram, MESSAGE_DMA_TILE_LIMIT),
+            message_dma_tile_sentinel: read_le_u16(ram, MESSAGE_DMA_TILE_SENTINEL),
             overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
             travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
@@ -123,6 +131,13 @@ impl DisplayState {
             ram,
             MESSAGE_DMA_DST_ADDR,
             self.message_dma_destination_address,
+        );
+        write_le_u16(ram, MESSAGE_DMA_TILE_BASE, self.message_dma_tile_base);
+        write_le_u16(ram, MESSAGE_DMA_TILE_LIMIT, self.message_dma_tile_limit);
+        write_le_u16(
+            ram,
+            MESSAGE_DMA_TILE_SENTINEL,
+            self.message_dma_tile_sentinel,
         );
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
@@ -454,6 +469,21 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.message_dma_destination_address,
             read_le_u16(self.ram, MESSAGE_DMA_DST_ADDR)
+        );
+    }
+
+    fn debug_assert_message_dma_tile_range_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.message_dma_tile_base,
+            read_le_u16(self.ram, MESSAGE_DMA_TILE_BASE)
+        );
+        debug_assert_eq!(
+            self.display.message_dma_tile_limit,
+            read_le_u16(self.ram, MESSAGE_DMA_TILE_LIMIT)
+        );
+        debug_assert_eq!(
+            self.display.message_dma_tile_sentinel,
+            read_le_u16(self.ram, MESSAGE_DMA_TILE_SENTINEL)
         );
     }
 
@@ -894,6 +924,24 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.message_dma_destination_address = value;
         write_le_u16(self.ram, MESSAGE_DMA_DST_ADDR, value);
         self.debug_assert_message_dma_destination_address_matches_ram();
+    }
+
+    pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
+        self.display.message_dma_tile_base = value;
+        write_le_u16(self.ram, MESSAGE_DMA_TILE_BASE, value);
+        self.debug_assert_message_dma_tile_range_matches_ram();
+    }
+
+    pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
+        self.display.message_dma_tile_limit = value;
+        write_le_u16(self.ram, MESSAGE_DMA_TILE_LIMIT, value);
+        self.debug_assert_message_dma_tile_range_matches_ram();
+    }
+
+    pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
+        self.display.message_dma_tile_sentinel = value;
+        write_le_u16(self.ram, MESSAGE_DMA_TILE_SENTINEL, value);
+        self.debug_assert_message_dma_tile_range_matches_ram();
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {

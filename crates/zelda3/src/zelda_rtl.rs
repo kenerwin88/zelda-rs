@@ -2465,6 +2465,21 @@ impl ZeldaState {
             .set_message_dma_destination_address(value);
     }
 
+    pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_message_dma_tile_base(value);
+    }
+
+    pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_message_dma_tile_limit(value);
+    }
+
+    pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_message_dma_tile_sentinel(value);
+    }
+
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_overworld_fixed_color_adjustment(value);

@@ -187,8 +187,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_erase_triforce(&mut self) {
-        self.display_nmi_view_mut()
-            .set_core_update_disable_flag(0x80);
+        self.set_core_update_disable_flag(0x80);
         self.enable_force_blank();
         self.erase_tile_maps_triforce();
         self.palette_load_for_file_select();

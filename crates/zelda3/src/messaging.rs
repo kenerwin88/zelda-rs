@@ -2928,12 +2928,9 @@ impl ZeldaState {
         self.player_state_view_mut()
             .reset_link_dma_animation_cycle(7);
         self.set_message_dma_destination_address(0x6040);
-        self.display_nmi_view_mut()
-            .set_message_dma_tile_base(0x4841);
-        self.display_nmi_view_mut()
-            .set_message_dma_tile_limit(0x007f);
-        self.display_nmi_view_mut()
-            .set_message_dma_tile_sentinel(0xffff);
+        self.set_message_dma_tile_base(0x4841);
+        self.set_message_dma_tile_limit(0x007f);
+        self.set_message_dma_tile_sentinel(0xffff);
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
@@ -3863,8 +3860,7 @@ impl ZeldaState {
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.set_pending_nmi_subroutine(7);
         self.set_screen_brightness(0);
-        self.display_nmi_view_mut()
-            .increment_core_update_disable_flag();
+        self.increment_core_update_disable_flag();
         self.world_state_view_mut().increment_overworld_map_state();
     }
 

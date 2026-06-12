@@ -2403,8 +2403,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_MirrorWarp(&mut self) {
-        self.display_nmi_view_mut()
-            .increment_core_update_disable_flag();
+        self.increment_core_update_disable_flag();
         match self.frame_state().subsubmodule {
             0 => {
                 if self.world_location_state().overworld_screen_index() >= 0x80 {
@@ -2509,8 +2508,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_2E_Whirlpool(&mut self) {
-        self.display_nmi_view_mut()
-            .increment_core_update_disable_flag();
+        self.increment_core_update_disable_flag();
         match self.frame_state().subsubmodule {
             0 => {
                 self.system_signals_view_mut().set_sound_effect_1(0x34);
@@ -2534,22 +2532,19 @@ impl ZeldaState {
                 self.system_signals_view_mut().clear_cgram_update_flag();
                 self.palette_filter_view_mut().set_fixed_color_blue(0x80);
                 self.set_screen_brightness(0x0f);
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
             4 | 6 => {
                 self.set_pending_nmi_subroutine(13);
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
             5 => {
                 self.Overworld_LoadOverlayAndMap();
                 self.set_pending_nmi_subroutine(12);
                 self.set_screen_brightness(0x0f);
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
             7 => {
@@ -2560,8 +2555,7 @@ impl ZeldaState {
             8 => {
                 self.Overworld_FinishTransGfx();
                 self.set_screen_brightness(0x0f);
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
                 self.decrement_submodule();
                 self.increment_subsubmodule();
             }
@@ -2583,8 +2577,7 @@ impl ZeldaState {
                 self.LoadNewSpriteGFXSet();
                 self.palette_filter_view_mut().set_fixed_color_blue(0x80);
                 self.set_screen_brightness(0x0f);
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
             10 => {
@@ -3929,8 +3922,7 @@ impl ZeldaState {
         self.world_state_view_mut()
             .set_overworld_peg_puzzle_progress(0);
         self.SomeTileMapChange();
-        self.display_nmi_view_mut()
-            .increment_core_update_disable_flag();
+        self.increment_core_update_disable_flag();
         self.CreateInitialNewScreenMapToScroll();
         self.LoadNewSpriteGFXSet();
     }

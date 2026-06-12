@@ -202,6 +202,10 @@ mod tests {
         ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
+        write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
+        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
+        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
+        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_SENTINEL, 0xffff);
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
 
@@ -258,6 +262,10 @@ mod tests {
             display.current_vram_upload_data_address(),
             VRAM_UPLOAD_DATA + 0x0124
         );
+        assert_eq!(display.message_dma_destination_address, 0x6040);
+        assert_eq!(display.message_dma_tile_base, 0x4841);
+        assert_eq!(display.message_dma_tile_limit, 0x007f);
+        assert_eq!(display.message_dma_tile_sentinel, 0xffff);
         assert_eq!(display.animated_tile_data_source_address, 0xa680);
         assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
         assert!(display.has_animated_tile_data_source());
@@ -294,6 +302,10 @@ mod tests {
         display.mosaic_direction = 0;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
+        display.message_dma_destination_address = 0x6080;
+        display.message_dma_tile_base = 0x4842;
+        display.message_dma_tile_limit = 0x0080;
+        display.message_dma_tile_sentinel = 0xfffe;
         display.animated_tile_data_source_address = 0xac80;
         display.animated_tile_vram_destination_address = 0x3c00;
         display.write_to_ram(&mut ram);
@@ -313,6 +325,13 @@ mod tests {
         assert_eq!(ram[TMW_COPY], 3);
         assert_eq!(ram[TSW_COPY], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
+        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
+        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_BASE), 0x4842);
+        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_LIMIT), 0x0080);
+        assert_eq!(
+            read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_SENTINEL),
+            0xfffe
+        );
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
         assert_eq!(ram[NMI_THREAD_ACTIVE], 0);
@@ -457,6 +476,9 @@ mod tests {
             assert_eq!(view.increment_vram_upload_counter(), 0);
             view.reset_incremental_vram_upload_counter();
             view.set_message_dma_destination_address(0x6080);
+            view.set_message_dma_tile_base(0x4841);
+            view.set_message_dma_tile_limit(0x007f);
+            view.set_message_dma_tile_sentinel(0xffff);
             view.set_overworld_fixed_color_adjustment(0x30);
             view.set_travel_bird_tile_offset(0x08);
             view.set_animated_tile_data_source_address(0xac80);
@@ -505,6 +527,9 @@ mod tests {
         assert_eq!(display.incremental_vram_upload_counter_usize(), 0);
         assert_eq!(display.message_dma_destination_address, 0x6080);
         assert_eq!(display.message_dma_destination_address_usize(), 0x6080);
+        assert_eq!(display.message_dma_tile_base, 0x4841);
+        assert_eq!(display.message_dma_tile_limit, 0x007f);
+        assert_eq!(display.message_dma_tile_sentinel, 0xffff);
         assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
         assert_eq!(display.travel_bird_tile_offset, 0x08);
         assert!(display.has_travel_bird_tile_upload());

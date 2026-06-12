@@ -1859,8 +1859,7 @@ impl ZeldaState {
         self.world_state_view_mut().increment_overworld_map_state();
         let nmi = MIRROR_WARP_LOAD_NEXT_NMI_LOAD.get(st).copied().unwrap_or(0);
         self.set_pending_nmi_subroutine(nmi);
-        self.display_nmi_view_mut()
-            .set_core_update_disable_flag(nmi);
+        self.set_core_update_disable_flag(nmi);
         let xt = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
             8
         } else {
@@ -1948,8 +1947,7 @@ impl ZeldaState {
             }
             7 => {
                 self.Overworld_DrawScreenAtCurrentMirrorPosition();
-                self.display_nmi_view_mut()
-                    .increment_core_update_disable_flag();
+                self.increment_core_update_disable_flag();
             }
             8 => {
                 self.MirrorWarp_LoadSpritesAndColors();

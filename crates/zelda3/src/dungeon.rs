@@ -5083,8 +5083,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.display_nmi_view_mut()
-            .set_load_target_addr(UPLOAD_BG_DSTS[ofs] + dst_bias);
+        self.set_nmi_load_target_page(UPLOAD_BG_DSTS[ofs] + dst_bias);
         self.set_pending_nmi_subroutine(1);
         self.set_core_update_disable_flag(1);
     }
@@ -8979,8 +8978,7 @@ impl ZeldaState {
                 .moving_wall_write_point()
                 .wrapping_sub(neg)
                 & 0x141f;
-            self.display_nmi_view_mut()
-                .set_load_target_addr_word(target);
+            self.set_nmi_load_target_address(target);
         }
     }
 
@@ -9037,8 +9035,7 @@ impl ZeldaState {
             if target & 0x1020 != 0 {
                 target = (target & 0x1020) ^ 0x0420;
             }
-            self.display_nmi_view_mut()
-                .set_load_target_addr_word(target);
+            self.set_nmi_load_target_address(target);
         }
     }
 
@@ -12158,8 +12155,7 @@ impl ZeldaState {
         self.Door_BlastWallExploding_Draw(dsto);
         self.ClearAndStripeExplodingWall(dsto as u16);
 
-        self.display_nmi_view_mut()
-            .set_core_update_disable_flag_word(0xffff);
+        self.set_core_update_disable_flag_word(0xffff);
         let walls2 = self
             .dungeon_state_view()
             .crush_wall_progress()

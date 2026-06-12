@@ -317,8 +317,7 @@ impl ZeldaState {
     }
 
     pub(super) fn death_func31(&mut self) {
-        self.display_nmi_view_mut()
-            .increment_core_update_disable_flag();
+        self.increment_core_update_disable_flag();
         self.intro_initialize_memory_darken();
         self.overworld_load_all_palettes();
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2_low(0);
