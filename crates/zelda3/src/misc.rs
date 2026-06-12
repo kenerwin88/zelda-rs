@@ -474,7 +474,7 @@ impl ZeldaState {
         self.sprite_workspace_view_mut().set_graphics_subset(2, 70);
         self.sprite_workspace_view_mut().set_graphics_subset(3, 70);
         self.shared_message_timer_view_mut().set(0x0200);
-        self.display_nmi_view_mut().set_virq_trigger(48);
+        self.set_vertical_irq_trigger(48);
 
         if self.save_progress_view().dark_world_state() != 0 {
             if self.world_location_state().is_indoors() {

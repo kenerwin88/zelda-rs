@@ -116,6 +116,8 @@ pub(crate) struct DisplayState {
     pub(crate) chr_halfslot_request: u8,
     pub(crate) nmi_thread_active: bool,
     pub(crate) nmi_thread_stack_pointer: u16,
+    pub(crate) irq_control_flag: u8,
+    pub(crate) vertical_irq_trigger: u8,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
@@ -132,6 +134,8 @@ impl DisplayState {
             chr_halfslot_request: ram_byte(ram, LOAD_CHR_HALFSLOT_EVEN_ODD),
             nmi_thread_active: ram_byte(ram, NMI_THREAD_ACTIVE) != 0,
             nmi_thread_stack_pointer: read_le_u16(ram, POLY_THREAD_STACK),
+            irq_control_flag: ram_byte(ram, IRQ_FLAG),
+            vertical_irq_trigger: ram_byte(ram, VIRQ_TRIGGER),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
@@ -147,6 +151,8 @@ impl DisplayState {
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
         ram[NMI_THREAD_ACTIVE] = u8::from(self.nmi_thread_active);
         write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
+        ram[IRQ_FLAG] = self.irq_control_flag;
+        ram[VIRQ_TRIGGER] = self.vertical_irq_trigger;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
@@ -173,6 +179,14 @@ impl DisplayState {
 
     pub(crate) fn nmi_thread_uses_poly_stack(&self) -> bool {
         self.nmi_thread_active && self.nmi_thread_stack_pointer != 0x1f31
+    }
+
+    pub(crate) fn has_irq_control_flag(&self) -> bool {
+        self.irq_control_flag != 0
+    }
+
+    pub(crate) fn irq_control_has_vcounter_marker(&self) -> bool {
+        self.irq_control_flag & 0x80 != 0
     }
 
     pub(crate) fn nmi_load_target_page(&self) -> u8 {
@@ -550,6 +564,14 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_irq_control_matches_ram(&self) {
+        debug_assert_eq!(self.display.irq_control_flag, ram_byte(self.ram, IRQ_FLAG));
+        debug_assert_eq!(
+            self.display.vertical_irq_trigger,
+            ram_byte(self.ram, VIRQ_TRIGGER)
+        );
+    }
+
     fn debug_assert_nmi_load_target_address_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
@@ -687,6 +709,22 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.debug_assert_nmi_thread_control_matches_ram();
     }
 
+    pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
+        self.display.irq_control_flag = value;
+        self.ram[IRQ_FLAG] = value;
+        self.debug_assert_irq_control_matches_ram();
+    }
+
+    pub(crate) fn clear_irq_control_flag(&mut self) {
+        self.set_irq_control_flag(0);
+    }
+
+    pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
+        self.display.vertical_irq_trigger = value;
+        self.ram[VIRQ_TRIGGER] = value;
+        self.debug_assert_irq_control_matches_ram();
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         self.display.nmi_load_target_address =
             (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
@@ -820,6 +858,8 @@ mod tests {
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
         ram[NMI_THREAD_ACTIVE] = 1;
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
+        ram[IRQ_FLAG] = 0x80;
+        ram[VIRQ_TRIGGER] = 0x90;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
@@ -839,6 +879,10 @@ mod tests {
         assert!(display.nmi_thread_active);
         assert_eq!(display.nmi_thread_stack_pointer, 0x01f2);
         assert!(display.nmi_thread_uses_poly_stack());
+        assert_eq!(display.irq_control_flag, 0x80);
+        assert!(display.has_irq_control_flag());
+        assert!(display.irq_control_has_vcounter_marker());
+        assert_eq!(display.vertical_irq_trigger, 0x90);
         assert_eq!(display.nmi_load_target_address, 0x2146);
         assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
@@ -857,6 +901,8 @@ mod tests {
         display.chr_halfslot_request = 0;
         display.nmi_thread_active = false;
         display.nmi_thread_stack_pointer = 0x1f31;
+        display.irq_control_flag = 0;
+        display.vertical_irq_trigger = 0x70;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
@@ -870,6 +916,8 @@ mod tests {
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
         assert_eq!(ram[NMI_THREAD_ACTIVE], 0);
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
+        assert_eq!(ram[IRQ_FLAG], 0);
+        assert_eq!(ram[VIRQ_TRIGGER], 0x70);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
@@ -903,6 +951,8 @@ mod tests {
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 3;
         ram[NMI_THREAD_ACTIVE] = 1;
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
+        ram[IRQ_FLAG] = 0x80;
+        ram[VIRQ_TRIGGER] = 0x90;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
@@ -929,6 +979,9 @@ mod tests {
             view.deactivate_nmi_thread();
             view.activate_nmi_thread();
             view.set_nmi_thread_stack_pointer(0x1f31);
+            view.clear_irq_control_flag();
+            view.set_irq_control_flag(0xff);
+            view.set_vertical_irq_trigger(0x70);
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
         }
@@ -943,6 +996,9 @@ mod tests {
         assert!(display.nmi_thread_active);
         assert_eq!(display.nmi_thread_stack_pointer, 0x1f31);
         assert!(!display.nmi_thread_uses_poly_stack());
+        assert_eq!(display.irq_control_flag, 0xff);
+        assert!(display.irq_control_has_vcounter_marker());
+        assert_eq!(display.vertical_irq_trigger, 0x70);
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -954,6 +1010,8 @@ mod tests {
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 12);
         assert_eq!(ram[NMI_THREAD_ACTIVE], 1);
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
+        assert_eq!(ram[IRQ_FLAG], 0xff);
+        assert_eq!(ram[VIRQ_TRIGGER], 0x70);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }

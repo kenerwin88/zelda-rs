@@ -101,7 +101,7 @@ impl ZeldaState {
         }
 
         self.enable_force_blank();
-        self.display_nmi_view_mut().set_irq_flag(0xff);
+        self.set_irq_control_flag(0xff);
         self.deactivate_nmi_thread();
         self.display_nmi_view_mut()
             .clear_nmi_flag_update_polyhedral();

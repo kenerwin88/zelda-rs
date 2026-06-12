@@ -855,7 +855,7 @@ impl ZeldaState {
                     self.frame_control_view_mut().set_main_module(26);
                     self.frame_control_view_mut().set_submodule(0);
                     self.frame_control_view_mut().set_subsubmodule(0);
-                    self.display_nmi_view_mut().set_irq_flag(0xff);
+                    self.set_irq_control_flag(0xff);
                     self.deactivate_nmi_thread();
                     self.display_nmi_view_mut()
                         .clear_nmi_flag_update_polyhedral();
@@ -2757,7 +2757,7 @@ fn break_triforce_handle_poly(state: &mut ZeldaState) {
 
 impl ZeldaState {
     pub(super) fn fade_music_and_reset_sram_mirror(&mut self) {
-        self.display_nmi_view_mut().set_irq_flag(0xff);
+        self.set_irq_control_flag(0xff);
         self.display_nmi_view_mut().set_main_screen_layers(0x15);
         self.display_nmi_view_mut().set_sub_screen_layers(0);
         self.world_state_view_mut().set_indoor_flag(0);
@@ -3122,7 +3122,7 @@ impl ZeldaState {
     pub(super) fn intro_init_gfx_helper(&mut self) {
         self.polyhedral_initialize_thread();
         self.load_triforce_sprite_palette();
-        self.display_nmi_view_mut().set_virq_trigger(0x90);
+        self.set_vertical_irq_trigger(0x90);
         self.poly_state_view_mut().set_config1(0xff);
         self.poly_state_view_mut().set_base_x(32);
         self.poly_state_view_mut().set_base_y(32);

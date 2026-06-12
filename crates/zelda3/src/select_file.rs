@@ -1012,7 +1012,7 @@ impl ZeldaState {
 
     pub(super) fn name_file_erase_save(&mut self) {
         self.file_select_erase_triforce();
-        self.display_nmi_view_mut().set_irq_flag(1);
+        self.set_irq_control_flag(1);
         self.select_file_scratch_view_mut().clear_name_entry_state();
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
 
@@ -1197,7 +1197,7 @@ impl ZeldaState {
         self.intro_fix_cksum_slot(slot_base);
         self.zelda_write_sram();
         self.return_to_file_select();
-        self.display_nmi_view_mut().set_irq_flag(0xff);
+        self.set_irq_control_flag(0xff);
         self.system_signals_view_mut().set_sound_effect_1(0x2c);
     }
 

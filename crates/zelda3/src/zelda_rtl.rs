@@ -414,11 +414,9 @@ const FILTERED_JOYPAD_H: usize = 0xf4;
 const FILTERED_JOYPAD_L: usize = 0xf6;
 const JOYPAD1H_LAST2: usize = 0xf8;
 const JOYPAD1L_LAST2: usize = 0xfa;
-const VIRQ_TRIGGER: usize = 0xff;
 const WHICH_ENTRANCE: usize = 0x10e;
 const OVERWORLD_HOLE_SCAN_STEP: usize = 0x10f;
 const OAM_PRIORITY_VALUE: usize = 0x64;
-const IRQ_FLAG: usize = 0x128;
 // NES_Ver2: GOVRCFG, game-over check flag.
 const GAME_OVER_CHECK_FLAG: usize = 0x10a;
 const SAVED_MODULE_FOR_MENU: usize = 0x10c;
@@ -2063,6 +2061,21 @@ impl ZeldaState {
             .set_nmi_thread_stack_pointer(value);
     }
 
+    pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_irq_control_flag(value);
+    }
+
+    pub(crate) fn clear_irq_control_flag(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_irq_control_flag();
+    }
+
+    pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_vertical_irq_trigger(value);
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_nmi_load_target_page(value);
@@ -3619,7 +3632,7 @@ impl ZeldaState {
             self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
         }
 
-        let saved_irq_flag = self.display_nmi_view().irq_flag();
+        let saved_irq_control_flag = self.display_state().irq_control_flag;
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
         let saved_cgram_second_write = self.ppu.cgram_second_write;
@@ -3643,14 +3656,14 @@ impl ZeldaState {
         let mut result =
             Box::new([(0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8]); 224]);
         for line in 0..=224usize {
-            if line == 128 && self.display_nmi_view().irq_flag() != 0 {
+            if line == 128 && self.display_state().has_irq_control_flag() {
                 let name_scroll_x = self.select_file_scratch_view().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.display_nmi_view().irq_flag_has_vcounter_marker() {
-                    self.display_nmi_view_mut().clear_irq_flag();
+                if self.display_state().irq_control_has_vcounter_marker() {
+                    self.clear_irq_control_flag();
                 }
             }
 
@@ -3671,7 +3684,7 @@ impl ZeldaState {
             self.simple_hdma_do_line(&mut hdma_chans[1]);
         }
 
-        self.display_nmi_view_mut().set_irq_flag(saved_irq_flag);
+        self.set_irq_control_flag(saved_irq_control_flag);
         self.dma.channel = saved_channels;
         self.ppu.cgram = saved_cgram;
         self.ppu.cgram_pointer = saved_cgram_pointer;
@@ -3918,14 +3931,14 @@ impl ZeldaState {
         }
 
         for line in 0..=output_height {
-            if line == 128 && self.display_nmi_view().irq_flag() != 0 {
+            if line == 128 && self.display_state().has_irq_control_flag() {
                 let name_scroll_x = self.select_file_scratch_view().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.display_nmi_view().irq_flag_has_vcounter_marker() {
-                    self.display_nmi_view_mut().clear_irq_flag();
+                if self.display_state().irq_control_has_vcounter_marker() {
+                    self.clear_irq_control_flag();
                 }
             }
             self.ppu.run_line(line as i32);
@@ -4447,7 +4460,7 @@ impl ZeldaState {
                 1
             }
         } else {
-            let virq = self.display_nmi_view().virq_trigger();
+            let virq = self.display_state().vertical_irq_trigger;
             let carry = if self.display_state().nmi_thread_active {
                 if use_bsnes_poly_scheduler {
                     let previous_counter = self.bsnes_poly_scheduler_counter;
@@ -8662,7 +8675,7 @@ mod tests {
     fn draw_ppu_frame_runs_irq_and_hdma_side_effects() {
         let mut state = ZeldaState::new();
         let mut pixels = vec![0u8; 256 * 224 * 4];
-        state.ram[IRQ_FLAG] = 0x80;
+        state.set_irq_control_flag(0x80);
         state
             .select_file_scratch_view_mut()
             .set_name_scroll_x(0x01f0);
@@ -8671,7 +8684,7 @@ mod tests {
 
         state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
 
-        assert_eq!(state.ram[IRQ_FLAG], 0);
+        assert_eq!(state.display_state().irq_control_flag, 0);
         assert!(state.ppu.forced_blank);
         assert_eq!(state.ppu.brightness, 0x0f);
         assert_eq!(state.ppu.render_pitch, (PPU_X_PIXELS * 4) as u32);
@@ -8833,7 +8846,7 @@ mod tests {
 
         state.module00_intro();
 
-        assert_eq!(state.ram[IRQ_FLAG], 0xff);
+        assert_eq!(state.display_state().irq_control_flag, 0xff);
         assert_eq!(state.ram[TM_COPY], 0x15);
         assert_eq!(state.ram[TS_COPY], 0);
         assert_eq!(state.world_location_state().indoor_flag, 0);
