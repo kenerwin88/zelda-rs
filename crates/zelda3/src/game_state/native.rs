@@ -28,7 +28,7 @@ pub(crate) use display::{
 pub(crate) use effects::{
     BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
     NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeQuakeSpellBridgeMut, QuakeSpellState,
+    NativeQuakeSpellBridgeMut, NativeTowerSealBridgeMut, QuakeSpellState, TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1489,6 +1489,52 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_Y), 0x5678);
         assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_X + 30), 0x9abc);
         assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_Y + 30), 0xdef0);
+    }
+
+    #[test]
+    fn tower_seal_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TOWER_SEAL_RING_RADIUS] = 32;
+        write_le_u16(&mut ram, TOWER_SEAL_CENTER_X, 0x1234);
+        write_le_u16(&mut ram, TOWER_SEAL_CENTER_Y, 0x5678);
+        ram[TOWER_SEAL_WAIT_COUNTDOWN] = 2;
+
+        let mut tower = TowerSealState::load_from_ram(&ram);
+        assert_eq!(tower.ring_radius(), 32);
+        assert_eq!(tower.center_x(), 0x1234);
+        assert_eq!(tower.center_y(), 0x5678);
+        tower.set_ring_radius(48);
+        tower.set_center(0x9abc, 0xdef0);
+        assert_eq!(tower.tick_wait_countdown(), 1);
+        tower.write_to_ram(&mut ram);
+
+        assert_eq!(ram[TOWER_SEAL_RING_RADIUS], 48);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_X), 0x9abc);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_Y), 0xdef0);
+        assert_eq!(ram[TOWER_SEAL_WAIT_COUNTDOWN], 1);
+    }
+
+    #[test]
+    fn native_tower_seal_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TOWER_SEAL_WAIT_COUNTDOWN] = 1;
+
+        let mut tower = TowerSealState::default();
+        {
+            let mut bridge = NativeTowerSealBridgeMut::new(&mut tower, &mut ram);
+            bridge.set_ring_radius(48);
+            bridge.set_center(0x1234, 0x5678);
+            assert_eq!(bridge.tick_wait_countdown(), 0);
+            bridge.set_wait_countdown(240);
+        }
+
+        assert_eq!(tower.ring_radius(), 48);
+        assert_eq!(tower.center_x(), 0x1234);
+        assert_eq!(tower.center_y(), 0x5678);
+        assert_eq!(ram[TOWER_SEAL_RING_RADIUS], 48);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_X), 0x1234);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_Y), 0x5678);
+        assert_eq!(ram[TOWER_SEAL_WAIT_COUNTDOWN], 240);
     }
 
     #[test]

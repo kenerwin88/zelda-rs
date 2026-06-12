@@ -3,7 +3,8 @@ use crate::game_state::constants::{
     BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
     DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
     QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
-    QUAKE_SCREEN_SHAKE_Y,
+    QUAKE_SCREEN_SHAKE_Y, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS,
+    TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -17,6 +18,7 @@ pub(crate) struct EffectState {
     pub(crate) angle_scratch: EffectAngleScratchState,
     pub(crate) quake_spell: QuakeSpellState,
     pub(crate) bombos_spell: BombosSpellState,
+    pub(crate) tower_seal: TowerSealState,
 }
 
 impl EffectState {
@@ -26,6 +28,7 @@ impl EffectState {
             angle_scratch: EffectAngleScratchState::load_from_ram(ram),
             quake_spell: QuakeSpellState::load_from_ram(ram),
             bombos_spell: BombosSpellState::load_from_ram(ram),
+            tower_seal: TowerSealState::load_from_ram(ram),
         }
     }
 
@@ -34,6 +37,7 @@ impl EffectState {
         self.angle_scratch.write_to_ram(ram);
         self.quake_spell.write_to_ram(ram);
         self.bombos_spell.write_to_ram(ram);
+        self.tower_seal.write_to_ram(ram);
     }
 }
 
@@ -456,6 +460,104 @@ impl<'a> NativeBombosSpellBridgeMut<'a> {
 
     pub(crate) fn set_blast_position(&mut self, slot: usize, x: u16, y: u16) {
         self.state.set_blast_position(slot, x, y);
+        self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TowerSealState {
+    ring_radius: u8,
+    center_x: u16,
+    center_y: u16,
+    wait_countdown: u8,
+}
+
+impl TowerSealState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            ring_radius: ram.get(TOWER_SEAL_RING_RADIUS).copied().unwrap_or(0),
+            center_x: read_le_u16(ram, TOWER_SEAL_CENTER_X),
+            center_y: read_le_u16(ram, TOWER_SEAL_CENTER_Y),
+            wait_countdown: ram.get(TOWER_SEAL_WAIT_COUNTDOWN).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TOWER_SEAL_RING_RADIUS] = self.ring_radius;
+        write_le_u16(ram, TOWER_SEAL_CENTER_X, self.center_x);
+        write_le_u16(ram, TOWER_SEAL_CENTER_Y, self.center_y);
+        ram[TOWER_SEAL_WAIT_COUNTDOWN] = self.wait_countdown;
+    }
+
+    pub(crate) fn ring_radius(&self) -> u8 {
+        self.ring_radius
+    }
+
+    pub(crate) fn center_x(&self) -> u16 {
+        self.center_x
+    }
+
+    pub(crate) fn center_y(&self) -> u16 {
+        self.center_y
+    }
+
+    pub(crate) fn set_ring_radius(&mut self, value: u8) {
+        self.ring_radius = value;
+    }
+
+    pub(crate) fn set_center(&mut self, x: u16, y: u16) {
+        self.center_x = x;
+        self.center_y = y;
+    }
+
+    pub(crate) fn tick_wait_countdown(&mut self) -> u8 {
+        self.wait_countdown = self.wait_countdown.wrapping_sub(1);
+        self.wait_countdown
+    }
+
+    pub(crate) fn set_wait_countdown(&mut self, value: u8) {
+        self.wait_countdown = value;
+    }
+}
+
+pub(crate) struct NativeTowerSealBridgeMut<'a> {
+    state: &'a mut TowerSealState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeTowerSealBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8]) -> Self {
+        *state = TowerSealState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, TowerSealState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_ring_radius(&mut self, value: u8) {
+        self.state.set_ring_radius(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_center(&mut self, x: u16, y: u16) {
+        self.state.set_center(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn tick_wait_countdown(&mut self) -> u8 {
+        let value = self.state.tick_wait_countdown();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_wait_countdown(&mut self, value: u8) {
+        self.state.set_wait_countdown(value);
         self.sync();
     }
 }

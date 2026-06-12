@@ -295,57 +295,6 @@ impl<'a> TowerSealSparkleViewMut<'a> {
     }
 }
 
-pub(crate) struct TowerSealScratchView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> TowerSealScratchView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn ring_radius(&self) -> u8 {
-        byte(self.ram, TOWER_SEAL_RING_RADIUS)
-    }
-
-    pub(crate) fn center_x(&self) -> u16 {
-        read_le_u16(self.ram, TOWER_SEAL_CENTER_X)
-    }
-
-    pub(crate) fn center_y(&self) -> u16 {
-        read_le_u16(self.ram, TOWER_SEAL_CENTER_Y)
-    }
-}
-
-pub(crate) struct TowerSealScratchViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> TowerSealScratchViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_ring_radius(&mut self, value: u8) {
-        self.ram[TOWER_SEAL_RING_RADIUS] = value;
-    }
-
-    pub(crate) fn set_center(&mut self, x: u16, y: u16) {
-        write_le_u16(self.ram, TOWER_SEAL_CENTER_X, x);
-        write_le_u16(self.ram, TOWER_SEAL_CENTER_Y, y);
-    }
-
-    pub(crate) fn tick_wait_countdown(&mut self) -> u8 {
-        let value = self.ram[TOWER_SEAL_WAIT_COUNTDOWN].wrapping_sub(1);
-        self.ram[TOWER_SEAL_WAIT_COUNTDOWN] = value;
-        value
-    }
-
-    pub(crate) fn set_wait_countdown(&mut self, value: u8) {
-        self.ram[TOWER_SEAL_WAIT_COUNTDOWN] = value;
-    }
-}
-
 pub(crate) struct BlastWallExplosionView<'a> {
     ram: &'a [u8],
     slot: usize,

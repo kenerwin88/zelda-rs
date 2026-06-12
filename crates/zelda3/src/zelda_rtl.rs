@@ -73,20 +73,20 @@ use crate::game_state::{
     NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpriteBattleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView,
-    QuakeBoltViewMut, QuakeSpellState, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTowerSealBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellState, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadTransferState, SaveProgressView, SaveProgressViewMut, ScratchWordView,
+    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
     SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
     SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
     SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
@@ -95,9 +95,9 @@ use crate::game_state::{
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
     SystemSignalsState, TagalongSlotView, TempCounterView, TempCounterViewMut,
     TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
-    TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
+    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
+    WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3626,12 +3626,12 @@ impl ZeldaState {
         TowerSealSparkleViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn tower_seal_scratch_view(&self) -> TowerSealScratchView<'_> {
-        TowerSealScratchView::new(&self.ram)
+    pub(crate) fn tower_seal_scratch_view(&self) -> &TowerSealState {
+        &self.game_state.effects.tower_seal
     }
 
-    pub(crate) fn tower_seal_scratch_view_mut(&mut self) -> TowerSealScratchViewMut<'_> {
-        TowerSealScratchViewMut::new(&mut self.ram)
+    pub(crate) fn tower_seal_scratch_view_mut(&mut self) -> NativeTowerSealBridgeMut<'_> {
+        NativeTowerSealBridgeMut::new(&mut self.game_state.effects.tower_seal, &mut self.ram)
     }
 
     pub(crate) fn blast_wall_explosion_view(&self, slot: usize) -> BlastWallExplosionView<'_> {
