@@ -1523,6 +1523,10 @@ impl<'a> DoorDebrisViewMut<'a> {
     pub(crate) fn set_x_word(&mut self, slot: usize, value: u16) {
         write_le_u16(self.ram, DOOR_DEBRIS_X + slot * 2, value);
     }
+
+    pub(crate) fn set_y_word(&mut self, slot: usize, value: u16) {
+        write_le_u16(self.ram, DOOR_DEBRIS_Y + slot * 2, value);
+    }
 }
 
 pub(crate) struct DiggingGamePrizeView<'a> {

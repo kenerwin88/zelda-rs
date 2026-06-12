@@ -23,16 +23,22 @@ const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a6;
 const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a8;
 const DUNG_INTER_STAIRCASE_TABLE_LOCAL: usize = 0x06b0;
 const DUNG_STAIRS_TABLE_1_LOCAL: usize = 0x06b8;
+const DUNG_STAIRS_TABLE_2_LOCAL: usize = 0x06ec;
 const STAR_SHAPED_SWITCHES_TILE_LOCAL: usize = 0x06a0;
 
 #[derive(Clone, Copy)]
 pub(crate) enum DungeonStairList {
     InterRoomUpNorth,
     InterRoomSouthDown,
+    InRoomUpNorth,
     InRoomSouthDown,
     InterPseudoUpNorth,
     InRoomUpNorthWater,
     ActivatedWaterLadders,
+    WetStairs,
+    InRoomUpSouthWater,
+    Stairs1,
+    Stairs2,
     WaterLadders,
     WaterSideStepSwitch,
     WallUpNorthSpiral,
@@ -50,10 +56,15 @@ impl DungeonStairList {
         match self {
             Self::InterRoomUpNorth => DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL,
             Self::InterRoomSouthDown => DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL,
+            Self::InRoomUpNorth => DUNG_NUM_INROOM_UPNORTH_STAIRS,
             Self::InRoomSouthDown => DUNG_NUM_INROOM_SOUTHDOWN_STAIRS_LOCAL,
             Self::InterPseudoUpNorth => DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
             Self::InRoomUpNorthWater => DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
             Self::ActivatedWaterLadders => DUNG_NUM_ACTIVATED_WATER_LADDERS,
+            Self::WetStairs => DUNG_NUM_STAIRS_WET,
+            Self::InRoomUpSouthWater => DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+            Self::Stairs1 => DUNG_NUM_STAIRS_1,
+            Self::Stairs2 => DUNG_NUM_STAIRS_2,
             Self::WaterLadders => DUNG_NUM_WATER_LADDERS_LOCAL,
             Self::WaterSideStepSwitch => WATER_SIDE_STEP_SWITCH,
             Self::WallUpNorthSpiral => DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_LOCAL,
@@ -64,6 +75,15 @@ impl DungeonStairList {
             Self::InterRoomUpSouthStraight => DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL,
             Self::InterRoomDownNorthStraight => DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL,
             Self::InterRoomDownSouthStraight => DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL,
+        }
+    }
+
+    fn tilemap_table(self) -> usize {
+        match self {
+            Self::WetStairs | Self::InRoomUpSouthWater | Self::Stairs1 | Self::Stairs2 => {
+                DUNG_STAIRS_TABLE_2_LOCAL
+            }
+            _ => DUNG_STAIRS_TABLE_1_LOCAL,
         }
     }
 }
@@ -157,6 +177,14 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, RESET_XY_CHECK_FLAGS)
     }
 
+    pub(crate) fn layout_quadrant_key(&self) -> u8 {
+        byte(self.ram, COMPOSITE_OF_LAYOUT_AND_QUADRANT)
+    }
+
+    pub(crate) fn quadrants_visited(&self) -> u16 {
+        word(self.ram, DUNG_QUADRANTS_VISITED)
+    }
+
     pub(crate) fn cached_floor(&self) -> u8 {
         byte(self.ram, DUNG_CUR_FLOOR_CACHED)
     }
@@ -195,6 +223,14 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn any_lights_out_request(&self) -> u8 {
         self.wants_lights_out() | self.wants_lights_out_copy()
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
+        byte(self.ram, HDR_DUNGEON_DARK_WITH_LANTERN) != 0
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern_raw(&self) -> u8 {
+        byte(self.ram, HDR_DUNGEON_DARK_WITH_LANTERN)
     }
 
     pub(crate) fn quadrant_upload_index(&self) -> u8 {
@@ -245,12 +281,80 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNG_FLOOR_Y_OFFS)
     }
 
+    pub(crate) fn crush_wall_progress(&self) -> u16 {
+        word(self.ram, CRUSH_WALL_PROGRESS)
+    }
+
+    pub(crate) fn moving_wall_dot_pointer(&self) -> u8 {
+        byte(self.ram, MOVING_WALL_DOT_POINTER)
+    }
+
+    pub(crate) fn moving_wall_dot_index(&self) -> usize {
+        usize::from(self.moving_wall_dot_pointer() >> 1) & 7
+    }
+
+    pub(crate) fn moving_wall_write_point(&self) -> u16 {
+        word(self.ram, MOVING_WALL_WRITE_POINT)
+    }
+
     pub(crate) fn dungeon_music_type_flag(&self) -> u8 {
         byte(self.ram, FLAG_WHICH_MUSIC_TYPE_DUNGEON)
     }
 
     pub(crate) fn fixed_color_plusminus(&self) -> u8 {
         byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
+    }
+
+    pub(crate) fn overlay_to_load(&self) -> u8 {
+        byte(self.ram, DUNG_OVERLAY_TO_LOAD)
+    }
+
+    pub(crate) fn moving_wall_torch_should_update(&self) -> bool {
+        byte(self.ram, MOVING_WALL_TORCH_UPDATE_FLAG) != 0
+    }
+
+    pub(crate) fn movable_block_was_pushed(&self) -> u8 {
+        byte(self.ram, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED)
+    }
+
+    pub(crate) fn movable_block_was_not_pushed_flag(&self) -> u8 {
+        self.movable_block_was_pushed() ^ 1
+    }
+
+    pub(crate) fn somaria_block_switch_counter(&self) -> u8 {
+        byte(self.ram, DUNG_FLAG_SOMARIA_BLOCK_SWITCH)
+    }
+
+    pub(crate) fn door_switch_triggered(&self) -> bool {
+        byte(self.ram, DUNG_DOOR_SWITCH_TRIGGERED) != 0
+    }
+
+    pub(crate) fn block_trap_related_tile(&self) -> u16 {
+        word(self.ram, BLOCK_TRAP_CHECK_FLAG)
+    }
+
+    pub(crate) fn selected_key_door_x2(&self) -> u16 {
+        word(self.ram, DUNG_WHICH_KEY_X2_DUNGEON)
+    }
+
+    pub(crate) fn blast_wall_door_index_x2(&self) -> u16 {
+        word(self.ram, CRUSH_WALL_DOOR_INDEX_X2)
+    }
+
+    pub(crate) fn landing_class(&self) -> u8 {
+        byte(self.ram, DUNG_TRANSITION_LANDING_CLASS)
+    }
+
+    pub(crate) fn landing_class_is_pit(&self) -> bool {
+        matches!(self.landing_class(), 2 | 4)
+    }
+
+    pub(crate) fn push_block_direction_index(&self) -> usize {
+        usize::from((byte(self.ram, PUSH_BLOCK_DIRECTION_DUNGEON) >> 1) & 3)
+    }
+
+    pub(crate) fn minigame_credits(&self) -> u8 {
+        byte(self.ram, MINIGAME_CREDITS)
     }
 
     pub(crate) fn water_transition_counter(&self) -> u8 {
@@ -297,8 +401,80 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNG_NUM_BIGKEY_LOCKS_X2)
     }
 
+    pub(crate) fn chest_reveal_cursor_x2(&self) -> u16 {
+        word(self.ram, OVERWORLD_MAP_STATE)
+    }
+
+    pub(crate) fn chest_reveal_cursor_reached_end(&self, cursor_x2: u16) -> bool {
+        cursor_x2 == self.num_chests_x2()
+    }
+
+    pub(crate) fn replacement_tile_destination_x2(&self) -> u16 {
+        word(self.ram, DUNG_REPLACEMENT_TILE_DST_POS_X2)
+    }
+
+    pub(crate) fn replacement_tile_source_x2(&self) -> u16 {
+        word(self.ram, DUNG_REPLACEMENT_TILE_SRC_POS_X2)
+    }
+
+    pub(crate) fn replacement_tile_source_pos(&self) -> u16 {
+        self.replacement_tile_source_x2() >> 1
+    }
+
+    pub(crate) fn chest_location_for_cursor(&self, cursor_x2: u16) -> u16 {
+        self.chest_location(usize::from(cursor_x2 >> 1))
+    }
+
     pub(crate) fn adjacent_door_flags(&self) -> u16 {
         word(self.ram, ADJACENT_DOORS_FLAGS)
+    }
+
+    pub(crate) fn exit_door_count_x2(&self) -> u16 {
+        word(self.ram, DUNG_EXIT_DOOR_COUNT)
+    }
+
+    pub(crate) fn exit_door_count(&self) -> usize {
+        usize::from(self.exit_door_count_x2() >> 1)
+    }
+
+    pub(crate) fn exit_door_address(&self, index: usize) -> u16 {
+        word(self.ram, DUNG_EXIT_DOOR_ADDRESSES + index * 2)
+    }
+
+    pub(crate) fn has_exit_door_address(&self, address: u16) -> bool {
+        (0..4).any(|index| self.exit_door_address(index) == address)
+    }
+
+    pub(crate) fn invisible_door_marker(&self) -> u16 {
+        word(self.ram, INVISIBLE_DOOR_DIR_AND_INDEX_X2)
+    }
+
+    pub(crate) fn toggle_floor_count_x2(&self) -> u16 {
+        word(self.ram, DUNG_NUM_TOGGLE_FLOOR)
+    }
+
+    pub(crate) fn toggle_palace_count_x2(&self) -> u16 {
+        word(self.ram, DUNG_NUM_TOGGLE_PALACE)
+    }
+
+    pub(crate) fn toggle_floor_pos(&self, index: usize) -> u16 {
+        word(self.ram, DUNG_TOGGLE_FLOOR_POS + index * 2)
+    }
+
+    pub(crate) fn toggle_palace_pos(&self, index: usize) -> u16 {
+        word(self.ram, DUNG_TOGGLE_PALACE_POS + index * 2)
+    }
+
+    pub(crate) fn active_room_load_ptr(&self) -> u16 {
+        word(self.ram, DUNG_LOAD_PTR)
+    }
+
+    pub(crate) fn active_room_load_ptr_bank(&self) -> u8 {
+        byte(self.ram, DUNG_LOAD_PTR_BANK)
+    }
+
+    pub(crate) fn width_road_address(&self) -> u16 {
+        word(self.ram, DUNG_WIDTH_ROAD_ADDRESS)
     }
 
     pub(crate) fn adjacent_door(&self, index: usize) -> u16 {
@@ -311,6 +487,17 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn torch_index(&self) -> u16 {
         word(self.ram, DUNG_INDEX_OF_TORCHES)
+    }
+
+    pub(crate) fn star_switch_count_x2(&self) -> u16 {
+        word(self.ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL)
+    }
+
+    pub(crate) fn star_switch_tilemap_pos(&self, offset_x2: usize) -> u16 {
+        word(
+            self.ram,
+            STAR_SHAPED_SWITCHES_TILE_LOCAL + (offset_x2 >> 1) * 2,
+        )
     }
 
     pub(crate) fn floor_1_filler_tile_source(&self) -> usize {
@@ -351,6 +538,15 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn staircase_move_counter(&self) -> u8 {
         byte(self.ram, STAIRCASE_MOVE_COUNTER)
+    }
+
+    pub(crate) fn stair_list_count(&self, list: DungeonStairList) -> u16 {
+        word(self.ram, list.counter())
+    }
+
+    pub(crate) fn stair_list_tilemap_pos(&self, list: DungeonStairList, offset_x2: u16) -> u16 {
+        let index = usize::from(offset_x2 >> 1);
+        word(self.ram, list.tilemap_table() + index * 2)
     }
 
     pub(crate) fn inter_staircase_pos(&self, index: usize) -> u16 {
@@ -412,6 +608,14 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn previous_room_index(&self) -> usize {
         usize::from(word(self.ram, DUNGEON_ROOM_INDEX_PREV))
+    }
+
+    pub(crate) fn previous_room_index_word(&self) -> u16 {
+        word(self.ram, DUNGEON_ROOM_INDEX_PREV)
+    }
+
+    pub(crate) fn room_transitioning_flags(&self) -> u8 {
+        byte(self.ram, ROOM_TRANSITIONING_FLAGS)
     }
 
     pub(crate) fn bg2_tile(&self, index: usize) -> u16 {
@@ -478,8 +682,8 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, DUNGEON_ROOM_HISTORY + index * 2)
     }
 
-    pub(crate) fn floor_move_flags(&self) -> u8 {
-        byte(self.ram, DUNG_FLOOR_MOVE_FLAGS)
+    pub(crate) fn floor_move_flags(&self) -> u16 {
+        word(self.ram, DUNG_FLOOR_MOVE_FLAGS)
     }
 
     pub(crate) fn has_bomb_trap_activation(&self) -> bool {
@@ -488,6 +692,22 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn kind_of_in_room_staircase(&self) -> u8 {
         byte(self.ram, KIND_OF_IN_ROOM_STAIRCASE)
+    }
+
+    pub(crate) fn blast_wall_message_state(&self) -> u8 {
+        byte(self.ram, MESSAGING_BUF_DUNGEON)
+    }
+
+    pub(crate) fn staircase_tilemap_pos_x2(&self) -> u16 {
+        word(self.ram, STAIRCASE_TILEMAP_POS_X2)
+    }
+
+    pub(crate) fn staircase_countdown(&self) -> u8 {
+        byte(self.ram, COUNTDOWN_TIMER_FOR_STAIRCASES)
+    }
+
+    pub(crate) fn should_run_room_tags(&self) -> bool {
+        byte(self.ram, FLAG_SKIP_CALL_TAG_ROUTINES) == 0
     }
 
     pub(crate) fn loading_bg_offset_h(&self) -> u16 {
@@ -512,6 +732,10 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn chest_location(&self, index: usize) -> u16 {
         word(self.ram, DUNG_CHEST_LOCATIONS + index * 2)
+    }
+
+    pub(crate) fn chest_location_for_offset_x2(&self, offset_x2: usize) -> u16 {
+        self.chest_location(offset_x2 >> 1)
     }
 
     pub(crate) fn replacement_tilemap_quad(&self, index: usize) -> [u16; 4] {
@@ -798,6 +1022,61 @@ impl<'a> DungeonStateViewMut<'a> {
         write_le_u16(self.ram, DUNG_FLOOR_Y_OFFS, value);
     }
 
+    pub(crate) fn set_floor_y_offset_low(&mut self, value: u8) {
+        self.ram[DUNG_FLOOR_Y_OFFS] = value;
+    }
+
+    pub(crate) fn set_floor_offsets(&mut self, x: u16, y: u16) {
+        self.set_floor_x_offset(x);
+        self.set_floor_y_offset(y);
+    }
+
+    pub(crate) fn add_floor_x_offset(&mut self, delta: u16) -> u16 {
+        let value = word(self.ram, DUNG_FLOOR_X_OFFS).wrapping_add(delta);
+        self.set_floor_x_offset(value);
+        value
+    }
+
+    pub(crate) fn sub_floor_x_offset(&mut self, delta: u16) -> u16 {
+        let value = word(self.ram, DUNG_FLOOR_X_OFFS).wrapping_sub(delta);
+        self.set_floor_x_offset(value);
+        value
+    }
+
+    pub(crate) fn add_floor_y_offset(&mut self, delta: u16) -> u16 {
+        let value = word(self.ram, DUNG_FLOOR_Y_OFFS).wrapping_add(delta);
+        self.set_floor_y_offset(value);
+        value
+    }
+
+    pub(crate) fn sub_floor_y_offset(&mut self, delta: u16) -> u16 {
+        let value = word(self.ram, DUNG_FLOOR_Y_OFFS).wrapping_sub(delta);
+        self.set_floor_y_offset(value);
+        value
+    }
+
+    pub(crate) fn clear_floor_offsets(&mut self) {
+        self.set_floor_offsets(0, 0);
+    }
+
+    pub(crate) fn clear_floor_move_flags(&mut self) {
+        write_le_u16(self.ram, DUNG_FLOOR_MOVE_FLAGS, 0);
+    }
+
+    pub(crate) fn fill_moving_wall_replacement_buffer(&mut self, value: u16) {
+        for i in 0..64 {
+            write_le_u16(self.ram, MOVING_WALL_REPLACEMENT_BUFFER + i * 2, value);
+        }
+    }
+
+    pub(crate) fn set_moving_wall_write_point(&mut self, value: u16) {
+        write_le_u16(self.ram, MOVING_WALL_WRITE_POINT, value);
+    }
+
+    pub(crate) fn set_moving_wall_dot_pointer(&mut self, value: u8) {
+        self.ram[MOVING_WALL_DOT_POINTER] = value;
+    }
+
     pub(crate) fn clear_dungeon_music_type_flag(&mut self) {
         self.ram[FLAG_WHICH_MUSIC_TYPE_DUNGEON] = 0;
     }
@@ -808,6 +1087,24 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn set_fixed_color_plusminus(&mut self, value: u8) {
         self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
+    }
+
+    pub(crate) fn set_overlay_to_load(&mut self, value: u8) {
+        self.ram[DUNG_OVERLAY_TO_LOAD] = value;
+    }
+
+    pub(crate) fn set_overlay_to_load_if_empty(&mut self, value: u8) {
+        if self.ram[DUNG_OVERLAY_TO_LOAD] == 0 {
+            self.set_overlay_to_load(value);
+        }
+    }
+
+    pub(crate) fn toggle_moving_wall_torch_blink_phase(&mut self) {
+        self.ram[MOVING_WALL_TORCH_BLINK_PHASE] ^= 1;
+    }
+
+    pub(crate) fn request_moving_wall_torch_update(&mut self) {
+        self.ram[MOVING_WALL_TORCH_UPDATE_FLAG] = 0x80;
     }
 
     pub(crate) fn clear_moving_wall_torch_blink_phase(&mut self) {
@@ -937,6 +1234,10 @@ impl<'a> DungeonStateViewMut<'a> {
         write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
     }
 
+    pub(crate) fn set_staircase_tilemap_pos_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, STAIRCASE_TILEMAP_POS_X2, value);
+    }
+
     pub(crate) fn set_bg2_properties_backup(&mut self, value: u8) {
         self.ram[DUNG_HDR_BG2_PROPERTIES_BACKUP] = value;
     }
@@ -982,6 +1283,50 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED] ^= 1;
     }
 
+    pub(crate) fn set_block_trap_related_tile(&mut self, value: u16) {
+        write_le_u16(self.ram, BLOCK_TRAP_CHECK_FLAG, value);
+    }
+
+    pub(crate) fn set_selected_key_door_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_WHICH_KEY_X2_DUNGEON, value);
+    }
+
+    pub(crate) fn set_selected_key_door(&mut self, door: usize) {
+        self.set_selected_key_door_x2((door * 2) as u16);
+    }
+
+    pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
+        write_le_u16(self.ram, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, 0);
+    }
+
+    pub(crate) fn set_blast_wall_door_index_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, CRUSH_WALL_DOOR_INDEX_X2, value);
+    }
+
+    pub(crate) fn set_blast_wall_door_index(&mut self, door: usize) {
+        self.set_blast_wall_door_index_x2((door * 2) as u16);
+    }
+
+    pub(crate) fn clear_blast_wall_door_index(&mut self) {
+        self.set_blast_wall_door_index_x2(0);
+    }
+
+    pub(crate) fn set_landing_class(&mut self, value: u8) {
+        self.ram[DUNG_TRANSITION_LANDING_CLASS] = value;
+    }
+
+    pub(crate) fn clear_landing_class(&mut self) {
+        self.ram[DUNG_TRANSITION_LANDING_CLASS] = 0;
+    }
+
+    pub(crate) fn mark_door_switch_triggered(&mut self) {
+        self.ram[DUNG_DOOR_SWITCH_TRIGGERED] = 1;
+    }
+
+    pub(crate) fn clear_door_switch_triggered(&mut self) {
+        self.ram[DUNG_DOOR_SWITCH_TRIGGERED] = 0;
+    }
+
     pub(crate) fn set_movable_block_record(&mut self, index: usize, room: u16, tilemap: u16) {
         write_le_u16(self.ram, MOVABLE_BLOCK_DATAS + index * 4, room);
         write_le_u16(self.ram, MOVABLE_BLOCK_DATAS + index * 4 + 2, tilemap);
@@ -1025,6 +1370,30 @@ impl<'a> DungeonStateViewMut<'a> {
         write_le_u16(self.ram, DUNG_CHEST_LOCATIONS + index * 2, value);
     }
 
+    pub(crate) fn set_chest_location_for_offset_x2(&mut self, offset_x2: usize, value: u16) {
+        self.set_chest_location(offset_x2 >> 1, value);
+    }
+
+    pub(crate) fn set_chest_reveal_cursor_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, OVERWORLD_MAP_STATE, value);
+    }
+
+    pub(crate) fn clear_chest_reveal_cursor(&mut self) {
+        self.set_chest_reveal_cursor_x2(0);
+    }
+
+    pub(crate) fn set_replacement_tile_destination_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_DST_POS_X2, value);
+    }
+
+    pub(crate) fn set_replacement_tile_source_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_SRC_POS_X2, value);
+    }
+
+    pub(crate) fn clear_replacement_tile_destination(&mut self) {
+        self.set_replacement_tile_destination_x2(0);
+    }
+
     pub(crate) fn clear_chest_location(&mut self, index: usize) {
         self.set_chest_location(index, 0);
     }
@@ -1037,6 +1406,48 @@ impl<'a> DungeonStateViewMut<'a> {
         let opened = word(self.ram, DUNG_DOOR_OPENED) | mask;
         self.set_opened_doors(opened);
         opened
+    }
+
+    pub(crate) fn mark_door_opened(&mut self, door: usize) -> u16 {
+        self.or_opened_doors(0x8000u16 >> (door & 15))
+    }
+
+    pub(crate) fn append_exit_door_address(&mut self, address: u16) -> usize {
+        let count = word(self.ram, DUNG_EXIT_DOOR_COUNT);
+        let index = usize::from(count >> 1);
+        if index < 16 {
+            write_le_u16(self.ram, DUNG_EXIT_DOOR_ADDRESSES + index * 2, address);
+        }
+        write_le_u16(self.ram, DUNG_EXIT_DOOR_COUNT, count.wrapping_add(2));
+        index
+    }
+
+    pub(crate) fn append_toggle_palace_pos(&mut self, pos: u16) -> usize {
+        let count = word(self.ram, DUNG_NUM_TOGGLE_PALACE);
+        let index = usize::from(count >> 1);
+        if index < 8 {
+            write_le_u16(self.ram, DUNG_TOGGLE_PALACE_POS + index * 2, pos);
+        }
+        write_le_u16(self.ram, DUNG_NUM_TOGGLE_PALACE, count.wrapping_add(2));
+        index
+    }
+
+    pub(crate) fn append_toggle_floor_pos(&mut self, pos: u16) -> usize {
+        let count = word(self.ram, DUNG_NUM_TOGGLE_FLOOR);
+        let index = usize::from(count >> 1);
+        if index < 8 {
+            write_le_u16(self.ram, DUNG_TOGGLE_FLOOR_POS + index * 2, pos);
+        }
+        write_le_u16(self.ram, DUNG_NUM_TOGGLE_FLOOR, count.wrapping_add(2));
+        index
+    }
+
+    pub(crate) fn set_active_room_load_ptr(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_LOAD_PTR, value);
+    }
+
+    pub(crate) fn set_active_room_load_ptr_bank(&mut self, value: u8) {
+        self.ram[DUNG_LOAD_PTR_BANK] = value;
     }
 
     pub(crate) fn set_replacement_tilemap_quad(&mut self, index: usize, quad: [u16; 4]) {
@@ -1062,6 +1473,27 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn set_door_animation_step_low(&mut self, value: u8) {
         self.ram[DOOR_ANIMATION_STEP_INDICATOR_DUNGEON] = value;
+    }
+
+    pub(crate) fn set_staircase_countdown(&mut self, value: u8) {
+        self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES] = value;
+    }
+
+    pub(crate) fn decrement_staircase_countdown_clamped(&mut self) -> u8 {
+        let value = self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES].wrapping_sub(1);
+        self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES] = if (value as i8).is_negative() {
+            0
+        } else {
+            value
+        };
+        self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES]
+    }
+
+    pub(crate) fn decrement_staircase_countdown_underflowed(&mut self) -> bool {
+        let value = self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES].wrapping_sub(1);
+        let underflowed = (value as i8).is_negative();
+        self.ram[COUNTDOWN_TIMER_FOR_STAIRCASES] = if underflowed { 0 } else { value };
+        underflowed
     }
 
     pub(crate) fn increment_door_animation_step(&mut self) -> u16 {
@@ -1200,6 +1632,10 @@ impl<'a> DungeonStateViewMut<'a> {
         write_le_u16(self.ram, DUNG_QUADRANTS_VISITED, value);
     }
 
+    pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u8) {
+        self.ram[HUD_FLOOR_CHANGED_TIMER] = value;
+    }
+
     pub(crate) fn or_quadrants_visited(&mut self, value: u16) -> u16 {
         let visited = word(self.ram, DUNG_QUADRANTS_VISITED) | value;
         write_le_u16(self.ram, DUNG_QUADRANTS_VISITED, visited);
@@ -1212,6 +1648,20 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn mark_blast_wall_y_open(&mut self) {
         self.ram[DUNG_BLASTWALL_FLAG_Y] = 1;
+    }
+
+    pub(crate) fn set_crush_wall_progress(&mut self, value: u16) {
+        write_le_u16(self.ram, CRUSH_WALL_PROGRESS, value);
+    }
+
+    pub(crate) fn set_crush_wall_progress_low(&mut self, value: u8) {
+        self.ram[CRUSH_WALL_PROGRESS] = value;
+    }
+
+    pub(crate) fn advance_crush_wall_progress_by(&mut self, delta: u16) -> u16 {
+        let value = word(self.ram, CRUSH_WALL_PROGRESS).wrapping_add(delta);
+        self.set_crush_wall_progress(value);
+        value
     }
 
     pub(crate) fn add_reset_xy_check_flags(&mut self, value: u16) -> u16 {
@@ -1352,8 +1802,25 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.ram[DUNGEON_TRAP_TRIGGER_LATCH].wrapping_add(1);
     }
 
+    pub(crate) fn mark_trap_trigger_latched(&mut self) {
+        self.ram[DUNGEON_TRAP_TRIGGER_LATCH] = 1;
+    }
+
     pub(crate) fn clear_trap_trigger_latch(&mut self) {
         self.ram[DUNGEON_TRAP_TRIGGER_LATCH] = 0;
+    }
+
+    pub(crate) fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
+        write_le_u16(self.ram, KIND_OF_IN_ROOM_STAIRCASE, value);
+    }
+
+    pub(crate) fn set_blast_wall_message_direction(&mut self, value: u16) {
+        write_le_u16(self.ram, MESSAGING_BUF_DUNGEON + 0x1c, value);
+    }
+
+    pub(crate) fn set_blast_wall_message_position(&mut self, x: u16, y: u16) {
+        write_le_u16(self.ram, MESSAGING_BUF_DUNGEON + 0x1a, x);
+        write_le_u16(self.ram, MESSAGING_BUF_DUNGEON + 0x18, y);
     }
 
     pub(crate) fn set_room_history_entry(&mut self, index: usize, value: u16) {
@@ -1366,12 +1833,13 @@ impl<'a> DungeonStateViewMut<'a> {
         }
     }
 
-    pub(crate) fn set_floor_move_flags(&mut self, value: u8) {
-        self.ram[DUNG_FLOOR_MOVE_FLAGS] = value;
+    pub(crate) fn set_floor_move_flags(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNG_FLOOR_MOVE_FLAGS, value);
     }
 
     pub(crate) fn increment_floor_move_flags(&mut self) {
-        self.ram[DUNG_FLOOR_MOVE_FLAGS] = self.ram[DUNG_FLOOR_MOVE_FLAGS].wrapping_add(1);
+        let value = word(self.ram, DUNG_FLOOR_MOVE_FLAGS).wrapping_add(1);
+        self.set_floor_move_flags(value);
     }
 
     pub(crate) fn clear_orange_blue_barrier_state(&mut self) {
@@ -1397,6 +1865,10 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
     }
 
+    pub(crate) fn set_dungeon_dark_with_lantern_raw(&mut self, value: u8) {
+        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = value;
+    }
+
     pub(crate) fn clear_dungeon_dark_with_lantern(&mut self) {
         self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 0;
     }
@@ -1409,8 +1881,48 @@ impl<'a> DungeonStateViewMut<'a> {
         self.ram[ACTIVATE_BOMB_TRAP_OVERLORD] = value;
     }
 
+    pub(crate) fn set_minigame_credits(&mut self, value: u8) {
+        self.ram[MINIGAME_CREDITS] = value;
+    }
+
+    pub(crate) fn decrement_minigame_credits(&mut self) -> u8 {
+        self.ram[MINIGAME_CREDITS] = self.ram[MINIGAME_CREDITS].wrapping_sub(1);
+        self.ram[MINIGAME_CREDITS]
+    }
+
+    pub(crate) fn clear_reserved_gfx_config(&mut self) {
+        write_le_u16(self.ram, RESERVED_GFX_CONFIG_WORD, 0);
+    }
+
     pub(crate) fn set_room_index_prev(&mut self, value: u8) {
         self.ram[DUNGEON_ROOM_INDEX_PREV] = value;
+    }
+
+    pub(crate) fn set_previous_room_index_word(&mut self, value: u16) {
+        write_le_u16(self.ram, DUNGEON_ROOM_INDEX_PREV, value);
+    }
+
+    pub(crate) fn set_layout_quadrant_key(&mut self, value: u8) {
+        self.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] = value;
+    }
+
+    pub(crate) fn update_layout_quadrant_key(&mut self, quadrant_y: u8, quadrant_x: u8) -> u8 {
+        let key = self.ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] | quadrant_y | quadrant_x;
+        self.set_layout_quadrant_key(key);
+        key
+    }
+
+    pub(crate) fn clear_room_transitioning_flags(&mut self) {
+        self.ram[ROOM_TRANSITIONING_FLAGS] = 0;
+    }
+
+    pub(crate) fn skip_room_tags_once(&mut self) {
+        self.ram[FLAG_SKIP_CALL_TAG_ROUTINES] =
+            self.ram[FLAG_SKIP_CALL_TAG_ROUTINES].wrapping_add(1);
+    }
+
+    pub(crate) fn clear_room_tag_skip(&mut self) {
+        self.ram[FLAG_SKIP_CALL_TAG_ROUTINES] = 0;
     }
 
     pub(crate) fn set_cached_room_bounds(
@@ -1602,6 +2114,10 @@ impl<'a> DungeonTorchViewMut<'a> {
 
     pub(crate) fn set_attr(&mut self, value: u8) {
         self.ram[DUNGEON_TORCH_ATTR] = value;
+    }
+
+    pub(crate) fn set_ganon_torch_count(&mut self, value: u8) {
+        self.ram[GANON_TORCH_COUNT] = value;
     }
 
     pub(crate) fn clear_attr(&mut self) {

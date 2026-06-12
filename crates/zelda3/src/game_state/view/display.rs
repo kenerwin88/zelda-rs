@@ -498,6 +498,30 @@ impl<'a> DisplayNmiViewMut<'a> {
         self.ram[TSW_COPY] = value;
     }
 
+    pub(crate) fn set_window_layer_masks(
+        &mut self,
+        w12sel: u8,
+        w34sel: u8,
+        wobjsel: u8,
+        tmw: u8,
+        tsw: u8,
+    ) {
+        self.set_w12sel_copy(w12sel);
+        self.set_w34sel_copy(w34sel);
+        self.set_wobjsel_copy(wobjsel);
+        self.set_tmw_copy(tmw);
+        self.set_tsw_copy(tsw);
+    }
+
+    pub(crate) fn clear_window_layer_masks(&mut self) {
+        self.set_window_layer_masks(0, 0, 0, 0, 0);
+    }
+
+    pub(crate) fn clear_window_main_sub_masks(&mut self) {
+        self.set_tmw_copy(0);
+        self.set_tsw_copy(0);
+    }
+
     pub(crate) fn tilemap_upload_buffer_mut(&mut self) -> &mut [u8] {
         &mut self.ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
     }
@@ -1512,6 +1536,12 @@ impl<'a> WaterHdmaWindowView<'a> {
     pub(crate) fn watergate_spotlight_y_upper(&self) -> u16 {
         word(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER)
     }
+    pub(crate) fn watergate_pointer(&self) -> u8 {
+        byte(self.ram, WATERGATE_POINTER)
+    }
+    pub(crate) fn watergate_tilemap_pos_x2(&self) -> u16 {
+        word(self.ram, WATERGATE_POS)
+    }
 }
 pub(crate) struct WaterHdmaWindowViewMut<'a> {
     ram: &'a mut [u8],
@@ -1524,6 +1554,57 @@ impl<'a> WaterHdmaWindowViewMut<'a> {
         let v = word(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER).wrapping_sub(1);
         write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, v);
         v
+    }
+
+    pub(crate) fn set_watergate_pointer(&mut self, value: u8) {
+        self.ram[WATERGATE_POINTER] = value;
+    }
+
+    pub(crate) fn increment_watergate_pointer(&mut self) -> u8 {
+        self.ram[WATERGATE_POINTER] = self.ram[WATERGATE_POINTER].wrapping_add(1);
+        self.ram[WATERGATE_POINTER]
+    }
+
+    pub(crate) fn set_watergate_tilemap_pos_x2(&mut self, value: u16) {
+        write_le_u16(self.ram, WATERGATE_POS, value);
+    }
+
+    pub(crate) fn set_window_x(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, value);
+    }
+
+    pub(crate) fn set_window_y(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, value);
+    }
+
+    pub(crate) fn set_window_x_radius(&mut self, value: u16) {
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X_RADIUS, value);
+    }
+
+    pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
+    }
+
+    pub(crate) fn increment_window_y_radius_byte(&mut self) -> u8 {
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = self.ram[WATER_HDMA_WINDOW_Y_RADIUS].wrapping_add(1);
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS]
+    }
+
+    pub(crate) fn set_watergate_spotlight_y_upper(&mut self, value: u16) {
+        write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, value);
+    }
+
+    pub(crate) fn copy_watergate_spotlight_to_spotlight_upper(&mut self) {
+        self.ram[SPOTLIGHT_Y_UPPER] = self.ram[WATERGATE_SPOTLIGHT_Y_UPPER];
+    }
+
+    pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
+        self.copy_watergate_spotlight_to_spotlight_upper();
+        self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(1);
+        let x_radius_minus_margin = self.ram[WATER_HDMA_WINDOW_X_RADIUS].wrapping_sub(8);
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] =
+            self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(x_radius_minus_margin);
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS]
     }
 }
 

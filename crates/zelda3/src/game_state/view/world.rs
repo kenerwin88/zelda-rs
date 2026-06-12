@@ -560,6 +560,11 @@ impl<'a> WorldStateViewMut<'a> {
         self.ram[IS_NMI_THREAD_ACTIVE] = value;
     }
 
+    pub(crate) fn increment_nmi_thread_active(&mut self) -> u8 {
+        self.ram[IS_NMI_THREAD_ACTIVE] = self.ram[IS_NMI_THREAD_ACTIVE].wrapping_add(1);
+        self.ram[IS_NMI_THREAD_ACTIVE]
+    }
+
     pub(crate) fn clear_nmi_flag_update_polyhedral(&mut self) {
         self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
     }
@@ -693,6 +698,10 @@ impl<'a> WorldStateViewMut<'a> {
 
     pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
         self.ram[MISC_SPRITES_GRAPHICS_INDEX] = value;
+    }
+
+    pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
+        self.ram[PALETTE_SP6R_INDOORS] = value;
     }
 
     pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {

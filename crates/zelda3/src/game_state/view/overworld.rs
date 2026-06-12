@@ -508,4 +508,19 @@ impl<'a> VramUploadDataViewMut<'a> {
         write_le_u16(self.ram, abs_addr + 14, tiles[3]);
         write_le_u16(self.ram, abs_addr + 16, 0xffff);
     }
+
+    pub(crate) fn write_single_tile_stripe_packet(
+        &mut self,
+        abs_addr: usize,
+        stripe: u16,
+        tile: u16,
+    ) {
+        write_le_u16(self.ram, abs_addr, stripe);
+        write_le_u16(self.ram, abs_addr + 2, 0x0100);
+        write_le_u16(self.ram, abs_addr + 4, tile);
+    }
+
+    pub(crate) fn write_tile_stripe_sentinel(&mut self, abs_addr: usize) {
+        write_le_u16(self.ram, abs_addr, 0xffff);
+    }
 }

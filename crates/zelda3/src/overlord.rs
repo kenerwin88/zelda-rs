@@ -648,7 +648,8 @@ impl ZeldaState {
                     1
                 };
                 let flags = (self.get_random_number() & mask) * 2;
-                self.dungeon_state_view_mut().set_floor_move_flags(flags);
+                self.dungeon_state_view_mut()
+                    .set_floor_move_flags(u16::from(flags));
                 let value = (self.get_random_number() & 127).wrapping_add(128);
                 self.overlord_slot_view_mut(k).set_gen2(value);
                 let value = self.overlord_slot_view(k).gen1().wrapping_add(1);

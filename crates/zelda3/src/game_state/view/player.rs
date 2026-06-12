@@ -4175,6 +4175,10 @@ impl<'a> PushedBlockView<'a> {
         byte(self.ram, PUSHEDBLOCK_FACING_PLAYER + slot * 2)
     }
 
+    pub(crate) fn animation_mode(&self) -> u8 {
+        byte(self.ram, PUSHED_BLOCK_MODE)
+    }
+
     pub(crate) fn x_fixed24(&self, slot: usize) -> u32 {
         u32::from(self.subpixel(slot))
             | (u32::from(self.x_low(slot)) << 8)
@@ -4203,6 +4207,26 @@ impl<'a> PushedBlockViewMut<'a> {
 
     pub(crate) fn set_target_low(&mut self, slot: usize, value: u8) {
         self.ram[PUSHEDBLOCKS_TARGET + slot * 2] = value;
+    }
+
+    pub(crate) fn set_animation_mode(&mut self, value: u8) {
+        self.ram[PUSHED_BLOCK_MODE] = value;
+    }
+
+    pub(crate) fn reset_animation_timer(&mut self) {
+        self.ram[PUSHED_BLOCK_ANIMATION_TIMER] = 9;
+    }
+
+    pub(crate) fn decrement_animation_timer(&mut self) -> u8 {
+        self.ram[PUSHED_BLOCK_ANIMATION_TIMER] =
+            self.ram[PUSHED_BLOCK_ANIMATION_TIMER].wrapping_sub(1);
+        self.ram[PUSHED_BLOCK_ANIMATION_TIMER]
+    }
+
+    pub(crate) fn advance_animation_mode(&mut self) -> u8 {
+        self.reset_animation_timer();
+        self.ram[PUSHED_BLOCK_MODE] = self.ram[PUSHED_BLOCK_MODE].wrapping_add(1);
+        self.ram[PUSHED_BLOCK_MODE]
     }
 
     /// Initializes a pushed-block slot: split x/y words, zero target and

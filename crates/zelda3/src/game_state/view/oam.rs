@@ -208,6 +208,20 @@ impl<'a> OamStateViewMut<'a> {
         self.ram[addr + 3] = flags;
     }
 
+    pub(crate) fn write_current_entry_with_extended(
+        &mut self,
+        x: u8,
+        y: u8,
+        charnum: u8,
+        flags: u8,
+        extended: u8,
+    ) {
+        let oam = usize::from(word(self.ram, OAM_CUR_PTR));
+        self.write_entry(oam, x, y, charnum, flags);
+        let ext = usize::from(word(self.ram, OAM_EXT_CUR_PTR));
+        self.ram[ext] = extended;
+    }
+
     pub(crate) fn set_entry_x(&mut self, addr: usize, x: u8) {
         self.ram[addr] = x;
     }
