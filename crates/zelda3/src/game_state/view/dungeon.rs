@@ -2086,11 +2086,11 @@ impl<'a> DungeonHeaderViewMut<'a> {
     }
 }
 
-pub(crate) struct DungeonKeySlotsView<'a> {
+pub(crate) struct DungeonKeySlotsRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> DungeonKeySlotsView<'a> {
+impl<'a> DungeonKeySlotsRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -2107,11 +2107,11 @@ impl<'a> DungeonKeySlotsView<'a> {
     }
 }
 
-pub(crate) struct DungeonKeySlotsViewMut<'a> {
+pub(crate) struct DungeonKeySlotsRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> DungeonKeySlotsViewMut<'a> {
+impl<'a> DungeonKeySlotsRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

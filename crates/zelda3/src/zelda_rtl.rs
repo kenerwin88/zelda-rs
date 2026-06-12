@@ -39,25 +39,25 @@ use crate::game_state::{
     DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut,
     DrawScratchPositionView, DrawScratchPositionViewMut, DualLayerTileCacheView,
     DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut, DungeonHeaderView,
-    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut, DungeonMapScratchView,
-    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
-    DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
-    DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
-    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
-    EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
-    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
-    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
-    IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut, MemorizedTileView,
-    MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState, MinigameStateView,
-    MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut,
+    DungeonMapViewMut, DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStairList,
+    DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
+    EffectAngleScratchView, EffectAngleScratchViewMut, EndingCreditState, EndingScratchView,
+    EndingScratchViewMut, EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesState,
+    EtherOrbitView, EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState,
+    GameState, GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
+    InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
+    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState,
+    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMessagingRenderBufferBridgeMut,
     NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
@@ -3112,11 +3112,14 @@ impl ZeldaState {
     }
 
     pub(crate) fn dungeon_key_slots_view(&self) -> DungeonKeySlotsView<'_> {
-        DungeonKeySlotsView::new(&self.ram)
+        DungeonKeySlotsView::new(&self.game_state.inventory.dungeon_key_slots)
     }
 
-    pub(crate) fn dungeon_key_slots_view_mut(&mut self) -> DungeonKeySlotsViewMut<'_> {
-        DungeonKeySlotsViewMut::new(&mut self.ram)
+    pub(crate) fn dungeon_key_slots_view_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
+        NativeDungeonKeySlotsBridgeMut::new(
+            &mut self.game_state.inventory.dungeon_key_slots,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dungeon_torch_view(&self) -> DungeonTorchView<'_> {

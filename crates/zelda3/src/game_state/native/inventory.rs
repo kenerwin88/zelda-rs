@@ -2,20 +2,104 @@ use super::ram_byte;
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
+const DUNGEON_KEY_SLOT_COUNT: usize = 16;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InventoryState {
+    pub(crate) dungeon_key_slots: DungeonKeySlotsState,
     pub(crate) player_resources: PlayerResourcesState,
 }
 
 impl InventoryState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            dungeon_key_slots: DungeonKeySlotsState::load_from_ram(ram),
             player_resources: PlayerResourcesState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.dungeon_key_slots.write_to_ram(ram);
         self.player_resources.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonKeySlotsState {
+    keys_earned: [u8; DUNGEON_KEY_SLOT_COUNT],
+}
+
+impl DungeonKeySlotsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut keys_earned = [0; DUNGEON_KEY_SLOT_COUNT];
+        for (slot, keys) in keys_earned.iter_mut().enumerate() {
+            *keys = ram_byte(ram, LINK_KEYS_EARNED_PER_DUNGEON + slot);
+        }
+        Self { keys_earned }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, keys) in self.keys_earned.iter().copied().enumerate() {
+            ram[LINK_KEYS_EARNED_PER_DUNGEON + slot] = keys;
+        }
+    }
+
+    pub(crate) fn keys_earned(&self, palace_index_x2: u8) -> u8 {
+        self.keys_earned_slot(usize::from(palace_index_x2 >> 1))
+    }
+
+    pub(crate) fn keys_earned_slot(&self, slot: usize) -> u8 {
+        self.keys_earned.get(slot).copied().unwrap_or(0)
+    }
+}
+
+pub(crate) struct DungeonKeySlotsView<'a> {
+    state: &'a DungeonKeySlotsState,
+}
+
+impl<'a> DungeonKeySlotsView<'a> {
+    pub(crate) fn new(state: &'a DungeonKeySlotsState) -> Self {
+        Self { state }
+    }
+
+    pub(crate) fn keys_earned(&self, palace_index_x2: u8) -> u8 {
+        self.state.keys_earned(palace_index_x2)
+    }
+
+    pub(crate) fn keys_earned_slot(&self, slot: usize) -> u8 {
+        self.state.keys_earned_slot(slot)
+    }
+}
+
+pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
+    state: &'a mut DungeonKeySlotsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonKeySlotsState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonKeySlotsState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonKeySlotsState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_keys_earned(&mut self, palace_index_x2: u8, keys: u8) {
+        self.set_keys_earned_slot(usize::from(palace_index_x2 >> 1), keys);
+    }
+
+    pub(crate) fn set_keys_earned_slot(&mut self, slot: usize, keys: u8) {
+        if let Some(value) = self.state.keys_earned.get_mut(slot) {
+            *value = keys;
+            self.sync();
+        }
     }
 }
 

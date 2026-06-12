@@ -28,7 +28,10 @@ pub(crate) use ending::{
 pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
-pub(crate) use inventory::{InventoryState, NativePlayerResourcesBridgeMut, PlayerResourcesState};
+pub(crate) use inventory::{
+    DungeonKeySlotsView, InventoryState, NativeDungeonKeySlotsBridgeMut,
+    NativePlayerResourcesBridgeMut, PlayerResourcesState,
+};
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
     MessagingRenderBufferState, MessagingRuntimeState, MessagingState,
@@ -61,6 +64,8 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{HudRuntimeState, OverworldPaletteBackupState};
+#[cfg(test)]
+use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
@@ -519,6 +524,47 @@ mod tests {
         assert_eq!(read_le_u16(&ram, LINK_Y_COORD_SPEXIT), 0x0800);
         assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x0700);
         assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x0800);
+    }
+
+    #[test]
+    fn dungeon_key_slots_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_KEYS_EARNED_PER_DUNGEON] = 1;
+        ram[LINK_KEYS_EARNED_PER_DUNGEON + 5] = 6;
+        ram[LINK_KEYS_EARNED_PER_DUNGEON + 15] = 16;
+
+        let slots = DungeonKeySlotsState::load_from_ram(&ram);
+        assert_eq!(slots.keys_earned(0), 1);
+        assert_eq!(slots.keys_earned(10), 6);
+        assert_eq!(slots.keys_earned_slot(15), 16);
+        assert_eq!(slots.keys_earned_slot(16), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        slots.write_to_ram(&mut projected);
+        assert_eq!(projected[LINK_KEYS_EARNED_PER_DUNGEON], 1);
+        assert_eq!(projected[LINK_KEYS_EARNED_PER_DUNGEON + 5], 6);
+        assert_eq!(projected[LINK_KEYS_EARNED_PER_DUNGEON + 15], 16);
+    }
+
+    #[test]
+    fn native_dungeon_key_slots_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_KEYS_EARNED_PER_DUNGEON + 2] = 3;
+
+        let mut slots = DungeonKeySlotsState::default();
+        {
+            let mut bridge = NativeDungeonKeySlotsBridgeMut::new(&mut slots, &mut ram);
+            bridge.set_keys_earned(4, 7);
+            bridge.set_keys_earned_slot(5, 9);
+            bridge.set_keys_earned_slot(16, 11);
+        }
+
+        assert_eq!(slots.keys_earned(4), 7);
+        assert_eq!(slots.keys_earned_slot(5), 9);
+        assert_eq!(slots.keys_earned_slot(16), 0);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 2], 7);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 5], 9);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 15], 0);
     }
 
     #[test]
