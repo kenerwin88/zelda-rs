@@ -119,6 +119,7 @@ const VISIBLE_SUBPALETTE_CLEAR_START: usize = 32 * 2;
 const VISIBLE_SUBPALETTE_CLEAR_LEN: usize = 192;
 const SPRITE_SUBPALETTE_CLEAR_START: usize = 0x180;
 const SPRITE_SUBPALETTE_CLEAR_LEN: usize = 0x80;
+const HUD_TILEMAP_BYTES: usize = MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PaletteFilterState {
@@ -360,18 +361,83 @@ impl HudRuntimeState {
     }
 }
 
-pub(crate) struct HudStateView<'a> {
-    runtime: &'a HudRuntimeState,
-    ram: &'a [u8],
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HudTilemapState {
+    floor_changed_timer: u16,
+    tile_indices: Vec<u8>,
 }
 
-impl<'a> HudStateView<'a> {
-    pub(crate) fn new(runtime: &'a HudRuntimeState, ram: &'a [u8]) -> Self {
-        Self { runtime, ram }
+impl Default for HudTilemapState {
+    fn default() -> Self {
+        Self {
+            floor_changed_timer: 0,
+            tile_indices: vec![0; HUD_TILEMAP_BYTES],
+        }
+    }
+}
+
+impl HudTilemapState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut tile_indices = vec![0; HUD_TILEMAP_BYTES];
+        let available = ram
+            .len()
+            .saturating_sub(HUD_TILE_INDICES_BUFFER)
+            .min(HUD_TILEMAP_BYTES);
+        tile_indices[..available]
+            .copy_from_slice(&ram[HUD_TILE_INDICES_BUFFER..HUD_TILE_INDICES_BUFFER + available]);
+        Self {
+            floor_changed_timer: read_le_u16(ram, HUD_FLOOR_CHANGED_TIMER),
+            tile_indices,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, HUD_FLOOR_CHANGED_TIMER, self.floor_changed_timer);
+        ram[HUD_TILE_INDICES_BUFFER..HUD_TILE_INDICES_BUFFER + self.tile_indices.len()]
+            .copy_from_slice(&self.tile_indices);
     }
 
     pub(crate) fn floor_changed_timer_low(&self) -> u8 {
-        ram_byte(self.ram, HUD_FLOOR_CHANGED_TIMER)
+        self.floor_changed_timer as u8
+    }
+
+    pub(crate) fn tile_word(&self, tile: usize) -> u16 {
+        let offset = tile * 2;
+        if offset + 1 >= self.tile_indices.len() {
+            return 0;
+        }
+        u16::from(self.tile_indices[offset]) | (u16::from(self.tile_indices[offset + 1]) << 8)
+    }
+
+    fn set_floor_changed_timer(&mut self, value: u16) {
+        self.floor_changed_timer = value;
+    }
+
+    fn clear_floor_changed_timer_low(&mut self) {
+        self.floor_changed_timer &= 0xff00;
+    }
+
+    fn set_tile_word(&mut self, tile: usize, value: u16) {
+        let offset = tile * 2;
+        if offset + 1 < self.tile_indices.len() {
+            self.tile_indices[offset] = value as u8;
+            self.tile_indices[offset + 1] = (value >> 8) as u8;
+        }
+    }
+}
+
+pub(crate) struct HudStateView<'a> {
+    runtime: &'a HudRuntimeState,
+    tilemap: &'a HudTilemapState,
+}
+
+impl<'a> HudStateView<'a> {
+    pub(crate) fn new(runtime: &'a HudRuntimeState, tilemap: &'a HudTilemapState) -> Self {
+        Self { runtime, tilemap }
+    }
+
+    pub(crate) fn floor_changed_timer_low(&self) -> u8 {
+        self.tilemap.floor_changed_timer_low()
     }
 
     pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
@@ -427,7 +493,7 @@ impl<'a> HudStateView<'a> {
     }
 
     pub(crate) fn tile_word(&self, tile: usize) -> u16 {
-        read_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2)
+        self.tilemap.tile_word(tile)
     }
 }
 
@@ -1048,6 +1114,7 @@ pub(crate) struct DisplayState {
     pub(crate) palette_filter: PaletteFilterState,
     pub(crate) trinexx_palette: TrinexxPaletteState,
     pub(crate) hud_runtime: HudRuntimeState,
+    pub(crate) hud_tilemap: HudTilemapState,
     pub(crate) hud_inventory_order: HudInventoryOrderState,
     pub(crate) water_hdma_window: WaterHdmaWindowState,
     pub(crate) overworld_palette_backup: OverworldPaletteBackupState,
@@ -1104,6 +1171,7 @@ impl DisplayState {
             palette_filter: PaletteFilterState::load_from_ram(ram),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
             hud_runtime: HudRuntimeState::load_from_ram(ram),
+            hud_tilemap: HudTilemapState::load_from_ram(ram),
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
             water_hdma_window: WaterHdmaWindowState::load_from_ram(ram),
             overworld_palette_backup: OverworldPaletteBackupState::load_from_ram(ram),
@@ -1183,6 +1251,7 @@ impl DisplayState {
         self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
         self.hud_runtime.write_to_ram(ram);
+        self.hud_tilemap.write_to_ram(ram);
         self.hud_inventory_order.write_to_ram(ram);
         self.water_hdma_window.write_to_ram(ram);
         self.overworld_palette_backup.write_to_ram(ram);
@@ -1705,6 +1774,7 @@ pub(crate) struct NativeHudStateBridgeMut<'a> {
 impl<'a> NativeHudStateBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
         display.hud_runtime = HudRuntimeState::load_from_ram(ram);
+        display.hud_tilemap = HudTilemapState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -1721,6 +1791,7 @@ impl<'a> NativeHudStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_floor_changed_timer(&mut self, value: u16) {
+        self.display.hud_tilemap.set_floor_changed_timer(value);
         write_le_u16(self.ram, HUD_FLOOR_CHANGED_TIMER, value);
     }
 
@@ -1745,7 +1816,11 @@ impl<'a> NativeHudStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_tile_word(&mut self, tile: usize, value: u16) {
-        write_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2, value);
+        let offset = tile * 2;
+        if offset + 1 < self.display.hud_tilemap.tile_indices.len() {
+            self.display.hud_tilemap.set_tile_word(tile, value);
+            write_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + offset, value);
+        }
     }
 
     pub(crate) fn clear_is_doing_heart_animation(&mut self) {
@@ -1803,6 +1878,7 @@ impl<'a> NativeHudStateBridgeMut<'a> {
     }
 
     pub(crate) fn clear_floor_changed_timer_low(&mut self) {
+        self.display.hud_tilemap.clear_floor_changed_timer_low();
         self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
     }
 }

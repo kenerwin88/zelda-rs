@@ -3236,7 +3236,10 @@ impl ZeldaState {
     }
 
     pub(crate) fn hud_state_view(&self) -> HudStateView<'_> {
-        HudStateView::new(&self.game_state.display.hud_runtime, &self.ram)
+        HudStateView::new(
+            &self.game_state.display.hud_runtime,
+            &self.game_state.display.hud_tilemap,
+        )
     }
 
     pub(crate) fn hud_state_view_mut(&mut self) -> NativeHudStateBridgeMut<'_> {

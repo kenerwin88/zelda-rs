@@ -83,7 +83,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use display::{HudRuntimeState, OverworldPaletteBackupState, PaletteBufferState};
+use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState, PaletteBufferState};
 #[cfg(test)]
 use effects::DoorDebrisState;
 #[cfg(test)]
@@ -3620,6 +3620,30 @@ mod tests {
     }
 
     #[test]
+    fn hud_tilemap_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, HUD_FLOOR_CHANGED_TIMER, 0x1234);
+        write_le_u16(&mut ram, HUD_TILE_INDICES_BUFFER + 4, 0xbeef);
+        write_le_u16(&mut ram, MOVING_WALL_REPLACEMENT_BUFFER - 2, 0xabcd);
+
+        let tilemap = HudTilemapState::load_from_ram(&ram);
+        assert_eq!(tilemap.floor_changed_timer_low(), 0x34);
+        assert_eq!(tilemap.tile_word(2), 0xbeef);
+        assert_eq!(
+            tilemap.tile_word((MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER) / 2 - 1),
+            0xabcd
+        );
+        assert_eq!(
+            tilemap.tile_word((MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER) / 2),
+            0
+        );
+
+        let mut projected = vec![0; WRAM_SIZE];
+        tilemap.write_to_ram(&mut projected);
+        assert_eq!(HudTilemapState::load_from_ram(&projected), tilemap);
+    }
+
+    #[test]
     fn native_hud_state_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[BOTTLE_MENU_ROW] = 5;
@@ -3660,6 +3684,8 @@ mod tests {
         assert_eq!(display.hud_runtime.bottle_menu_row(), 4);
         assert!(display.hud_runtime.dungeon_dark_with_lantern());
         assert_eq!(display.hud_runtime.tick_counter(), 0x44);
+        assert_eq!(display.hud_tilemap.floor_changed_timer_low(), 0);
+        assert_eq!(display.hud_tilemap.tile_word(2), 0xbeef);
         assert_eq!(ram[SUPER_BOMB_INDICATOR_TIMER], 8);
         assert_eq!(ram[SUPER_BOMB_INDICATOR_COUNTER], 3);
         assert_eq!(ram[RUPEE_SFX_SOUND_DELAY], 4);

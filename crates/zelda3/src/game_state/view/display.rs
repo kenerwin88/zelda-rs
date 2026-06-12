@@ -1,45 +1,5 @@
 use super::*;
 
-pub(crate) struct HudRawStateView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> HudRawStateView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn floor_changed_timer_low(&self) -> u8 {
-        byte(self.ram, HUD_FLOOR_CHANGED_TIMER)
-    }
-
-    pub(crate) fn tile_word(&self, tile: usize) -> u16 {
-        word(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2)
-    }
-}
-
-pub(crate) struct HudRawStateViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> HudRawStateViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_floor_changed_timer(&mut self, value: u16) {
-        write_le_u16(self.ram, HUD_FLOOR_CHANGED_TIMER, value);
-    }
-
-    pub(crate) fn set_tile_word(&mut self, tile: usize, value: u16) {
-        write_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2, value);
-    }
-
-    pub(crate) fn clear_floor_changed_timer_low(&mut self) {
-        self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
-    }
-}
-
 pub(crate) struct GraphicsScratchViewMut<'a> {
     ram: &'a mut [u8],
 }
