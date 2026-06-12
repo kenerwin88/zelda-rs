@@ -5522,7 +5522,9 @@ mod tests {
         assert_eq!(buggy.sprite_slot_view(k).head_direction(), 0x02);
 
         let mut fixed = fresh_state();
-        fixed.write_u32_ram(ENHANCED_FEATURES0, FEATURE_MISC_BUG_FIXES_PREP);
+        fixed
+            .enhanced_features_view_mut()
+            .set_bits(FEATURE_MISC_BUG_FIXES_PREP);
         fixed.sprite_slot_view_mut(k).set_x_low(0x77);
         fixed.sprite_slot_view_mut(k).set_x_high(0x03);
         fixed.sprite_slot_view_mut(k).set_y_low(0x99);

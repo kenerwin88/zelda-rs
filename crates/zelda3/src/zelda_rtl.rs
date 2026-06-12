@@ -45,13 +45,13 @@ use crate::game_state::{
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
     EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
-    EnemyDamageDataViewMut, EnhancedFeaturesView, EnhancedFeaturesViewMut, EtherOrbitView,
-    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
-    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
-    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView,
-    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView,
-    IntroSwordViewMut, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
+    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
+    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
+    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, HudStateViewMut,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
+    InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
     MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferView,
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
@@ -59,9 +59,9 @@ use crate::game_state::{
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeAttractVramDestinationBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeIntroSceneBridgeMut, NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut,
+    NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
     NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
@@ -1699,12 +1699,12 @@ impl ZeldaState {
         PlayerStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn enhanced_features_view(&self) -> EnhancedFeaturesView<'_> {
-        EnhancedFeaturesView::new(&self.ram)
+    pub(crate) fn enhanced_features_view(&self) -> &EnhancedFeaturesState {
+        &self.game_state.enhanced_features
     }
 
-    pub(crate) fn enhanced_features_view_mut(&mut self) -> EnhancedFeaturesViewMut<'_> {
-        EnhancedFeaturesViewMut::new(&mut self.ram)
+    pub(crate) fn enhanced_features_view_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {
+        NativeEnhancedFeaturesBridgeMut::new(&mut self.game_state.enhanced_features, &mut self.ram)
     }
 
     pub(crate) fn system_signals_view(&self) -> &SystemSignalsState {
@@ -7882,7 +7882,7 @@ mod tests {
             .tile_detect_position_view_mut()
             .set_slope_collision_bits(5);
         set_link_test_word(&mut state, LINK_X_COORD, 0x44);
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
 
         state.start_movement_collision_checks_x_handle_outdoors();
 
@@ -8466,7 +8466,7 @@ mod tests {
     #[test]
     fn link_initialize_applies_misc_bugfix_cleanup() {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
         state.player_state_view_mut().set_button_mask_b_y(0xff);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
         set_link_test_byte(&mut state, LINK_IS_NEAR_MOVEABLE_STATUE, 1);
@@ -8495,7 +8495,7 @@ mod tests {
     fn link_reset_properties_a_clears_reset_chain_state() {
         let mut state = ZeldaState::new();
         state.ram.fill(0xff);
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
 
         state.link_reset_properties_a();
 
@@ -8918,7 +8918,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 2);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 2);
         state.player_state_view_mut().set_grabbing_wall(1);
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
 
         state.link_handle_cape_passive_lift_check();
 
@@ -8951,7 +8951,7 @@ mod tests {
 
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 125);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
         state.refund_magic(0);
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 128);
 
@@ -9242,7 +9242,7 @@ mod tests {
     fn mirror_item_crossing_and_follower_cleanup_match_core_state() {
         let mut mirror = ZeldaState::new();
         mirror.player_state_view_mut().set_filtered_joypad_h(0x40);
-        write_le_u16(&mut mirror.ram, ENHANCED_FEATURES0, 8);
+        mirror.enhanced_features_view_mut().set_bits(8);
         mirror
             .world_state_view_mut()
             .set_overworld_screen_word(0x40);
@@ -9463,7 +9463,7 @@ mod tests {
     #[test]
     fn load_actual_gear_palettes_applies_enhanced_glove_color() {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, ENHANCED_FEATURES0, 0x1000);
+        state.enhanced_features_view_mut().set_bits(0x1000);
         set_link_test_byte(&mut state, LINK_ITEM_GLOVES, 2);
 
         state.load_actual_gear_palettes();

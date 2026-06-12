@@ -1,47 +1,5 @@
 use super::*;
 
-pub(crate) struct EnhancedFeaturesView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> EnhancedFeaturesView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn bits(&self) -> u32 {
-        u32::from(byte(self.ram, ENHANCED_FEATURE_FLAGS))
-            | (u32::from(byte(self.ram, ENHANCED_FEATURE_FLAGS + 1)) << 8)
-            | (u32::from(byte(self.ram, ENHANCED_FEATURE_FLAGS + 2)) << 16)
-            | (u32::from(byte(self.ram, ENHANCED_FEATURE_FLAGS + 3)) << 24)
-    }
-
-    pub(crate) fn has(&self, mask: u32) -> bool {
-        self.bits() & mask != 0
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.bits() == 0
-    }
-}
-
-pub(crate) struct EnhancedFeaturesViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> EnhancedFeaturesViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_bits(&mut self, value: u32) {
-        self.ram[ENHANCED_FEATURE_FLAGS] = value as u8;
-        self.ram[ENHANCED_FEATURE_FLAGS + 1] = (value >> 8) as u8;
-        self.ram[ENHANCED_FEATURE_FLAGS + 2] = (value >> 16) as u8;
-        self.ram[ENHANCED_FEATURE_FLAGS + 3] = (value >> 24) as u8;
-    }
-}
-
 /// Tile-revert memory used when secrets/liftable tiles are uncovered:
 /// parallel arrays of tilemap addresses and original tile values, plus a
 /// running byte count.

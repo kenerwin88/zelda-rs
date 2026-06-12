@@ -8,6 +8,7 @@ mod display;
 mod ending;
 mod frame;
 mod messaging;
+mod misc;
 mod world;
 
 pub(crate) use display::{
@@ -25,6 +26,7 @@ pub(crate) use frame::{
 pub(crate) use messaging::{
     MessagingState, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
 };
+pub(crate) use misc::{EnhancedFeaturesState, NativeEnhancedFeaturesBridgeMut};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
@@ -54,6 +56,7 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) system_signals: SystemSignalsState,
+    pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
     pub(crate) ending: EndingState,
@@ -65,6 +68,7 @@ impl GameState {
         Self {
             frame: FrameState::load_from_ram(ram),
             system_signals: SystemSignalsState::load_from_ram(ram),
+            enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
@@ -75,6 +79,7 @@ impl GameState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);
+        self.enhanced_features.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.ending.write_to_ram(ram);
@@ -279,6 +284,43 @@ mod tests {
         assert_eq!(ram[RAW_SFX_PAN_VALUE], 0x80);
         assert_eq!(ram[DEATH_BACKUP_CURRENT_MUSIC], 0x21);
         assert_eq!(ram[DEATH_BACKUP_AMBIENT_SOUND], 0x22);
+    }
+
+    #[test]
+    fn enhanced_features_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ENHANCED_FEATURE_FLAGS] = 0x78;
+        ram[ENHANCED_FEATURE_FLAGS + 1] = 0x56;
+        ram[ENHANCED_FEATURE_FLAGS + 2] = 0x34;
+        ram[ENHANCED_FEATURE_FLAGS + 3] = 0x12;
+
+        let features = EnhancedFeaturesState::load_from_ram(&ram);
+        assert_eq!(features.bits(), 0x1234_5678);
+        assert!(features.has(0x1000_0000));
+        assert!(!features.is_empty());
+
+        let mut projected = vec![0; WRAM_SIZE];
+        features.write_to_ram(&mut projected);
+        assert_eq!(
+            &projected[ENHANCED_FEATURE_FLAGS..ENHANCED_FEATURE_FLAGS + 4],
+            &[0x78, 0x56, 0x34, 0x12]
+        );
+    }
+
+    #[test]
+    fn native_enhanced_features_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ENHANCED_FEATURE_FLAGS, 0x1000);
+
+        let mut features = EnhancedFeaturesState::default();
+        {
+            let mut bridge = NativeEnhancedFeaturesBridgeMut::new(&mut features, &mut ram);
+            bridge.set_bits(0x1234_5678);
+        }
+
+        assert_eq!(features.bits(), 0x1234_5678);
+        assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS), 0x5678);
+        assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS + 2), 0x1234);
     }
 
     #[test]
