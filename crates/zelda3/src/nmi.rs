@@ -407,34 +407,50 @@ impl ZeldaState {
 
     pub(super) fn nmi_core_link_graphics_update(&mut self) {
         if let Some(link_graphics) = self.asset_raw(57).map(Vec::from) {
-            self.copy_asset_bytes_to_vram(0x4100, &link_graphics, DMA_SOURCE_ADDR_0, 0x40);
-            self.copy_asset_bytes_to_vram(0x4120, &link_graphics, DMA_SOURCE_ADDR_1, 0x40);
-            self.copy_asset_bytes_to_vram(0x4140, &link_graphics, DMA_SOURCE_ADDR_2, 0x20);
-            self.copy_asset_bytes_to_vram(0x4000, &link_graphics, DMA_SOURCE_ADDR_3, 0x40);
-            self.copy_asset_bytes_to_vram(0x4020, &link_graphics, DMA_SOURCE_ADDR_4, 0x40);
-            self.copy_asset_bytes_to_vram(0x4040, &link_graphics, DMA_SOURCE_ADDR_5, 0x20);
+            for (dst, source, len) in [
+                (0x4100, LinkDmaSourceSlot::BodyBottom, 0x40),
+                (0x4120, LinkDmaSourceSlot::HeadBottom, 0x40),
+                (0x4140, LinkDmaSourceSlot::HandRight, 0x20),
+                (0x4000, LinkDmaSourceSlot::BodyTop, 0x40),
+                (0x4020, LinkDmaSourceSlot::HeadTop, 0x40),
+                (0x4040, LinkDmaSourceSlot::HandLeft, 0x20),
+            ] {
+                self.copy_asset_bytes_to_vram(dst, &link_graphics, source, len);
+            }
         }
 
-        self.copy_ram_bytes_to_vram(0x4050, DMA_SOURCE_ADDR_6, 0x40);
-        self.copy_ram_bytes_to_vram(0x4070, DMA_SOURCE_ADDR_7, 0x40);
-        self.copy_ram_bytes_to_vram(0x4090, DMA_SOURCE_ADDR_8, 0x40);
-        self.copy_ram_bytes_to_vram(0x40b0, DMA_SOURCE_ADDR_9, 0x20);
-        self.copy_ram_bytes_to_vram(0x40c0, DMA_SOURCE_ADDR_10, 0x40);
-        self.copy_ram_bytes_to_vram(0x4150, DMA_SOURCE_ADDR_11, 0x40);
-        self.copy_ram_bytes_to_vram(0x4170, DMA_SOURCE_ADDR_12, 0x40);
-        self.copy_ram_bytes_to_vram(0x4190, DMA_SOURCE_ADDR_13, 0x40);
-        self.copy_ram_bytes_to_vram(0x41b0, DMA_SOURCE_ADDR_14, 0x20);
-        self.copy_ram_bytes_to_vram(0x41c0, DMA_SOURCE_ADDR_15, 0x40);
-        self.copy_ram_bytes_to_vram(0x4200, DMA_SOURCE_ADDR_16, 0x40);
-        self.copy_ram_bytes_to_vram(0x4220, DMA_SOURCE_ADDR_17, 0x40);
+        for (dst, source, len) in [
+            (0x4050, LinkDmaSourceSlot::SwordUpper, 0x40),
+            (0x4070, LinkDmaSourceSlot::ShieldUpper, 0x40),
+            (0x4090, LinkDmaSourceSlot::AuxUpper, 0x40),
+            (0x40b0, LinkDmaSourceSlot::AnimatedTileUpper, 0x20),
+            (0x40c0, LinkDmaSourceSlot::PushUpper, 0x40),
+            (0x4150, LinkDmaSourceSlot::SwordLower, 0x40),
+            (0x4170, LinkDmaSourceSlot::ShieldLower, 0x40),
+            (0x4190, LinkDmaSourceSlot::AuxLower, 0x40),
+            (0x41b0, LinkDmaSourceSlot::AnimatedTileLower, 0x20),
+            (0x41c0, LinkDmaSourceSlot::PushLower, 0x40),
+            (0x4200, LinkDmaSourceSlot::HeadPointerUpper, 0x40),
+            (0x4220, LinkDmaSourceSlot::BodyPointerUpper, 0x40),
+        ] {
+            self.copy_ram_bytes_to_vram(dst, source, len);
+        }
         self.copy_ram_bytes_to_vram_absolute(0x4240, 0xbd40, 0x40);
-        self.copy_ram_bytes_to_vram(0x4300, DMA_SOURCE_ADDR_18, 0x40);
-        self.copy_ram_bytes_to_vram(0x4320, DMA_SOURCE_ADDR_19, 0x40);
+        for (dst, source) in [
+            (0x4300, LinkDmaSourceSlot::HeadPointerLower),
+            (0x4320, LinkDmaSourceSlot::BodyPointerLower),
+        ] {
+            self.copy_ram_bytes_to_vram(dst, source, 0x40);
+        }
         self.copy_ram_bytes_to_vram_absolute(0x4340, 0xbd80, 0x40);
 
         if self.display_state().has_travel_bird_tile_upload() {
-            self.copy_ram_bytes_to_vram(0x40e0, DMA_SOURCE_ADDR_20, 0x40);
-            self.copy_ram_bytes_to_vram(0x41e0, DMA_SOURCE_ADDR_21, 0x40);
+            for (dst, source) in [
+                (0x40e0, LinkDmaSourceSlot::TravelBirdUpper),
+                (0x41e0, LinkDmaSourceSlot::TravelBirdLower),
+            ] {
+                self.copy_ram_bytes_to_vram(dst, source, 0x40);
+            }
         }
     }
 
@@ -483,10 +499,10 @@ impl ZeldaState {
         &mut self,
         dst_word: usize,
         source: &[u8],
-        source_addr_var: usize,
+        source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.display_nmi_view().word_at(source_addr_var) as usize;
+        let source_addr = VramLoadStateView::new(&self.ram).link_dma_source(source_slot) as usize;
         if source_addr < 0x8000 {
             return;
         }
@@ -496,10 +512,10 @@ impl ZeldaState {
     pub(super) fn copy_ram_bytes_to_vram(
         &mut self,
         dst_word: usize,
-        source_addr_var: usize,
+        source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.display_nmi_view().word_at(source_addr_var) as usize;
+        let source_addr = VramLoadStateView::new(&self.ram).link_dma_source(source_slot) as usize;
         self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
     }
 
