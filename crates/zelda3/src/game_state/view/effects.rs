@@ -536,62 +536,6 @@ impl<'a> SkullWoodsFireViewMut<'a> {
     }
 }
 
-pub(crate) struct SkullWoodsFireScratchView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> SkullWoodsFireScratchView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn has_started_entrance_opening(&self) -> bool {
-        byte(self.ram, SKULL_WOODS_FIRE_STARTED) != 0
-    }
-
-    pub(crate) fn inner_x(&self) -> u16 {
-        read_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_X)
-    }
-
-    pub(crate) fn inner_y(&self) -> u16 {
-        read_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_Y)
-    }
-}
-
-pub(crate) struct SkullWoodsFireScratchViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> SkullWoodsFireScratchViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_entrance_opening_started(&mut self) {
-        self.ram[SKULL_WOODS_FIRE_STARTED] = 0;
-    }
-
-    pub(crate) fn set_entrance_opening_started(&mut self) {
-        self.ram[SKULL_WOODS_FIRE_STARTED] = 1;
-    }
-
-    pub(crate) fn set_inner_position(&mut self, x: u16, y: u16) {
-        write_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_X, x);
-        write_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_Y, y);
-    }
-
-    pub(crate) fn set_outer_position(&mut self, x: u16, y: u16) {
-        write_le_u16(self.ram, SKULL_WOODS_FIRE_OUTER_X, x);
-        write_le_u16(self.ram, SKULL_WOODS_FIRE_OUTER_Y, y);
-    }
-
-    pub(crate) fn retreat_inner_y(&mut self, value: u16) -> u16 {
-        let y = read_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_Y).wrapping_sub(value);
-        write_le_u16(self.ram, SKULL_WOODS_FIRE_INNER_Y, y);
-        y
-    }
-}
-
 pub(crate) struct HappinessPondRupeeState {
     pub(crate) y_low: u8,
     pub(crate) y_high: u8,

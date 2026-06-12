@@ -28,7 +28,8 @@ pub(crate) use display::{
 pub(crate) use effects::{
     BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
     NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeTowerSealBridgeMut, QuakeSpellState, TowerSealState,
+    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeTowerSealBridgeMut,
+    QuakeSpellState, SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1535,6 +1536,56 @@ mod tests {
         assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_X), 0x1234);
         assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_Y), 0x5678);
         assert_eq!(ram[TOWER_SEAL_WAIT_COUNTDOWN], 240);
+    }
+
+    #[test]
+    fn skull_woods_fire_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SKULL_WOODS_FIRE_STARTED] = 1;
+        write_le_u16(&mut ram, SKULL_WOODS_FIRE_INNER_X, 0x1234);
+        write_le_u16(&mut ram, SKULL_WOODS_FIRE_INNER_Y, 0x5678);
+        write_le_u16(&mut ram, SKULL_WOODS_FIRE_OUTER_X, 0x9abc);
+        write_le_u16(&mut ram, SKULL_WOODS_FIRE_OUTER_Y, 0xdef0);
+
+        let mut fire = SkullWoodsFireState::load_from_ram(&ram);
+        assert!(fire.has_started_entrance_opening());
+        assert_eq!(fire.inner_x(), 0x1234);
+        assert_eq!(fire.inner_y(), 0x5678);
+        fire.clear_entrance_opening_started();
+        assert_eq!(fire.retreat_inner_y(8), 0x5670);
+        fire.set_inner_position(0x1111, 0x2222);
+        fire.set_outer_position(0x3333, 0x4444);
+        fire.write_to_ram(&mut ram);
+
+        assert_eq!(ram[SKULL_WOODS_FIRE_STARTED], 0);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_INNER_X), 0x1111);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_INNER_Y), 0x2222);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_X), 0x3333);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_Y), 0x4444);
+    }
+
+    #[test]
+    fn native_skull_woods_fire_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SKULL_WOODS_FIRE_INNER_Y, 0x0100);
+
+        let mut fire = SkullWoodsFireState::default();
+        {
+            let mut bridge = NativeSkullWoodsFireBridgeMut::new(&mut fire, &mut ram);
+            bridge.set_entrance_opening_started();
+            bridge.set_inner_position(0x0098, 0x0100);
+            bridge.set_outer_position(0x0098, 0x0100);
+            assert_eq!(bridge.retreat_inner_y(8), 0x00f8);
+        }
+
+        assert!(fire.has_started_entrance_opening());
+        assert_eq!(fire.inner_x(), 0x0098);
+        assert_eq!(fire.inner_y(), 0x00f8);
+        assert_eq!(ram[SKULL_WOODS_FIRE_STARTED], 1);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_INNER_X), 0x0098);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_INNER_Y), 0x00f8);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_X), 0x0098);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_Y), 0x0100);
     }
 
     #[test]

@@ -70,24 +70,24 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut,
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpriteBattleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
-    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTowerSealBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellState, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadTransferState, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
-    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
+    NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellState,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
+    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
+    SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView,
     SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
     SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
@@ -3683,12 +3683,17 @@ impl ZeldaState {
         SkullWoodsFireViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn skull_woods_fire_scratch_view(&self) -> SkullWoodsFireScratchView<'_> {
-        SkullWoodsFireScratchView::new(&self.ram)
+    pub(crate) fn skull_woods_fire_scratch_view(&self) -> &SkullWoodsFireState {
+        &self.game_state.effects.skull_woods_fire
     }
 
-    pub(crate) fn skull_woods_fire_scratch_view_mut(&mut self) -> SkullWoodsFireScratchViewMut<'_> {
-        SkullWoodsFireScratchViewMut::new(&mut self.ram)
+    pub(crate) fn skull_woods_fire_scratch_view_mut(
+        &mut self,
+    ) -> NativeSkullWoodsFireBridgeMut<'_> {
+        NativeSkullWoodsFireBridgeMut::new(
+            &mut self.game_state.effects.skull_woods_fire,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn happiness_pond_rupee_view(&self, slot: usize) -> HappinessPondRupeeView<'_> {

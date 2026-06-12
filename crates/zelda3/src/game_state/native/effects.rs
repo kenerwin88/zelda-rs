@@ -3,8 +3,9 @@ use crate::game_state::constants::{
     BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
     DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
     QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
-    QUAKE_SCREEN_SHAKE_Y, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS,
-    TOWER_SEAL_WAIT_COUNTDOWN,
+    QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
+    SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
+    TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS, TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -19,6 +20,7 @@ pub(crate) struct EffectState {
     pub(crate) quake_spell: QuakeSpellState,
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
+    pub(crate) skull_woods_fire: SkullWoodsFireState,
 }
 
 impl EffectState {
@@ -29,6 +31,7 @@ impl EffectState {
             quake_spell: QuakeSpellState::load_from_ram(ram),
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
+            skull_woods_fire: SkullWoodsFireState::load_from_ram(ram),
         }
     }
 
@@ -38,6 +41,7 @@ impl EffectState {
         self.quake_spell.write_to_ram(ram);
         self.bombos_spell.write_to_ram(ram);
         self.tower_seal.write_to_ram(ram);
+        self.skull_woods_fire.write_to_ram(ram);
     }
 }
 
@@ -559,6 +563,117 @@ impl<'a> NativeTowerSealBridgeMut<'a> {
     pub(crate) fn set_wait_countdown(&mut self, value: u8) {
         self.state.set_wait_countdown(value);
         self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SkullWoodsFireState {
+    entrance_opening_started: u8,
+    inner_x: u16,
+    inner_y: u16,
+    outer_x: u16,
+    outer_y: u16,
+}
+
+impl SkullWoodsFireState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            entrance_opening_started: ram.get(SKULL_WOODS_FIRE_STARTED).copied().unwrap_or(0),
+            inner_x: read_le_u16(ram, SKULL_WOODS_FIRE_INNER_X),
+            inner_y: read_le_u16(ram, SKULL_WOODS_FIRE_INNER_Y),
+            outer_x: read_le_u16(ram, SKULL_WOODS_FIRE_OUTER_X),
+            outer_y: read_le_u16(ram, SKULL_WOODS_FIRE_OUTER_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[SKULL_WOODS_FIRE_STARTED] = self.entrance_opening_started;
+        write_le_u16(ram, SKULL_WOODS_FIRE_INNER_X, self.inner_x);
+        write_le_u16(ram, SKULL_WOODS_FIRE_INNER_Y, self.inner_y);
+        write_le_u16(ram, SKULL_WOODS_FIRE_OUTER_X, self.outer_x);
+        write_le_u16(ram, SKULL_WOODS_FIRE_OUTER_Y, self.outer_y);
+    }
+
+    pub(crate) fn has_started_entrance_opening(&self) -> bool {
+        self.entrance_opening_started != 0
+    }
+
+    pub(crate) fn inner_x(&self) -> u16 {
+        self.inner_x
+    }
+
+    pub(crate) fn inner_y(&self) -> u16 {
+        self.inner_y
+    }
+
+    pub(crate) fn clear_entrance_opening_started(&mut self) {
+        self.entrance_opening_started = 0;
+    }
+
+    pub(crate) fn set_entrance_opening_started(&mut self) {
+        self.entrance_opening_started = 1;
+    }
+
+    pub(crate) fn set_inner_position(&mut self, x: u16, y: u16) {
+        self.inner_x = x;
+        self.inner_y = y;
+    }
+
+    pub(crate) fn set_outer_position(&mut self, x: u16, y: u16) {
+        self.outer_x = x;
+        self.outer_y = y;
+    }
+
+    pub(crate) fn retreat_inner_y(&mut self, value: u16) -> u16 {
+        self.inner_y = self.inner_y.wrapping_sub(value);
+        self.inner_y
+    }
+}
+
+pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
+    state: &'a mut SkullWoodsFireState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut SkullWoodsFireState, ram: &'a mut [u8]) -> Self {
+        *state = SkullWoodsFireState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, SkullWoodsFireState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn clear_entrance_opening_started(&mut self) {
+        self.state.clear_entrance_opening_started();
+        self.sync();
+    }
+
+    pub(crate) fn set_entrance_opening_started(&mut self) {
+        self.state.set_entrance_opening_started();
+        self.sync();
+    }
+
+    pub(crate) fn set_inner_position(&mut self, x: u16, y: u16) {
+        self.state.set_inner_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_outer_position(&mut self, x: u16, y: u16) {
+        self.state.set_outer_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn retreat_inner_y(&mut self, value: u16) -> u16 {
+        let y = self.state.retreat_inner_y(value);
+        self.sync();
+        y
     }
 }
 
