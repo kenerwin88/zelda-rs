@@ -3,7 +3,6 @@ use crate::game_state::constants::messaging::{
     MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE, MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL,
 };
 use crate::game_state::constants::*;
-use crate::game_state::RamVramUploadBufferMut;
 use crate::types::{read_le_u16, write_le_u16};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -536,25 +535,25 @@ impl DisplayState {
 
 pub(crate) struct NativeVramUploadBufferBridgeMut<'a> {
     display: &'a mut DisplayState,
-    ram_view: RamVramUploadBufferMut<'a>,
+    ram: &'a mut [u8],
 }
 
 impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
         *display = DisplayState::load_from_ram(ram);
-        Self {
-            display,
-            ram_view: RamVramUploadBufferMut::new(ram),
-        }
+        Self { display, ram }
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(self.display.vram_upload_cursor, self.ram_view.offset());
+        debug_assert_eq!(
+            self.display.vram_upload_cursor,
+            read_le_u16(self.ram, VRAM_UPLOAD_OFFSET)
+        );
     }
 
     pub(crate) fn set_offset(&mut self, value: u16) {
         self.display.vram_upload_cursor = value;
-        self.ram_view.set_offset(value);
+        write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, value);
         self.debug_assert_matches_ram();
     }
 
@@ -569,39 +568,44 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     }
 
     pub(crate) fn write_buffer_byte(&mut self, offset: usize, value: u8) {
-        self.ram_view.write_buffer_byte(offset, value);
+        self.ram[VRAM_UPLOAD_DATA + offset] = value;
     }
 
     pub(crate) fn write_buffer_word(&mut self, offset: usize, value: u16) {
-        self.ram_view.write_buffer_word(offset, value);
+        write_le_u16(self.ram, VRAM_UPLOAD_DATA + offset, value);
     }
 
     pub(crate) fn write_tilemap_word(&mut self, offset: usize, value: u16) {
-        self.ram_view.write_tilemap_word(offset, value);
+        write_le_u16(self.ram, VRAM_UPLOAD_OFFSET + offset, value);
     }
 
     pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
-        self.ram_view.write_overworld_vram_word(word_index, value);
+        write_le_u16(self.ram, UVRAM_DATA + word_index * 2, value);
     }
 
     pub(crate) fn write_absolute_byte(&mut self, address: usize, value: u8) {
-        self.ram_view.write_absolute_byte(address, value);
+        self.ram[address] = value;
     }
 
     pub(crate) fn write_absolute_word(&mut self, address: usize, value: u16) {
-        self.ram_view.write_absolute_word(address, value);
+        write_le_u16(self.ram, address, value);
     }
 
     pub(crate) fn copy_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
-        self.ram_view.copy_buffer_bytes(offset, data);
+        self.ram[VRAM_UPLOAD_DATA + offset..VRAM_UPLOAD_DATA + offset + data.len()]
+            .copy_from_slice(data);
     }
 
     pub(crate) fn terminate_buffer_at(&mut self, offset: usize) {
-        self.ram_view.terminate_buffer_at(offset);
+        self.ram[VRAM_UPLOAD_DATA + offset] = 0xff;
     }
 
     pub(crate) fn write_level_label_tiles(&mut self, left: &[u8; 14], right: &[u8; 14]) {
-        self.ram_view.write_level_label_tiles(left, right);
+        self.ram[VRAM_UPLOAD_DATA + 32] = 0xff;
+        for i in (0..14).rev() {
+            self.ram[VRAM_UPLOAD_DATA + i] = left[i];
+            self.ram[VRAM_UPLOAD_DATA + i + 16] = right[i];
+        }
     }
 
     pub(crate) fn write_map16_update_packet(
@@ -610,8 +614,19 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
         vram_pos: u16,
         tiles: [u16; 4],
     ) {
-        self.ram_view
-            .write_map16_update_packet(address, vram_pos, tiles);
+        write_le_u16(self.ram, address, vram_pos.swap_bytes());
+        write_le_u16(self.ram, address + 2, 0x0300);
+        write_le_u16(self.ram, address + 4, tiles[0]);
+        write_le_u16(self.ram, address + 6, tiles[1]);
+        write_le_u16(
+            self.ram,
+            address + 8,
+            vram_pos.wrapping_add(0x20).swap_bytes(),
+        );
+        write_le_u16(self.ram, address + 10, 0x0300);
+        write_le_u16(self.ram, address + 12, tiles[2]);
+        write_le_u16(self.ram, address + 14, tiles[3]);
+        write_le_u16(self.ram, address + 16, 0xffff);
     }
 
     pub(crate) fn write_single_tile_stripe_packet(
@@ -620,12 +635,13 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
         stripe: u16,
         tile: u16,
     ) {
-        self.ram_view
-            .write_single_tile_stripe_packet(address, stripe, tile);
+        write_le_u16(self.ram, address, stripe);
+        write_le_u16(self.ram, address + 2, 0x0100);
+        write_le_u16(self.ram, address + 4, tile);
     }
 
     pub(crate) fn write_tile_stripe_sentinel(&mut self, address: usize) {
-        self.ram_view.write_tile_stripe_sentinel(address);
+        write_le_u16(self.ram, address, 0xffff);
     }
 }
 

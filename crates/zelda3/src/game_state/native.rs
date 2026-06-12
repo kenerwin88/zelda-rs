@@ -928,10 +928,51 @@ mod tests {
             bridge.advance_offset_by(0x20);
             bridge.clear_offset();
             bridge.set_offset(0x0034);
+            bridge.write_buffer_byte(40, 0xaa);
+            bridge.write_buffer_word(42, 0xbbcc);
+            bridge.write_tilemap_word(80, 0x1234);
+            bridge.write_overworld_vram_word(3, 0x5678);
+            bridge.write_absolute_byte(0x2000, 0xdd);
+            bridge.write_absolute_word(0x2002, 0xeeff);
+            bridge.copy_buffer_bytes(44, &[1, 2, 3, 4]);
+            bridge.terminate_buffer_at(48);
+            bridge.write_level_label_tiles(&[0x11; 14], &[0x22; 14]);
+            bridge.write_map16_update_packet(0x2100, 0x1234, [0x1000, 0x1001, 0x1002, 0x1003]);
+            bridge.write_single_tile_stripe_packet(0x2120, 0x3456, 0x2000);
+            bridge.write_tile_stripe_sentinel(0x2130);
         }
 
         assert_eq!(display.vram_upload_cursor, 0x0034);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0034);
+        assert_eq!(ram[VRAM_UPLOAD_DATA], 0x11);
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 13], 0x11);
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 16], 0x22);
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 29], 0x22);
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 32], 0xff);
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 40], 0xaa);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_DATA + 42), 0xbbcc);
+        assert_eq!(
+            &ram[VRAM_UPLOAD_DATA + 44..VRAM_UPLOAD_DATA + 48],
+            &[1, 2, 3, 4]
+        );
+        assert_eq!(ram[VRAM_UPLOAD_DATA + 48], 0xff);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET + 80), 0x1234);
+        assert_eq!(read_le_u16(&ram, UVRAM_DATA + 6), 0x5678);
+        assert_eq!(ram[0x2000], 0xdd);
+        assert_eq!(read_le_u16(&ram, 0x2002), 0xeeff);
+        assert_eq!(read_le_u16(&ram, 0x2100), 0x3412);
+        assert_eq!(read_le_u16(&ram, 0x2102), 0x0300);
+        assert_eq!(read_le_u16(&ram, 0x2104), 0x1000);
+        assert_eq!(read_le_u16(&ram, 0x2106), 0x1001);
+        assert_eq!(read_le_u16(&ram, 0x2108), 0x5412);
+        assert_eq!(read_le_u16(&ram, 0x210a), 0x0300);
+        assert_eq!(read_le_u16(&ram, 0x210c), 0x1002);
+        assert_eq!(read_le_u16(&ram, 0x210e), 0x1003);
+        assert_eq!(read_le_u16(&ram, 0x2110), 0xffff);
+        assert_eq!(read_le_u16(&ram, 0x2120), 0x3456);
+        assert_eq!(read_le_u16(&ram, 0x2122), 0x0100);
+        assert_eq!(read_le_u16(&ram, 0x2124), 0x2000);
+        assert_eq!(read_le_u16(&ram, 0x2130), 0xffff);
     }
 
     #[test]
