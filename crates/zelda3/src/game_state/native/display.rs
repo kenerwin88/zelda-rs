@@ -283,6 +283,18 @@ impl DisplayState {
         &ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B..]
     }
 
+    pub(crate) fn background_character_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER..]
+    }
+
+    pub(crate) fn background_character_secondary_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER_1..]
+    }
+
+    pub(crate) fn background_character_half_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER..]
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }

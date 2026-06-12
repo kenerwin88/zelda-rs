@@ -319,20 +319,32 @@ impl ZeldaState {
     pub(super) fn nmi_tile_map_nothing(&mut self) {}
 
     pub(super) fn nmi_update_bg2_left(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
-        let buf1 = self.display_nmi_view().bg_char_buffer_1().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
+        let buf1 = self
+            .display_state()
+            .background_character_secondary_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0, &buf, 0x800);
         self.copy_to_vram_slice(0x800, &buf1, 0x800);
     }
 
     pub(super) fn nmi_update_bg_char3and4(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0x2c00, &buf, 0x1000);
         self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_bg_char5and6(&mut self) {
-        let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_half_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0x3400, &buf, 0x1000);
         self.clear_core_update_disable_flag();
     }
@@ -354,7 +366,10 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_obj_char0(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0x4400, &buf, 0x800);
         self.clear_core_update_disable_flag();
     }
@@ -368,7 +383,10 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_run_tile_map_update_dma(&mut self, dst: usize) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(dst, &buf, 0x1000);
         self.clear_core_update_disable_flag();
     }
@@ -398,12 +416,18 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_peg_tiles(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0x3d00, &buf, 0x100);
     }
 
     pub(super) fn nmi_update_star_tiles(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         self.copy_to_vram_slice(0x3ed0, &buf, 0x40);
     }
 
@@ -608,14 +632,20 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_bg_char_half(&mut self) {
         let dst = self.display_state().nmi_load_target_page() as usize * 256;
-        let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_half_buffer(&self.ram)
+            .to_vec();
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
         }
     }
 
     pub(super) fn nmi_upload_bg3_text(&mut self) {
-        let buf = self.display_nmi_view().bg_char_buffer().to_vec();
+        let buf = self
+            .display_state()
+            .background_character_buffer(&self.ram)
+            .to_vec();
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
         }

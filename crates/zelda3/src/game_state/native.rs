@@ -676,6 +676,12 @@ mod tests {
         ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + 1] = 0xce;
         ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B] = 0x56;
         ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B + 1] = 0x78;
+        ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER] = 0x9a;
+        ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER + 1] = 0xbc;
+        ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER_1] = 0xde;
+        ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER_1 + 1] = 0xf0;
+        ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER] = 0x13;
+        ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER + 1] = 0x57;
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
@@ -754,6 +760,18 @@ mod tests {
         assert_eq!(
             &display.secondary_stripe_upload_buffer(&ram)[..2],
             &[0x56, 0x78]
+        );
+        assert_eq!(
+            &display.background_character_buffer(&ram)[..2],
+            &[0x9a, 0xbc]
+        );
+        assert_eq!(
+            &display.background_character_secondary_buffer(&ram)[..2],
+            &[0xde, 0xf0]
+        );
+        assert_eq!(
+            &display.background_character_half_buffer(&ram)[..2],
+            &[0x13, 0x57]
         );
         assert_eq!(display.message_dma_destination_address, 0x6040);
         assert_eq!(display.message_dma_tile_base, 0x4841);

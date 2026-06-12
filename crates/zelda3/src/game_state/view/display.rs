@@ -17,18 +17,6 @@ impl<'a> DisplayNmiView<'a> {
         &self.ram[crate::game_state::constants::nmi::BG1_WALL_BOTTOM_BUFFER..]
     }
 
-    pub(crate) fn bg_char_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER..]
-    }
-
-    pub(crate) fn bg_char_buffer_1(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER_1..]
-    }
-
-    pub(crate) fn bg_char_half_buffer(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::BG_CHAR_HALF_BUFFER..]
-    }
-
     pub(crate) fn game_over_text_buffer(&self) -> &[u8] {
         &self.ram[crate::game_state::constants::nmi::GAME_OVER_TEXT_BUFFER..]
     }
