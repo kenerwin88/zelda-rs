@@ -11,9 +11,9 @@ mod world;
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
-    NativeOverworldEntranceBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut, OverworldEntranceState,
-    OverworldMapUiState, OverworldTransitionState, WorldLocationState,
+    OverworldExitState, OverworldMapUiState, OverworldTransitionState, WorldLocationState,
 };
 
 #[cfg(test)]
@@ -31,6 +31,7 @@ pub(crate) struct GameState {
     pub(crate) world_location: WorldLocationState,
     pub(crate) overworld_map_ui: OverworldMapUiState,
     pub(crate) overworld_entrance: OverworldEntranceState,
+    pub(crate) overworld_exit: OverworldExitState,
     pub(crate) overworld_transition: OverworldTransitionState,
     pub(crate) display: DisplayState,
 }
@@ -42,6 +43,7 @@ impl GameState {
             world_location: WorldLocationState::load_from_ram(ram),
             overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
             overworld_entrance: OverworldEntranceState::load_from_ram(ram),
+            overworld_exit: OverworldExitState::load_from_ram(ram),
             overworld_transition: OverworldTransitionState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
         }
@@ -52,6 +54,7 @@ impl GameState {
         self.world_location.write_to_ram(ram);
         self.overworld_map_ui.write_to_ram(ram);
         self.overworld_entrance.write_to_ram(ram);
+        self.overworld_exit.write_to_ram(ram);
         self.overworld_transition.write_to_ram(ram);
         self.display.write_to_ram(ram);
     }
@@ -270,6 +273,43 @@ mod tests {
         assert_eq!(entrance.sequence_counter, 0);
         assert_eq!(ram[TRIGGER_SPECIAL_ENTRANCE], 0);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 0);
+    }
+
+    #[test]
+    fn overworld_exit_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_EXIT, 0x0123);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_SPEXIT, 0x0045);
+
+        let mut exit = OverworldExitState::load_from_ram(&ram);
+        assert_eq!(exit.exit_screen, 0x0123);
+        assert_eq!(exit.special_exit_screen, 0x0045);
+
+        exit.exit_screen = 0x0067;
+        exit.special_exit_screen = 0x0089;
+        exit.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0067);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_SPEXIT), 0x0089);
+    }
+
+    #[test]
+    fn native_overworld_exit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_EXIT, 0x0111);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_SPEXIT, 0x0222);
+
+        let mut exit = OverworldExitState::default();
+        {
+            let mut bridge = NativeOverworldExitBridgeMut::new(&mut exit, &mut ram);
+            bridge.set_exit_screen(0x0033);
+            bridge.set_special_exit_screen(0x0044);
+        }
+
+        assert_eq!(exit.exit_screen, 0x0033);
+        assert_eq!(exit.special_exit_screen, 0x0044);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0033);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_SPEXIT), 0x0044);
     }
 
     #[test]

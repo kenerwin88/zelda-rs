@@ -372,8 +372,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .store_overworld_exit_position_from_current();
             let overworld_screen = self.world_location_state().overworld_screen;
-            self.world_state_view_mut()
-                .set_exit_screen_index(overworld_screen);
+            self.set_exit_screen_index(overworld_screen);
             copy_le_u16(
                 &mut self.ram,
                 ENTRANCE_BACKUP_MAP16_LOAD_SRC_OFF,

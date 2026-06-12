@@ -60,7 +60,7 @@ use crate::game_state::{
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
     NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
     OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
@@ -2156,6 +2156,24 @@ impl ZeldaState {
             &mut self.ram,
         )
         .decrement_sequence_counter()
+    }
+
+    pub(crate) fn exit_screen_index(&self) -> u16 {
+        self.game_state.overworld_exit.exit_screen
+    }
+
+    pub(crate) fn set_exit_screen_index(&mut self, value: u16) {
+        NativeOverworldExitBridgeMut::new(&mut self.game_state.overworld_exit, &mut self.ram)
+            .set_exit_screen(value);
+    }
+
+    pub(crate) fn special_exit_screen_index(&self) -> u16 {
+        self.game_state.overworld_exit.special_exit_screen
+    }
+
+    pub(crate) fn set_special_exit_screen_index(&mut self, value: u16) {
+        NativeOverworldExitBridgeMut::new(&mut self.game_state.overworld_exit, &mut self.ram)
+            .set_special_exit_screen(value);
     }
 
     pub(crate) fn screen_transition_direction_bits(&self) -> u8 {

@@ -103,6 +103,26 @@ impl OverworldEntranceState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldExitState {
+    pub(crate) exit_screen: u16,
+    pub(crate) special_exit_screen: u16,
+}
+
+impl OverworldExitState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            exit_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_EXIT),
+            special_exit_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_SPEXIT),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_EXIT, self.exit_screen);
+        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_SPEXIT, self.special_exit_screen);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldTransitionState {
     pub(crate) edge_direction_bits: u16,
     pub(crate) direction_bits: u16,
@@ -395,6 +415,34 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
         let next = self.entrance.sequence_counter.wrapping_sub(1);
         self.set_sequence_counter(next);
         next
+    }
+}
+
+pub(crate) struct NativeOverworldExitBridgeMut<'a> {
+    exit: &'a mut OverworldExitState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldExitBridgeMut<'a> {
+    pub(crate) fn new(exit: &'a mut OverworldExitState, ram: &'a mut [u8]) -> Self {
+        *exit = OverworldExitState::load_from_ram(ram);
+        Self { exit, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.exit, OverworldExitState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_exit_screen(&mut self, value: u16) {
+        self.exit.exit_screen = value;
+        write_le_u16(self.ram, OVERWORLD_SCREEN_INDEX_EXIT, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_special_exit_screen(&mut self, value: u16) {
+        self.exit.special_exit_screen = value;
+        write_le_u16(self.ram, OVERWORLD_SCREEN_INDEX_SPEXIT, value);
+        self.debug_assert_matches_ram();
     }
 }
 

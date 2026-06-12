@@ -609,8 +609,7 @@ impl ZeldaState {
         self.special_exit_position_view_mut().store_from_player();
         self.world_state_view_mut().save_spexit_camera_coords();
         let overworld_screen = self.world_location_state().overworld_screen;
-        self.world_state_view_mut()
-            .set_spexit_screen_index(overworld_screen);
+        self.set_special_exit_screen_index(overworld_screen);
         let map16 = self.overworld_map16_load_state();
         self.store_overworld_spexit_map16_src_off(map16.src_off);
         let top = self.room_bounds_view().packed_top();
@@ -629,7 +628,7 @@ impl ZeldaState {
                 "spexit-save frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} yunit=0x{:04x} dst=0x{:04x} cam=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
                 self.frame_state().frame_counter,
                 self.world_state_view().spexit_area_index(),
-                self.world_state_view().spexit_screen_index(),
+                self.special_exit_screen_index(),
                 self.special_exit_position_view().x(),
                 self.special_exit_position_view().y(),
                 self.ppu_scroll_copy_view().special_exit_bg2_h_copy2(),
@@ -2949,7 +2948,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_facing(0);
         }
 
-        let overworld_screen = self.world_state_view().exit_screen_index();
+        let overworld_screen = self.exit_screen_index();
         self.set_overworld_screen_word(overworld_screen);
         self.set_overworld_map16_src_off(self.overworld_exit_map16_src_off());
         let src = self.overworld_map16_src_off();
@@ -3010,7 +3009,7 @@ impl ZeldaState {
                 "spexit-restore-before frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} cam=0x{:04x}/0x{:04x} bounds={:04x},{:04x},{:04x},{:04x}",
                 self.frame_state().frame_counter,
                 self.world_state_view().spexit_area_index(),
-                self.world_state_view().spexit_screen_index(),
+                self.special_exit_screen_index(),
                 self.special_exit_position_view().x(),
                 self.special_exit_position_view().y(),
                 self.ppu_scroll_copy_view().special_exit_bg2_h_copy2(),
@@ -3033,7 +3032,7 @@ impl ZeldaState {
 
         self.special_exit_position_view_mut()
             .restore_player_position();
-        let overworld_screen = self.world_state_view().spexit_screen_index();
+        let overworld_screen = self.special_exit_screen_index();
         self.set_overworld_screen_word(overworld_screen);
         self.set_overworld_map16_src_off(self.overworld_spexit_map16_src_off());
         let src = self.overworld_map16_src_off();
