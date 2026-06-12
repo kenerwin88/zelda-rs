@@ -60,28 +60,28 @@ use crate::game_state::{
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
     MoldormHistoryView, MoldormHistoryViewMut, MosaicDirectionView, MosaicDirectionViewMut,
     MultiselectChoiceView, MultiselectChoiceViewMut, NativeFrameStateView, NativeFrameStateViewMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
-    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, OverworldTileUpdateView, OverworldTileUpdateViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
-    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
-    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
-    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeWorldLocationViewMut, OamStateView,
+    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut,
+    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
+    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
+    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
+    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView,
+    RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView,
+    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
+    SelectFileScratchViewMut, SharedMessageTimerView, SharedMessageTimerViewMut,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView,
+    SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    StarTileView, StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
     SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
@@ -90,7 +90,7 @@ use crate::game_state::{
     VramLoadStateViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
     VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
     WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView, WorldStateViewMut,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1954,8 +1954,8 @@ impl ZeldaState {
         WorldStateView::new(&self.ram)
     }
 
-    pub(crate) fn world_state_view_mut(&mut self) -> WorldStateViewMut<'_> {
-        WorldStateViewMut::new(&mut self.ram)
+    pub(crate) fn world_state_view_mut(&mut self) -> NativeWorldLocationViewMut<'_> {
+        NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
     }
 
     pub(crate) fn dungeon_state_view(&self) -> DungeonStateView<'_> {
@@ -2868,6 +2868,15 @@ impl ZeldaState {
         );
     }
 
+    #[track_caller]
+    pub(crate) fn assert_native_world_location_state_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.world_location,
+            crate::game_state::WorldLocationState::load_from_ram(&self.ram),
+            "native world location state diverged from RAM projection",
+        );
+    }
+
     pub fn sync_overworld_map16_load_from_ram(&mut self) {
         self.overworld_map16_load = OverworldMap16LoadState {
             src_off: self
@@ -2963,6 +2972,7 @@ impl ZeldaState {
         state.initialize();
         state.sync_native_game_state_from_ram();
         state.assert_native_frame_state_matches_ram();
+        state.assert_native_world_location_state_matches_ram();
         state
     }
 
@@ -3162,6 +3172,7 @@ impl ZeldaState {
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
         self.assert_native_frame_state_matches_ram();
+        self.assert_native_world_location_state_matches_ram();
         self.replay_trace_col("run-frame-entry");
         self.replay_trace_ram_watch("run-frame-entry");
         if !self.initialized {
@@ -3227,6 +3238,7 @@ impl ZeldaState {
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
+        self.assert_native_world_location_state_matches_ram();
         self.sync_overworld_map16_load_from_ram();
     }
 
@@ -3649,6 +3661,7 @@ impl ZeldaState {
 
     fn configure_ppu_side_space(&mut self) {
         self.sync_native_game_state_from_ram();
+        self.assert_native_world_location_state_matches_ram();
         let mut extra_left = 0u16;
         let mut extra_right = 0u16;
         let mut extra_bottom = 0u16;
@@ -3922,6 +3935,7 @@ impl ZeldaState {
             .copy_to(HDMA_TABLE_DYNAMIC, &src);
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
+        self.assert_native_world_location_state_matches_ram();
         self.sync_overworld_map16_load_from_ram();
         self.emu_synchronize_whole_state();
     }
@@ -4275,6 +4289,7 @@ impl ZeldaState {
 
         self.sync_native_game_state_from_ram();
         self.assert_native_frame_state_matches_ram();
+        self.assert_native_world_location_state_matches_ram();
         let frame = self.frame_state();
         let use_bsnes_poly_scheduler = self.rom_startup_timing
             && frame.main_module == 0
@@ -4647,6 +4662,7 @@ impl ZeldaState {
         self.native_ram_bridge_view_mut()
             .set_word_at(DMA_SOURCE_ADDR_14, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();
+        self.assert_native_world_location_state_matches_ram();
     }
 
     fn startup_initialize_memory(&mut self) {
@@ -4664,6 +4680,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_screen_brightness(0x80);
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.sync_native_game_state_from_ram();
+        self.assert_native_world_location_state_matches_ram();
     }
 
     fn zelda_run_poly_loop(&mut self) {

@@ -5,7 +5,9 @@
 //! projected to or loaded from WRAM during the transition.
 
 use crate::game_state::constants::*;
+use crate::game_state::WorldStateViewMut;
 use crate::types::{read_le_u16, write_le_u16};
+use std::ops::{Deref, DerefMut};
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)
@@ -249,6 +251,74 @@ impl<'a> NativeFrameStateViewMut<'a> {
     }
 }
 
+pub(crate) struct NativeWorldLocationViewMut<'a> {
+    world_location: &'a mut WorldLocationState,
+    ram_view: WorldStateViewMut<'a>,
+}
+
+impl<'a> NativeWorldLocationViewMut<'a> {
+    pub(crate) fn new(world_location: &'a mut WorldLocationState, ram: &'a mut [u8]) -> Self {
+        *world_location = WorldLocationState::load_from_ram(ram);
+        Self {
+            world_location,
+            ram_view: WorldStateViewMut::new(ram),
+        }
+    }
+
+    pub(crate) fn set_dungeon_room(&mut self, value: u16) {
+        self.world_location.dungeon_room = value;
+        self.ram_view.set_dungeon_room(value);
+    }
+
+    pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
+        self.world_location.dungeon_room =
+            (self.world_location.dungeon_room & 0xff00) | u16::from(value);
+        self.ram_view.set_dungeon_room_index(value);
+    }
+
+    pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        let next = self.world_location.dungeon_room_index().wrapping_add(value);
+        self.set_dungeon_room_index(next);
+        next
+    }
+
+    pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        let next = self.world_location.dungeon_room_index().wrapping_sub(value);
+        self.set_dungeon_room_index(next);
+        next
+    }
+
+    pub(crate) fn set_overworld_screen(&mut self, value: u8) {
+        self.world_location.overworld_screen =
+            (self.world_location.overworld_screen & 0xff00) | u16::from(value);
+        self.ram_view.set_overworld_screen(value);
+    }
+
+    pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
+        self.world_location.overworld_screen = value;
+        self.ram_view.set_overworld_screen_word(value);
+    }
+
+    pub(crate) fn set_indoor_flag(&mut self, value: u8) {
+        self.world_location.indoor_flag = value;
+        self.ram_view.set_indoor_flag(value);
+    }
+}
+
+impl<'a> Deref for NativeWorldLocationViewMut<'a> {
+    type Target = WorldStateViewMut<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ram_view
+    }
+}
+
+impl<'a> DerefMut for NativeWorldLocationViewMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ram_view
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +399,29 @@ mod tests {
         world.write_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0181);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
+        assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+    }
+
+    #[test]
+    fn native_world_location_mut_view_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_ROOM, 0x0124);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX, 0x0040);
+        ram[PLAYER_IS_INDOORS] = 1;
+
+        let mut world = WorldLocationState::default();
+        {
+            let mut view = NativeWorldLocationViewMut::new(&mut world, &mut ram);
+            view.increment_dungeon_room_index_by(2);
+            view.set_overworld_screen(0x5b);
+            view.set_indoor_flag(0);
+        }
+
+        assert_eq!(world.dungeon_room, 0x0126);
+        assert_eq!(world.overworld_screen, 0x005b);
+        assert_eq!(world.indoor_flag, 0);
+        assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0126);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
     }
