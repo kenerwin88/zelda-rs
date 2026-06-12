@@ -60,12 +60,13 @@ pub(crate) use sprites::{
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OverworldEventInfoState,
-    OverworldMap16State, WeatherVaneState, WorldLocationState, WorldState,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16State, WeatherVaneState,
+    WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -87,9 +88,9 @@ use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 use sprites::{DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState};
 #[cfg(test)]
 use world::{
-    BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
-    OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
-    OverworldTransitionState,
+    BirdTravelDestinationsState, OverworldConfigTableState, OverworldEntranceState,
+    OverworldExitState, OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
+    OverworldScrollDeltaState, OverworldTransitionState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -1286,6 +1287,63 @@ mod tests {
         assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x02], 0x10);
         assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x5b], 0x60);
         assert_eq!(ram[OVERWORLD_EVENT_INFO + 0x9f], 0);
+    }
+
+    #[test]
+    fn overworld_config_table_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_MUSIC_TABLE + 0x02] = 0x31;
+        ram[OVERWORLD_MUSIC_TABLE + 0x80] = 0x42;
+        ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02] = 0x05;
+        ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02] = 0x18;
+
+        let mut config_table = OverworldConfigTableState::load_from_ram(&ram);
+        assert_eq!(config_table.music(0x02), 0x31);
+        assert_eq!(config_table.music(0x80), 0x42);
+        assert_eq!(config_table.sprite_palette(0x02), 0x05);
+        assert_eq!(config_table.sprite_graphics(0x02), 0x18);
+        assert_eq!(config_table.music(0xa0), 0);
+
+        config_table.set_music(0x02, 0x6a);
+        config_table.write_to_ram(&mut ram);
+
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x02], 0x6a);
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x80], 0x42);
+        assert_eq!(ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02], 0x05);
+        assert_eq!(ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02], 0x18);
+    }
+
+    #[test]
+    fn native_overworld_config_table_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_MUSIC_TABLE + 0x02] = 0x31;
+        ram[OVERWORLD_MUSIC_TABLE + 0x80] = 0x42;
+        ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02] = 0x05;
+        ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02] = 0x18;
+
+        let primary = [0x24; 64];
+        let secondary = [0x46; 96];
+        let mut config_table = OverworldConfigTableState::default();
+        {
+            let mut bridge = NativeOverworldConfigTableBridgeMut::new(&mut config_table, &mut ram);
+            bridge.copy_music_primary(&primary);
+            bridge.copy_music_secondary(&secondary);
+            bridge.set_music(0x02, 0x6a);
+            bridge.set_music(0x80, 0x7b);
+        }
+
+        assert_eq!(config_table.music(0), 0x24);
+        assert_eq!(config_table.music(0x02), 0x6a);
+        assert_eq!(config_table.music(0x40), 0x46);
+        assert_eq!(config_table.music(0x80), 0x7b);
+        assert_eq!(config_table.sprite_palette(0x02), 0x05);
+        assert_eq!(config_table.sprite_graphics(0x02), 0x18);
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE], 0x24);
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x02], 0x6a);
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x40], 0x46);
+        assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x80], 0x7b);
+        assert_eq!(ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02], 0x05);
+        assert_eq!(ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02], 0x18);
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
 const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
 const OVERWORLD_EVENT_INFO_SCREENS: usize = 160;
+const OVERWORLD_CONFIG_SCREENS: usize = 160;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldLocationState {
@@ -178,6 +179,106 @@ impl Default for OverworldEventInfoState {
         Self {
             info: vec![0; OVERWORLD_EVENT_INFO_SCREENS],
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldConfigTableState {
+    music: Vec<u8>,
+    sprite_palette: Vec<u8>,
+    sprite_graphics: Vec<u8>,
+}
+
+impl OverworldConfigTableState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut music = vec![0; OVERWORLD_CONFIG_SCREENS];
+        let mut sprite_palette = vec![0; OVERWORLD_CONFIG_SCREENS];
+        let mut sprite_graphics = vec![0; OVERWORLD_CONFIG_SCREENS];
+        for screen in 0..OVERWORLD_CONFIG_SCREENS {
+            music[screen] = ram_byte(ram, OVERWORLD_MUSIC_TABLE + screen);
+            sprite_palette[screen] = ram_byte(ram, OVERWORLD_SPRITE_PALETTE_TABLE + screen);
+            sprite_graphics[screen] = ram_byte(ram, OVERWORLD_SPRITE_GFX_TABLE + screen);
+        }
+        Self {
+            music,
+            sprite_palette,
+            sprite_graphics,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for screen in 0..OVERWORLD_CONFIG_SCREENS {
+            ram[OVERWORLD_MUSIC_TABLE + screen] = self.music(screen);
+            ram[OVERWORLD_SPRITE_PALETTE_TABLE + screen] = self.sprite_palette(screen);
+            ram[OVERWORLD_SPRITE_GFX_TABLE + screen] = self.sprite_graphics(screen);
+        }
+    }
+
+    pub(crate) fn music(&self, screen: usize) -> u8 {
+        self.music.get(screen).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn sprite_palette(&self, screen: usize) -> u8 {
+        self.sprite_palette.get(screen).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn sprite_graphics(&self, screen: usize) -> u8 {
+        self.sprite_graphics
+            .get(screen)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
+        self.music[screen] = value;
+    }
+
+    pub(crate) fn copy_music_primary(&mut self, data: &[u8]) {
+        self.music[..64].copy_from_slice(&data[..64]);
+    }
+
+    pub(crate) fn copy_music_secondary(&mut self, data: &[u8]) {
+        self.music[64..160].copy_from_slice(&data[..96]);
+    }
+}
+
+impl Default for OverworldConfigTableState {
+    fn default() -> Self {
+        Self {
+            music: vec![0; OVERWORLD_CONFIG_SCREENS],
+            sprite_palette: vec![0; OVERWORLD_CONFIG_SCREENS],
+            sprite_graphics: vec![0; OVERWORLD_CONFIG_SCREENS],
+        }
+    }
+}
+
+pub(crate) struct OverworldConfigTableView<'a> {
+    config_table: &'a OverworldConfigTableState,
+    current_screen: usize,
+}
+
+impl<'a> OverworldConfigTableView<'a> {
+    pub(crate) fn new(config_table: &'a OverworldConfigTableState, current_screen: usize) -> Self {
+        Self {
+            config_table,
+            current_screen,
+        }
+    }
+
+    pub(crate) fn music(&self, screen: usize) -> u8 {
+        self.config_table.music(screen)
+    }
+
+    pub(crate) fn current_music(&self) -> u8 {
+        self.music(self.current_screen)
+    }
+
+    pub(crate) fn sprite_palette(&self, screen: usize) -> u8 {
+        self.config_table.sprite_palette(screen)
+    }
+
+    pub(crate) fn sprite_graphics(&self, screen: usize) -> u8 {
+        self.config_table.sprite_graphics(screen)
     }
 }
 
@@ -637,6 +738,7 @@ impl OverworldTransitionState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldState {
     pub(crate) event_info: OverworldEventInfoState,
+    pub(crate) config_table: OverworldConfigTableState,
     pub(crate) map_ui: OverworldMapUiState,
     pub(crate) weather_vane: WeatherVaneState,
     pub(crate) bird_travel_destinations: BirdTravelDestinationsState,
@@ -653,6 +755,7 @@ impl OverworldState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             event_info: OverworldEventInfoState::load_from_ram(ram),
+            config_table: OverworldConfigTableState::load_from_ram(ram),
             map_ui: OverworldMapUiState::load_from_ram(ram),
             weather_vane: WeatherVaneState::load_from_ram(ram),
             bird_travel_destinations: BirdTravelDestinationsState::load_from_ram(ram),
@@ -668,6 +771,7 @@ impl OverworldState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.event_info.write_to_ram(ram);
+        self.config_table.write_to_ram(ram);
         self.map_ui.write_to_ram(ram);
         self.weather_vane.write_to_ram(ram);
         self.bird_travel_destinations.write_to_ram(ram);
@@ -818,6 +922,44 @@ impl<'a> NativeOverworldEventInfoBridgeMut<'a> {
     pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
         self.event_info.clear_event_bits(screen, mask);
         self.ram[OVERWORLD_EVENT_INFO + screen] &= !mask;
+        self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeOverworldConfigTableBridgeMut<'a> {
+    config_table: &'a mut OverworldConfigTableState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
+    pub(crate) fn new(config_table: &'a mut OverworldConfigTableState, ram: &'a mut [u8]) -> Self {
+        *config_table = OverworldConfigTableState::load_from_ram(ram);
+        Self { config_table, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.config_table,
+            OverworldConfigTableState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn copy_music_primary(&mut self, data: &[u8]) {
+        self.config_table.copy_music_primary(data);
+        self.ram[OVERWORLD_MUSIC_TABLE..OVERWORLD_MUSIC_TABLE + 64].copy_from_slice(&data[..64]);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn copy_music_secondary(&mut self, data: &[u8]) {
+        self.config_table.copy_music_secondary(data);
+        self.ram[OVERWORLD_MUSIC_TABLE + 64..OVERWORLD_MUSIC_TABLE + 160]
+            .copy_from_slice(&data[..96]);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
+        self.config_table.set_music(screen, value);
+        self.ram[OVERWORLD_MUSIC_TABLE + screen] = value;
         self.debug_assert_matches_ram();
     }
 }

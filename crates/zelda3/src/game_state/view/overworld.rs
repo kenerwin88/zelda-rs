@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) struct OverworldConfigTableView<'a> {
+pub(crate) struct OverworldConfigTableRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> OverworldConfigTableView<'a> {
+impl<'a> OverworldConfigTableRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -40,11 +40,11 @@ impl<'a> DungeonMapViewMut<'a> {
     }
 }
 
-pub(crate) struct OverworldConfigTableViewMut<'a> {
+pub(crate) struct OverworldConfigTableRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> OverworldConfigTableViewMut<'a> {
+impl<'a> OverworldConfigTableRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

@@ -62,18 +62,18 @@ use crate::game_state::{
     NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
     NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpriteBattleBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
     OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
@@ -3200,11 +3200,19 @@ impl ZeldaState {
     }
 
     pub(crate) fn overworld_config_table_view(&self) -> OverworldConfigTableView<'_> {
-        OverworldConfigTableView::new(&self.ram)
+        OverworldConfigTableView::new(
+            &self.game_state.world.overworld.config_table,
+            usize::from(self.game_state.world.location.overworld_screen_index()),
+        )
     }
 
-    pub(crate) fn overworld_config_table_view_mut(&mut self) -> OverworldConfigTableViewMut<'_> {
-        OverworldConfigTableViewMut::new(&mut self.ram)
+    pub(crate) fn overworld_config_table_view_mut(
+        &mut self,
+    ) -> NativeOverworldConfigTableBridgeMut<'_> {
+        NativeOverworldConfigTableBridgeMut::new(
+            &mut self.game_state.world.overworld.config_table,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn palette_buffer_view(&self) -> PaletteBufferView<'_> {
