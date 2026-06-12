@@ -1,11 +1,12 @@
 use crate::game_state::constants::{
     DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
-    HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
-    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
+    ENEMY_DAMAGE_DATA, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI,
+    MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
+const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -13,6 +14,7 @@ pub(crate) struct SpriteState {
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
     pub(crate) draw_hitbox_work: SpriteDrawHitboxWorkState,
+    pub(crate) enemy_damage_subclasses: EnemyDamageSubclassTableState,
 }
 
 impl SpriteState {
@@ -22,6 +24,7 @@ impl SpriteState {
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
             draw_hitbox_work: SpriteDrawHitboxWorkState::load_from_ram(ram),
+            enemy_damage_subclasses: EnemyDamageSubclassTableState::load_from_ram(ram),
         }
     }
 
@@ -30,6 +33,115 @@ impl SpriteState {
         self.prize_drop_cycle.write_to_ram(ram);
         self.dual_layer_tile_cache.write_to_ram(ram);
         self.draw_hitbox_work.write_to_ram(ram);
+        self.enemy_damage_subclasses.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EnemyDamageSubclassTableState {
+    subclasses: Vec<u8>,
+}
+
+impl Default for EnemyDamageSubclassTableState {
+    fn default() -> Self {
+        Self {
+            subclasses: vec![0; ENEMY_DAMAGE_SUBCLASS_COUNT],
+        }
+    }
+}
+
+impl EnemyDamageSubclassTableState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut subclasses = vec![0; ENEMY_DAMAGE_SUBCLASS_COUNT];
+        for (index, subclass) in subclasses.iter_mut().enumerate() {
+            *subclass = ram.get(ENEMY_DAMAGE_DATA + index).copied().unwrap_or(0);
+        }
+        Self { subclasses }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, subclass) in self.subclasses.iter().copied().enumerate() {
+            if index >= ENEMY_DAMAGE_SUBCLASS_COUNT {
+                break;
+            }
+            ram[ENEMY_DAMAGE_DATA + index] = subclass;
+        }
+    }
+
+    pub(crate) fn entry(&self, index: usize) -> u8 {
+        self.subclasses.get(index).copied().unwrap_or(0)
+    }
+
+    fn set_entry(&mut self, index: usize, value: u8) -> bool {
+        let Some(entry) = self.subclasses.get_mut(index) else {
+            return false;
+        };
+        *entry = value;
+        true
+    }
+
+    fn load_from_packed_nibbles(&mut self, data: &[u8]) {
+        for index in (0..ENEMY_DAMAGE_SUBCLASS_COUNT).step_by(2) {
+            let packed = data.get(index >> 1).copied().unwrap_or(0);
+            self.subclasses[index] = packed >> 4;
+            self.subclasses[index + 1] = packed & 0x0f;
+        }
+    }
+}
+
+pub(crate) struct EnemyDamageSubclassTableView<'a> {
+    state: &'a EnemyDamageSubclassTableState,
+}
+
+impl<'a> EnemyDamageSubclassTableView<'a> {
+    pub(crate) fn new(state: &'a EnemyDamageSubclassTableState) -> Self {
+        Self { state }
+    }
+
+    pub(crate) fn entry(&self, index: usize) -> u8 {
+        self.state.entry(index)
+    }
+}
+
+pub(crate) struct NativeEnemyDamageSubclassTableBridgeMut<'a> {
+    state: &'a mut EnemyDamageSubclassTableState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeEnemyDamageSubclassTableBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EnemyDamageSubclassTableState, ram: &'a mut [u8]) -> Self {
+        *state = EnemyDamageSubclassTableState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    pub(crate) fn set_entry(&mut self, index: usize, value: u8) {
+        if self.state.set_entry(index, value) {
+            self.ram[ENEMY_DAMAGE_DATA + index] = value;
+            self.debug_assert_entry_matches_ram(index);
+        }
+    }
+
+    pub(crate) fn load_from_packed_nibbles(&mut self, data: &[u8]) {
+        self.state.load_from_packed_nibbles(data);
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_entry_matches_ram(&self, index: usize) {
+        debug_assert_eq!(
+            self.state.entry(index),
+            self.ram
+                .get(ENEMY_DAMAGE_DATA + index)
+                .copied()
+                .unwrap_or(0)
+        );
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            EnemyDamageSubclassTableState::load_from_ram(self.ram)
+        );
     }
 }
 

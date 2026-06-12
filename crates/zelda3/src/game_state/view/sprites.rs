@@ -1056,34 +1056,6 @@ impl<'a> SpriteWorkspaceViewMut<'a> {
     }
 }
 
-pub(crate) struct EnemyDamageDataView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> EnemyDamageDataView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn entry(&self, index: usize) -> u8 {
-        byte(self.ram, ENEMY_DAMAGE_DATA + index)
-    }
-}
-
-pub(crate) struct EnemyDamageDataViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> EnemyDamageDataViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_entry(&mut self, index: usize, value: u8) {
-        self.ram[ENEMY_DAMAGE_DATA + index] = value;
-    }
-}
-
 pub(crate) struct EtherOrbitView<'a> {
     ram: &'a [u8],
 }

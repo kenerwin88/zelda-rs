@@ -10770,8 +10770,10 @@ impl ZeldaState {
         }
         let damage_type = self.sprite_battle_view().damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
-        let dmg = ENEMY_DAMAGES
-            [damage_type * 8 | self.enemy_damage_data_view().entry(enemy_damage_index) as usize];
+        let dmg = ENEMY_DAMAGES[damage_type * 8
+            | self
+                .enemy_damage_subclass_table_view()
+                .entry(enemy_damage_index) as usize];
         self.sprite_give_damage_for_ancilla(k, dmg, a);
     }
 

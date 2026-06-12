@@ -58,7 +58,8 @@ pub(crate) use player::{
     SwimAccelerationView,
 };
 pub(crate) use sprites::{
-    DualLayerTileCacheView, MazeGameTimerView, NativeDualLayerTileCacheBridgeMut,
+    DualLayerTileCacheView, EnemyDamageSubclassTableView, MazeGameTimerView,
+    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteState,
@@ -91,7 +92,8 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use sprites::{
-    DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState, SpriteDrawHitboxWorkState,
+    DualLayerTileCacheState, EnemyDamageSubclassTableState, MazeGameTimerState,
+    PrizeDropCycleState, SpriteDrawHitboxWorkState,
 };
 #[cfg(test)]
 use world::{
@@ -1000,6 +1002,55 @@ mod tests {
         assert_eq!(cache.tile_type(4), 0x2a);
         assert_eq!(cache.tile_type(18), 0);
         assert_eq!(ram[DUAL_LAYER_TILE_CACHE + 4], 0x2a);
+    }
+
+    #[test]
+    fn enemy_damage_subclass_table_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ENEMY_DAMAGE_DATA] = 3;
+        ram[ENEMY_DAMAGE_DATA + 0x918] = 2;
+        ram[ENEMY_DAMAGE_DATA + 0x0fff] = 7;
+
+        let table = EnemyDamageSubclassTableState::load_from_ram(&ram);
+        assert_eq!(table.entry(0), 3);
+        assert_eq!(table.entry(0x918), 2);
+        assert_eq!(table.entry(0x0fff), 7);
+        assert_eq!(table.entry(0x1000), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        table.write_to_ram(&mut projected);
+        assert_eq!(
+            EnemyDamageSubclassTableState::load_from_ram(&projected),
+            table
+        );
+    }
+
+    #[test]
+    fn native_enemy_damage_subclass_table_loads_packed_nibbles_and_dual_writes_overrides() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ENEMY_DAMAGE_DATA + 0x918] = 9;
+
+        let packed = vec![0xab, 0xcd, 0xef];
+        let mut table = EnemyDamageSubclassTableState::default();
+        {
+            let mut bridge = NativeEnemyDamageSubclassTableBridgeMut::new(&mut table, &mut ram);
+            bridge.load_from_packed_nibbles(&packed);
+            bridge.set_entry(0x918, 2);
+            bridge.set_entry(0x1000, 7);
+        }
+
+        assert_eq!(table.entry(0), 0x0a);
+        assert_eq!(table.entry(1), 0x0b);
+        assert_eq!(table.entry(2), 0x0c);
+        assert_eq!(table.entry(3), 0x0d);
+        assert_eq!(table.entry(4), 0x0e);
+        assert_eq!(table.entry(5), 0x0f);
+        assert_eq!(table.entry(6), 0);
+        assert_eq!(table.entry(0x918), 2);
+        assert_eq!(table.entry(0x1000), 0);
+        assert_eq!(ram[ENEMY_DAMAGE_DATA], 0x0a);
+        assert_eq!(ram[ENEMY_DAMAGE_DATA + 1], 0x0b);
+        assert_eq!(ram[ENEMY_DAMAGE_DATA + 0x918], 2);
     }
 
     #[test]

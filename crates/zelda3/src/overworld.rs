@@ -5259,12 +5259,8 @@ impl ZeldaState {
             .to_vec();
         self.overworld_map16_decode_view_mut()
             .copy_source_from(&data);
-        for i in (0..0x1000).step_by(2) {
-            let t = self.overworld_map16_decode_view().source_byte(i >> 1);
-            let mut enemy_damage = self.enemy_damage_data_view_mut();
-            enemy_damage.set_entry(i, t >> 4);
-            enemy_damage.set_entry(i + 1, t & 0x0f);
-        }
+        self.enemy_damage_subclass_table_view_mut()
+            .load_from_packed_nibbles(&data);
     }
 
     pub(super) fn conditional_mosaic_control(&mut self) {

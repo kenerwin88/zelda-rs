@@ -3848,7 +3848,8 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_delay_main(255);
             self.sprite_slot_view_mut(k).set_x_velocity(0);
             self.sprite_slot_view_mut(k).set_y_velocity(0);
-            self.enemy_damage_data_view_mut().set_entry(0x918, 2);
+            self.enemy_damage_subclass_table_view_mut()
+                .set_entry(0x918, 2);
         }
         if self.sprite_return_if_recoiling(k) {
             return;
@@ -3883,7 +3884,8 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.enemy_damage_data_view_mut().set_entry(0x918, 0);
+                self.enemy_damage_subclass_table_view_mut()
+                    .set_entry(0x918, 0);
                 self.sprite_check_damage_to_and_from_link(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -4249,7 +4251,7 @@ impl ZeldaState {
             .enhanced_features_view()
             .has(FEATURE_MISC_BUG_FIXES_MOTHULA)
         {
-            let mut damage_data = self.enemy_damage_data_view_mut();
+            let mut damage_data = self.enemy_damage_subclass_table_view_mut();
             damage_data.set_entry(0x884, 1);
             damage_data.set_entry(0x885, 1);
         }

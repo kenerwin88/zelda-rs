@@ -41,9 +41,9 @@ use crate::game_state::{
     DungeonMapScratchView, DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList,
     DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
     EffectAngleScratchView, EffectAngleScratchViewMut, EndingCreditState, EndingScratchView,
-    EndingScratchViewMut, EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesState,
-    EtherOrbitView, EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState,
-    GameState, GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView,
+    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
+    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
     HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
     IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
@@ -56,25 +56,25 @@ use crate::game_state::{
     NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut,
     NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeMultiselectChoiceView, NativeOverworldConfigTableBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpriteBattleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
-    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
+    NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeSaveLoadTransferBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
     OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
     OverworldMap16SourcePage, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
     OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
@@ -3987,12 +3987,17 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn enemy_damage_data_view(&self) -> EnemyDamageDataView<'_> {
-        EnemyDamageDataView::new(&self.ram)
+    pub(crate) fn enemy_damage_subclass_table_view(&self) -> EnemyDamageSubclassTableView<'_> {
+        EnemyDamageSubclassTableView::new(&self.game_state.sprites.enemy_damage_subclasses)
     }
 
-    pub(crate) fn enemy_damage_data_view_mut(&mut self) -> EnemyDamageDataViewMut<'_> {
-        EnemyDamageDataViewMut::new(&mut self.ram)
+    pub(crate) fn enemy_damage_subclass_table_view_mut(
+        &mut self,
+    ) -> NativeEnemyDamageSubclassTableBridgeMut<'_> {
+        NativeEnemyDamageSubclassTableBridgeMut::new(
+            &mut self.game_state.sprites.enemy_damage_subclasses,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn ether_orbit_view(&self) -> EtherOrbitView<'_> {
