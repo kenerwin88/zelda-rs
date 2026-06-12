@@ -662,29 +662,6 @@ impl<'a> OverworldTileUpdateViewMut<'a> {
     }
 }
 
-pub(crate) struct StarTileView<'a> {
-    ram: &'a [u8],
-}
-impl<'a> StarTileView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn restore_phase(&self) -> u8 {
-        byte(self.ram, STAR_TILE_RESTORE_PHASE)
-    }
-}
-pub(crate) struct StarTileViewMut<'a> {
-    ram: &'a mut [u8],
-}
-impl<'a> StarTileViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn clear_restore_phase(&mut self) {
-        self.ram[STAR_TILE_RESTORE_PHASE] = 0;
-    }
-}
-
 pub(crate) struct TrinexxPaletteView<'a> {
     ram: &'a [u8],
 }
@@ -949,32 +926,6 @@ impl<'a> WaterHdmaWindowViewMut<'a> {
         self.ram[WATER_HDMA_WINDOW_Y_RADIUS] =
             self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(x_radius_minus_margin);
         self.ram[WATER_HDMA_WINDOW_Y_RADIUS]
-    }
-}
-
-pub(crate) struct MosaicDirectionView<'a> {
-    ram: &'a [u8],
-}
-impl<'a> MosaicDirectionView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn inc_or_dec(&self) -> u8 {
-        byte(self.ram, MOSAIC_INC_OR_DEC)
-    }
-}
-pub(crate) struct MosaicDirectionViewMut<'a> {
-    ram: &'a mut [u8],
-}
-impl<'a> MosaicDirectionViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn set_inc_or_dec(&mut self, v: u8) {
-        self.ram[MOSAIC_INC_OR_DEC] = v;
-    }
-    pub(crate) fn clear(&mut self) {
-        self.ram[MOSAIC_INC_OR_DEC] = 0;
     }
 }
 

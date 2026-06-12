@@ -83,16 +83,15 @@ use crate::game_state::{
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
     SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
     SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
-    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
-    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
-    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
-    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
+    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
+    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
+    TrinexxPaletteViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2808,6 +2807,11 @@ impl ZeldaState {
             .reset_bg_tile_animation_countdown(value);
     }
 
+    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
+        self.display_state_bridge_mut()
+            .clear_star_tile_restore_phase();
+    }
+
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
         self.display_state_bridge_mut()
             .set_animated_tile_data_source_address(value);
@@ -3755,14 +3759,6 @@ impl ZeldaState {
 
     pub(crate) fn overworld_tile_update_view_mut(&mut self) -> OverworldTileUpdateViewMut<'_> {
         OverworldTileUpdateViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn star_tile_view(&self) -> StarTileView<'_> {
-        StarTileView::new(&self.ram)
-    }
-
-    pub(crate) fn star_tile_view_mut(&mut self) -> StarTileViewMut<'_> {
-        StarTileViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn trinexx_palette_view(&self) -> TrinexxPaletteView<'_> {

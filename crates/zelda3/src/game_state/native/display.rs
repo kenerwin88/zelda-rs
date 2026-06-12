@@ -188,6 +188,7 @@ pub(crate) struct DisplayState {
     pub(crate) message_dma_tile_sentinel: u16,
     pub(crate) overworld_fixed_color_adjustment: u8,
     pub(crate) travel_bird_tile_offset: u8,
+    pub(crate) star_tile_restore_phase: u8,
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
 }
@@ -235,6 +236,7 @@ impl DisplayState {
             message_dma_tile_sentinel: read_le_u16(ram, MESSAGE_DMA_TILE_SENTINEL),
             overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
             travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
+            star_tile_restore_phase: ram_byte(ram, STAR_TILE_RESTORE_PHASE),
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
         }
@@ -297,6 +299,7 @@ impl DisplayState {
         );
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
+        ram[STAR_TILE_RESTORE_PHASE] = self.star_tile_restore_phase;
         write_le_u16(
             ram,
             ANIMATED_TILE_DATA_SRC,
@@ -514,6 +517,14 @@ impl DisplayState {
 
     pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
         self.travel_bird_tile_offset != 0
+    }
+
+    pub(crate) fn star_tile_restore_source_offsets(&self) -> (usize, usize) {
+        if self.star_tile_restore_phase != 0 {
+            (32, 0)
+        } else {
+            (0, 32)
+        }
     }
 
     pub(crate) fn animated_tile_data_source_usize(&self) -> usize {
@@ -868,6 +879,13 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         debug_assert_eq!(
             self.display.travel_bird_tile_offset,
             ram_byte(self.ram, FLAG_TRAVEL_BIRD)
+        );
+    }
+
+    fn debug_assert_star_tile_restore_phase_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.star_tile_restore_phase,
+            ram_byte(self.ram, STAR_TILE_RESTORE_PHASE)
         );
     }
 
@@ -1391,6 +1409,12 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.display.travel_bird_tile_offset = value;
         self.ram[FLAG_TRAVEL_BIRD] = value;
         self.debug_assert_travel_bird_tile_offset_matches_ram();
+    }
+
+    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
+        self.display.star_tile_restore_phase = 0;
+        self.ram[STAR_TILE_RESTORE_PHASE] = 0;
+        self.debug_assert_star_tile_restore_phase_matches_ram();
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {

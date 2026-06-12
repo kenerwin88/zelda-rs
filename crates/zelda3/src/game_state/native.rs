@@ -709,6 +709,7 @@ mod tests {
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_SENTINEL, 0xffff);
         ram[HUD_TILE_INDICES_BUFFER] = 0xbe;
         ram[HUD_TILE_INDICES_BUFFER + 1] = 0xef;
+        ram[STAR_TILE_RESTORE_PHASE] = 1;
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
         ram[0xa680] = 0xde;
@@ -829,6 +830,8 @@ mod tests {
         assert_eq!(display.message_dma_tile_limit, 0x007f);
         assert_eq!(display.message_dma_tile_sentinel, 0xffff);
         assert_eq!(&display.message_dma_tile_indices(&ram)[..2], &[0xbe, 0xef]);
+        assert_eq!(display.star_tile_restore_phase, 1);
+        assert_eq!(display.star_tile_restore_source_offsets(), (32, 0));
         assert_eq!(display.animated_tile_data_source_address, 0xa680);
         assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
         assert_eq!(&display.animated_tile_data(&ram)[..2], &[0xde, 0xad]);
@@ -871,6 +874,7 @@ mod tests {
         display.message_dma_tile_base = 0x4842;
         display.message_dma_tile_limit = 0x0080;
         display.message_dma_tile_sentinel = 0xfffe;
+        display.star_tile_restore_phase = 0;
         display.animated_tile_data_source_address = 0xac80;
         display.animated_tile_vram_destination_address = 0x3c00;
         display.write_to_ram(&mut ram);
@@ -913,6 +917,7 @@ mod tests {
         assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
+        assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
     }
@@ -1057,6 +1062,7 @@ mod tests {
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x20;
         ram[FLAG_TRAVEL_BIRD] = 0x04;
+        ram[STAR_TILE_RESTORE_PHASE] = 7;
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
 
@@ -1144,6 +1150,7 @@ mod tests {
             bridge.set_message_dma_tile_sentinel(0xffff);
             bridge.set_overworld_fixed_color_adjustment(0x30);
             bridge.set_travel_bird_tile_offset(0x08);
+            bridge.clear_star_tile_restore_phase();
             bridge.set_animated_tile_data_source_address(0xac80);
             bridge.set_animated_tile_vram_destination_address(0x3c00);
             bridge.copy_tilemap_upload_stripe_bytes(&[0xaa, 0xbb, 0xcc]);
@@ -1226,6 +1233,8 @@ mod tests {
         assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
         assert_eq!(display.travel_bird_tile_offset, 0x08);
         assert!(display.has_travel_bird_tile_upload());
+        assert_eq!(display.star_tile_restore_phase, 0);
+        assert_eq!(display.star_tile_restore_source_offsets(), (0, 32));
         assert_eq!(display.animated_tile_data_source_address, 0xac80);
         assert_eq!(display.animated_tile_data_source_usize(), 0xac80);
         assert!(display.has_animated_tile_data_source());
@@ -1267,6 +1276,7 @@ mod tests {
             0xcc
         );
         assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
+        assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);
         assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_3), 0x9000);
         assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_0), 0x9001);
         assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_4), 0x9002);

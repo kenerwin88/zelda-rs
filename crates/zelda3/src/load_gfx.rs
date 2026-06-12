@@ -2760,16 +2760,12 @@ impl ZeldaState {
     }
 
     pub(super) fn ResetStarTileGraphics(&mut self) {
-        self.star_tile_view_mut().clear_restore_phase();
+        self.clear_star_tile_restore_phase();
         self.Dungeon_RestoreStarTileChr();
     }
 
     pub(super) fn Dungeon_RestoreStarTileChr(&mut self) {
-        let (xx, yy) = if self.star_tile_view().restore_phase() != 0 {
-            (32, 0)
-        } else {
-            (0, 32)
-        };
+        let (xx, yy) = self.display_state().star_tile_restore_source_offsets();
         let src0 = 0xbdc0 + xx;
         let src1 = 0xbdc0 + yy;
         self.graphics_scratch_view_mut()
