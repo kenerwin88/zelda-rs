@@ -9,8 +9,9 @@ use std::slice;
 
 use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 
+use crate::game_state::constants::{RUN_MAIN_THREAD, RUN_POLY_THREAD};
 use crate::game_state::{
-    AncillaSlotView, PlayerStateView, RamFrameStateView, SpriteSlotView, WorldLocationState,
+    AncillaSlotView, DisplayState, FrameState, PlayerStateView, SpriteSlotView, WorldLocationState,
     WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16};
@@ -1253,17 +1254,22 @@ fn copy_graduated_map16_load_bytes(mine: &mut Snapshot, theirs: &Snapshot) {
 }
 
 fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot {
-    let frame = RamFrameStateView::new(ram);
+    let frame = FrameState::load_from_ram(ram);
+    let display = DisplayState::load_from_ram(ram);
     let player = PlayerStateView::new(ram);
     let world_location = WorldLocationState::load_from_ram(ram);
     let world = WorldStateView::new(ram);
     SemanticSnapshot {
         frame: SemanticFrame {
-            main_module: frame.main_module(),
-            submodule: frame.submodule(),
-            subsubmodule: frame.subsubmodule(),
-            nmi_thread_active: frame.nmi_thread_active(),
-            selected_run_thread: frame.selected_run_thread(),
+            main_module: frame.main_module,
+            submodule: frame.submodule,
+            subsubmodule: frame.subsubmodule,
+            nmi_thread_active: display.nmi_thread_active,
+            selected_run_thread: if display.nmi_thread_uses_poly_stack() {
+                RUN_POLY_THREAD
+            } else {
+                RUN_MAIN_THREAD
+            },
         },
         player: SemanticPlayer {
             x: player.x(),
