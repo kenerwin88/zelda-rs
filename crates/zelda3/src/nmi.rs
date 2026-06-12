@@ -64,8 +64,8 @@ impl ZeldaState {
         if !self.display_state().core_updates_are_disabled() {
             self.nmi_core_link_graphics_update();
 
-            let src_addr = self.display_nmi_view().animated_tile_data_src() as usize;
-            let dst = self.display_nmi_view().animated_tile_vram_addr() as usize;
+            let src_addr = self.display_state().animated_tile_data_source_usize();
+            let dst = self.display_state().animated_tile_vram_destination_usize();
             if dst + 0x200 <= self.ppu.vram.len() && src_addr + 0x400 <= self.ram.len() {
                 let data = self.display_nmi_view().animated_tile_data().to_vec();
                 for i in 0..0x200 {
@@ -751,6 +751,7 @@ mod tests {
         write_le_u16(&mut s.ram, ANIMATED_TILE_VRAM_ADDR, 0x6000);
         write_le_u16(&mut s.ram, 0, 0x1234);
         write_le_u16(&mut s.ram, 2, 0x5678);
+        s.sync_native_game_state_from_ram();
 
         s.nmi_do_updates();
 

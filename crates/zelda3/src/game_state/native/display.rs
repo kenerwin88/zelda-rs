@@ -41,6 +41,8 @@ pub(crate) struct DisplayState {
     pub(crate) message_dma_destination_address: u16,
     pub(crate) overworld_fixed_color_adjustment: u8,
     pub(crate) travel_bird_tile_offset: u8,
+    pub(crate) animated_tile_data_source_address: u16,
+    pub(crate) animated_tile_vram_destination_address: u16,
 }
 
 impl DisplayState {
@@ -80,6 +82,8 @@ impl DisplayState {
             message_dma_destination_address: read_le_u16(ram, MESSAGE_DMA_DST_ADDR),
             overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
             travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
+            animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
+            animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
         }
     }
 
@@ -122,6 +126,16 @@ impl DisplayState {
         );
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
+        write_le_u16(
+            ram,
+            ANIMATED_TILE_DATA_SRC,
+            self.animated_tile_data_source_address,
+        );
+        write_le_u16(
+            ram,
+            ANIMATED_TILE_VRAM_ADDR,
+            self.animated_tile_vram_destination_address,
+        );
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -202,6 +216,18 @@ impl DisplayState {
 
     pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
         self.travel_bird_tile_offset != 0
+    }
+
+    pub(crate) fn animated_tile_data_source_usize(&self) -> usize {
+        usize::from(self.animated_tile_data_source_address)
+    }
+
+    pub(crate) fn has_animated_tile_data_source(&self) -> bool {
+        self.animated_tile_data_source_address != 0
+    }
+
+    pub(crate) fn animated_tile_vram_destination_usize(&self) -> usize {
+        usize::from(self.animated_tile_vram_destination_address)
     }
 }
 
@@ -442,6 +468,17 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.travel_bird_tile_offset,
             ram_byte(self.ram, FLAG_TRAVEL_BIRD)
+        );
+    }
+
+    fn debug_assert_animated_tile_upload_metadata_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.animated_tile_data_source_address,
+            read_le_u16(self.ram, ANIMATED_TILE_DATA_SRC)
+        );
+        debug_assert_eq!(
+            self.display.animated_tile_vram_destination_address,
+            read_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR)
         );
     }
 
@@ -869,5 +906,17 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.travel_bird_tile_offset = value;
         self.ram[FLAG_TRAVEL_BIRD] = value;
         self.debug_assert_travel_bird_tile_offset_matches_ram();
+    }
+
+    pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
+        self.display.animated_tile_data_source_address = value;
+        write_le_u16(self.ram, ANIMATED_TILE_DATA_SRC, value);
+        self.debug_assert_animated_tile_upload_metadata_matches_ram();
+    }
+
+    pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
+        self.display.animated_tile_vram_destination_address = value;
+        write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
+        self.debug_assert_animated_tile_upload_metadata_matches_ram();
     }
 }

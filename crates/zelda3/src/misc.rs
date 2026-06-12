@@ -1292,7 +1292,7 @@ impl ZeldaState {
             let source_offset = self
                 .player_state_view_mut()
                 .advance_link_dma_source_offset();
-            self.set_animated_tile_data_src(0xa680u16.wrapping_add(source_offset));
+            self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
         }
         if self.player_state_view_mut().decrement_link_dma_countdown() == 0 {
             let t = self.player_state_view_mut().advance_link_dma_tile_offset();

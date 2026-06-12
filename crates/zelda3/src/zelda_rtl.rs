@@ -2450,8 +2450,14 @@ impl ZeldaState {
         VramLoadStateViewMut::new(&mut self.ram).reset_bg_tile_animation_countdown(value);
     }
 
-    pub(crate) fn set_animated_tile_data_src(&mut self, value: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_animated_tile_data_src(value);
+    pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_animated_tile_data_source_address(value);
+    }
+
+    pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_animated_tile_vram_destination_address(value);
     }
 
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
@@ -3570,11 +3576,7 @@ impl ZeldaState {
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
-        } else if self
-            .native_ram_bridge_view()
-            .word_at(ANIMATED_TILE_DATA_SRC)
-            == 0
-        {
+        } else if !self.display_state().has_animated_tile_data_source() {
             self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
         }
     }
@@ -3705,11 +3707,7 @@ impl ZeldaState {
             self.capture_display_snapshot();
             return;
         }
-        if self
-            .native_ram_bridge_view()
-            .word_at(ANIMATED_TILE_DATA_SRC)
-            == 0
-        {
+        if !self.display_state().has_animated_tile_data_source() {
             self.zelda_initialization_code();
         }
         if run_what & crate::RUN_POLY != 0 {
@@ -4774,11 +4772,7 @@ impl ZeldaState {
                     1,
                 );
             }
-            if self
-                .native_ram_bridge_view()
-                .word_at(ANIMATED_TILE_DATA_SRC)
-                != 0
-            {
+            if self.display_state().has_animated_tile_data_source() {
                 if self.system_signals_view().bugs_fixed() < BUGFIX_LATEST {
                     if !self.rom_startup_timing {
                         self.system_signals_view_mut().set_bugs_fixed(BUGFIX_LATEST);
@@ -5175,8 +5169,7 @@ impl ZeldaState {
     fn zelda_initialization_code(&mut self) {
         self.sound_load_intro_song_bank();
         self.startup_initialize_memory();
-        self.native_ram_bridge_view_mut()
-            .set_word_at(ANIMATED_TILE_DATA_SRC, 0xa680);
+        self.set_animated_tile_data_source_address(0xa680);
         self.native_ram_bridge_view_mut()
             .set_word_at(DMA_SOURCE_ADDR_9, 0xb280);
         self.native_ram_bridge_view_mut()
@@ -6897,7 +6890,7 @@ mod tests {
     fn zelda_run_frame_sanitizes_inputs_and_records_features() {
         let mut state = ZeldaState::new();
         state.wanted_zelda_features = 0x1000;
-        write_le_u16(&mut state.ram, ANIMATED_TILE_DATA_SRC, 1);
+        state.set_animated_tile_data_source_address(1);
 
         let was_replay = state.zelda_run_frame(0x30 | 0xc0 | 1);
 
@@ -8922,6 +8915,10 @@ mod tests {
         state.run_frame_internal(0, crate::RUN_MAIN);
 
         assert_eq!(read_le_u16(&state.ram, ANIMATED_TILE_DATA_SRC), 0xa680);
+        assert_eq!(
+            state.display_state().animated_tile_data_source_address,
+            0xa680
+        );
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0xb280);
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0xb2e0);
         assert_eq!(state.display_state().screen_brightness, 15);

@@ -202,6 +202,8 @@ mod tests {
         ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
+        write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
+        write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
 
         let mut display = DisplayState::load_from_ram(&ram);
         assert_eq!(display.screen_brightness, 0x0f);
@@ -256,6 +258,11 @@ mod tests {
             display.current_vram_upload_data_address(),
             VRAM_UPLOAD_DATA + 0x0124
         );
+        assert_eq!(display.animated_tile_data_source_address, 0xa680);
+        assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
+        assert!(display.has_animated_tile_data_source());
+        assert_eq!(display.animated_tile_vram_destination_address, 0x3b00);
+        assert_eq!(display.animated_tile_vram_destination_usize(), 0x3b00);
 
         display.screen_brightness = 0x80;
         display.nmi_update_latch = 0;
@@ -287,6 +294,8 @@ mod tests {
         display.mosaic_direction = 0;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
+        display.animated_tile_data_source_address = 0xac80;
+        display.animated_tile_vram_destination_address = 0x3c00;
         display.write_to_ram(&mut ram);
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -319,6 +328,8 @@ mod tests {
         assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
+        assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
+        assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
     }
 
     #[test]
@@ -376,6 +387,8 @@ mod tests {
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x20;
         ram[FLAG_TRAVEL_BIRD] = 0x04;
+        write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
+        write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
 
         let mut display = DisplayState::default();
         {
@@ -446,6 +459,8 @@ mod tests {
             view.set_message_dma_destination_address(0x6080);
             view.set_overworld_fixed_color_adjustment(0x30);
             view.set_travel_bird_tile_offset(0x08);
+            view.set_animated_tile_data_source_address(0xac80);
+            view.set_animated_tile_vram_destination_address(0x3c00);
         }
 
         assert_eq!(display.screen_brightness, 0x80);
@@ -493,6 +508,11 @@ mod tests {
         assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
         assert_eq!(display.travel_bird_tile_offset, 0x08);
         assert!(display.has_travel_bird_tile_upload());
+        assert_eq!(display.animated_tile_data_source_address, 0xac80);
+        assert_eq!(display.animated_tile_data_source_usize(), 0xac80);
+        assert!(display.has_animated_tile_data_source());
+        assert_eq!(display.animated_tile_vram_destination_address, 0x3c00);
+        assert_eq!(display.animated_tile_vram_destination_usize(), 0x3c00);
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 1);
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
@@ -528,5 +548,7 @@ mod tests {
         assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
         assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);
         assert_eq!(ram[FLAG_TRAVEL_BIRD], 0x08);
+        assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
+        assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
     }
 }

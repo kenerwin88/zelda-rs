@@ -1406,8 +1406,7 @@ impl ZeldaState {
         self.graphics_scratch_view_mut()
             .rotate_animated_dungeon_tile_planes();
 
-        self.display_nmi_view_mut()
-            .set_animated_tile_vram_addr(0x3b00);
+        self.set_animated_tile_vram_destination_address(0x3b00);
     }
 
     pub(super) fn decomp_spr_to_ram(&mut self, dst: usize, mut gfx: usize) -> usize {
@@ -1748,8 +1747,7 @@ impl ZeldaState {
             .graphics_scratch_view_mut()
             .primary_decomp_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
-        self.display_nmi_view_mut()
-            .set_animated_tile_vram_addr(0x3c00);
+        self.set_animated_tile_vram_destination_address(0x3c00);
     }
 
     pub(super) fn LoadItemGFX_Auxiliary(&mut self) {
