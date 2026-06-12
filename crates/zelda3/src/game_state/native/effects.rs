@@ -1,5 +1,7 @@
 use crate::game_state::constants::{
     DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
+    QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
+    QUAKE_SCREEN_SHAKE_Y,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -9,6 +11,7 @@ const DOOR_DEBRIS_BANK_LEN: usize = 10;
 pub(crate) struct EffectState {
     pub(crate) door_debris: DoorDebrisState,
     pub(crate) angle_scratch: EffectAngleScratchState,
+    pub(crate) quake_spell: QuakeSpellState,
 }
 
 impl EffectState {
@@ -16,12 +19,14 @@ impl EffectState {
         Self {
             door_debris: DoorDebrisState::load_from_ram(ram),
             angle_scratch: EffectAngleScratchState::load_from_ram(ram),
+            quake_spell: QuakeSpellState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.door_debris.write_to_ram(ram);
         self.angle_scratch.write_to_ram(ram);
+        self.quake_spell.write_to_ram(ram);
     }
 }
 
@@ -142,6 +147,125 @@ impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
     pub(crate) fn set_radial_radius(&mut self, value: u8) {
         self.state.set_radial_radius(value);
         self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct QuakeSpellState {
+    active_bolt_limit: u8,
+    pending_step: u8,
+    origin_x: u16,
+    origin_y: u16,
+    screen_shake_y: u16,
+}
+
+impl QuakeSpellState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            active_bolt_limit: ram.get(QUAKE_ACTIVE_BOLT_LIMIT).copied().unwrap_or(0),
+            pending_step: ram.get(QUAKE_PENDING_STEP).copied().unwrap_or(0),
+            origin_x: read_le_u16(ram, QUAKE_ORIGIN_X),
+            origin_y: read_le_u16(ram, QUAKE_ORIGIN_Y),
+            screen_shake_y: read_le_u16(ram, QUAKE_SCREEN_SHAKE_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[QUAKE_ACTIVE_BOLT_LIMIT] = self.active_bolt_limit;
+        ram[QUAKE_PENDING_STEP] = self.pending_step;
+        write_le_u16(ram, QUAKE_ORIGIN_X, self.origin_x);
+        write_le_u16(ram, QUAKE_ORIGIN_Y, self.origin_y);
+        write_le_u16(ram, QUAKE_SCREEN_SHAKE_Y, self.screen_shake_y);
+    }
+
+    pub(crate) fn active_bolt_limit(&self) -> u8 {
+        self.active_bolt_limit
+    }
+
+    pub(crate) fn pending_step(&self) -> u8 {
+        self.pending_step
+    }
+
+    pub(crate) fn origin_x(&self) -> u16 {
+        self.origin_x
+    }
+
+    pub(crate) fn origin_y(&self) -> u16 {
+        self.origin_y
+    }
+
+    pub(crate) fn screen_shake_y(&self) -> u16 {
+        self.screen_shake_y
+    }
+
+    pub(crate) fn set_active_bolt_limit(&mut self, value: u8) {
+        self.active_bolt_limit = value;
+    }
+
+    pub(crate) fn set_pending_step(&mut self, value: u8) {
+        self.pending_step = value;
+    }
+
+    pub(crate) fn set_origin(&mut self, x: u16, y: u16) {
+        self.origin_x = x;
+        self.origin_y = y;
+    }
+
+    pub(crate) fn set_screen_shake_y(&mut self, value: u16) {
+        self.screen_shake_y = value;
+    }
+
+    pub(crate) fn invert_screen_shake_y(&mut self) -> u16 {
+        let value = self.screen_shake_y;
+        self.screen_shake_y = 0u16.wrapping_sub(value);
+        value
+    }
+}
+
+pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
+    state: &'a mut QuakeSpellState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeQuakeSpellBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut QuakeSpellState, ram: &'a mut [u8]) -> Self {
+        *state = QuakeSpellState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, QuakeSpellState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_active_bolt_limit(&mut self, value: u8) {
+        self.state.set_active_bolt_limit(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_pending_step(&mut self, value: u8) {
+        self.state.set_pending_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_origin(&mut self, x: u16, y: u16) {
+        self.state.set_origin(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_screen_shake_y(&mut self, value: u16) {
+        self.state.set_screen_shake_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn invert_screen_shake_y(&mut self) -> u16 {
+        let value = self.state.invert_screen_shake_y();
+        self.sync();
+        value
     }
 }
 

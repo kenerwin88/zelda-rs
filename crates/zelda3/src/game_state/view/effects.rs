@@ -50,69 +50,6 @@ impl<'a> QuakeBoltViewMut<'a> {
     }
 }
 
-pub(crate) struct QuakeSpellScratchView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> QuakeSpellScratchView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn active_bolt_limit(&self) -> u8 {
-        byte(self.ram, QUAKE_ACTIVE_BOLT_LIMIT)
-    }
-
-    pub(crate) fn pending_step(&self) -> u8 {
-        byte(self.ram, QUAKE_PENDING_STEP)
-    }
-
-    pub(crate) fn origin_x(&self) -> u16 {
-        read_le_u16(self.ram, QUAKE_ORIGIN_X)
-    }
-
-    pub(crate) fn origin_y(&self) -> u16 {
-        read_le_u16(self.ram, QUAKE_ORIGIN_Y)
-    }
-
-    pub(crate) fn screen_shake_y(&self) -> u16 {
-        read_le_u16(self.ram, QUAKE_SCREEN_SHAKE_Y)
-    }
-}
-
-pub(crate) struct QuakeSpellScratchViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> QuakeSpellScratchViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_active_bolt_limit(&mut self, value: u8) {
-        self.ram[QUAKE_ACTIVE_BOLT_LIMIT] = value;
-    }
-
-    pub(crate) fn set_pending_step(&mut self, value: u8) {
-        self.ram[QUAKE_PENDING_STEP] = value;
-    }
-
-    pub(crate) fn set_origin(&mut self, x: u16, y: u16) {
-        write_le_u16(self.ram, QUAKE_ORIGIN_X, x);
-        write_le_u16(self.ram, QUAKE_ORIGIN_Y, y);
-    }
-
-    pub(crate) fn set_screen_shake_y(&mut self, value: u16) {
-        write_le_u16(self.ram, QUAKE_SCREEN_SHAKE_Y, value);
-    }
-
-    pub(crate) fn invert_screen_shake_y(&mut self) -> u16 {
-        let value = read_le_u16(self.ram, QUAKE_SCREEN_SHAKE_Y);
-        write_le_u16(self.ram, QUAKE_SCREEN_SHAKE_Y, 0u16.wrapping_sub(value));
-        value
-    }
-}
-
 pub(crate) struct BombosFireColumnView<'a> {
     ram: &'a [u8],
     slot: usize,

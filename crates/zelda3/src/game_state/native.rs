@@ -27,7 +27,7 @@ pub(crate) use display::{
 };
 pub(crate) use effects::{
     DoorDebrisView, EffectAngleScratchState, EffectState, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeQuakeSpellBridgeMut, QuakeSpellState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1364,6 +1364,56 @@ mod tests {
         assert_eq!(ram[EFFECT_ANGLE_WORK + 1], 2);
         assert_eq!(ram[EFFECT_ANGLE_WORK + 4], 12);
         assert_eq!(ram[EFFECT_ANGLE_WORK + 8], 20);
+    }
+
+    #[test]
+    fn quake_spell_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_ACTIVE_BOLT_LIMIT] = 4;
+        ram[QUAKE_PENDING_STEP] = 1;
+        write_le_u16(&mut ram, QUAKE_ORIGIN_X, 0x1234);
+        write_le_u16(&mut ram, QUAKE_ORIGIN_Y, 0x5678);
+        write_le_u16(&mut ram, QUAKE_SCREEN_SHAKE_Y, 3);
+
+        let mut quake = QuakeSpellState::load_from_ram(&ram);
+        assert_eq!(quake.active_bolt_limit(), 4);
+        assert_eq!(quake.pending_step(), 1);
+        assert_eq!(quake.origin_x(), 0x1234);
+        assert_eq!(quake.origin_y(), 0x5678);
+        assert_eq!(quake.screen_shake_y(), 3);
+        assert_eq!(quake.invert_screen_shake_y(), 3);
+        quake.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, QUAKE_SCREEN_SHAKE_Y), 0xfffd);
+    }
+
+    #[test]
+    fn native_quake_spell_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_ACTIVE_BOLT_LIMIT] = 4;
+        ram[QUAKE_PENDING_STEP] = 1;
+        write_le_u16(&mut ram, QUAKE_SCREEN_SHAKE_Y, 5);
+
+        let mut quake = QuakeSpellState::default();
+        {
+            let mut bridge = NativeQuakeSpellBridgeMut::new(&mut quake, &mut ram);
+            bridge.set_active_bolt_limit(2);
+            bridge.set_pending_step(3);
+            bridge.set_origin(0x4567, 0x89ab);
+            assert_eq!(bridge.invert_screen_shake_y(), 5);
+            bridge.set_screen_shake_y(9);
+        }
+
+        assert_eq!(quake.active_bolt_limit(), 2);
+        assert_eq!(quake.pending_step(), 3);
+        assert_eq!(quake.origin_x(), 0x4567);
+        assert_eq!(quake.origin_y(), 0x89ab);
+        assert_eq!(quake.screen_shake_y(), 9);
+        assert_eq!(ram[QUAKE_ACTIVE_BOLT_LIMIT], 2);
+        assert_eq!(ram[QUAKE_PENDING_STEP], 3);
+        assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_X), 0x4567);
+        assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_Y), 0x89ab);
+        assert_eq!(read_le_u16(&ram, QUAKE_SCREEN_SHAKE_Y), 9);
     }
 
     #[test]

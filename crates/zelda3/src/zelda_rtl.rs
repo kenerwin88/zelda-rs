@@ -68,28 +68,28 @@ use crate::game_state::{
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
-    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
-    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
-    SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
+    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpriteBattleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSwimAccelerationBridgeMut,
+    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
+    OverworldMap16SourcePage, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
+    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
+    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
+    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView,
+    QuakeBoltViewMut, QuakeSpellState, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
     SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
@@ -3572,12 +3572,12 @@ impl ZeldaState {
         QuakeBoltViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn quake_spell_scratch_view(&self) -> QuakeSpellScratchView<'_> {
-        QuakeSpellScratchView::new(&self.ram)
+    pub(crate) fn quake_spell_scratch_view(&self) -> &QuakeSpellState {
+        &self.game_state.effects.quake_spell
     }
 
-    pub(crate) fn quake_spell_scratch_view_mut(&mut self) -> QuakeSpellScratchViewMut<'_> {
-        QuakeSpellScratchViewMut::new(&mut self.ram)
+    pub(crate) fn quake_spell_scratch_view_mut(&mut self) -> NativeQuakeSpellBridgeMut<'_> {
+        NativeQuakeSpellBridgeMut::new(&mut self.game_state.effects.quake_spell, &mut self.ram)
     }
 
     pub(crate) fn bombos_fire_column_view(&self, slot: usize) -> BombosFireColumnView<'_> {
