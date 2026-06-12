@@ -9,7 +9,7 @@ mod frame;
 mod world;
 
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
-pub(crate) use frame::{FrameState, NativeFrameStateViewMut};
+pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{NativeWorldLocationViewMut, WorldLocationState};
 
 #[cfg(test)]
@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn native_frame_mut_view_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_frame_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[MAIN_MODULE] = 1;
         ram[SUBMODULE] = 2;
@@ -96,16 +96,16 @@ mod tests {
 
         let mut frame = FrameState::default();
         {
-            let mut view = NativeFrameStateViewMut::new(&mut frame, &mut ram);
-            view.increment_submodule();
-            view.set_subsubmodule(9);
-            view.increment_frame_counter();
-            view.save_main_module_for_menu();
-            view.clear_saved_module_for_menu();
-            view.save_submodule_for_menu();
-            view.clear_modal_pause_flag();
-            view.increment_modal_pause_flag();
-            view.set_modal_pause_flag(6);
+            let mut bridge = NativeFrameStateBridgeMut::new(&mut frame, &mut ram);
+            bridge.increment_submodule();
+            bridge.set_subsubmodule(9);
+            bridge.increment_frame_counter();
+            bridge.save_main_module_for_menu();
+            bridge.clear_saved_module_for_menu();
+            bridge.save_submodule_for_menu();
+            bridge.clear_modal_pause_flag();
+            bridge.increment_modal_pause_flag();
+            bridge.set_modal_pause_flag(6);
         }
 
         assert_eq!(frame.main_module, 1);

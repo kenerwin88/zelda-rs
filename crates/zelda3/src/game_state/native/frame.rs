@@ -38,12 +38,12 @@ impl FrameState {
     }
 }
 
-pub(crate) struct NativeFrameStateViewMut<'a> {
+pub(crate) struct NativeFrameStateBridgeMut<'a> {
     frame: &'a mut FrameState,
     ram: &'a mut [u8],
 }
 
-impl<'a> NativeFrameStateViewMut<'a> {
+impl<'a> NativeFrameStateBridgeMut<'a> {
     pub(crate) fn new(frame: &'a mut FrameState, ram: &'a mut [u8]) -> Self {
         *frame = FrameState::load_from_ram(ram);
         Self { frame, ram }

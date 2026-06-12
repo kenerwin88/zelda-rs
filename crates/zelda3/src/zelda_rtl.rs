@@ -59,7 +59,7 @@ use crate::game_state::{
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
-    MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateViewMut,
+    MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadBufferMut,
     NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
     OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
@@ -1903,87 +1903,87 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_main_module(value);
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_main_module_word(value);
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_submodule(value);
     }
 
     pub(crate) fn increment_submodule(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .increment_submodule();
     }
 
     pub(crate) fn decrement_submodule(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .decrement_submodule();
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_subsubmodule(value);
     }
 
     pub(crate) fn increment_subsubmodule(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .increment_subsubmodule();
     }
 
     pub(crate) fn decrement_subsubmodule(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .decrement_subsubmodule();
     }
 
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_frame_counter(value);
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .increment_frame_counter();
     }
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_saved_module_for_menu(value);
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .clear_saved_module_for_menu();
     }
 
     pub(crate) fn save_main_module_for_menu(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .save_main_module_for_menu();
     }
 
     pub(crate) fn save_submodule_for_menu(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .save_submodule_for_menu();
     }
 
     pub(crate) fn clear_modal_pause_flag(&mut self) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .clear_modal_pause_flag();
     }
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .set_modal_pause_flag(value);
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
             .increment_modal_pause_flag()
     }
 
