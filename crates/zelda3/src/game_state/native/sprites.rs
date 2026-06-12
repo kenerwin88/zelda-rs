@@ -1,5 +1,5 @@
 use crate::game_state::constants::{
-    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    DUAL_LAYER_TILE_CACHE, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
     MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
 };
 use crate::types::{read_le_u16, write_le_u16};
@@ -10,6 +10,7 @@ const SPRITE_SLOT_COUNT: usize = 16;
 pub(crate) struct SpriteState {
     pub(crate) maze_game_timer: MazeGameTimerState,
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
+    pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
 }
 
 impl SpriteState {
@@ -17,12 +18,84 @@ impl SpriteState {
         Self {
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
+            dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.maze_game_timer.write_to_ram(ram);
         self.prize_drop_cycle.write_to_ram(ram);
+        self.dual_layer_tile_cache.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DualLayerTileCacheState {
+    tile_types: [u8; SPRITE_SLOT_COUNT],
+}
+
+impl DualLayerTileCacheState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut tile_types = [0; SPRITE_SLOT_COUNT];
+        for (slot, tile_type) in tile_types.iter_mut().enumerate() {
+            *tile_type = ram.get(DUAL_LAYER_TILE_CACHE + slot).copied().unwrap_or(0);
+        }
+        Self { tile_types }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, tile_type) in self.tile_types.iter().copied().enumerate() {
+            ram[DUAL_LAYER_TILE_CACHE + slot] = tile_type;
+        }
+    }
+
+    pub(crate) fn tile_type(&self, slot: usize) -> u8 {
+        self.tile_types.get(slot).copied().unwrap_or(0)
+    }
+}
+
+pub(crate) struct DualLayerTileCacheView<'a> {
+    state: &'a DualLayerTileCacheState,
+}
+
+impl<'a> DualLayerTileCacheView<'a> {
+    pub(crate) fn new(state: &'a DualLayerTileCacheState) -> Self {
+        Self { state }
+    }
+
+    pub(crate) fn tile_type(&self, slot: usize) -> u8 {
+        self.state.tile_type(slot)
+    }
+}
+
+pub(crate) struct NativeDualLayerTileCacheBridgeMut<'a> {
+    state: &'a mut DualLayerTileCacheState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDualLayerTileCacheBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DualLayerTileCacheState, ram: &'a mut [u8]) -> Self {
+        *state = DualLayerTileCacheState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) {
+        if let Some(tile_type) = self.state.tile_types.get_mut(slot) {
+            *tile_type = value;
+            self.sync();
+        }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DualLayerTileCacheState::load_from_ram(self.ram)
+        );
     }
 }
 

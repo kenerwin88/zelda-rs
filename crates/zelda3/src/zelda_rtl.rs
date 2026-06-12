@@ -37,9 +37,9 @@ use crate::game_state::{
     CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView,
     DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DrawScratchPositionView,
-    DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
-    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
+    DrawScratchPositionViewMut, DualLayerTileCacheView, DungeonEntranceBackupViewMut,
+    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView,
+    DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
     DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
     DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
     EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
@@ -57,10 +57,11 @@ use crate::game_state::{
     NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
     NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeEndingCreditBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -3987,11 +3988,16 @@ impl ZeldaState {
     }
 
     pub(crate) fn dual_layer_tile_cache_view(&self) -> DualLayerTileCacheView<'_> {
-        DualLayerTileCacheView::new(&self.ram)
+        DualLayerTileCacheView::new(&self.game_state.sprites.dual_layer_tile_cache)
     }
 
-    pub(crate) fn dual_layer_tile_cache_view_mut(&mut self) -> DualLayerTileCacheViewMut<'_> {
-        DualLayerTileCacheViewMut::new(&mut self.ram)
+    pub(crate) fn dual_layer_tile_cache_view_mut(
+        &mut self,
+    ) -> NativeDualLayerTileCacheBridgeMut<'_> {
+        NativeDualLayerTileCacheBridgeMut::new(
+            &mut self.game_state.sprites.dual_layer_tile_cache,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn sprite_slot_view(&self, slot: usize) -> SpriteSlotView<'_> {

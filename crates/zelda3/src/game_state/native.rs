@@ -54,7 +54,8 @@ pub(crate) use player::{
     SpecialExitPositionView, SwimAccelerationView,
 };
 pub(crate) use sprites::{
-    MazeGameTimerView, NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut, SpriteState,
+    DualLayerTileCacheView, MazeGameTimerView, NativeDualLayerTileCacheBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut, SpriteState,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -82,7 +83,7 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 #[cfg(test)]
 use player::{SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
-use sprites::{MazeGameTimerState, PrizeDropCycleState};
+use sprites::{DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -700,6 +701,41 @@ mod tests {
 
         assert_eq!(cycle.next_index_for_slot(3), 1);
         assert_eq!(ram[PRIZE_DROP_CYCLE + 3], 1);
+    }
+
+    #[test]
+    fn dual_layer_tile_cache_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUAL_LAYER_TILE_CACHE] = 0x1c;
+        ram[DUAL_LAYER_TILE_CACHE + 15] = 0x2a;
+
+        let cache = DualLayerTileCacheState::load_from_ram(&ram);
+        assert_eq!(cache.tile_type(0), 0x1c);
+        assert_eq!(cache.tile_type(15), 0x2a);
+        assert_eq!(cache.tile_type(16), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        cache.write_to_ram(&mut projected);
+        assert_eq!(DualLayerTileCacheState::load_from_ram(&projected), cache);
+        assert_eq!(projected[DUAL_LAYER_TILE_CACHE], 0x1c);
+        assert_eq!(projected[DUAL_LAYER_TILE_CACHE + 15], 0x2a);
+    }
+
+    #[test]
+    fn native_dual_layer_tile_cache_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUAL_LAYER_TILE_CACHE + 4] = 0x1c;
+
+        let mut cache = DualLayerTileCacheState::default();
+        {
+            let mut bridge = NativeDualLayerTileCacheBridgeMut::new(&mut cache, &mut ram);
+            bridge.set_tile_type(4, 0x2a);
+            bridge.set_tile_type(18, 0x7f);
+        }
+
+        assert_eq!(cache.tile_type(4), 0x2a);
+        assert_eq!(cache.tile_type(18), 0);
+        assert_eq!(ram[DUAL_LAYER_TILE_CACHE + 4], 0x2a);
     }
 
     #[test]

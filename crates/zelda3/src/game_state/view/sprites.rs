@@ -1213,11 +1213,11 @@ impl<'a> PrizeDropCycleRawViewMut<'a> {
     }
 }
 
-pub(crate) struct DualLayerTileCacheView<'a> {
+pub(crate) struct DualLayerTileCacheRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> DualLayerTileCacheView<'a> {
+impl<'a> DualLayerTileCacheRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -1227,11 +1227,11 @@ impl<'a> DualLayerTileCacheView<'a> {
     }
 }
 
-pub(crate) struct DualLayerTileCacheViewMut<'a> {
+pub(crate) struct DualLayerTileCacheRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> DualLayerTileCacheViewMut<'a> {
+impl<'a> DualLayerTileCacheRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
