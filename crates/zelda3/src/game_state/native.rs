@@ -49,9 +49,9 @@ pub(crate) use messaging::{
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SharedMessageTimerState,
-    VwfRenderState,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SelectFileMenuState,
+    SharedMessageTimerState, VwfRenderState,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -185,11 +185,11 @@ impl GameState {
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
+        self.messaging.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.effects.write_to_ram(ram);
         self.ending.write_to_ram(ram);
-        self.messaging.write_to_ram(ram);
         self.oam.write_to_ram(ram);
     }
 }
@@ -3741,6 +3741,93 @@ mod tests {
 
         assert_eq!(message_index.value(), 0x0140);
         assert_eq!(read_le_u16(&ram, DIALOGUE_MESSAGE_INDEX), 0x0140);
+    }
+
+    #[test]
+    fn select_file_menu_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SELECTFILE_SAVE_SLOT_FLAGS, 1);
+        write_le_u16(&mut ram, SELECTFILE_SAVE_SLOT_FLAGS + 2, 2);
+        write_le_u16(&mut ram, SELECTFILE_SAVE_SLOT_FLAGS + 4, 3);
+        ram[SELECT_FILE_CURSOR_WORK] = 4;
+        ram[SELECT_FILE_TRANSITION_WORK] = 7;
+        write_le_u16(&mut ram, SELECT_FILE_TARGET_WORK, 0x1234);
+        write_le_u16(&mut ram, SELECT_FILE_COPY_SOURCE_SLOT_X2, 0x1204);
+        ram[SELECT_FILE_REMEMBERED_CURSOR] = 2;
+        write_le_u16(&mut ram, SELECT_FILE_NAME_SCROLL_X, 0x01f0);
+        ram[SELECT_FILE_NAME_COLUMN] = 5;
+        ram[SELECT_FILE_NAME_CURSOR_Y] = 0x83;
+        ram[SELECT_FILE_NAME_SLOT] = 3;
+        ram[SELECT_FILE_NAME_SCROLL_X_STEP] = 8;
+        ram[SELECT_FILE_NAME_SCROLL_Y_STEP] = 9;
+        ram[SELECT_FILE_NAME_ROW] = 6;
+        ram[SELECT_FILE_NAME_SCROLL_X_DIRECTION] = 1;
+
+        let mut menu = SelectFileMenuState::load_from_ram(&ram);
+        assert_eq!(menu.save_slot_flags(), [1, 2, 3]);
+        assert!(menu.any_save_slot_flag());
+        assert_eq!(menu.cursor(), 4);
+        assert_eq!(menu.choice(0), 0x34);
+        assert_eq!(menu.target_word(), 0x1234);
+        assert_eq!(menu.copy_source_slot_x2(), 0x1204);
+        assert_eq!(menu.copy_source_slot(), 0x0902);
+        assert_eq!(menu.name_scroll_x(), 0x01f0);
+        assert!(menu.is_name_scrolling());
+        menu.clear_name_entry_state();
+        menu.write_to_ram(&mut ram);
+
+        assert_eq!(ram[SELECT_FILE_NAME_COLUMN], 0);
+        assert_eq!(ram[SELECT_FILE_NAME_SLOT], 0);
+        assert_eq!(ram[SELECT_FILE_NAME_ROW], 0);
+        assert_eq!(ram[SELECT_FILE_CHOICE_WORK], 0);
+        assert_eq!(ram[SELECT_FILE_COPY_SOURCE_SLOT_X2], 0);
+        assert_eq!(ram[SELECT_FILE_COPY_SOURCE_SLOT_X2 + 1], 0x12);
+        assert_eq!(ram[SELECT_FILE_NAME_CURSOR_Y], 0x83);
+        assert_eq!(read_le_u16(&ram, SELECT_FILE_NAME_SCROLL_X), 0x01f0);
+    }
+
+    #[test]
+    fn native_select_file_menu_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SELECT_FILE_CURSOR_WORK] = 0xff;
+        ram[SELECT_FILE_NAME_SLOT] = 0;
+        ram[SELECT_FILE_NAME_CURSOR_Y] = 0x80;
+        ram[SELECT_FILE_NAME_SCROLL_X_STEP] = 0xfe;
+
+        let mut menu = SelectFileMenuState::default();
+        {
+            let mut bridge = NativeSelectFileMenuBridgeMut::new(&mut menu, &mut ram);
+            assert_eq!(bridge.increment_cursor(), 0);
+            bridge.remember_current_cursor();
+            bridge.set_cursor(3);
+            bridge.restore_remembered_cursor();
+            bridge.set_target_word(0x1234);
+            bridge.set_copy_source_slot(2);
+            assert_eq!(bridge.move_name_slot_left_wrapped(), 5);
+            assert_eq!(bridge.move_name_slot_right_wrapped(), 0);
+            assert!(bridge.step_name_cursor_y_toward(0x84));
+            assert_eq!(bridge.advance_name_scroll_x_step_by(4), 2);
+            bridge.mark_save_slot_present(1);
+            bridge.clear_transition_scratch();
+        }
+
+        assert_eq!(menu.cursor(), 0);
+        assert_eq!(menu.remembered_cursor(), 0);
+        assert_eq!(menu.target_word(), 0x1234);
+        assert_eq!(menu.copy_source_slot_x2(), 4);
+        assert_eq!(menu.name_slot(), 0);
+        assert_eq!(menu.name_cursor_y(), 0x82);
+        assert_eq!(menu.name_scroll_x_step(), 2);
+        assert_eq!(menu.save_slot_flag(1), 1);
+        assert_eq!(ram[SELECT_FILE_CURSOR_WORK], 0);
+        assert_eq!(ram[SELECT_FILE_REMEMBERED_CURSOR], 0);
+        assert_eq!(read_le_u16(&ram, SELECT_FILE_TARGET_WORK), 0x1234);
+        assert_eq!(read_le_u16(&ram, SELECT_FILE_COPY_SOURCE_SLOT_X2), 4);
+        assert_eq!(ram[SELECT_FILE_NAME_SLOT], 0);
+        assert_eq!(ram[SELECT_FILE_NAME_CURSOR_Y], 0x82);
+        assert_eq!(ram[SELECT_FILE_NAME_SCROLL_X_STEP], 2);
+        assert_eq!(read_le_u16(&ram, SELECTFILE_SAVE_SLOT_FLAGS + 2), 1);
+        assert_eq!(ram[SELECT_FILE_TRANSITION_WORK], 0);
     }
 
     #[test]

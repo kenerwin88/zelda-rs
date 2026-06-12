@@ -69,8 +69,9 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut,
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -86,17 +87,17 @@ use crate::game_state::{
     PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellState,
     RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
     SaveProgressViewMut, ScratchCounterState, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireState,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
-    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
-    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
-    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
-    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView,
+    SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
+    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
+    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3929,12 +3930,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn select_file_scratch_view(&self) -> SelectFileScratchView<'_> {
-        SelectFileScratchView::new(&self.ram)
+    pub(crate) fn select_file_scratch_view(&self) -> &SelectFileMenuState {
+        &self.game_state.messaging.select_file_menu
     }
 
-    pub(crate) fn select_file_scratch_view_mut(&mut self) -> SelectFileScratchViewMut<'_> {
-        SelectFileScratchViewMut::new(&mut self.ram)
+    pub(crate) fn select_file_scratch_view_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
+        NativeSelectFileMenuBridgeMut::new(
+            &mut self.game_state.messaging.select_file_menu,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn arrghus_puff_home_view(&self, puff_slot: usize) -> ArrghusPuffHomeView<'_> {

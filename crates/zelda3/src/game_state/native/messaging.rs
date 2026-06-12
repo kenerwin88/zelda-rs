@@ -6,6 +6,337 @@ const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0x400;
 const DIALOGUE_POINTER_COUNT: usize = 398;
 const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
 const VWF_TILE_BUFFER_LEN: usize = 6 * 21 * 2;
+const SELECT_FILE_CHOICE_WORK_LEN: usize = 4;
+const SELECT_FILE_SAVE_SLOT_COUNT: usize = 3;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SelectFileMenuState {
+    save_slot_flags: [u16; SELECT_FILE_SAVE_SLOT_COUNT],
+    cursor: u8,
+    transition_scratch: u8,
+    choice_work: [u8; SELECT_FILE_CHOICE_WORK_LEN],
+    remembered_cursor: u8,
+    name_scroll_x: u16,
+    name_column: u8,
+    name_cursor_y: u8,
+    name_slot: u8,
+    name_scroll_x_step: u8,
+    name_scroll_y_step: u8,
+    name_row: u8,
+    name_scroll_x_direction: u8,
+}
+
+impl SelectFileMenuState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut choice_work = [0; SELECT_FILE_CHOICE_WORK_LEN];
+        for (index, value) in choice_work.iter_mut().enumerate() {
+            *value = ram
+                .get(SELECT_FILE_CHOICE_WORK + index)
+                .copied()
+                .unwrap_or(0);
+        }
+
+        let mut save_slot_flags = [0; SELECT_FILE_SAVE_SLOT_COUNT];
+        for (slot, flag) in save_slot_flags.iter_mut().enumerate() {
+            *flag = read_le_u16(ram, SELECTFILE_SAVE_SLOT_FLAGS + slot * 2);
+        }
+
+        Self {
+            save_slot_flags,
+            cursor: ram.get(SELECT_FILE_CURSOR_WORK).copied().unwrap_or(0),
+            transition_scratch: ram.get(SELECT_FILE_TRANSITION_WORK).copied().unwrap_or(0),
+            choice_work,
+            remembered_cursor: ram.get(SELECT_FILE_REMEMBERED_CURSOR).copied().unwrap_or(0),
+            name_scroll_x: read_le_u16(ram, SELECT_FILE_NAME_SCROLL_X),
+            name_column: ram.get(SELECT_FILE_NAME_COLUMN).copied().unwrap_or(0),
+            name_cursor_y: ram.get(SELECT_FILE_NAME_CURSOR_Y).copied().unwrap_or(0),
+            name_slot: ram.get(SELECT_FILE_NAME_SLOT).copied().unwrap_or(0),
+            name_scroll_x_step: ram
+                .get(SELECT_FILE_NAME_SCROLL_X_STEP)
+                .copied()
+                .unwrap_or(0),
+            name_scroll_y_step: ram
+                .get(SELECT_FILE_NAME_SCROLL_Y_STEP)
+                .copied()
+                .unwrap_or(0),
+            name_row: ram.get(SELECT_FILE_NAME_ROW).copied().unwrap_or(0),
+            name_scroll_x_direction: ram
+                .get(SELECT_FILE_NAME_SCROLL_X_DIRECTION)
+                .copied()
+                .unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, flag) in self.save_slot_flags.iter().copied().enumerate() {
+            write_le_u16(ram, SELECTFILE_SAVE_SLOT_FLAGS + slot * 2, flag);
+        }
+        ram[SELECT_FILE_CURSOR_WORK] = self.cursor;
+        ram[SELECT_FILE_TRANSITION_WORK] = self.transition_scratch;
+        ram[SELECT_FILE_CHOICE_WORK..SELECT_FILE_CHOICE_WORK + SELECT_FILE_CHOICE_WORK_LEN]
+            .copy_from_slice(&self.choice_work);
+        ram[SELECT_FILE_REMEMBERED_CURSOR] = self.remembered_cursor;
+        write_le_u16(ram, SELECT_FILE_NAME_SCROLL_X, self.name_scroll_x);
+        ram[SELECT_FILE_NAME_COLUMN] = self.name_column;
+        ram[SELECT_FILE_NAME_CURSOR_Y] = self.name_cursor_y;
+        ram[SELECT_FILE_NAME_SLOT] = self.name_slot;
+        ram[SELECT_FILE_NAME_SCROLL_X_STEP] = self.name_scroll_x_step;
+        ram[SELECT_FILE_NAME_SCROLL_Y_STEP] = self.name_scroll_y_step;
+        ram[SELECT_FILE_NAME_ROW] = self.name_row;
+        ram[SELECT_FILE_NAME_SCROLL_X_DIRECTION] = self.name_scroll_x_direction;
+    }
+
+    pub(crate) fn choice(&self, index: usize) -> u8 {
+        self.choice_work.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn cursor(&self) -> u8 {
+        self.cursor
+    }
+
+    pub(crate) fn cursor_usize(&self) -> usize {
+        usize::from(self.cursor())
+    }
+
+    pub(crate) fn remembered_cursor(&self) -> u8 {
+        self.remembered_cursor
+    }
+
+    pub(crate) fn target_word(&self) -> u16 {
+        u16::from(self.choice_work[0]) | (u16::from(self.choice_work[1]) << 8)
+    }
+
+    pub(crate) fn copy_source_slot_x2(&self) -> u16 {
+        u16::from(self.choice_work[2]) | (u16::from(self.choice_work[3]) << 8)
+    }
+
+    pub(crate) fn copy_source_slot(&self) -> usize {
+        usize::from(self.copy_source_slot_x2() >> 1)
+    }
+
+    pub(crate) fn name_scroll_x(&self) -> u16 {
+        self.name_scroll_x
+    }
+
+    pub(crate) fn name_column(&self) -> u8 {
+        self.name_column
+    }
+
+    pub(crate) fn name_column_usize(&self) -> usize {
+        usize::from(self.name_column())
+    }
+
+    pub(crate) fn name_cursor_y(&self) -> u8 {
+        self.name_cursor_y
+    }
+
+    pub(crate) fn name_slot(&self) -> u8 {
+        self.name_slot
+    }
+
+    pub(crate) fn name_slot_usize(&self) -> usize {
+        usize::from(self.name_slot())
+    }
+
+    pub(crate) fn name_scroll_x_step(&self) -> u8 {
+        self.name_scroll_x_step
+    }
+
+    pub(crate) fn name_scroll_y_step(&self) -> u8 {
+        self.name_scroll_y_step
+    }
+
+    pub(crate) fn is_name_scrolling(&self) -> bool {
+        (self.name_scroll_x_step() | self.name_scroll_y_step()) != 0
+    }
+
+    pub(crate) fn name_row(&self) -> u8 {
+        self.name_row
+    }
+
+    pub(crate) fn name_row_usize(&self) -> usize {
+        usize::from(self.name_row())
+    }
+
+    pub(crate) fn name_scroll_x_direction(&self) -> u8 {
+        self.name_scroll_x_direction
+    }
+
+    pub(crate) fn save_slot_flag(&self, slot: usize) -> u16 {
+        self.save_slot_flags.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn save_slot_flags(&self) -> [u16; SELECT_FILE_SAVE_SLOT_COUNT] {
+        self.save_slot_flags
+    }
+
+    pub(crate) fn any_save_slot_flag(&self) -> bool {
+        self.save_slot_flags().into_iter().any(|flag| flag != 0)
+    }
+
+    pub(crate) fn set_choice(&mut self, index: usize, value: u8) {
+        if let Some(choice) = self.choice_work.get_mut(index) {
+            *choice = value;
+        }
+    }
+
+    pub(crate) fn set_cursor(&mut self, value: u8) {
+        self.cursor = value;
+    }
+
+    pub(crate) fn clear_cursor(&mut self) {
+        self.set_cursor(0);
+    }
+
+    pub(crate) fn clear_transition_scratch(&mut self) {
+        self.transition_scratch = 0;
+    }
+
+    pub(crate) fn increment_cursor(&mut self) -> u8 {
+        self.cursor = self.cursor.wrapping_add(1);
+        self.cursor
+    }
+
+    pub(crate) fn decrement_cursor(&mut self) -> u8 {
+        self.cursor = self.cursor.wrapping_sub(1);
+        self.cursor
+    }
+
+    pub(crate) fn set_remembered_cursor(&mut self, value: u8) {
+        self.remembered_cursor = value;
+    }
+
+    pub(crate) fn clear_remembered_cursor(&mut self) {
+        self.set_remembered_cursor(0);
+    }
+
+    pub(crate) fn remember_current_cursor(&mut self) {
+        self.remembered_cursor = self.cursor;
+    }
+
+    pub(crate) fn restore_remembered_cursor(&mut self) {
+        self.cursor = self.remembered_cursor;
+    }
+
+    pub(crate) fn set_target_word(&mut self, value: u16) {
+        self.choice_work[0] = value as u8;
+        self.choice_work[1] = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_copy_source_slot_x2(&mut self, value: u16) {
+        self.choice_work[2] = value as u8;
+        self.choice_work[3] = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_copy_source_slot(&mut self, slot: u8) {
+        self.set_copy_source_slot_x2(u16::from(slot) * 2);
+    }
+
+    pub(crate) fn set_name_scroll_x(&mut self, value: u16) {
+        self.name_scroll_x = value;
+    }
+
+    pub(crate) fn clear_name_entry_state(&mut self) {
+        self.name_column = 0;
+        self.name_slot = 0;
+        self.name_row = 0;
+        self.choice_work[0] = 0;
+        self.choice_work[2] = 0;
+        self.name_cursor_y = 0x83;
+        self.name_scroll_x = 0x01f0;
+    }
+
+    pub(crate) fn set_name_column(&mut self, value: u8) {
+        self.name_column = value;
+    }
+
+    pub(crate) fn set_name_cursor_y(&mut self, value: u8) {
+        self.name_cursor_y = value;
+    }
+
+    pub(crate) fn step_name_cursor_y_toward(&mut self, target_y: u8) -> bool {
+        let diff = self.name_cursor_y.wrapping_sub(target_y);
+        if diff == 0 {
+            return false;
+        }
+        self.name_cursor_y = if diff & 0x80 != 0 {
+            self.name_cursor_y.wrapping_add(2)
+        } else {
+            self.name_cursor_y.wrapping_sub(2)
+        };
+        true
+    }
+
+    pub(crate) fn set_name_slot(&mut self, value: u8) {
+        self.name_slot = value;
+    }
+
+    pub(crate) fn move_name_slot_left_wrapped(&mut self) -> u8 {
+        let next = if self.name_slot == 0 {
+            5
+        } else {
+            self.name_slot.wrapping_sub(1)
+        };
+        self.name_slot = next;
+        next
+    }
+
+    pub(crate) fn move_name_slot_right_wrapped(&mut self) -> u8 {
+        self.name_slot = self.name_slot.wrapping_add(1);
+        if self.name_slot == 6 {
+            self.name_slot = 0;
+        }
+        self.name_slot
+    }
+
+    pub(crate) fn set_name_scroll_x_step(&mut self, value: u8) {
+        self.name_scroll_x_step = value;
+    }
+
+    pub(crate) fn advance_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
+        self.name_scroll_x_step = self.name_scroll_x_step.wrapping_add(value);
+        self.name_scroll_x_step
+    }
+
+    pub(crate) fn set_name_scroll_y_step(&mut self, value: u8) {
+        self.name_scroll_y_step = value;
+    }
+
+    pub(crate) fn clear_name_scroll_y_step(&mut self) {
+        self.name_scroll_y_step = 0;
+    }
+
+    pub(crate) fn increment_name_scroll_y_step(&mut self) -> u8 {
+        self.name_scroll_y_step = self.name_scroll_y_step.wrapping_add(1);
+        self.name_scroll_y_step
+    }
+
+    pub(crate) fn set_name_row(&mut self, value: u8) {
+        self.name_row = value;
+    }
+
+    pub(crate) fn set_name_scroll_x_direction(&mut self, value: u8) {
+        self.name_scroll_x_direction = value;
+    }
+
+    pub(crate) fn set_save_slot_flag(&mut self, slot: usize, value: u16) {
+        if let Some(flag) = self.save_slot_flags.get_mut(slot) {
+            *flag = value;
+        }
+    }
+
+    pub(crate) fn mark_save_slot_present(&mut self, slot: usize) {
+        self.set_save_slot_flag(slot, 1);
+    }
+
+    pub(crate) fn clear_save_slot_flag(&mut self, slot: usize) {
+        self.set_save_slot_flag(slot, 0);
+    }
+
+    pub(crate) fn clear_save_slot_flags(&mut self) {
+        self.save_slot_flags.fill(0);
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DialogueMessageIndexState {
@@ -609,6 +940,7 @@ impl VwfRenderState {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MessagingState {
+    pub(crate) select_file_menu: SelectFileMenuState,
     pub(crate) dialogue_message_index: DialogueMessageIndexState,
     pub(crate) multiselect_choice: MultiselectChoiceState,
     pub(crate) dialogue_number: DialogueNumberState,
@@ -624,6 +956,7 @@ pub(crate) struct MessagingState {
 impl MessagingState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            select_file_menu: SelectFileMenuState::load_from_ram(ram),
             dialogue_message_index: DialogueMessageIndexState::load_from_ram(ram),
             multiselect_choice: MultiselectChoiceState::load_from_ram(ram),
             dialogue_number: DialogueNumberState::load_from_ram(ram),
@@ -638,6 +971,7 @@ impl MessagingState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.select_file_menu.write_to_ram(ram);
         self.dialogue_message_index.write_to_ram(ram);
         self.multiselect_choice.write_to_ram(ram);
         self.dialogue_number.write_to_ram(ram);
@@ -647,6 +981,194 @@ impl MessagingState {
         self.shared_message_timer.write_to_ram(ram);
         self.render_buffer.write_to_ram(ram);
         self.vwf_render.write_to_ram(ram);
+    }
+}
+
+pub(crate) struct NativeSelectFileMenuBridgeMut<'a> {
+    menu: &'a mut SelectFileMenuState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSelectFileMenuBridgeMut<'a> {
+    pub(crate) fn new(menu: &'a mut SelectFileMenuState, ram: &'a mut [u8]) -> Self {
+        *menu = SelectFileMenuState::load_from_ram(ram);
+        Self { menu, ram }
+    }
+
+    fn sync(&mut self) {
+        self.menu.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.menu, SelectFileMenuState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_choice(&mut self, index: usize, value: u8) {
+        self.menu.set_choice(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_cursor(&mut self, value: u8) {
+        self.menu.set_cursor(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_cursor(&mut self) {
+        self.menu.clear_cursor();
+        self.sync();
+    }
+
+    pub(crate) fn clear_transition_scratch(&mut self) {
+        self.menu.clear_transition_scratch();
+        self.sync();
+    }
+
+    pub(crate) fn increment_cursor(&mut self) -> u8 {
+        let value = self.menu.increment_cursor();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_cursor(&mut self) -> u8 {
+        let value = self.menu.decrement_cursor();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_remembered_cursor(&mut self, value: u8) {
+        self.menu.set_remembered_cursor(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_remembered_cursor(&mut self) {
+        self.menu.clear_remembered_cursor();
+        self.sync();
+    }
+
+    pub(crate) fn remember_current_cursor(&mut self) {
+        self.menu.remember_current_cursor();
+        self.sync();
+    }
+
+    pub(crate) fn restore_remembered_cursor(&mut self) {
+        self.menu.restore_remembered_cursor();
+        self.sync();
+    }
+
+    pub(crate) fn set_target_word(&mut self, value: u16) {
+        self.menu.set_target_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_copy_source_slot_x2(&mut self, value: u16) {
+        self.menu.set_copy_source_slot_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_copy_source_slot(&mut self, slot: u8) {
+        self.menu.set_copy_source_slot(slot);
+        self.sync();
+    }
+
+    pub(crate) fn set_name_scroll_x(&mut self, value: u16) {
+        self.menu.set_name_scroll_x(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_name_entry_state(&mut self) {
+        self.menu.clear_name_entry_state();
+        self.sync();
+    }
+
+    pub(crate) fn set_name_column(&mut self, value: u8) {
+        self.menu.set_name_column(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_name_cursor_y(&mut self, value: u8) {
+        self.menu.set_name_cursor_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn step_name_cursor_y_toward(&mut self, target_y: u8) -> bool {
+        let moved = self.menu.step_name_cursor_y_toward(target_y);
+        self.sync();
+        moved
+    }
+
+    pub(crate) fn set_name_slot(&mut self, value: u8) {
+        self.menu.set_name_slot(value);
+        self.sync();
+    }
+
+    pub(crate) fn move_name_slot_left_wrapped(&mut self) -> u8 {
+        let value = self.menu.move_name_slot_left_wrapped();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn move_name_slot_right_wrapped(&mut self) -> u8 {
+        let value = self.menu.move_name_slot_right_wrapped();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_name_scroll_x_step(&mut self, value: u8) {
+        self.menu.set_name_scroll_x_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
+        let step = self.menu.advance_name_scroll_x_step_by(value);
+        self.sync();
+        step
+    }
+
+    pub(crate) fn set_name_scroll_y_step(&mut self, value: u8) {
+        self.menu.set_name_scroll_y_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_name_scroll_y_step(&mut self) {
+        self.menu.clear_name_scroll_y_step();
+        self.sync();
+    }
+
+    pub(crate) fn increment_name_scroll_y_step(&mut self) -> u8 {
+        let step = self.menu.increment_name_scroll_y_step();
+        self.sync();
+        step
+    }
+
+    pub(crate) fn set_name_row(&mut self, value: u8) {
+        self.menu.set_name_row(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_name_scroll_x_direction(&mut self, value: u8) {
+        self.menu.set_name_scroll_x_direction(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_save_slot_flag(&mut self, slot: usize, value: u16) {
+        self.menu.set_save_slot_flag(slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn mark_save_slot_present(&mut self, slot: usize) {
+        self.menu.mark_save_slot_present(slot);
+        self.sync();
+    }
+
+    pub(crate) fn clear_save_slot_flag(&mut self, slot: usize) {
+        self.menu.clear_save_slot_flag(slot);
+        self.sync();
+    }
+
+    pub(crate) fn clear_save_slot_flags(&mut self) {
+        self.menu.clear_save_slot_flags();
+        self.sync();
     }
 }
 
