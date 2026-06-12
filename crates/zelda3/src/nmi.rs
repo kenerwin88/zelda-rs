@@ -6,8 +6,8 @@ impl ZeldaState {
     pub(super) fn interrupt_nmi(&mut self, input: u16) {
         self.interrupt_nmi_audio_parts_locked();
 
-        if self.display_nmi_view().nmi_boolean() == 0 {
-            self.display_nmi_view_mut().set_nmi_boolean(1);
+        if !self.display_state().nmi_update_is_latched() {
+            self.latch_nmi_update();
             self.nmi_do_updates();
             self.nmi_read_joypads(input);
         }

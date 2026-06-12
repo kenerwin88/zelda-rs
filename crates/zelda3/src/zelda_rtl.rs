@@ -279,7 +279,6 @@ const GRAB_WALL_ANIM_STEPS: [u8; 7] = [0, 1, 2, 3, 1, 2, 3];
 const GRAB_WALL_ANIM_TIMER: [u8; 7] = [0, 5, 5, 12, 5, 5, 12];
 const GRAB_WALL_ANIM_STEPS2: [u8; 10] = [0, 1, 2, 3, 4, 0, 1, 2, 3, 0x20];
 
-const NMI_BOOLEAN: usize = 0x12;
 const MAIN_MODULE_INDEX: usize = 0x10;
 const LINK_Y_COORD: usize = 0x20;
 const LINK_X_COORD: usize = 0x22;
@@ -1968,6 +1967,16 @@ impl ZeldaState {
     pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .decrement_screen_brightness()
+    }
+
+    pub(crate) fn latch_nmi_update(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .latch_nmi_update();
+    }
+
+    pub(crate) fn clear_nmi_update_latch(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_nmi_update_latch();
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
@@ -4773,7 +4782,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("game-loop-after-module");
         self.nmi_prepare_sprites();
         self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
-        self.display_nmi_view_mut().set_nmi_boolean(0);
+        self.clear_nmi_update_latch();
         self.replay_trace_ram_watch("game-loop-exit");
     }
 
@@ -8478,14 +8487,14 @@ mod tests {
     }
 
     #[test]
-    fn game_loop_clears_oam_y_slots_and_nmi_boolean() {
+    fn game_loop_clears_oam_y_slots_and_keeps_nmi_update_latched() {
         let mut state = ZeldaState::new();
-        state.ram[NMI_BOOLEAN] = 1;
+        state.latch_nmi_update();
 
         state.run_frame_internal(0, crate::RUN_MAIN);
 
         assert_eq!(state.frame_state().frame_counter, 1);
-        assert_eq!(state.ram[NMI_BOOLEAN], 1);
+        assert!(state.display_state().nmi_update_is_latched());
         for i in 4..128 {
             assert_eq!(state.ram[OAM_BUF + i * 4 + 1], 0xf0);
         }

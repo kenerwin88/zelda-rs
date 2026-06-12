@@ -7197,7 +7197,7 @@ impl ZeldaState {
         }
 
         self.frame_control_view_mut().set_submodule(0);
-        self.display_nmi_view_mut().set_nmi_boolean(0);
+        self.clear_nmi_update_latch();
         self.frame_control_view_mut().set_subsubmodule(0);
     }
 
