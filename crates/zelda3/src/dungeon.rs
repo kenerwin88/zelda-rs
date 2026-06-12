@@ -9593,7 +9593,7 @@ impl ZeldaState {
         }
         self.frame_control_view_mut().set_submodule(7);
         self.frame_control_view_mut().set_subsubmodule(17);
-        self.display_nmi_view_mut().set_chr_halfslot_state(1);
+        self.set_chr_halfslot_request(1);
         self.Graphics_LoadChrHalfSlot();
     }
 

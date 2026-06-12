@@ -3012,9 +3012,9 @@ impl ZeldaState {
         self.intro_initialize_background_settings();
         self.palette_filter_view_mut()
             .set_color_window_selection(0x20);
-        self.display_nmi_view_mut().set_chr_halfslot_state(20);
+        self.set_chr_halfslot_request(20);
         self.graphics_load_chr_half_slot();
-        self.display_nmi_view_mut().clear_chr_halfslot_state();
+        self.clear_chr_halfslot_request();
         self.LoadOWMusicIfNeeded();
 
         for i in 0..17 {

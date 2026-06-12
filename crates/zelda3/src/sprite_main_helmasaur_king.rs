@@ -727,7 +727,7 @@ impl ZeldaState {
             return;
         }
         let j = j as usize;
-        self.display_nmi_view_mut().set_chr_halfslot_state(11);
+        self.set_chr_halfslot_request(11);
         {
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_state(4);

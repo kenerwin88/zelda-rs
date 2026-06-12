@@ -2882,7 +2882,7 @@ impl ZeldaState {
                 quake.set_item_to_link(0);
                 quake.set_timer(2);
             }
-            self.display_nmi_view_mut().set_chr_halfslot_state(13);
+            self.set_chr_halfslot_request(13);
             self.system_signals_view_mut().set_sound_effect_1(0x35);
             for i in 0..5 {
                 self.quake_bolt_view_mut(i).set_phase(0);
@@ -2915,7 +2915,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_custom_spell_animation_active();
             self.ether_orbit_view_mut().set_radius(40);
-            self.display_nmi_view_mut().set_chr_halfslot_state(9);
+            self.set_chr_halfslot_request(9);
             self.ether_orbit_view_mut().set_spin_countdown(0x40);
             self.set_sound_effect_2_with_link_pan(0x26);
             for i in 0..8 {
@@ -3090,7 +3090,7 @@ impl ZeldaState {
         }
 
         self.ancilla_slot_view_mut(k).clear();
-        self.display_nmi_view_mut().set_chr_halfslot_state(1);
+        self.set_chr_halfslot_request(1);
         self.player_state_view_mut().clear_spin_attack_sound_latch();
         self.player_state_view_mut().clear_state_for_spin_attack();
         self.player_state_view_mut()
@@ -3143,7 +3143,7 @@ impl ZeldaState {
         self.bombos_spell_scratch_view_mut()
             .set_blast_release_countdown(0x80);
         self.bombos_fire_column_view_mut(0).set_radial_angle(0x10);
-        self.display_nmi_view_mut().set_chr_halfslot_state(11);
+        self.set_chr_halfslot_request(11);
         self.player_state_view_mut()
             .set_custom_spell_animation_active();
         {
@@ -3399,7 +3399,7 @@ impl ZeldaState {
             }
         }
         self.ancilla_slot_view_mut(kk).clear();
-        self.display_nmi_view_mut().set_chr_halfslot_state(1);
+        self.set_chr_halfslot_request(1);
         self.player_state_view_mut().clear_spin_attack_sound_latch();
         self.player_state_view_mut().clear_state_for_spin_attack();
         self.player_state_view_mut()
@@ -5942,7 +5942,7 @@ impl ZeldaState {
         self.prepare_apply_rumble_to_sprites();
         self.ancilla_slot_view_mut(k).clear();
         self.player_state_view_mut().clear_handler_state();
-        self.display_nmi_view_mut().set_chr_halfslot_state(1);
+        self.set_chr_halfslot_request(1);
         self.player_state_view_mut().clear_spin_attack_sound_latch();
         self.player_state_view_mut().clear_state_for_spin_attack();
         self.player_state_view_mut()

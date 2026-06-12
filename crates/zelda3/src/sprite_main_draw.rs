@@ -25411,7 +25411,7 @@ impl ZeldaState {
                     let j = self.sprite_spawn_dynamically(k, 0x00, &mut info);
                     if j >= 0 {
                         let j = j as usize;
-                        self.display_nmi_view_mut().set_chr_halfslot_state(11);
+                        self.set_chr_halfslot_request(11);
                         let value = 4;
                         self.sprite_slot_view_mut(j).set_state(value);
                         let value = 31;

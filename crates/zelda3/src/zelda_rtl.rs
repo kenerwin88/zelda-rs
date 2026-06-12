@@ -696,7 +696,6 @@ const REPLACEMENT_TILEMAP_LR: usize = 0x5c0;
 const DUNG_INTER_STARCASES: usize = 0x6b0;
 const DUNG_STAIRS_TABLE_1: usize = 0x6b8;
 const DUNG_CHEST_LOCATIONS: usize = 0x6e0;
-const LOAD_CHR_HALFSLOT_EVEN_ODD: usize = 0xaaa;
 const MAIN_TILE_THEME_INDEX: usize = 0x0aa1;
 const AUX_TILE_THEME_INDEX: usize = 0x0aa2;
 const SPRITE_GRAPHICS_INDEX: usize = 0x0aa3;
@@ -2034,6 +2033,21 @@ impl ZeldaState {
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .clear_nmi_copy_packets_request();
+    }
+
+    pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_chr_halfslot_request(value);
+    }
+
+    pub(crate) fn clear_chr_halfslot_request(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_chr_halfslot_request();
+    }
+
+    pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .increment_chr_halfslot_request()
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
@@ -8749,7 +8763,7 @@ mod tests {
         ranges[64] = (0, data.len());
         state.assets = Some(AssetPack { data, ranges });
 
-        state.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 20;
+        state.set_chr_halfslot_request(20);
         state.graphics_load_chr_half_slot();
 
         assert_eq!(state.display_state().nmi_load_target_page(), 0x46);

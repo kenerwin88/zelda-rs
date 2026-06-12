@@ -1567,7 +1567,7 @@ impl ZeldaState {
     }
 
     pub(super) fn graphics_load_chr_half_slot(&mut self) {
-        let k = self.display_nmi_view().chr_halfslot_state();
+        let k = self.display_state().chr_halfslot_request;
         if k == 0 {
             return;
         }
@@ -1587,9 +1587,9 @@ impl ZeldaState {
         }
 
         let mut tilebytes = 0x44;
-        self.display_nmi_view_mut().increment_chr_halfslot_state();
-        if self.display_nmi_view().chr_halfslot_state() & 1 != 0 {
-            self.display_nmi_view_mut().clear_chr_halfslot_state();
+        self.increment_chr_halfslot_request();
+        if self.display_state().chr_halfslot_request & 1 != 0 {
+            self.clear_chr_halfslot_request();
             if k != 18 {
                 tilebytes = 0x46;
                 if k == 2 {

@@ -893,9 +893,9 @@ impl ZeldaState {
                 let value = 2;
                 self.inventory_state_view_mut().set_bottle(i, value);
                 self.messaging_state_view_mut().set_menu_animation_timer(12);
-                self.display_nmi_view_mut().set_chr_halfslot_state(15);
+                self.set_chr_halfslot_request(15);
                 self.Graphics_LoadChrHalfSlot();
-                self.display_nmi_view_mut().clear_chr_halfslot_state();
+                self.clear_chr_halfslot_request();
                 self.frame_control_view_mut().set_submodule(10);
                 return;
             }
@@ -911,9 +911,9 @@ impl ZeldaState {
 
     pub(super) fn Death_Func6(&mut self) {
         self.messaging_state_view_mut().set_menu_animation_timer(12);
-        self.display_nmi_view_mut().set_chr_halfslot_state(15);
+        self.set_chr_halfslot_request(15);
         self.Graphics_LoadChrHalfSlot();
-        self.display_nmi_view_mut().clear_chr_halfslot_state();
+        self.clear_chr_halfslot_request();
         self.palette_buffer_view_mut().set_sp6r_indoors(5);
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
@@ -1135,7 +1135,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_Restore0D(&mut self) {
         if !self.hud_state_view().is_doing_heart_animation() {
-            self.display_nmi_view_mut().set_chr_halfslot_state(1);
+            self.set_chr_halfslot_request(1);
             self.Graphics_LoadChrHalfSlot();
             let fixed_color = self.display_nmi_view().overworld_fixed_color_plusminus();
             self.Dungeon_ApproachFixedColor_variable(fixed_color);
@@ -1425,9 +1425,9 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_LoadSpriteGFX(&mut self) {
-        self.display_nmi_view_mut().set_chr_halfslot_state(0x10);
+        self.set_chr_halfslot_request(0x10);
         self.Graphics_LoadChrHalfSlot();
-        self.display_nmi_view_mut().clear_chr_halfslot_state();
+        self.clear_chr_halfslot_request();
         self.world_state_view_mut().increment_overworld_map_state();
     }
 

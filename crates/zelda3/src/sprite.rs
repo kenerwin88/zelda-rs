@@ -2058,10 +2058,10 @@ impl ZeldaState {
         self.overworld_scroll_delta_view_mut().clear_low();
         self.overworld_scroll_delta_view_mut().set_high(0);
         self.execute_cached_sprites();
-        if self.display_nmi_view().chr_halfslot_state() != 0 {
-            let chr_halfslot_state = self.display_nmi_view().chr_halfslot_state();
+        if self.display_state().has_chr_halfslot_request() {
+            let chr_halfslot_request = self.display_state().chr_halfslot_request;
             self.sprite_system_view_mut()
-                .set_chr_halfslot_state(chr_halfslot_state);
+                .set_chr_halfslot_state(chr_halfslot_request);
         }
     }
 
@@ -4562,7 +4562,7 @@ impl ZeldaState {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 if !(0..16).any(|j| self.sprite_slot_view(j).state() == 4) {
-                    self.display_nmi_view_mut().set_chr_halfslot_state(1);
+                    self.set_chr_halfslot_request(1);
                     if !self.sprite_check_if_screen_is_clear() {
                         self.player_state_view_mut().clear_menu_block();
                     }
@@ -4617,7 +4617,7 @@ impl ZeldaState {
             const SPRITE_EXPLODE_RANDOM_XY: [i8; 16] =
                 [0, 4, 8, 12, -4, -8, -12, 0, 0, 8, 16, 24, -24, -16, -8, 0];
             let j = j as usize;
-            self.display_nmi_view_mut().set_chr_halfslot_state(11);
+            self.set_chr_halfslot_request(11);
             let value = 4;
             self.sprite_slot_view_mut(j).set_state(value);
             let value = 3;
