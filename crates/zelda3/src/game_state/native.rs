@@ -672,6 +672,8 @@ mod tests {
         ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
+        ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF] = 0xfa;
+        ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + 1] = 0xce;
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
@@ -742,6 +744,7 @@ mod tests {
             display.current_vram_upload_data_address(),
             VRAM_UPLOAD_DATA + 0x0124
         );
+        assert_eq!(&display.nmi_vram_packet_buffer(&ram)[..2], &[0xfa, 0xce]);
         assert_eq!(display.message_dma_destination_address, 0x6040);
         assert_eq!(display.message_dma_tile_base, 0x4841);
         assert_eq!(display.message_dma_tile_limit, 0x007f);

@@ -17,10 +17,6 @@ impl<'a> DisplayNmiView<'a> {
         &self.ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B..]
     }
 
-    pub(crate) fn vram_upload_tile_buf(&self) -> &[u8] {
-        &self.ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..]
-    }
-
     pub(crate) fn bg1_wall_top_buffer(&self) -> &[u8] {
         &self.ram[crate::game_state::constants::nmi::BG1_WALL_TOP_BUFFER..]
     }

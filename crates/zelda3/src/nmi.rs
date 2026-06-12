@@ -215,7 +215,10 @@ impl ZeldaState {
     pub(super) fn nmi_upload_tilemap_do_nothing(&mut self) {}
 
     pub(super) fn nmi_update_ow_scroll(&mut self) {
-        let data = self.display_nmi_view().vram_upload_tile_buf().to_vec();
+        let data = self
+            .display_state()
+            .nmi_vram_packet_buffer(&self.ram)
+            .to_vec();
         if data.len() < 2 {
             return;
         }
@@ -393,7 +396,10 @@ impl ZeldaState {
     }
 
     pub(super) fn NMI_CopyPackets(&mut self) {
-        let data = self.display_nmi_view().vram_upload_tile_buf().to_vec();
+        let data = self
+            .display_state()
+            .nmi_vram_packet_buffer(&self.ram)
+            .to_vec();
         let mut pos = 0usize;
         while pos + 4 <= data.len() && read_word_from_slice(&data, pos) != 0xffff {
             let dst = read_word_from_slice(&data, pos) as usize;

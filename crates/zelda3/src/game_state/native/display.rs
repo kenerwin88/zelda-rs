@@ -271,6 +271,10 @@ impl DisplayState {
         &ram[self.vram_upload_buffer_base()..]
     }
 
+    pub(crate) fn nmi_vram_packet_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..]
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
         self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }
