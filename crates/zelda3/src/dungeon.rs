@@ -371,7 +371,7 @@ impl ZeldaState {
             self.ppu_scroll_copy_view_mut().save_exit_bg2_live_scroll();
             self.player_state_view_mut()
                 .store_overworld_exit_position_from_current();
-            let overworld_screen = self.world_state_view().overworld_screen_word();
+            let overworld_screen = self.world_location_state().overworld_screen;
             self.world_state_view_mut()
                 .set_exit_screen_index(overworld_screen);
             copy_le_u16(
@@ -713,7 +713,7 @@ impl ZeldaState {
         const SWAMP_DRAIN_WINDOW_RADIUS_DELTAS: [i8; 16] =
             [-1, -1, -1, 1, -1, -1, -1, 1, -1, -1, -1, 1, -1, -1, -1, 1];
 
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => {
                 if self.dungeon_state_view().water_transition_counter() & 7 == 0 {
                     let k =
@@ -760,7 +760,7 @@ impl ZeldaState {
         const SWAMP_FILL_WINDOW_RIGHT_DELTAS: [i8; 4] = [1, 2, 1, -1];
         const SWAMP_FILL_WINDOW_LEFT_DELTAS: [i8; 4] = [1, -1, 1, -1];
 
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0..=3 => self.Dungeon_FloodSwampWater_PrepTileMap(),
             4..=8 => {
                 if self
@@ -771,7 +771,7 @@ impl ZeldaState {
                     self.dungeon_state_view_mut()
                         .set_water_transition_counter(4);
                     self.frame_control_view_mut().increment_subsubmodule();
-                    let depth = i32::from(self.frame_control_view().subsubmodule()) - 4;
+                    let depth = i32::from(self.frame_state().subsubmodule) - 4;
                     self.dungeon_state_view_mut().set_water_hdma_x_radius(8);
                     self.dungeon_state_view_mut().set_water_hdma_y_radius_alt(0);
                     self.dungeon_state_view_mut().set_water_hdma_y_radius(0x30);
@@ -873,7 +873,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_0D_FloodDam(&mut self) {
         self.FloodDam_PrepFloodHDMA();
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.FloodDam_PrepTiles_init(),
             1..=3 => self.Watergate_Main_State1(),
             4 => self.FloodDam_Expand(),
@@ -883,7 +883,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_0E_01_HandleMusicAndResetProps(&mut self) {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         if (room == 7 || (room == 23 && !self.zelda_is_playing_music_track(17)))
             && self.player_resources_view().pendant_flags() & 1 == 0
         {
@@ -925,7 +925,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_SetBossMusicUnorthodox(&mut self) {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         let mut x = 0x1c;
         if room != 16 {
             x = 0x15;
@@ -945,12 +945,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_0E_SpiralStairs(&mut self) {
-        if self.frame_control_view().subsubmodule() >= 7 {
+        if self.frame_state().subsubmodule >= 7 {
             self.Graphics_IncrementalVRAMUpload();
             self.Dungeon_LoadAttribute_Selectable();
         }
         self.HandleLinkOnSpiralStairs();
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_0E_00_InitPriorityAndScreens(),
             1 => self.Module07_0E_01_HandleMusicAndResetProps(),
             2 => self.Module07_0E_02_ApplyFilterIf(),
@@ -977,7 +977,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_SyncBackgroundsFromSpiralStairs(&mut self) {
         if self.follower_state_view().indicator() == 6
-            && self.world_state_view().dungeon_room_index() == 100
+            && self.world_location_state().dungeon_room_index() == 100
         {
             self.follower_state_view_mut().set_indicator(0);
         }
@@ -1074,7 +1074,7 @@ impl ZeldaState {
         if self.dungeon_state_view().staircase_index() & 4 == 0 {
             self.SpiralStairs_MakeNearbyWallsLowPriority();
         }
-        let dungeon_room_index = self.world_state_view().dungeon_room_index();
+        let dungeon_room_index = self.world_location_state().dungeon_room_index();
         self.dungeon_state_view_mut()
             .set_room_index2(dungeon_room_index);
         self.ResetThenCacheRoomEntryProperties();
@@ -1129,7 +1129,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_PlayMusicIfDefeated(&mut self) {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         let mut x = 0x14;
         if room != 18 {
             x = 0x10;
@@ -1205,7 +1205,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
         self.RoomDraw_DrawAllObjectsCurrentRoom();
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         for offset in (0..0x018c).step_by(4) {
             if self.dungeon_state_view().movable_block_room(offset) == room {
                 let tilemap = self.dungeon_state_view().movable_block_tilemap(offset);
@@ -1263,7 +1263,7 @@ impl ZeldaState {
             .clear_movable_block_was_pushed();
         const ADJUSTMENT: [i16; 2] = [256, -256];
 
-        let submodule = self.frame_control_view().submodule();
+        let submodule = self.frame_state().submodule;
         let bg_h = self.world_state_view().bg2_x();
         let bg_v = self.world_state_view().bg2_y();
         let direction = self.player_state_view().direction() & 0x0f;
@@ -1288,7 +1288,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_loading_bg_offsets(load_h, load_v);
 
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let header = self
             .GetRoomHeaderPtr(room)
             .expect("dungeon room must have a header")
@@ -1463,7 +1463,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_DrawFloorsCurrentRoom(&mut self) {
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let Some(room_layout) = self.dungeon_room_layout(room).map(Vec::from) else {
             return;
         };
@@ -1491,7 +1491,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_DrawAllObjectsCurrentRoom(&mut self) {
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let Some(room_layout) = self.dungeon_room_layout(room).map(Vec::from) else {
             return;
         };
@@ -2399,7 +2399,7 @@ impl ZeldaState {
         match idx {
             0x00 => {
                 if self.dungeon_state_view().header_tag(1) == 27 {
-                    let room = self.world_state_view().dungeon_room() as usize;
+                    let room = self.world_location_state().dungeon_room as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 != 0 {
                         self.RoomDraw_WaterHoldingObject(5, 0x162c, dsto);
                         return;
@@ -2592,7 +2592,7 @@ impl ZeldaState {
             0x32 => self.RoomDraw_1x3_rightwards(src, dsto, 4),
             0x33 => {
                 if self.dungeon_state_view().header_tag(1) == 27 {
-                    let room = self.world_state_view().dungeon_room() as usize;
+                    let room = self.world_location_state().dungeon_room as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0 {
                         self.dungeon_state_view_mut().clear_bg2_properties();
                         self.dungeon_state_view_mut()
@@ -2806,7 +2806,7 @@ impl ZeldaState {
                 self.RoomDraw_4x4(src, dsto);
             }
             0x33 => {
-                let room = self.world_state_view().dungeon_room() as usize;
+                let room = self.world_location_state().dungeon_room as usize;
                 if self.dungeon_state_view().header_tag(1) == 27
                     && self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0
                 {
@@ -2838,7 +2838,7 @@ impl ZeldaState {
                 }
             }
             0x35 => {
-                let room = self.world_state_view().dungeon_room() as usize;
+                let room = self.world_location_state().dungeon_room as usize;
                 if self.dungeon_state_view().header_tag(1) == 27
                     && self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0
                 {
@@ -3969,7 +3969,7 @@ impl ZeldaState {
     pub(super) fn bomb_check_for_destructibles(&mut self, x: u16, y: u16, r14: u8) {
         const DOOR_TYPE_BREAKABLE_WALL: u8 = 0x28;
 
-        if self.frame_control_view().main_module() != 7 {
+        if self.frame_state().main_module != 7 {
             self.overworld_bomb_tiles32x32(x, y);
             return;
         }
@@ -3979,7 +3979,7 @@ impl ZeldaState {
             for step in 0..3 {
                 let a = self.dungeon_state_view().bg2_attr(k);
                 if a == 0x62 {
-                    if self.world_state_view().dungeon_room() == 0x65 {
+                    if self.world_location_state().dungeon_room == 0x65 {
                         let bits = self.dungeon_state_view().savegame_state_bits() | 0x1000;
                         self.dungeon_state_view_mut().set_savegame_state_bits(bits);
                     }
@@ -4024,14 +4024,14 @@ impl ZeldaState {
         self.dungeon_state_view_mut().set_savegame_state_bits(bits);
         self.Dungeon_FlagRoomData_Quadrants();
 
-        let room = self.world_state_view().dungeon_room_index();
+        let room = self.world_location_state().dungeon_room_index();
         let j = DUNGEON_EXIT_SOURCE_ROOMS
             .iter()
             .position(|&from| from == room)
             .expect("dungeon room must have a boss-exit mapping");
         self.world_state_view_mut()
             .set_dungeon_room_index(DUNGEON_EXIT_TARGET_ROOMS[j]);
-        if self.world_state_view().dungeon_room_index() == 0x20 {
+        if self.world_location_state().dungeon_room_index() == 0x20 {
             self.save_progress_view_mut().set_progress_indicator(3);
             self.overworld_event_info_view_mut().set_event_bits(2, 0x20);
             self.save_progress_view_mut().xor_dark_world_state(0x40);
@@ -4047,7 +4047,7 @@ impl ZeldaState {
             self.frame_control_view_mut().set_main_module(21);
             self.frame_control_view_mut().set_submodule(0);
             self.frame_control_view_mut().set_subsubmodule(0);
-        } else if self.world_state_view().dungeon_room_index() == 0x0d {
+        } else if self.world_location_state().dungeon_room_index() == 0x0d {
             self.frame_control_view_mut().set_main_module(24);
             self.frame_control_view_mut().set_submodule(0);
             self.world_state_view_mut().set_overworld_map_state(0);
@@ -4101,7 +4101,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_BombableFloor(&mut self, _src: usize, dst: &mut u16, dsto: u16) {
-        if self.world_state_view().dungeon_room() == 101
+        if self.world_location_state().dungeon_room == 101
             && self.dungeon_state_view().savegame_state_bits() & 0x1000 != 0
         {
             self.dungeon_state_view_mut().set_draw_width_indicator(0);
@@ -4458,7 +4458,7 @@ impl ZeldaState {
 
     pub(super) fn RoomDraw_Chest(&mut self, dsto: u16) {
         const CHEST_OPEN_MASKS: [u16; 6] = [0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000];
-        if self.frame_control_view().main_module() == 26 {
+        if self.frame_state().main_module == 26 {
             return;
         }
         let index = self
@@ -5117,7 +5117,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .advance_quadrant_upload_index_by(4);
         self.frame_control_view_mut().increment_subsubmodule();
-        if self.frame_control_view().subsubmodule() == 6 {
+        if self.frame_state().subsubmodule == 6 {
             self.dungeon_state_view_mut().clear_quadrant_upload_index();
             self.frame_control_view_mut().set_subsubmodule(0);
             self.frame_control_view_mut().set_submodule(0);
@@ -5230,7 +5230,7 @@ impl ZeldaState {
         const LAMP_CONE_SCROLL_CLAMPS: [u16; 4] = [128, 384, 160, 160];
 
         if !self.dungeon_state_view().dungeon_dark_with_lantern()
-            || self.frame_control_view().submodule() == 20
+            || self.frame_state().submodule == 20
         {
             return;
         }
@@ -5354,7 +5354,7 @@ impl ZeldaState {
         let flag = QUADRANT_VISITING_FLAGS[index];
         let visited = self.dungeon_state_view_mut().or_quadrants_visited(flag);
 
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let saved = self.save_progress_view().dungeon_info_word(room) | visited;
         self.save_progress_view_mut()
             .set_dungeon_info_word(room, saved);
@@ -5482,13 +5482,13 @@ impl ZeldaState {
         let saved = (self.dungeon_state_view().savegame_state_bits() >> 4)
             | (self.dungeon_state_view().opened_doors() & 0xf000)
             | self.dungeon_state_view().quadrants_visited();
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         self.save_progress_view_mut()
             .set_dungeon_info_word(room, saved);
     }
 
     pub(super) fn SaveQuadrantsToSram(&mut self) {
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let saved = self.save_progress_view().dungeon_info_word(room)
             | self.dungeon_state_view().quadrants_visited();
         self.save_progress_view_mut()
@@ -5564,7 +5564,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_StartInterRoomTrans_Left(&mut self) {
-        assert_eq!(self.frame_control_view().submodule(), 0);
+        assert_eq!(self.frame_state().submodule, 0);
         let quadrant_x = self.player_state_view_mut().toggle_quadrant_x();
         self.Dungeon_AdjustQuadrant();
         self.RoomBounds_SubX_A();
@@ -5574,18 +5574,20 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(1);
         if self.player_state_view().quadrant_x() != 0 {
             self.RoomBounds_SubX_B();
-            let previous_room = self.world_state_view().dungeon_room_index();
+            let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             if self.player_state_view().tile_below() & 0xcf == 0x89 {
                 let room = self.dungeon_header_view().travel_destination(3);
                 self.world_state_view_mut().set_dungeon_room_index(room);
                 self.Dungeon_AdjustForTeleportDoors(
-                    self.world_state_view().dungeon_room_index().wrapping_add(1),
+                    self.world_location_state()
+                        .dungeon_room_index()
+                        .wrapping_add(1),
                     0xff,
                 );
             } else {
-                if self.world_state_view().dungeon_room_index()
+                if self.world_location_state().dungeon_room_index()
                     != self.dungeon_state_view().room_index2()
                 {
                     let previous_room = self.dungeon_state_view().room_index2();
@@ -5610,7 +5612,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_StartInterRoomTrans_Right(&mut self) {
-        assert_eq!(self.frame_control_view().submodule(), 0);
+        assert_eq!(self.frame_state().submodule, 0);
         let quadrant_x = self.player_state_view_mut().toggle_quadrant_x();
         self.Dungeon_AdjustQuadrant();
         self.RoomBounds_AddX_A();
@@ -5620,18 +5622,20 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(1);
         if self.player_state_view().quadrant_x() == 0 {
             self.RoomBounds_AddX_B();
-            let previous_room = self.world_state_view().dungeon_room_index();
+            let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             if self.player_state_view().tile_below() & 0xcf == 0x89 {
                 let room = self.dungeon_header_view().travel_destination(4);
                 self.world_state_view_mut().set_dungeon_room_index(room);
                 self.Dungeon_AdjustForTeleportDoors(
-                    self.world_state_view().dungeon_room_index().wrapping_sub(1),
+                    self.world_location_state()
+                        .dungeon_room_index()
+                        .wrapping_sub(1),
                     1,
                 );
             } else {
-                if self.world_state_view().dungeon_room_index()
+                if self.world_location_state().dungeon_room_index()
                     != self.dungeon_state_view().room_index2()
                 {
                     let previous_room = self.dungeon_state_view().room_index2();
@@ -5650,7 +5654,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_StartInterRoomTrans_Up(&mut self) {
-        assert_eq!(self.frame_control_view().submodule(), 0);
+        assert_eq!(self.frame_state().submodule, 0);
         let quadrant_y = self.player_state_view_mut().toggle_quadrant_y();
         self.Dungeon_AdjustQuadrant();
         self.RoomBounds_SubY_A();
@@ -5660,14 +5664,14 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(1);
         if self.player_state_view().quadrant_y() != 0 {
             self.RoomBounds_SubY_B();
-            let previous_room = self.world_state_view().dungeon_room_index();
+            let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             if self.player_state_view().tile_below() == 0x8e {
                 self.Dung_HandleExitToOverworld();
                 return;
             }
-            if self.world_state_view().dungeon_room_index() == 0 {
+            if self.world_location_state().dungeon_room_index() == 0 {
                 self.SaveDungeonKeys();
                 self.frame_control_view_mut().set_main_module(25);
                 self.frame_control_view_mut().set_submodule(0);
@@ -5675,7 +5679,7 @@ impl ZeldaState {
                 return;
             }
             if self.dungeon_state_view().room_index2()
-                == self.world_state_view().dungeon_room_index()
+                == self.world_location_state().dungeon_room_index()
             {
                 let previous_room = self.dungeon_state_view().room_index2();
                 self.dungeon_state_view_mut()
@@ -5692,7 +5696,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_StartInterRoomTrans_Down(&mut self) {
-        assert_eq!(self.frame_control_view().submodule(), 0);
+        assert_eq!(self.frame_state().submodule, 0);
         let quadrant_y = self.player_state_view_mut().toggle_quadrant_y();
         self.Dungeon_AdjustQuadrant();
         self.RoomBounds_AddY_A();
@@ -5702,14 +5706,14 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(1);
         if self.player_state_view().quadrant_y() == 0 {
             self.RoomBounds_AddY_B();
-            let previous_room = self.world_state_view().dungeon_room_index();
+            let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_state_view_mut()
                 .set_room_index_prev(previous_room);
             if self.player_state_view().tile_below() == 0x8e {
                 self.Dung_HandleExitToOverworld();
                 return;
             }
-            if self.world_state_view().dungeon_room_index()
+            if self.world_location_state().dungeon_room_index()
                 != self.dungeon_state_view().room_index2()
             {
                 let previous_room = self.dungeon_state_view().room_index2();
@@ -5834,7 +5838,7 @@ impl ZeldaState {
             if target.map_or(true, |target| tile_positions.contains(&target)) {
                 eprintln!(
                     "R sprite_dma fc=0x{:02x} x=0x{:04x} y=0x{:04x} v=0x{:02x} pos=0x{:04x} src=0x{:04x} attr=0x{:02x} tiles={:04x},{:04x},{:04x},{:04x}",
-                    self.frame_control_view().frame_counter(),
+                    self.frame_state().frame_counter,
                     x as u16,
                     y as u16,
                     v,
@@ -6030,7 +6034,7 @@ impl ZeldaState {
 
     pub(super) fn RevealPotItem(&mut self, pos6: u16, pos4: u16) {
         self.dungeon_secret_scratch_view_mut().clear_pending_kind();
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let secrets = self
             .asset_raw(50)
             .expect("missing dungeon secrets asset")
@@ -6123,7 +6127,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PushBlock_Slide(&mut self, j: u8) {
-        if self.frame_control_view().submodule() != 0 {
+        if self.frame_state().submodule != 0 {
             return;
         }
         let i = usize::from(
@@ -6308,7 +6312,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_IsPitThatHurtsPlayer(&self) -> bool {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         let Some(data) = self.asset_raw(10) else {
             return false;
         };
@@ -7615,8 +7619,8 @@ impl ZeldaState {
                     if trace_pos.map_or(true, |target| target == pos) {
                         eprintln!(
                             "R overlay_attr fc={} room=0x{:04x} overlay=0x{:02x} p=0x{:04x} pos=0x{:04x} tile=0x{:04x} attr=0x{:02x}",
-                            self.frame_control_view().frame_counter(),
-                            self.world_state_view().dungeon_room(),
+                            self.frame_state().frame_counter,
+                            self.world_location_state().dungeon_room,
                             self.dungeon_state_view().overlay_to_load(),
                             p,
                             pos,
@@ -7989,7 +7993,7 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_STATE_DUMP").is_some() {
             eprintln!(
                 "dungeon-attr-state room=0x{:04x} star=0x{:04x} inter={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} in1={:04x},{:04x},{:04x},{:04x},{:04x},{:04x} misc=0x{:04x} torch=0x{:04x} chest=0x{:04x} big=0x{:04x} in2={:04x},{:04x},{:04x},{:04x} table1={:04x},{:04x},{:04x},{:04x} table2={:04x},{:04x},{:04x},{:04x} obj={:04x},{:04x},{:04x},{:04x}",
-                self.world_state_view().dungeon_room(),
+                self.world_location_state().dungeon_room,
                 self.dungeon_state_view().star_switch_count_x2(),
                 self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomUpNorth),
                 self.dungeon_state_view().stair_list_count(DungeonStairList::WallUpNorthSpiral),
@@ -8483,7 +8487,7 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
             eprintln!(
                 "door-attr frame={} entry k={} t=0x{:02x} raw=0x{:04x} opened=0x{:04x} opened_adj=0x{:04x} cur=0x{:04x} addr=0x{:04x} dir=0x{:04x} sub={} step=0x{:04x}",
-                self.frame_control_view().frame_counter(),
+                self.frame_state().frame_counter,
                 k,
                 t,
                 self.dungeon_state_view().door_type_word(k),
@@ -8492,7 +8496,7 @@ impl ZeldaState {
                 self.dungeon_state_view().current_door_pos(),
                 self.dungeon_state_view().door_tilemap_address(k),
                 self.dungeon_state_view().door_direction_word(k),
-                self.frame_control_view().submodule(),
+                self.frame_state().submodule,
                 self.dungeon_state_view().door_animation_step(),
             );
         }
@@ -8547,7 +8551,7 @@ impl ZeldaState {
             if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
                 eprintln!(
                     "door-attr frame={} stairmask-return k={} t=0x{:02x}",
-                    self.frame_control_view().frame_counter(),
+                    self.frame_state().frame_counter,
                     k,
                     t,
                 );
@@ -8561,7 +8565,7 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
             eprintln!(
                 "door-attr frame={} alpha k={} t=0x{:02x} attr=0x{:04x}",
-                self.frame_control_view().frame_counter(),
+                self.frame_state().frame_counter,
                 k,
                 t,
                 attr,
@@ -8758,7 +8762,7 @@ impl ZeldaState {
                     self.dungeon_state_view().opened_doors(),
                     self.dungeon_state_view().opened_doors_including_adjacent(),
                     self.dungeon_state_view().current_door_pos(),
-                    self.frame_control_view().submodule(),
+                    self.frame_state().submodule,
                     self.dungeon_state_view().door_animation_step(),
                 );
             }
@@ -8851,7 +8855,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut().set_staircase_index(attr2);
         self.dungeon_state_view_mut()
             .set_staircase_index_high((pos >> 8) as u8);
-        let dungeon_room = self.world_state_view().dungeon_room();
+        let dungeon_room = self.world_location_state().dungeon_room;
         self.dungeon_state_view_mut()
             .set_previous_room_index_word(dungeon_room);
         self.Dungeon_FlagRoomData_Quadrants();
@@ -8988,7 +8992,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_MovingWallShakeItUp(&mut self, k: usize) {
-        let x = if self.frame_control_view().frame_counter() & 1 != 0 {
+        let x = if self.frame_state().frame_counter & 1 != 0 {
             -1i16
         } else {
             1
@@ -9192,7 +9196,7 @@ impl ZeldaState {
             .expect("missing dungeon room chests asset")
             .to_vec();
         let mut chest_idx = chest_idx_org as isize;
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         for entry in chest_data.chunks_exact(3) {
             let chest_room = read_word_from_slice(entry, 0);
             if (chest_room & 0x7fff) == room {
@@ -9288,7 +9292,7 @@ impl ZeldaState {
 
         let old_choice = self.scratch_word_view().minigame_previous_chest_choice();
         let mut choice = self.get_random_number();
-        let room = self.world_state_view().dungeon_room_index();
+        let room = self.world_location_state().dungeon_room_index();
         let item = if room == 0 {
             choice &= 0x0f;
             RUPEE_CHEST_MINIGAME_PRIZES[choice as usize]
@@ -9346,11 +9350,11 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_15_WarpPad(&mut self) {
-        if self.frame_control_view().subsubmodule() >= 3 {
+        if self.frame_state().subsubmodule >= 3 {
             self.Graphics_IncrementalVRAMUpload();
             self.Dungeon_LoadAttribute_Selectable();
         }
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.Module07_15_01_ApplyMosaicAndFilter(),
             2 => self.Dungeon_InitializeRoomFromSpecial(),
@@ -9425,7 +9429,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .cache_previous_position_from_current();
         self.link_handle_moving_animation_full_long_entry();
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.DungeonTransition_Subtile_PrepTransition(),
             1 => self.DungeonTransition_Subtile_ApplyFilter(),
             2 => self.DungeonTransition_Subtile_ResetShutters(),
@@ -9441,14 +9445,14 @@ impl ZeldaState {
     pub(super) fn Module07_02_SupertileTransition(&mut self) {
         self.player_state_view_mut()
             .cache_previous_position_from_current();
-        if self.frame_control_view().subsubmodule() != 0 {
-            if self.frame_control_view().subsubmodule() >= 7 {
+        if self.frame_state().subsubmodule != 0 {
+            if self.frame_state().subsubmodule >= 7 {
                 self.Graphics_IncrementalVRAMUpload();
             }
             self.Dungeon_LoadAttribute_Selectable();
         }
         self.link_handle_moving_animation_full_long_entry();
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_02_00_InitializeTransition(),
             1 => self.Module07_02_01_LoadNextRoom(),
             2 => self.Module07_02_FadedFilter(),
@@ -9482,7 +9486,7 @@ impl ZeldaState {
         self.LoadTransAuxGFX_sprite();
         self.frame_control_view_mut().increment_subsubmodule();
         self.world_state_view_mut().set_overworld_map_state(0);
-        let dungeon_room_index = self.world_state_view().dungeon_room_index();
+        let dungeon_room_index = self.world_location_state().dungeon_room_index();
         self.dungeon_state_view_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites();
@@ -9505,12 +9509,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_07_FallingTransition(&mut self) {
-        if self.frame_control_view().subsubmodule() >= 6 {
+        if self.frame_state().subsubmodule >= 6 {
             self.Graphics_IncrementalVRAMUpload();
             self.Dungeon_LoadAttribute_Selectable();
             self.ApplyGrayscaleFixed_Incremental();
         }
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_07_00_HandleMusicAndResetRoom(),
             1 => self.ApplyPaletteFilter_bounce(),
             2 => self.Dungeon_InitializeRoomFromSpecial(),
@@ -9534,7 +9538,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_07_00_HandleMusicAndResetRoom(&mut self) {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         if room == 0x10 || room == 7 || room == 0x17 {
             self.system_signals_view_mut().set_music_control(0xf1);
         }
@@ -9569,7 +9573,7 @@ impl ZeldaState {
         self.tile_detect_position_view_mut().set_y_high(high);
         self.Dungeon_SetBossMusicUnorthodox();
 
-        let room = self.world_state_view().dungeon_room_index();
+        let room = self.world_location_state().dungeon_room_index();
         if room == 0x89 || room == 0x4f {
             return;
         }
@@ -9584,7 +9588,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_07_10_LandLinkFromFalling(&mut self) {
         self.handle_dungeon_landing_from_pit();
-        if self.frame_control_view().submodule() != 0 {
+        if self.frame_state().submodule != 0 {
             return;
         }
         self.frame_control_view_mut().set_submodule(7);
@@ -9602,7 +9606,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module11_DungeonFallingEntrance(&mut self) {
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => {
                 let entrance_music = self.asset_raw(27).expect("missing entrance music asset")
                     [self.world_state_view().which_entrance() as usize];
@@ -9612,7 +9616,7 @@ impl ZeldaState {
                 self.ResetTransitionPropsAndAdvance_ResetInterface();
             }
             1 => {
-                if self.frame_control_view().frame_counter() & 1 == 0 {
+                if self.frame_state().frame_counter & 1 == 0 {
                     self.ApplyPaletteFilter_bounce();
                 }
             }
@@ -9635,7 +9639,7 @@ impl ZeldaState {
 
     fn Module11_DungeonFallingEntrance_land(&mut self) {
         self.handle_dungeon_landing_from_pit();
-        if self.frame_control_view().submodule() != 0 {
+        if self.frame_state().submodule != 0 {
             return;
         }
         self.frame_control_view_mut().set_main_module(7);
@@ -9678,7 +9682,7 @@ impl ZeldaState {
             player.clear_picking_throw_state();
         }
         self.player_state_view_mut().set_y_button_action_timer(0);
-        let dungeon_room = self.world_state_view().dungeon_room();
+        let dungeon_room = self.world_location_state().dungeon_room;
         self.dungeon_state_view_mut()
             .set_previous_room_index_word(dungeon_room);
         let link_y = self.player_state_view().y();
@@ -9689,7 +9693,7 @@ impl ZeldaState {
             .wrapping_sub(u16::from(y).wrapping_add(16));
         self.player_state_view_mut().set_y(new_y);
 
-        let bak = self.frame_control_view().subsubmodule();
+        let bak = self.frame_state().subsubmodule;
         self.dungeon_state_view_mut().clear_lit_torches();
         self.dungeon_state_view_mut()
             .clear_dungeon_dark_with_lantern();
@@ -9757,7 +9761,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State12(&mut self) {
-        if self.frame_control_view().submodule() == 2 {
+        if self.frame_state().submodule == 2 {
             if self.world_state_view().overworld_map_state() != 5 {
                 return;
             }
@@ -9777,8 +9781,8 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_InterRoomTrans_State7(&mut self) {
         self.MirrorBg1Bg2Offs();
-        if self.world_state_view().dungeon_room() != 54
-            && self.world_state_view().dungeon_room() != 56
+        if self.world_location_state().dungeon_room != 54
+            && self.world_location_state().dungeon_room != 56
         {
             let y = if SPIRAL_SUBSCREEN_LAYER_BY_BG2
                 [self.dungeon_state_view().bg2_properties() as usize]
@@ -9808,7 +9812,7 @@ impl ZeldaState {
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
         self.SubtileTransitionCalculateLanding();
         self.frame_control_view_mut().increment_subsubmodule();
-        let room = self.world_state_view().dungeon_room() as usize;
+        let room = self.world_location_state().dungeon_room as usize;
         let visited = self.dungeon_state_view().quadrants_visited();
         self.save_progress_view_mut()
             .or_dungeon_info_word(room, visited);
@@ -9898,7 +9902,7 @@ impl ZeldaState {
     pub(super) fn DungeonTransition_Subtile_ResetShutters(&mut self) {
         self.dungeon_state_view_mut().set_trapdoors_down_low(0);
         self.dungeon_state_view_mut().set_door_animation_step_low(7);
-        let bak = self.frame_control_view().submodule();
+        let bak = self.frame_state().submodule;
         self.OperateShutterDoors();
         self.frame_control_view_mut().set_submodule(bak);
         self.palette_filter_view_mut().set_countdown(31);
@@ -9948,7 +9952,7 @@ impl ZeldaState {
     pub(super) fn Dungeon_InterRoomTrans_State15(&mut self) {
         self.ResetThenCacheRoomEntryProperties();
         if self.dungeon_state_view().trapdoors_down_low() == 0
-            && (self.world_state_view().dungeon_room_index() != 172
+            && (self.world_location_state().dungeon_room_index() != 172
                 || self.dungeon_state_view().savegame_state_bits() & 0x3000 != 0)
         {
             self.dungeon_state_view_mut().set_trapdoors_down_low(1);
@@ -10000,11 +10004,11 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_06_FatInterRoomStairs(&mut self) {
-        if self.frame_control_view().subsubmodule() >= 3 {
+        if self.frame_state().subsubmodule >= 3 {
             self.Dungeon_LoadAttribute_Selectable();
         }
 
-        if self.frame_control_view().subsubmodule() >= 13 {
+        if self.frame_state().subsubmodule >= 13 {
             self.Graphics_IncrementalVRAMUpload();
             if self.dungeon_state_view().staircase_move_counter() == 0 {
                 self.Module07_06_FatInterRoomStairs_dispatch();
@@ -10030,7 +10034,7 @@ impl ZeldaState {
     }
 
     fn Module07_06_FatInterRoomStairs_dispatch(&mut self) {
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
             1 => {
                 self.ApplyPaletteFilter_bounce();
@@ -10071,7 +10075,7 @@ impl ZeldaState {
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX();
         self.Dungeon_LoadCustomTileAttr();
-        let dungeon_room_index = self.world_state_view().dungeon_room_index();
+        let dungeon_room_index = self.world_location_state().dungeon_room_index();
         self.dungeon_state_view_mut()
             .set_room_index2(dungeon_room_index);
         self.follower_initialize();
@@ -10108,10 +10112,10 @@ impl ZeldaState {
 
     pub(super) fn Module07_16_UpdatePegs(&mut self) {
         self.frame_control_view_mut().increment_subsubmodule();
-        if self.frame_control_view().subsubmodule() & 3 != 0 {
+        if self.frame_state().subsubmodule & 3 != 0 {
             return;
         }
-        match self.frame_control_view().subsubmodule() >> 2 {
+        match self.frame_state().subsubmodule >> 2 {
             0 | 1 => self.Module07_16_UpdatePegs_Step1(),
             2 => self.Module07_16_UpdatePegs_Step2(),
             3 => self.RecoverPegGFXFromMapping(),
@@ -10126,7 +10130,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_17_PressurePlate(&mut self) {
         self.frame_control_view_mut().decrement_subsubmodule();
-        if self.frame_control_view().subsubmodule() != 0 {
+        if self.frame_state().subsubmodule != 0 {
             return;
         }
         let link_y = self.player_state_view().y().wrapping_sub(2);
@@ -10142,7 +10146,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_18_RescuedMaiden(&mut self) {
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => {
                 self.PaletteFilter_RestoreBGSubstractiveStrict();
                 let c = self.palette_buffer_view().main_color(32);
@@ -10167,7 +10171,7 @@ impl ZeldaState {
                 self.PaletteFilter_Crystal();
                 self.display_nmi_view_mut().set_sub_screen_layers(1);
                 self.player_state_view_mut().set_immobilized_flag(2);
-                let room = self.world_state_view().dungeon_room();
+                let room = self.world_location_state().dungeon_room;
                 let j = DUNGEON_BOSS_ROOMS
                     .iter()
                     .rposition(|&r| r == room)
@@ -10237,11 +10241,11 @@ impl ZeldaState {
         }
         self.player_state_view_mut().clear_immobilized();
         self.frame_control_view_mut().increment_subsubmodule();
-        if self.frame_control_view().subsubmodule() & 3 != 0 {
+        if self.frame_state().subsubmodule & 3 != 0 {
             return;
         }
 
-        let index = self.frame_control_view().subsubmodule().wrapping_sub(4) as usize >> 2;
+        let index = self.frame_state().subsubmodule.wrapping_sub(4) as usize >> 2;
         let src = OPEN_GANON_DOOR_TILE_SOURCES[index] as usize;
         for i in 0..8u16 {
             self.room_write_bg(
@@ -10267,7 +10271,7 @@ impl ZeldaState {
         }
 
         self.dungeon_prep_overlay_dma_watergate(0, 0x01d8, 0x0881, 8);
-        if self.frame_control_view().subsubmodule() == 16 {
+        if self.frame_state().subsubmodule == 16 {
             self.write_attr2(xy(44, 5), 0x0202);
             self.write_attr2(xy(44, 6), 0x0202);
             self.write_attr2(xy(50, 5), 0x0200);
@@ -10319,7 +10323,7 @@ impl ZeldaState {
             self.SetAndSaveVisitedQuadrantFlags();
             self.frame_control_view_mut().increment_subsubmodule();
             self.world_state_view_mut().set_transition_counter(0);
-            if self.frame_control_view().submodule() == 2 {
+            if self.frame_state().submodule == 2 {
                 self.WaterFlood_BuildOneQuadrantForVRAM();
             }
         }
@@ -10363,11 +10367,9 @@ impl ZeldaState {
             return;
         };
 
-        if !self.link_check_for_edge_screen_transition()
-            && self.frame_control_view().main_module() == 7
-        {
+        if !self.link_check_for_edge_screen_transition() && self.frame_state().main_module == 7 {
             self.Dungeon_HandleEdgeTransitionMovement(dir);
-            if self.frame_control_view().main_module() == 7 {
+            if self.frame_state().main_module == 7 {
                 self.frame_control_view_mut().set_submodule(2);
             }
         }
@@ -10387,7 +10389,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_AdjustAfterSpiralStairs(&mut self) {
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         let prev = self.dungeon_state_view().previous_room_index_word();
         let xd = ((room & 0x000f) as i32 - (prev & 0x000f) as i32) * 0x200;
         self.add_dungeon_room_delta_x(xd as i16 as u16);
@@ -10554,7 +10556,7 @@ impl ZeldaState {
     pub(super) fn Module07_0F_01_OperateSpotlight(&mut self) {
         self.sprite_main();
         self.IrisSpotlight_ConfigureTable();
-        if self.frame_control_view().submodule() == 0 {
+        if self.frame_state().submodule == 0 {
             self.display_nmi_view_mut().clear_window_layer_masks();
             self.display_nmi_view_mut().clear_window_main_sub_masks();
             self.frame_control_view_mut().set_subsubmodule(0);
@@ -10567,7 +10569,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_0F_00_InitSpotlight(),
             1 => self.Module07_0F_01_OperateSpotlight(),
             other => panic!("invalid Module07_0F_LandingWipe subsubmodule_index {other}"),
@@ -10589,7 +10591,7 @@ impl ZeldaState {
             self.dungeon_handle_camera();
             self.link_handle_moving_animation_full_long_entry();
         }
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_10_00_InitStairs(),
             1 => self.Module07_10_01_ClimbStairs(),
             other => panic!("invalid Module07_10_SouthIntraRoomStairs subsubmodule_index {other}"),
@@ -10648,7 +10650,7 @@ impl ZeldaState {
             self.dungeon_handle_camera();
             self.link_handle_moving_animation_full_long_entry();
         }
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_08_00_InitStairs(),
             1 => self.Module07_08_01_ClimbStairs(),
             other => panic!("invalid Module07_08_NorthIntraRoomStairs subsubmodule_index {other}"),
@@ -10691,10 +10693,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_StraightInterroomStairs(&mut self) {
-        if self.frame_control_view().subsubmodule() >= 3 {
+        if self.frame_state().subsubmodule >= 3 {
             self.Dungeon_LoadAttribute_Selectable();
         }
-        if self.frame_control_view().subsubmodule() >= 13 {
+        if self.frame_state().subsubmodule >= 13 {
             self.Graphics_IncrementalVRAMUpload();
         }
         if self.dungeon_state_view().staircase_move_counter() != 0 {
@@ -10703,7 +10705,7 @@ impl ZeldaState {
             }
             self.dungeon_state_view_mut()
                 .decrement_staircase_move_counter();
-            let direction = if self.frame_control_view().submodule() == 18 {
+            let direction = if self.frame_state().submodule == 18 {
                 8
             } else {
                 4
@@ -10712,7 +10714,7 @@ impl ZeldaState {
             self.link_handle_velocity();
         }
         self.link_handle_moving_animation_full_long_entry();
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_11_00_PrepAndReset(),
             1 => self.Module07_11_01_FadeOut(),
             2 => self.Module07_11_02_LoadAndPrepRoom(),
@@ -10750,7 +10752,7 @@ impl ZeldaState {
         };
         self.system_signals_view_mut()
             .set_sound_effect_1(sound_effect_1);
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         if room == 48 || room == 64 {
             self.system_signals_view_mut().set_music_control(0xf1);
         }
@@ -10785,7 +10787,7 @@ impl ZeldaState {
     pub(super) fn Module07_11_04_FilterDoBGAndResetSprites(&mut self) {
         self.ApplyPaletteFilter_bounce();
         self.DungeonTransition_TriggerBGC56UpdateAndAdvance();
-        let dungeon_room_index = self.world_state_view().dungeon_room_index();
+        let dungeon_room_index = self.world_location_state().dungeon_room_index();
         self.dungeon_state_view_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites();
@@ -10810,7 +10812,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_bg1_y(y);
         self.world_state_view_mut().set_bg2_y(y);
         if (y & 0x01fc) == self.world_state_view().up_down_scroll_target(i) {
-            if self.frame_control_view().submodule() >= 18 {
+            if self.frame_state().submodule >= 18 {
                 i += 2;
             }
             let link_y = self
@@ -10849,7 +10851,7 @@ impl ZeldaState {
         }
 
         let mut r0 = 0u8;
-        let y_delta = if self.frame_control_view().submodule() == 18 {
+        let y_delta = if self.frame_state().submodule == 18 {
             (-32i16) as u16
         } else {
             32
@@ -10871,7 +10873,7 @@ impl ZeldaState {
         }
 
         if r0 == 0 {
-            let delta = if self.frame_control_view().submodule() == 18 {
+            let delta = if self.frame_state().submodule == 18 {
                 if self.dungeon_state_view().staircase_index() & 4 != 0 {
                     (-24i16) as u16
                 } else {
@@ -10894,7 +10896,7 @@ impl ZeldaState {
             && self.palette_filter_view().darkening_or_lightening_screen() == 0
         {
             self.frame_control_view_mut().increment_subsubmodule();
-            let room = self.world_state_view().dungeon_room();
+            let room = self.world_location_state().dungeon_room;
             if room == 48 {
                 self.system_signals_view_mut().set_music_control(0x1c);
             } else if room == 64 {
@@ -10913,7 +10915,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_14_RecoverFromFall(&mut self) {
-        match self.frame_control_view().subsubmodule() {
+        match self.frame_state().subsubmodule {
             0 => self.Module07_14_00_ScrollCamera(),
             1 => self.RecoverPositionAfterDrowning(),
             _ => {}
@@ -11164,7 +11166,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_palette_sp6r_indoors(10);
         self.dungeon_load_palettes();
 
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         self.dungeon_state_view_mut()
             .set_loading_bg_offsets((room & 0x000f) << 9, (room & 0x0ff0) << 5);
         if room == 0x0104 && self.save_progress_view().progress_flags() & 0x10 != 0 {
@@ -11328,8 +11330,8 @@ impl ZeldaState {
         if self.save_progress_view().progress_indicator() < 2 {
             self.system_signals_view_mut().set_ambient_sound_effect(5);
             if (self.dungeon_state_view().current_floor() as i8) >= 0
-                && self.world_state_view().dungeon_room() != 2
-                && self.world_state_view().dungeon_room() != 18
+                && self.world_location_state().dungeon_room != 2
+                && self.world_location_state().dungeon_room != 18
             {
                 self.system_signals_view_mut().set_ambient_sound_effect(3);
             }
@@ -11345,21 +11347,21 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-submodule");
 
         if !self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
-            || self.frame_control_view().main_module() == 7
+            || self.frame_state().main_module == 7
         {
             self.dungeon_state_view_mut().clear_misc_object_index();
             self.dungeon_push_block_handler();
             self.replay_trace_ram_watch("module07-after-push-blocks");
-            if self.frame_control_view().submodule() == 0 {
+            if self.frame_state().submodule == 0 {
                 self.graphics_load_chr_half_slot();
                 self.dungeon_handle_camera();
                 self.replay_trace_ram_watch("module07-after-camera");
             }
-            if self.frame_control_view().submodule() == 0 {
+            if self.frame_state().submodule == 0 {
                 self.dungeon_handle_room_tags();
                 self.replay_trace_ram_watch("module07-after-room-tags");
             }
-            if self.frame_control_view().submodule() == 0 {
+            if self.frame_state().submodule == 0 {
                 self.dungeon_process_torches_and_doors();
                 self.replay_trace_ram_watch("module07-after-torches-doors");
                 if self.dungeon_state_view().crush_wall_progress() != 0 {
@@ -11439,7 +11441,7 @@ impl ZeldaState {
                 return;
             } else if self.did_press_button_for_map() {
                 if self.save_progress_view().palace_index_x2() != 0xff
-                    && self.world_state_view().dungeon_room_index() != 0
+                    && self.world_location_state().dungeon_room_index() != 0
                 {
                     self.world_state_view_mut().set_overworld_map_state(0);
                     self.frame_control_view_mut().set_submodule(3);
@@ -11535,7 +11537,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LayerEffect_Agahnim2(&mut self) {
-        let j = self.frame_control_view().frame_counter() & 0x7f;
+        let j = self.frame_state().frame_counter & 0x7f;
         if j == 3 || j == 36 {
             self.palette_buffer_view_mut().set_main_color(0x6d, 0x1d59);
             self.palette_buffer_view_mut().set_main_color(0x6e, 0x25ff);
@@ -11607,7 +11609,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_15_04_SyncRoomPropsAndBuildOverlay(&mut self) {
         self.ApplyGrayscaleFixed_Incremental();
-        if self.world_state_view().dungeon_room() == 0x17 {
+        if self.world_location_state().dungeon_room == 0x17 {
             self.dungeon_state_view_mut().set_current_floor(4);
         }
         self.MirrorBg1Bg2Offs();
@@ -11732,7 +11734,7 @@ impl ZeldaState {
                     .bg2_y()
                     .wrapping_add(scrollamt as u16);
                 self.world_state_view_mut().set_bg2_y(bg2);
-                if self.world_state_view().dungeon_room() == 0xffff {
+                if self.world_location_state().dungeon_room == 0xffff {
                     continue;
                 }
 
@@ -11791,7 +11793,7 @@ impl ZeldaState {
                     .bg2_x()
                     .wrapping_add(scrollamt as u16);
                 self.world_state_view_mut().set_bg2_x(bg2);
-                if self.world_state_view().dungeon_room() == 0xffff {
+                if self.world_location_state().dungeon_room == 0xffff {
                     continue;
                 }
 
@@ -11817,7 +11819,7 @@ impl ZeldaState {
             }
         }
 
-        if self.world_state_view().dungeon_room() != 0xffff {
+        if self.world_location_state().dungeon_room != 0xffff {
             let bg2_properties = self.dungeon_state_view().bg2_properties();
             if bg2_properties == 0
                 || bg2_properties == 2
@@ -11837,7 +11839,7 @@ impl ZeldaState {
             if self
                 .enhanced_features_view()
                 .has(FEATURE_MISC_BUG_FIXES_DUNGEON)
-                && self.frame_control_view().submodule() != 0
+                && self.frame_state().submodule != 0
             {
                 return;
             }
@@ -11907,7 +11909,7 @@ impl ZeldaState {
         const OPEN_DOOR_PANNING: [u8; 4] = [0x00, 0x00, 0x80, 0x40];
         const SRC_TILES_1: [u16; 4] = [0x07ea, 0x080a, 0x080a, 0x082a];
 
-        if self.frame_control_view().frame_counter() & 3 == 0
+        if self.frame_state().frame_counter & 3 == 0
             && self.world_state_view().flag_custom_spell_anim_active() == 0
         {
             for i in 0..16 {

@@ -7004,7 +7004,7 @@ mod tests {
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
-        state.ram[MAIN_MODULE_INDEX] = 7;
+        state.frame_control_view_mut().set_main_module(7);
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
@@ -7030,7 +7030,7 @@ mod tests {
         state.ram[IS_STANDING_IN_DOORWAY] = 1;
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 4);
-        state.ram[MAIN_MODULE_INDEX] = 7;
+        state.frame_control_view_mut().set_main_module(7);
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
@@ -7052,7 +7052,7 @@ mod tests {
     #[test]
     fn dungeon_edge_transition_right_starts_super_tile_scroll() {
         let mut state = ZeldaState::new();
-        state.ram[MAIN_MODULE_INDEX] = 7;
+        state.frame_control_view_mut().set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
@@ -7072,7 +7072,7 @@ mod tests {
     #[test]
     fn edge_transition_recoil_guard_restores_previous_position() {
         let mut state = ZeldaState::new();
-        state.ram[MAIN_MODULE_INDEX] = 7;
+        state.frame_control_view_mut().set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         state.player_state_view_mut().set_incapacitated_timer(5);
         state.player_state_view_mut().set_actual_x_velocity(12);
@@ -8499,13 +8499,13 @@ mod tests {
     #[test]
     fn configure_ppu_side_space_matches_module_cases() {
         let mut state = ZeldaState::new();
-        state.ram[MAIN_MODULE_INDEX] = 20;
+        state.frame_control_view_mut().set_main_module(20);
         state.configure_ppu_side_space();
         assert_eq!(state.ppu.extra_left_cur, PPU_SIDE_SPACE_LIMIT as u8);
         assert_eq!(state.ppu.extra_right_cur, PPU_SIDE_SPACE_LIMIT as u8);
         assert_eq!(state.ppu.extra_bottom_cur, 16);
 
-        state.ram[MAIN_MODULE_INDEX] = 7;
+        state.frame_control_view_mut().set_main_module(7);
         state.world_state_view_mut().set_bg2_x(0x0110);
         state.world_state_view_mut().set_bg2_y(0x0108);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
