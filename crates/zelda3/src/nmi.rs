@@ -161,8 +161,7 @@ impl ZeldaState {
             self.clear_core_update_disable_flag();
         }
 
-        let nmi_subroutine_index = self.display_nmi_view().subroutine_index();
-        self.display_nmi_view_mut().set_subroutine_index(0);
+        let nmi_subroutine_index = self.take_pending_nmi_subroutine();
         match nmi_subroutine_index {
             0 => self.nmi_upload_tilemap_do_nothing(),
             1 => self.nmi_upload_tilemap(),
@@ -194,7 +193,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_tilemap(&mut self) {
-        let target = NMI_VRAM_ADDRS[self.display_nmi_view().load_target_addr() as usize] << 8;
+        let target = NMI_VRAM_ADDRS[self.display_state().nmi_load_target_page() as usize] << 8;
         if target + 0x400 <= self.ppu.vram.len() {
             let buf = self.display_nmi_view().tilemap_upload_buffer().to_vec();
             for i in 0..0x400 {
@@ -290,7 +289,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg1_wall(&mut self) {
-        let target = self.display_nmi_view().load_target_addr_word() as usize;
+        let target = self.display_state().nmi_load_target_address as usize;
         let top_buf = self.display_nmi_view().bg1_wall_top_buffer().to_vec();
         let bottom_buf = self.display_nmi_view().bg1_wall_bottom_buffer().to_vec();
         self.copy_to_vram_vertical_slice(target, &top_buf, 0x40);
@@ -567,7 +566,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg_char_half(&mut self) {
-        let dst = self.display_nmi_view().load_target_addr() as usize * 256;
+        let dst = self.display_state().nmi_load_target_page() as usize * 256;
         let buf = self.display_nmi_view().bg_char_half_buffer().to_vec();
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
@@ -766,7 +765,7 @@ mod tests {
     fn nmi_do_updates_panics_on_invalid_subroutine_like_c_table_index() {
         let mut s = ZeldaState::new();
         s.set_core_update_disable_flag(1);
-        s.display_nmi_view_mut().set_subroutine_index(25);
+        s.set_pending_nmi_subroutine(25);
 
         s.nmi_do_updates();
     }

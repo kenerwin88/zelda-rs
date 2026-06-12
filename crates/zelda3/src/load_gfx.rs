@@ -1598,8 +1598,8 @@ impl ZeldaState {
             }
         }
 
-        self.display_nmi_view_mut().set_load_target_addr(tilebytes);
-        self.display_nmi_view_mut().set_subroutine_index(11);
+        self.set_nmi_load_target_page(tilebytes);
+        self.set_pending_nmi_subroutine(11);
 
         let mut pack = GRAPHICS_HALF_SLOT_PACKS[k as usize - 1] as usize;
         if pack == 1 {
@@ -1860,7 +1860,7 @@ impl ZeldaState {
         let st = self.world_state_view().overworld_map_state() as usize;
         self.world_state_view_mut().increment_overworld_map_state();
         let nmi = MIRROR_WARP_LOAD_NEXT_NMI_LOAD.get(st).copied().unwrap_or(0);
-        self.display_nmi_view_mut().set_subroutine_index(nmi);
+        self.set_pending_nmi_subroutine(nmi);
         self.display_nmi_view_mut()
             .set_core_update_disable_flag(nmi);
         let xt = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
@@ -1941,11 +1941,11 @@ impl ZeldaState {
                     self.display_nmi_view_mut().set_sub_screen_layers(1);
                 }
                 self.frame_control_view_mut().decrement_submodule();
-                self.display_nmi_view_mut().set_subroutine_index(12);
+                self.set_pending_nmi_subroutine(12);
                 self.set_core_update_disable_flag(12);
             }
             6 | 9 => {
-                self.display_nmi_view_mut().set_subroutine_index(13);
+                self.set_pending_nmi_subroutine(13);
                 self.set_core_update_disable_flag(13);
             }
             7 => {
@@ -1955,7 +1955,7 @@ impl ZeldaState {
             }
             8 => {
                 self.MirrorWarp_LoadSpritesAndColors();
-                self.display_nmi_view_mut().set_subroutine_index(12);
+                self.set_pending_nmi_subroutine(12);
                 self.set_core_update_disable_flag(12);
             }
             10 => {
@@ -2779,7 +2779,7 @@ impl ZeldaState {
         let src1 = 0xbdc0 + yy;
         self.graphics_scratch_view_mut()
             .copy_message_rows(0, src0, src1, 32);
-        self.display_nmi_view_mut().set_subroutine_index(0x18);
+        self.set_pending_nmi_subroutine(0x18);
     }
 
     pub(super) fn LinkZap_HandleMosaic(&mut self) {
@@ -2828,7 +2828,7 @@ impl ZeldaState {
     pub(super) fn Dungeon_UpdatePegGFXBuffer(&mut self, x: usize, y: usize) {
         self.graphics_scratch_view_mut()
             .copy_peg_tile_graphics_to_message_buffer(x, y);
-        self.display_nmi_view_mut().set_subroutine_index(23);
+        self.set_pending_nmi_subroutine(23);
     }
 
     pub(super) fn Dungeon_HandleTranslucencyAndPalette(&mut self) {

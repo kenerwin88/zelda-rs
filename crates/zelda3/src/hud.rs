@@ -573,8 +573,8 @@ impl ZeldaState {
                 .set_tilemap_word(i * 2, 0x207f);
         }
         self.system_signals_view_mut().set_sound_effect_2(17);
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
         self.world_state_view_mut().increment_overworld_map_state();
     }
 
@@ -612,8 +612,8 @@ impl ZeldaState {
         }
 
         self.hud_state_view_mut().set_flashing_circle_timer(16);
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
         self.world_state_view_mut().increment_overworld_map_state();
     }
 
@@ -627,8 +627,8 @@ impl ZeldaState {
 
     pub(super) fn hud_choose_next_mode(&mut self) {
         if self.hud_have_any_items() {
-            self.display_nmi_view_mut().set_subroutine_index(1);
-            self.display_nmi_view_mut().set_load_target_addr(0x22);
+            self.set_pending_nmi_subroutine(1);
+            self.set_nmi_load_target_page(0x22);
             self.hud_draw_selected_y_button_item();
             let overworld_map_state = if self.save_progress_view().hud_current_item()
                 == HUD_ITEM_BOTTLE_LEGACY
@@ -798,8 +798,8 @@ impl ZeldaState {
             self.world_state_view_mut().set_overworld_map_state(7);
         }
 
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_update_hud(&mut self) {
@@ -868,8 +868,8 @@ impl ZeldaState {
             self.world_state_view_mut().increment_overworld_map_state();
             self.hud_state_view_mut().set_bottle_menu_row(17);
         }
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_expand_bottle_menu(&mut self) {
@@ -897,8 +897,8 @@ impl ZeldaState {
         if (row as i8) < 0 {
             self.world_state_view_mut().increment_overworld_map_state();
         }
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_bottle_menu(&mut self) {
@@ -964,8 +964,8 @@ impl ZeldaState {
     pub(super) fn hud_draw_bottle_menu_update(&mut self) {
         self.hud_draw_bottle_menu();
         self.hud_draw_selected_y_button_item();
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_erase_bottle_menu(&mut self) {
@@ -978,16 +978,16 @@ impl ZeldaState {
         if row == 19 {
             self.world_state_view_mut().increment_overworld_map_state();
         }
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_restore_normal_menu(&mut self) {
         self.hud_draw_progress_icons();
         self.hud_draw_equipment_box();
         self.world_state_view_mut().set_overworld_map_state(4);
-        self.display_nmi_view_mut().set_subroutine_index(1);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(1);
+        self.set_nmi_load_target_page(0x22);
     }
 
     pub(super) fn hud_search_for_equipped_item(&mut self) {

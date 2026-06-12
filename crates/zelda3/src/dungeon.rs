@@ -352,7 +352,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_overworld_map_state(0);
         self.Dungeon_UploadRoomQuadrants();
         self.display_nmi_view_mut().set_hdma_enable_mask(hdma);
-        self.display_nmi_view_mut().set_subroutine_index(0);
+        self.clear_pending_nmi_subroutine();
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
     }
@@ -5028,7 +5028,7 @@ impl ZeldaState {
             self.Dungeon_PrepareNextRoomQuadrantUpload();
             self.upload_tilemap_now();
         }
-        self.display_nmi_view_mut().set_subroutine_index(0);
+        self.clear_pending_nmi_subroutine();
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
     }
@@ -5086,7 +5086,7 @@ impl ZeldaState {
         }
         self.display_nmi_view_mut()
             .set_load_target_addr(UPLOAD_BG_DSTS[ofs] + dst_bias);
-        self.display_nmi_view_mut().set_subroutine_index(1);
+        self.set_pending_nmi_subroutine(1);
         self.set_core_update_disable_flag(1);
     }
 
@@ -5310,7 +5310,7 @@ impl ZeldaState {
     }
 
     pub(super) fn upload_tilemap_now(&mut self) {
-        let target = self.display_nmi_view().load_target_addr() as usize;
+        let target = self.display_state().nmi_load_target_page() as usize;
         let vram_page = NMI_VRAM_ADDRS[target];
         let dst = vram_page << 8;
         for i in 0..0x400 {
@@ -8979,7 +8979,7 @@ impl ZeldaState {
                     self.finish_moving_wall_tag(k);
                 }
             }
-            self.display_nmi_view_mut().set_subroutine_index(5);
+            self.set_pending_nmi_subroutine(5);
             let neg = (0u16.wrapping_sub(offs) & 0x01f8) >> 3;
             let target = self
                 .dungeon_state_view()
@@ -9036,7 +9036,7 @@ impl ZeldaState {
                     self.finish_moving_wall_tag(k);
                 }
             }
-            self.display_nmi_view_mut().set_subroutine_index(5);
+            self.set_pending_nmi_subroutine(5);
             let mut target = self
                 .dungeon_state_view()
                 .moving_wall_write_point()
@@ -10330,13 +10330,13 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_TriggerBGC34UpdateAndAdvance(&mut self) {
         self.PrepTransAuxGfx();
-        self.display_nmi_view_mut().set_subroutine_index(9);
+        self.set_pending_nmi_subroutine(9);
         self.set_core_update_disable_flag(9);
         self.frame_control_view_mut().increment_subsubmodule();
     }
 
     pub(super) fn DungeonTransition_TriggerBGC56UpdateAndAdvance(&mut self) {
-        self.display_nmi_view_mut().set_subroutine_index(10);
+        self.set_pending_nmi_subroutine(10);
         self.set_core_update_disable_flag(10);
         self.frame_control_view_mut().increment_subsubmodule();
     }

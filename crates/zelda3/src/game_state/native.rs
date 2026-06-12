@@ -110,8 +110,10 @@ pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) nmi_update_latch: u8,
     pub(crate) core_update_disable_flag: u8,
+    pub(crate) pending_nmi_subroutine: u8,
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) nmi_copy_packets_request: u8,
+    pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
 
@@ -121,8 +123,10 @@ impl DisplayState {
             screen_brightness: ram_byte(ram, INIDISP_COPY),
             nmi_update_latch: ram_byte(ram, NMI_BOOLEAN),
             core_update_disable_flag: ram_byte(ram, NMI_DISABLE_CORE_UPDATES),
+            pending_nmi_subroutine: ram_byte(ram, NMI_SUBROUTINE_INDEX),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
+            nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
     }
@@ -131,8 +135,10 @@ impl DisplayState {
         ram[INIDISP_COPY] = self.screen_brightness;
         ram[NMI_BOOLEAN] = self.nmi_update_latch;
         ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
+        ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
+        write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
 
@@ -150,6 +156,10 @@ impl DisplayState {
 
     pub(crate) fn has_nmi_copy_packets_request(&self) -> bool {
         self.nmi_copy_packets_request != 0
+    }
+
+    pub(crate) fn nmi_load_target_page(&self) -> u8 {
+        self.nmi_load_target_address as u8
     }
 
     pub(crate) fn vram_upload_cursor_usize(&self) -> usize {
@@ -484,6 +494,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_pending_nmi_subroutine_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.pending_nmi_subroutine,
+            ram_byte(self.ram, NMI_SUBROUTINE_INDEX)
+        );
+    }
+
     fn debug_assert_bg_vram_load_mode_matches_ram(&self) {
         debug_assert_eq!(
             self.display.bg_vram_load_mode,
@@ -495,6 +512,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.nmi_copy_packets_request,
             ram_byte(self.ram, NMI_COPY_PACKETS_FLAG)
+        );
+    }
+
+    fn debug_assert_nmi_load_target_address_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.nmi_load_target_address,
+            read_le_u16(self.ram, NMI_LOAD_TARGET_ADDR)
         );
     }
 
@@ -552,6 +576,22 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         value
     }
 
+    pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
+        self.display.pending_nmi_subroutine = value;
+        self.ram[NMI_SUBROUTINE_INDEX] = value;
+        self.debug_assert_pending_nmi_subroutine_matches_ram();
+    }
+
+    pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
+        self.set_pending_nmi_subroutine(0);
+    }
+
+    pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
+        let value = self.display.pending_nmi_subroutine;
+        self.clear_pending_nmi_subroutine();
+        value
+    }
+
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
         self.display.bg_vram_load_mode = value;
         self.ram[NMI_LOAD_BG_FROM_VRAM] = value;
@@ -574,6 +614,19 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
         self.set_nmi_copy_packets_request(0);
+    }
+
+    pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
+        self.display.nmi_load_target_address =
+            (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
+        self.ram[NMI_LOAD_TARGET_ADDR] = value;
+        self.debug_assert_nmi_load_target_address_matches_ram();
+    }
+
+    pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
+        self.display.nmi_load_target_address = value;
+        write_le_u16(self.ram, NMI_LOAD_TARGET_ADDR, value);
+        self.debug_assert_nmi_load_target_address_matches_ram();
     }
 }
 
@@ -690,8 +743,10 @@ mod tests {
         ram[INIDISP_COPY] = 0x0f;
         ram[NMI_BOOLEAN] = 1;
         ram[NMI_DISABLE_CORE_UPDATES] = 4;
+        ram[NMI_SUBROUTINE_INDEX] = 11;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
+        write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
         let mut display = DisplayState::load_from_ram(&ram);
@@ -700,10 +755,13 @@ mod tests {
         assert!(display.nmi_update_is_latched());
         assert_eq!(display.core_update_disable_flag, 4);
         assert!(display.core_updates_are_disabled());
+        assert_eq!(display.pending_nmi_subroutine, 11);
         assert_eq!(display.bg_vram_load_mode, 3);
         assert!(display.has_bg_vram_load());
         assert_eq!(display.nmi_copy_packets_request, 1);
         assert!(display.has_nmi_copy_packets_request());
+        assert_eq!(display.nmi_load_target_address, 0x2146);
+        assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
         assert_eq!(display.vram_upload_cursor_usize(), 0x0124);
         assert_eq!(
@@ -714,16 +772,20 @@ mod tests {
         display.screen_brightness = 0x80;
         display.nmi_update_latch = 0;
         display.core_update_disable_flag = 0;
+        display.pending_nmi_subroutine = 0;
         display.bg_vram_load_mode = 0;
         display.nmi_copy_packets_request = 0;
+        display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 0);
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 0);
+        assert_eq!(ram[NMI_SUBROUTINE_INDEX], 0);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
+        assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
 
@@ -750,8 +812,10 @@ mod tests {
         ram[INIDISP_COPY] = 4;
         ram[NMI_BOOLEAN] = 1;
         ram[NMI_DISABLE_CORE_UPDATES] = 2;
+        ram[NMI_SUBROUTINE_INDEX] = 6;
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
+        write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
         let mut display = DisplayState::default();
@@ -764,24 +828,32 @@ mod tests {
             view.latch_nmi_update();
             view.clear_core_update_disable_flag();
             view.set_core_update_disable_flag(7);
+            assert_eq!(view.take_pending_nmi_subroutine(), 6);
+            view.set_pending_nmi_subroutine(11);
             view.clear_bg_vram_load_mode();
             view.set_bg_vram_load_mode(5);
             view.clear_nmi_copy_packets_request();
             view.request_nmi_copy_packets();
             view.set_nmi_copy_packets_request(3);
+            view.set_nmi_load_target_page(0x80);
+            view.set_nmi_load_target_address(0x1234);
         }
 
         assert_eq!(display.screen_brightness, 0x80);
         assert_eq!(display.nmi_update_latch, 1);
         assert_eq!(display.core_update_disable_flag, 7);
+        assert_eq!(display.pending_nmi_subroutine, 11);
         assert_eq!(display.bg_vram_load_mode, 5);
         assert_eq!(display.nmi_copy_packets_request, 3);
+        assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
         assert_eq!(ram[NMI_BOOLEAN], 1);
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
+        assert_eq!(ram[NMI_SUBROUTINE_INDEX], 11);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
+        assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }
 }

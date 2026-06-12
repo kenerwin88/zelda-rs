@@ -804,7 +804,7 @@ impl ZeldaState {
         self.LoadTransAuxGFX();
         self.PrepTransAuxGfx();
         self.set_core_update_disable_flag(9);
-        self.display_nmi_view_mut().set_subroutine_index(9);
+        self.set_pending_nmi_subroutine(9);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -953,7 +953,7 @@ impl ZeldaState {
         self.set_overworld_map16_y_unit(bak_y_unit);
         self.set_overworld_map16_dst_off(bak_dst_off);
         self.set_overworld_map16_src_off(bak_src_off);
-        self.display_nmi_view_mut().set_subroutine_index(4);
+        self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
         self.frame_control_view_mut().increment_submodule();
         self.set_screen_brightness(0);
@@ -970,7 +970,7 @@ impl ZeldaState {
     pub(super) fn LoadOverworldOverlay(&mut self) {
         self.OverworldLoad_LoadSubOverlayMap32();
         self.Map16ToMap8(0x4000, 0x1000);
-        self.display_nmi_view_mut().set_subroutine_index(4);
+        self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
         self.frame_control_view_mut().increment_submodule();
     }
@@ -2220,7 +2220,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_FinishTransGfx(&mut self) {
         self.set_core_update_disable_flag(10);
-        self.display_nmi_view_mut().set_subroutine_index(10);
+        self.set_pending_nmi_subroutine(10);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -2537,7 +2537,7 @@ impl ZeldaState {
                 self.dungeon_state_view_mut().set_draw_width_indicator(0);
                 self.Overworld_LoadOverlays2();
                 self.frame_control_view_mut().decrement_submodule();
-                self.display_nmi_view_mut().set_subroutine_index(12);
+                self.set_pending_nmi_subroutine(12);
                 self.system_signals_view_mut().clear_cgram_update_flag();
                 self.palette_filter_view_mut().set_fixed_color_blue(0x80);
                 self.set_screen_brightness(0x0f);
@@ -2546,14 +2546,14 @@ impl ZeldaState {
                 self.frame_control_view_mut().increment_subsubmodule();
             }
             4 | 6 => {
-                self.display_nmi_view_mut().set_subroutine_index(13);
+                self.set_pending_nmi_subroutine(13);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
                 self.frame_control_view_mut().increment_subsubmodule();
             }
             5 => {
                 self.Overworld_LoadOverlayAndMap();
-                self.display_nmi_view_mut().set_subroutine_index(12);
+                self.set_pending_nmi_subroutine(12);
                 self.set_screen_brightness(0x0f);
                 self.display_nmi_view_mut()
                     .increment_core_update_disable_flag();
@@ -3499,7 +3499,7 @@ impl ZeldaState {
         self.write_overworld_vram_word(dst, 0xffff);
         self.write_overworld_vram_word(dst + 1, 0xffff);
         if dst != 0 {
-            self.display_nmi_view_mut().set_subroutine_index(3);
+            self.set_pending_nmi_subroutine(3);
         }
         if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
             && matches!(
@@ -3525,7 +3525,7 @@ impl ZeldaState {
     pub(super) fn TriggerAndFinishMapLoadStripe_Y(&mut self, mut n: i32) {
         self.world_state_view_mut()
             .set_screen_transition_direction_bits(8);
-        self.display_nmi_view_mut().set_subroutine_index(3);
+        self.set_pending_nmi_subroutine(3);
         let mut dst = 0usize;
         self.write_overworld_vram_word(dst, 0x0080);
         dst += 1;
@@ -3543,7 +3543,7 @@ impl ZeldaState {
     pub(super) fn TriggerAndFinishMapLoadStripe_X(&mut self, mut n: i32) {
         self.world_state_view_mut()
             .set_screen_transition_direction_bits(2);
-        self.display_nmi_view_mut().set_subroutine_index(3);
+        self.set_pending_nmi_subroutine(3);
         let mut dst = 0usize;
         self.write_overworld_vram_word(dst, 0x8040);
         dst += 1;
@@ -4118,7 +4118,7 @@ impl ZeldaState {
         self.write_overworld_vram_word(dst, 0xffff);
         self.write_overworld_vram_word(dst + 1, 0xffff);
         if dst != 0 {
-            self.display_nmi_view_mut().set_subroutine_index(3);
+            self.set_pending_nmi_subroutine(3);
         }
         let screen_transition = self.world_state_view().screen_transition_direction_bits();
         self.world_state_view_mut()

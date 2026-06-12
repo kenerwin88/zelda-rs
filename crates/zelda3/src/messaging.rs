@@ -747,7 +747,7 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_Draw(&mut self) {
-        self.display_nmi_view_mut().set_subroutine_index(0x12);
+        self.set_pending_nmi_subroutine(0x12);
     }
 
     pub(super) fn Module12_GameOver(&mut self) {
@@ -904,7 +904,7 @@ impl ZeldaState {
             .clear_changeable_object_index(0);
         self.dungeon_state_view_mut()
             .clear_changeable_object_index(1);
-        self.display_nmi_view_mut().set_subroutine_index(22);
+        self.set_pending_nmi_subroutine(22);
         self.set_core_update_disable_flag(22);
         self.frame_control_view_mut().increment_submodule();
     }
@@ -1419,7 +1419,7 @@ impl ZeldaState {
                 self.display_nmi_view_mut().tilemap_upload_buffer_mut()[..len]
                     .copy_from_slice(&tilemap[..len]);
             }
-            self.display_nmi_view_mut().set_subroutine_index(21);
+            self.set_pending_nmi_subroutine(21);
         }
         self.world_state_view_mut().increment_overworld_map_state();
     }
@@ -2123,8 +2123,8 @@ impl ZeldaState {
         self.dungeon_map_scratch_view_mut()
             .set_dungmap_cur_floor(dungmap_cur_floor);
         self.dungeon_map_scratch_view_mut().clear_scroll_state();
-        self.display_nmi_view_mut().set_subroutine_index(8);
-        self.display_nmi_view_mut().set_load_target_addr(0x22);
+        self.set_pending_nmi_subroutine(8);
+        self.set_nmi_load_target_page(0x22);
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
     }
@@ -2442,7 +2442,7 @@ impl ZeldaState {
         }
         self.dungeon_map_scratch_view_mut()
             .set_scroll_draw_offset(scroll_draw_offset);
-        self.display_nmi_view_mut().set_subroutine_index(8);
+        self.set_pending_nmi_subroutine(8);
     }
 
     pub(super) fn DungeonMap_ScrollFloors(&mut self) {
@@ -2773,7 +2773,7 @@ impl ZeldaState {
             }
         }
 
-        self.display_nmi_view_mut().set_subroutine_index(0);
+        self.clear_pending_nmi_subroutine();
         self.frame_control_view_mut().set_subsubmodule(0);
         self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
         let mapbak_palette = self.ppu_scroll_copy_view().mapbak_palette_slice().to_vec();
@@ -3009,7 +3009,7 @@ impl ZeldaState {
         self.messaging_state_view_mut().set_text_tilemap_cur(0x3980);
         self.Text_LoadCharacterBuffer();
         self.messaging_render_buffer_view_mut().clear_range(0x7e0);
-        self.display_nmi_view_mut().set_subroutine_index(2);
+        self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
     }
 
@@ -3354,7 +3354,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.display_nmi_view_mut().set_subroutine_index(2);
+        self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
     }
 
@@ -3886,7 +3886,7 @@ impl ZeldaState {
         self.load_overworld_map_palette();
         self.load_actual_gear_palettes();
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.display_nmi_view_mut().set_subroutine_index(7);
+        self.set_pending_nmi_subroutine(7);
         self.set_screen_brightness(0);
         self.display_nmi_view_mut()
             .increment_core_update_disable_flag();

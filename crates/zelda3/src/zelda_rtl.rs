@@ -290,7 +290,6 @@ const NMI_LOAD_BG_FROM_VRAM: usize = 0x14;
 const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
 const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
-const NMI_SUBROUTINE_INDEX: usize = 0x17;
 const FRAME_COUNTER: usize = 0x1a;
 const TM_COPY: usize = 0x1c;
 const TS_COPY: usize = 0x1d;
@@ -419,7 +418,6 @@ const VIRQ_TRIGGER: usize = 0xff;
 const WHICH_ENTRANCE: usize = 0x10e;
 const OVERWORLD_HOLE_SCAN_STEP: usize = 0x10f;
 const OAM_PRIORITY_VALUE: usize = 0x64;
-const NMI_LOAD_TARGET_ADDR: usize = 0x116;
 const IS_NMI_THREAD_ACTIVE: usize = 0x12a;
 const IRQ_FLAG: usize = 0x128;
 // NES_Ver2: GOVRCFG, game-over check flag.
@@ -1998,6 +1996,21 @@ impl ZeldaState {
             .increment_core_update_disable_flag()
     }
 
+    pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_pending_nmi_subroutine(value);
+    }
+
+    pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_pending_nmi_subroutine();
+    }
+
+    pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .take_pending_nmi_subroutine()
+    }
+
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_bg_vram_load_mode(value);
@@ -2021,6 +2034,16 @@ impl ZeldaState {
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .clear_nmi_copy_packets_request();
+    }
+
+    pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_nmi_load_target_page(value);
+    }
+
+    pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_nmi_load_target_address(value);
     }
 
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
@@ -5739,12 +5762,12 @@ mod tests {
     fn scratch_word_high_does_not_alias_nmi_subroutine_index() {
         let mut state = ZeldaState::new();
         state.scratch_word_view_mut().set_word(0x0200);
-        state.display_nmi_view_mut().set_subroutine_index(11);
+        state.set_pending_nmi_subroutine(11);
 
         assert_eq!(state.scratch_word_view_mut().decrement_high(), 1);
 
         assert_eq!(state.scratch_word_view().word(), 0x0100);
-        assert_eq!(state.display_nmi_view().subroutine_index(), 11);
+        assert_eq!(state.display_state().pending_nmi_subroutine, 11);
     }
 
     #[test]
@@ -8670,8 +8693,8 @@ mod tests {
         assert_eq!(state.palette_filter_view().fixed_color_green(), 0x40);
         assert_eq!(state.palette_filter_view().fixed_color_blue(), 0x80);
         assert_eq!(state.display_state().core_update_disable_flag, 0x80);
-        assert_eq!(state.display_nmi_view().load_target_addr(), 0x46);
-        assert_eq!(state.display_nmi_view().subroutine_index(), 0);
+        assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
+        assert_eq!(state.display_state().pending_nmi_subroutine, 0);
         assert_eq!(state.system_signals_view().sound_effect_2(), 0);
         assert_eq!(state.ending_scratch_view().primary_word(), 0x1bfe);
         assert_eq!(state.ending_scratch_view().secondary_word(), 0x17fe);
@@ -8729,8 +8752,8 @@ mod tests {
         state.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 20;
         state.graphics_load_chr_half_slot();
 
-        assert_eq!(state.display_nmi_view().load_target_addr(), 0x46);
-        assert_eq!(state.display_nmi_view().subroutine_index(), 11);
+        assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
+        assert_eq!(state.display_state().pending_nmi_subroutine, 11);
         assert_eq!(&state.ram[0x11000..0x11004], &[0, 1, 2, 3]);
         assert_eq!(&state.ram[0x11010..0x11014], &[16, 17, 17, 19]);
         assert_eq!(&state.ram[0x11020..0x11024], &[24, 25, 26, 27]);
@@ -8741,14 +8764,14 @@ mod tests {
         let mut state = ZeldaState::new();
         write_le_u16(&mut state.ram, 0x11000, 0x1234);
         write_le_u16(&mut state.ram, 0x11002, 0xabcd);
-        state.display_nmi_view_mut().set_load_target_addr(0x46);
-        state.display_nmi_view_mut().set_subroutine_index(11);
+        state.set_nmi_load_target_page(0x46);
+        state.set_pending_nmi_subroutine(11);
 
         state.nmi_do_updates();
 
         assert_eq!(state.ppu.vram[0x4600], 0x1234);
         assert_eq!(state.ppu.vram[0x4601], 0xabcd);
-        assert_eq!(state.display_nmi_view().subroutine_index(), 0);
+        assert_eq!(state.display_state().pending_nmi_subroutine, 0);
     }
 
     #[test]
