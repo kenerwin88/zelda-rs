@@ -1,4 +1,5 @@
 use super::ram_byte;
+use crate::game_state::constants::messaging::MESSAGE_DMA_DST_ADDR;
 use crate::game_state::constants::*;
 use crate::game_state::VramUploadDataViewMut;
 use crate::types::{read_le_u16, write_le_u16};
@@ -37,6 +38,8 @@ pub(crate) struct DisplayState {
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
     pub(crate) incremental_vram_upload_counter: u8,
+    pub(crate) message_dma_destination_address: u16,
+    pub(crate) overworld_fixed_color_adjustment: u8,
 }
 
 impl DisplayState {
@@ -73,6 +76,8 @@ impl DisplayState {
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
             incremental_vram_upload_counter: ram_byte(ram, INCREMENTAL_COUNTER_FOR_VRAM),
+            message_dma_destination_address: read_le_u16(ram, MESSAGE_DMA_DST_ADDR),
+            overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
         }
     }
 
@@ -108,6 +113,12 @@ impl DisplayState {
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
         ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.incremental_vram_upload_counter;
+        write_le_u16(
+            ram,
+            MESSAGE_DMA_DST_ADDR,
+            self.message_dma_destination_address,
+        );
+        ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -180,6 +191,10 @@ impl DisplayState {
 
     pub(crate) fn incremental_vram_upload_counter_usize(&self) -> usize {
         usize::from(self.incremental_vram_upload_counter)
+    }
+
+    pub(crate) fn message_dma_destination_address_usize(&self) -> usize {
+        usize::from(self.message_dma_destination_address)
     }
 }
 
@@ -399,6 +414,20 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.incremental_vram_upload_counter,
             ram_byte(self.ram, INCREMENTAL_COUNTER_FOR_VRAM)
+        );
+    }
+
+    fn debug_assert_message_dma_destination_address_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.message_dma_destination_address,
+            read_le_u16(self.ram, MESSAGE_DMA_DST_ADDR)
+        );
+    }
+
+    fn debug_assert_overworld_fixed_color_adjustment_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.overworld_fixed_color_adjustment,
+            ram_byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
         );
     }
 
@@ -808,5 +837,17 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = value;
         self.debug_assert_incremental_vram_upload_counter_matches_ram();
         value
+    }
+
+    pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
+        self.display.message_dma_destination_address = value;
+        write_le_u16(self.ram, MESSAGE_DMA_DST_ADDR, value);
+        self.debug_assert_message_dma_destination_address_matches_ram();
+    }
+
+    pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
+        self.display.overworld_fixed_color_adjustment = value;
+        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
+        self.debug_assert_overworld_fixed_color_adjustment_matches_ram();
     }
 }

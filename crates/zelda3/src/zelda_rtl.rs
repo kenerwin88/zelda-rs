@@ -2454,6 +2454,16 @@ impl ZeldaState {
         VramLoadStateViewMut::new(&mut self.ram).set_animated_tile_data_src(value);
     }
 
+    pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_message_dma_destination_address(value);
+    }
+
+    pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_overworld_fixed_color_adjustment(value);
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }

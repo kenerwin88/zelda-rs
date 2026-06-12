@@ -1474,8 +1474,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_rebuild_indoor(&mut self) {
-        self.display_nmi_view_mut()
-            .set_overworld_fixed_color_plusminus(0);
+        self.set_overworld_fixed_color_adjustment(0);
         self.player_resources_view_mut().set_keys(0xff);
         self.hud_rebuild();
     }

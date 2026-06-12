@@ -358,8 +358,7 @@ impl ZeldaState {
                 let color_plus =
                     LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
                 self.set_sub_screen_layers(0);
-                self.display_nmi_view_mut()
-                    .set_overworld_fixed_color_plusminus(color_plus);
+                self.set_overworld_fixed_color_adjustment(color_plus);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
             }
@@ -641,8 +640,7 @@ impl ZeldaState {
         }
         self.increment_submodule();
         self.player_state_view_mut().clear_movement_velocity();
-        self.display_nmi_view_mut()
-            .set_overworld_fixed_color_plusminus(0);
+        self.set_overworld_fixed_color_adjustment(0);
     }
 
     pub(super) fn module15_mirror_warp_from_aga(&mut self) {

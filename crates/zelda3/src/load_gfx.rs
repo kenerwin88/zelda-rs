@@ -2861,13 +2861,12 @@ impl ZeldaState {
             torch = 3;
         }
         const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-        self.display_nmi_view_mut()
-            .set_overworld_fixed_color_plusminus(
-                LIT_TORCHES_COLOR_PLUS
-                    .get(torch as usize)
-                    .copied()
-                    .unwrap_or(0),
-            );
+        self.set_overworld_fixed_color_adjustment(
+            LIT_TORCHES_COLOR_PLUS
+                .get(torch as usize)
+                .copied()
+                .unwrap_or(0),
+        );
         self.palette_filter_view_mut().set_countdown(31);
         self.clear_mosaic_target_level();
         self.palette_filter_view_mut()

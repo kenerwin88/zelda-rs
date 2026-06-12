@@ -1510,8 +1510,7 @@ impl ZeldaState {
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let plus = LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
-                self.display_nmi_view_mut()
-                    .set_overworld_fixed_color_plusminus(plus);
+                self.set_overworld_fixed_color_adjustment(plus);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
             }

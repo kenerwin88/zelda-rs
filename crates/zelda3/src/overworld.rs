@@ -425,8 +425,7 @@ impl ZeldaState {
             self.SpecialOverworld_CopyPalettesToCache();
         }
         self.Overworld_SetFixedColAndScroll();
-        self.display_nmi_view_mut()
-            .set_overworld_fixed_color_plusminus(0);
+        self.set_overworld_fixed_color_adjustment(0);
         self.follower_initialize();
 
         if sc & 0x3f == 0 {
@@ -478,8 +477,7 @@ impl ZeldaState {
         self.set_indoor_flag(0);
         self.dungeon_state_view_mut()
             .clear_dungeon_dark_with_lantern();
-        self.display_nmi_view_mut()
-            .set_overworld_fixed_color_plusminus(0);
+        self.set_overworld_fixed_color_adjustment(0);
         self.save_progress_view_mut().set_palace_index_x2(0xff);
         self.memorized_tile_view_mut().clear_count();
 

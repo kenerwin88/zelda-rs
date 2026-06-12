@@ -1119,7 +1119,7 @@ impl ZeldaState {
         if !self.hud_state_view().is_doing_heart_animation() {
             self.set_chr_halfslot_request(1);
             self.Graphics_LoadChrHalfSlot();
-            let fixed_color = self.display_nmi_view().overworld_fixed_color_plusminus();
+            let fixed_color = self.display_state().overworld_fixed_color_adjustment;
             self.Dungeon_ApproachFixedColor_variable(fixed_color);
             self.increment_submodule();
         }
@@ -2755,7 +2755,7 @@ impl ZeldaState {
         let mapbak_palette = self.ppu_scroll_copy_view().mapbak_palette_slice().to_vec();
         self.palette_buffer_view_mut()
             .copy_main_full_from(&mapbak_palette);
-        let fixed_color_plusminus = self.display_nmi_view().overworld_fixed_color_plusminus();
+        let fixed_color_plusminus = self.display_state().overworld_fixed_color_adjustment;
         self.palette_filter_view_mut()
             .or_fixed_color_red(fixed_color_plusminus);
         self.palette_filter_view_mut()
@@ -2927,7 +2927,7 @@ impl ZeldaState {
             .set_bg_tile_animation_countdown(7);
         self.player_state_view_mut()
             .reset_link_dma_animation_cycle(7);
-        self.display_nmi_view_mut().set_message_dma_dst_addr(0x6040);
+        self.set_message_dma_destination_address(0x6040);
         self.display_nmi_view_mut()
             .set_message_dma_tile_base(0x4841);
         self.display_nmi_view_mut()
