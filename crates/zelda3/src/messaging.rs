@@ -313,12 +313,9 @@ impl ZeldaState {
             1 => self.ApplyPaletteFilter_bounce(),
             2 => {
                 self.DesertPrayer_InitializeIrisHDMA();
-                let countdown = self
-                    .display_nmi_view()
-                    .mosaic_target_level()
-                    .wrapping_sub(1);
+                let countdown = self.display_state().mosaic_target_level.wrapping_sub(1);
                 self.palette_filter_view_mut().set_countdown(countdown);
-                self.display_nmi_view_mut().clear_mosaic_target_level();
+                self.clear_mosaic_target_level();
                 self.palette_filter_view_mut()
                     .set_darkening_or_lightening_screen(2);
             }
@@ -885,9 +882,9 @@ impl ZeldaState {
         if self.palette_filter_view().darkening_or_lightening_screen() != 0xff {
             return;
         }
-        self.display_nmi_view_mut().clear_mosaic_level();
-        self.mosaic_direction_view_mut().clear();
-        self.display_nmi_view_mut().set_mosaic_copy(3);
+        self.clear_mosaic_level();
+        self.clear_mosaic_direction();
+        self.set_mosaic_copy(3);
         for i in 0..4 {
             if self.inventory_state_view().bottle(i) == 6 {
                 let value = 2;
@@ -1372,7 +1369,7 @@ impl ZeldaState {
         let hdmaen = self.display_state().hdma_enable_mask;
         self.ppu_scroll_copy_view_mut().set_mapbak_hdmaen(hdmaen);
         self.EnableForceBlank();
-        self.display_nmi_view_mut().set_mosaic_copy(3);
+        self.set_mosaic_copy(3);
         self.world_state_view_mut().increment_overworld_map_state();
         let tm_ts = self.display_nmi_view().layer_masks_word();
         self.ppu_scroll_copy_view_mut().set_mapbak_tm_word(tm_ts);
@@ -2832,7 +2829,7 @@ impl ZeldaState {
         if self.display_state().screen_brightness != 0 {
             return;
         }
-        self.display_nmi_view_mut().set_mosaic_copy(3);
+        self.set_mosaic_copy(3);
         let hdmaen = self.display_state().hdma_enable_mask;
         self.ppu_scroll_copy_view_mut().set_mapbak_hdmaen(hdmaen);
         self.EnableForceBlank();
@@ -2959,7 +2956,7 @@ impl ZeldaState {
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
-            self.display_nmi_view_mut().clear_mosaic_level();
+            self.clear_mosaic_level();
         }
 
         self.save_progress_view_mut().request_post_message_refresh();

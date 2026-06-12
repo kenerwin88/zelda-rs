@@ -763,11 +763,11 @@ impl ZeldaState {
                     .set_subsubmodule(bak0.wrapping_add(1));
                 self.set_screen_brightness(15);
                 self.palette_filter_view_mut().set_countdown(31);
-                self.display_nmi_view_mut().clear_mosaic_target_level();
+                self.clear_mosaic_target_level();
                 self.ppu_scroll_copy_view_mut().set_bg1_h_high(1);
                 self.palette_filter_view_mut().set_color_window_selection(2);
                 self.palette_filter_view_mut().set_color_math_control(50);
-                self.display_nmi_view_mut().set_mosaic_level(240);
+                self.set_mosaic_level(240);
                 {
                     let mut player = self.player_state_view_mut();
                     player.set_y_low(236);
@@ -791,12 +791,12 @@ impl ZeldaState {
             }
             6 => {
                 if self.palette_filter_view().countdown() & 1 == 0
-                    && self.display_nmi_view().mosaic_level() != 0
+                    && self.display_state().mosaic_level != 0
                 {
-                    self.display_nmi_view_mut().decrement_mosaic_level_by(0x10);
+                    self.decrement_mosaic_level_by(0x10);
                 }
                 self.display_nmi_view_mut().set_bg_mode(9);
-                self.display_nmi_view_mut().set_mosaic_copy_from_level_or(7);
+                self.set_mosaic_copy_from_level_or(7);
                 self.apply_palette_filter_bounce();
             }
             7 => {
@@ -2678,8 +2678,7 @@ impl ZeldaState {
             self.palette_filter_view_mut()
                 .set_darkening_or_lightening_screen_word(0);
             self.palette_filter_view_mut().set_countdown_word(0);
-            self.display_nmi_view_mut()
-                .set_mosaic_target_level_word(0x1f);
+            self.set_mosaic_target_level_word(0x1f);
             self.frame_control_view_mut().increment_submodule();
             self.ending_scratch_view_mut().set_primary_word(0x00c0);
             self.ending_scratch_view_mut().set_secondary_word(0);
@@ -3029,7 +3028,7 @@ impl ZeldaState {
 
     pub(super) fn intro_initialize_background_settings(&mut self) {
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy(0);
+        self.set_mosaic_copy(0);
         self.zelda_ppu_write(0x2107, 0x13);
         self.zelda_ppu_write(0x2108, 0x03);
         self.zelda_ppu_write(0x2109, 0x63);
@@ -3098,7 +3097,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(2);
         self.palette_filter_view_mut().set_countdown_word(31);
-        self.display_nmi_view_mut().clear_mosaic_target_level();
+        self.clear_mosaic_target_level();
         self.frame_control_view_mut().increment_submodule();
     }
 

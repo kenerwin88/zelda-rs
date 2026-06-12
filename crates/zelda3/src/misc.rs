@@ -490,7 +490,7 @@ impl ZeldaState {
             self.frame_control_view_mut().set_submodule(0);
             self.frame_control_view_mut().set_subsubmodule(0);
             self.system_signals_view_mut().clear_restart_check_flag();
-        } else if self.display_nmi_view().mosaic_level() != 0
+        } else if self.display_state().mosaic_level != 0
             || (self.system_signals_view().game_over_check_flag() != 0
                 && self.system_signals_view().restart_check_flag() == 0)
             || self.save_progress_view().progress_indicator() < 2
@@ -514,8 +514,8 @@ impl ZeldaState {
     }
 
     pub(super) fn load_dungeon_room_rebuild_hud(&mut self) {
-        self.display_nmi_view_mut().clear_mosaic_level();
-        self.display_nmi_view_mut().set_mosaic_copy(7);
+        self.clear_mosaic_level();
+        self.set_mosaic_copy(7);
         self.hud_search_for_equipped_item();
         self.hud_rebuild();
         self.hud_update_equipped_item();
@@ -955,7 +955,7 @@ impl ZeldaState {
         if self.frame_state().submodule == 1 {
             self.decrement_screen_brightness();
             if self.display_state().screen_brightness == 0 {
-                self.display_nmi_view_mut().set_mosaic_copy(15);
+                self.set_mosaic_copy(15);
                 self.frame_control_view_mut().set_subsubmodule(1);
                 self.Death_Func15(false);
             }

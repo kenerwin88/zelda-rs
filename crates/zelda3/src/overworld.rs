@@ -2202,10 +2202,10 @@ impl ZeldaState {
 
     pub(super) fn Overworld_ResetMosaicDown(&mut self) {
         if self.palette_filter_view().countdown() & 1 != 0 {
-            self.display_nmi_view_mut().decrement_mosaic_level_by(0x10);
+            self.decrement_mosaic_level_by(0x10);
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(7);
+        self.set_mosaic_copy_from_level_or(7);
     }
 
     pub(super) fn Overworld_Func1D(&mut self) {
@@ -2794,16 +2794,16 @@ impl ZeldaState {
 
     pub(super) fn ConditionalMosaicControl(&mut self) {
         if self.palette_filter_view().countdown() & 1 != 0 {
-            self.display_nmi_view_mut().increment_mosaic_level_by(0x10);
+            self.increment_mosaic_level_by(0x10);
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(7);
+        self.set_mosaic_copy_from_level_or(7);
     }
 
     pub(super) fn Overworld_ResetMosaic_alwaysIncrease(&mut self) {
-        self.display_nmi_view_mut().increment_mosaic_level_by(0x10);
+        self.increment_mosaic_level_by(0x10);
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(7);
+        self.set_mosaic_copy_from_level_or(7);
     }
 
     pub(super) fn FluteMenu_LoadTransport(&mut self) {
@@ -4346,8 +4346,8 @@ impl ZeldaState {
         {
             self.frame_control_view_mut().set_subsubmodule(0);
             self.frame_control_view_mut().set_submodule(13);
-            self.display_nmi_view_mut().set_mosaic_copy(0);
-            self.display_nmi_view_mut().clear_mosaic_level();
+            self.set_mosaic_copy(0);
+            self.clear_mosaic_level();
         } else {
             let sc = self.world_location_state().overworld_screen_index() as usize;
             self.Overworld_LoadPalettes(
@@ -5070,12 +5070,9 @@ impl ZeldaState {
         self.LoadNewSpriteGFXSet();
         self.set_screen_brightness(0x0f);
         self.set_hdma_enable_mask(0x80);
-        let countdown = self
-            .display_nmi_view()
-            .mosaic_target_level()
-            .wrapping_sub(1);
+        let countdown = self.display_state().mosaic_target_level.wrapping_sub(1);
         self.palette_filter_view_mut().set_countdown(countdown);
-        self.display_nmi_view_mut().clear_mosaic_target_level();
+        self.clear_mosaic_target_level();
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen(2);
         self.frame_control_view_mut().increment_subsubmodule();
@@ -5380,10 +5377,10 @@ impl ZeldaState {
 
     pub(super) fn conditional_mosaic_control(&mut self) {
         if self.palette_filter_view().countdown() & 1 != 0 {
-            self.display_nmi_view_mut().increment_mosaic_level_by(0x10);
+            self.increment_mosaic_level_by(0x10);
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(7);
+        self.set_mosaic_copy_from_level_or(7);
     }
 
     pub(super) fn overworld_alter_weathervane(&mut self) {

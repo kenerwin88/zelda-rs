@@ -58,31 +58,30 @@ use crate::game_state::{
     MemorizedTileViewMut, MessagingRenderBufferView, MessagingRenderBufferViewMut,
     MessagingStateView, MessagingStateViewMut, MessagingTextView, MessagingTextViewMut,
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
-    MoldormHistoryView, MoldormHistoryViewMut, MosaicDirectionView, MosaicDirectionViewMut,
-    MultiselectChoiceView, MultiselectChoiceViewMut, NativeDisplayStateViewMut,
-    NativeFrameStateView, NativeFrameStateViewMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeVramUploadDataViewMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
-    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, OverworldTileUpdateView, OverworldTileUpdateViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
-    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
-    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
-    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
+    NativeDisplayStateViewMut, NativeFrameStateView, NativeFrameStateViewMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeVramUploadDataViewMut, NativeWorldLocationViewMut, OamStateView,
+    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut,
+    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
+    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
+    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
+    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView,
+    RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView,
+    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
+    SelectFileScratchViewMut, SharedMessageTimerView, SharedMessageTimerViewMut,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView,
+    SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    StarTileView, StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
     SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
@@ -348,7 +347,6 @@ const INDEX_OF_INTERACTING_TILE: usize = 0x76;
 const ALLOW_SCROLL_Z: usize = 0x78;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
 const BGMODE_COPY: usize = 0x94;
-const MOSAIC_COPY: usize = 0x95;
 const W12SEL_COPY: usize = 0x96;
 const W34SEL_COPY: usize = 0x97;
 const WOBJSEL_COPY: usize = 0x98;
@@ -830,7 +828,6 @@ const DMA_SOURCE_ADDR_20: usize = 0x0af6;
 const DMA_SOURCE_ADDR_21: usize = 0x0af8;
 const PALETTE_FILTER_COUNTDOWN: usize = 0x0c007;
 const DARKENING_OR_LIGHTENING_SCREEN: usize = 0x0c009;
-const MOSAIC_TARGET_LEVEL: usize = 0x0c00b;
 const SPRITE_N: usize = 0x0bc0;
 const RAW_SFX_PAN_VALUE: usize = 0x0cf8;
 const RUPEE_SFX_SOUND_DELAY: usize = 0x0cfd;
@@ -900,8 +897,6 @@ const GARNISH_TYPE: usize = 0x1f800;
 const BEAMOS_X_HI: usize = 0x1fe00;
 const BG_TILE_ANIMATION_COUNTDOWN: usize = 0x0c00d;
 const LINK_DMA_SOURCE_OFFSET: usize = 0x0c00f;
-const MOSAIC_LEVEL: usize = 0x0c011;
-const MOSAIC_INC_OR_DEC: usize = 0x647;
 const LINK_DMA_COUNTDOWN: usize = 0x0c013;
 const LINK_DMA_TILE_OFFSET: usize = 0x0c015;
 const OVERWORLD_FIXED_COLOR_PLUSMINUS: usize = 0x0c017;
@@ -2093,6 +2088,71 @@ impl ZeldaState {
             .clear_hdma_enable_mask();
     }
 
+    pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_copy(value);
+    }
+
+    pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_copy_from_level_or(mask);
+    }
+
+    pub(crate) fn set_mosaic_level(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_level(value);
+    }
+
+    pub(crate) fn clear_mosaic_level(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_mosaic_level();
+    }
+
+    pub(crate) fn clear_mosaic_level_word(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_mosaic_level_word();
+    }
+
+    pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .increment_mosaic_level_by(value)
+    }
+
+    pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .decrement_mosaic_level_by(value)
+    }
+
+    pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_target_level(value);
+    }
+
+    pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_target_level_word(value);
+    }
+
+    pub(crate) fn clear_mosaic_target_level(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_mosaic_target_level();
+    }
+
+    pub(crate) fn clear_mosaic_target_level_word(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_mosaic_target_level_word();
+    }
+
+    pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_mosaic_direction(value);
+    }
+
+    pub(crate) fn clear_mosaic_direction(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_mosaic_direction();
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_nmi_load_target_page(value);
@@ -2953,14 +3013,6 @@ impl ZeldaState {
 
     pub(crate) fn water_hdma_window_view_mut(&mut self) -> WaterHdmaWindowViewMut<'_> {
         WaterHdmaWindowViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn mosaic_direction_view(&self) -> MosaicDirectionView<'_> {
-        MosaicDirectionView::new(&self.ram)
-    }
-
-    pub(crate) fn mosaic_direction_view_mut(&mut self) -> MosaicDirectionViewMut<'_> {
-        MosaicDirectionViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn overworld_palette_backup_view_mut(
@@ -5948,7 +6000,7 @@ mod tests {
         state.intro_initialize_background_settings();
 
         assert_eq!(state.ram[BGMODE_COPY], 9);
-        assert_eq!(state.ram[MOSAIC_COPY], 0);
+        assert_eq!(state.display_state().mosaic_copy, 0);
         assert_eq!(state.ppu.bg_layer[0].tilemap_adr, 0x1000);
         assert!(state.ppu.bg_layer[0].tilemap_wider);
         assert!(state.ppu.bg_layer[0].tilemap_higher);
@@ -8334,20 +8386,20 @@ mod tests {
     #[test]
     fn link_zap_mosaic_bounces_between_zero_and_c0() {
         let mut state = ZeldaState::new();
-        state.ram[MOSAIC_LEVEL] = 0xb0;
+        state.set_mosaic_level(0xb0);
 
         state.LinkZap_HandleMosaic();
 
-        assert_eq!(state.ram[MOSAIC_LEVEL], 0xc0);
-        assert_eq!(state.ram[MOSAIC_INC_OR_DEC], 1);
-        assert_eq!(state.ram[MOSAIC_COPY], 0x63);
+        assert_eq!(state.display_state().mosaic_level, 0xc0);
+        assert_eq!(state.display_state().mosaic_direction, 1);
+        assert_eq!(state.display_state().mosaic_copy, 0x63);
         assert_eq!(state.ram[BGMODE_COPY], 9);
 
-        state.ram[MOSAIC_LEVEL] = 0x10;
+        state.set_mosaic_level(0x10);
         state.LinkZap_HandleMosaic();
-        assert_eq!(state.ram[MOSAIC_LEVEL], 0);
-        assert_eq!(state.ram[MOSAIC_INC_OR_DEC], 0);
-        assert_eq!(state.ram[MOSAIC_COPY], 3);
+        assert_eq!(state.display_state().mosaic_level, 0);
+        assert_eq!(state.display_state().mosaic_direction, 0);
+        assert_eq!(state.display_state().mosaic_copy, 3);
     }
 
     #[test]
@@ -8359,8 +8411,8 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 1);
         set_link_test_byte(&mut state, LINK_ELECTROCUTE_ON_TOUCH, 1);
         state.player_state_view_mut().set_auxiliary_state(1);
-        state.ram[MOSAIC_LEVEL] = 0x20;
-        state.ram[MOSAIC_INC_OR_DEC] = 1;
+        state.set_mosaic_level(0x20);
+        state.set_mosaic_direction(1);
 
         state.link_state_zapped();
 
@@ -8369,8 +8421,8 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
         assert_eq!(state.player_state_view().auxiliary_state(), 0);
-        assert_eq!(state.ram[MOSAIC_LEVEL], 0);
-        assert_eq!(state.ram[MOSAIC_COPY], 3);
+        assert_eq!(state.display_state().mosaic_level, 0);
+        assert_eq!(state.display_state().mosaic_copy, 3);
         assert_eq!(state.ram[BGMODE_COPY], 9);
     }
 

@@ -686,7 +686,7 @@ impl ZeldaState {
         self.zelda_ppu_write(0x2112, self.ppu_scroll_copy_view().bg3_v_copy2_low());
         self.zelda_ppu_write(0x2112, self.ppu_scroll_copy_view().bg3_v_high());
         self.zelda_ppu_write(0x2100, self.display_state().screen_brightness);
-        self.zelda_ppu_write(0x2106, self.display_nmi_view().mosaic_copy());
+        self.zelda_ppu_write(0x2106, self.display_state().mosaic_copy);
         self.zelda_ppu_write(0x2105, self.display_nmi_view().bg_mode());
         if self.display_nmi_view().bg_mode() & 7 == 7 {
             self.zelda_ppu_write(0x211c, 0);

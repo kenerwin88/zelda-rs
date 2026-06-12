@@ -5372,11 +5372,11 @@ impl ZeldaState {
     }
 
     pub(super) fn ResetTransitionPropsAndAdvanceSubmodule(&mut self) {
-        self.display_nmi_view_mut().clear_mosaic_level_word();
+        self.clear_mosaic_level_word();
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen(0);
         self.palette_filter_view_mut().set_countdown(0);
-        self.display_nmi_view_mut().set_mosaic_target_level(31);
+        self.set_mosaic_target_level(31);
         self.dungeon_state_view_mut().clear_reserved_gfx_config();
         self.dungeon_state_view_mut().clear_lit_torches();
         if self.dungeon_state_view().dungeon_dark_with_lantern() {
@@ -6690,7 +6690,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown(0);
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen(0);
-        self.display_nmi_view_mut().set_mosaic_target_level(31);
+        self.set_mosaic_target_level(31);
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.dungeon_state_view_mut().clear_header_tag(1);
         let save_bits = self.dungeon_state_view().savegame_state_bits() | 0x0800;
@@ -9878,7 +9878,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(0);
         self.palette_filter_view_mut().set_countdown_word(0);
-        self.display_nmi_view_mut().set_mosaic_target_level(31);
+        self.set_mosaic_target_level(31);
         self.dungeon_state_view_mut().clear_reserved_gfx_config();
         self.dungeon_state_view_mut()
             .clear_somaria_block_switch_counter();
@@ -9905,7 +9905,7 @@ impl ZeldaState {
         self.OperateShutterDoors();
         self.frame_control_view_mut().set_submodule(bak);
         self.palette_filter_view_mut().set_countdown(31);
-        self.display_nmi_view_mut().clear_mosaic_target_level();
+        self.clear_mosaic_target_level();
         self.frame_control_view_mut().increment_subsubmodule();
     }
 
@@ -9932,7 +9932,7 @@ impl ZeldaState {
             self.Dungeon_ApproachFixedColor_variable(
                 self.dungeon_state_view().fixed_color_plusminus(),
             );
-            self.display_nmi_view_mut().clear_mosaic_target_level();
+            self.clear_mosaic_target_level();
         }
         self.Dungeon_HandleTranslucencyAndPalette();
     }
@@ -11194,7 +11194,7 @@ impl ZeldaState {
             .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
         self.Dungeon_ApproachFixedColor_variable(self.dungeon_state_view().fixed_color_plusminus());
         self.palette_filter_view_mut().set_countdown(0x1f);
-        self.display_nmi_view_mut().clear_mosaic_target_level();
+        self.clear_mosaic_target_level();
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen(2);
         self.palette_buffer_view_mut()
@@ -11602,7 +11602,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_15_01_ApplyMosaicAndFilter(&mut self) {
         self.conditional_mosaic_control();
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(3);
+        self.set_mosaic_copy_from_level_or(3);
         self.apply_palette_filter_bounce();
     }
 
@@ -11627,13 +11627,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_15_0E_FadeInFromWarp(&mut self) {
-        if self.palette_filter_view().countdown() & 1 != 0
-            && self.display_nmi_view().mosaic_level() != 0
+        if self.palette_filter_view().countdown() & 1 != 0 && self.display_state().mosaic_level != 0
         {
-            self.display_nmi_view_mut().decrement_mosaic_level_by(0x10);
+            self.decrement_mosaic_level_by(0x10);
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(3);
+        self.set_mosaic_copy_from_level_or(3);
         self.ApplyPaletteFilter_bounce();
     }
 

@@ -791,7 +791,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(2);
         self.palette_filter_view_mut().set_countdown_word(0);
-        self.display_nmi_view_mut().clear_mosaic_target_level_word();
+        self.clear_mosaic_target_level_word();
         self.overworld_copy_palettes_to_cache();
     }
 
@@ -2424,17 +2424,17 @@ impl ZeldaState {
             let color = self.palette_buffer_view().main_color(32);
             self.palette_buffer_view_mut().set_main_color(0, color);
             if self.palette_filter_view().countdown() & 1 == 0 {
-                self.display_nmi_view_mut().increment_mosaic_level_by(16);
+                self.increment_mosaic_level_by(16);
             }
             self.palette_filter_view_mut().increment_countdown();
             if self.palette_filter_view().countdown() == 31 {
                 self.palette_filter_view_mut().set_countdown(0);
                 self.frame_control_view_mut().increment_subsubmodule();
-                self.display_nmi_view_mut().set_mosaic_level(0xf0);
+                self.set_mosaic_level(0xf0);
             }
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(3);
+        self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -2455,10 +2455,10 @@ impl ZeldaState {
         if self.palette_filter_view().countdown() == 31 {
             self.palette_filter_view_mut().set_countdown(0);
             self.frame_control_view_mut().increment_subsubmodule();
-            self.display_nmi_view_mut().set_mosaic_level(0xf0);
+            self.set_mosaic_level(0xf0);
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(3);
+        self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -2475,17 +2475,17 @@ impl ZeldaState {
             let color = self.palette_buffer_view().main_color(32);
             self.palette_buffer_view_mut().set_main_color(0, color);
             if self.palette_filter_view().countdown() & 1 == 0 {
-                self.display_nmi_view_mut().decrement_mosaic_level_by(16);
+                self.decrement_mosaic_level_by(16);
             }
             self.palette_filter_view_mut().increment_countdown();
             if self.palette_filter_view().countdown() == 31 {
                 self.palette_filter_view_mut().set_countdown(0);
                 self.frame_control_view_mut().increment_subsubmodule();
-                self.display_nmi_view_mut().clear_mosaic_level();
+                self.clear_mosaic_level();
             }
         }
         self.display_nmi_view_mut().set_bg_mode(9);
-        self.display_nmi_view_mut().set_mosaic_copy_from_level_or(3);
+        self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -2783,29 +2783,27 @@ impl ZeldaState {
     }
 
     pub(super) fn LinkZap_HandleMosaic(&mut self) {
-        let mut level = self.display_nmi_view().mosaic_level();
-        if self.mosaic_direction_view().inc_or_dec() == 0 {
+        let mut level = self.display_state().mosaic_level;
+        if self.display_state().mosaic_direction == 0 {
             level = level.wrapping_add(0x10);
             if level == 0xc0 {
-                self.mosaic_direction_view_mut().set_inc_or_dec(1);
+                self.set_mosaic_direction(1);
             }
         } else {
             level = level.wrapping_sub(0x10);
             if level == 0 {
-                self.mosaic_direction_view_mut().clear();
+                self.clear_mosaic_direction();
             }
         }
-        self.display_nmi_view_mut().set_mosaic_level(level);
-        self.display_nmi_view_mut()
-            .set_mosaic_copy((level >> 1) | 3);
+        self.set_mosaic_level(level);
+        self.set_mosaic_copy((level >> 1) | 3);
         self.display_nmi_view_mut().set_bg_mode(9);
     }
 
     pub(super) fn Player_SetCustomMosaicLevel(&mut self, level: u8) {
-        self.mosaic_direction_view_mut().clear();
-        self.display_nmi_view_mut().set_mosaic_level(level);
-        self.display_nmi_view_mut()
-            .set_mosaic_copy((level >> 1) | 3);
+        self.clear_mosaic_direction();
+        self.set_mosaic_level(level);
+        self.set_mosaic_copy((level >> 1) | 3);
         self.display_nmi_view_mut().set_bg_mode(9);
     }
 
@@ -2872,7 +2870,7 @@ impl ZeldaState {
                     .unwrap_or(0),
             );
         self.palette_filter_view_mut().set_countdown(31);
-        self.display_nmi_view_mut().clear_mosaic_target_level();
+        self.clear_mosaic_target_level();
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen(2);
         self.palette_buffer_view_mut()
@@ -2939,8 +2937,8 @@ impl ZeldaState {
                     .set_main_color(base + i, color);
             }
         }
-        self.display_nmi_view_mut().set_mosaic_copy(0xf7);
-        self.display_nmi_view_mut().set_mosaic_level(0xf7);
+        self.set_mosaic_copy(0xf7);
+        self.set_mosaic_level(0xf7);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -3274,7 +3272,7 @@ impl ZeldaState {
         self.system_signals_view_mut().increment_cgram_update_flag();
 
         let countdown = self.palette_filter_view().countdown_word();
-        let target = self.display_nmi_view().mosaic_target_level() as u16;
+        let target = self.display_state().mosaic_target_level as u16;
         if self
             .palette_filter_view()
             .darkening_or_lightening_screen_word()

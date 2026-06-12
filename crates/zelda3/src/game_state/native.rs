@@ -121,6 +121,10 @@ pub(crate) struct DisplayState {
     pub(crate) sprite_dma_head_pointer: u8,
     pub(crate) sprite_dma_body_pointer: u8,
     pub(crate) hdma_enable_mask: u8,
+    pub(crate) mosaic_copy: u8,
+    pub(crate) mosaic_level: u8,
+    pub(crate) mosaic_target_level: u8,
+    pub(crate) mosaic_direction: u8,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
@@ -142,6 +146,10 @@ impl DisplayState {
             sprite_dma_head_pointer: ram_byte(ram, DMA_HEAD_POINTER),
             sprite_dma_body_pointer: ram_byte(ram, DMA_BODY_POINTER),
             hdma_enable_mask: ram_byte(ram, HDMAEN_COPY),
+            mosaic_copy: ram_byte(ram, MOSAIC_COPY),
+            mosaic_level: ram_byte(ram, MOSAIC_LEVEL),
+            mosaic_target_level: ram_byte(ram, MOSAIC_TARGET_LEVEL),
+            mosaic_direction: ram_byte(ram, MOSAIC_INC_OR_DEC),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
@@ -162,6 +170,10 @@ impl DisplayState {
         ram[DMA_HEAD_POINTER] = self.sprite_dma_head_pointer;
         ram[DMA_BODY_POINTER] = self.sprite_dma_body_pointer;
         ram[HDMAEN_COPY] = self.hdma_enable_mask;
+        ram[MOSAIC_COPY] = self.mosaic_copy;
+        ram[MOSAIC_LEVEL] = self.mosaic_level;
+        ram[MOSAIC_TARGET_LEVEL] = self.mosaic_target_level;
+        ram[MOSAIC_INC_OR_DEC] = self.mosaic_direction;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
@@ -200,6 +212,10 @@ impl DisplayState {
 
     pub(crate) fn is_hdma_channel_enabled(&self, channel: usize) -> bool {
         self.hdma_enable_mask & (1 << channel) != 0
+    }
+
+    pub(crate) fn mosaic_target_level_word(&self) -> u16 {
+        u16::from(self.mosaic_target_level)
     }
 
     pub(crate) fn nmi_load_target_page(&self) -> u8 {
@@ -603,6 +619,19 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_mosaic_control_matches_ram(&self) {
+        debug_assert_eq!(self.display.mosaic_copy, ram_byte(self.ram, MOSAIC_COPY));
+        debug_assert_eq!(self.display.mosaic_level, ram_byte(self.ram, MOSAIC_LEVEL));
+        debug_assert_eq!(
+            self.display.mosaic_target_level,
+            ram_byte(self.ram, MOSAIC_TARGET_LEVEL)
+        );
+        debug_assert_eq!(
+            self.display.mosaic_direction,
+            ram_byte(self.ram, MOSAIC_INC_OR_DEC)
+        );
+    }
+
     fn debug_assert_nmi_load_target_address_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
@@ -778,6 +807,76 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.set_hdma_enable_mask(0);
     }
 
+    pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
+        self.display.mosaic_copy = value;
+        self.ram[MOSAIC_COPY] = value;
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
+        self.set_mosaic_copy(self.display.mosaic_level | mask);
+    }
+
+    pub(crate) fn set_mosaic_level(&mut self, value: u8) {
+        self.display.mosaic_level = value;
+        self.ram[MOSAIC_LEVEL] = value;
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn clear_mosaic_level(&mut self) {
+        self.set_mosaic_level(0);
+    }
+
+    pub(crate) fn clear_mosaic_level_word(&mut self) {
+        self.display.mosaic_level = 0;
+        write_le_u16(self.ram, MOSAIC_LEVEL, 0);
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
+        let level = self.display.mosaic_level.wrapping_add(value);
+        self.set_mosaic_level(level);
+        level
+    }
+
+    pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
+        let level = self.display.mosaic_level.wrapping_sub(value);
+        self.set_mosaic_level(level);
+        level
+    }
+
+    pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
+        self.display.mosaic_target_level = value;
+        self.ram[MOSAIC_TARGET_LEVEL] = value;
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
+        self.display.mosaic_target_level = value as u8;
+        write_le_u16(self.ram, MOSAIC_TARGET_LEVEL, value);
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn clear_mosaic_target_level(&mut self) {
+        self.set_mosaic_target_level(0);
+    }
+
+    pub(crate) fn clear_mosaic_target_level_word(&mut self) {
+        self.display.mosaic_target_level = 0;
+        write_le_u16(self.ram, MOSAIC_TARGET_LEVEL, 0);
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
+        self.display.mosaic_direction = value;
+        self.ram[MOSAIC_INC_OR_DEC] = value;
+        self.debug_assert_mosaic_control_matches_ram();
+    }
+
+    pub(crate) fn clear_mosaic_direction(&mut self) {
+        self.set_mosaic_direction(0);
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         self.display.nmi_load_target_address =
             (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
@@ -916,6 +1015,10 @@ mod tests {
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
         ram[HDMAEN_COPY] = 0xc0;
+        ram[MOSAIC_COPY] = 0x73;
+        ram[MOSAIC_LEVEL] = 0x70;
+        ram[MOSAIC_TARGET_LEVEL] = 0x1f;
+        ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
@@ -945,6 +1048,11 @@ mod tests {
         assert!(display.is_hdma_channel_enabled(6));
         assert!(display.is_hdma_channel_enabled(7));
         assert!(!display.is_hdma_channel_enabled(5));
+        assert_eq!(display.mosaic_copy, 0x73);
+        assert_eq!(display.mosaic_level, 0x70);
+        assert_eq!(display.mosaic_target_level, 0x1f);
+        assert_eq!(display.mosaic_target_level_word(), 0x1f);
+        assert_eq!(display.mosaic_direction, 1);
         assert_eq!(display.nmi_load_target_address, 0x2146);
         assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
@@ -968,6 +1076,10 @@ mod tests {
         display.sprite_dma_head_pointer = 0x40;
         display.sprite_dma_body_pointer = 0x80;
         display.hdma_enable_mask = 0x80;
+        display.mosaic_copy = 3;
+        display.mosaic_level = 0x20;
+        display.mosaic_target_level = 0;
+        display.mosaic_direction = 0;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
@@ -986,6 +1098,10 @@ mod tests {
         assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
         assert_eq!(ram[DMA_BODY_POINTER], 0x80);
         assert_eq!(ram[HDMAEN_COPY], 0x80);
+        assert_eq!(ram[MOSAIC_COPY], 3);
+        assert_eq!(ram[MOSAIC_LEVEL], 0x20);
+        assert_eq!(ram[MOSAIC_TARGET_LEVEL], 0);
+        assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
@@ -1024,6 +1140,10 @@ mod tests {
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
         ram[HDMAEN_COPY] = 0xc0;
+        ram[MOSAIC_COPY] = 0x73;
+        ram[MOSAIC_LEVEL] = 0x70;
+        ram[MOSAIC_TARGET_LEVEL] = 0x1f;
+        ram[MOSAIC_INC_OR_DEC] = 1;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
@@ -1057,6 +1177,15 @@ mod tests {
             view.set_sprite_dma_body_pointer(0x80);
             view.clear_hdma_enable_mask();
             view.set_hdma_enable_mask(0x80);
+            view.set_mosaic_level(0x40);
+            assert_eq!(view.increment_mosaic_level_by(0x10), 0x50);
+            assert_eq!(view.decrement_mosaic_level_by(0x20), 0x30);
+            view.set_mosaic_copy_from_level_or(3);
+            view.set_mosaic_target_level_word(0x001f);
+            view.clear_mosaic_target_level_word();
+            view.set_mosaic_target_level(0x0f);
+            view.set_mosaic_direction(1);
+            view.clear_mosaic_direction();
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
         }
@@ -1079,6 +1208,10 @@ mod tests {
         assert_eq!(display.hdma_enable_mask, 0x80);
         assert!(display.is_hdma_channel_enabled(7));
         assert!(!display.is_hdma_channel_enabled(6));
+        assert_eq!(display.mosaic_level, 0x30);
+        assert_eq!(display.mosaic_copy, 0x33);
+        assert_eq!(display.mosaic_target_level, 0x0f);
+        assert_eq!(display.mosaic_direction, 0);
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -1095,6 +1228,10 @@ mod tests {
         assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
         assert_eq!(ram[DMA_BODY_POINTER], 0x80);
         assert_eq!(ram[HDMAEN_COPY], 0x80);
+        assert_eq!(ram[MOSAIC_LEVEL], 0x30);
+        assert_eq!(ram[MOSAIC_COPY], 0x33);
+        assert_eq!(ram[MOSAIC_TARGET_LEVEL], 0x0f);
+        assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }
