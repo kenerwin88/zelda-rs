@@ -287,11 +287,11 @@ impl<'a> ChainChompHistoryViewMut<'a> {
     }
 }
 
-pub(crate) struct MazeGameTimerView<'a> {
+pub(crate) struct MazeGameTimerRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> MazeGameTimerView<'a> {
+impl<'a> MazeGameTimerRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -309,11 +309,11 @@ impl<'a> MazeGameTimerView<'a> {
     }
 }
 
-pub(crate) struct MazeGameTimerViewMut<'a> {
+pub(crate) struct MazeGameTimerRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> MazeGameTimerViewMut<'a> {
+impl<'a> MazeGameTimerRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

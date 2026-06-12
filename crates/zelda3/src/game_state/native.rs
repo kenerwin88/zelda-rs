@@ -11,6 +11,7 @@ mod inventory;
 mod messaging;
 mod misc;
 mod player;
+mod sprites;
 mod world;
 
 pub(crate) use display::{
@@ -50,6 +51,7 @@ pub(crate) use player::{
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
     SpecialExitPositionView, SwimAccelerationView,
 };
+pub(crate) use sprites::{MazeGameTimerView, NativeMazeGameTimerBridgeMut, SpriteState};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
@@ -74,6 +76,8 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 #[cfg(test)]
 use player::{SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
+use sprites::MazeGameTimerState;
+#[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
     OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
@@ -91,6 +95,7 @@ pub(crate) struct GameState {
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
+    pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
@@ -107,6 +112,7 @@ impl GameState {
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
+            sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
@@ -122,6 +128,7 @@ impl GameState {
         self.enhanced_features.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
+        self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
         self.world.write_to_ram(ram);
@@ -605,6 +612,50 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION_DIRECTION + 2), 4);
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION), 0);
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION + 2), 6);
+    }
+
+    #[test]
+    fn maze_game_timer_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_LO, 0x0012);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_HI, 0x0034);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0x0056);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0x0078);
+
+        let timer = MazeGameTimerState::load_from_ram(&ram);
+        assert_eq!(timer.elapsed_low(), 0x0012);
+        assert_eq!(timer.elapsed_high(), 0x0034);
+        assert_eq!(timer.snapshot_low(), 0x0056);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        timer.write_to_ram(&mut projected);
+        assert_eq!(MazeGameTimerState::load_from_ram(&projected), timer);
+    }
+
+    #[test]
+    fn native_maze_game_timer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_LO, 0xffff);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_HI, 0xffff);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0xffff);
+        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0xffff);
+
+        let mut timer = MazeGameTimerState::default();
+        {
+            let mut bridge = NativeMazeGameTimerBridgeMut::new(&mut timer, &mut ram);
+            bridge.clear_elapsed();
+            assert_eq!(bridge.increment_elapsed_low(), 1);
+            assert_eq!(bridge.increment_elapsed_high(), 1);
+            bridge.capture_snapshot();
+        }
+
+        assert_eq!(timer.elapsed_low(), 1);
+        assert_eq!(timer.elapsed_high(), 1);
+        assert_eq!(timer.snapshot_low(), 1);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_LO), 1);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_HI), 1);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_LO), 1);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_HI), 1);
     }
 
     #[test]
