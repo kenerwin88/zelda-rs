@@ -5506,8 +5506,7 @@ impl ZeldaState {
 
     fn overworld_draw_map16(&mut self, pos: u16, value: u16) {
         let vram_pos = Self::overworld_find_map16_vram_address(pos);
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         let src = value as usize * 4;
         let map8 = self
             .asset_raw(70)
@@ -5521,8 +5520,8 @@ impl ZeldaState {
             vram_pos,
             [tile0, tile1, tile2, tile3],
         );
-        self.vram_upload_data_view_mut()
-            .set_offset((upload + 16) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(16);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
     }
 
     fn overworld_find_map16_vram_address(addr: u16) -> u16 {

@@ -5781,8 +5781,7 @@ impl ZeldaState {
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         for (i, (&tile_pos, &tile)) in positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
             let addr = self.Dungeon_MapVramAddr(tile_pos);
@@ -5791,8 +5790,8 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 24);
-        self.vram_upload_data_view_mut()
-            .set_offset(upload.wrapping_add(24) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
         self.set_bg_vram_load_mode(1);
     }
 
@@ -5857,8 +5856,7 @@ impl ZeldaState {
                 .set_bg2_tile(tile_pos as usize, tile);
         }
 
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         for (i, (&tile_pos, &tile)) in tile_positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
             let vram_addr = self.Dungeon_MapVramAddr(tile_pos);
@@ -5867,14 +5865,13 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 24);
-        self.vram_upload_data_view_mut()
-            .set_offset(upload.wrapping_add(24) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
     }
 
     pub(super) fn Dungeon_DeleteRupeeTile(&mut self, x: u16, y: u16) {
         let pos = ((y & 0x01f8) << 3) | ((x & 0x01f8) >> 3);
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         let tile = 0x190f;
 
         self.dungeon_state_view_mut()
@@ -5896,8 +5893,8 @@ impl ZeldaState {
             .write_single_tile_stripe_packet(dst + 6, vram_addr_1, tile);
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 12);
-        self.vram_upload_data_view_mut()
-            .set_offset(upload.wrapping_add(24) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
 
         let state = self.dungeon_state_view().savegame_state_bits() | 0x1000;
         self.dungeon_state_view_mut().set_savegame_state_bits(state);
@@ -7001,8 +6998,7 @@ impl ZeldaState {
                     .set_bg2_tile(tile_pos as usize, tile);
             }
 
-            let upload = self.display_state().vram_upload_cursor_usize();
-            let dst = self.vram_upload_data_view().data_address(upload);
+            let dst = self.display_state().current_vram_upload_data_address();
             for (i, (&offset, &tile)) in [0u16, 128, 2, 130].iter().zip(tiles.iter()).enumerate() {
                 let stripe = self.RoomTag_BuildChestStripes(offset, yy);
                 let base = dst + i * 6;
@@ -7011,8 +7007,8 @@ impl ZeldaState {
             }
             self.vram_upload_data_view_mut()
                 .write_tile_stripe_sentinel(dst + 24);
-            self.vram_upload_data_view_mut()
-                .set_offset((upload + 24) as u16);
+            let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+            self.vram_upload_data_view_mut().set_offset(next_upload);
 
             let next = yy.wrapping_add(2);
             self.dungeon_state_view_mut()
@@ -9262,8 +9258,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_bg2_tile(pos_wrong + 65, src[3]);
 
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;

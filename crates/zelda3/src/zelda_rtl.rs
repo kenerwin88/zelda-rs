@@ -5576,8 +5576,7 @@ impl ZeldaState {
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
             let addr = self.Dungeon_MapVramAddr(tile_pos);
@@ -5589,8 +5588,8 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 24, 0xffff);
-        self.vram_upload_data_view_mut()
-            .set_offset(upload.wrapping_add(24) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
         if self.system_signals_view().sound_effect_2() == 0 {

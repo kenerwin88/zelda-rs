@@ -3329,8 +3329,7 @@ impl ZeldaState {
 
     fn dungeon_delete_rupee_tile_for_player(&mut self, x: u16, y: u16) {
         let pos = ((y & 0x01f8) * 8) | ((x & 0x01f8) >> 3);
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 4, 0x190f);
         self.vram_upload_data_view_mut()
@@ -3354,8 +3353,8 @@ impl ZeldaState {
             upload.write_le_u16_at(dst + 8, 0x0100);
             upload.write_le_u16_at(dst + 12, 0xffff);
         }
-        self.vram_upload_data_view_mut()
-            .set_offset((upload + 24) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
         self.dungeon_state_view_mut()
             .set_savegame_state_high_bits(0x10);
         self.set_bg_vram_load_mode(1);
@@ -3634,8 +3633,7 @@ impl ZeldaState {
 
     pub(super) fn overworld_draw_map16_for_smash(&mut self, pos: u16, value: u16) {
         let vram_pos = self.overworld_find_map16_vram_address_for_smash(pos);
-        let upload = self.display_state().vram_upload_cursor_usize();
-        let dst = self.vram_upload_data_view().data_address(upload);
+        let dst = self.display_state().current_vram_upload_data_address();
         let src = value as usize * 4;
         let map8 = self
             .asset_raw(70)
@@ -3656,8 +3654,8 @@ impl ZeldaState {
             upload.write_le_u16_at(dst + 14, tile3);
             upload.write_le_u16_at(dst + 16, 0xffff);
         }
-        self.vram_upload_data_view_mut()
-            .set_offset((upload + 16) as u16);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(16);
+        self.vram_upload_data_view_mut().set_offset(next_upload);
     }
 
     fn overworld_find_map16_vram_address_for_smash(&self, addr: u16) -> u16 {
