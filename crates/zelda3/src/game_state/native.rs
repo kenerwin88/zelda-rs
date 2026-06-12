@@ -59,7 +59,9 @@ pub(crate) use player::{
 };
 pub(crate) use sprites::{
     DualLayerTileCacheView, MazeGameTimerView, NativeDualLayerTileCacheBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut, SpriteState,
+    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
+    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteState,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -88,7 +90,9 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 #[cfg(test)]
 use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
-use sprites::{DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState};
+use sprites::{
+    DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState, SpriteDrawHitboxWorkState,
+};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldConfigTableState, OverworldEntranceState,
@@ -996,6 +1000,62 @@ mod tests {
         assert_eq!(cache.tile_type(4), 0x2a);
         assert_eq!(cache.tile_type(18), 0);
         assert_eq!(ram[DUAL_LAYER_TILE_CACHE + 4], 0x2a);
+    }
+
+    #[test]
+    fn sprite_draw_hitbox_work_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DRAW_WORK_POSITION_X] = 0x34;
+        ram[DRAW_WORK_POSITION_Y] = 0x12;
+        ram[HITBOX_WORK_Y_OFFSET] = 0xfc;
+        ram[DRAW_WORK_FLAGS_HI] = 0x80;
+
+        let work = SpriteDrawHitboxWorkState::load_from_ram(&ram);
+        assert_eq!(work.x_low(), 0x34);
+        assert_eq!(work.y_low(), 0x12);
+        assert_eq!(work.low_position_word(), 0x1234);
+        assert_eq!(work.hitbox_y_low_offset(), 0xfc);
+        assert_eq!(work.hitbox_x_high_offset(), 0x80);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        work.write_to_ram(&mut projected);
+        assert_eq!(SpriteDrawHitboxWorkState::load_from_ram(&projected), work);
+        assert_eq!(projected[DRAW_WORK_FLAGS_HI], 0x80);
+        assert_eq!(projected[HITBOX_WORK_X_OFFSET], 0x80);
+    }
+
+    #[test]
+    fn native_sprite_draw_hitbox_work_bridges_share_flags_offset_byte() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DRAW_WORK_POSITION_X] = 0x10;
+        ram[DRAW_WORK_POSITION_Y] = 0x20;
+        ram[HITBOX_WORK_Y_OFFSET] = 0x30;
+        ram[HITBOX_WORK_X_OFFSET] = 0x40;
+
+        let mut work = SpriteDrawHitboxWorkState::default();
+        {
+            let mut draw = NativeSpriteDrawWorkPositionBridgeMut::new(&mut work, &mut ram);
+            draw.set_low_position_word(0x9abc);
+            draw.offset_low_position(1, 2);
+            draw.set_flags_high(0x7f);
+        }
+
+        assert_eq!(work.low_position_word(), 0x9cbd);
+        assert_eq!(work.hitbox_x_high_offset(), 0x7f);
+        assert_eq!(ram[DRAW_WORK_POSITION_X], 0xbd);
+        assert_eq!(ram[DRAW_WORK_POSITION_Y], 0x9c);
+        assert_eq!(ram[DRAW_WORK_FLAGS_HI], 0x7f);
+
+        {
+            let mut hitbox = NativeSpriteHitboxWorkOffsetBridgeMut::new(&mut work, &mut ram);
+            hitbox.set_offsets(0xfc, 0x08);
+        }
+
+        assert_eq!(work.hitbox_y_low_offset(), 0xfc);
+        assert_eq!(work.hitbox_x_high_offset(), 0x08);
+        assert_eq!(ram[HITBOX_WORK_Y_OFFSET], 0xfc);
+        assert_eq!(ram[HITBOX_WORK_X_OFFSET], 0x08);
+        assert_eq!(ram[DRAW_WORK_FLAGS_HI], 0x08);
     }
 
     #[test]
