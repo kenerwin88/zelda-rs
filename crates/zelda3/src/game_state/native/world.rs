@@ -338,6 +338,38 @@ impl OverworldTransitionState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldState {
+    pub(crate) map_ui: OverworldMapUiState,
+    pub(crate) map_zoom: OverworldMapZoomState,
+    pub(crate) map16: OverworldMap16State,
+    pub(crate) entrance: OverworldEntranceState,
+    pub(crate) exit: OverworldExitState,
+    pub(crate) transition: OverworldTransitionState,
+}
+
+impl OverworldState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            map_ui: OverworldMapUiState::load_from_ram(ram),
+            map_zoom: OverworldMapZoomState::load_from_ram(ram),
+            map16: OverworldMap16State::load_from_ram(ram),
+            entrance: OverworldEntranceState::load_from_ram(ram),
+            exit: OverworldExitState::load_from_ram(ram),
+            transition: OverworldTransitionState::load_from_ram(ram),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.map_ui.write_to_ram(ram);
+        self.map_zoom.write_to_ram(ram);
+        self.map16.write_to_ram(ram);
+        self.entrance.write_to_ram(ram);
+        self.exit.write_to_ram(ram);
+        self.transition.write_to_ram(ram);
+    }
+}
+
 pub(crate) struct NativeWorldLocationViewMut<'a> {
     world_location: &'a mut WorldLocationState,
     ram_view: WorldStateViewMut<'a>,

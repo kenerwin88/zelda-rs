@@ -13,9 +13,8 @@ pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut, OverworldEntranceState,
-    OverworldExitState, OverworldMap16State, OverworldMapUiState, OverworldMapZoomState,
-    OverworldTransitionState, WorldLocationState,
+    NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut, OverworldMap16State,
+    OverworldState, WorldLocationState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -23,6 +22,11 @@ pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
+#[cfg(test)]
+use world::{
+    OverworldEntranceState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
+    OverworldTransitionState,
+};
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)
@@ -32,12 +36,7 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) world_location: WorldLocationState,
-    pub(crate) overworld_map_ui: OverworldMapUiState,
-    pub(crate) overworld_map_zoom: OverworldMapZoomState,
-    pub(crate) overworld_map16: OverworldMap16State,
-    pub(crate) overworld_entrance: OverworldEntranceState,
-    pub(crate) overworld_exit: OverworldExitState,
-    pub(crate) overworld_transition: OverworldTransitionState,
+    pub(crate) overworld: OverworldState,
     pub(crate) display: DisplayState,
 }
 
@@ -46,12 +45,7 @@ impl GameState {
         Self {
             frame: FrameState::load_from_ram(ram),
             world_location: WorldLocationState::load_from_ram(ram),
-            overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
-            overworld_map_zoom: OverworldMapZoomState::load_from_ram(ram),
-            overworld_map16: OverworldMap16State::load_from_ram(ram),
-            overworld_entrance: OverworldEntranceState::load_from_ram(ram),
-            overworld_exit: OverworldExitState::load_from_ram(ram),
-            overworld_transition: OverworldTransitionState::load_from_ram(ram),
+            overworld: OverworldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
         }
     }
@@ -59,12 +53,7 @@ impl GameState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
         self.world_location.write_to_ram(ram);
-        self.overworld_map_ui.write_to_ram(ram);
-        self.overworld_map_zoom.write_to_ram(ram);
-        self.overworld_map16.write_to_ram(ram);
-        self.overworld_entrance.write_to_ram(ram);
-        self.overworld_exit.write_to_ram(ram);
-        self.overworld_transition.write_to_ram(ram);
+        self.overworld.write_to_ram(ram);
         self.display.write_to_ram(ram);
     }
 }
@@ -192,6 +181,49 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0126);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+    }
+
+    #[test]
+    fn game_state_loads_grouped_overworld_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0206);
+        ram[OVERWORLD_MAP_FLAGS] = 0x03;
+        write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0004);
+        ram[MODE7_ZOOM_STEP_COUNTER] = 2;
+        ram[TIMER_FOR_MODE7_ZOOM] = 12;
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+        ram[TRIGGER_SPECIAL_ENTRANCE] = 1;
+        ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = 3;
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_EXIT, 0x0022);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_SPEXIT, 0x0033);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, 0x0004);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0008);
+        ram[OVERWORLD_TRANSITION_DIR] = 2;
+
+        let mut state = GameState::load_from_ram(&ram);
+        assert_eq!(state.overworld.map_ui.map_state_word(), 0x0206);
+        assert_eq!(state.overworld.map_zoom.timer, 12);
+        assert_eq!(state.overworld.map16.active_load.src_off, 0x1234);
+        assert_eq!(state.overworld.entrance.sequence_counter, 3);
+        assert_eq!(state.overworld.exit.special_exit_screen, 0x0033);
+        assert_eq!(state.overworld.transition.direction_bits_word(), 0x0008);
+
+        state.overworld.map_ui.map_flags = 0x81;
+        state.overworld.map_zoom.timer = 4;
+        state.overworld.map16.active_load.src_off = 0x4567;
+        state.overworld.entrance.sequence_counter = 9;
+        state.overworld.exit.exit_screen = 0x0044;
+        state.overworld.transition.direction_enum = 3;
+        state.write_to_ram(&mut ram);
+
+        assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x81);
+        assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 4);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x4567);
+        assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
+        assert_eq!(ram[OVERWORLD_TRANSITION_DIR], 3);
     }
 
     #[test]
