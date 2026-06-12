@@ -684,7 +684,7 @@ impl ZeldaState {
             }
             3 => {
                 self.set_birdtravel_status(8);
-                self.bird_travel_status_view_mut().clear(1);
+                self.clear_bird_travel_stop_status(1);
                 self.FluteMenu_LoadSelectedScreen();
                 self.LoadOWMusicIfNeeded();
                 self.system_signals_view_mut().set_music_control(9);

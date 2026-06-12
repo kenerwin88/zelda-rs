@@ -5,6 +5,7 @@ use crate::types::{read_le_u16, write_le_u16};
 use std::ops::{Deref, DerefMut};
 
 const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
+const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldLocationState {
@@ -46,10 +47,56 @@ impl WorldLocationState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BirdTravelStatusesState {
+    slots: [u8; BIRD_TRAVEL_STATUS_SLOTS],
+}
+
+impl BirdTravelStatusesState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut slots = [0; BIRD_TRAVEL_STATUS_SLOTS];
+        for (slot, status) in slots.iter_mut().enumerate() {
+            *status = ram_byte(ram, BIRD_TRAVEL_STATUS + slot);
+        }
+        Self { slots }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, status) in self.slots.iter().enumerate() {
+            ram[BIRD_TRAVEL_STATUS + slot] = *status;
+        }
+    }
+
+    pub(crate) fn status(&self, slot: usize) -> u8 {
+        self.slots.get(slot).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn set_status(&mut self, slot: usize, value: u8) {
+        self.slots[slot] = value;
+    }
+
+    pub(crate) fn clear_status(&mut self, slot: usize) {
+        self.set_status(slot, 0);
+    }
+
+    pub(crate) fn increment_status(&mut self, slot: usize) {
+        self.set_status(slot, self.status(slot).wrapping_add(1));
+    }
+
+    pub(crate) fn status_word(&self) -> u16 {
+        u16::from(self.status(0)) | (u16::from(self.status(1)) << 8)
+    }
+
+    pub(crate) fn set_status_word(&mut self, value: u16) {
+        self.set_status(0, value as u8);
+        self.set_status(1, (value >> 8) as u8);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldMapUiState {
     pub(crate) map_state: u16,
     pub(crate) map_flags: u8,
-    pub(crate) birdtravel_status: u16,
+    pub(crate) bird_travel_statuses: BirdTravelStatusesState,
 }
 
 impl OverworldMapUiState {
@@ -57,14 +104,14 @@ impl OverworldMapUiState {
         Self {
             map_state: read_le_u16(ram, OVERWORLD_MAP_STATE),
             map_flags: ram_byte(ram, OVERWORLD_MAP_FLAGS),
-            birdtravel_status: read_le_u16(ram, BIRDTRAVEL_STATUS),
+            bird_travel_statuses: BirdTravelStatusesState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, OVERWORLD_MAP_STATE, self.map_state);
         ram[OVERWORLD_MAP_FLAGS] = self.map_flags;
-        write_le_u16(ram, BIRDTRAVEL_STATUS, self.birdtravel_status);
+        self.bird_travel_statuses.write_to_ram(ram);
     }
 
     pub(crate) fn map_state(&self) -> u8 {
@@ -76,11 +123,11 @@ impl OverworldMapUiState {
     }
 
     pub(crate) fn birdtravel_status(&self) -> u8 {
-        self.birdtravel_status as u8
+        self.bird_travel_statuses.status(0)
     }
 
     pub(crate) fn birdtravel_status_word(&self) -> u16 {
-        self.birdtravel_status
+        self.bird_travel_statuses.status_word()
     }
 }
 
@@ -692,13 +739,13 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     }
 
     pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
-        self.map_ui.birdtravel_status = (self.map_ui.birdtravel_status & 0xff00) | u16::from(value);
+        self.map_ui.bird_travel_statuses.set_status(0, value);
         self.ram[BIRDTRAVEL_STATUS] = value;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
-        self.map_ui.birdtravel_status = value;
+        self.map_ui.bird_travel_statuses.set_status_word(value);
         write_le_u16(self.ram, BIRDTRAVEL_STATUS, value);
         self.debug_assert_matches_ram();
     }
@@ -716,6 +763,18 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         let next = self.map_ui.birdtravel_status().wrapping_add(1);
         self.set_birdtravel_status(next);
+    }
+
+    pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
+        self.map_ui.bird_travel_statuses.clear_status(slot);
+        self.ram[BIRD_TRAVEL_STATUS + slot] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
+        self.map_ui.bird_travel_statuses.increment_status(slot);
+        self.ram[BIRD_TRAVEL_STATUS + slot] = self.ram[BIRD_TRAVEL_STATUS + slot].wrapping_add(1);
+        self.debug_assert_matches_ram();
     }
 }
 

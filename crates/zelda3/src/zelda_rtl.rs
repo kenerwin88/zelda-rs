@@ -30,10 +30,10 @@ use crate::game_state::{
     ArcheryGameView, ArcheryGameViewMut, ArmosKnightHomeView, ArmosKnightHomeViewMut,
     ArrghusPuffHomeView, AttractStateView, AttractStateViewMut, BeamosLaserHistoryView,
     BeamosLaserHistoryViewMut, Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationState,
-    BirdTravelStatusViewMut, BlastWallExplosionView, BlastWallExplosionViewMut,
-    BlastWallFireballView, BlastWallFireballViewMut, BlastWallFragmentView,
-    BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView,
-    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
+    BlastWallExplosionView, BlastWallExplosionViewMut, BlastWallFireballView,
+    BlastWallFireballViewMut, BlastWallFragmentView, BlastWallFragmentViewMut,
+    BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView, BombosBlastViewMut,
+    BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
     BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
     ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
     DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
@@ -2079,6 +2079,22 @@ impl ZeldaState {
         .increment_birdtravel_status();
     }
 
+    pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
+        NativeOverworldMapUiBridgeMut::new(
+            &mut self.game_state.world.overworld.map_ui,
+            &mut self.ram,
+        )
+        .clear_bird_travel_stop_status(slot);
+    }
+
+    pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
+        NativeOverworldMapUiBridgeMut::new(
+            &mut self.game_state.world.overworld.map_ui,
+            &mut self.ram,
+        )
+        .increment_bird_travel_stop_status(slot);
+    }
+
     pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
         NativeOverworldMapZoomBridgeMut::new(
             &mut self.game_state.world.overworld.map_zoom,
@@ -3602,10 +3618,6 @@ impl ZeldaState {
     pub(crate) fn clear_bird_travel_destination(&mut self, slot: usize) {
         self.bird_travel_destination_bridge_mut()
             .clear_destination(slot);
-    }
-
-    pub(crate) fn bird_travel_status_view_mut(&mut self) -> BirdTravelStatusViewMut<'_> {
-        BirdTravelStatusViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn moldorm_history_view(&self, slot: usize) -> MoldormHistoryView<'_> {

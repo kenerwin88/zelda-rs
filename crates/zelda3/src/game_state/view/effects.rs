@@ -1150,24 +1150,6 @@ impl<'a> WeatherVaneDebrisViewMut<'a> {
     }
 }
 
-pub(crate) struct BirdTravelStatusViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> BirdTravelStatusViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear(&mut self, slot: usize) {
-        self.ram[BIRD_TRAVEL_STATUS + slot] = 0;
-    }
-
-    pub(crate) fn increment(&mut self, slot: usize) {
-        self.ram[BIRD_TRAVEL_STATUS + slot] = self.ram[BIRD_TRAVEL_STATUS + slot].wrapping_add(1);
-    }
-}
-
 pub(crate) struct MoldormHistoryView<'a> {
     ram: &'a [u8],
     slot: usize,

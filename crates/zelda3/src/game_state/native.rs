@@ -316,6 +316,7 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0205);
         ram[OVERWORLD_MAP_FLAGS] = 0x81;
         write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0307);
+        ram[BIRD_TRAVEL_STATUS + 15] = 0xaa;
 
         let mut map_ui = OverworldMapUiState::load_from_ram(&ram);
         assert_eq!(map_ui.map_state(), 5);
@@ -323,15 +324,18 @@ mod tests {
         assert_eq!(map_ui.map_flags, 0x81);
         assert_eq!(map_ui.birdtravel_status(), 7);
         assert_eq!(map_ui.birdtravel_status_word(), 0x0307);
+        assert_eq!(map_ui.bird_travel_statuses.status(15), 0xaa);
 
         map_ui.map_state = 0x0104;
         map_ui.map_flags = 0x40;
-        map_ui.birdtravel_status = 0x0008;
+        map_ui.bird_travel_statuses.set_status_word(0x0008);
+        map_ui.bird_travel_statuses.set_status(15, 0x55);
         map_ui.write_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0104);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x40);
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0008);
+        assert_eq!(ram[BIRD_TRAVEL_STATUS + 15], 0x55);
     }
 
     #[test]
@@ -340,6 +344,7 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0205);
         ram[OVERWORLD_MAP_FLAGS] = 0x81;
         write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0307);
+        ram[BIRD_TRAVEL_STATUS + 15] = 0xfe;
 
         let mut map_ui = OverworldMapUiState::default();
         {
@@ -350,14 +355,20 @@ mod tests {
             bridge.increment_birdtravel_status();
             bridge.and_birdtravel_status(7);
             bridge.set_birdtravel_status_word(0x0004);
+            bridge.increment_bird_travel_stop_status(15);
+            bridge.clear_bird_travel_stop_status(1);
         }
 
         assert_eq!(map_ui.map_state_word(), 0x0206);
         assert_eq!(map_ui.map_flags, 0x03);
         assert_eq!(map_ui.birdtravel_status_word(), 0x0004);
+        assert_eq!(map_ui.bird_travel_statuses.status(15), 0xff);
+        assert_eq!(map_ui.bird_travel_statuses.status(1), 0);
         assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0206);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x03);
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
+        assert_eq!(ram[BIRD_TRAVEL_STATUS + 15], 0xff);
+        assert_eq!(ram[BIRD_TRAVEL_STATUS + 1], 0);
     }
 
     #[test]

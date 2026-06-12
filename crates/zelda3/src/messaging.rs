@@ -1578,7 +1578,7 @@ impl ZeldaState {
             && !self.bird_travel_destination(k).is_empty()
         {
             if self.frame_state().frame_counter == 0 {
-                self.bird_travel_status_view_mut().increment(k);
+                self.increment_bird_travel_stop_status(k);
             }
             let bird = self.bird_travel_destination(k);
             let bird_x = bird.x;
@@ -2892,7 +2892,7 @@ impl ZeldaState {
     pub(super) fn CopySaveToWRAM(&mut self) {
         let k = 0x0f;
         self.clear_bird_travel_destination(k);
-        self.bird_travel_status_view_mut().clear(k);
+        self.clear_bird_travel_stop_status(k);
 
         let save_offset = self.save_load_scratch_view().source_offset_usize();
         if save_offset + 0x500 <= self.sram.len() {
