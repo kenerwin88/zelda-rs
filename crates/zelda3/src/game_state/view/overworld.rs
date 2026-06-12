@@ -397,11 +397,11 @@ impl<'a> RoomBoundsViewMut<'a> {
     }
 }
 
-pub(crate) struct VramUploadDataViewMut<'a> {
+pub(crate) struct RamVramUploadBufferMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> VramUploadDataViewMut<'a> {
+impl<'a> RamVramUploadBufferMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
@@ -414,23 +414,23 @@ impl<'a> VramUploadDataViewMut<'a> {
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, value);
     }
 
-    pub(crate) fn set_byte(&mut self, offset: usize, value: u8) {
+    pub(crate) fn write_buffer_byte(&mut self, offset: usize, value: u8) {
         self.ram[VRAM_UPLOAD_DATA + offset] = value;
     }
 
-    pub(crate) fn set_word(&mut self, offset: usize, value: u16) {
+    pub(crate) fn write_buffer_word(&mut self, offset: usize, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_DATA + offset, value);
     }
 
-    pub(crate) fn write_le_u16_at(&mut self, abs_addr: usize, value: u16) {
+    pub(crate) fn write_absolute_word(&mut self, abs_addr: usize, value: u16) {
         write_le_u16(self.ram, abs_addr, value);
     }
 
-    pub(crate) fn write_byte_at(&mut self, abs_addr: usize, value: u8) {
+    pub(crate) fn write_absolute_byte(&mut self, abs_addr: usize, value: u8) {
         self.ram[abs_addr] = value;
     }
 
-    pub(crate) fn set_tilemap_word(&mut self, offset: usize, value: u16) {
+    pub(crate) fn write_tilemap_word(&mut self, offset: usize, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET + offset, value);
     }
 
@@ -438,7 +438,7 @@ impl<'a> VramUploadDataViewMut<'a> {
         write_le_u16(self.ram, UVRAM_DATA + word_index * 2, value);
     }
 
-    pub(crate) fn set_level_label_tiles(&mut self, left: &[u8; 14], right: &[u8; 14]) {
+    pub(crate) fn write_level_label_tiles(&mut self, left: &[u8; 14], right: &[u8; 14]) {
         self.ram[VRAM_UPLOAD_DATA + 32] = 0xff;
         for i in (0..14).rev() {
             self.ram[VRAM_UPLOAD_DATA + i] = left[i];
@@ -446,11 +446,11 @@ impl<'a> VramUploadDataViewMut<'a> {
         }
     }
 
-    pub(crate) fn terminate_at(&mut self, offset: usize) {
+    pub(crate) fn terminate_buffer_at(&mut self, offset: usize) {
         self.ram[VRAM_UPLOAD_DATA + offset] = 0xff;
     }
 
-    pub(crate) fn copy_bytes(&mut self, offset: usize, data: &[u8]) {
+    pub(crate) fn copy_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
         self.ram[VRAM_UPLOAD_DATA + offset..VRAM_UPLOAD_DATA + offset + data.len()]
             .copy_from_slice(data);
     }

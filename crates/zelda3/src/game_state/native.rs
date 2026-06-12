@@ -8,7 +8,7 @@ mod display;
 mod frame;
 mod world;
 
-pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadDataViewMut};
+pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateViewMut};
 pub(crate) use world::{NativeWorldLocationViewMut, WorldLocationState};
 
@@ -358,7 +358,7 @@ mod tests {
 
         let mut display = DisplayState::default();
         {
-            let mut view = NativeVramUploadDataViewMut::new(&mut display, &mut ram);
+            let mut view = NativeVramUploadBufferMut::new(&mut display, &mut ram);
             view.advance_offset_by(0x20);
             view.clear_offset();
             view.set_offset(0x0034);

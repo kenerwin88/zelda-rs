@@ -60,7 +60,7 @@ use crate::game_state::{
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateViewMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadDataViewMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadBufferMut,
     NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
     OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
@@ -2735,43 +2735,43 @@ impl ZeldaState {
     }
 
     pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_byte(offset, value);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_buffer_byte(offset, value);
     }
 
     pub(crate) fn write_vram_upload_buffer_word(&mut self, offset: usize, value: u16) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_word(offset, value);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_buffer_word(offset, value);
     }
 
     pub(crate) fn write_vram_upload_tilemap_word(&mut self, offset: usize, value: u16) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_tilemap_word(offset, value);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_tilemap_word(offset, value);
     }
 
     pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .write_overworld_vram_word(word_index, value);
     }
 
     pub(crate) fn write_vram_upload_absolute_byte(&mut self, address: usize, value: u8) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .write_byte_at(address, value);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_absolute_byte(address, value);
     }
 
     pub(crate) fn write_vram_upload_absolute_word(&mut self, address: usize, value: u16) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .write_le_u16_at(address, value);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_absolute_word(address, value);
     }
 
     pub(crate) fn copy_vram_upload_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .copy_bytes(offset, data);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .copy_buffer_bytes(offset, data);
     }
 
     pub(crate) fn terminate_vram_upload_buffer_at(&mut self, offset: usize) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .terminate_at(offset);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .terminate_buffer_at(offset);
     }
 
     pub(crate) fn write_vram_upload_level_label_tiles(
@@ -2779,8 +2779,8 @@ impl ZeldaState {
         left: &[u8; 14],
         right: &[u8; 14],
     ) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .set_level_label_tiles(left, right);
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
+            .write_level_label_tiles(left, right);
     }
 
     pub(crate) fn write_vram_upload_map16_update_packet(
@@ -2789,7 +2789,7 @@ impl ZeldaState {
         vram_pos: u16,
         tiles: [u16; 4],
     ) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .write_map16_update_packet(address, vram_pos, tiles);
     }
 
@@ -2799,27 +2799,26 @@ impl ZeldaState {
         stripe: u16,
         tile: u16,
     ) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .write_single_tile_stripe_packet(address, stripe, tile);
     }
 
     pub(crate) fn write_vram_upload_tile_stripe_sentinel(&mut self, address: usize) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .write_tile_stripe_sentinel(address);
     }
 
     pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .set_offset(value);
     }
 
     pub(crate) fn clear_vram_upload_cursor(&mut self) {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
-            .clear_offset();
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram).clear_offset();
     }
 
     pub(crate) fn advance_vram_upload_cursor_by(&mut self, value: u16) -> u16 {
-        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+        NativeVramUploadBufferMut::new(&mut self.game_state.display, &mut self.ram)
             .advance_offset_by(value)
     }
 

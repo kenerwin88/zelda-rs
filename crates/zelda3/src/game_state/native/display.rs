@@ -3,10 +3,8 @@ use crate::game_state::constants::messaging::{
     MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE, MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL,
 };
 use crate::game_state::constants::*;
-use crate::game_state::VramUploadDataViewMut;
+use crate::game_state::RamVramUploadBufferMut;
 use crate::types::{read_le_u16, write_le_u16};
-use std::ops::{Deref, DerefMut};
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
@@ -282,17 +280,17 @@ impl DisplayState {
     }
 }
 
-pub(crate) struct NativeVramUploadDataViewMut<'a> {
+pub(crate) struct NativeVramUploadBufferMut<'a> {
     display: &'a mut DisplayState,
-    ram_view: VramUploadDataViewMut<'a>,
+    ram_view: RamVramUploadBufferMut<'a>,
 }
 
-impl<'a> NativeVramUploadDataViewMut<'a> {
+impl<'a> NativeVramUploadBufferMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
         *display = DisplayState::load_from_ram(ram);
         Self {
             display,
-            ram_view: VramUploadDataViewMut::new(ram),
+            ram_view: RamVramUploadBufferMut::new(ram),
         }
     }
 
@@ -315,19 +313,65 @@ impl<'a> NativeVramUploadDataViewMut<'a> {
         self.set_offset(next);
         next
     }
-}
 
-impl<'a> Deref for NativeVramUploadDataViewMut<'a> {
-    type Target = VramUploadDataViewMut<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.ram_view
+    pub(crate) fn write_buffer_byte(&mut self, offset: usize, value: u8) {
+        self.ram_view.write_buffer_byte(offset, value);
     }
-}
 
-impl<'a> DerefMut for NativeVramUploadDataViewMut<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.ram_view
+    pub(crate) fn write_buffer_word(&mut self, offset: usize, value: u16) {
+        self.ram_view.write_buffer_word(offset, value);
+    }
+
+    pub(crate) fn write_tilemap_word(&mut self, offset: usize, value: u16) {
+        self.ram_view.write_tilemap_word(offset, value);
+    }
+
+    pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
+        self.ram_view.write_overworld_vram_word(word_index, value);
+    }
+
+    pub(crate) fn write_absolute_byte(&mut self, address: usize, value: u8) {
+        self.ram_view.write_absolute_byte(address, value);
+    }
+
+    pub(crate) fn write_absolute_word(&mut self, address: usize, value: u16) {
+        self.ram_view.write_absolute_word(address, value);
+    }
+
+    pub(crate) fn copy_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
+        self.ram_view.copy_buffer_bytes(offset, data);
+    }
+
+    pub(crate) fn terminate_buffer_at(&mut self, offset: usize) {
+        self.ram_view.terminate_buffer_at(offset);
+    }
+
+    pub(crate) fn write_level_label_tiles(&mut self, left: &[u8; 14], right: &[u8; 14]) {
+        self.ram_view.write_level_label_tiles(left, right);
+    }
+
+    pub(crate) fn write_map16_update_packet(
+        &mut self,
+        address: usize,
+        vram_pos: u16,
+        tiles: [u16; 4],
+    ) {
+        self.ram_view
+            .write_map16_update_packet(address, vram_pos, tiles);
+    }
+
+    pub(crate) fn write_single_tile_stripe_packet(
+        &mut self,
+        address: usize,
+        stripe: u16,
+        tile: u16,
+    ) {
+        self.ram_view
+            .write_single_tile_stripe_packet(address, stripe, tile);
+    }
+
+    pub(crate) fn write_tile_stripe_sentinel(&mut self, address: usize) {
+        self.ram_view.write_tile_stripe_sentinel(address);
     }
 }
 
