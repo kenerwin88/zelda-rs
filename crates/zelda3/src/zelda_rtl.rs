@@ -48,20 +48,20 @@ use crate::game_state::{
     HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
     IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameStateView,
-    MinigameStateViewMut, MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut,
-    NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut,
-    NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
+    NativeEndingCreditBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -3272,12 +3272,12 @@ impl ZeldaState {
         NativeArcheryGameBridgeMut::new(&mut self.game_state.archery_game, &mut self.ram)
     }
 
-    pub(crate) fn minigame_state_view(&self) -> MinigameStateView<'_> {
-        MinigameStateView::new(&self.ram)
+    pub(crate) fn minigame_state_view(&self) -> &MinigameState {
+        &self.game_state.minigame
     }
 
-    pub(crate) fn minigame_state_view_mut(&mut self) -> MinigameStateViewMut<'_> {
-        MinigameStateViewMut::new(&mut self.ram)
+    pub(crate) fn minigame_state_view_mut(&mut self) -> NativeMinigameBridgeMut<'_> {
+        NativeMinigameBridgeMut::new(&mut self.game_state.minigame, &mut self.ram)
     }
 
     pub(crate) fn sprite_battle_view(&self) -> SpriteBattleState {

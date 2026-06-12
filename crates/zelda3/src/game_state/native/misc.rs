@@ -375,6 +375,154 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MinigameState {
+    archery_or_digging_game_mode: u8,
+    credits: u8,
+    boomerang_in_place_flag: u8,
+    boomerang_temp_x: u16,
+    boomerang_temp_y: u16,
+}
+
+impl MinigameState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            archery_or_digging_game_mode: ram_byte(ram, IS_ARCHER_OR_SHOVEL_GAME),
+            credits: ram_byte(ram, MINIGAME_CREDITS),
+            boomerang_in_place_flag: ram_byte(ram, FLAG_FOR_BOOMERANG_IN_PLACE),
+            boomerang_temp_x: read_le_u16(ram, BOOMERANG_TEMP_X),
+            boomerang_temp_y: read_le_u16(ram, BOOMERANG_TEMP_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[IS_ARCHER_OR_SHOVEL_GAME] = self.archery_or_digging_game_mode;
+        ram[MINIGAME_CREDITS] = self.credits;
+        ram[FLAG_FOR_BOOMERANG_IN_PLACE] = self.boomerang_in_place_flag;
+        write_le_u16(ram, BOOMERANG_TEMP_X, self.boomerang_temp_x);
+        write_le_u16(ram, BOOMERANG_TEMP_Y, self.boomerang_temp_y);
+    }
+
+    pub(crate) fn is_archer_or_shovel_game(&self) -> u8 {
+        self.archery_or_digging_game_mode
+    }
+
+    pub(crate) fn credits(&self) -> u8 {
+        self.credits
+    }
+
+    pub(crate) fn flag_boomerang_in_place(&self) -> u8 {
+        self.boomerang_in_place_flag
+    }
+
+    pub(crate) fn boomerang_temp_x(&self) -> u16 {
+        self.boomerang_temp_x
+    }
+
+    pub(crate) fn boomerang_temp_y(&self) -> u16 {
+        self.boomerang_temp_y
+    }
+
+    pub(crate) fn set_is_archer_or_shovel_game(&mut self, value: u8) {
+        self.archery_or_digging_game_mode = value;
+    }
+
+    pub(crate) fn clear_is_archer_or_shovel_game(&mut self) {
+        self.archery_or_digging_game_mode = 0;
+    }
+
+    pub(crate) fn set_credits(&mut self, value: u8) {
+        self.credits = value;
+    }
+
+    pub(crate) fn decrement_credits(&mut self) -> u8 {
+        self.credits = self.credits.wrapping_sub(1);
+        self.credits
+    }
+
+    pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
+        self.boomerang_in_place_flag = 0;
+    }
+
+    pub(crate) fn set_flag_boomerang_in_place(&mut self, value: u8) {
+        self.boomerang_in_place_flag = value;
+    }
+
+    pub(crate) fn set_boomerang_temp_x(&mut self, value: u16) {
+        self.boomerang_temp_x = value;
+    }
+
+    pub(crate) fn set_boomerang_temp_y(&mut self, value: u16) {
+        self.boomerang_temp_y = value;
+    }
+}
+
+pub(crate) struct NativeMinigameBridgeMut<'a> {
+    minigame: &'a mut MinigameState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeMinigameBridgeMut<'a> {
+    pub(crate) fn new(minigame: &'a mut MinigameState, ram: &'a mut [u8]) -> Self {
+        *minigame = MinigameState::load_from_ram(ram);
+        Self { minigame, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.minigame, MinigameState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_is_archer_or_shovel_game(&mut self, value: u8) {
+        self.minigame.set_is_archer_or_shovel_game(value);
+        self.ram[IS_ARCHER_OR_SHOVEL_GAME] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_is_archer_or_shovel_game(&mut self) {
+        self.minigame.clear_is_archer_or_shovel_game();
+        self.ram[IS_ARCHER_OR_SHOVEL_GAME] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_credits(&mut self, value: u8) {
+        self.minigame.set_credits(value);
+        self.ram[MINIGAME_CREDITS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_credits(&mut self) -> u8 {
+        let value = self.minigame.decrement_credits();
+        self.ram[MINIGAME_CREDITS] = self.ram[MINIGAME_CREDITS].wrapping_sub(1);
+        debug_assert_eq!(value, self.ram[MINIGAME_CREDITS]);
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
+        self.minigame.clear_flag_boomerang_in_place();
+        self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_flag_boomerang_in_place(&mut self, value: u8) {
+        self.minigame.set_flag_boomerang_in_place(value);
+        self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_boomerang_temp_x(&mut self, value: u16) {
+        self.minigame.set_boomerang_temp_x(value);
+        write_le_u16(self.ram, BOOMERANG_TEMP_X, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_boomerang_temp_y(&mut self, value: u16) {
+        self.minigame.set_boomerang_temp_y(value);
+        write_le_u16(self.ram, BOOMERANG_TEMP_Y, value);
+        self.debug_assert_matches_ram();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {
     hit_counter: u8,
     arrows_left: u8,

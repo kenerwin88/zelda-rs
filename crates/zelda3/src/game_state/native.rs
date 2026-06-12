@@ -49,8 +49,9 @@ pub(crate) use messaging::{
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
-    MemorizedTileState, NativeArcheryGameBridgeMut, NativeDungeonMapDisplayBridgeMut,
-    NativeDungeonSecretBridgeMut, NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut,
+    MemorizedTileState, MinigameState, NativeArcheryGameBridgeMut,
+    NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut, NativeMinigameBridgeMut,
     NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut, SaveLoadTransferState,
     SpriteBattleState,
 };
@@ -115,6 +116,7 @@ pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
+    pub(crate) minigame: MinigameState,
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
     pub(crate) memorized_tiles: MemorizedTileState,
@@ -138,6 +140,7 @@ impl GameState {
             frame: FrameState::load_from_ram(ram),
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
+            minigame: MinigameState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
             memorized_tiles: MemorizedTileState::load_from_ram(ram),
@@ -160,6 +163,7 @@ impl GameState {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
+        self.minigame.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
         self.memorized_tiles.write_to_ram(ram);
@@ -577,6 +581,68 @@ mod tests {
 
         assert_eq!(display.current_floor(), 0x0034);
         assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
+    }
+
+    #[test]
+    fn minigame_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[IS_ARCHER_OR_SHOVEL_GAME] = 2;
+        ram[MINIGAME_CREDITS] = 3;
+        ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 1;
+        write_le_u16(&mut ram, BOOMERANG_TEMP_X, 0x1234);
+        write_le_u16(&mut ram, BOOMERANG_TEMP_Y, 0xabcd);
+
+        let mut minigame = MinigameState::load_from_ram(&ram);
+        assert_eq!(minigame.is_archer_or_shovel_game(), 2);
+        assert_eq!(minigame.credits(), 3);
+        assert_eq!(minigame.flag_boomerang_in_place(), 1);
+        assert_eq!(minigame.boomerang_temp_x(), 0x1234);
+        assert_eq!(minigame.boomerang_temp_y(), 0xabcd);
+
+        minigame.clear_is_archer_or_shovel_game();
+        minigame.decrement_credits();
+        minigame.clear_flag_boomerang_in_place();
+        minigame.set_boomerang_temp_x(0x4567);
+        minigame.set_boomerang_temp_y(0xcdef);
+        minigame.write_to_ram(&mut ram);
+
+        assert_eq!(ram[IS_ARCHER_OR_SHOVEL_GAME], 0);
+        assert_eq!(ram[MINIGAME_CREDITS], 2);
+        assert_eq!(ram[FLAG_FOR_BOOMERANG_IN_PLACE], 0);
+        assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_X), 0x4567);
+        assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_Y), 0xcdef);
+    }
+
+    #[test]
+    fn native_minigame_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[IS_ARCHER_OR_SHOVEL_GAME] = 2;
+        ram[MINIGAME_CREDITS] = 3;
+        ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 1;
+        write_le_u16(&mut ram, BOOMERANG_TEMP_X, 0x1234);
+        write_le_u16(&mut ram, BOOMERANG_TEMP_Y, 0xabcd);
+
+        let mut minigame = MinigameState::default();
+        {
+            let mut bridge = NativeMinigameBridgeMut::new(&mut minigame, &mut ram);
+            bridge.clear_is_archer_or_shovel_game();
+            bridge.set_credits(5);
+            bridge.decrement_credits();
+            bridge.clear_flag_boomerang_in_place();
+            bridge.set_boomerang_temp_x(0x4567);
+            bridge.set_boomerang_temp_y(0xcdef);
+        }
+
+        assert_eq!(minigame.is_archer_or_shovel_game(), 0);
+        assert_eq!(minigame.credits(), 4);
+        assert_eq!(minigame.flag_boomerang_in_place(), 0);
+        assert_eq!(minigame.boomerang_temp_x(), 0x4567);
+        assert_eq!(minigame.boomerang_temp_y(), 0xcdef);
+        assert_eq!(ram[IS_ARCHER_OR_SHOVEL_GAME], 0);
+        assert_eq!(ram[MINIGAME_CREDITS], 4);
+        assert_eq!(ram[FLAG_FOR_BOOMERANG_IN_PLACE], 0);
+        assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_X), 0x4567);
+        assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_Y), 0xcdef);
     }
 
     #[test]

@@ -9194,17 +9194,17 @@ impl ZeldaState {
     }
 
     pub(super) fn OpenMiniGameChestResult(&mut self) -> Option<(u8, u16)> {
-        if self.dungeon_state_view().minigame_credits() == 0 {
+        if self.minigame_state_view().credits() == 0 {
             self.dialogue_message_index_view_mut().set_value(0x0163);
             self.main_show_text_message();
             return None;
         }
-        if self.dungeon_state_view().minigame_credits() == 0xff {
+        if self.minigame_state_view().credits() == 0xff {
             self.dialogue_message_index_view_mut().set_value(0x0162);
             self.main_show_text_message();
             return None;
         }
-        self.dungeon_state_view_mut().decrement_minigame_credits();
+        self.minigame_state_view_mut().decrement_credits();
 
         let mut pos = (self.player_state_view().y().wrapping_sub(4) & 0x01f8) * 8;
         pos |= (self.player_state_view().x().wrapping_add(7) & 0x01f8) >> 3;

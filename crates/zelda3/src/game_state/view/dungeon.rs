@@ -356,10 +356,6 @@ impl<'a> DungeonStateView<'a> {
         usize::from((byte(self.ram, PUSH_BLOCK_DIRECTION_DUNGEON) >> 1) & 3)
     }
 
-    pub(crate) fn minigame_credits(&self) -> u8 {
-        byte(self.ram, MINIGAME_CREDITS)
-    }
-
     pub(crate) fn water_transition_counter(&self) -> u8 {
         byte(self.ram, TURN_ON_OFF_WATER_CTR)
     }
@@ -1953,15 +1949,6 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
         self.ram[ACTIVATE_BOMB_TRAP_OVERLORD] = value;
-    }
-
-    pub(crate) fn set_minigame_credits(&mut self, value: u8) {
-        self.ram[MINIGAME_CREDITS] = value;
-    }
-
-    pub(crate) fn decrement_minigame_credits(&mut self) -> u8 {
-        self.ram[MINIGAME_CREDITS] = self.ram[MINIGAME_CREDITS].wrapping_sub(1);
-        self.ram[MINIGAME_CREDITS]
     }
 
     pub(crate) fn clear_reserved_gfx_config(&mut self) {
