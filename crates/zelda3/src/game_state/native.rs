@@ -676,6 +676,8 @@ mod tests {
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_SENTINEL, 0xffff);
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
+        ram[0xa680] = 0xde;
+        ram[0xa681] = 0xad;
 
         let mut display = DisplayState::load_from_ram(&ram);
         assert_eq!(display.screen_brightness, 0x0f);
@@ -741,6 +743,7 @@ mod tests {
         assert_eq!(display.message_dma_tile_sentinel, 0xffff);
         assert_eq!(display.animated_tile_data_source_address, 0xa680);
         assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
+        assert_eq!(&display.animated_tile_data(&ram)[..2], &[0xde, 0xad]);
         assert!(display.has_animated_tile_data_source());
         assert_eq!(display.animated_tile_vram_destination_address, 0x3b00);
         assert_eq!(display.animated_tile_vram_destination_usize(), 0x3b00);

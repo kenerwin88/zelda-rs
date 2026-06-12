@@ -67,7 +67,7 @@ impl ZeldaState {
             let src_addr = self.display_state().animated_tile_data_source_usize();
             let dst = self.display_state().animated_tile_vram_destination_usize();
             if dst + 0x200 <= self.ppu.vram.len() && src_addr + 0x400 <= self.ram.len() {
-                let data = self.display_nmi_view().animated_tile_data().to_vec();
+                let data = self.display_state().animated_tile_data(&self.ram).to_vec();
                 for i in 0..0x200 {
                     self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
                 }

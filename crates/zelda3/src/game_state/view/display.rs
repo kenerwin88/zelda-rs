@@ -9,11 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn animated_tile_data(&self) -> &[u8] {
-        let src = word(self.ram, ANIMATED_TILE_DATA_SRC) as usize;
-        &self.ram[src.min(self.ram.len())..]
-    }
-
     pub(crate) fn hud_tile_indices_buffer(&self) -> &[u8] {
         &self.ram[HUD_TILE_INDICES_BUFFER..]
     }

@@ -287,6 +287,10 @@ impl DisplayState {
         usize::from(self.animated_tile_data_source_address)
     }
 
+    pub(crate) fn animated_tile_data<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[self.animated_tile_data_source_usize().min(ram.len())..]
+    }
+
     pub(crate) fn has_animated_tile_data_source(&self) -> bool {
         self.animated_tile_data_source_address != 0
     }
