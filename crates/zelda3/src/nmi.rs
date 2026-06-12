@@ -659,9 +659,9 @@ impl ZeldaState {
     }
 
     pub(super) fn write_ppu_registers(&mut self) {
-        self.zelda_ppu_write(0x2123, self.display_nmi_view().w12sel_copy());
-        self.zelda_ppu_write(0x2124, self.display_nmi_view().w34sel_copy());
-        self.zelda_ppu_write(0x2125, self.display_nmi_view().wobjsel_copy());
+        self.zelda_ppu_write(0x2123, self.display_state().bg12_window_selection);
+        self.zelda_ppu_write(0x2124, self.display_state().bg34_window_selection);
+        self.zelda_ppu_write(0x2125, self.display_state().object_color_window_selection);
         self.zelda_ppu_write(0x2130, self.palette_filter_view().color_window_selection());
         self.zelda_ppu_write(0x2131, self.palette_filter_view().color_math_control());
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_red());
@@ -669,8 +669,8 @@ impl ZeldaState {
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_blue());
         self.zelda_ppu_write(0x212c, self.display_state().main_screen_layers);
         self.zelda_ppu_write(0x212d, self.display_state().sub_screen_layers);
-        self.zelda_ppu_write(0x212e, self.display_nmi_view().tmw_copy());
-        self.zelda_ppu_write(0x212f, self.display_nmi_view().tsw_copy());
+        self.zelda_ppu_write(0x212e, self.display_state().main_screen_window_layers);
+        self.zelda_ppu_write(0x212f, self.display_state().sub_screen_window_layers);
         self.zelda_ppu_write(0x210d, self.ppu_scroll_copy_view().bg1_h_copy_low());
         self.zelda_ppu_write(0x210d, self.ppu_scroll_copy_view().bg1_h_high());
         self.zelda_ppu_write(0x210e, self.ppu_scroll_copy_view().bg1_v_copy_low());

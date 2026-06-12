@@ -296,8 +296,6 @@ const SCRATCH_0: usize = 0x72;
 const SCRATCH_A: usize = 0x73;
 const SCRATCH_1: usize = 0x74;
 const PLAYER_IS_INDOORS: usize = 0x1b;
-const TMW_COPY: usize = 0x1e;
-const TSW_COPY: usize = 0x1f;
 const LINK_SUBPIXEL_Y: usize = 0x2a;
 const LINK_SUBPIXEL_X: usize = 0x2b;
 const LINK_SUBPIXEL_Z: usize = 0x2c;
@@ -344,9 +342,6 @@ const LINK_DIRECTION: usize = 0x67;
 const INDEX_OF_INTERACTING_TILE: usize = 0x76;
 const ALLOW_SCROLL_Z: usize = 0x78;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
-const W12SEL_COPY: usize = 0x96;
-const W34SEL_COPY: usize = 0x97;
-const WOBJSEL_COPY: usize = 0x98;
 const CGWSEL_COPY: usize = 0x99;
 const CGADSUB_COPY: usize = 0x9a;
 const COLDATA_COPY0: usize = 0x9c;
@@ -2042,6 +2037,59 @@ impl ZeldaState {
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_layer_masks_word(value);
+    }
+
+    pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_bg12_window_selection(value);
+    }
+
+    pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_bg34_window_selection(value);
+    }
+
+    pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_object_color_window_selection(value);
+    }
+
+    pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_main_screen_window_layers(value);
+    }
+
+    pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_sub_screen_window_layers(value);
+    }
+
+    pub(crate) fn set_window_layer_masks(
+        &mut self,
+        bg12_window_selection: u8,
+        bg34_window_selection: u8,
+        object_color_window_selection: u8,
+        main_screen_window_layers: u8,
+        sub_screen_window_layers: u8,
+    ) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_window_layer_masks(
+                bg12_window_selection,
+                bg34_window_selection,
+                object_color_window_selection,
+                main_screen_window_layers,
+                sub_screen_window_layers,
+            );
+    }
+
+    pub(crate) fn clear_window_layer_masks(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_window_layer_masks();
+    }
+
+    pub(crate) fn clear_window_main_sub_masks(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_window_main_sub_masks();
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {

@@ -115,6 +115,11 @@ pub(crate) struct DisplayState {
     pub(crate) bg_mode: u8,
     pub(crate) main_screen_layers: u8,
     pub(crate) sub_screen_layers: u8,
+    pub(crate) bg12_window_selection: u8,
+    pub(crate) bg34_window_selection: u8,
+    pub(crate) object_color_window_selection: u8,
+    pub(crate) main_screen_window_layers: u8,
+    pub(crate) sub_screen_window_layers: u8,
     pub(crate) nmi_copy_packets_request: u8,
     pub(crate) pending_polyhedral_update: u8,
     pub(crate) chr_halfslot_request: u8,
@@ -144,6 +149,11 @@ impl DisplayState {
             bg_mode: ram_byte(ram, BGMODE_COPY),
             main_screen_layers: ram_byte(ram, TM_COPY),
             sub_screen_layers: ram_byte(ram, TS_COPY),
+            bg12_window_selection: ram_byte(ram, W12SEL_COPY),
+            bg34_window_selection: ram_byte(ram, W34SEL_COPY),
+            object_color_window_selection: ram_byte(ram, WOBJSEL_COPY),
+            main_screen_window_layers: ram_byte(ram, TMW_COPY),
+            sub_screen_window_layers: ram_byte(ram, TSW_COPY),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
             pending_polyhedral_update: ram_byte(ram, NMI_FLAG_UPDATE_POLYHEDRAL),
             chr_halfslot_request: ram_byte(ram, LOAD_CHR_HALFSLOT_EVEN_ODD),
@@ -172,6 +182,11 @@ impl DisplayState {
         ram[BGMODE_COPY] = self.bg_mode;
         ram[TM_COPY] = self.main_screen_layers;
         ram[TS_COPY] = self.sub_screen_layers;
+        ram[W12SEL_COPY] = self.bg12_window_selection;
+        ram[W34SEL_COPY] = self.bg34_window_selection;
+        ram[WOBJSEL_COPY] = self.object_color_window_selection;
+        ram[TMW_COPY] = self.main_screen_window_layers;
+        ram[TSW_COPY] = self.sub_screen_window_layers;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = self.pending_polyhedral_update;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
@@ -597,6 +612,29 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(self.display.sub_screen_layers, ram_byte(self.ram, TS_COPY));
     }
 
+    fn debug_assert_window_layer_masks_match_ram(&self) {
+        debug_assert_eq!(
+            self.display.bg12_window_selection,
+            ram_byte(self.ram, W12SEL_COPY)
+        );
+        debug_assert_eq!(
+            self.display.bg34_window_selection,
+            ram_byte(self.ram, W34SEL_COPY)
+        );
+        debug_assert_eq!(
+            self.display.object_color_window_selection,
+            ram_byte(self.ram, WOBJSEL_COPY)
+        );
+        debug_assert_eq!(
+            self.display.main_screen_window_layers,
+            ram_byte(self.ram, TMW_COPY)
+        );
+        debug_assert_eq!(
+            self.display.sub_screen_window_layers,
+            ram_byte(self.ram, TSW_COPY)
+        );
+    }
+
     fn debug_assert_nmi_copy_packets_request_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_copy_packets_request,
@@ -785,8 +823,10 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
         self.display.sub_screen_layers = 0;
+        self.display.main_screen_window_layers = 0;
         write_le_u16(self.ram, TS_COPY, 0);
         self.debug_assert_screen_layer_masks_match_ram();
+        self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
@@ -804,6 +844,68 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.sub_screen_layers = (value >> 8) as u8;
         write_le_u16(self.ram, TM_COPY, value);
         self.debug_assert_screen_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
+        self.display.bg12_window_selection = value;
+        self.ram[W12SEL_COPY] = value;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
+        self.display.bg34_window_selection = value;
+        self.ram[W34SEL_COPY] = value;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
+        self.display.object_color_window_selection = value;
+        self.ram[WOBJSEL_COPY] = value;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
+        self.display.main_screen_window_layers = value;
+        self.ram[TMW_COPY] = value;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
+        self.display.sub_screen_window_layers = value;
+        self.ram[TSW_COPY] = value;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn set_window_layer_masks(
+        &mut self,
+        bg12_window_selection: u8,
+        bg34_window_selection: u8,
+        object_color_window_selection: u8,
+        main_screen_window_layers: u8,
+        sub_screen_window_layers: u8,
+    ) {
+        self.display.bg12_window_selection = bg12_window_selection;
+        self.display.bg34_window_selection = bg34_window_selection;
+        self.display.object_color_window_selection = object_color_window_selection;
+        self.display.main_screen_window_layers = main_screen_window_layers;
+        self.display.sub_screen_window_layers = sub_screen_window_layers;
+        self.ram[W12SEL_COPY] = bg12_window_selection;
+        self.ram[W34SEL_COPY] = bg34_window_selection;
+        self.ram[WOBJSEL_COPY] = object_color_window_selection;
+        self.ram[TMW_COPY] = main_screen_window_layers;
+        self.ram[TSW_COPY] = sub_screen_window_layers;
+        self.debug_assert_window_layer_masks_match_ram();
+    }
+
+    pub(crate) fn clear_window_layer_masks(&mut self) {
+        self.set_window_layer_masks(0, 0, 0, 0, 0);
+    }
+
+    pub(crate) fn clear_window_main_sub_masks(&mut self) {
+        self.display.main_screen_window_layers = 0;
+        self.display.sub_screen_window_layers = 0;
+        write_le_u16(self.ram, TMW_COPY, 0);
+        self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
@@ -1110,6 +1212,11 @@ mod tests {
         ram[BGMODE_COPY] = 7;
         ram[TM_COPY] = 0x16;
         ram[TS_COPY] = 0x01;
+        ram[W12SEL_COPY] = 0x33;
+        ram[W34SEL_COPY] = 3;
+        ram[WOBJSEL_COPY] = 0xb0;
+        ram[TMW_COPY] = 0x16;
+        ram[TSW_COPY] = 1;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
@@ -1140,6 +1247,11 @@ mod tests {
         assert_eq!(display.main_screen_layers, 0x16);
         assert_eq!(display.sub_screen_layers, 0x01);
         assert_eq!(display.layer_masks_word(), 0x0116);
+        assert_eq!(display.bg12_window_selection, 0x33);
+        assert_eq!(display.bg34_window_selection, 3);
+        assert_eq!(display.object_color_window_selection, 0xb0);
+        assert_eq!(display.main_screen_window_layers, 0x16);
+        assert_eq!(display.sub_screen_window_layers, 1);
         assert_eq!(display.nmi_copy_packets_request, 1);
         assert!(display.has_nmi_copy_packets_request());
         assert_eq!(display.pending_polyhedral_update, 0xff);
@@ -1181,6 +1293,11 @@ mod tests {
         display.bg_mode = 9;
         display.main_screen_layers = 0x11;
         display.sub_screen_layers = 0;
+        display.bg12_window_selection = 0;
+        display.bg34_window_selection = 0;
+        display.object_color_window_selection = 0x30;
+        display.main_screen_window_layers = 3;
+        display.sub_screen_window_layers = 0;
         display.nmi_copy_packets_request = 0;
         display.pending_polyhedral_update = 0;
         display.chr_halfslot_request = 0;
@@ -1207,6 +1324,11 @@ mod tests {
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[TM_COPY], 0x11);
         assert_eq!(ram[TS_COPY], 0);
+        assert_eq!(ram[W12SEL_COPY], 0);
+        assert_eq!(ram[W34SEL_COPY], 0);
+        assert_eq!(ram[WOBJSEL_COPY], 0x30);
+        assert_eq!(ram[TMW_COPY], 3);
+        assert_eq!(ram[TSW_COPY], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
@@ -1253,6 +1375,11 @@ mod tests {
         ram[BGMODE_COPY] = 7;
         ram[TM_COPY] = 0x16;
         ram[TS_COPY] = 0x01;
+        ram[W12SEL_COPY] = 0x33;
+        ram[W34SEL_COPY] = 3;
+        ram[WOBJSEL_COPY] = 0xb0;
+        ram[TMW_COPY] = 0x16;
+        ram[TSW_COPY] = 1;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 3;
@@ -1293,6 +1420,14 @@ mod tests {
             view.clear_sub_screen_layers_word();
             view.set_main_screen_layers(0x11);
             view.set_sub_screen_layers(0x02);
+            view.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
+            view.set_bg12_window_selection(0x11);
+            view.set_bg34_window_selection(0x22);
+            view.set_object_color_window_selection(0x30);
+            view.set_main_screen_window_layers(0x04);
+            view.set_sub_screen_window_layers(0x05);
+            view.clear_window_main_sub_masks();
+            view.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
             view.clear_nmi_copy_packets_request();
             view.request_nmi_copy_packets();
             view.set_nmi_copy_packets_request(3);
@@ -1333,6 +1468,11 @@ mod tests {
         assert_eq!(display.main_screen_layers, 0x11);
         assert_eq!(display.sub_screen_layers, 0x02);
         assert_eq!(display.layer_masks_word(), 0x0211);
+        assert_eq!(display.bg12_window_selection, 0x33);
+        assert_eq!(display.bg34_window_selection, 3);
+        assert_eq!(display.object_color_window_selection, 0x33);
+        assert_eq!(display.main_screen_window_layers, 0x11);
+        assert_eq!(display.sub_screen_window_layers, 0x02);
         assert_eq!(display.nmi_copy_packets_request, 3);
         assert_eq!(display.pending_polyhedral_update, 0xff);
         assert!(display.has_pending_polyhedral_update());
@@ -1362,7 +1502,11 @@ mod tests {
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[TM_COPY], 0x11);
         assert_eq!(ram[TS_COPY], 0x02);
-        assert_eq!(ram[TMW_COPY], 0);
+        assert_eq!(ram[W12SEL_COPY], 0x33);
+        assert_eq!(ram[W34SEL_COPY], 3);
+        assert_eq!(ram[WOBJSEL_COPY], 0x33);
+        assert_eq!(ram[TMW_COPY], 0x11);
+        assert_eq!(ram[TSW_COPY], 0x02);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0xff);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 12);

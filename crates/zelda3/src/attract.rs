@@ -133,11 +133,11 @@ impl ZeldaState {
 
         self.hdma_setup(0x0cfa87, 0x0cfa94, 1, 0x26, 0x28, 0);
         self.set_hdma_enable_mask(0xc0);
-        self.display_nmi_view_mut().set_w12sel_copy(0);
-        self.display_nmi_view_mut().set_w34sel_copy(0);
-        self.display_nmi_view_mut().set_wobjsel_copy(0xb0);
-        self.display_nmi_view_mut().set_tmw_copy(3);
-        self.display_nmi_view_mut().set_tsw_copy(0);
+        self.set_bg12_window_selection(0);
+        self.set_bg34_window_selection(0);
+        self.set_object_color_window_selection(0xb0);
+        self.set_main_screen_window_layers(3);
+        self.set_sub_screen_window_layers(0);
         self.palette_filter_view_mut().set_fixed_color_red(0x25);
         self.palette_filter_view_mut().set_fixed_color_green(0x45);
         self.palette_filter_view_mut().set_fixed_color_blue(0x85);

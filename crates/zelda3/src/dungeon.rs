@@ -779,11 +779,11 @@ impl ZeldaState {
                 }
             }
             9 => {
-                self.display_nmi_view_mut().set_w12sel_copy(3);
-                self.display_nmi_view_mut().set_w34sel_copy(0);
-                self.display_nmi_view_mut().set_wobjsel_copy(0);
-                self.display_nmi_view_mut().set_tmw_copy(22);
-                self.display_nmi_view_mut().set_tsw_copy(1);
+                self.set_bg12_window_selection(3);
+                self.set_bg34_window_selection(0);
+                self.set_object_color_window_selection(0);
+                self.set_main_screen_window_layers(22);
+                self.set_sub_screen_window_layers(1);
                 self.set_sub_screen_layers(1);
                 self.palette_filter_view_mut().set_color_window_selection(2);
                 self.palette_filter_view_mut().set_color_math_control(98);
@@ -5209,7 +5209,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut().clear_quadrant_upload_index();
             self.frame_control_view_mut().set_submodule(0);
             self.frame_control_view_mut().set_subsubmodule(0);
-            self.display_nmi_view_mut().clear_window_main_sub_masks();
+            self.clear_window_main_sub_masks();
             self.IrisSpotlight_ResetTable();
         }
     }
@@ -6681,8 +6681,7 @@ impl ZeldaState {
             return;
         }
 
-        self.display_nmi_view_mut()
-            .set_window_layer_masks(3, 0, 0, 22, 1);
+        self.set_window_layer_masks(3, 0, 0, 22, 1);
         self.dungeon_state_view_mut()
             .set_water_transition_counter(1);
         self.AdjustWaterHDMAWindow();
@@ -6726,8 +6725,7 @@ impl ZeldaState {
         self.water_hdma_window_view_mut()
             .set_window_y_radius_byte(0);
         self.spotlight_hdma_view_mut().set_window_y_buffer_byte(0);
-        self.display_nmi_view_mut()
-            .set_window_layer_masks(3, 0, 0, 0x16, 1);
+        self.set_window_layer_masks(3, 0, 0, 0x16, 1);
         self.palette_filter_view_mut().set_color_window_selection(2);
         self.palette_filter_view_mut().set_color_math_control(0x62);
         self.overworld_event_info_view_mut()
@@ -7107,9 +7105,9 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_color_window_selection(2);
         self.palette_filter_view_mut().set_color_math_control(0x32);
         self.set_sub_screen_layers(0);
-        self.display_nmi_view_mut().set_w12sel_copy(0);
+        self.set_bg12_window_selection(0);
         self.dungeon_state_view_mut().set_header_collision(0);
-        self.display_nmi_view_mut().clear_window_main_sub_masks();
+        self.clear_window_main_sub_masks();
 
         let mut j = 0;
         while j
@@ -7144,7 +7142,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_SetAttrForActivatedWater(&mut self) {
-        self.display_nmi_view_mut().clear_window_main_sub_masks();
+        self.clear_window_main_sub_masks();
 
         let mut j = 0;
         while j
@@ -10555,8 +10553,8 @@ impl ZeldaState {
         self.sprite_main();
         self.IrisSpotlight_ConfigureTable();
         if self.frame_state().submodule == 0 {
-            self.display_nmi_view_mut().clear_window_layer_masks();
-            self.display_nmi_view_mut().clear_window_main_sub_masks();
+            self.clear_window_layer_masks();
+            self.clear_window_main_sub_masks();
             self.frame_control_view_mut().set_subsubmodule(0);
             let queued_music_control = self.system_signals_view().queued_music_control();
             if queued_music_control != 0xff {

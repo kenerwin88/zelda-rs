@@ -333,11 +333,11 @@ impl ZeldaState {
         self.world_state_view_mut().set_bg1_y(0x00c8);
         self.ppu_scroll_copy_view_mut().set_mode7_center_y(0x01c9);
         self.ppu_scroll_copy_view_mut().set_mode7_center_x(0x0100);
-        self.display_nmi_view_mut().set_w12sel_copy(0);
-        self.display_nmi_view_mut().set_w34sel_copy(0);
-        self.display_nmi_view_mut().set_wobjsel_copy(0);
-        self.display_nmi_view_mut().set_tmw_copy(0);
-        self.display_nmi_view_mut().set_tsw_copy(0);
+        self.set_bg12_window_selection(0);
+        self.set_bg34_window_selection(0);
+        self.set_object_color_window_selection(0);
+        self.set_main_screen_window_layers(0);
+        self.set_sub_screen_window_layers(0);
         if self.frame_state().main_module == 20 {
             self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
             self.set_hdma_enable_mask(0xc0);
@@ -3308,13 +3308,13 @@ impl ZeldaState {
         self.spotlight_hdma_view_mut().set_window_radius(x as u16);
         self.spotlight_hdma_view_mut().set_window_state(y as u16);
         self.hdma_setup(0x00f2fb, 0x00f2fb, 0x41, 0x26, 0x26, 0);
-        self.display_nmi_view_mut().set_w12sel_copy(0x33);
-        self.display_nmi_view_mut().set_w34sel_copy(3);
-        self.display_nmi_view_mut().set_wobjsel_copy(0x33);
+        self.set_bg12_window_selection(0x33);
+        self.set_bg34_window_selection(3);
+        self.set_object_color_window_selection(0x33);
         let main_screen = self.display_state().main_screen_layers;
-        self.display_nmi_view_mut().set_tmw_copy(main_screen);
+        self.set_main_screen_window_layers(main_screen);
         let sub_screen = self.display_state().sub_screen_layers;
-        self.display_nmi_view_mut().set_tsw_copy(sub_screen);
+        self.set_sub_screen_window_layers(sub_screen);
         if self.world_location_state().is_outdoors() {
             self.palette_filter_view_mut().set_fixed_color_red(0x20);
             self.palette_filter_view_mut().set_fixed_color_green(0x40);

@@ -2673,11 +2673,11 @@ impl ZeldaState {
             }
         }
 
-        self.display_nmi_view_mut().set_w12sel_copy(0);
-        self.display_nmi_view_mut().set_w34sel_copy(0);
-        self.display_nmi_view_mut().set_wobjsel_copy(0);
-        self.display_nmi_view_mut().set_tmw_copy(0);
-        self.display_nmi_view_mut().set_tsw_copy(0);
+        self.set_bg12_window_selection(0);
+        self.set_bg34_window_selection(0);
+        self.set_object_color_window_selection(0);
+        self.set_main_screen_window_layers(0);
+        self.set_sub_screen_window_layers(0);
         self.player_state_view_mut().clear_force_hold_sword_up();
 
         match self.world_location_state().overworld_screen_index() {

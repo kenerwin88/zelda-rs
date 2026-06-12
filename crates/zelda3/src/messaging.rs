@@ -408,14 +408,7 @@ impl ZeldaState {
         self.hdma_setup(0, 0x02c80c, 0x41, 0, 0x26, 0);
         let main_layers = self.display_state().main_screen_layers;
         let sub_layers = self.display_state().sub_screen_layers;
-        {
-            let mut d = self.display_nmi_view_mut();
-            d.set_w12sel_copy(0x33);
-            d.set_w34sel_copy(3);
-            d.set_wobjsel_copy(0x33);
-            d.set_tmw_copy(main_layers);
-            d.set_tsw_copy(sub_layers);
-        }
+        self.set_window_layer_masks(0x33, 3, 0x33, main_layers, sub_layers);
         self.set_hdma_enable_mask(0x80);
         self.spotlight_hdma_view_mut().clear_hdma_table_dynamic(240);
     }
@@ -553,14 +546,7 @@ impl ZeldaState {
                 self.frame_control_view_mut().set_submodule(0);
                 let saved_module = self.frame_control_view().saved_module_for_menu();
                 self.frame_control_view_mut().set_main_module(saved_module);
-                {
-                    let mut d = self.display_nmi_view_mut();
-                    d.set_tmw_copy(0);
-                    d.set_tsw_copy(0);
-                    d.set_w12sel_copy(0);
-                    d.set_w34sel_copy(0);
-                    d.set_wobjsel_copy(0);
-                }
+                self.clear_window_layer_masks();
                 self.IrisSpotlight_ResetTable();
                 return;
             }
@@ -827,8 +813,8 @@ impl ZeldaState {
         }
         self.Death_InitializeGameOverLetters();
         self.IrisSpotlight_close();
-        self.display_nmi_view_mut().set_wobjsel_copy(0x30);
-        self.display_nmi_view_mut().set_w34sel_copy(0);
+        self.set_object_color_window_selection(0x30);
+        self.set_bg34_window_selection(0);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -854,9 +840,9 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_fixed_color_red(32);
         self.palette_filter_view_mut().set_fixed_color_green(64);
         self.palette_filter_view_mut().set_fixed_color_blue(128);
-        self.display_nmi_view_mut().set_w12sel_copy(0);
-        self.display_nmi_view_mut().set_w34sel_copy(0);
-        self.display_nmi_view_mut().set_wobjsel_copy(0);
+        self.set_bg12_window_selection(0);
+        self.set_bg34_window_selection(0);
+        self.set_object_color_window_selection(0);
         self.frame_control_view_mut().set_submodule(4);
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.set_screen_brightness(15);
