@@ -61,13 +61,13 @@ use crate::game_state::{
     MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView, MultiselectChoiceViewMut,
     NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
-    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
     OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
     OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
     PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
@@ -2108,6 +2108,66 @@ impl ZeldaState {
         .set_timer(value);
     }
 
+    pub(crate) fn overworld_is_big_area_word(&self) -> u16 {
+        self.game_state
+            .world
+            .overworld
+            .screen_size
+            .is_big_area_word()
+    }
+
+    pub(crate) fn overworld_is_big_area(&self) -> bool {
+        self.game_state.world.overworld.screen_size.is_big_area()
+    }
+
+    pub(crate) fn overworld_right_bottom_scroll_bound(&self) -> u16 {
+        self.game_state
+            .world
+            .overworld
+            .screen_size
+            .right_bottom_bound_word()
+    }
+
+    pub(crate) fn clear_overworld_big_area_high(&mut self) {
+        NativeOverworldScreenSizeBridgeMut::new(
+            &mut self.game_state.world.overworld.screen_size,
+            &mut self.ram,
+        )
+        .clear_big_area_high();
+    }
+
+    pub(crate) fn set_overworld_big_area_low(&mut self, value: u8) {
+        NativeOverworldScreenSizeBridgeMut::new(
+            &mut self.game_state.world.overworld.screen_size,
+            &mut self.ram,
+        )
+        .set_big_area_low(value);
+    }
+
+    pub(crate) fn backup_overworld_big_area_low(&mut self) {
+        NativeOverworldScreenSizeBridgeMut::new(
+            &mut self.game_state.world.overworld.screen_size,
+            &mut self.ram,
+        )
+        .backup_big_area_low();
+    }
+
+    pub(crate) fn set_overworld_right_bottom_bound_low(&mut self, value: u8) {
+        NativeOverworldScreenSizeBridgeMut::new(
+            &mut self.game_state.world.overworld.screen_size,
+            &mut self.ram,
+        )
+        .set_right_bottom_bound_low(value);
+    }
+
+    pub(crate) fn set_overworld_right_bottom_bound_high(&mut self, value: u8) {
+        NativeOverworldScreenSizeBridgeMut::new(
+            &mut self.game_state.world.overworld.screen_size,
+            &mut self.ram,
+        )
+        .set_right_bottom_bound_high(value);
+    }
+
     pub(crate) fn special_entrance_trigger(&self) -> u8 {
         self.game_state
             .world
@@ -3095,14 +3155,6 @@ impl ZeldaState {
 
     pub(crate) fn graphics_scratch_view_mut(&mut self) -> GraphicsScratchViewMut<'_> {
         GraphicsScratchViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn overworld_screen_size_view(&self) -> OverworldScreenSizeView<'_> {
-        OverworldScreenSizeView::new(&self.ram)
-    }
-
-    pub(crate) fn overworld_screen_size_view_mut(&mut self) -> OverworldScreenSizeViewMut<'_> {
-        OverworldScreenSizeViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn overworld_map16_decode_view(&self) -> OverworldMap16DecodeView<'_> {

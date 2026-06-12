@@ -2910,10 +2910,9 @@ impl ZeldaState {
         self.tile_detect_position_view_mut()
             .set_location_calc_mask(!7u16);
         self.Overworld_LoadGFXAndScreenSize();
-        self.overworld_screen_size_view_mut()
-            .set_right_bottom_bound_low(0xe4);
-        self.overworld_screen_size_view_mut().clear_big_area_high();
-        let big = self.overworld_screen_size_view().is_big_area_word() != 0;
+        self.set_overworld_right_bottom_bound_low(0xe4);
+        self.clear_overworld_big_area_high();
+        let big = self.overworld_is_big_area();
         let area = (self.world_location_state().overworld_screen_index() & 0x3f) as usize;
         self.Overworld_SetCameraBoundaries(if big { 1 } else { 0 }, area as i32);
         self.player_state_view_mut().set_quadrants(0, 2);
@@ -3112,9 +3111,8 @@ impl ZeldaState {
         }
         self.link_reset_swimming_state();
         self.Overworld_LoadGFXAndScreenSize();
-        self.overworld_screen_size_view_mut()
-            .set_right_bottom_bound_low(228);
-        self.overworld_screen_size_view_mut().clear_big_area_high();
+        self.set_overworld_right_bottom_bound_low(228);
+        self.clear_overworld_big_area_high();
         if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
             println!(
                 "spexit-restore-after frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
@@ -3145,13 +3143,11 @@ impl ZeldaState {
         let aux_tile_theme_index = self.asset_u8(108, i);
         self.world_state_view_mut()
             .set_aux_tile_theme_index(aux_tile_theme_index);
-        self.overworld_screen_size_view_mut().backup_big_area_low();
+        self.backup_overworld_big_area_low();
 
         let small = self.asset_u8(107, i & 0x3f) != 0;
-        self.overworld_screen_size_view_mut()
-            .set_big_area_low(if small { 0 } else { 0x20 });
-        self.overworld_screen_size_view_mut()
-            .set_right_bottom_bound_high(if small { 1 } else { 3 });
+        self.set_overworld_big_area_low(if small { 0 } else { 0x20 });
+        self.set_overworld_right_bottom_bound_high(if small { 1 } else { 3 });
         let is_dark_world_screen = self.world_location_state().overworld_screen_index() & 0x40 != 0;
         let main_tile_theme_index = if is_dark_world_screen { 0x21 } else { 0x20 };
         self.world_state_view_mut()
@@ -3165,7 +3161,7 @@ impl ZeldaState {
             .set_overworld_offset_base_y(overworld_offset_base_y_c_index(j));
         self.world_state_view_mut()
             .set_overworld_offset_base_x(overworld_offset_base_x_c_index(j) >> 3);
-        let mask = if self.overworld_screen_size_view().is_big_area_word() != 0 {
+        let mask = if self.overworld_is_big_area() {
             0x03f0
         } else {
             0x01f0
@@ -4156,7 +4152,7 @@ impl ZeldaState {
 
         let current_area = self.world_state_view().current_area_of_player_word();
         let area_half = (self.world_state_view().current_area_of_player() >> 1) as usize;
-        let bounds = self.overworld_screen_size_view().right_bottom_bound_word();
+        let bounds = self.overworld_right_bottom_scroll_bound();
         let mut transition: Option<(u8, usize)> = None;
 
         if self.player_state_view().y_velocity() != 0 {
@@ -4517,11 +4513,7 @@ impl ZeldaState {
         let area = ((self.world_state_view().current_area_of_player_word() >> 1) as i16)
             + OVERWORLD_ADJACENT_AREA_DELTAS[y];
         self.Overworld_SetCameraBoundaries(
-            if self.overworld_screen_size_view().is_big_area_word() != 0 {
-                1
-            } else {
-                0
-            },
+            if self.overworld_is_big_area() { 1 } else { 0 },
             area as i32,
         );
         self.world_state_view_mut()

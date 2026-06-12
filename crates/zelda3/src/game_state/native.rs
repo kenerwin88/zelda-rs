@@ -15,8 +15,8 @@ pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWorldLocationBridgeMut, OverworldMap16State,
-    WorldLocationState, WorldState,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeWorldLocationBridgeMut, OverworldMap16State, WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -27,7 +27,7 @@ use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use world::{
     OverworldEntranceState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
-    OverworldTransitionState,
+    OverworldScreenSizeState, OverworldTransitionState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -193,6 +193,9 @@ mod tests {
         write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0004);
         ram[MODE7_ZOOM_STEP_COUNTER] = 2;
         ram[TIMER_FOR_MODE7_ZOOM] = 12;
+        write_le_u16(&mut ram, OVERWORLD_AREA_IS_BIG, 0x0120);
+        ram[OVERWORLD_AREA_IS_BIG_BACKUP] = 0x20;
+        write_le_u16(&mut ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND, 0x03e4);
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
@@ -210,6 +213,12 @@ mod tests {
         assert_eq!(state.world.location.indoor_flag, 1);
         assert_eq!(state.world.overworld.map_ui.map_state_word(), 0x0206);
         assert_eq!(state.world.overworld.map_zoom.timer, 12);
+        assert_eq!(state.world.overworld.screen_size.is_big_area_word(), 0x0120);
+        assert!(state.world.overworld.screen_size.is_big_area());
+        assert_eq!(
+            state.world.overworld.screen_size.right_bottom_bound_word(),
+            0x03e4
+        );
         assert_eq!(state.world.overworld.map16.active_load.src_off, 0x1234);
         assert_eq!(state.world.overworld.entrance.sequence_counter, 3);
         assert_eq!(state.world.overworld.exit.special_exit_screen, 0x0033);
@@ -223,6 +232,9 @@ mod tests {
         state.world.location.indoor_flag = 0;
         state.world.overworld.map_ui.map_flags = 0x81;
         state.world.overworld.map_zoom.timer = 4;
+        state.world.overworld.screen_size.big_area = 0x0020;
+        state.world.overworld.screen_size.big_area_backup = 0x20;
+        state.world.overworld.screen_size.right_bottom_scroll_bound = 0x01e4;
         state.world.overworld.map16.active_load.src_off = 0x4567;
         state.world.overworld.entrance.sequence_counter = 9;
         state.world.overworld.exit.exit_screen = 0x0044;
@@ -234,6 +246,12 @@ mod tests {
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x81);
         assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 4);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_AREA_IS_BIG), 0x0020);
+        assert_eq!(ram[OVERWORLD_AREA_IS_BIG_BACKUP], 0x20);
+        assert_eq!(
+            read_le_u16(&ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
+            0x01e4
+        );
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x4567);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
@@ -326,6 +344,60 @@ mod tests {
         assert_eq!(zoom.timer, 12);
         assert_eq!(ram[MODE7_ZOOM_STEP_COUNTER], 4);
         assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 12);
+    }
+
+    #[test]
+    fn overworld_screen_size_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_AREA_IS_BIG, 0x0120);
+        ram[OVERWORLD_AREA_IS_BIG_BACKUP] = 0x20;
+        write_le_u16(&mut ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND, 0x03e4);
+
+        let mut screen_size = OverworldScreenSizeState::load_from_ram(&ram);
+        assert_eq!(screen_size.is_big_area_word(), 0x0120);
+        assert!(screen_size.is_big_area());
+        assert_eq!(screen_size.big_area_backup, 0x20);
+        assert_eq!(screen_size.right_bottom_bound_word(), 0x03e4);
+
+        screen_size.big_area = 0x0020;
+        screen_size.big_area_backup = 0x20;
+        screen_size.right_bottom_scroll_bound = 0x01e4;
+        screen_size.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, OVERWORLD_AREA_IS_BIG), 0x0020);
+        assert_eq!(ram[OVERWORLD_AREA_IS_BIG_BACKUP], 0x20);
+        assert_eq!(
+            read_le_u16(&ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
+            0x01e4
+        );
+    }
+
+    #[test]
+    fn native_overworld_screen_size_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_AREA_IS_BIG, 0x0120);
+        ram[OVERWORLD_AREA_IS_BIG_BACKUP] = 0x11;
+        write_le_u16(&mut ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND, 0x02c0);
+
+        let mut screen_size = OverworldScreenSizeState::default();
+        {
+            let mut bridge = NativeOverworldScreenSizeBridgeMut::new(&mut screen_size, &mut ram);
+            bridge.backup_big_area_low();
+            bridge.clear_big_area_high();
+            bridge.set_big_area_low(0x20);
+            bridge.set_right_bottom_bound_low(0xe4);
+            bridge.set_right_bottom_bound_high(0x01);
+        }
+
+        assert_eq!(screen_size.big_area, 0x0020);
+        assert_eq!(screen_size.big_area_backup, 0x20);
+        assert_eq!(screen_size.right_bottom_scroll_bound, 0x01e4);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_AREA_IS_BIG), 0x0020);
+        assert_eq!(ram[OVERWORLD_AREA_IS_BIG_BACKUP], 0x20);
+        assert_eq!(
+            read_le_u16(&ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
+            0x01e4
+        );
     }
 
     #[test]

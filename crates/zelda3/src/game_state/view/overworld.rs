@@ -103,54 +103,6 @@ impl<'a> OverworldConfigTableViewMut<'a> {
     }
 }
 
-pub(crate) struct OverworldScreenSizeView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> OverworldScreenSizeView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn is_big_area_word(&self) -> u16 {
-        word(self.ram, OVERWORLD_AREA_IS_BIG)
-    }
-
-    pub(crate) fn right_bottom_bound_word(&self) -> u16 {
-        word(self.ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND)
-    }
-}
-
-pub(crate) struct OverworldScreenSizeViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> OverworldScreenSizeViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_big_area_high(&mut self) {
-        self.ram[OVERWORLD_AREA_IS_BIG + 1] = 0;
-    }
-
-    pub(crate) fn set_big_area_low(&mut self, value: u8) {
-        self.ram[OVERWORLD_AREA_IS_BIG] = value;
-    }
-
-    pub(crate) fn backup_big_area_low(&mut self) {
-        self.ram[OVERWORLD_AREA_IS_BIG_BACKUP] = self.ram[OVERWORLD_AREA_IS_BIG];
-    }
-
-    pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
-        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND] = value;
-    }
-
-    pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
-        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND + 1] = value;
-    }
-}
-
 pub(crate) struct OverworldMap16DecodeView<'a> {
     ram: &'a [u8],
 }

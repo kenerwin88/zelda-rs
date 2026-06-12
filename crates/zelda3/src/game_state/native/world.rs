@@ -102,6 +102,45 @@ impl OverworldMapZoomState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldScreenSizeState {
+    pub(crate) big_area: u16,
+    pub(crate) big_area_backup: u8,
+    pub(crate) right_bottom_scroll_bound: u16,
+}
+
+impl OverworldScreenSizeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            big_area: read_le_u16(ram, OVERWORLD_AREA_IS_BIG),
+            big_area_backup: ram_byte(ram, OVERWORLD_AREA_IS_BIG_BACKUP),
+            right_bottom_scroll_bound: read_le_u16(ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, OVERWORLD_AREA_IS_BIG, self.big_area);
+        ram[OVERWORLD_AREA_IS_BIG_BACKUP] = self.big_area_backup;
+        write_le_u16(
+            ram,
+            OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND,
+            self.right_bottom_scroll_bound,
+        );
+    }
+
+    pub(crate) fn is_big_area_word(&self) -> u16 {
+        self.big_area
+    }
+
+    pub(crate) fn is_big_area(&self) -> bool {
+        self.is_big_area_word() != 0
+    }
+
+    pub(crate) fn right_bottom_bound_word(&self) -> u16 {
+        self.right_bottom_scroll_bound
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OverworldMap16LoadState {
     pub src_off: u16,
@@ -342,6 +381,7 @@ impl OverworldTransitionState {
 pub(crate) struct OverworldState {
     pub(crate) map_ui: OverworldMapUiState,
     pub(crate) map_zoom: OverworldMapZoomState,
+    pub(crate) screen_size: OverworldScreenSizeState,
     pub(crate) map16: OverworldMap16State,
     pub(crate) entrance: OverworldEntranceState,
     pub(crate) exit: OverworldExitState,
@@ -353,6 +393,7 @@ impl OverworldState {
         Self {
             map_ui: OverworldMapUiState::load_from_ram(ram),
             map_zoom: OverworldMapZoomState::load_from_ram(ram),
+            screen_size: OverworldScreenSizeState::load_from_ram(ram),
             map16: OverworldMap16State::load_from_ram(ram),
             entrance: OverworldEntranceState::load_from_ram(ram),
             exit: OverworldExitState::load_from_ram(ram),
@@ -363,6 +404,7 @@ impl OverworldState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.map_ui.write_to_ram(ram);
         self.map_zoom.write_to_ram(ram);
+        self.screen_size.write_to_ram(ram);
         self.map16.write_to_ram(ram);
         self.entrance.write_to_ram(ram);
         self.exit.write_to_ram(ram);
@@ -580,6 +622,57 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
     pub(crate) fn decrement_timer(&mut self) {
         let next = self.zoom.timer.wrapping_sub(1);
         self.set_timer(next);
+    }
+}
+
+pub(crate) struct NativeOverworldScreenSizeBridgeMut<'a> {
+    screen_size: &'a mut OverworldScreenSizeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
+    pub(crate) fn new(screen_size: &'a mut OverworldScreenSizeState, ram: &'a mut [u8]) -> Self {
+        *screen_size = OverworldScreenSizeState::load_from_ram(ram);
+        Self { screen_size, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.screen_size,
+            OverworldScreenSizeState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_big_area_high(&mut self) {
+        self.screen_size.big_area &= 0x00ff;
+        self.ram[OVERWORLD_AREA_IS_BIG + 1] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_big_area_low(&mut self, value: u8) {
+        self.screen_size.big_area = (self.screen_size.big_area & 0xff00) | u16::from(value);
+        self.ram[OVERWORLD_AREA_IS_BIG] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn backup_big_area_low(&mut self) {
+        self.screen_size.big_area_backup = self.screen_size.big_area as u8;
+        self.ram[OVERWORLD_AREA_IS_BIG_BACKUP] = self.screen_size.big_area_backup;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
+        self.screen_size.right_bottom_scroll_bound =
+            (self.screen_size.right_bottom_scroll_bound & 0xff00) | u16::from(value);
+        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
+        self.screen_size.right_bottom_scroll_bound =
+            (self.screen_size.right_bottom_scroll_bound & 0x00ff) | (u16::from(value) << 8);
+        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND + 1] = value;
+        self.debug_assert_matches_ram();
     }
 }
 
