@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) struct FrameControlView<'a> {
+pub(crate) struct RamFrameControlView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> FrameControlView<'a> {
+impl<'a> RamFrameControlView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -54,11 +54,11 @@ impl<'a> FrameControlView<'a> {
     }
 }
 
-pub(crate) struct FrameControlViewMut<'a> {
+pub(crate) struct RamFrameControlViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> FrameControlViewMut<'a> {
+impl<'a> RamFrameControlViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
