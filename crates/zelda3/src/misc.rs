@@ -749,7 +749,7 @@ impl ZeldaState {
         if item == 0x1f {
             self.player_state_view_mut().clear_bunny_body_state();
         } else if item == 0x4b || item == 0x1e {
-            self.inventory_state_view_mut()
+            self.player_resources_view_mut()
                 .add_ability_flags(if item == 0x4b { 4 } else { 2 });
         }
 

@@ -2386,7 +2386,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_c(j as u8);
                 let item = self.inventory_state_view().inventory_item(j);
                 let value = 0;
-                self.inventory_state_view_mut().set_inventory_item(j, value);
+                if j == 3 {
+                    self.player_resources_view_mut().set_bombs(value);
+                } else {
+                    self.inventory_state_view_mut().set_inventory_item(j, value);
+                }
                 let item_idx = if j == 3 || j == 32 { 1 } else { item };
                 let data_idx = WISH_POND_ITEM_DATA_OFFSETS[j]
                     .wrapping_add(item_idx)
@@ -2485,10 +2489,8 @@ impl ZeldaState {
             }
             7 => {
                 if self.sprite_slot_view(k).c() == 3 {
-                    let idx = self.sprite_slot_view(k).c() as usize;
                     let value = self.sprite_slot_view(k).direction();
-                    self.inventory_state_view_mut()
-                        .set_inventory_item(idx, value);
+                    self.player_resources_view_mut().set_bombs(value);
                 }
                 self.Palette_AssertTranslucencySwap();
                 self.set_sub_screen_layers(2);

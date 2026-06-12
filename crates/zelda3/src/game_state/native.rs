@@ -7,6 +7,7 @@
 mod display;
 mod ending;
 mod frame;
+mod inventory;
 mod messaging;
 mod misc;
 mod world;
@@ -25,6 +26,7 @@ pub(crate) use ending::{
 pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
+pub(crate) use inventory::{InventoryState, NativePlayerResourcesBridgeMut, PlayerResourcesState};
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
     MessagingRenderBufferState, MessagingRuntimeState, MessagingState,
@@ -75,6 +77,7 @@ pub(crate) struct GameState {
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) archery_game: ArcheryGameState,
+    pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
     pub(crate) ending: EndingState,
@@ -88,6 +91,7 @@ impl GameState {
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
+            inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
@@ -100,6 +104,7 @@ impl GameState {
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
+        self.inventory.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.ending.write_to_ram(ram);
@@ -389,6 +394,111 @@ mod tests {
         assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 0);
         assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
         assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 0);
+    }
+
+    #[test]
+    fn player_resources_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_MAGIC_POWER] = 0x40;
+        ram[LINK_MAGIC_CONSUMPTION] = 2;
+        ram[LINK_ITEM_BOMBS] = 7;
+        ram[LINK_ITEM_BOTTLE_INDEX] = 3;
+        write_le_u16(&mut ram, LINK_RUPEES_GOAL, 0x0123);
+        write_le_u16(&mut ram, LINK_RUPEES_ACTUAL, 0x0045);
+        write_le_u16(&mut ram, LINK_COMPASS, 0x0008);
+        write_le_u16(&mut ram, LINK_BIGKEY, 0x0010);
+        write_le_u16(&mut ram, LINK_DUNGEON_MAP, 0x0020);
+        ram[LINK_RUPEES_IN_POND] = 30;
+        ram[LINK_HEART_PIECES] = 2;
+        ram[LINK_HEALTH_CAPACITY] = 0x38;
+        ram[LINK_CURRENT_HEALTH] = 0x28;
+        ram[LINK_NUM_KEYS] = 4;
+        ram[LINK_BOMB_UPGRADES] = 1;
+        ram[LINK_ARROW_UPGRADES] = 2;
+        ram[LINK_HEARTS_FILLER] = 5;
+        ram[LINK_MAGIC_FILLER] = 6;
+        ram[LINK_WHICH_PENDANTS] = 7;
+        ram[LINK_BOMB_FILLER] = 8;
+        ram[LINK_ARROW_REFILL_COUNTER] = 9;
+        ram[LINK_NUM_ARROWS] = 10;
+        ram[LINK_ABILITY_FLAGS] = 0x11;
+        ram[LINK_HAS_CRYSTALS] = 0x22;
+        ram[LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP] = 0x33;
+
+        let resources = PlayerResourcesState::load_from_ram(&ram);
+        assert_eq!(resources.magic_power(), 0x40);
+        assert_eq!(resources.magic_consumption_level(), 2);
+        assert_eq!(resources.bombs(), 7);
+        assert_eq!(resources.equipped_bottle_index(), 3);
+        assert_eq!(resources.rupees_goal(), 0x0123);
+        assert_eq!(resources.rupees_actual(), 0x0045);
+        assert!(resources.has_compass_mask(0x0008));
+        assert!(resources.has_big_key_mask(0x0010));
+        assert!(resources.has_dungeon_map_mask(0x0020));
+        assert_eq!(resources.rupees_in_pond(), 30);
+        assert_eq!(resources.heart_pieces(), 2);
+        assert_eq!(resources.health_capacity(), 0x38);
+        assert_eq!(resources.current_health(), 0x28);
+        assert_eq!(resources.keys(), 4);
+        assert_eq!(resources.bomb_upgrade_level(), 1);
+        assert_eq!(resources.arrow_upgrade_level(), 2);
+        assert_eq!(resources.heart_filler(), 5);
+        assert_eq!(resources.magic_filler(), 6);
+        assert_eq!(resources.pendant_flags(), 7);
+        assert_eq!(resources.bomb_filler(), 8);
+        assert_eq!(resources.arrow_filler(), 9);
+        assert_eq!(resources.arrows(), 10);
+        assert_eq!(resources.ability_flags(), 0x11);
+        assert_eq!(resources.crystal_flags(), 0x22);
+        assert_eq!(resources.low_health_beep_timer(), 0x33);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        resources.write_to_ram(&mut projected);
+        assert_eq!(PlayerResourcesState::load_from_ram(&projected), resources);
+    }
+
+    #[test]
+    fn native_player_resources_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_ITEM_BOMBS] = 1;
+        ram[LINK_NUM_ARROWS] = 2;
+        ram[LINK_HEARTS_FILLER] = 0xff;
+        ram[LINK_MAGIC_FILLER] = 0;
+        write_le_u16(&mut ram, LINK_RUPEES_GOAL, 10);
+        ram[LINK_NUM_KEYS] = 0xff;
+
+        let mut resources = PlayerResourcesState::default();
+        {
+            let mut bridge = NativePlayerResourcesBridgeMut::new(&mut resources, &mut ram);
+            bridge.set_bombs(4);
+            bridge.decrement_bombs();
+            bridge.increment_arrows_by(5);
+            bridge.increment_heart_filler_word_by(2);
+            bridge.add_rupees_goal(90);
+            bridge.subtract_rupees_goal(25);
+            bridge.increment_keys();
+            bridge.add_ability_flags(0x04);
+            bridge.add_crystal_flags(0x20);
+            bridge.set_pendant_flags(0x07);
+        }
+
+        assert_eq!(resources.bombs(), 3);
+        assert_eq!(resources.arrows(), 7);
+        assert_eq!(resources.heart_filler(), 1);
+        assert_eq!(resources.magic_filler(), 1);
+        assert_eq!(resources.rupees_goal(), 75);
+        assert_eq!(resources.keys(), 0);
+        assert_eq!(resources.ability_flags(), 0x04);
+        assert_eq!(resources.crystal_flags(), 0x20);
+        assert_eq!(resources.pendant_flags(), 0x07);
+        assert_eq!(ram[LINK_ITEM_BOMBS], 3);
+        assert_eq!(ram[LINK_NUM_ARROWS], 7);
+        assert_eq!(read_le_u16(&ram, LINK_HEARTS_FILLER), 0x0101);
+        assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 75);
+        assert_eq!(ram[LINK_NUM_KEYS], 0);
+        assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
+        assert_eq!(ram[LINK_HAS_CRYSTALS], 0x20);
+        assert_eq!(ram[LINK_WHICH_PENDANTS], 0x07);
     }
 
     #[test]
