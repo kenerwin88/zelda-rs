@@ -141,6 +141,67 @@ impl OverworldScreenSizeState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldScrollDeltaState {
+    bytes: [u8; 3],
+}
+
+impl OverworldScrollDeltaState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            bytes: [
+                ram_byte(ram, OVERWORLD_SCROLL_DELTA),
+                ram_byte(ram, OVERWORLD_SCROLL_DELTA + 1),
+                ram_byte(ram, OVERWORLD_SCROLL_DELTA + 2),
+            ],
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_SCROLL_DELTA] = self.bytes[0];
+        ram[OVERWORLD_SCROLL_DELTA + 1] = self.bytes[1];
+        ram[OVERWORLD_SCROLL_DELTA + 2] = self.bytes[2];
+    }
+
+    pub(crate) fn vertical_delta_low_byte(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    pub(crate) fn horizontal_delta_low_byte(&self) -> u8 {
+        self.bytes[1]
+    }
+
+    pub(crate) fn vertical_delta_word(&self) -> u16 {
+        u16::from(self.bytes[0]) | (u16::from(self.bytes[1]) << 8)
+    }
+
+    pub(crate) fn horizontal_delta_word(&self) -> u16 {
+        u16::from(self.bytes[1]) | (u16::from(self.bytes[2]) << 8)
+    }
+
+    pub(crate) fn set_vertical_delta_low_byte(&mut self, value: u8) {
+        self.bytes[0] = value;
+    }
+
+    pub(crate) fn set_horizontal_delta_low_byte(&mut self, value: u8) {
+        self.bytes[1] = value;
+    }
+
+    pub(crate) fn set_vertical_delta_word(&mut self, value: u16) {
+        self.bytes[0] = value as u8;
+        self.bytes[1] = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_horizontal_delta_word(&mut self, value: u16) {
+        self.bytes[1] = value as u8;
+        self.bytes[2] = (value >> 8) as u8;
+    }
+
+    pub(crate) fn clear_vertical_delta_low_byte(&mut self) {
+        self.set_vertical_delta_low_byte(0);
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OverworldMap16LoadState {
     pub src_off: u16,
@@ -382,6 +443,7 @@ pub(crate) struct OverworldState {
     pub(crate) map_ui: OverworldMapUiState,
     pub(crate) map_zoom: OverworldMapZoomState,
     pub(crate) screen_size: OverworldScreenSizeState,
+    pub(crate) scroll_delta: OverworldScrollDeltaState,
     pub(crate) map16: OverworldMap16State,
     pub(crate) entrance: OverworldEntranceState,
     pub(crate) exit: OverworldExitState,
@@ -394,6 +456,7 @@ impl OverworldState {
             map_ui: OverworldMapUiState::load_from_ram(ram),
             map_zoom: OverworldMapZoomState::load_from_ram(ram),
             screen_size: OverworldScreenSizeState::load_from_ram(ram),
+            scroll_delta: OverworldScrollDeltaState::load_from_ram(ram),
             map16: OverworldMap16State::load_from_ram(ram),
             entrance: OverworldEntranceState::load_from_ram(ram),
             exit: OverworldExitState::load_from_ram(ram),
@@ -405,6 +468,7 @@ impl OverworldState {
         self.map_ui.write_to_ram(ram);
         self.map_zoom.write_to_ram(ram);
         self.screen_size.write_to_ram(ram);
+        self.scroll_delta.write_to_ram(ram);
         self.map16.write_to_ram(ram);
         self.entrance.write_to_ram(ram);
         self.exit.write_to_ram(ram);
@@ -672,6 +736,55 @@ impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
         self.screen_size.right_bottom_scroll_bound =
             (self.screen_size.right_bottom_scroll_bound & 0x00ff) | (u16::from(value) << 8);
         self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND + 1] = value;
+        self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeOverworldScrollDeltaBridgeMut<'a> {
+    scroll_delta: &'a mut OverworldScrollDeltaState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
+    pub(crate) fn new(scroll_delta: &'a mut OverworldScrollDeltaState, ram: &'a mut [u8]) -> Self {
+        *scroll_delta = OverworldScrollDeltaState::load_from_ram(ram);
+        Self { scroll_delta, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.scroll_delta,
+            OverworldScrollDeltaState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_vertical_delta_low_byte(&mut self, value: u8) {
+        self.scroll_delta.set_vertical_delta_low_byte(value);
+        self.ram[OVERWORLD_SCROLL_DELTA] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_horizontal_delta_low_byte(&mut self, value: u8) {
+        self.scroll_delta.set_horizontal_delta_low_byte(value);
+        self.ram[OVERWORLD_SCROLL_DELTA + 1] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_vertical_delta_word(&mut self, value: u16) {
+        self.scroll_delta.set_vertical_delta_word(value);
+        write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_horizontal_delta_word(&mut self, value: u16) {
+        self.scroll_delta.set_horizontal_delta_word(value);
+        write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA + 1, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_vertical_delta_low_byte(&mut self) {
+        self.scroll_delta.clear_vertical_delta_low_byte();
+        self.ram[OVERWORLD_SCROLL_DELTA] = 0;
         self.debug_assert_matches_ram();
     }
 }

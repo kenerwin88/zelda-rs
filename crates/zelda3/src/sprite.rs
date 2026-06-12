@@ -1614,8 +1614,8 @@ impl ZeldaState {
 
     pub(super) fn sprite_activate_all_proxima(&mut self) {
         let bak0 = self.world_state_view().bg2_x();
-        let bak1 = self.overworld_scroll_delta_view().high();
-        self.overworld_scroll_delta_view_mut().set_high(0xff);
+        let bak1 = self.overworld_horizontal_scroll_delta_low();
+        self.set_overworld_horizontal_scroll_delta_low(0xff);
 
         let xt: u16 = if self
             .enhanced_features_view()
@@ -1631,7 +1631,7 @@ impl ZeldaState {
             let bg = self.world_state_view().bg2_x().wrapping_add(16);
             self.world_state_view_mut().set_bg2_x(bg);
         }
-        self.overworld_scroll_delta_view_mut().set_high(bak1);
+        self.set_overworld_horizontal_scroll_delta_low(bak1);
         self.world_state_view_mut().set_bg2_x(bak0);
     }
 
@@ -1652,7 +1652,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_activate_when_proximal(&mut self) {
-        if self.overworld_scroll_delta_view().high() == 0 {
+        if self.overworld_horizontal_scroll_delta_low() == 0 {
             return;
         }
         let xt: u16 = if self
@@ -1664,7 +1664,7 @@ impl ZeldaState {
             0
         };
         let x = self.world_state_view().bg2_x().wrapping_add(
-            if sign8(self.overworld_scroll_delta_view().high()) {
+            if sign8(self.overworld_horizontal_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10).wrapping_sub(xt)
             } else {
                 0x110u16.wrapping_add(xt)
@@ -1678,7 +1678,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_activate_when_proximal_big(&mut self) {
-        if self.overworld_scroll_delta_view().low() == 0 {
+        if self.overworld_vertical_scroll_delta_low() == 0 {
             return;
         }
         let xt: u16 = if self
@@ -1695,7 +1695,7 @@ impl ZeldaState {
             .wrapping_sub(0x30)
             .wrapping_sub(xt);
         let y = self.world_state_view().bg2_y().wrapping_add(
-            if sign8(self.overworld_scroll_delta_view().low()) {
+            if sign8(self.overworld_vertical_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10)
             } else {
                 0x110
@@ -2055,8 +2055,8 @@ impl ZeldaState {
             }
         }
         self.garnish_execute_lower_slots();
-        self.overworld_scroll_delta_view_mut().clear_low();
-        self.overworld_scroll_delta_view_mut().set_high(0);
+        self.clear_overworld_vertical_scroll_delta_low();
+        self.set_overworld_horizontal_scroll_delta_low(0);
         self.execute_cached_sprites();
         if self.display_state().has_chr_halfslot_request() {
             let chr_halfslot_request = self.display_state().chr_halfslot_request;

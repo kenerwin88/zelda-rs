@@ -2346,7 +2346,7 @@ impl ZeldaState {
             self.world_state_view_mut()
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = y_vel as i16 as u16;
-            self.overworld_scroll_delta_view_mut().set_y_delta(r4);
+            self.set_overworld_vertical_scroll_delta(r4);
             let oi = self.world_state_view().overlay_index();
             if oi != 0x97 && oi != 0x9d {
                 let subp;
@@ -2384,7 +2384,7 @@ impl ZeldaState {
             self.world_state_view_mut()
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = x_vel as i16 as u16;
-            self.overworld_scroll_delta_view_mut().set_high_word(r4);
+            self.set_overworld_horizontal_scroll_delta(r4);
             let oi = self.world_state_view().overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let subp;
@@ -2405,7 +2405,7 @@ impl ZeldaState {
             let bg1v = self
                 .world_state_view()
                 .bg1_y()
-                .wrapping_add(self.overworld_scroll_delta_view().word());
+                .wrapping_add(self.overworld_vertical_scroll_delta());
             self.world_state_view_mut().set_bg1_y(bg1v);
             self.ppu_scroll_copy_view_mut()
                 .copy_bg2_h_live_to_bg1_h_live();

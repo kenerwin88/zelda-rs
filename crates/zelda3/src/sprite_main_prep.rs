@@ -3914,7 +3914,7 @@ impl ZeldaState {
             16
         };
         self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
-        let y_vel = if sign8(self.overworld_scroll_delta_view().low()) {
+        let y_vel = if sign8(self.overworld_vertical_scroll_delta_low()) {
             4
         } else {
             (-4i8) as u8

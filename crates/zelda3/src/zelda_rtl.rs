@@ -62,13 +62,13 @@ use crate::game_state::{
     NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut, NativeFrameStateBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldScrollDeltaView,
-    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
     OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
     PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView,
     PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
@@ -2160,6 +2160,62 @@ impl ZeldaState {
         .set_right_bottom_bound_high(value);
     }
 
+    pub(crate) fn overworld_vertical_scroll_delta_low(&self) -> u8 {
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
+            .vertical_delta_low_byte()
+    }
+
+    pub(crate) fn overworld_horizontal_scroll_delta_low(&self) -> u8 {
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
+            .horizontal_delta_low_byte()
+    }
+
+    pub(crate) fn overworld_vertical_scroll_delta(&self) -> u16 {
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
+            .vertical_delta_word()
+    }
+
+    fn overworld_scroll_delta_bridge_mut(&mut self) -> NativeOverworldScrollDeltaBridgeMut<'_> {
+        NativeOverworldScrollDeltaBridgeMut::new(
+            &mut self.game_state.world.overworld.scroll_delta,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn set_overworld_vertical_scroll_delta_low(&mut self, value: u8) {
+        self.overworld_scroll_delta_bridge_mut()
+            .set_vertical_delta_low_byte(value);
+    }
+
+    pub(crate) fn set_overworld_horizontal_scroll_delta_low(&mut self, value: u8) {
+        self.overworld_scroll_delta_bridge_mut()
+            .set_horizontal_delta_low_byte(value);
+    }
+
+    pub(crate) fn set_overworld_vertical_scroll_delta(&mut self, value: u16) {
+        self.overworld_scroll_delta_bridge_mut()
+            .set_vertical_delta_word(value);
+    }
+
+    pub(crate) fn set_overworld_horizontal_scroll_delta(&mut self, value: u16) {
+        self.overworld_scroll_delta_bridge_mut()
+            .set_horizontal_delta_word(value);
+    }
+
+    pub(crate) fn clear_overworld_vertical_scroll_delta_low(&mut self) {
+        self.overworld_scroll_delta_bridge_mut()
+            .clear_vertical_delta_low_byte();
+    }
+
     pub(crate) fn special_entrance_trigger(&self) -> u8 {
         self.game_state
             .world
@@ -3618,14 +3674,6 @@ impl ZeldaState {
 
     pub(crate) fn hitbox_scratch_offset_view_mut(&mut self) -> HitboxScratchOffsetViewMut<'_> {
         HitboxScratchOffsetViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn overworld_scroll_delta_view(&self) -> OverworldScrollDeltaView<'_> {
-        OverworldScrollDeltaView::new(&self.ram)
-    }
-
-    pub(crate) fn overworld_scroll_delta_view_mut(&mut self) -> OverworldScrollDeltaViewMut<'_> {
-        OverworldScrollDeltaViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn dialogue_number_view_mut(&mut self) -> DialogueNumberViewMut<'_> {

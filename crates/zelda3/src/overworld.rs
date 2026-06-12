@@ -4309,7 +4309,7 @@ impl ZeldaState {
                 }
                 av = av.wrapping_sub(1);
             }
-            self.overworld_scroll_delta_view_mut().set_low_word(r4);
+            self.set_overworld_vertical_scroll_delta(r4);
             let oi = self.world_state_view().overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let (subp, mut scroll) = if oi == 0xb5 || oi == 0xbe {
@@ -4363,7 +4363,7 @@ impl ZeldaState {
                 }
                 ax = ax.wrapping_sub(1);
             }
-            self.overworld_scroll_delta_view_mut().set_high_word(r4);
+            self.set_overworld_horizontal_scroll_delta(r4);
             let oi = self.world_state_view().overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let (subp, mut scroll) = if oi == 0x95 || oi == 0x9e {
@@ -4389,7 +4389,7 @@ impl ZeldaState {
             if self.world_state_view().overlay_index() == 0x9c {
                 self.ppu_scroll_copy_view_mut()
                     .subtract_bg1_v_live_subpixel(0x2000);
-                let scroll_delta = self.overworld_scroll_delta_view().word();
+                let scroll_delta = self.overworld_vertical_scroll_delta();
                 let bg1_v = self.world_state_view().bg1_y().wrapping_add(scroll_delta);
                 self.world_state_view_mut().set_bg1_y(bg1_v);
                 self.ppu_scroll_copy_view_mut()
@@ -4457,7 +4457,7 @@ impl ZeldaState {
         let d = OVERWORLD_TRANSITION_SCROLL_DELTAS[y];
         let rv;
         if y < 2 {
-            self.overworld_scroll_delta_view_mut().set_low(d as u8);
+            self.set_overworld_vertical_scroll_delta_low(d as u8);
             rv = self.world_state_view().bg2_y().wrapping_add_signed(d);
             self.world_state_view_mut().set_bg2_y(rv);
             if self.world_location_state().overworld_screen_index() != 0x1b
@@ -4485,7 +4485,7 @@ impl ZeldaState {
                 .set_camera_scroll_from_link_for_axis(false, camera_hi);
             self.world_state_view_mut().clear_opposed_scroll_counters(0);
         } else {
-            self.overworld_scroll_delta_view_mut().set_high(d as u8);
+            self.set_overworld_horizontal_scroll_delta_low(d as u8);
             rv = self.world_state_view().bg2_x().wrapping_add_signed(d);
             self.world_state_view_mut().set_bg2_x(rv);
             if self.world_location_state().overworld_screen_index() != 0x1b

@@ -16,8 +16,9 @@ pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativeWorldLocationBridgeMut, OverworldMap16State, WorldLocationState, WorldState,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeWorldLocationBridgeMut, OverworldMap16State,
+    WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -28,7 +29,7 @@ use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use world::{
     OverworldEntranceState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
-    OverworldScreenSizeState, OverworldTransitionState,
+    OverworldScreenSizeState, OverworldScrollDeltaState, OverworldTransitionState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -197,6 +198,9 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_AREA_IS_BIG, 0x0120);
         ram[OVERWORLD_AREA_IS_BIG_BACKUP] = 0x20;
         write_le_u16(&mut ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND, 0x03e4);
+        ram[OVERWORLD_SCROLL_DELTA] = 0x11;
+        ram[OVERWORLD_SCROLL_DELTA + 1] = 0x22;
+        ram[OVERWORLD_SCROLL_DELTA + 2] = 0x33;
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
@@ -220,6 +224,14 @@ mod tests {
             state.world.overworld.screen_size.right_bottom_bound_word(),
             0x03e4
         );
+        assert_eq!(
+            state.world.overworld.scroll_delta.vertical_delta_word(),
+            0x2211
+        );
+        assert_eq!(
+            state.world.overworld.scroll_delta.horizontal_delta_word(),
+            0x3322
+        );
         assert_eq!(state.world.overworld.map16.active_load.src_off, 0x1234);
         assert_eq!(state.world.overworld.entrance.sequence_counter, 3);
         assert_eq!(state.world.overworld.exit.special_exit_screen, 0x0033);
@@ -236,6 +248,16 @@ mod tests {
         state.world.overworld.screen_size.big_area = 0x0020;
         state.world.overworld.screen_size.big_area_backup = 0x20;
         state.world.overworld.screen_size.right_bottom_scroll_bound = 0x01e4;
+        state
+            .world
+            .overworld
+            .scroll_delta
+            .set_vertical_delta_word(0x4433);
+        state
+            .world
+            .overworld
+            .scroll_delta
+            .set_horizontal_delta_word(0x5544);
         state.world.overworld.map16.active_load.src_off = 0x4567;
         state.world.overworld.entrance.sequence_counter = 9;
         state.world.overworld.exit.exit_screen = 0x0044;
@@ -253,6 +275,9 @@ mod tests {
             read_le_u16(&ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
             0x01e4
         );
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0x33);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x44);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x55);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x4567);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
@@ -399,6 +424,54 @@ mod tests {
             read_le_u16(&ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
             0x01e4
         );
+    }
+
+    #[test]
+    fn overworld_scroll_delta_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_SCROLL_DELTA] = 0x11;
+        ram[OVERWORLD_SCROLL_DELTA + 1] = 0x22;
+        ram[OVERWORLD_SCROLL_DELTA + 2] = 0x33;
+
+        let mut scroll_delta = OverworldScrollDeltaState::load_from_ram(&ram);
+        assert_eq!(scroll_delta.vertical_delta_low_byte(), 0x11);
+        assert_eq!(scroll_delta.horizontal_delta_low_byte(), 0x22);
+        assert_eq!(scroll_delta.vertical_delta_word(), 0x2211);
+        assert_eq!(scroll_delta.horizontal_delta_word(), 0x3322);
+
+        scroll_delta.set_vertical_delta_word(0x4433);
+        scroll_delta.set_horizontal_delta_word(0x5544);
+        scroll_delta.write_to_ram(&mut ram);
+
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0x33);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x44);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x55);
+    }
+
+    #[test]
+    fn native_overworld_scroll_delta_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_SCROLL_DELTA] = 0x11;
+        ram[OVERWORLD_SCROLL_DELTA + 1] = 0x22;
+        ram[OVERWORLD_SCROLL_DELTA + 2] = 0x33;
+
+        let mut scroll_delta = OverworldScrollDeltaState::default();
+        {
+            let mut bridge = NativeOverworldScrollDeltaBridgeMut::new(&mut scroll_delta, &mut ram);
+            bridge.set_vertical_delta_low_byte(0x44);
+            bridge.set_horizontal_delta_low_byte(0x55);
+            bridge.set_vertical_delta_word(0x6677);
+            bridge.set_horizontal_delta_word(0x8899);
+            bridge.clear_vertical_delta_low_byte();
+        }
+
+        assert_eq!(scroll_delta.vertical_delta_low_byte(), 0);
+        assert_eq!(scroll_delta.horizontal_delta_low_byte(), 0x99);
+        assert_eq!(scroll_delta.vertical_delta_word(), 0x9900);
+        assert_eq!(scroll_delta.horizontal_delta_word(), 0x8899);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x99);
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x88);
     }
 
     #[test]
