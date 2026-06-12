@@ -287,62 +287,6 @@ impl<'a> ChainChompHistoryViewMut<'a> {
     }
 }
 
-pub(crate) struct MazeGameTimerRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> MazeGameTimerRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn elapsed_low(&self) -> u16 {
-        word(self.ram, MAZE_GAME_TIMER_LO)
-    }
-
-    pub(crate) fn elapsed_high(&self) -> u16 {
-        word(self.ram, MAZE_GAME_TIMER_HI)
-    }
-
-    pub(crate) fn snapshot_low(&self) -> u16 {
-        word(self.ram, MAZE_GAME_TIMER_SNAPSHOT_LO)
-    }
-}
-
-pub(crate) struct MazeGameTimerRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> MazeGameTimerRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_elapsed(&mut self) {
-        write_le_u16(self.ram, MAZE_GAME_TIMER_LO, 0);
-        write_le_u16(self.ram, MAZE_GAME_TIMER_HI, 0);
-    }
-
-    pub(crate) fn increment_elapsed_low(&mut self) -> u16 {
-        let value = word(self.ram, MAZE_GAME_TIMER_LO).wrapping_add(1);
-        write_le_u16(self.ram, MAZE_GAME_TIMER_LO, value);
-        value
-    }
-
-    pub(crate) fn increment_elapsed_high(&mut self) -> u16 {
-        let value = word(self.ram, MAZE_GAME_TIMER_HI).wrapping_add(1);
-        write_le_u16(self.ram, MAZE_GAME_TIMER_HI, value);
-        value
-    }
-
-    pub(crate) fn capture_snapshot(&mut self) {
-        let low = word(self.ram, MAZE_GAME_TIMER_LO);
-        let high = word(self.ram, MAZE_GAME_TIMER_HI);
-        write_le_u16(self.ram, MAZE_GAME_TIMER_SNAPSHOT_LO, low);
-        write_le_u16(self.ram, MAZE_GAME_TIMER_SNAPSHOT_HI, high);
-    }
-}
-
 pub(crate) struct ArrghusPuffHomeView<'a> {
     ram: &'a [u8],
     slot: usize,
@@ -1089,34 +1033,6 @@ impl<'a> PrizeDropCycleRawViewMut<'a> {
         let index = byte(self.ram, PRIZE_DROP_CYCLE + slot);
         self.ram[PRIZE_DROP_CYCLE + slot] = index.wrapping_add(1) & 7;
         index
-    }
-}
-
-pub(crate) struct DualLayerTileCacheRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DualLayerTileCacheRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn tile_type(&self, slot: usize) -> u8 {
-        byte(self.ram, DUAL_LAYER_TILE_CACHE + slot)
-    }
-}
-
-pub(crate) struct DualLayerTileCacheRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DualLayerTileCacheRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) {
-        self.ram[DUAL_LAYER_TILE_CACHE + slot] = value;
     }
 }
 
