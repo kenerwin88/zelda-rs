@@ -8,7 +8,9 @@ mod display;
 mod frame;
 mod world;
 
-pub(crate) use display::{DisplayState, NativeDisplayStateBridgeMut, NativeVramUploadBufferMut};
+pub(crate) use display::{
+    DisplayState, NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
+};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
@@ -166,10 +168,10 @@ mod tests {
 
         let mut world = WorldLocationState::default();
         {
-            let mut view = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
-            view.increment_dungeon_room_index_by(2);
-            view.set_overworld_screen(0x5b);
-            view.set_indoor_flag(0);
+            let mut bridge = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
+            bridge.increment_dungeon_room_index_by(2);
+            bridge.set_overworld_screen(0x5b);
+            bridge.set_indoor_flag(0);
         }
 
         assert_eq!(world.dungeon_room, 0x0126);
@@ -817,16 +819,16 @@ mod tests {
     }
 
     #[test]
-    fn native_vram_upload_mut_view_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_vram_upload_buffer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
         let mut display = DisplayState::default();
         {
-            let mut view = NativeVramUploadBufferMut::new(&mut display, &mut ram);
-            view.advance_offset_by(0x20);
-            view.clear_offset();
-            view.set_offset(0x0034);
+            let mut bridge = NativeVramUploadBufferBridgeMut::new(&mut display, &mut ram);
+            bridge.advance_offset_by(0x20);
+            bridge.clear_offset();
+            bridge.set_offset(0x0034);
         }
 
         assert_eq!(display.vram_upload_cursor, 0x0034);
@@ -834,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn native_display_mut_view_syncs_seeded_ram_and_dual_writes_brightness() {
+    fn native_display_bridge_syncs_seeded_ram_and_dual_writes_brightness() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[INIDISP_COPY] = 4;
         ram[NMI_BOOLEAN] = 1;
@@ -876,78 +878,78 @@ mod tests {
 
         let mut display = DisplayState::default();
         {
-            let mut view = NativeDisplayStateBridgeMut::new(&mut display, &mut ram);
-            view.increment_screen_brightness();
-            view.decrement_screen_brightness();
-            view.set_screen_brightness(0x80);
-            view.clear_nmi_update_latch();
-            view.latch_nmi_update();
-            view.clear_core_update_disable_flag();
-            view.set_core_update_disable_flag(7);
-            assert_eq!(view.take_pending_nmi_subroutine(), 6);
-            view.set_pending_nmi_subroutine(11);
-            view.clear_bg_vram_load_mode();
-            view.set_bg_vram_load_mode(5);
-            view.queue_tilemap_update(0x52, 0x0400);
-            view.clear_pending_tilemap_update_destination();
-            view.queue_tilemap_update(0x54, 0x0800);
-            view.set_bg_mode(9);
-            view.set_layer_masks_word(0x0116);
-            view.and_main_screen_layers(0x15);
-            view.or_main_screen_layers(0x01);
-            view.and_sub_screen_layers(0x0f);
-            view.or_sub_screen_layers(0x10);
-            view.clear_sub_screen_layers_word();
-            view.set_main_screen_layers(0x11);
-            view.set_sub_screen_layers(0x02);
-            view.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
-            view.set_bg12_window_selection(0x11);
-            view.set_bg34_window_selection(0x22);
-            view.set_object_color_window_selection(0x30);
-            view.set_main_screen_window_layers(0x04);
-            view.set_sub_screen_window_layers(0x05);
-            view.clear_window_main_sub_masks();
-            view.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
-            view.clear_nmi_copy_packets_request();
-            view.request_nmi_copy_packets();
-            view.set_nmi_copy_packets_request(3);
-            view.clear_pending_polyhedral_update();
-            view.request_polyhedral_nmi_update();
-            view.increment_chr_halfslot_request();
-            view.clear_chr_halfslot_request();
-            view.set_chr_halfslot_request(12);
-            view.deactivate_nmi_thread();
-            view.activate_nmi_thread();
-            view.set_nmi_thread_stack_pointer(0x1f31);
-            view.clear_irq_control_flag();
-            view.set_irq_control_flag(0xff);
-            view.set_vertical_irq_trigger(0x70);
-            view.set_sprite_dma_head_pointer(0x40);
-            view.set_sprite_dma_body_pointer(0x80);
-            view.clear_hdma_enable_mask();
-            view.set_hdma_enable_mask(0x80);
-            view.set_mosaic_level(0x40);
-            assert_eq!(view.increment_mosaic_level_by(0x10), 0x50);
-            assert_eq!(view.decrement_mosaic_level_by(0x20), 0x30);
-            view.set_mosaic_copy_from_level_or(3);
-            view.set_mosaic_target_level_word(0x001f);
-            view.clear_mosaic_target_level_word();
-            view.set_mosaic_target_level(0x0f);
-            view.set_mosaic_direction(1);
-            view.clear_mosaic_direction();
-            view.set_nmi_load_target_page(0x80);
-            view.set_nmi_load_target_address(0x1234);
-            assert_eq!(view.increment_vram_upload_counter(), 0xff);
-            assert_eq!(view.increment_vram_upload_counter(), 0);
-            view.reset_incremental_vram_upload_counter();
-            view.set_message_dma_destination_address(0x6080);
-            view.set_message_dma_tile_base(0x4841);
-            view.set_message_dma_tile_limit(0x007f);
-            view.set_message_dma_tile_sentinel(0xffff);
-            view.set_overworld_fixed_color_adjustment(0x30);
-            view.set_travel_bird_tile_offset(0x08);
-            view.set_animated_tile_data_source_address(0xac80);
-            view.set_animated_tile_vram_destination_address(0x3c00);
+            let mut bridge = NativeDisplayStateBridgeMut::new(&mut display, &mut ram);
+            bridge.increment_screen_brightness();
+            bridge.decrement_screen_brightness();
+            bridge.set_screen_brightness(0x80);
+            bridge.clear_nmi_update_latch();
+            bridge.latch_nmi_update();
+            bridge.clear_core_update_disable_flag();
+            bridge.set_core_update_disable_flag(7);
+            assert_eq!(bridge.take_pending_nmi_subroutine(), 6);
+            bridge.set_pending_nmi_subroutine(11);
+            bridge.clear_bg_vram_load_mode();
+            bridge.set_bg_vram_load_mode(5);
+            bridge.queue_tilemap_update(0x52, 0x0400);
+            bridge.clear_pending_tilemap_update_destination();
+            bridge.queue_tilemap_update(0x54, 0x0800);
+            bridge.set_bg_mode(9);
+            bridge.set_layer_masks_word(0x0116);
+            bridge.and_main_screen_layers(0x15);
+            bridge.or_main_screen_layers(0x01);
+            bridge.and_sub_screen_layers(0x0f);
+            bridge.or_sub_screen_layers(0x10);
+            bridge.clear_sub_screen_layers_word();
+            bridge.set_main_screen_layers(0x11);
+            bridge.set_sub_screen_layers(0x02);
+            bridge.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
+            bridge.set_bg12_window_selection(0x11);
+            bridge.set_bg34_window_selection(0x22);
+            bridge.set_object_color_window_selection(0x30);
+            bridge.set_main_screen_window_layers(0x04);
+            bridge.set_sub_screen_window_layers(0x05);
+            bridge.clear_window_main_sub_masks();
+            bridge.set_window_layer_masks(0x33, 3, 0x33, 0x11, 0x02);
+            bridge.clear_nmi_copy_packets_request();
+            bridge.request_nmi_copy_packets();
+            bridge.set_nmi_copy_packets_request(3);
+            bridge.clear_pending_polyhedral_update();
+            bridge.request_polyhedral_nmi_update();
+            bridge.increment_chr_halfslot_request();
+            bridge.clear_chr_halfslot_request();
+            bridge.set_chr_halfslot_request(12);
+            bridge.deactivate_nmi_thread();
+            bridge.activate_nmi_thread();
+            bridge.set_nmi_thread_stack_pointer(0x1f31);
+            bridge.clear_irq_control_flag();
+            bridge.set_irq_control_flag(0xff);
+            bridge.set_vertical_irq_trigger(0x70);
+            bridge.set_sprite_dma_head_pointer(0x40);
+            bridge.set_sprite_dma_body_pointer(0x80);
+            bridge.clear_hdma_enable_mask();
+            bridge.set_hdma_enable_mask(0x80);
+            bridge.set_mosaic_level(0x40);
+            assert_eq!(bridge.increment_mosaic_level_by(0x10), 0x50);
+            assert_eq!(bridge.decrement_mosaic_level_by(0x20), 0x30);
+            bridge.set_mosaic_copy_from_level_or(3);
+            bridge.set_mosaic_target_level_word(0x001f);
+            bridge.clear_mosaic_target_level_word();
+            bridge.set_mosaic_target_level(0x0f);
+            bridge.set_mosaic_direction(1);
+            bridge.clear_mosaic_direction();
+            bridge.set_nmi_load_target_page(0x80);
+            bridge.set_nmi_load_target_address(0x1234);
+            assert_eq!(bridge.increment_vram_upload_counter(), 0xff);
+            assert_eq!(bridge.increment_vram_upload_counter(), 0);
+            bridge.reset_incremental_vram_upload_counter();
+            bridge.set_message_dma_destination_address(0x6080);
+            bridge.set_message_dma_tile_base(0x4841);
+            bridge.set_message_dma_tile_limit(0x007f);
+            bridge.set_message_dma_tile_sentinel(0xffff);
+            bridge.set_overworld_fixed_color_adjustment(0x30);
+            bridge.set_travel_bird_tile_offset(0x08);
+            bridge.set_animated_tile_data_source_address(0xac80);
+            bridge.set_animated_tile_vram_destination_address(0x3c00);
         }
 
         assert_eq!(display.screen_brightness, 0x80);

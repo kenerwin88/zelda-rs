@@ -280,12 +280,12 @@ impl DisplayState {
     }
 }
 
-pub(crate) struct NativeVramUploadBufferMut<'a> {
+pub(crate) struct NativeVramUploadBufferBridgeMut<'a> {
     display: &'a mut DisplayState,
     ram_view: RamVramUploadBufferMut<'a>,
 }
 
-impl<'a> NativeVramUploadBufferMut<'a> {
+impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
         *display = DisplayState::load_from_ram(ram);
         Self {
