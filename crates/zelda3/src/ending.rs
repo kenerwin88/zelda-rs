@@ -1638,11 +1638,11 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_oam_flags(0x0b);
                         self.credits_sprite_draw_set_shadow_prop(k, 2);
                         self.sprite_slot_view_mut(k).set_z(48);
-                        let j = ((self
-                            .frame_control_view()
-                            .frame_counter()
-                            .wrapping_add(if k != 0 { 0x5f } else { 0x7d }))
-                            >> 2
+                        let j = ((self.frame_state().frame_counter.wrapping_add(if k != 0 {
+                            0x5f
+                        } else {
+                            0x7d
+                        })) >> 2
                             & 3) as usize;
                         self.sprite_slot_view_mut(k).set_graphics(CASE3_GFX[j]);
                         self.credits_sprite_draw_circling_birds(k);

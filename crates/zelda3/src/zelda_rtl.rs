@@ -1898,10 +1898,6 @@ impl ZeldaState {
         PlayerResourcesViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn frame_control_view(&self) -> RamFrameControlView<'_> {
-        RamFrameControlView::new(&self.ram)
-    }
-
     pub(crate) fn frame_control_view_mut(&mut self) -> NativeFrameStateViewMut<'_> {
         NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
     }
