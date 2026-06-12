@@ -5815,7 +5815,7 @@ mod tests {
     #[test]
     fn credits_module_sets_oam_region_words_like_c() {
         let mut state = ZeldaState::new();
-        state.ram[SUBMODULE_INDEX] = 38;
+        state.frame_control_view_mut().set_submodule(38);
         for offset in 0..6 {
             state.ram[0x0fe0 + offset] = 0xff;
         }
@@ -8682,9 +8682,9 @@ mod tests {
     #[test]
     fn intro_fade_in_bg_start_skips_to_file_select_loader() {
         let mut state = ZeldaState::new();
-        state.ram[MAIN_MODULE_INDEX] = 0;
-        state.ram[SUBMODULE_INDEX] = 7;
-        state.ram[SUBSUBMODULE_INDEX] = 0xf3;
+        state.frame_control_view_mut().set_main_module(0);
+        state.frame_control_view_mut().set_submodule(7);
+        state.frame_control_view_mut().set_subsubmodule(0xf3);
         state.palette_filter_view_mut().set_countdown(0);
         state.player_state_view_mut().set_filtered_joypad_h(0x10);
         state.world_state_view_mut().set_indoor_flag(1);
