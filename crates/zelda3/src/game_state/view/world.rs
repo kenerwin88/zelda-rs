@@ -576,10 +576,6 @@ impl<'a> WorldStateViewMut<'a> {
         self.ram[MAPBAK_TS] = value;
     }
 
-    pub(crate) fn clear_set_when_damaging_enemies(&mut self) {
-        self.ram[SET_WHEN_DAMAGING_ENEMIES] = 0;
-    }
-
     pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
         self.ram[WHICH_ENTRANCE] = value;
     }

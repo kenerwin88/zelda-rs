@@ -1901,8 +1901,7 @@ impl ZeldaState {
         if y == cached_y && x == cached_x {
             self.increment_subsubmodule();
             self.player_state_view_mut().set_incapacitated_timer(0);
-            self.world_state_view_mut()
-                .clear_set_when_damaging_enemies();
+            self.sprite_battle_view_mut().clear_damaging_enemies_timer();
         }
         self.Overworld_OperateCameraScroll();
         if self

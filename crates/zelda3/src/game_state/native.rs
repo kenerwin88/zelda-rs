@@ -39,7 +39,7 @@ pub(crate) use messaging::{
 };
 pub(crate) use misc::{
     ArcheryGameState, EnhancedFeaturesState, NativeArcheryGameBridgeMut,
-    NativeEnhancedFeaturesBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -77,6 +77,7 @@ pub(crate) struct GameState {
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) archery_game: ArcheryGameState,
+    pub(crate) sprite_battle: SpriteBattleState,
     pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
@@ -91,6 +92,7 @@ impl GameState {
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
+            sprite_battle: SpriteBattleState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
@@ -104,6 +106,7 @@ impl GameState {
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
+        self.sprite_battle.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
@@ -394,6 +397,74 @@ mod tests {
         assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 0);
         assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
         assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 0);
+    }
+
+    #[test]
+    fn sprite_battle_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[NUM_SPRITES_KILLED] = 3;
+        ram[TIMES_HURT_BY_SPRITES] = 4;
+        ram[ITEM_DROP_LUCK] = 5;
+        ram[LUCK_KILL_COUNTER] = 6;
+        ram[ITEM_DROP_COUNTER] = 7;
+        ram[DAMAGE_TYPE_DETERMINER] = 8;
+        ram[SET_WHEN_DAMAGING_ENEMIES] = 9;
+
+        let battle = SpriteBattleState::load_from_ram(&ram);
+        assert_eq!(battle.sprites_killed(), 3);
+        assert_eq!(battle.times_hurt_by_sprites(), 4);
+        assert_eq!(battle.item_drop_luck(), 5);
+        assert_eq!(battle.luck_kill_counter(), 6);
+        assert_eq!(battle.item_drop_counter(), 7);
+        assert_eq!(battle.damage_type_determiner(), 8);
+        assert_eq!(battle.damaging_enemies_timer(), 9);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        battle.write_to_ram(&mut projected);
+        assert_eq!(SpriteBattleState::load_from_ram(&projected), battle);
+    }
+
+    #[test]
+    fn native_sprite_battle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[NUM_SPRITES_KILLED] = 0xff;
+        ram[TIMES_HURT_BY_SPRITES] = 0xff;
+        ram[LUCK_KILL_COUNTER] = 0xff;
+        ram[ITEM_DROP_COUNTER] = 0xff;
+        ram[SET_WHEN_DAMAGING_ENEMIES] = 0x81;
+
+        let mut battle = SpriteBattleState::default();
+        {
+            let mut bridge = NativeSpriteBattleBridgeMut::new(&mut battle, &mut ram);
+            bridge.clear_sprites_killed();
+            bridge.increment_sprites_killed();
+            bridge.clear_times_hurt_by_sprites();
+            bridge.increment_times_hurt_by_sprites();
+            bridge.set_item_drop_luck(2);
+            bridge.clear_luck_kill_counter();
+            bridge.increment_luck_kill_counter();
+            bridge.clear_item_drop_counter();
+            bridge.increment_item_drop_counter();
+            bridge.set_damage_type_determiner(10);
+            bridge.set_damaging_enemies_timer(2);
+            bridge.tick_damaging_enemies_timer();
+            bridge.clear_damaging_enemies_timer();
+        }
+
+        assert_eq!(battle.sprites_killed(), 1);
+        assert_eq!(battle.times_hurt_by_sprites(), 1);
+        assert_eq!(battle.item_drop_luck(), 2);
+        assert_eq!(battle.luck_kill_counter(), 1);
+        assert_eq!(battle.item_drop_counter(), 1);
+        assert_eq!(battle.damage_type_determiner(), 10);
+        assert_eq!(battle.damaging_enemies_timer(), 0);
+        assert_eq!(ram[NUM_SPRITES_KILLED], 1);
+        assert_eq!(ram[TIMES_HURT_BY_SPRITES], 1);
+        assert_eq!(ram[ITEM_DROP_LUCK], 2);
+        assert_eq!(ram[LUCK_KILL_COUNTER], 1);
+        assert_eq!(ram[ITEM_DROP_COUNTER], 1);
+        assert_eq!(ram[DAMAGE_TYPE_DETERMINER], 10);
+        assert_eq!(ram[SET_WHEN_DAMAGING_ENEMIES], 0);
     }
 
     #[test]

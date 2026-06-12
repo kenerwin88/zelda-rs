@@ -68,17 +68,17 @@ use crate::game_state::{
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    NativeSharedMessageTimerBridgeMut, NativeSpriteBattleBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoState, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterState,
+    PlayerResourcesState, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
+    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
+    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
     PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
     QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
     RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
@@ -86,11 +86,11 @@ use crate::game_state::{
     SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
     SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
     SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView,
-    SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut,
-    SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut,
-    SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut,
-    SystemSignalsState, TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
+    SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsState,
+    TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
     TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
     TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
     TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
@@ -3253,12 +3253,12 @@ impl ZeldaState {
         MinigameStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn sprite_battle_view(&self) -> SpriteBattleView<'_> {
-        SpriteBattleView::new(&self.ram)
+    pub(crate) fn sprite_battle_view(&self) -> SpriteBattleState {
+        SpriteBattleState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_battle_view_mut(&mut self) -> SpriteBattleViewMut<'_> {
-        SpriteBattleViewMut::new(&mut self.ram)
+    pub(crate) fn sprite_battle_view_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
+        NativeSpriteBattleBridgeMut::new(&mut self.game_state.sprite_battle, &mut self.ram)
     }
 
     pub(crate) fn shared_message_timer_state(&self) -> SharedMessageTimerState {

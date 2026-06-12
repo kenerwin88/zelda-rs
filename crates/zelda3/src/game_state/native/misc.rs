@@ -116,6 +116,162 @@ impl<'a> NativeArcheryGameBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteBattleState {
+    sprites_killed: u8,
+    times_hurt_by_sprites: u8,
+    item_drop_luck: u8,
+    luck_kill_counter: u8,
+    item_drop_counter: u8,
+    damage_type_determiner: u8,
+    damaging_enemies_timer: u8,
+}
+
+impl SpriteBattleState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            sprites_killed: ram_byte(ram, NUM_SPRITES_KILLED),
+            times_hurt_by_sprites: ram_byte(ram, TIMES_HURT_BY_SPRITES),
+            item_drop_luck: ram_byte(ram, ITEM_DROP_LUCK),
+            luck_kill_counter: ram_byte(ram, LUCK_KILL_COUNTER),
+            item_drop_counter: ram_byte(ram, ITEM_DROP_COUNTER),
+            damage_type_determiner: ram_byte(ram, DAMAGE_TYPE_DETERMINER),
+            damaging_enemies_timer: ram_byte(ram, SET_WHEN_DAMAGING_ENEMIES),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[NUM_SPRITES_KILLED] = self.sprites_killed;
+        ram[TIMES_HURT_BY_SPRITES] = self.times_hurt_by_sprites;
+        ram[ITEM_DROP_LUCK] = self.item_drop_luck;
+        ram[LUCK_KILL_COUNTER] = self.luck_kill_counter;
+        ram[ITEM_DROP_COUNTER] = self.item_drop_counter;
+        ram[DAMAGE_TYPE_DETERMINER] = self.damage_type_determiner;
+        ram[SET_WHEN_DAMAGING_ENEMIES] = self.damaging_enemies_timer;
+    }
+
+    pub(crate) fn sprites_killed(&self) -> u8 {
+        self.sprites_killed
+    }
+
+    pub(crate) fn times_hurt_by_sprites(&self) -> u8 {
+        self.times_hurt_by_sprites
+    }
+
+    pub(crate) fn item_drop_luck(&self) -> u8 {
+        self.item_drop_luck
+    }
+
+    pub(crate) fn luck_kill_counter(&self) -> u8 {
+        self.luck_kill_counter
+    }
+
+    pub(crate) fn item_drop_counter(&self) -> u8 {
+        self.item_drop_counter
+    }
+
+    pub(crate) fn damage_type_determiner(&self) -> u8 {
+        self.damage_type_determiner
+    }
+
+    pub(crate) fn damaging_enemies_timer(&self) -> u8 {
+        self.damaging_enemies_timer
+    }
+}
+
+pub(crate) struct NativeSpriteBattleBridgeMut<'a> {
+    sprite_battle: &'a mut SpriteBattleState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSpriteBattleBridgeMut<'a> {
+    pub(crate) fn new(sprite_battle: &'a mut SpriteBattleState, ram: &'a mut [u8]) -> Self {
+        *sprite_battle = SpriteBattleState::load_from_ram(ram);
+        Self { sprite_battle, ram }
+    }
+
+    fn sync(&mut self) {
+        self.sprite_battle.write_to_ram(self.ram);
+        debug_assert_eq!(
+            *self.sprite_battle,
+            SpriteBattleState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_sprites_killed(&mut self) {
+        self.sprite_battle.sprites_killed = 0;
+        self.sync();
+    }
+
+    pub(crate) fn clear_times_hurt_by_sprites(&mut self) {
+        self.sprite_battle.times_hurt_by_sprites = 0;
+        self.sync();
+    }
+
+    pub(crate) fn increment_times_hurt_by_sprites(&mut self) {
+        self.sprite_battle.times_hurt_by_sprites =
+            self.sprite_battle.times_hurt_by_sprites.wrapping_add(1);
+        self.sync();
+    }
+
+    pub(crate) fn set_item_drop_luck(&mut self, value: u8) {
+        self.sprite_battle.item_drop_luck = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_luck_kill_counter(&mut self) {
+        self.sprite_battle.luck_kill_counter = 0;
+        self.sync();
+    }
+
+    pub(crate) fn clear_item_drop_counter(&mut self) {
+        self.sprite_battle.item_drop_counter = 0;
+        self.sync();
+    }
+
+    pub(crate) fn increment_sprites_killed(&mut self) {
+        self.sprite_battle.sprites_killed = self.sprite_battle.sprites_killed.wrapping_add(1);
+        self.sync();
+    }
+
+    pub(crate) fn increment_luck_kill_counter(&mut self) {
+        self.sprite_battle.luck_kill_counter = self.sprite_battle.luck_kill_counter.wrapping_add(1);
+        self.sync();
+    }
+
+    pub(crate) fn set_damage_type_determiner(&mut self, value: u8) {
+        self.sprite_battle.damage_type_determiner = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_damaging_enemies_timer(&mut self, value: u8) {
+        self.sprite_battle.damaging_enemies_timer = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_damaging_enemies_timer(&mut self) {
+        self.sprite_battle.damaging_enemies_timer = 0;
+        self.sync();
+    }
+
+    pub(crate) fn tick_damaging_enemies_timer(&mut self) {
+        self.sprite_battle.damaging_enemies_timer =
+            if self.sprite_battle.damaging_enemies_timer & 0x7f != 0 {
+                self.sprite_battle.damaging_enemies_timer.wrapping_sub(1)
+            } else {
+                0
+            };
+        self.sync();
+    }
+
+    pub(crate) fn increment_item_drop_counter(&mut self) -> u8 {
+        self.sprite_battle.item_drop_counter = self.sprite_battle.item_drop_counter.wrapping_add(1);
+        let value = self.sprite_battle.item_drop_counter;
+        self.sync();
+        value
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EnhancedFeaturesState {
     bits: u32,
 }
