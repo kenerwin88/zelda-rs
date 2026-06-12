@@ -5609,7 +5609,7 @@ impl ZeldaState {
         if self.world_state_view().last_light_vs_dark_world() != 0 {
             let y = self.player_state_view().y();
             let x = self.player_state_view().x();
-            self.bird_travel_destination_view_mut(15).set_position(x, y);
+            self.set_bird_travel_destination(15, x, y);
         }
         self.set_submodule(35);
         self.player_state_view_mut()

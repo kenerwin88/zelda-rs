@@ -14,6 +14,7 @@ pub(crate) use display::{
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
+    BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
@@ -28,8 +29,9 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use world::{
-    OverworldEntranceState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
-    OverworldScreenSizeState, OverworldScrollDeltaState, OverworldTransitionState,
+    BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
+    OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
+    OverworldTransitionState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -201,6 +203,10 @@ mod tests {
         ram[OVERWORLD_SCROLL_DELTA] = 0x11;
         ram[OVERWORLD_SCROLL_DELTA + 1] = 0x22;
         ram[OVERWORLD_SCROLL_DELTA + 2] = 0x33;
+        ram[BIRD_TRAVEL_X_LO + 3] = 0x34;
+        ram[BIRD_TRAVEL_X_HI + 3] = 0x12;
+        ram[BIRD_TRAVEL_Y_LO + 3] = 0x78;
+        ram[BIRD_TRAVEL_Y_HI + 3] = 0x56;
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
@@ -232,6 +238,17 @@ mod tests {
             state.world.overworld.scroll_delta.horizontal_delta_word(),
             0x3322
         );
+        assert_eq!(
+            state
+                .world
+                .overworld
+                .bird_travel_destinations
+                .destination(3),
+            BirdTravelDestinationState {
+                x: 0x1234,
+                y: 0x5678,
+            }
+        );
         assert_eq!(state.world.overworld.map16.active_load.src_off, 0x1234);
         assert_eq!(state.world.overworld.entrance.sequence_counter, 3);
         assert_eq!(state.world.overworld.exit.special_exit_screen, 0x0033);
@@ -258,6 +275,11 @@ mod tests {
             .overworld
             .scroll_delta
             .set_horizontal_delta_word(0x5544);
+        state
+            .world
+            .overworld
+            .bird_travel_destinations
+            .set_destination(3, 0x2345, 0x6789);
         state.world.overworld.map16.active_load.src_off = 0x4567;
         state.world.overworld.entrance.sequence_counter = 9;
         state.world.overworld.exit.exit_screen = 0x0044;
@@ -278,6 +300,10 @@ mod tests {
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0x33);
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x44);
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x55);
+        assert_eq!(ram[BIRD_TRAVEL_X_LO + 3], 0x45);
+        assert_eq!(ram[BIRD_TRAVEL_X_HI + 3], 0x23);
+        assert_eq!(ram[BIRD_TRAVEL_Y_LO + 3], 0x89);
+        assert_eq!(ram[BIRD_TRAVEL_Y_HI + 3], 0x67);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x4567);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
@@ -332,6 +358,72 @@ mod tests {
         assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0206);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x03);
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
+    }
+
+    #[test]
+    fn bird_travel_destinations_load_from_and_project_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BIRD_TRAVEL_X_LO + 2] = 0x34;
+        ram[BIRD_TRAVEL_X_HI + 2] = 0x12;
+        ram[BIRD_TRAVEL_Y_LO + 2] = 0x78;
+        ram[BIRD_TRAVEL_Y_HI + 2] = 0x56;
+
+        let mut destinations = BirdTravelDestinationsState::load_from_ram(&ram);
+        assert_eq!(
+            destinations.destination(2),
+            BirdTravelDestinationState {
+                x: 0x1234,
+                y: 0x5678,
+            }
+        );
+        assert!(!destinations.destination(2).is_empty());
+        assert!(destinations.destination(3).is_empty());
+
+        destinations.set_destination(2, 0x2345, 0x6789);
+        destinations.clear_destination(3);
+        destinations.write_to_ram(&mut ram);
+
+        assert_eq!(ram[BIRD_TRAVEL_X_LO + 2], 0x45);
+        assert_eq!(ram[BIRD_TRAVEL_X_HI + 2], 0x23);
+        assert_eq!(ram[BIRD_TRAVEL_Y_LO + 2], 0x89);
+        assert_eq!(ram[BIRD_TRAVEL_Y_HI + 2], 0x67);
+        assert_eq!(ram[BIRD_TRAVEL_X_LO + 3], 0);
+        assert_eq!(ram[BIRD_TRAVEL_X_HI + 3], 0);
+        assert_eq!(ram[BIRD_TRAVEL_Y_LO + 3], 0);
+        assert_eq!(ram[BIRD_TRAVEL_Y_HI + 3], 0);
+    }
+
+    #[test]
+    fn native_bird_travel_destination_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BIRD_TRAVEL_X_LO + 15] = 0x34;
+        ram[BIRD_TRAVEL_X_HI + 15] = 0x12;
+        ram[BIRD_TRAVEL_Y_LO + 15] = 0x78;
+        ram[BIRD_TRAVEL_Y_HI + 15] = 0x56;
+
+        let mut destinations = BirdTravelDestinationsState::default();
+        {
+            let mut bridge = NativeBirdTravelDestinationBridgeMut::new(&mut destinations, &mut ram);
+            bridge.set_destination(15, 0x2345, 0x6789);
+            bridge.clear_destination(2);
+        }
+
+        assert_eq!(
+            destinations.destination(15),
+            BirdTravelDestinationState {
+                x: 0x2345,
+                y: 0x6789,
+            }
+        );
+        assert!(destinations.destination(2).is_empty());
+        assert_eq!(ram[BIRD_TRAVEL_X_LO + 15], 0x45);
+        assert_eq!(ram[BIRD_TRAVEL_X_HI + 15], 0x23);
+        assert_eq!(ram[BIRD_TRAVEL_Y_LO + 15], 0x89);
+        assert_eq!(ram[BIRD_TRAVEL_Y_HI + 15], 0x67);
+        assert_eq!(ram[BIRD_TRAVEL_X_LO + 2], 0);
+        assert_eq!(ram[BIRD_TRAVEL_X_HI + 2], 0);
+        assert_eq!(ram[BIRD_TRAVEL_Y_LO + 2], 0);
+        assert_eq!(ram[BIRD_TRAVEL_Y_HI + 2], 0);
     }
 
     #[test]

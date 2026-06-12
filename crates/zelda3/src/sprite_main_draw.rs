@@ -23604,8 +23604,9 @@ impl ZeldaState {
             let value = 1;
             self.sprite_slot_view_mut(k).set_a(value);
         }
-        let bird_x = self.bird_travel_destination_view(15).x();
-        let bird_y = self.bird_travel_destination_view(15).y();
+        let bird = self.bird_travel_destination(15);
+        let bird_x = bird.x;
+        let bird_y = bird.y;
         let value = bird_x as u8;
         self.sprite_slot_view_mut(k).set_x_low(value);
         let value = (bird_x >> 8) as u8;

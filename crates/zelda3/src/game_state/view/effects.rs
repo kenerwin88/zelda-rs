@@ -1150,63 +1150,6 @@ impl<'a> WeatherVaneDebrisViewMut<'a> {
     }
 }
 
-pub(crate) struct BirdTravelDestinationView<'a> {
-    ram: &'a [u8],
-    slot: usize,
-}
-
-impl<'a> BirdTravelDestinationView<'a> {
-    pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
-        Self { ram, slot }
-    }
-
-    pub(crate) fn x(&self) -> u16 {
-        packed_position(
-            self.ram,
-            BIRD_TRAVEL_X_LO + self.slot,
-            BIRD_TRAVEL_X_HI + self.slot,
-        )
-    }
-
-    pub(crate) fn y(&self) -> u16 {
-        packed_position(
-            self.ram,
-            BIRD_TRAVEL_Y_LO + self.slot,
-            BIRD_TRAVEL_Y_HI + self.slot,
-        )
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.ram[BIRD_TRAVEL_X_LO + self.slot]
-            | self.ram[BIRD_TRAVEL_X_HI + self.slot]
-            | self.ram[BIRD_TRAVEL_Y_LO + self.slot]
-            | self.ram[BIRD_TRAVEL_Y_HI + self.slot]
-            == 0
-    }
-}
-
-pub(crate) struct BirdTravelDestinationViewMut<'a> {
-    ram: &'a mut [u8],
-    slot: usize,
-}
-
-impl<'a> BirdTravelDestinationViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
-        Self { ram, slot }
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.ram[BIRD_TRAVEL_X_LO + self.slot] = x as u8;
-        self.ram[BIRD_TRAVEL_X_HI + self.slot] = (x >> 8) as u8;
-        self.ram[BIRD_TRAVEL_Y_LO + self.slot] = y as u8;
-        self.ram[BIRD_TRAVEL_Y_HI + self.slot] = (y >> 8) as u8;
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.set_position(0, 0);
-    }
-}
-
 pub(crate) struct BirdTravelStatusViewMut<'a> {
     ram: &'a mut [u8],
 }

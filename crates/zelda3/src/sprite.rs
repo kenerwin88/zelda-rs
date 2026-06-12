@@ -1456,9 +1456,9 @@ impl ZeldaState {
             j = 0;
         }
         let ju = j as usize;
-        let bird = self.bird_travel_destination_view(15);
-        let x = bird.x();
-        let y = bird.y().wrapping_add(8);
+        let bird = self.bird_travel_destination(15);
+        let x = bird.x;
+        let y = bird.y.wrapping_add(8);
         self.sprite_set_x(ju, x);
         self.sprite_set_y(ju, y);
         let value = 0;
@@ -8582,8 +8582,7 @@ mod tests {
         s.sprite_slot_view_mut(4).set_state(9);
         s.sprite_slot_view_mut(4).set_sprite_type(0x6c);
         s.sprite_slot_view_mut(15).set_state(1);
-        s.bird_travel_destination_view_mut(15)
-            .set_position(0x1234, 0x01f8);
+        s.set_bird_travel_destination(15, 0x1234, 0x01f8);
 
         s.sprite_initialize_mirror_portal();
 
@@ -8598,8 +8597,7 @@ mod tests {
         let mut full = fresh_state();
         full.sprite_system_view_mut().fill_live_states(9);
         full.sprite_slot_view_mut(0).set_state(7);
-        full.bird_travel_destination_view_mut(15)
-            .set_position(0xabcd, 0x0201);
+        full.set_bird_travel_destination(15, 0xabcd, 0x0201);
         full.sprite_initialize_mirror_portal();
         assert_eq!(full.sprite_get_x(0), 0xabcd);
         assert_eq!(full.sprite_get_y(0), 0x0209);

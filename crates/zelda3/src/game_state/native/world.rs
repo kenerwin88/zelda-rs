@@ -4,6 +4,8 @@ use crate::game_state::WorldStateViewMut;
 use crate::types::{read_le_u16, write_le_u16};
 use std::ops::{Deref, DerefMut};
 
+const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldLocationState {
     pub(crate) dungeon_room: u16,
@@ -79,6 +81,64 @@ impl OverworldMapUiState {
 
     pub(crate) fn birdtravel_status_word(&self) -> u16 {
         self.birdtravel_status
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BirdTravelDestinationState {
+    pub(crate) x: u16,
+    pub(crate) y: u16,
+}
+
+impl BirdTravelDestinationState {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.x == 0 && self.y == 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BirdTravelDestinationsState {
+    slots: [BirdTravelDestinationState; BIRD_TRAVEL_DESTINATION_SLOTS],
+}
+
+impl BirdTravelDestinationsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut slots = [BirdTravelDestinationState::default(); BIRD_TRAVEL_DESTINATION_SLOTS];
+        for (slot, destination) in slots.iter_mut().enumerate() {
+            destination.x = u16::from(ram_byte(ram, BIRD_TRAVEL_X_LO + slot))
+                | (u16::from(ram_byte(ram, BIRD_TRAVEL_X_HI + slot)) << 8);
+            destination.y = u16::from(ram_byte(ram, BIRD_TRAVEL_Y_LO + slot))
+                | (u16::from(ram_byte(ram, BIRD_TRAVEL_Y_HI + slot)) << 8);
+        }
+        Self { slots }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, destination) in self.slots.iter().enumerate() {
+            ram[BIRD_TRAVEL_X_LO + slot] = destination.x as u8;
+            ram[BIRD_TRAVEL_X_HI + slot] = (destination.x >> 8) as u8;
+            ram[BIRD_TRAVEL_Y_LO + slot] = destination.y as u8;
+            ram[BIRD_TRAVEL_Y_HI + slot] = (destination.y >> 8) as u8;
+        }
+    }
+
+    pub(crate) fn destination(&self, slot: usize) -> BirdTravelDestinationState {
+        self.slots
+            .get(slot)
+            .copied()
+            .unwrap_or_else(BirdTravelDestinationState::default)
+    }
+
+    pub(crate) fn destination_mut(&mut self, slot: usize) -> &mut BirdTravelDestinationState {
+        &mut self.slots[slot]
+    }
+
+    pub(crate) fn set_destination(&mut self, slot: usize, x: u16, y: u16) {
+        *self.destination_mut(slot) = BirdTravelDestinationState { x, y };
+    }
+
+    pub(crate) fn clear_destination(&mut self, slot: usize) {
+        self.set_destination(slot, 0, 0);
     }
 }
 
@@ -441,6 +501,7 @@ impl OverworldTransitionState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldState {
     pub(crate) map_ui: OverworldMapUiState,
+    pub(crate) bird_travel_destinations: BirdTravelDestinationsState,
     pub(crate) map_zoom: OverworldMapZoomState,
     pub(crate) screen_size: OverworldScreenSizeState,
     pub(crate) scroll_delta: OverworldScrollDeltaState,
@@ -454,6 +515,7 @@ impl OverworldState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             map_ui: OverworldMapUiState::load_from_ram(ram),
+            bird_travel_destinations: BirdTravelDestinationsState::load_from_ram(ram),
             map_zoom: OverworldMapZoomState::load_from_ram(ram),
             screen_size: OverworldScreenSizeState::load_from_ram(ram),
             scroll_delta: OverworldScrollDeltaState::load_from_ram(ram),
@@ -466,6 +528,7 @@ impl OverworldState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.map_ui.write_to_ram(ram);
+        self.bird_travel_destinations.write_to_ram(ram);
         self.map_zoom.write_to_ram(ram);
         self.screen_size.write_to_ram(ram);
         self.scroll_delta.write_to_ram(ram);
@@ -653,6 +716,41 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         let next = self.map_ui.birdtravel_status().wrapping_add(1);
         self.set_birdtravel_status(next);
+    }
+}
+
+pub(crate) struct NativeBirdTravelDestinationBridgeMut<'a> {
+    destinations: &'a mut BirdTravelDestinationsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeBirdTravelDestinationBridgeMut<'a> {
+    pub(crate) fn new(
+        destinations: &'a mut BirdTravelDestinationsState,
+        ram: &'a mut [u8],
+    ) -> Self {
+        *destinations = BirdTravelDestinationsState::load_from_ram(ram);
+        Self { destinations, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.destinations,
+            BirdTravelDestinationsState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_destination(&mut self, slot: usize, x: u16, y: u16) {
+        self.destinations.set_destination(slot, x, y);
+        self.ram[BIRD_TRAVEL_X_LO + slot] = x as u8;
+        self.ram[BIRD_TRAVEL_X_HI + slot] = (x >> 8) as u8;
+        self.ram[BIRD_TRAVEL_Y_LO + slot] = y as u8;
+        self.ram[BIRD_TRAVEL_Y_HI + slot] = (y >> 8) as u8;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_destination(&mut self, slot: usize) {
+        self.set_destination(slot, 0, 0);
     }
 }
 

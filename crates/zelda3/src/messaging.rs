@@ -1230,8 +1230,7 @@ impl ZeldaState {
         for i in (0..8).rev() {
             let bird_x = u16::from(BIRD_TRAVEL_X_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_X_LOW[i]);
             let bird_y = u16::from(BIRD_TRAVEL_Y_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_Y_LOW[i]);
-            self.bird_travel_destination_view_mut(i)
-                .set_position(bird_x, bird_y);
+            self.set_bird_travel_destination(i, bird_x, bird_y);
             self.special_exit_position_view_mut()
                 .set_position(bird_x, bird_y);
 
@@ -1576,14 +1575,14 @@ impl ZeldaState {
 
         let k = 15;
         if self.world_location_state().overworld_screen_index() < 0x40
-            && !self.bird_travel_destination_view(k).is_empty()
+            && !self.bird_travel_destination(k).is_empty()
         {
             if self.frame_state().frame_counter == 0 {
                 self.bird_travel_status_view_mut().increment(k);
             }
-            let bird = self.bird_travel_destination_view(k);
-            let bird_x = bird.x();
-            let bird_y = bird.y();
+            let bird = self.bird_travel_destination(k);
+            let bird_x = bird.x;
+            let bird_y = bird.y;
             self.special_exit_position_view_mut()
                 .set_position(bird_x, bird_y);
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
@@ -2892,7 +2891,7 @@ impl ZeldaState {
 
     pub(super) fn CopySaveToWRAM(&mut self) {
         let k = 0x0f;
-        self.bird_travel_destination_view_mut(k).clear();
+        self.clear_bird_travel_destination(k);
         self.bird_travel_status_view_mut().clear(k);
 
         let save_offset = self.save_load_scratch_view().source_offset_usize();
