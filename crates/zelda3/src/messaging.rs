@@ -1393,8 +1393,7 @@ impl ZeldaState {
         if u16::from(self.world_location_state().overworld_screen_index()) & 0x40 != 0 {
             if let Some(tilemap) = self.asset_raw(68).map(Vec::from) {
                 let len = tilemap.len().min(1024);
-                self.display_nmi_view_mut().tilemap_upload_buffer_mut()[..len]
-                    .copy_from_slice(&tilemap[..len]);
+                self.copy_tilemap_upload_stripe_bytes(&tilemap[..len]);
             }
             self.set_pending_nmi_subroutine(21);
         }

@@ -1049,6 +1049,7 @@ mod tests {
             bridge.set_travel_bird_tile_offset(0x08);
             bridge.set_animated_tile_data_source_address(0xac80);
             bridge.set_animated_tile_vram_destination_address(0x3c00);
+            bridge.copy_tilemap_upload_stripe_bytes(&[0xaa, 0xbb, 0xcc]);
         }
 
         assert_eq!(display.screen_brightness, 0x80);
@@ -1093,7 +1094,7 @@ mod tests {
         assert_eq!(display.mosaic_target_level, 0x0f);
         assert_eq!(display.mosaic_direction, 0);
         assert_eq!(display.nmi_load_target_address, 0x1234);
-        assert_eq!(display.vram_upload_cursor, 0x0010);
+        assert_eq!(display.vram_upload_cursor, 0xbbaa);
         assert_eq!(display.incremental_vram_upload_counter, 0);
         assert_eq!(display.incremental_vram_upload_counter_usize(), 0);
         assert_eq!(display.message_dma_destination_address, 0x6080);
@@ -1139,7 +1140,11 @@ mod tests {
         assert_eq!(ram[MOSAIC_TARGET_LEVEL], 0x0f);
         assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
-        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0xbbaa);
+        assert_eq!(
+            ram[crate::game_state::constants::nmi::VRAM_UPLOAD_DATA],
+            0xcc
+        );
         assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
         assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
         assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);

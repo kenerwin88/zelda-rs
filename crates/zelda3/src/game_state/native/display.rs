@@ -1149,4 +1149,18 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
         self.debug_assert_animated_tile_upload_metadata_matches_ram();
     }
+
+    pub(crate) fn copy_tilemap_upload_stripe_bytes(&mut self, bytes: &[u8]) {
+        let start = crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER;
+        let len = bytes.len().min(self.ram.len().saturating_sub(start));
+        self.ram[start..start + len].copy_from_slice(&bytes[..len]);
+
+        // This legacy upload buffer starts at the same word used as the VRAM
+        // upload cursor, so keep the native metadata synchronized after writes.
+        self.display.vram_upload_cursor = read_le_u16(self.ram, VRAM_UPLOAD_OFFSET);
+        debug_assert_eq!(
+            self.display.vram_upload_cursor,
+            read_le_u16(self.ram, VRAM_UPLOAD_OFFSET)
+        );
+    }
 }

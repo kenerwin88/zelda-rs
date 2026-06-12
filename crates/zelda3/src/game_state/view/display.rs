@@ -1,19 +1,5 @@
 use super::*;
 
-pub(crate) struct DisplayNmiViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DisplayNmiViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn tilemap_upload_buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
-    }
-}
-
 pub(crate) struct PaletteBufferView<'a> {
     ram: &'a [u8],
 }
