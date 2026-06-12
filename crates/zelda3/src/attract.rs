@@ -133,7 +133,7 @@ impl ZeldaState {
         self.attract_state_view_mut().add_state(3);
 
         self.hdma_setup(0x0cfa87, 0x0cfa94, 1, 0x26, 0x28, 0);
-        self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+        self.set_hdma_enable_mask(0xc0);
         self.display_nmi_view_mut().set_w12sel_copy(0);
         self.display_nmi_view_mut().set_w34sel_copy(0);
         self.display_nmi_view_mut().set_wobjsel_copy(0xb0);
@@ -187,7 +187,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_scene_throne_room(&mut self) {
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        self.clear_hdma_enable_mask();
         self.palette_filter_view_mut().set_color_window_selection(2);
         self.palette_filter_view_mut().set_color_math_control(0x20);
         self.sprite_system_view_mut()
@@ -312,7 +312,7 @@ impl ZeldaState {
 
     pub(super) fn attract_setup_conclusion_hdma(&mut self) {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.display_nmi_view_mut().set_bg_mode(9);
         self.clear_core_update_disable_flag();
     }

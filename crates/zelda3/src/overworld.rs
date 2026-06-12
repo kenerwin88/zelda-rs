@@ -2259,7 +2259,7 @@ impl ZeldaState {
     pub(super) fn Overworld_WeathervaneExplosion(&mut self) {}
 
     pub(super) fn InitializeMirrorHDMA(&mut self) {
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        self.clear_hdma_enable_mask();
 
         self.mirror_warp_scratch_view_mut()
             .initialize_hdma_wave_state();
@@ -2271,7 +2271,7 @@ impl ZeldaState {
             self.spotlight_hdma_view_mut()
                 .set_hdma_table_dynamic_entry(i, value);
         }
-        self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+        self.set_hdma_enable_mask(0xc0);
     }
 
     pub(super) fn MirrorWarp_BuildWavingHDMATable(&mut self) {
@@ -2364,7 +2364,7 @@ impl ZeldaState {
                 .spotlight_hdma_view_mut()
                 .hdma_table_dynamic_entry(0x0d8);
         if t == self.world_state_view().bg2_x() {
-            self.display_nmi_view_mut().clear_hdma_enable_mask();
+            self.clear_hdma_enable_mask();
             self.frame_control_view_mut().increment_subsubmodule();
             self.Overworld_SetFixedColAndScroll();
             if self.world_location_state().overworld_screen_index() & 0x3f != 0x1b {
@@ -2388,7 +2388,7 @@ impl ZeldaState {
             .set_darkening_or_lightening_screen_word(0);
         self.ReloadPreviouslyLoadedSheets();
         self.Overworld_SetSongList();
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
 
         let screen = self.world_location_state().overworld_screen_index() as usize;
         let music = self.overworld_config_table_view().music(screen);
@@ -2439,7 +2439,7 @@ impl ZeldaState {
             }
             1 => {
                 self.frame_control_view_mut().increment_subsubmodule();
-                self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+                self.set_hdma_enable_mask(0xc0);
                 self.MirrorWarp_BuildWavingHDMATable();
             }
             2 => self.MirrorWarp_BuildWavingHDMATable(),
@@ -2607,7 +2607,7 @@ impl ZeldaState {
             12 => {
                 self.player_state_view_mut().set_blink_countdown(144);
                 self.ReloadPreviouslyLoadedSheets();
-                self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+                self.set_hdma_enable_mask(0x80);
                 let music = self
                     .overworld_config_table_view()
                     .music(self.world_location_state().overworld_screen_index() as usize);
@@ -5069,7 +5069,7 @@ impl ZeldaState {
     pub(super) fn OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic(&mut self) {
         self.LoadNewSpriteGFXSet();
         self.set_screen_brightness(0x0f);
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         let countdown = self
             .display_nmi_view()
             .mosaic_target_level()

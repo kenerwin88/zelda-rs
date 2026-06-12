@@ -120,6 +120,7 @@ pub(crate) struct DisplayState {
     pub(crate) vertical_irq_trigger: u8,
     pub(crate) sprite_dma_head_pointer: u8,
     pub(crate) sprite_dma_body_pointer: u8,
+    pub(crate) hdma_enable_mask: u8,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
@@ -140,6 +141,7 @@ impl DisplayState {
             vertical_irq_trigger: ram_byte(ram, VIRQ_TRIGGER),
             sprite_dma_head_pointer: ram_byte(ram, DMA_HEAD_POINTER),
             sprite_dma_body_pointer: ram_byte(ram, DMA_BODY_POINTER),
+            hdma_enable_mask: ram_byte(ram, HDMAEN_COPY),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
@@ -159,6 +161,7 @@ impl DisplayState {
         ram[VIRQ_TRIGGER] = self.vertical_irq_trigger;
         ram[DMA_HEAD_POINTER] = self.sprite_dma_head_pointer;
         ram[DMA_BODY_POINTER] = self.sprite_dma_body_pointer;
+        ram[HDMAEN_COPY] = self.hdma_enable_mask;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
@@ -193,6 +196,10 @@ impl DisplayState {
 
     pub(crate) fn irq_control_has_vcounter_marker(&self) -> bool {
         self.irq_control_flag & 0x80 != 0
+    }
+
+    pub(crate) fn is_hdma_channel_enabled(&self, channel: usize) -> bool {
+        self.hdma_enable_mask & (1 << channel) != 0
     }
 
     pub(crate) fn nmi_load_target_page(&self) -> u8 {
@@ -589,6 +596,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_hdma_enable_mask_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.hdma_enable_mask,
+            ram_byte(self.ram, HDMAEN_COPY)
+        );
+    }
+
     fn debug_assert_nmi_load_target_address_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
@@ -754,6 +768,16 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.debug_assert_sprite_dma_pointers_match_ram();
     }
 
+    pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
+        self.display.hdma_enable_mask = value;
+        self.ram[HDMAEN_COPY] = value;
+        self.debug_assert_hdma_enable_mask_matches_ram();
+    }
+
+    pub(crate) fn clear_hdma_enable_mask(&mut self) {
+        self.set_hdma_enable_mask(0);
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         self.display.nmi_load_target_address =
             (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
@@ -891,6 +915,7 @@ mod tests {
         ram[VIRQ_TRIGGER] = 0x90;
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
+        ram[HDMAEN_COPY] = 0xc0;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
@@ -916,6 +941,10 @@ mod tests {
         assert_eq!(display.vertical_irq_trigger, 0x90);
         assert_eq!(display.sprite_dma_head_pointer, 0x20);
         assert_eq!(display.sprite_dma_body_pointer, 0xa0);
+        assert_eq!(display.hdma_enable_mask, 0xc0);
+        assert!(display.is_hdma_channel_enabled(6));
+        assert!(display.is_hdma_channel_enabled(7));
+        assert!(!display.is_hdma_channel_enabled(5));
         assert_eq!(display.nmi_load_target_address, 0x2146);
         assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
@@ -938,6 +967,7 @@ mod tests {
         display.vertical_irq_trigger = 0x70;
         display.sprite_dma_head_pointer = 0x40;
         display.sprite_dma_body_pointer = 0x80;
+        display.hdma_enable_mask = 0x80;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
@@ -955,6 +985,7 @@ mod tests {
         assert_eq!(ram[VIRQ_TRIGGER], 0x70);
         assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
         assert_eq!(ram[DMA_BODY_POINTER], 0x80);
+        assert_eq!(ram[HDMAEN_COPY], 0x80);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
@@ -992,6 +1023,7 @@ mod tests {
         ram[VIRQ_TRIGGER] = 0x90;
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
+        ram[HDMAEN_COPY] = 0xc0;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
@@ -1023,6 +1055,8 @@ mod tests {
             view.set_vertical_irq_trigger(0x70);
             view.set_sprite_dma_head_pointer(0x40);
             view.set_sprite_dma_body_pointer(0x80);
+            view.clear_hdma_enable_mask();
+            view.set_hdma_enable_mask(0x80);
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
         }
@@ -1042,6 +1076,9 @@ mod tests {
         assert_eq!(display.vertical_irq_trigger, 0x70);
         assert_eq!(display.sprite_dma_head_pointer, 0x40);
         assert_eq!(display.sprite_dma_body_pointer, 0x80);
+        assert_eq!(display.hdma_enable_mask, 0x80);
+        assert!(display.is_hdma_channel_enabled(7));
+        assert!(!display.is_hdma_channel_enabled(6));
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -1057,6 +1094,7 @@ mod tests {
         assert_eq!(ram[VIRQ_TRIGGER], 0x70);
         assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
         assert_eq!(ram[DMA_BODY_POINTER], 0x80);
+        assert_eq!(ram[HDMAEN_COPY], 0x80);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }

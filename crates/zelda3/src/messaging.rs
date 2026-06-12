@@ -418,8 +418,8 @@ impl ZeldaState {
             d.set_wobjsel_copy(0x33);
             d.set_tmw_copy(main_layers);
             d.set_tsw_copy(sub_layers);
-            d.set_hdma_enable_mask(0x80);
         }
+        self.set_hdma_enable_mask(0x80);
         self.spotlight_hdma_view_mut().clear_hdma_table_dynamic(240);
     }
 
@@ -1345,8 +1345,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
-        self.display_nmi_view_mut()
-            .set_hdma_enable_mask(hdma_enable_mask);
+        self.set_hdma_enable_mask(hdma_enable_mask);
         self.add_bird_travel_something(0x27, 4);
         self.sprite_main();
     }
@@ -1370,7 +1369,7 @@ impl ZeldaState {
         if self.display_state().screen_brightness != 0 {
             return;
         }
-        let hdmaen = self.display_nmi_view().hdma_enable_mask();
+        let hdmaen = self.display_state().hdma_enable_mask;
         self.ppu_scroll_copy_view_mut().set_mapbak_hdmaen(hdmaen);
         self.EnableForceBlank();
         self.display_nmi_view_mut().set_mosaic_copy(3);
@@ -1555,7 +1554,7 @@ impl ZeldaState {
 
     pub(super) fn Attract_SetUpConclusionHDMA(&mut self) {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.display_nmi_view_mut().set_bg_mode(9);
         self.clear_core_update_disable_flag();
     }
@@ -1574,8 +1573,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(32);
         self.clear_vram_upload_cursor();
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
-        self.display_nmi_view_mut()
-            .set_hdma_enable_mask(hdma_enable_mask);
+        self.set_hdma_enable_mask(hdma_enable_mask);
         let music = self.overworld_config_table_view().current_music();
         self.system_signals_view_mut()
             .set_ambient_sound_effect(music >> 4);
@@ -1924,8 +1922,8 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_00_PrepMapGraphics(&mut self) {
         self.replay_trace_ram_watch("dungmap-prep-entry");
-        let hdmaen_bak = self.display_nmi_view().hdma_enable_mask();
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        let hdmaen_bak = self.display_state().hdma_enable_mask;
+        self.clear_hdma_enable_mask();
         let main_tile_theme = self.world_state_view().main_tile_theme_index();
         let sprite_gfx = self.sprite_system_view().graphics_index();
         let aux_tile_theme = self.world_state_view().aux_tile_theme_index();
@@ -1963,7 +1961,7 @@ impl ZeldaState {
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
-        self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
+        self.set_hdma_enable_mask(hdmaen_bak);
         self.set_bg_vram_load_mode(9);
         self.set_core_update_disable_flag(9);
         self.replay_trace_ram_watch("dungmap-prep-exit");
@@ -2736,8 +2734,8 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_RecoverGFX(&mut self) {
-        let hdmaen_bak = self.display_nmi_view().hdma_enable_mask();
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        let hdmaen_bak = self.display_state().hdma_enable_mask;
+        self.clear_hdma_enable_mask();
         self.EraseTileMaps_normal();
 
         let main_screen_layers = self.ppu_scroll_copy_view().mapbak_tm();
@@ -2775,7 +2773,7 @@ impl ZeldaState {
 
         self.clear_pending_nmi_subroutine();
         self.frame_control_view_mut().set_subsubmodule(0);
-        self.display_nmi_view_mut().set_hdma_enable_mask(hdmaen_bak);
+        self.set_hdma_enable_mask(hdmaen_bak);
         let mapbak_palette = self.ppu_scroll_copy_view().mapbak_palette_slice().to_vec();
         self.palette_buffer_view_mut()
             .copy_main_full_from(&mapbak_palette);
@@ -2835,7 +2833,7 @@ impl ZeldaState {
             return;
         }
         self.display_nmi_view_mut().set_mosaic_copy(3);
-        let hdmaen = self.display_nmi_view().hdma_enable_mask();
+        let hdmaen = self.display_state().hdma_enable_mask;
         self.ppu_scroll_copy_view_mut().set_mapbak_hdmaen(hdmaen);
         self.EnableForceBlank();
         self.world_state_view_mut().increment_overworld_map_state();
@@ -2922,8 +2920,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_subsubmodule(0);
         self.set_screen_brightness(0x0f);
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
-        self.display_nmi_view_mut()
-            .set_hdma_enable_mask(hdma_enable_mask);
+        self.set_hdma_enable_mask(hdma_enable_mask);
     }
 
     pub(super) fn Death_InitializeGameOverLetters(&mut self) {

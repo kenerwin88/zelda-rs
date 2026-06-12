@@ -220,7 +220,7 @@ impl ZeldaState {
     }
 
     fn kill_aghanim_func2(&mut self) {
-        self.display_nmi_view_mut().set_hdma_enable_mask(192);
+        self.set_hdma_enable_mask(192);
         self.MirrorWarp_BuildWavingHDMATable();
         self.frame_control_view_mut().increment_submodule();
         self.frame_control_view_mut().set_subsubmodule(0);
@@ -255,7 +255,7 @@ impl ZeldaState {
         self.main_show_text_message();
         self.ReloadPreviouslyLoadedSheets();
         self.hud_rebuild_indoor();
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.frame_control_view_mut().set_main_module(21);
         self.frame_control_view_mut().set_submodule(6);
         self.frame_control_view_mut().set_subsubmodule(24);

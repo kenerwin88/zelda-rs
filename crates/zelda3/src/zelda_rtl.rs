@@ -354,7 +354,6 @@ const W34SEL_COPY: usize = 0x97;
 const WOBJSEL_COPY: usize = 0x98;
 const CGWSEL_COPY: usize = 0x99;
 const CGADSUB_COPY: usize = 0x9a;
-const HDMAEN_COPY: usize = 0x9b;
 const COLDATA_COPY0: usize = 0x9c;
 const COLDATA_COPY1: usize = 0x9d;
 const COLDATA_COPY2: usize = 0x9e;
@@ -2084,6 +2083,16 @@ impl ZeldaState {
             .set_sprite_dma_body_pointer(value);
     }
 
+    pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_hdma_enable_mask(value);
+    }
+
+    pub(crate) fn clear_hdma_enable_mask(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_hdma_enable_mask();
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_nmi_load_target_page(value);
@@ -3578,7 +3587,7 @@ impl ZeldaState {
     /// by HDMA so the actual render call (`zelda_draw_ppu_frame`) is unaffected.
     pub fn cgram_after_first_hdma_line(&mut self) -> Vec<u16> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
         }
 
         let saved_cgram = self.ppu.cgram.clone();
@@ -3637,7 +3646,7 @@ impl ZeldaState {
     ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]); 224]> {
         let saved_channels: [_; 8] = std::array::from_fn(|i| self.dma.channel[i]);
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
         }
 
         let saved_irq_control_flag = self.display_state().irq_control_flag;
@@ -3719,7 +3728,7 @@ impl ZeldaState {
     /// per scanline.  Used for GPU color math parity diagnostics.
     pub fn ppu_scanline_fixed_color(&mut self) -> Box<[(u8, u8, u8); 224]> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
         }
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
@@ -3774,7 +3783,7 @@ impl ZeldaState {
     /// Simulate 224 HDMA scanlines and capture a full CGRAM snapshot per scanline.
     pub fn ppu_scanline_cgram(&mut self) -> Vec<Vec<u16>> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
         }
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
@@ -3908,7 +3917,7 @@ impl ZeldaState {
         }
 
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_nmi_view().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
         }
         let mut hdma_chans = [SimpleHdma::default(), SimpleHdma::default()];
         self.simple_hdma_init(&mut hdma_chans[0], &self.dma.channel[6]);
@@ -8647,7 +8656,7 @@ mod tests {
         let mut state = ZeldaState::new();
         let mut pixels = vec![0u8; 256 * 224 * 4];
         state.ppu.mode = 7;
-        state.ram[HDMAEN_COPY] = 1 << 6;
+        state.set_hdma_enable_mask(1 << 6);
         state.hdma_setup(0x0abdcf, 0, 0, 0, 0, 0x0a);
 
         state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::MODE7_4X4);
@@ -8687,7 +8696,7 @@ mod tests {
         state
             .select_file_scratch_view_mut()
             .set_name_scroll_x(0x01f0);
-        state.ram[HDMAEN_COPY] = 1 << 6;
+        state.set_hdma_enable_mask(1 << 6);
         state.hdma_setup(0x0cfa87, 0, 0, 0, 0, 0);
 
         state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());

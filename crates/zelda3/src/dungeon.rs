@@ -345,13 +345,13 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_LoadAndDrawRoom(&mut self) {
-        let hdma = self.display_nmi_view().hdma_enable_mask();
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        let hdma = self.display_state().hdma_enable_mask;
+        self.clear_hdma_enable_mask();
         self.Dungeon_LoadRoom();
         self.world_state_view_mut().clear_screen_transition();
         self.world_state_view_mut().set_overworld_map_state(0);
         self.Dungeon_UploadRoomQuadrants();
-        self.display_nmi_view_mut().set_hdma_enable_mask(hdma);
+        self.set_hdma_enable_mask(hdma);
         self.clear_pending_nmi_subroutine();
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
@@ -9716,7 +9716,7 @@ impl ZeldaState {
         if self.player_state_view().is_bunny_mirror() {
             self.LoadGearPalettes_bunny();
         }
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.hud_refill_logic();
         self.module_pre_dungeon_set_ambient_sfx();
         self.frame_control_view_mut().set_submodule(7);

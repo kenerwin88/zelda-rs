@@ -2491,7 +2491,7 @@ impl ZeldaState {
         self.frame_control_view_mut().set_subsubmodule(64);
         self.set_screen_brightness(0);
         self.hdma_setup(0, 0xebd53, 0x42, 0, BG2HOFS as u8, 0);
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.ppu_scroll_copy_view_mut().copy_live_to_ppu_copy();
     }
 

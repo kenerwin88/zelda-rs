@@ -340,7 +340,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_tsw_copy(0);
         if self.frame_state().main_module == 20 {
             self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
-            self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+            self.set_hdma_enable_mask(0xc0);
         } else if self.frame_state().submodule != 10 {
             self.world_state_view_mut().set_mode7_zoom_step_counter(4);
             self.world_state_view_mut().set_timer_for_mode7_zoom(12);
@@ -364,13 +364,13 @@ impl ZeldaState {
             self.world_state_view_mut()
                 .set_bg1_x(t2.wrapping_add(0x80) & !1);
             self.OverworldMap_SetupHdma();
-            self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+            self.set_hdma_enable_mask(0xc0);
         } else {
             self.world_state_view_mut().set_mode7_zoom_step_counter(4);
             self.world_state_view_mut().set_timer_for_mode7_zoom(33);
             self.world_state_view_mut().set_overworld_map_flags(0);
             self.hdma_setup(0x0abdcf, 0x0abdcf, 0x42, 0x1b, 0x1e, 10);
-            self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+            self.set_hdma_enable_mask(0xc0);
         }
     }
 
@@ -2396,12 +2396,12 @@ impl ZeldaState {
                 if self.frame_state().main_module != 21 {
                     return;
                 }
-                self.display_nmi_view_mut().clear_hdma_enable_mask();
+                self.clear_hdma_enable_mask();
                 for i in 0..240 {
                     self.spotlight_hdma_view_mut()
                         .set_hdma_table_dynamic_entry(i, 0x0778);
                 }
-                self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
+                self.set_hdma_enable_mask(0xc0);
             }
         }
         self.system_signals_view_mut().increment_cgram_update_flag();
@@ -3323,7 +3323,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().set_fixed_color_blue(0x80);
         }
         self.iris_spotlight_configure_table();
-        self.display_nmi_view_mut().set_hdma_enable_mask(0x80);
+        self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
     }
 
@@ -3475,7 +3475,7 @@ impl ZeldaState {
 
     pub(super) fn enable_force_blank(&mut self) {
         self.set_screen_brightness(0x80);
-        self.display_nmi_view_mut().clear_hdma_enable_mask();
+        self.clear_hdma_enable_mask();
     }
 
     // ----- Palette backdrop / OW background color helpers ---------------------
