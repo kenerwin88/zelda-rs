@@ -17,9 +17,10 @@ pub mod zelda_cpu_infra;
 pub mod zelda_main;
 pub mod zelda_rtl;
 
+pub use game_state::OverworldMap16LoadState;
 pub use zelda_cpu_infra::{
     ComparisonReport, Difference, LockstepOracle, OracleError, Region, SemanticAncillaSlot,
     SemanticComparisonReport, SemanticDifference, SemanticFrame, SemanticPlayer, SemanticPpu,
     SemanticSnapshot, SemanticSpriteSlot, SemanticWorld, RUN_MAIN, RUN_POLY,
 };
-pub use zelda_rtl::{OverworldMap16LoadState, ZeldaState, SRAM_SIZE, VRAM_WORDS};
+pub use zelda_rtl::{ZeldaState, SRAM_SIZE, VRAM_WORDS};

@@ -2008,7 +2008,7 @@ mod tests {
     }
 
     #[test]
-    fn graduated_map16_load_state_can_replace_private_raw_bytes() {
+    fn native_map16_load_state_dual_writes_and_graduated_compare_masks_padding_bytes() {
         let mut oracle = LockstepOracle::new();
         oracle.snes.ram[0x84] = 0x90;
         oracle.snes.ram[0x85] = 0x13;
@@ -2028,10 +2028,16 @@ mod tests {
                 y_unit: 0x000e,
             });
 
+        assert_eq!(&oracle.game.ram[0x84..=0x86], &oracle.snes.ram[0x84..=0x86]);
+        assert_eq!(oracle.game.ram[0x88], oracle.snes.ram[0x88]);
+
+        oracle.game.ram[0x87] = 0xee;
+        oracle.game.ram[0x89] = 0xdd;
+
         assert!(oracle.compare_current().is_err());
         oracle
             .compare_current_with_graduated_semantics()
-            .expect("graduated Map16 semantics should replace private raw bytes");
+            .expect("graduated Map16 semantics should replace padding bytes");
     }
 
     #[test]

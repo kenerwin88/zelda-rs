@@ -102,6 +102,29 @@ impl OverworldMapZoomState {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OverworldMap16LoadState {
+    pub src_off: u16,
+    pub dst_off: u16,
+    pub y_unit: u16,
+}
+
+impl OverworldMap16LoadState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF),
+            dst_off: read_le_u16(ram, MAP16_LOAD_DST_OFF),
+            y_unit: read_le_u16(ram, MAP16_LOAD_Y_UNIT),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, MAP16_LOAD_SRC_OFF, self.src_off);
+        write_le_u16(ram, MAP16_LOAD_DST_OFF, self.dst_off);
+        write_le_u16(ram, MAP16_LOAD_Y_UNIT, self.y_unit);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldEntranceState {
     pub(crate) special_entrance_trigger: u8,
@@ -417,6 +440,31 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
     pub(crate) fn decrement_timer(&mut self) {
         let next = self.zoom.timer.wrapping_sub(1);
         self.set_timer(next);
+    }
+}
+
+pub(crate) struct NativeOverworldMap16LoadBridgeMut<'a> {
+    map16: &'a mut OverworldMap16LoadState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldMap16LoadBridgeMut<'a> {
+    pub(crate) fn new(map16: &'a mut OverworldMap16LoadState, ram: &'a mut [u8]) -> Self {
+        *map16 = OverworldMap16LoadState::load_from_ram(ram);
+        Self { map16, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.map16,
+            OverworldMap16LoadState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_state(&mut self, state: OverworldMap16LoadState) {
+        *self.map16 = state;
+        self.map16.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 }
 

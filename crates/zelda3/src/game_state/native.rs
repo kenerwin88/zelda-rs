@@ -10,8 +10,10 @@ mod world;
 
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
+pub use world::OverworldMap16LoadState;
 pub(crate) use world::{
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut,
+    NativeOverworldMap16LoadBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldTransitionBridgeMut,
     NativeWorldLocationViewMut, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
     OverworldMapZoomState, OverworldTransitionState, WorldLocationState,
@@ -32,6 +34,7 @@ pub(crate) struct GameState {
     pub(crate) world_location: WorldLocationState,
     pub(crate) overworld_map_ui: OverworldMapUiState,
     pub(crate) overworld_map_zoom: OverworldMapZoomState,
+    pub(crate) overworld_map16_load: OverworldMap16LoadState,
     pub(crate) overworld_entrance: OverworldEntranceState,
     pub(crate) overworld_exit: OverworldExitState,
     pub(crate) overworld_transition: OverworldTransitionState,
@@ -45,6 +48,7 @@ impl GameState {
             world_location: WorldLocationState::load_from_ram(ram),
             overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
             overworld_map_zoom: OverworldMapZoomState::load_from_ram(ram),
+            overworld_map16_load: OverworldMap16LoadState::load_from_ram(ram),
             overworld_entrance: OverworldEntranceState::load_from_ram(ram),
             overworld_exit: OverworldExitState::load_from_ram(ram),
             overworld_transition: OverworldTransitionState::load_from_ram(ram),
@@ -57,6 +61,7 @@ impl GameState {
         self.world_location.write_to_ram(ram);
         self.overworld_map_ui.write_to_ram(ram);
         self.overworld_map_zoom.write_to_ram(ram);
+        self.overworld_map16_load.write_to_ram(ram);
         self.overworld_entrance.write_to_ram(ram);
         self.overworld_exit.write_to_ram(ram);
         self.overworld_transition.write_to_ram(ram);
@@ -275,6 +280,58 @@ mod tests {
         assert_eq!(zoom.timer, 12);
         assert_eq!(ram[MODE7_ZOOM_STEP_COUNTER], 4);
         assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 12);
+    }
+
+    #[test]
+    fn overworld_map16_load_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+
+        let mut map16 = OverworldMap16LoadState::load_from_ram(&ram);
+        assert_eq!(map16.src_off, 0x1234);
+        assert_eq!(map16.dst_off, 0x0056);
+        assert_eq!(map16.y_unit, 0x0007);
+
+        map16.src_off = 0x2222;
+        map16.dst_off = 0x0034;
+        map16.y_unit = 0x0009;
+        map16.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x2222);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0034);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT), 0x0009);
+    }
+
+    #[test]
+    fn native_overworld_map16_load_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+
+        let mut map16 = OverworldMap16LoadState::default();
+        {
+            let mut bridge = NativeOverworldMap16LoadBridgeMut::new(&mut map16, &mut ram);
+            bridge.set_state(OverworldMap16LoadState {
+                src_off: 0x3456,
+                dst_off: 0x0078,
+                y_unit: 0x000a,
+            });
+        }
+
+        assert_eq!(
+            map16,
+            OverworldMap16LoadState {
+                src_off: 0x3456,
+                dst_off: 0x0078,
+                y_unit: 0x000a,
+            }
+        );
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x3456);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0078);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT), 0x000a);
     }
 
     #[test]

@@ -3227,12 +3227,6 @@ impl ZeldaState {
 
     fn store_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
         self.set_overworld_map16_load_state(state);
-        self.world_state_view_mut()
-            .set_map16_load_src(state.src_off);
-        self.world_state_view_mut()
-            .set_map16_load_dst(state.dst_off);
-        self.world_state_view_mut()
-            .set_map16_load_y_unit(state.y_unit);
     }
 
     fn store_overworld_prev_map16_load_state(&mut self, state: OverworldMap16LoadState) {
