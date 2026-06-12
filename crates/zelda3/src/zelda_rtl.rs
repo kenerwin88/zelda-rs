@@ -39,7 +39,7 @@ use crate::game_state::{
     ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexView,
     DialogueMessageIndexViewMut, DialogueNumberView, DialogueNumberViewMut,
     DialogueSourceOffsetViewMut, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayNmiView,
-    DisplayNmiViewMut, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
+    DisplayNmiViewMut, DisplayState, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
     DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
     DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
     DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
@@ -60,37 +60,37 @@ use crate::game_state::{
     MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
     MoldormHistoryView, MoldormHistoryViewMut, MosaicDirectionView, MosaicDirectionViewMut,
     MultiselectChoiceView, MultiselectChoiceViewMut, NativeFrameStateView, NativeFrameStateViewMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeWorldLocationViewMut, OamStateView,
-    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut,
-    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
-    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
-    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
-    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
-    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView,
-    RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView,
-    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
-    SelectFileScratchViewMut, SharedMessageTimerView, SharedMessageTimerViewMut,
-    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
-    StarTileView, StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadDataViewMut,
+    NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
+    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, OverworldTileUpdateView, OverworldTileUpdateViewMut,
+    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
+    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
+    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
+    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
+    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
+    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
     SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
     TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
-    VramLoadStateViewMut, VramUploadDataView, VramUploadDataViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView,
+    VramLoadStateViewMut, VramUploadDataView, VwfGlyphSpacingView, VwfGlyphSpacingViewMut,
+    WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
+    WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1951,6 +1951,10 @@ impl ZeldaState {
         &self.game_state.world_location
     }
 
+    pub(crate) fn display_state(&self) -> &DisplayState {
+        &self.game_state.display
+    }
+
     pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
         WorldStateView::new(&self.ram)
     }
@@ -2199,8 +2203,18 @@ impl ZeldaState {
         VramUploadDataView::new(&self.ram)
     }
 
-    pub(crate) fn vram_upload_data_view_mut(&mut self) -> VramUploadDataViewMut<'_> {
-        VramUploadDataViewMut::new(&mut self.ram)
+    pub(crate) fn vram_upload_data_view_mut(&mut self) -> NativeVramUploadDataViewMut<'_> {
+        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
+    pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
+        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_offset(value);
+    }
+
+    pub(crate) fn clear_vram_upload_cursor(&mut self) {
+        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_offset();
     }
 
     pub(crate) fn poly_state_view(&self) -> PolyStateView<'_> {
@@ -2875,6 +2889,15 @@ impl ZeldaState {
             self.game_state.world_location,
             crate::game_state::WorldLocationState::load_from_ram(&self.ram),
             "native world location state diverged from RAM projection",
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_native_display_state_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.display,
+            crate::game_state::DisplayState::load_from_ram(&self.ram),
+            "native display state diverged from RAM projection",
         );
     }
 
@@ -5069,7 +5092,7 @@ impl ZeldaState {
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
-        let upload = self.vram_upload_data_view().offset_usize();
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;

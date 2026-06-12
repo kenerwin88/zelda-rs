@@ -433,6 +433,10 @@ impl<'a> VramUploadDataViewMut<'a> {
         Self { ram }
     }
 
+    pub(crate) fn offset(&self) -> u16 {
+        read_le_u16(self.ram, VRAM_UPLOAD_OFFSET)
+    }
+
     pub(crate) fn set_offset(&mut self, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, value);
     }

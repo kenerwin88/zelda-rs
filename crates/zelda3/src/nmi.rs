@@ -140,7 +140,7 @@ impl ZeldaState {
                 ),
             }
             if self.display_nmi_view().bg_vram_load_mode() == 1 {
-                self.vram_upload_data_view_mut().clear_offset();
+                self.clear_vram_upload_cursor();
             }
             self.display_nmi_view_mut().set_bg_vram_load_mode(0);
         }
@@ -201,7 +201,7 @@ impl ZeldaState {
                 self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
             }
         }
-        self.vram_upload_data_view_mut().clear_offset();
+        self.clear_vram_upload_cursor();
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 

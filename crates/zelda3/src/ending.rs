@@ -2546,7 +2546,7 @@ impl ZeldaState {
             0x2f2, 0x310,
         ];
         const DIGIT_CHAR: [u16; 2] = [0x3ce6, 0x3cf6];
-        let mut dst = self.vram_upload_data_view().current_data_address();
+        let mut dst = self.display_state().current_vram_upload_data_address();
         let mut r16 = self.ending_scratch_view().primary_word();
 
         self.vram_upload_data_view_mut()

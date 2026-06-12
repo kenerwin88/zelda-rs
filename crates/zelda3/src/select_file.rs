@@ -647,7 +647,7 @@ impl ZeldaState {
         const FAERIE_X: [u8; 4] = [36, 36, 36, 28];
         const FAERIE_Y: [u8; 4] = [87, 111, 135, 191];
 
-        self.vram_upload_data_view_mut().set_offset(0x00ac);
+        self.set_vram_upload_cursor(0x00ac);
         self.vram_upload_data_view_mut()
             .copy_bytes(0, &COPY_SOURCE_SELECTION_STRIPE);
 
@@ -782,7 +782,7 @@ impl ZeldaState {
                 }
             }
         }
-        self.vram_upload_data_view_mut().set_offset(132);
+        self.set_vram_upload_cursor(132);
         let r16 = self.select_file_scratch_view().cursor_usize();
         self.file_select_draw_fairy(FAERIE_X[r16], FAERIE_Y[r16]);
 

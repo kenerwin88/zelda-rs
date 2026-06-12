@@ -5316,7 +5316,7 @@ impl ZeldaState {
         for i in 0..0x400 {
             self.ppu.vram[dst + i] = self.vram_upload_data_view().tilemap_word(i * 2);
         }
-        self.vram_upload_data_view_mut().clear_offset();
+        self.clear_vram_upload_cursor();
         self.display_nmi_view_mut().set_core_update_disable_flag(0);
     }
 
@@ -5787,7 +5787,7 @@ impl ZeldaState {
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         for (i, (&tile_pos, &tile)) in positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
@@ -5863,7 +5863,7 @@ impl ZeldaState {
                 .set_bg2_tile(tile_pos as usize, tile);
         }
 
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         for (i, (&tile_pos, &tile)) in tile_positions.iter().zip(tiles.iter()).enumerate() {
             let base = dst + i * 6;
@@ -5879,7 +5879,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_DeleteRupeeTile(&mut self, x: u16, y: u16) {
         let pos = ((y & 0x01f8) << 3) | ((x & 0x01f8) >> 3);
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         let tile = 0x190f;
 
@@ -6982,7 +6982,7 @@ impl ZeldaState {
 
     pub(super) fn RoomTag_OperateChestReveal(&mut self, k: usize) {
         self.dungeon_state_view_mut().clear_header_tag(k);
-        self.vram_upload_data_view_mut().clear_offset();
+        self.clear_vram_upload_cursor();
         self.dungeon_state_view_mut().clear_chest_reveal_cursor();
 
         let mut attr = 0x5858;
@@ -7009,7 +7009,7 @@ impl ZeldaState {
                     .set_bg2_tile(tile_pos as usize, tile);
             }
 
-            let upload = self.vram_upload_data_view().offset() as usize;
+            let upload = self.display_state().vram_upload_cursor_usize();
             let dst = self.vram_upload_data_view().data_address(upload);
             for (i, (&offset, &tile)) in [0u16, 128, 2, 130].iter().zip(tiles.iter()).enumerate() {
                 let stripe = self.RoomTag_BuildChestStripes(offset, yy);
@@ -9272,7 +9272,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_bg2_tile(pos_wrong + 65, src[3]);
 
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (i, &tile_pos) in positions.iter().enumerate() {
@@ -9287,8 +9287,8 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 24, 0xffff);
-        let next_upload = self.vram_upload_data_view().offset().wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
+        self.set_vram_upload_cursor(next_upload);
 
         let old_choice = self.scratch_word_view().minigame_previous_chest_choice();
         let mut choice = self.get_random_number();

@@ -5,7 +5,7 @@
 //! projected to or loaded from WRAM during the transition.
 
 use crate::game_state::constants::*;
-use crate::game_state::WorldStateViewMut;
+use crate::game_state::{VramUploadDataViewMut, WorldStateViewMut};
 use crate::types::{read_le_u16, write_le_u16};
 use std::ops::{Deref, DerefMut};
 
@@ -17,6 +17,7 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) world_location: WorldLocationState,
+    pub(crate) display: DisplayState,
 }
 
 impl GameState {
@@ -24,12 +25,14 @@ impl GameState {
         Self {
             frame: FrameState::load_from_ram(ram),
             world_location: WorldLocationState::load_from_ram(ram),
+            display: DisplayState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
         self.world_location.write_to_ram(ram);
+        self.display.write_to_ram(ram);
     }
 }
 
@@ -99,6 +102,31 @@ impl WorldLocationState {
 
     pub(crate) fn is_outdoors(&self) -> bool {
         !self.is_indoors()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DisplayState {
+    pub(crate) vram_upload_cursor: u16,
+}
+
+impl DisplayState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
+    }
+
+    pub(crate) fn vram_upload_cursor_usize(&self) -> usize {
+        usize::from(self.vram_upload_cursor)
+    }
+
+    pub(crate) fn current_vram_upload_data_address(&self) -> usize {
+        VRAM_UPLOAD_DATA + self.vram_upload_cursor_usize()
     }
 }
 
@@ -344,6 +372,60 @@ impl<'a> DerefMut for NativeWorldLocationViewMut<'a> {
     }
 }
 
+pub(crate) struct NativeVramUploadDataViewMut<'a> {
+    display: &'a mut DisplayState,
+    ram_view: VramUploadDataViewMut<'a>,
+}
+
+impl<'a> NativeVramUploadDataViewMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        *display = DisplayState::load_from_ram(ram);
+        Self {
+            display,
+            ram_view: VramUploadDataViewMut::new(ram),
+        }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.display,
+            DisplayState {
+                vram_upload_cursor: self.ram_view.offset(),
+            }
+        );
+    }
+
+    pub(crate) fn set_offset(&mut self, value: u16) {
+        self.display.vram_upload_cursor = value;
+        self.ram_view.set_offset(value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_offset(&mut self) {
+        self.set_offset(0);
+    }
+
+    pub(crate) fn advance_offset_by(&mut self, value: u16) -> u16 {
+        let next = self.display.vram_upload_cursor.wrapping_add(value);
+        self.set_offset(next);
+        next
+    }
+}
+
+impl<'a> Deref for NativeVramUploadDataViewMut<'a> {
+    type Target = VramUploadDataViewMut<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ram_view
+    }
+}
+
+impl<'a> DerefMut for NativeVramUploadDataViewMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ram_view
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,5 +531,41 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0126);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+    }
+
+    #[test]
+    fn display_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
+
+        let mut display = DisplayState::load_from_ram(&ram);
+        assert_eq!(display.vram_upload_cursor, 0x0124);
+        assert_eq!(display.vram_upload_cursor_usize(), 0x0124);
+        assert_eq!(
+            display.current_vram_upload_data_address(),
+            VRAM_UPLOAD_DATA + 0x0124
+        );
+
+        display.vram_upload_cursor = 0x0042;
+        display.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
+    }
+
+    #[test]
+    fn native_vram_upload_mut_view_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
+
+        let mut display = DisplayState::default();
+        {
+            let mut view = NativeVramUploadDataViewMut::new(&mut display, &mut ram);
+            view.advance_offset_by(0x20);
+            view.clear_offset();
+            view.set_offset(0x0034);
+        }
+
+        assert_eq!(display.vram_upload_cursor, 0x0034);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0034);
     }
 }

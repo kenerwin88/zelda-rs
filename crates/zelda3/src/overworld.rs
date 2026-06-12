@@ -1583,7 +1583,7 @@ impl ZeldaState {
                 self.display_nmi_view_mut().set_sub_screen_layers(1);
                 self.palette_filter_view_mut().set_color_window_selection(2);
                 self.palette_filter_view_mut().set_color_math_control(0x22);
-                let end = self.vram_upload_data_view().offset() as usize;
+                let end = self.display_state().vram_upload_cursor_usize();
                 let mut off = 0usize;
                 while off != end {
                     let v0 = self.vram_upload_data_view().word(off) | 0x10;
@@ -5503,7 +5503,7 @@ impl ZeldaState {
                 .set_entry_value(i + n * 2, tile);
             self.overworld_draw_map16_persist(pos, tile);
         }
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         self.vram_upload_data_view_mut().set_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
         let step = self.world_state_view().door_animation_step().wrapping_add(
@@ -5528,7 +5528,7 @@ impl ZeldaState {
 
     fn overworld_draw_map16(&mut self, pos: u16, value: u16) {
         let vram_pos = Self::overworld_find_map16_vram_address(pos);
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         let src = value as usize * 4;
         let map8 = self

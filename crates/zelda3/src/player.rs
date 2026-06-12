@@ -3330,7 +3330,7 @@ impl ZeldaState {
 
     fn dungeon_delete_rupee_tile_for_player(&mut self, x: u16, y: u16) {
         let pos = ((y & 0x01f8) * 8) | ((x & 0x01f8) >> 3);
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 4, 0x190f);
@@ -3635,7 +3635,7 @@ impl ZeldaState {
 
     pub(super) fn overworld_draw_map16_for_smash(&mut self, pos: u16, value: u16) {
         let vram_pos = self.overworld_find_map16_vram_address_for_smash(pos);
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         let dst = self.vram_upload_data_view().data_address(upload);
         let src = value as usize * 4;
         let map8 = self
@@ -3698,7 +3698,7 @@ impl ZeldaState {
                 .set_entry_value(i + n * 2, tile);
             self.overworld_draw_map16_persist_for_smash(pos, tile);
         }
-        let upload = self.vram_upload_data_view().offset() as usize;
+        let upload = self.display_state().vram_upload_cursor_usize();
         self.vram_upload_data_view_mut().set_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
         let step = self

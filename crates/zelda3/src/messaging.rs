@@ -1572,7 +1572,7 @@ impl ZeldaState {
         let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(32);
-        self.vram_upload_data_view_mut().clear_offset();
+        self.clear_vram_upload_cursor();
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
         self.display_nmi_view_mut()
             .set_hdma_enable_mask(hdma_enable_mask);
@@ -2043,10 +2043,9 @@ impl ZeldaState {
                 break;
             }
         }
-        self.vram_upload_data_view_mut()
-            .set_offset((offs * 2) as u16);
+        self.set_vram_upload_cursor((offs * 2) as u16);
         self.DungeonMap_BuildFloorListBoxes(t5 as u8, t7_org);
-        let offset = self.vram_upload_data_view().offset() as usize;
+        let offset = self.display_state().vram_upload_cursor_usize();
         self.vram_upload_data_view_mut().terminate_at(offset);
         self.dungeon_map_scratch_view_mut()
             .increment_dungmap_init_state();
@@ -2058,7 +2057,7 @@ impl ZeldaState {
         r14 = r14
             .wrapping_sub(0x40 - 2)
             .wrapping_add(u16::from(t5 & 0x0f) * 0x40);
-        let mut offs = self.vram_upload_data_view().offset() as usize >> 1;
+        let mut offs = self.display_state().vram_upload_cursor_usize() >> 1;
         for _ in 0..n {
             self.vram_upload_data_view_mut()
                 .set_word(offs * 2, r14.swap_bytes());
