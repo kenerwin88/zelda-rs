@@ -1020,22 +1020,6 @@ impl<'a> EtherOrbitViewMut<'a> {
     }
 }
 
-pub(crate) struct PrizeDropCycleRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> PrizeDropCycleRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn take_next_index(&mut self, slot: usize) -> u8 {
-        let index = byte(self.ram, PRIZE_DROP_CYCLE + slot);
-        self.ram[PRIZE_DROP_CYCLE + slot] = index.wrapping_add(1) & 7;
-        index
-    }
-}
-
 pub(crate) struct SpriteSlotView<'a> {
     ram: &'a [u8],
     slot: usize,

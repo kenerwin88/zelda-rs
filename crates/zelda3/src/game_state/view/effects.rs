@@ -1343,63 +1343,6 @@ impl<'a> LanmolaSegmentMotionViewMut<'a> {
     }
 }
 
-pub(crate) struct DoorDebrisRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DoorDebrisRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn x(&self, slot: usize) -> u8 {
-        byte(self.ram, DOOR_DEBRIS_X + slot)
-    }
-
-    pub(crate) fn y(&self, slot: usize) -> u8 {
-        byte(self.ram, DOOR_DEBRIS_Y + slot)
-    }
-
-    pub(crate) fn direction(&self, slot: usize) -> u8 {
-        byte(self.ram, DOOR_DEBRIS_DIRECTION + slot)
-    }
-
-    pub(crate) fn x_word(&self, slot: usize) -> u16 {
-        word(self.ram, DOOR_DEBRIS_X + slot * 2)
-    }
-
-    pub(crate) fn y_word(&self, slot: usize) -> u16 {
-        word(self.ram, DOOR_DEBRIS_Y + slot * 2)
-    }
-}
-
-pub(crate) struct DoorDebrisRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DoorDebrisRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_direction(&mut self, slot: usize, value: u8) {
-        self.ram[DOOR_DEBRIS_DIRECTION + slot] = value;
-    }
-
-    pub(crate) fn set_y_low_and_x_low_from_word(&mut self, slot: usize, value: u16) {
-        self.ram[DOOR_DEBRIS_Y + slot] = value as u8;
-        self.ram[DOOR_DEBRIS_X + slot] = (value >> 8) as u8;
-    }
-
-    pub(crate) fn set_x_word(&mut self, slot: usize, value: u16) {
-        write_le_u16(self.ram, DOOR_DEBRIS_X + slot * 2, value);
-    }
-
-    pub(crate) fn set_y_word(&mut self, slot: usize, value: u16) {
-        write_le_u16(self.ram, DOOR_DEBRIS_Y + slot * 2, value);
-    }
-}
-
 pub(crate) struct DiggingGamePrizeView<'a> {
     ram: &'a [u8],
 }

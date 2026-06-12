@@ -2086,45 +2086,6 @@ impl<'a> DungeonHeaderViewMut<'a> {
     }
 }
 
-pub(crate) struct DungeonKeySlotsRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DungeonKeySlotsRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn keys_earned(&self, palace_index_x2: u8) -> u8 {
-        byte(
-            self.ram,
-            LINK_KEYS_EARNED_PER_DUNGEON + usize::from(palace_index_x2 >> 1),
-        )
-    }
-
-    pub(crate) fn keys_earned_slot(&self, slot: usize) -> u8 {
-        byte(self.ram, LINK_KEYS_EARNED_PER_DUNGEON + slot)
-    }
-}
-
-pub(crate) struct DungeonKeySlotsRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DungeonKeySlotsRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_keys_earned(&mut self, palace_index_x2: u8, keys: u8) {
-        self.ram[LINK_KEYS_EARNED_PER_DUNGEON + usize::from(palace_index_x2 >> 1)] = keys;
-    }
-
-    pub(crate) fn set_keys_earned_slot(&mut self, slot: usize, keys: u8) {
-        self.ram[LINK_KEYS_EARNED_PER_DUNGEON + slot] = keys;
-    }
-}
-
 pub(crate) struct DungeonTorchView<'a> {
     ram: &'a [u8],
 }
@@ -2331,38 +2292,6 @@ impl<'a> EndingScratchViewMut<'a> {
     pub(crate) fn increment_secondary_low(&mut self) -> u8 {
         self.ram[ENDING_WORK_SECONDARY] = self.ram[ENDING_WORK_SECONDARY].wrapping_add(1);
         self.ram[ENDING_WORK_SECONDARY]
-    }
-}
-
-pub(crate) struct SaveLoadTransferRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> SaveLoadTransferRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn source_offset(&self) -> u16 {
-        word(self.ram, SAVE_LOAD_SOURCE_OFFSET)
-    }
-
-    pub(crate) fn source_offset_usize(&self) -> usize {
-        usize::from(self.source_offset())
-    }
-}
-
-pub(crate) struct SaveLoadTransferRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> SaveLoadTransferRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_source_offset(&mut self, value: u16) {
-        write_le_u16(self.ram, SAVE_LOAD_SOURCE_OFFSET, value);
     }
 }
 
@@ -2595,74 +2524,5 @@ impl<'a> TempCounterViewMut<'a> {
         let next = self.ram[TEMP_COUNTER].wrapping_sub(1);
         self.ram[TEMP_COUNTER] = next;
         next
-    }
-}
-
-pub(crate) struct DungeonSecretScratchRawView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DungeonSecretScratchRawView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn pending_kind(&self) -> u8 {
-        byte(self.ram, DUNGEON_SECRET_PENDING_KIND)
-    }
-
-    pub(crate) fn overworld_subst_counter(&self) -> u8 {
-        byte(self.ram, OVERWORLD_SECRET_SUBST_CTR)
-    }
-
-    pub(crate) fn has_pending_kind(&self) -> bool {
-        self.pending_kind() != 0
-    }
-
-    pub(crate) fn is_available(&self) -> bool {
-        self.pending_kind() != 0xff
-    }
-
-    pub(crate) fn graphics_kind(&self) -> Option<u8> {
-        let value = self.pending_kind();
-        if value & 0x80 != 0 {
-            Some(value & 0x7f)
-        } else {
-            None
-        }
-    }
-}
-
-pub(crate) struct DungeonSecretScratchRawViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DungeonSecretScratchRawViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_pending_kind(&mut self) {
-        self.ram[DUNGEON_SECRET_PENDING_KIND] = 0;
-    }
-
-    pub(crate) fn set_pending_kind(&mut self, value: u8) {
-        self.ram[DUNGEON_SECRET_PENDING_KIND] = value;
-    }
-
-    pub(crate) fn increment_overworld_subst_counter(&mut self) {
-        self.ram[OVERWORLD_SECRET_SUBST_CTR] = self.ram[OVERWORLD_SECRET_SUBST_CTR].wrapping_add(1);
-    }
-
-    pub(crate) fn set_powder_pending_kind(&mut self) {
-        write_le_u16(self.ram, DUNGEON_SECRET_PENDING_KIND, 4);
-    }
-
-    pub(crate) fn or_pending_kind(&mut self, value: u8) {
-        self.ram[DUNGEON_SECRET_PENDING_KIND] |= value;
-    }
-
-    pub(crate) fn mark_graphics_kind(&mut self) {
-        self.ram[DUNGEON_SECRET_PENDING_KIND] |= 0x80;
     }
 }
