@@ -64,35 +64,34 @@ use crate::game_state::{
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView,
-    PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
-    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
-    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
-    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState,
-    VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    NativeSharedMessageTimerBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
+    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
+    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
+    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
+    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
+    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
+    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
+    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView,
+    SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut,
+    SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut,
+    SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut,
+    SystemSignalsView, SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut,
+    TempCounterView, TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3230,12 +3229,27 @@ impl ZeldaState {
         SpriteBattleViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn shared_message_timer_view(&self) -> SharedMessageTimerView<'_> {
-        SharedMessageTimerView::new(&self.ram)
+    pub(crate) fn shared_message_timer_state(&self) -> SharedMessageTimerState {
+        self.game_state.messaging.shared_message_timer
     }
 
-    pub(crate) fn shared_message_timer_view_mut(&mut self) -> SharedMessageTimerViewMut<'_> {
-        SharedMessageTimerViewMut::new(&mut self.ram)
+    fn shared_message_timer_bridge_mut(&mut self) -> NativeSharedMessageTimerBridgeMut<'_> {
+        NativeSharedMessageTimerBridgeMut::new(
+            &mut self.game_state.messaging.shared_message_timer,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn start_shared_message_timer(&mut self, value: u16) {
+        self.shared_message_timer_bridge_mut().start(value);
+    }
+
+    pub(crate) fn clear_shared_message_timer(&mut self) {
+        self.shared_message_timer_bridge_mut().clear();
+    }
+
+    pub(crate) fn tick_shared_message_timer(&mut self) -> u16 {
+        self.shared_message_timer_bridge_mut().tick()
     }
 
     pub(crate) fn intro_state_view(&self) -> IntroStateView<'_> {

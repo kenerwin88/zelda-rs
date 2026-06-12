@@ -7,6 +7,7 @@
 mod display;
 mod ending;
 mod frame;
+mod messaging;
 mod world;
 
 pub(crate) use display::{
@@ -16,6 +17,9 @@ pub(crate) use display::{
 };
 pub(crate) use ending::{EndingCreditState, EndingState, NativeEndingCreditBridgeMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
+pub(crate) use messaging::{
+    MessagingState, NativeSharedMessageTimerBridgeMut, SharedMessageTimerState,
+};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
@@ -47,6 +51,7 @@ pub(crate) struct GameState {
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
     pub(crate) ending: EndingState,
+    pub(crate) messaging: MessagingState,
 }
 
 impl GameState {
@@ -56,6 +61,7 @@ impl GameState {
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
+            messaging: MessagingState::load_from_ram(ram),
         }
     }
 
@@ -64,12 +70,14 @@ impl GameState {
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.ending.write_to_ram(ram);
+        self.messaging.write_to_ram(ram);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::constants::messaging as messaging_constants;
     use snes::WRAM_SIZE;
 
     #[test]
@@ -1050,10 +1058,18 @@ mod tests {
         ram[DUNGEON_BG1_ATTR_TABLE + 1] = 0x3c;
         ram[0x4567] = 0x81;
         ram[0x4568] = 0x18;
-        write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
-        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
-        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
-        write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_SENTINEL, 0xffff);
+        write_le_u16(&mut ram, messaging_constants::MESSAGE_DMA_DST_ADDR, 0x6040);
+        write_le_u16(&mut ram, messaging_constants::MESSAGE_DMA_TILE_BASE, 0x4841);
+        write_le_u16(
+            &mut ram,
+            messaging_constants::MESSAGE_DMA_TILE_LIMIT,
+            0x007f,
+        );
+        write_le_u16(
+            &mut ram,
+            messaging_constants::MESSAGE_DMA_TILE_SENTINEL,
+            0xffff,
+        );
         ram[HUD_TILE_INDICES_BUFFER] = 0xbe;
         ram[HUD_TILE_INDICES_BUFFER + 1] = 0xef;
         ram[STAR_TILE_RESTORE_PHASE] = 1;
@@ -1248,11 +1264,20 @@ mod tests {
         assert_eq!(ram[TMW_COPY], 3);
         assert_eq!(ram[TSW_COPY], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
-        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
-        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_BASE), 0x4842);
-        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_LIMIT), 0x0080);
         assert_eq!(
-            read_le_u16(&ram, messaging::MESSAGE_DMA_TILE_SENTINEL),
+            read_le_u16(&ram, messaging_constants::MESSAGE_DMA_DST_ADDR),
+            0x6080
+        );
+        assert_eq!(
+            read_le_u16(&ram, messaging_constants::MESSAGE_DMA_TILE_BASE),
+            0x4842
+        );
+        assert_eq!(
+            read_le_u16(&ram, messaging_constants::MESSAGE_DMA_TILE_LIMIT),
+            0x0080
+        );
+        assert_eq!(
+            read_le_u16(&ram, messaging_constants::MESSAGE_DMA_TILE_SENTINEL),
             0xfffe
         );
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0);
@@ -1544,7 +1569,7 @@ mod tests {
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
         ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0xfe;
-        write_le_u16(&mut ram, messaging::MESSAGE_DMA_DST_ADDR, 0x6040);
+        write_le_u16(&mut ram, messaging_constants::MESSAGE_DMA_DST_ADDR, 0x6040);
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x20;
         ram[FLAG_TRAVEL_BIRD] = 0x04;
         ram[STAR_TILE_RESTORE_PHASE] = 7;
@@ -1795,10 +1820,45 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_20), 0x9014);
         assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_21), 0x9015);
         assert_eq!(read_le_u16(&ram, BG_TILE_ANIMATION_COUNTDOWN), 0xffff);
-        assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
+        assert_eq!(
+            read_le_u16(&ram, messaging_constants::MESSAGE_DMA_DST_ADDR),
+            0x6080
+        );
         assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);
         assert_eq!(ram[FLAG_TRAVEL_BIRD], 0x08);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
+    }
+
+    #[test]
+    fn shared_message_timer_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SHARED_MESSAGE_TIMER, 0x0200);
+
+        let mut timer = SharedMessageTimerState::load_from_ram(&ram);
+        assert_eq!(timer.timer, 0x0200);
+        assert_eq!(timer.tick(), 0x01ff);
+        timer.clear();
+        timer.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, SHARED_MESSAGE_TIMER), 0);
+    }
+
+    #[test]
+    fn native_shared_message_timer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SHARED_MESSAGE_TIMER, 0x0000);
+
+        let mut timer = SharedMessageTimerState::default();
+        {
+            let mut bridge = NativeSharedMessageTimerBridgeMut::new(&mut timer, &mut ram);
+            assert_eq!(bridge.tick(), 0xffff);
+            bridge.start(0x0df3);
+            bridge.clear();
+            bridge.start(0x0040);
+        }
+
+        assert_eq!(timer.timer, 0x0040);
+        assert_eq!(read_le_u16(&ram, SHARED_MESSAGE_TIMER), 0x0040);
     }
 }

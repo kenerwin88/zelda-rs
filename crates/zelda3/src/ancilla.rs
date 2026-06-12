@@ -7220,7 +7220,7 @@ impl ZeldaState {
                         return;
                     }
                     if self.ancilla_slot_view(k).timer() == 17 {
-                        self.shared_message_timer_view_mut().set(0x0df3);
+                        self.start_shared_message_timer(0x0df3);
                         self.follower_state_view_mut().set_indicator(0x0e);
                         self.ancilla22_item_receipt_show_message(k);
                     }

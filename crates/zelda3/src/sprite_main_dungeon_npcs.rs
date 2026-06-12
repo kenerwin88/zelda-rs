@@ -892,7 +892,7 @@ impl ZeldaState {
             }
             4 => {
                 self.follower_state_view_mut().set_indicator(5);
-                self.shared_message_timer_view_mut().set(0x0df3);
+                self.start_shared_message_timer(0x0df3);
                 self.save_progress_view_mut().or_progress_flags(0x10);
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.player_state_view_mut().clear_immobilized();

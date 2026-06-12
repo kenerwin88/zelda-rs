@@ -2164,7 +2164,7 @@ impl ZeldaState {
                 self.follower_state_view_mut().set_appearance_none_flag(0);
                 self.load_follower_graphics();
                 self.follower_initialize();
-                self.shared_message_timer_view_mut().set(0x40);
+                self.start_shared_message_timer(0x40);
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             2 => {

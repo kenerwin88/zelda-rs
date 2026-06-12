@@ -331,34 +331,6 @@ impl<'a> SpriteBattleViewMut<'a> {
     }
 }
 
-pub(crate) struct SharedMessageTimerView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> SharedMessageTimerView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn get(&self) -> u16 {
-        word(self.ram, SHARED_MESSAGE_TIMER)
-    }
-}
-
-pub(crate) struct SharedMessageTimerViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> SharedMessageTimerViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set(&mut self, value: u16) {
-        write_le_u16(self.ram, SHARED_MESSAGE_TIMER, value);
-    }
-}
-
 pub(crate) struct IntroStateView<'a> {
     ram: &'a [u8],
 }

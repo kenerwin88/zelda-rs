@@ -1017,15 +1017,13 @@ impl ZeldaState {
             && self.frame_state().submodule == 0
             && !(j == 2 && self.world_location_state().overworld_screen_index() & 0x40 != 0)
         {
-            let timer = self.shared_message_timer_view().get().wrapping_sub(1);
-            self.shared_message_timer_view_mut().set(timer);
+            let timer = self.tick_shared_message_timer();
             if sign16(timer) {
                 if !self.follower_validate_message_freedom() {
-                    self.shared_message_timer_view_mut().set(0);
+                    self.clear_shared_message_timer();
                 } else {
                     let j = j as usize;
-                    self.shared_message_timer_view_mut()
-                        .set(TAGALONG_MESSAGE_TIMERS[j]);
+                    self.start_shared_message_timer(TAGALONG_MESSAGE_TIMERS[j]);
                     self.dialogue_message_index_view_mut()
                         .set_value(TAGALONG_MSG[j]);
                     self.Tagalong_Main_ShowTextMessage();
