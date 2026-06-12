@@ -146,6 +146,131 @@ impl<'a> NativeMemorizedTileBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonSecretState {
+    pending_kind: u8,
+    pending_kind_high: u8,
+    overworld_substitution_counter: u8,
+}
+
+impl DungeonSecretState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            pending_kind: ram_byte(ram, DUNGEON_SECRET_PENDING_KIND),
+            pending_kind_high: ram_byte(ram, DUNGEON_SECRET_PENDING_KIND + 1),
+            overworld_substitution_counter: ram_byte(ram, OVERWORLD_SECRET_SUBST_CTR),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DUNGEON_SECRET_PENDING_KIND] = self.pending_kind;
+        ram[DUNGEON_SECRET_PENDING_KIND + 1] = self.pending_kind_high;
+        ram[OVERWORLD_SECRET_SUBST_CTR] = self.overworld_substitution_counter;
+    }
+
+    pub(crate) fn pending_kind(&self) -> u8 {
+        self.pending_kind
+    }
+
+    pub(crate) fn overworld_subst_counter(&self) -> u8 {
+        self.overworld_substitution_counter
+    }
+
+    pub(crate) fn has_pending_kind(&self) -> bool {
+        self.pending_kind() != 0
+    }
+
+    pub(crate) fn is_available(&self) -> bool {
+        self.pending_kind() != 0xff
+    }
+
+    pub(crate) fn graphics_kind(&self) -> Option<u8> {
+        if self.pending_kind & 0x80 != 0 {
+            Some(self.pending_kind & 0x7f)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn clear_pending_kind(&mut self) {
+        self.pending_kind = 0;
+    }
+
+    pub(crate) fn set_pending_kind(&mut self, value: u8) {
+        self.pending_kind = value;
+    }
+
+    pub(crate) fn increment_overworld_subst_counter(&mut self) {
+        self.overworld_substitution_counter = self.overworld_substitution_counter.wrapping_add(1);
+    }
+
+    pub(crate) fn set_powder_pending_kind(&mut self) {
+        self.pending_kind = 4;
+        self.pending_kind_high = 0;
+    }
+
+    pub(crate) fn or_pending_kind(&mut self, value: u8) {
+        self.pending_kind |= value;
+    }
+
+    pub(crate) fn mark_graphics_kind(&mut self) {
+        self.pending_kind |= 0x80;
+    }
+}
+
+pub(crate) struct NativeDungeonSecretBridgeMut<'a> {
+    dungeon_secret: &'a mut DungeonSecretState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonSecretBridgeMut<'a> {
+    pub(crate) fn new(dungeon_secret: &'a mut DungeonSecretState, ram: &'a mut [u8]) -> Self {
+        *dungeon_secret = DungeonSecretState::load_from_ram(ram);
+        Self {
+            dungeon_secret,
+            ram,
+        }
+    }
+
+    fn sync(&mut self) {
+        self.dungeon_secret.write_to_ram(self.ram);
+        debug_assert_eq!(
+            *self.dungeon_secret,
+            DungeonSecretState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_pending_kind(&mut self) {
+        self.dungeon_secret.clear_pending_kind();
+        self.sync();
+    }
+
+    pub(crate) fn set_pending_kind(&mut self, value: u8) {
+        self.dungeon_secret.set_pending_kind(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_overworld_subst_counter(&mut self) {
+        self.dungeon_secret.increment_overworld_subst_counter();
+        self.sync();
+    }
+
+    pub(crate) fn set_powder_pending_kind(&mut self) {
+        self.dungeon_secret.set_powder_pending_kind();
+        self.sync();
+    }
+
+    pub(crate) fn or_pending_kind(&mut self, value: u8) {
+        self.dungeon_secret.or_pending_kind(value);
+        self.sync();
+    }
+
+    pub(crate) fn mark_graphics_kind(&mut self) {
+        self.dungeon_secret.mark_graphics_kind();
+        self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {
     hit_counter: u8,
     arrows_left: u8,

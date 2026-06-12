@@ -2598,11 +2598,11 @@ impl<'a> TempCounterViewMut<'a> {
     }
 }
 
-pub(crate) struct DungeonSecretScratchView<'a> {
+pub(crate) struct DungeonSecretScratchRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> DungeonSecretScratchView<'a> {
+impl<'a> DungeonSecretScratchRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -2633,11 +2633,11 @@ impl<'a> DungeonSecretScratchView<'a> {
     }
 }
 
-pub(crate) struct DungeonSecretScratchViewMut<'a> {
+pub(crate) struct DungeonSecretScratchRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> DungeonSecretScratchViewMut<'a> {
+impl<'a> DungeonSecretScratchRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

@@ -46,9 +46,9 @@ pub(crate) use messaging::{
     VwfRenderState,
 };
 pub(crate) use misc::{
-    ArcheryGameState, EnhancedFeaturesState, MemorizedTileState, NativeArcheryGameBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut, NativeSpriteBattleBridgeMut,
-    SpriteBattleState,
+    ArcheryGameState, DungeonSecretState, EnhancedFeaturesState, MemorizedTileState,
+    NativeArcheryGameBridgeMut, NativeDungeonSecretBridgeMut, NativeEnhancedFeaturesBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
 };
 pub(crate) use player::{
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
@@ -106,6 +106,7 @@ pub(crate) struct GameState {
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
     pub(crate) memorized_tiles: MemorizedTileState,
+    pub(crate) dungeon_secret: DungeonSecretState,
     pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
@@ -125,6 +126,7 @@ impl GameState {
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
             memorized_tiles: MemorizedTileState::load_from_ram(ram),
+            dungeon_secret: DungeonSecretState::load_from_ram(ram),
             sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
@@ -143,6 +145,7 @@ impl GameState {
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
         self.memorized_tiles.write_to_ram(ram);
+        self.dungeon_secret.write_to_ram(ram);
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
@@ -444,6 +447,56 @@ mod tests {
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0xfe), 0);
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 2), 0x4444);
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 4), 0x6666);
+    }
+
+    #[test]
+    fn dungeon_secret_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUNGEON_SECRET_PENDING_KIND] = 0x82;
+        ram[DUNGEON_SECRET_PENDING_KIND + 1] = 0x7f;
+        ram[OVERWORLD_SECRET_SUBST_CTR] = 3;
+
+        let mut secret = DungeonSecretState::load_from_ram(&ram);
+        assert_eq!(secret.pending_kind(), 0x82);
+        assert_eq!(secret.graphics_kind(), Some(2));
+        assert!(secret.has_pending_kind());
+        assert!(secret.is_available());
+        assert_eq!(secret.overworld_subst_counter(), 3);
+
+        secret.set_powder_pending_kind();
+        secret.increment_overworld_subst_counter();
+        secret.mark_graphics_kind();
+        secret.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND], 0x84);
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND + 1], 0);
+        assert_eq!(ram[OVERWORLD_SECRET_SUBST_CTR], 4);
+    }
+
+    #[test]
+    fn native_dungeon_secret_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUNGEON_SECRET_PENDING_KIND] = 0xff;
+        ram[DUNGEON_SECRET_PENDING_KIND + 1] = 0x44;
+        ram[OVERWORLD_SECRET_SUBST_CTR] = 0xff;
+
+        let mut secret = DungeonSecretState::default();
+        {
+            let mut bridge = NativeDungeonSecretBridgeMut::new(&mut secret, &mut ram);
+            bridge.clear_pending_kind();
+            bridge.set_pending_kind(2);
+            bridge.or_pending_kind(4);
+            bridge.mark_graphics_kind();
+            bridge.increment_overworld_subst_counter();
+            bridge.set_powder_pending_kind();
+        }
+
+        assert_eq!(secret.pending_kind(), 4);
+        assert_eq!(secret.graphics_kind(), None);
+        assert_eq!(secret.overworld_subst_counter(), 0);
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND], 4);
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND + 1], 0);
+        assert_eq!(ram[OVERWORLD_SECRET_SUBST_CTR], 0);
     }
 
     #[test]
