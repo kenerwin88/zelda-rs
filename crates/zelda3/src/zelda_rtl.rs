@@ -1994,6 +1994,16 @@ impl ZeldaState {
             .set_bg_vram_load_mode(value);
     }
 
+    pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .queue_tilemap_update(destination_page, source_offset);
+    }
+
+    pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_pending_tilemap_update_destination();
+    }
+
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_bg_mode(value);

@@ -159,6 +159,7 @@ mod tests {
         ram[NMI_DISABLE_CORE_UPDATES] = 4;
         ram[NMI_SUBROUTINE_INDEX] = 11;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
+        ram[NMI_UPDATE_TILEMAP_DST] = 0x50;
         ram[BGMODE_COPY] = 7;
         ram[TM_COPY] = 0x16;
         ram[TS_COPY] = 0x01;
@@ -193,6 +194,9 @@ mod tests {
         assert_eq!(display.pending_nmi_subroutine, 11);
         assert_eq!(display.bg_vram_load_mode, 3);
         assert!(display.has_bg_vram_load());
+        assert_eq!(display.pending_tilemap_update_destination_page, 0x50);
+        assert!(display.has_pending_tilemap_update());
+        assert_eq!(display.pending_tilemap_update_vram_destination(), 0x5000);
         assert_eq!(display.bg_mode, 7);
         assert_eq!(display.main_screen_layers, 0x16);
         assert_eq!(display.sub_screen_layers, 0x01);
@@ -240,6 +244,7 @@ mod tests {
         display.core_update_disable_flag = 0;
         display.pending_nmi_subroutine = 0;
         display.bg_vram_load_mode = 0;
+        display.pending_tilemap_update_destination_page = 0x40;
         display.bg_mode = 9;
         display.main_screen_layers = 0x11;
         display.sub_screen_layers = 0;
@@ -271,6 +276,7 @@ mod tests {
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 0);
         assert_eq!(ram[NMI_SUBROUTINE_INDEX], 0);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
+        assert_eq!(ram[NMI_UPDATE_TILEMAP_DST], 0x40);
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[TM_COPY], 0x11);
         assert_eq!(ram[TS_COPY], 0);
@@ -322,6 +328,8 @@ mod tests {
         ram[NMI_DISABLE_CORE_UPDATES] = 2;
         ram[NMI_SUBROUTINE_INDEX] = 6;
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
+        ram[NMI_UPDATE_TILEMAP_DST] = 0x50;
+        write_le_u16(&mut ram, NMI_UPDATE_TILEMAP_SRC, 0x0200);
         ram[BGMODE_COPY] = 7;
         ram[TM_COPY] = 0x16;
         ram[TS_COPY] = 0x01;
@@ -361,6 +369,9 @@ mod tests {
             view.set_pending_nmi_subroutine(11);
             view.clear_bg_vram_load_mode();
             view.set_bg_vram_load_mode(5);
+            view.queue_tilemap_update(0x52, 0x0400);
+            view.clear_pending_tilemap_update_destination();
+            view.queue_tilemap_update(0x54, 0x0800);
             view.set_bg_mode(9);
             view.set_layer_masks_word(0x0116);
             view.and_main_screen_layers(0x15);
@@ -414,6 +425,9 @@ mod tests {
         assert_eq!(display.core_update_disable_flag, 7);
         assert_eq!(display.pending_nmi_subroutine, 11);
         assert_eq!(display.bg_vram_load_mode, 5);
+        assert_eq!(display.pending_tilemap_update_destination_page, 0x54);
+        assert!(display.has_pending_tilemap_update());
+        assert_eq!(display.pending_tilemap_update_vram_destination(), 0x5400);
         assert_eq!(display.bg_mode, 9);
         assert_eq!(display.main_screen_layers, 0x11);
         assert_eq!(display.sub_screen_layers, 0x02);
@@ -449,6 +463,8 @@ mod tests {
         assert_eq!(ram[NMI_DISABLE_CORE_UPDATES], 7);
         assert_eq!(ram[NMI_SUBROUTINE_INDEX], 11);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
+        assert_eq!(ram[NMI_UPDATE_TILEMAP_DST], 0x54);
+        assert_eq!(read_le_u16(&ram, NMI_UPDATE_TILEMAP_SRC), 0x0800);
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[TM_COPY], 0x11);
         assert_eq!(ram[TS_COPY], 0x02);

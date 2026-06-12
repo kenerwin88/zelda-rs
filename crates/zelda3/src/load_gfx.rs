@@ -2078,8 +2078,7 @@ impl ZeldaState {
         if k == 16 {
             return;
         }
-        self.vram_load_state_view_mut().set_nmi_tilemap_dst(DST[k]);
-        self.vram_load_state_view_mut().set_nmi_tilemap_src(SRC[k]);
+        self.queue_tilemap_update(DST[k], SRC[k]);
         self.vram_load_state_view_mut().increment_counter();
     }
 

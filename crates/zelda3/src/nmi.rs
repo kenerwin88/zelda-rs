@@ -143,14 +143,15 @@ impl ZeldaState {
             self.clear_bg_vram_load_mode();
         }
 
-        let update_dst_byte = self.display_nmi_view().update_tilemap_dst();
-        if update_dst_byte != 0 {
-            let dst = (update_dst_byte as usize) * 256;
+        if self.display_state().has_pending_tilemap_update() {
+            let dst = self
+                .display_state()
+                .pending_tilemap_update_vram_destination();
             let src_data = self.display_nmi_view().update_tilemap_src_data().to_vec();
             if src_data.len() >= 0x200 {
                 self.copy_to_vram_slice(dst, &src_data, 0x200);
             }
-            self.display_nmi_view_mut().clear_update_tilemap_dst();
+            self.clear_pending_tilemap_update_destination();
         }
 
         if self.display_state().has_nmi_copy_packets_request() {

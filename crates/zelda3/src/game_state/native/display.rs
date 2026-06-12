@@ -11,6 +11,7 @@ pub(crate) struct DisplayState {
     pub(crate) core_update_disable_flag: u8,
     pub(crate) pending_nmi_subroutine: u8,
     pub(crate) bg_vram_load_mode: u8,
+    pub(crate) pending_tilemap_update_destination_page: u8,
     pub(crate) bg_mode: u8,
     pub(crate) main_screen_layers: u8,
     pub(crate) sub_screen_layers: u8,
@@ -45,6 +46,7 @@ impl DisplayState {
             core_update_disable_flag: ram_byte(ram, NMI_DISABLE_CORE_UPDATES),
             pending_nmi_subroutine: ram_byte(ram, NMI_SUBROUTINE_INDEX),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
+            pending_tilemap_update_destination_page: ram_byte(ram, NMI_UPDATE_TILEMAP_DST),
             bg_mode: ram_byte(ram, BGMODE_COPY),
             main_screen_layers: ram_byte(ram, TM_COPY),
             sub_screen_layers: ram_byte(ram, TS_COPY),
@@ -78,6 +80,7 @@ impl DisplayState {
         ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
         ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
+        ram[NMI_UPDATE_TILEMAP_DST] = self.pending_tilemap_update_destination_page;
         ram[BGMODE_COPY] = self.bg_mode;
         ram[TM_COPY] = self.main_screen_layers;
         ram[TS_COPY] = self.sub_screen_layers;
@@ -114,6 +117,14 @@ impl DisplayState {
 
     pub(crate) fn has_bg_vram_load(&self) -> bool {
         self.bg_vram_load_mode != 0
+    }
+
+    pub(crate) fn has_pending_tilemap_update(&self) -> bool {
+        self.pending_tilemap_update_destination_page != 0
+    }
+
+    pub(crate) fn pending_tilemap_update_vram_destination(&self) -> usize {
+        usize::from(self.pending_tilemap_update_destination_page) * 256
     }
 
     pub(crate) fn layer_masks_word(&self) -> u16 {
@@ -257,6 +268,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(
             self.display.bg_vram_load_mode,
             ram_byte(self.ram, NMI_LOAD_BG_FROM_VRAM)
+        );
+    }
+
+    fn debug_assert_pending_tilemap_update_destination_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.pending_tilemap_update_destination_page,
+            ram_byte(self.ram, NMI_UPDATE_TILEMAP_DST)
         );
     }
 
@@ -448,6 +466,20 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
         self.set_bg_vram_load_mode(0);
+    }
+
+    pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
+        self.display.pending_tilemap_update_destination_page = destination_page;
+        self.ram[NMI_UPDATE_TILEMAP_DST] = destination_page;
+        write_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC, source_offset);
+        self.debug_assert_pending_tilemap_update_destination_matches_ram();
+        debug_assert_eq!(read_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC), source_offset);
+    }
+
+    pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
+        self.display.pending_tilemap_update_destination_page = 0;
+        self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
+        self.debug_assert_pending_tilemap_update_destination_matches_ram();
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
