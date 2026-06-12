@@ -11603,7 +11603,7 @@ impl ZeldaState {
             match self.dungeon_state_view().replacement_tile_state(k) {
                 1 => {
                     self.RoomDraw_16x16Single(obj as u8);
-                    let dir = self.dungeon_state_view().push_block_direction_index();
+                    let dir = self.pushed_block_view().push_direction_index();
                     let pos = self
                         .dungeon_state_view()
                         .object_tilemap_pos(k)

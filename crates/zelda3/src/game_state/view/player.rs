@@ -4139,11 +4139,11 @@ impl<'a> TileDetectPositionViewMut<'a> {
     }
 }
 
-pub(crate) struct PushedBlockView<'a> {
+pub(crate) struct PushedBlockRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> PushedBlockView<'a> {
+impl<'a> PushedBlockRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -4195,11 +4195,11 @@ impl<'a> PushedBlockView<'a> {
     }
 }
 
-pub(crate) struct PushedBlockViewMut<'a> {
+pub(crate) struct PushedBlockRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> PushedBlockViewMut<'a> {
+impl<'a> PushedBlockRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

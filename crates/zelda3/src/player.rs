@@ -8392,7 +8392,7 @@ impl ZeldaState {
             .x(j)
             .wrapping_sub(self.world_state_view().bg2_x());
         let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE
-            [self.player_state_view().pushed_block_mode() as usize]
+            [self.pushed_block_view().animation_mode() as usize]
             .min(CHAR.len() - 1)];
         if ch != 0xff {
             let oam = self.oam_state_view().current_pointer_usize();

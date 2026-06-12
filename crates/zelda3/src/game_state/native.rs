@@ -50,8 +50,9 @@ pub(crate) use misc::{
     NativeEnhancedFeaturesBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
 };
 pub(crate) use player::{
-    NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
-    SpecialExitPositionView, SwimAccelerationView,
+    NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSwimAccelerationBridgeMut, PlayerState, PushedBlockView, SpecialExitPositionView,
+    SwimAccelerationView,
 };
 pub(crate) use sprites::{
     DualLayerTileCacheView, MazeGameTimerView, NativeDualLayerTileCacheBridgeMut,
@@ -81,7 +82,7 @@ use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
-use player::{SpecialExitPositionState, SwimAccelerationState};
+use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use sprites::{DualLayerTileCacheState, MazeGameTimerState, PrizeDropCycleState};
 #[cfg(test)]
@@ -622,6 +623,84 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION_DIRECTION + 2), 4);
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION), 0);
         assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION + 2), 6);
+    }
+
+    #[test]
+    fn pushed_block_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[PUSHEDBLOCKS_X_LO] = 0x34;
+        ram[PUSHEDBLOCKS_X_HI] = 0x12;
+        ram[PUSHEDBLOCKS_Y_LO + 2] = 0x78;
+        ram[PUSHEDBLOCKS_Y_HI + 2] = 0x56;
+        ram[PUSHEDBLOCKS_SUBPIXEL + 2] = 0x9a;
+        ram[PUSHEDBLOCKS_TARGET + 2] = 0x0b;
+        ram[PUSHEDBLOCK_FACING_PLAYER + 2] = 4;
+        ram[PUSHED_BLOCK_MODE] = 3;
+        ram[PUSHED_BLOCK_ANIMATION_TIMER] = 7;
+        ram[PUSH_BLOCK_DIRECTION] = 6;
+
+        let pushed = PushedBlockState::load_from_ram(&ram);
+        assert_eq!(pushed.x(0), 0x1234);
+        assert_eq!(pushed.y(1), 0x5678);
+        assert_eq!(pushed.y_fixed24(1), 0x56789a);
+        assert_eq!(pushed.target_low(1), 0x0b);
+        assert_eq!(pushed.facing_player(1), 4);
+        assert_eq!(pushed.animation_mode(), 3);
+        assert_eq!(pushed.animation_timer(), 7);
+        assert_eq!(pushed.push_direction(), 6);
+        assert_eq!(pushed.push_direction_index(), 3);
+        assert_eq!(pushed.x(2), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        pushed.write_to_ram(&mut projected);
+        assert_eq!(PushedBlockState::load_from_ram(&projected), pushed);
+    }
+
+    #[test]
+    fn native_pushed_block_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[PUSHEDBLOCKS_X_LO + 1] = 0xff;
+        ram[PUSHEDBLOCKS_X_HI + 1] = 0xff;
+        ram[PUSHEDBLOCKS_Y_LO + 1] = 0xff;
+        ram[PUSHEDBLOCKS_Y_HI + 1] = 0xff;
+        ram[PUSHEDBLOCKS_TARGET + 1] = 0xff;
+        ram[PUSHEDBLOCKS_SUBPIXEL + 1] = 0xff;
+
+        let mut pushed = PushedBlockState::default();
+        {
+            let mut bridge = NativePushedBlockBridgeMut::new(&mut pushed, &mut ram);
+            bridge.init_slot(0, 0x1234, 0x5678);
+            bridge.set_facing_player(1, 4);
+            bridge.set_target_low(1, 0x0b);
+            bridge.set_push_direction(6);
+            bridge.set_animation_mode(2);
+            bridge.reset_animation_timer();
+            assert_eq!(bridge.decrement_animation_timer(), 8);
+            assert_eq!(bridge.advance_animation_mode(), 3);
+            bridge.set_x_fixed24(1, 0x00abcdu32);
+            bridge.set_y_fixed24(1, 0x001234u32);
+            bridge.set_target_low(4, 0xff);
+        }
+
+        assert_eq!(pushed.x(0), 0x1234);
+        assert_eq!(pushed.y(0), 0x5678);
+        assert_eq!(pushed.x_fixed24(1), 0x00ab34);
+        assert_eq!(pushed.y_fixed24(1), 0x001234);
+        assert_eq!(pushed.target_low(1), 0x0b);
+        assert_eq!(pushed.facing_player(1), 4);
+        assert_eq!(pushed.push_direction_index(), 3);
+        assert_eq!(pushed.animation_mode(), 3);
+        assert_eq!(pushed.animation_timer(), 9);
+        assert_eq!(read_le_u16(&ram, PUSHEDBLOCKS_X_LO), 0x0034);
+        assert_eq!(read_le_u16(&ram, PUSHEDBLOCKS_X_HI), 0x0012);
+        assert_eq!(read_le_u16(&ram, PUSHEDBLOCKS_Y_LO), 0x0078);
+        assert_eq!(read_le_u16(&ram, PUSHEDBLOCKS_Y_HI), 0x0056);
+        assert_eq!(ram[PUSHEDBLOCKS_X_LO + 2], 0xab);
+        assert_eq!(ram[PUSHEDBLOCKS_X_HI + 2], 0);
+        assert_eq!(ram[PUSHEDBLOCKS_SUBPIXEL + 2], 0x34);
+        assert_eq!(ram[PUSH_BLOCK_DIRECTION], 6);
+        assert_eq!(ram[PUSHED_BLOCK_MODE], 3);
+        assert_eq!(ram[PUSHED_BLOCK_ANIMATION_TIMER], 9);
     }
 
     #[test]

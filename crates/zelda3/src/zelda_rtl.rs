@@ -67,34 +67,35 @@ use crate::game_state::{
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpriteBattleBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoState, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterState,
-    PlayerResourcesState, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
-    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
-    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
-    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
-    SharedMessageTimerState, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
-    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneState, WorldLocationState, WorldStateView,
+    NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
+    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
+    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
+    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
+    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
+    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TagalongSlotViewMut,
+    TempCounterView, TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1846,11 +1847,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn pushed_block_view(&self) -> PushedBlockView<'_> {
-        PushedBlockView::new(&self.ram)
+        PushedBlockView::new(&self.game_state.player.pushed_block)
     }
 
-    pub(crate) fn pushed_block_view_mut(&mut self) -> PushedBlockViewMut<'_> {
-        PushedBlockViewMut::new(&mut self.ram)
+    pub(crate) fn pushed_block_view_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
+        NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
     pub(crate) fn player_tile_attribute_view(&self) -> PlayerTileAttributeView<'_> {
