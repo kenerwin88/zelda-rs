@@ -2056,8 +2056,7 @@ impl ZeldaState {
             }
             r14 = r14.wrapping_sub(0x40 + 0x20);
         }
-        self.vram_upload_data_view_mut()
-            .set_offset((offs * 2) as u16);
+        self.set_vram_upload_cursor((offs * 2) as u16);
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {

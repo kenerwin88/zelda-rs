@@ -2613,8 +2613,7 @@ impl ZeldaState {
         }
         self.ending_scratch_view_mut().set_primary_word(r16);
         let upload_base = self.vram_upload_data_view().data_base();
-        self.vram_upload_data_view_mut()
-            .set_offset((dst - upload_base) as u16);
+        self.set_vram_upload_cursor((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.set_bg_vram_load_mode(1);
     }
@@ -2654,8 +2653,7 @@ impl ZeldaState {
             }
         }
         let upload_base = self.vram_upload_data_view().data_base();
-        self.vram_upload_data_view_mut()
-            .set_offset((dst - upload_base) as u16);
+        self.set_vram_upload_cursor((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.set_bg_vram_load_mode(1);
     }

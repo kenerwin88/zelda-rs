@@ -3353,8 +3353,7 @@ impl ZeldaState {
             upload.write_le_u16_at(dst + 8, 0x0100);
             upload.write_le_u16_at(dst + 12, 0xffff);
         }
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(24);
         self.dungeon_state_view_mut()
             .set_savegame_state_high_bits(0x10);
         self.set_bg_vram_load_mode(1);
@@ -3654,8 +3653,7 @@ impl ZeldaState {
             upload.write_le_u16_at(dst + 14, tile3);
             upload.write_le_u16_at(dst + 16, 0xffff);
         }
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(16);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(16);
     }
 
     fn overworld_find_map16_vram_address_for_smash(&self, addr: u16) -> u16 {

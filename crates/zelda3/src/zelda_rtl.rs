@@ -2733,6 +2733,11 @@ impl ZeldaState {
             .clear_offset();
     }
 
+    pub(crate) fn advance_vram_upload_cursor_by(&mut self, value: u16) -> u16 {
+        NativeVramUploadDataViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .advance_offset_by(value)
+    }
+
     pub(crate) fn poly_state_view(&self) -> PolyStateView<'_> {
         PolyStateView::new(&self.ram)
     }
@@ -5588,8 +5593,7 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 24, 0xffff);
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
         if self.system_signals_view().sound_effect_2() == 0 {

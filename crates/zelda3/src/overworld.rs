@@ -5520,8 +5520,7 @@ impl ZeldaState {
             vram_pos,
             [tile0, tile1, tile2, tile3],
         );
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(16);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(16);
     }
 
     fn overworld_find_map16_vram_address(addr: u16) -> u16 {

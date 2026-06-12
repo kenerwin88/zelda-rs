@@ -5790,8 +5790,7 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 24);
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
     }
 
@@ -5865,8 +5864,7 @@ impl ZeldaState {
         }
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 24);
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(24);
     }
 
     pub(super) fn Dungeon_DeleteRupeeTile(&mut self, x: u16, y: u16) {
@@ -5893,8 +5891,7 @@ impl ZeldaState {
             .write_single_tile_stripe_packet(dst + 6, vram_addr_1, tile);
         self.vram_upload_data_view_mut()
             .write_tile_stripe_sentinel(dst + 12);
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(24);
 
         let state = self.dungeon_state_view().savegame_state_bits() | 0x1000;
         self.dungeon_state_view_mut().set_savegame_state_bits(state);
@@ -7007,8 +7004,7 @@ impl ZeldaState {
             }
             self.vram_upload_data_view_mut()
                 .write_tile_stripe_sentinel(dst + 24);
-            let next_upload = self.display_state().vram_upload_cursor.wrapping_add(24);
-            self.vram_upload_data_view_mut().set_offset(next_upload);
+            self.advance_vram_upload_cursor_by(24);
 
             let next = yy.wrapping_add(2);
             self.dungeon_state_view_mut()

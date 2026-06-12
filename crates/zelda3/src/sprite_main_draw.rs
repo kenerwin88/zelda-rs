@@ -26828,8 +26828,7 @@ impl ZeldaState {
             .write_le_u16_at(dst + 14, tile3);
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst + 16, 0xffff);
-        let next_upload = self.display_state().vram_upload_cursor.wrapping_add(16);
-        self.vram_upload_data_view_mut().set_offset(next_upload);
+        self.advance_vram_upload_cursor_by(16);
     }
 }
 
