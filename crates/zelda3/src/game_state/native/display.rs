@@ -33,6 +33,33 @@ pub(crate) enum LinkDmaSourceSlot {
 }
 
 impl LinkDmaSourceSlot {
+    fn index(self) -> usize {
+        match self {
+            Self::BodyTop => 0,
+            Self::BodyBottom => 1,
+            Self::HeadTop => 2,
+            Self::HeadBottom => 3,
+            Self::HandLeft => 4,
+            Self::HandRight => 5,
+            Self::SwordUpper => 6,
+            Self::SwordLower => 7,
+            Self::ShieldUpper => 8,
+            Self::ShieldLower => 9,
+            Self::AuxUpper => 10,
+            Self::AuxLower => 11,
+            Self::PushUpper => 12,
+            Self::PushLower => 13,
+            Self::AnimatedTileUpper => 14,
+            Self::AnimatedTileLower => 15,
+            Self::HeadPointerUpper => 16,
+            Self::HeadPointerLower => 17,
+            Self::BodyPointerUpper => 18,
+            Self::BodyPointerLower => 19,
+            Self::TravelBirdUpper => 20,
+            Self::TravelBirdLower => 21,
+        }
+    }
+
     fn address(self) -> usize {
         match self {
             Self::BodyTop => DMA_SOURCE_ADDR_3,
@@ -58,6 +85,65 @@ impl LinkDmaSourceSlot {
             Self::TravelBirdUpper => DMA_SOURCE_ADDR_20,
             Self::TravelBirdLower => DMA_SOURCE_ADDR_21,
         }
+    }
+}
+
+const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
+    LinkDmaSourceSlot::BodyTop,
+    LinkDmaSourceSlot::BodyBottom,
+    LinkDmaSourceSlot::HeadTop,
+    LinkDmaSourceSlot::HeadBottom,
+    LinkDmaSourceSlot::HandLeft,
+    LinkDmaSourceSlot::HandRight,
+    LinkDmaSourceSlot::SwordUpper,
+    LinkDmaSourceSlot::SwordLower,
+    LinkDmaSourceSlot::ShieldUpper,
+    LinkDmaSourceSlot::ShieldLower,
+    LinkDmaSourceSlot::AuxUpper,
+    LinkDmaSourceSlot::AuxLower,
+    LinkDmaSourceSlot::PushUpper,
+    LinkDmaSourceSlot::PushLower,
+    LinkDmaSourceSlot::AnimatedTileUpper,
+    LinkDmaSourceSlot::AnimatedTileLower,
+    LinkDmaSourceSlot::HeadPointerUpper,
+    LinkDmaSourceSlot::HeadPointerLower,
+    LinkDmaSourceSlot::BodyPointerUpper,
+    LinkDmaSourceSlot::BodyPointerLower,
+    LinkDmaSourceSlot::TravelBirdUpper,
+    LinkDmaSourceSlot::TravelBirdLower,
+];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LinkDmaSources {
+    sources: [u16; LINK_DMA_SOURCE_SLOTS.len()],
+}
+
+impl LinkDmaSources {
+    fn load_from_ram(ram: &[u8]) -> Self {
+        let mut sources = [0; LINK_DMA_SOURCE_SLOTS.len()];
+        for slot in LINK_DMA_SOURCE_SLOTS {
+            let address = slot.address();
+            sources[slot.index()] = if address + 1 < ram.len() {
+                read_le_u16(ram, address)
+            } else {
+                0
+            };
+        }
+        Self { sources }
+    }
+
+    fn write_to_ram(&self, ram: &mut [u8]) {
+        for slot in LINK_DMA_SOURCE_SLOTS {
+            write_le_u16(ram, slot.address(), self.source(slot));
+        }
+    }
+
+    fn source(&self, slot: LinkDmaSourceSlot) -> u16 {
+        self.sources[slot.index()]
+    }
+
+    fn set_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
+        self.sources[slot.index()] = value;
     }
 }
 
@@ -95,6 +181,8 @@ pub(crate) struct DisplayState {
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
     pub(crate) incremental_vram_upload_counter: u8,
+    pub(crate) link_dma_sources: LinkDmaSources,
+    pub(crate) bg_tile_animation_countdown: u16,
     pub(crate) message_dma_destination_address: u16,
     pub(crate) message_dma_tile_base: u16,
     pub(crate) message_dma_tile_limit: u16,
@@ -140,6 +228,8 @@ impl DisplayState {
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
             incremental_vram_upload_counter: ram_byte(ram, INCREMENTAL_COUNTER_FOR_VRAM),
+            link_dma_sources: LinkDmaSources::load_from_ram(ram),
+            bg_tile_animation_countdown: read_le_u16(ram, BG_TILE_ANIMATION_COUNTDOWN),
             message_dma_destination_address: read_le_u16(ram, MESSAGE_DMA_DST_ADDR),
             message_dma_tile_base: read_le_u16(ram, MESSAGE_DMA_TILE_BASE),
             message_dma_tile_limit: read_le_u16(ram, MESSAGE_DMA_TILE_LIMIT),
@@ -188,6 +278,12 @@ impl DisplayState {
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
         ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.incremental_vram_upload_counter;
+        self.link_dma_sources.write_to_ram(ram);
+        write_le_u16(
+            ram,
+            BG_TILE_ANIMATION_COUNTDOWN,
+            self.bg_tile_animation_countdown,
+        );
         write_le_u16(
             ram,
             MESSAGE_DMA_DST_ADDR,
@@ -323,13 +419,8 @@ impl DisplayState {
             .unwrap_or(0)
     }
 
-    pub(crate) fn link_dma_source(&self, ram: &[u8], slot: LinkDmaSourceSlot) -> u16 {
-        let address = slot.address();
-        if address + 1 < ram.len() {
-            read_le_u16(ram, address)
-        } else {
-            0
-        }
+    pub(crate) fn link_dma_source(&self, slot: LinkDmaSourceSlot) -> u16 {
+        self.link_dma_sources.source(slot)
     }
 
     pub(crate) fn vram_upload_buffer_remaining<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
@@ -709,6 +800,22 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         debug_assert_eq!(
             self.display.incremental_vram_upload_counter,
             ram_byte(self.ram, INCREMENTAL_COUNTER_FOR_VRAM)
+        );
+    }
+
+    fn debug_assert_link_dma_sources_match_ram(&self) {
+        for slot in LINK_DMA_SOURCE_SLOTS {
+            debug_assert_eq!(
+                self.display.link_dma_sources.source(slot),
+                read_le_u16(self.ram, slot.address())
+            );
+        }
+    }
+
+    fn debug_assert_bg_tile_animation_countdown_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.bg_tile_animation_countdown,
+            read_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN)
         );
     }
 
@@ -1165,6 +1272,73 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = value;
         self.debug_assert_incremental_vram_upload_counter_matches_ram();
         value
+    }
+
+    fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
+        self.display.link_dma_sources.set_source(slot, value);
+        write_le_u16(self.ram, slot.address(), value);
+        self.debug_assert_link_dma_sources_match_ram();
+    }
+
+    pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyTop, top);
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyBottom, bottom);
+    }
+
+    pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadTop, top);
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadBottom, bottom);
+    }
+
+    pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HandLeft, left);
+        self.set_link_dma_source(LinkDmaSourceSlot::HandRight, right);
+    }
+
+    pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::SwordUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::SwordLower, lower);
+    }
+
+    pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::ShieldUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::ShieldLower, lower);
+    }
+
+    pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::AuxUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::AuxLower, lower);
+    }
+
+    pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::PushUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::PushLower, lower);
+    }
+
+    pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileLower, lower);
+    }
+
+    pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerLower, lower);
+    }
+
+    pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerLower, lower);
+    }
+
+    pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdLower, lower);
+    }
+
+    pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
+        self.display.bg_tile_animation_countdown = value;
+        write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
+        self.debug_assert_bg_tile_animation_countdown_matches_ram();
     }
 
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {

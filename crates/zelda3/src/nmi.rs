@@ -575,7 +575,7 @@ impl ZeldaState {
         source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.display_state().link_dma_source(&self.ram, source_slot) as usize;
+        let source_addr = self.display_state().link_dma_source(source_slot) as usize;
         if source_addr < 0x8000 {
             return;
         }
@@ -588,7 +588,7 @@ impl ZeldaState {
         source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.display_state().link_dma_source(&self.ram, source_slot) as usize;
+        let source_addr = self.display_state().link_dma_source(source_slot) as usize;
         self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
     }
 

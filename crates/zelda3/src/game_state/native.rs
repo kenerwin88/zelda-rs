@@ -966,9 +966,15 @@ mod tests {
             write_le_u16(&mut ram, address, 0x9000 + index as u16);
         }
 
-        let display = DisplayState::default();
+        let display = DisplayState::load_from_ram(&ram);
         for (index, (slot, _)) in slots.iter().copied().enumerate() {
-            assert_eq!(display.link_dma_source(&ram, slot), 0x9000 + index as u16);
+            assert_eq!(display.link_dma_source(slot), 0x9000 + index as u16);
+        }
+
+        let mut projected = vec![0; WRAM_SIZE];
+        display.write_to_ram(&mut projected);
+        for (index, (_, address)) in slots.iter().copied().enumerate() {
+            assert_eq!(read_le_u16(&projected, address), 0x9000 + index as u16);
         }
     }
 
@@ -1079,6 +1085,18 @@ mod tests {
             assert_eq!(bridge.increment_vram_upload_counter(), 0xff);
             assert_eq!(bridge.increment_vram_upload_counter(), 0);
             bridge.reset_incremental_vram_upload_counter();
+            bridge.set_link_body_dma_sources(0x9000, 0x9001);
+            bridge.set_link_head_dma_sources(0x9002, 0x9003);
+            bridge.set_link_hand_dma_sources(0x9004, 0x9005);
+            bridge.set_link_sword_dma_sources(0x9006, 0x9007);
+            bridge.set_link_shield_dma_sources(0x9008, 0x9009);
+            bridge.set_link_aux_dma_sources(0x900a, 0x900b);
+            bridge.set_link_push_dma_sources(0x900c, 0x900d);
+            bridge.set_link_animated_tile_dma_sources(0x900e, 0x900f);
+            bridge.set_link_head_pointer_dma_sources(0x9010, 0x9011);
+            bridge.set_link_body_pointer_dma_sources(0x9012, 0x9013);
+            bridge.set_travel_bird_dma_sources(0x9014, 0x9015);
+            bridge.reset_bg_tile_animation_countdown(0xffff);
             bridge.set_message_dma_destination_address(0x6080);
             bridge.set_message_dma_tile_base(0x4841);
             bridge.set_message_dma_tile_limit(0x007f);
@@ -1135,6 +1153,30 @@ mod tests {
         assert_eq!(display.vram_upload_cursor, 0xbbaa);
         assert_eq!(display.incremental_vram_upload_counter, 0);
         assert_eq!(display.incremental_vram_upload_counter_usize(), 0);
+        assert_eq!(display.link_dma_source(LinkDmaSourceSlot::BodyTop), 0x9000);
+        assert_eq!(
+            display.link_dma_source(LinkDmaSourceSlot::BodyBottom),
+            0x9001
+        );
+        assert_eq!(display.link_dma_source(LinkDmaSourceSlot::HeadTop), 0x9002);
+        assert_eq!(
+            display.link_dma_source(LinkDmaSourceSlot::HeadBottom),
+            0x9003
+        );
+        assert_eq!(display.link_dma_source(LinkDmaSourceSlot::HandLeft), 0x9004);
+        assert_eq!(
+            display.link_dma_source(LinkDmaSourceSlot::HandRight),
+            0x9005
+        );
+        assert_eq!(
+            display.link_dma_source(LinkDmaSourceSlot::TravelBirdUpper),
+            0x9014
+        );
+        assert_eq!(
+            display.link_dma_source(LinkDmaSourceSlot::TravelBirdLower),
+            0x9015
+        );
+        assert_eq!(display.bg_tile_animation_countdown, 0xffff);
         assert_eq!(display.message_dma_destination_address, 0x6080);
         assert_eq!(display.message_dma_destination_address_usize(), 0x6080);
         assert_eq!(display.message_dma_tile_base, 0x4841);
@@ -1184,6 +1226,15 @@ mod tests {
             0xcc
         );
         assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_3), 0x9000);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_0), 0x9001);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_4), 0x9002);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_1), 0x9003);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_5), 0x9004);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_2), 0x9005);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_20), 0x9014);
+        assert_eq!(read_le_u16(&ram, DMA_SOURCE_ADDR_21), 0x9015);
+        assert_eq!(read_le_u16(&ram, BG_TILE_ANIMATION_COUNTDOWN), 0xffff);
         assert_eq!(read_le_u16(&ram, messaging::MESSAGE_DMA_DST_ADDR), 0x6080);
         assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);
         assert_eq!(ram[FLAG_TRAVEL_BIRD], 0x08);

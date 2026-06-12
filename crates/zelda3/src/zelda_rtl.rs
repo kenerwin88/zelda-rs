@@ -89,10 +89,10 @@ use crate::game_state::{
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateViewMut,
-    VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut,
-    WorldLocationState, WorldStateView,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2749,51 +2749,63 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_body_dma_sources(top, bottom);
+        self.display_state_bridge_mut()
+            .set_link_body_dma_sources(top, bottom);
     }
 
     pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_head_dma_sources(top, bottom);
+        self.display_state_bridge_mut()
+            .set_link_head_dma_sources(top, bottom);
     }
 
     pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_hand_dma_sources(left, right);
+        self.display_state_bridge_mut()
+            .set_link_hand_dma_sources(left, right);
     }
 
     pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_sword_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_sword_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_shield_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_shield_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_aux_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_aux_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_push_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_push_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_animated_tile_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_animated_tile_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_head_pointer_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_head_pointer_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_link_body_pointer_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_link_body_pointer_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).set_travel_bird_dma_sources(upper, lower);
+        self.display_state_bridge_mut()
+            .set_travel_bird_dma_sources(upper, lower);
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
-        VramLoadStateViewMut::new(&mut self.ram).reset_bg_tile_animation_countdown(value);
+        self.display_state_bridge_mut()
+            .reset_bg_tile_animation_countdown(value);
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
