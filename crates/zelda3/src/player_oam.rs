@@ -2101,7 +2101,7 @@ impl ZeldaState {
 
     pub(crate) fn link_oam_main(&mut self) {
         let y_coord_backup = self.player_state_view().y();
-        let submodule = self.frame_control_view().submodule();
+        let submodule = self.frame_state().submodule;
 
         if submodule == 18 || submodule == 19 {
             let mut t = if submodule == 18 { 0 } else { 12 };
@@ -2158,7 +2158,7 @@ impl ZeldaState {
                 0
             };
 
-            if submodule == 14 && self.frame_control_view().main_module() != 18 && {
+            if submodule == 14 && self.frame_state().main_module != 18 && {
                 yt = 10;
                 self.player_state_view().actual_x_velocity() != 0
             } {
@@ -2223,7 +2223,7 @@ impl ZeldaState {
                 if self.player_state_view().is_in_auxiliary_state(4) {
                     yt = 0x13;
                     rt = SWIMMING_SPLASH_FRAME_BY_DIRECTION
-                        [((self.frame_control_view().frame_counter() & 0x18) >> 3) as usize];
+                        [((self.frame_state().frame_counter & 0x18) >> 3) as usize];
                     continue_after_set = true;
                 } else if self.player_state_view().is_in_auxiliary_state(1) {
                     if handler_state == PLAYER_HANDLER_STATE_TURTLE_ROCK {

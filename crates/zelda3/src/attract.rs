@@ -743,7 +743,7 @@ impl ZeldaState {
         ];
         const NUM: [usize; 8] = [2, 2, 2, 6, 6, 10, 10, 14];
 
-        let k = (self.frame_control_view().frame_counter() >> 2) as usize & 1;
+        let k = (self.frame_state().frame_counter >> 2) as usize & 1;
         let n = NUM[(self.attract_state_view().maiden_warp_step() >> 1) as usize & 7];
         self.attract_state_view_mut().set_x_base(110);
         self.attract_state_view_mut().set_y_base(72);
@@ -807,7 +807,7 @@ impl ZeldaState {
 
         self.attract_state_view_mut().set_x_base(110);
         self.attract_state_view_mut().set_y_base(72);
-        let k = (self.frame_control_view().frame_counter() >> 2) as usize & 1;
+        let k = (self.frame_state().frame_counter >> 2) as usize & 1;
         let n = NUM[(self.attract_state_view().maiden_warp_step() >> 1) as usize & 7];
         self.attract_draw_sprite_set2_slice(&OAMS[k * 14 + (14 - n)..k * 14 + 14]);
 
@@ -1046,7 +1046,7 @@ impl ZeldaState {
         if self.attract_state_view().prison_soldier_x_lo() == 0 {
             self.attract_state_view_mut().increment_scene_substep();
         }
-        if self.frame_control_view().frame_counter() & 1 != 0 {
+        if self.frame_state().frame_counter & 1 != 0 {
             self.attract_state_view_mut().decrement_vram_dst_word();
         }
         self.attract_state_view_mut().set_x_base(0x58);
@@ -1102,7 +1102,7 @@ impl ZeldaState {
             return;
         };
 
-        if self.frame_control_view().frame_counter() & 1 != 0 {
+        if self.frame_state().frame_counter & 1 != 0 {
             self.attract_state_view_mut().decrement_vram_dst_word();
         }
         self.attract_state_view_mut().set_x_base(0x58);
@@ -1192,7 +1192,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_polka_dots(&mut self) {
-        if self.frame_control_view().frame_counter() & 3 == 0 {
+        if self.frame_state().frame_counter & 3 == 0 {
             self.ppu_scroll_copy_view_mut().add_bg1_v_copy_low(1);
             self.ppu_scroll_copy_view_mut().add_bg1_h_copy_low(1);
             self.ppu_scroll_copy_view_mut().add_bg2_v_copy_low(1);

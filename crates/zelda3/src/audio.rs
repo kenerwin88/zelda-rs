@@ -334,7 +334,7 @@ impl ZeldaState {
 
         let resume = if !resume_from_snapshot {
             let mut resume = MsuPlayerResumeInfo::default();
-            if self.frame_control_view().main_module() == 9
+            if self.frame_state().main_module == 9
                 && actual_track
                     == Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO_ALT).actual_track
                 && self.audio.config_resume_msu
