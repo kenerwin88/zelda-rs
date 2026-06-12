@@ -35,27 +35,27 @@ use crate::game_state::{
     BlastWallScratchView, BlastWallScratchViewMut, BombosBlastView, BombosBlastViewMut,
     BombosFireColumnView, BombosFireColumnViewMut, BombosSpellScratchView,
     BombosSpellScratchViewMut, CachedSpriteSlotView, CachedSpriteSlotViewMut,
-    ChainChompHistoryView, ChainChompHistoryViewMut, DialogueMessageIndexState,
-    DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
-    DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView, DrawScratchPositionViewMut,
-    DualLayerTileCacheView, DualLayerTileCacheViewMut, DungeonEntranceBackupViewMut,
-    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonKeySlotsViewMut,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut, DungeonSecretScratchView,
-    DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView, DungeonStateViewMut,
-    DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView, EffectAngleScratchViewMut,
-    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageDataView,
-    EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
-    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
-    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, HudStateViewMut,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
-    InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    ChainChompHistoryView, ChainChompHistoryViewMut, DecodedMessageTextState,
+    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut,
+    DisplayState, DoorDebrisView, DoorDebrisViewMut, DrawScratchPositionView,
+    DrawScratchPositionViewMut, DualLayerTileCacheView, DualLayerTileCacheViewMut,
+    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
+    DungeonKeySlotsViewMut, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonMapViewMut,
+    DungeonSecretScratchView, DungeonSecretScratchViewMut, DungeonStairList, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchView,
+    EffectAngleScratchViewMut, EndingCreditState, EndingScratchView, EndingScratchViewMut,
+    EnemyDamageDataView, EnemyDamageDataViewMut, EnhancedFeaturesState, EtherOrbitView,
+    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
+    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HitboxScratchOffsetView, HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView,
+    HudStateViewMut, IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView,
+    IntroSwordViewMut, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
     MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState,
-    MessagingTextView, MessagingTextViewMut, MinigameStateView, MinigameStateViewMut,
-    MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
     NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
@@ -3836,12 +3836,12 @@ impl ZeldaState {
         NativeMessagingRuntimeBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    pub(crate) fn messaging_text_view(&self) -> MessagingTextView<'_> {
-        MessagingTextView::new(&self.ram)
+    pub(crate) fn messaging_text_view(&self) -> &DecodedMessageTextState {
+        &self.game_state.messaging.decoded_text
     }
 
-    pub(crate) fn messaging_text_view_mut(&mut self) -> MessagingTextViewMut<'_> {
-        MessagingTextViewMut::new(&mut self.ram)
+    pub(crate) fn messaging_text_view_mut(&mut self) -> NativeDecodedMessageTextBridgeMut<'_> {
+        NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
     pub(crate) fn messaging_render_buffer_view(&self) -> &MessagingRenderBufferState {

@@ -2,6 +2,8 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
 const MESSAGING_RENDER_BUFFER_LEN: usize = 0x7e0;
+const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0x400;
+const DIALOGUE_POINTER_COUNT: usize = 398;
 const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
 const VWF_TILE_BUFFER_LEN: usize = 6 * 21 * 2;
 
@@ -142,6 +144,105 @@ impl DialogueSourceOffsetState {
     pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
         self.bank_offset_low_nibble = self.bank_offset_low_nibble.wrapping_add(1);
         self.bank_offset_low_nibble
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DecodedMessageTextState {
+    bytes: Vec<u8>,
+}
+
+impl Default for DecodedMessageTextState {
+    fn default() -> Self {
+        Self {
+            bytes: vec![0; DECODED_MESSAGE_TEXT_CAPACITY],
+        }
+    }
+}
+
+impl DecodedMessageTextState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut bytes = vec![0; DECODED_MESSAGE_TEXT_CAPACITY];
+        if let Some(src) = ram.get(MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + bytes.len()) {
+            bytes.copy_from_slice(src);
+        }
+        Self { bytes }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + self.bytes.len()]
+            .copy_from_slice(&self.bytes);
+    }
+
+    pub(crate) fn byte(&self, offset: usize) -> u8 {
+        self.bytes.get(offset).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn next_byte(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(offset + 1).copied()
+    }
+
+    pub(crate) fn load_decoded_dialogue(&mut self, decoded: &[u8]) -> usize {
+        let len = decoded.len().min(self.bytes.len());
+        self.bytes[..len].copy_from_slice(&decoded[..len]);
+        len
+    }
+
+    pub(crate) fn write_decoded_text_at(&mut self, dst: usize, decoded: &[u8]) -> usize {
+        let Some(start) = dst.checked_sub(MESSAGING_TEXT_BUFFER) else {
+            return 0;
+        };
+        if start > self.bytes.len() {
+            return 0;
+        }
+        let len = decoded.len().min(self.bytes.len().saturating_sub(start));
+        self.bytes[start..start + len].copy_from_slice(&decoded[..len]);
+        len
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DialoguePointerTableState {
+    pointers: Vec<u32>,
+}
+
+impl Default for DialoguePointerTableState {
+    fn default() -> Self {
+        Self {
+            pointers: vec![0; DIALOGUE_POINTER_COUNT],
+        }
+    }
+}
+
+impl DialoguePointerTableState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut pointers = vec![0; DIALOGUE_POINTER_COUNT];
+        for (index, pointer) in pointers.iter_mut().enumerate() {
+            let src = TEXT_DIALOGUE_POINTERS + index * 3;
+            if src + 2 < ram.len() {
+                *pointer = u32::from(ram[src])
+                    | (u32::from(ram[src + 1]) << 8)
+                    | (u32::from(ram[src + 2]) << 16);
+            }
+        }
+        Self { pointers }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, pointer) in self.pointers.iter().copied().enumerate() {
+            let dst = TEXT_DIALOGUE_POINTERS + index * 3;
+            ram[dst] = pointer as u8;
+            ram[dst + 1] = (pointer >> 8) as u8;
+            ram[dst + 2] = (pointer >> 16) as u8;
+        }
+    }
+
+    pub(crate) fn pointer(&self, index: usize) -> u32 {
+        self.pointers.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_pointer(&mut self, index: usize, pointer: u32) {
+        self.pointers[index] = pointer & 0x00ff_ffff;
     }
 }
 
@@ -512,6 +613,8 @@ pub(crate) struct MessagingState {
     pub(crate) multiselect_choice: MultiselectChoiceState,
     pub(crate) dialogue_number: DialogueNumberState,
     pub(crate) dialogue_source_offset: DialogueSourceOffsetState,
+    pub(crate) decoded_text: DecodedMessageTextState,
+    pub(crate) dialogue_pointers: DialoguePointerTableState,
     pub(crate) runtime: MessagingRuntimeState,
     pub(crate) shared_message_timer: SharedMessageTimerState,
     pub(crate) render_buffer: MessagingRenderBufferState,
@@ -525,6 +628,8 @@ impl MessagingState {
             multiselect_choice: MultiselectChoiceState::load_from_ram(ram),
             dialogue_number: DialogueNumberState::load_from_ram(ram),
             dialogue_source_offset: DialogueSourceOffsetState::load_from_ram(ram),
+            decoded_text: DecodedMessageTextState::load_from_ram(ram),
+            dialogue_pointers: DialoguePointerTableState::load_from_ram(ram),
             runtime: MessagingRuntimeState::load_from_ram(ram),
             shared_message_timer: SharedMessageTimerState::load_from_ram(ram),
             render_buffer: MessagingRenderBufferState::load_from_ram(ram),
@@ -537,6 +642,8 @@ impl MessagingState {
         self.multiselect_choice.write_to_ram(ram);
         self.dialogue_number.write_to_ram(ram);
         self.dialogue_source_offset.write_to_ram(ram);
+        self.decoded_text.write_to_ram(ram);
+        self.dialogue_pointers.write_to_ram(ram);
         self.shared_message_timer.write_to_ram(ram);
         self.render_buffer.write_to_ram(ram);
         self.vwf_render.write_to_ram(ram);
@@ -701,6 +808,59 @@ impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
         self.ram[DIALOGUE_MSG_SRC_OFFS + 2] = next;
         self.debug_assert_matches_ram();
         next
+    }
+}
+
+pub(crate) struct NativeDecodedMessageTextBridgeMut<'a> {
+    messaging: &'a mut MessagingState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
+    pub(crate) fn new(messaging: &'a mut MessagingState, ram: &'a mut [u8]) -> Self {
+        messaging.decoded_text = DecodedMessageTextState::load_from_ram(ram);
+        messaging.dialogue_pointers = DialoguePointerTableState::load_from_ram(ram);
+        Self { messaging, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.messaging.decoded_text,
+            DecodedMessageTextState::load_from_ram(self.ram)
+        );
+        debug_assert_eq!(
+            self.messaging.dialogue_pointers,
+            DialoguePointerTableState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn load_decoded_dialogue(&mut self, decoded: &[u8]) -> usize {
+        let len = self.messaging.decoded_text.load_decoded_dialogue(decoded);
+        self.ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + len]
+            .copy_from_slice(&decoded[..len]);
+        self.debug_assert_matches_ram();
+        len
+    }
+
+    pub(crate) fn write_decoded_text_at(&mut self, dst: usize, decoded: &[u8]) -> usize {
+        let len = self
+            .messaging
+            .decoded_text
+            .write_decoded_text_at(dst, decoded);
+        if len != 0 {
+            self.ram[dst..dst + len].copy_from_slice(&decoded[..len]);
+        }
+        self.debug_assert_matches_ram();
+        len
+    }
+
+    pub(crate) fn set_dialogue_pointer(&mut self, index: usize, pointer: u32) {
+        self.messaging.dialogue_pointers.set_pointer(index, pointer);
+        let dst = TEXT_DIALOGUE_POINTERS + index * 3;
+        self.ram[dst] = pointer as u8;
+        self.ram[dst + 1] = (pointer >> 8) as u8;
+        self.ram[dst + 2] = (pointer >> 16) as u8;
+        self.debug_assert_matches_ram();
     }
 }
 

@@ -25,8 +25,9 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use messaging::{
-    DialogueMessageIndexState, DialogueNumberState, MessagingRenderBufferState,
-    MessagingRuntimeState, MessagingState, NativeDialogueMessageIndexBridgeMut,
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
+    MessagingRenderBufferState, MessagingRuntimeState, MessagingState,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
     NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
@@ -50,7 +51,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use messaging::{DialogueSourceOffsetState, MultiselectChoiceState};
+use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -2023,6 +2024,82 @@ mod tests {
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS], 0xaa);
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 1], 0xbb);
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 1);
+    }
+
+    #[test]
+    fn decoded_message_text_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MESSAGING_TEXT_BUFFER] = 0x12;
+        ram[MESSAGING_TEXT_BUFFER + 1] = 0x34;
+        ram[MESSAGING_TEXT_BUFFER + 2] = 0x56;
+
+        let mut text = DecodedMessageTextState::load_from_ram(&ram);
+        assert_eq!(text.byte(0), 0x12);
+        assert_eq!(text.next_byte(0), Some(0x34));
+        assert_eq!(text.byte(usize::MAX), 0);
+
+        assert_eq!(text.load_decoded_dialogue(&[1, 2, 3, 4]), 4);
+        assert_eq!(
+            text.write_decoded_text_at(MESSAGING_TEXT_BUFFER + 2, &[0xaa, 0xbb]),
+            2
+        );
+        text.write_to_ram(&mut ram);
+
+        assert_eq!(
+            &ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + 4],
+            &[1, 2, 0xaa, 0xbb]
+        );
+    }
+
+    #[test]
+    fn dialogue_pointer_table_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TEXT_DIALOGUE_POINTERS + 3] = 0x12;
+        ram[TEXT_DIALOGUE_POINTERS + 4] = 0x34;
+        ram[TEXT_DIALOGUE_POINTERS + 5] = 0x56;
+
+        let mut pointers = DialoguePointerTableState::load_from_ram(&ram);
+        assert_eq!(pointers.pointer(1), 0x563412);
+        assert_eq!(pointers.pointer(398), 0);
+
+        pointers.set_pointer(1, 0xffaabbcc);
+        pointers.write_to_ram(&mut ram);
+
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 3], 0xcc);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 4], 0xbb);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 5], 0xaa);
+    }
+
+    #[test]
+    fn native_decoded_message_text_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MESSAGING_TEXT_BUFFER] = 0x12;
+        ram[TEXT_DIALOGUE_POINTERS] = 0x11;
+        ram[TEXT_DIALOGUE_POINTERS + 1] = 0x22;
+        ram[TEXT_DIALOGUE_POINTERS + 2] = 0x33;
+
+        let mut messaging = MessagingState::default();
+        {
+            let mut bridge = NativeDecodedMessageTextBridgeMut::new(&mut messaging, &mut ram);
+            assert_eq!(bridge.load_decoded_dialogue(&[1, 2, 3]), 3);
+            assert_eq!(
+                bridge.write_decoded_text_at(MESSAGING_TEXT_BUFFER + 1, &[0xaa, 0xbb]),
+                2
+            );
+            bridge.set_dialogue_pointer(0, 0xffc0de);
+        }
+
+        assert_eq!(messaging.decoded_text.byte(0), 1);
+        assert_eq!(messaging.decoded_text.byte(1), 0xaa);
+        assert_eq!(messaging.decoded_text.byte(2), 0xbb);
+        assert_eq!(messaging.dialogue_pointers.pointer(0), 0xffc0de);
+        assert_eq!(
+            &ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + 3],
+            &[1, 0xaa, 0xbb]
+        );
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS], 0xde);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 1], 0xc0);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 2], 0xff);
     }
 
     #[test]
