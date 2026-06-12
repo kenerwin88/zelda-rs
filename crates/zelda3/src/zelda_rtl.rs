@@ -74,15 +74,15 @@ use crate::game_state::{
     PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
     PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
     PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameStateView, RoomBoundsView,
-    RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView,
-    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
-    SelectFileScratchViewMut, SharedMessageTimerView, SharedMessageTimerViewMut,
-    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
-    StarTileView, StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
+    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
     SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
     SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
     TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
@@ -1896,10 +1896,6 @@ impl ZeldaState {
 
     pub(crate) fn player_resources_view_mut(&mut self) -> PlayerResourcesViewMut<'_> {
         PlayerResourcesViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn ram_frame_state_view(&self) -> RamFrameStateView<'_> {
-        RamFrameStateView::new(&self.ram)
     }
 
     pub(crate) fn frame_state(&self) -> &FrameState {
