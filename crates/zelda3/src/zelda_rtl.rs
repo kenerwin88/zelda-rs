@@ -2114,6 +2114,26 @@ impl ZeldaState {
         self.game_state.overworld_transition.has_direction_bits()
     }
 
+    pub(crate) fn edge_transition_direction_bits(&self) -> u8 {
+        self.game_state.overworld_transition.edge_direction_bits()
+    }
+
+    pub(crate) fn set_edge_transition_direction_bits(&mut self, value: u8) {
+        NativeOverworldTransitionBridgeMut::new(
+            &mut self.game_state.overworld_transition,
+            &mut self.ram,
+        )
+        .set_edge_direction_bits(value);
+    }
+
+    pub(crate) fn clear_edge_transition_direction_bits(&mut self) {
+        NativeOverworldTransitionBridgeMut::new(
+            &mut self.game_state.overworld_transition,
+            &mut self.ram,
+        )
+        .clear_edge_direction_bits();
+    }
+
     pub(crate) fn set_screen_transition_direction_bits(&mut self, value: u8) {
         NativeOverworldTransitionBridgeMut::new(
             &mut self.game_state.overworld_transition,

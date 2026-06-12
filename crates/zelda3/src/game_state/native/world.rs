@@ -84,6 +84,7 @@ impl OverworldMapUiState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldTransitionState {
+    pub(crate) edge_direction_bits: u16,
     pub(crate) direction_bits: u16,
     pub(crate) screen_transition: u16,
     pub(crate) transition_counter: u8,
@@ -95,6 +96,7 @@ pub(crate) struct OverworldTransitionState {
 impl OverworldTransitionState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            edge_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS),
             direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2),
             screen_transition: read_le_u16(ram, OVERWORLD_SCREEN_TRANSITION),
             transition_counter: ram_byte(ram, TRANSITION_COUNTER),
@@ -105,6 +107,11 @@ impl OverworldTransitionState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(
+            ram,
+            OVERWORLD_SCREEN_TRANS_DIR_BITS,
+            self.edge_direction_bits,
+        );
         write_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, self.direction_bits);
         write_le_u16(ram, OVERWORLD_SCREEN_TRANSITION, self.screen_transition);
         ram[TRANSITION_COUNTER] = self.transition_counter;
@@ -119,6 +126,10 @@ impl OverworldTransitionState {
             self.previous_direction_bits2,
         );
         ram[OVERWORLD_SCREEN_TRANSITION_PREV] = self.previous_screen_transition;
+    }
+
+    pub(crate) fn edge_direction_bits(&self) -> u8 {
+        self.edge_direction_bits as u8
     }
 
     pub(crate) fn direction_bits(&self) -> u8 {
@@ -357,6 +368,23 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
         next
     }
 
+    pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
+        self.transition.edge_direction_bits =
+            (self.transition.edge_direction_bits & 0xff00) | u16::from(value);
+        self.ram[OVERWORLD_SCREEN_TRANS_DIR_BITS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_edge_direction_bits_word(&mut self, value: u16) {
+        self.transition.edge_direction_bits = value;
+        write_le_u16(self.ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_edge_direction_bits(&mut self) {
+        self.set_edge_direction_bits(0);
+    }
+
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
         self.transition.screen_transition =
             (self.transition.screen_transition & 0xff00) | u16::from(value);
@@ -387,8 +415,7 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     }
 
     pub(crate) fn save_previous_direction_bits(&mut self) {
-        self.transition.previous_direction_bits =
-            u16::from(ram_byte(self.ram, OVERWORLD_SCREEN_TRANS_DIR_BITS));
+        self.transition.previous_direction_bits = u16::from(self.transition.edge_direction_bits());
         self.transition.previous_direction_bits2 = self.transition.direction_bits_word();
         write_le_u16(
             self.ram,
@@ -404,11 +431,7 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     }
 
     pub(crate) fn restore_previous_direction_bits(&mut self) {
-        write_le_u16(
-            self.ram,
-            OVERWORLD_SCREEN_TRANS_DIR_BITS,
-            self.transition.previous_direction_bits,
-        );
+        self.set_edge_direction_bits_word(self.transition.previous_direction_bits);
         self.set_direction_bits_word(self.transition.previous_direction_bits2);
     }
 

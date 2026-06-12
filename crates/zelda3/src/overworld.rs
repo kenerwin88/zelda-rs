@@ -762,7 +762,7 @@ impl ZeldaState {
                 }
             }
         } else if (si & 0x3f) == 0x1b {
-            let value = if self.world_state_view().overworld_screen_trans_dir_bits() != 8 {
+            let value = if self.edge_transition_direction_bits() != 8 {
                 0x0838
             } else {
                 self.world_state_view().bg2_x()
@@ -871,8 +871,7 @@ impl ZeldaState {
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
         self.set_overworld_map16_dst_off((src.wrapping_sub(0x10) & 0x003e) >> 1);
         self.clear_screen_transition();
-        self.world_state_view_mut()
-            .clear_overworld_screen_trans_dir_bits();
+        self.clear_edge_transition_direction_bits();
         self.clear_screen_transition_direction_bits_word();
         self.palette_filter_view_mut()
             .set_color_window_selection(0x82);
@@ -4116,7 +4115,7 @@ impl ZeldaState {
         self.Graphics_IncrementalVRAMUpload();
         let rv = self.OverworldScrollTransition();
         if rv & 0x0f == 0 {
-            let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
+            let direction_bits = self.edge_transition_direction_bits();
             self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
             self.clear_screen_transition_direction_bits();
@@ -4141,8 +4140,8 @@ impl ZeldaState {
 
     pub(super) fn Overworld_StartScrollTransition(&mut self) {
         self.increment_submodule();
-        if self.world_state_view().overworld_screen_trans_dir_bits() >= 4 {
-            let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
+        if self.edge_transition_direction_bits() >= 4 {
+            let direction_bits = self.edge_transition_direction_bits();
             self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
             self.clear_screen_transition_direction_bits();
@@ -4151,7 +4150,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_EaseOffScrollTransition(&mut self) {
         if self.overworld_map_is_small() {
-            let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
+            let direction_bits = self.edge_transition_direction_bits();
             self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
             self.clear_screen_transition_direction_bits();
@@ -4160,14 +4159,13 @@ impl ZeldaState {
         if self.frame_state().subsubmodule < 8 {
             return;
         }
-        let dir = self.world_state_view().overworld_screen_trans_dir_bits();
+        let dir = self.edge_transition_direction_bits();
         if (dir == 8 || dir == 2) && self.frame_state().subsubmodule < 9 {
             return;
         }
 
         self.set_subsubmodule(0);
-        self.world_state_view_mut()
-            .set_overworld_screen_trans_dir_bits(0);
+        self.set_edge_transition_direction_bits(0);
 
         if self.overworld_map_is_small() {
             let backup = self.small_overworld_map16_scroll_backup_state();
@@ -4284,8 +4282,7 @@ impl ZeldaState {
 
         self.Overworld_LoadGFXAndScreenSize();
         self.set_submodule(1);
-        self.world_state_view_mut()
-            .set_overworld_screen_trans_dir_bits(dir);
+        self.set_edge_transition_direction_bits(dir);
         self.set_screen_transition_direction_bits(dir);
         let dir_enum = self.DirToEnum(dir as i32) as u8;
         self.world_state_view_mut()

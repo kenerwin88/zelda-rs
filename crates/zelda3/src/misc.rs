@@ -201,8 +201,7 @@ impl ZeldaState {
 
     fn kill_aghanim_init(&mut self) {
         self.system_signals_view_mut().set_music_control(8);
-        self.world_state_view_mut()
-            .set_overworld_screen_trans_dir_bits(8);
+        self.set_edge_transition_direction_bits(8);
         self.InitializeMirrorHDMA();
         self.set_overworld_map_state(0);
         self.PaletteFilter_InitializeWhiteFilter();
