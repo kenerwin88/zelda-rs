@@ -10,7 +10,8 @@ use std::slice;
 use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 
 use crate::game_state::{
-    AncillaSlotView, PlayerStateView, RamFrameStateView, SpriteSlotView, WorldStateView,
+    AncillaSlotView, PlayerStateView, RamFrameStateView, SpriteSlotView, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16};
 use crate::zelda_rtl::ZeldaState;
@@ -1254,6 +1255,7 @@ fn copy_graduated_map16_load_bytes(mine: &mut Snapshot, theirs: &Snapshot) {
 fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot {
     let frame = RamFrameStateView::new(ram);
     let player = PlayerStateView::new(ram);
+    let world_location = WorldLocationState::load_from_ram(ram);
     let world = WorldStateView::new(ram);
     SemanticSnapshot {
         frame: SemanticFrame {
@@ -1283,8 +1285,8 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
             current_item_active: player.current_item_active(),
         },
         world: SemanticWorld {
-            dungeon_room: world.dungeon_room(),
-            overworld_screen: world.overworld_screen(),
+            dungeon_room: world_location.dungeon_room,
+            overworld_screen: world_location.overworld_screen_index(),
             overworld_area: world.overworld_area(),
             transition_direction: world.transition_direction(),
             overlay_index: world.overlay_index(),

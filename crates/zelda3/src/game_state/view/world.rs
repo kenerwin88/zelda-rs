@@ -9,40 +9,12 @@ impl<'a> WorldStateView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn dungeon_room(&self) -> u16 {
-        word(self.ram, DUNGEON_ROOM)
-    }
-
-    pub(crate) fn dungeon_room_index(&self) -> u8 {
-        byte(self.ram, DUNGEON_ROOM)
-    }
-
-    pub(crate) fn overworld_screen(&self) -> u8 {
-        byte(self.ram, OVERWORLD_SCREEN_INDEX)
-    }
-
-    pub(crate) fn overworld_screen_word(&self) -> u16 {
-        word(self.ram, OVERWORLD_SCREEN_INDEX)
-    }
-
-    pub(crate) fn is_indoors(&self) -> bool {
-        byte(self.ram, PLAYER_IS_INDOORS) != 0
-    }
-
     pub(crate) fn current_area_of_player(&self) -> u8 {
         byte(self.ram, CURRENT_AREA_OF_PLAYER)
     }
 
     pub(crate) fn milestone_item_gfx_swap_countdown(&self) -> u8 {
         byte(self.ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN)
-    }
-
-    pub(crate) fn indoor_flag(&self) -> u8 {
-        byte(self.ram, PLAYER_IS_INDOORS)
-    }
-
-    pub(crate) fn is_outdoors(&self) -> bool {
-        !self.is_indoors()
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {

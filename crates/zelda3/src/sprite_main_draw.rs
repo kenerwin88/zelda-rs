@@ -18419,8 +18419,8 @@ impl ZeldaState {
                 self.sprite_draw_single_large(k);
                 let oam = self.oam_state_view().current_pointer_usize();
                 let t = self
-                    .world_state_view()
-                    .indoor_flag()
+                    .world_location_state()
+                    .indoor_flag
                     .wrapping_add(self.world_state_view().dark_world_region_index());
                 let j = usize::from(self.sprite_slot_view(k).c());
                 let charnum = THROWABLE_SCENERY_CHARS[j + if t >= 2 { 6 } else { 0 }];
