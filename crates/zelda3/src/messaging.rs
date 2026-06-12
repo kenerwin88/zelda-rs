@@ -354,7 +354,7 @@ impl ZeldaState {
             .clear_button_mask_b_y_bits(0x40);
         self.system_signals_view_mut().increment_hud_update_flag();
         self.frame_control_view_mut().set_submodule(0);
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
     }
 
@@ -544,7 +544,7 @@ impl ZeldaState {
                 self.player_state_view_mut().clear_direction_lock_bits(1);
                 self.frame_control_view_mut().set_subsubmodule(0);
                 self.frame_control_view_mut().set_submodule(0);
-                let saved_module = self.frame_control_view().saved_module_for_menu();
+                let saved_module = self.frame_state().saved_module_for_menu;
                 self.frame_control_view_mut().set_main_module(saved_module);
                 self.clear_window_layer_masks();
                 self.IrisSpotlight_ResetTable();
@@ -1147,7 +1147,7 @@ impl ZeldaState {
         }
         let sub_screen_layers = self.ppu_scroll_copy_view().mapbak_ts();
         self.set_sub_screen_layers(sub_screen_layers);
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
         self.player_state_view_mut().set_blink_countdown(144);
@@ -1322,7 +1322,7 @@ impl ZeldaState {
     pub(super) fn BirdTravel_Finish_Doit(&mut self) {
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
         let hdma_enable_mask = self.ppu_scroll_copy_view().mapbak_hdmaen();
@@ -1549,7 +1549,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut().set_draw_width_indicator(0);
         self.world_state_view_mut().set_overworld_map_state(0);
         self.frame_control_view_mut().set_subsubmodule(0);
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(32);
         self.clear_vram_upload_cursor();
@@ -2892,7 +2892,7 @@ impl ZeldaState {
         if self.display_state().screen_brightness != 0x0f {
             return;
         }
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
         self.world_state_view_mut().set_overworld_map_state(0);
@@ -3345,7 +3345,7 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
         self.messaging_state_view_mut().clear_module();
         self.frame_control_view_mut().set_submodule(0);
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
     }
 

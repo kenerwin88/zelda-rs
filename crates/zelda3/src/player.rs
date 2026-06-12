@@ -8637,7 +8637,7 @@ impl ZeldaState {
         const HAMMER_WATER_Y: [i8; 4] = [8, 32, 24, 24];
         if (self.frame_state().submodule
             | self.player_state_view().immobilized_flag()
-            | self.frame_control_view().modal_pause_flag())
+            | self.frame_state().modal_pause_flag)
             != 0
         {
             return;

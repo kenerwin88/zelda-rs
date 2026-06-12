@@ -10137,7 +10137,7 @@ impl ZeldaState {
             i32::from((pos >> 3) & 0x01f8),
             0x0e,
         );
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_submodule(saved_module);
     }
 

@@ -1478,7 +1478,7 @@ impl ZeldaState {
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 self.sprite_slot_view(k).state(),
-                self.frame_control_view().modal_pause_flag(),
+                self.frame_state().modal_pause_flag,
                 self.frame_state().submodule,
                 self.sprite_slot_view(k).deflection_bits(),
                 self.sprite_slot_view(k).pause(),
@@ -4849,9 +4849,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).state() == 9
             && aux4 != 0
             && aux4 < 80
-            && ((aux4 & 15)
-                | self.frame_state().submodule
-                | self.frame_control_view().modal_pause_flag())
+            && ((aux4 & 15) | self.frame_state().submodule | self.frame_state().modal_pause_flag)
                 == 0
         {
             self.sprite_slot_view_mut(k).add_b(1);

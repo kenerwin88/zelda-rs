@@ -56,6 +56,8 @@ mod tests {
         ram[SUBMODULE] = 2;
         ram[SUBSUBMODULE] = 9;
         ram[FRAME_COUNTER] = 0x42;
+        ram[SAVED_MODULE_FOR_MENU] = 5;
+        ram[MODAL_PAUSE_FLAG] = 1;
 
         let mut frame = FrameState::load_from_ram(&ram);
         assert_eq!(frame.main_module, 7);
@@ -63,17 +65,23 @@ mod tests {
         assert_eq!(frame.submodule, 2);
         assert_eq!(frame.subsubmodule, 9);
         assert_eq!(frame.frame_counter, 0x42);
+        assert_eq!(frame.saved_module_for_menu, 5);
+        assert_eq!(frame.modal_pause_flag, 1);
 
         frame.main_module = 14;
         frame.submodule = 3;
         frame.subsubmodule = 1;
         frame.frame_counter = 0x80;
+        frame.saved_module_for_menu = 7;
+        frame.modal_pause_flag = 2;
         frame.write_to_ram(&mut ram);
 
         assert_eq!(ram[MAIN_MODULE], 14);
         assert_eq!(ram[SUBMODULE], 3);
         assert_eq!(ram[SUBSUBMODULE], 1);
         assert_eq!(ram[FRAME_COUNTER], 0x80);
+        assert_eq!(ram[SAVED_MODULE_FOR_MENU], 7);
+        assert_eq!(ram[MODAL_PAUSE_FLAG], 2);
     }
 
     #[test]
@@ -83,6 +91,8 @@ mod tests {
         ram[SUBMODULE] = 2;
         ram[SUBSUBMODULE] = 3;
         ram[FRAME_COUNTER] = 4;
+        ram[SAVED_MODULE_FOR_MENU] = 8;
+        ram[MODAL_PAUSE_FLAG] = 1;
 
         let mut frame = FrameState::default();
         {
@@ -91,16 +101,24 @@ mod tests {
             view.set_subsubmodule(9);
             view.increment_frame_counter();
             view.save_main_module_for_menu();
+            view.clear_saved_module_for_menu();
+            view.save_submodule_for_menu();
+            view.clear_modal_pause_flag();
+            view.increment_modal_pause_flag();
+            view.set_modal_pause_flag(6);
         }
 
         assert_eq!(frame.main_module, 1);
         assert_eq!(frame.submodule, 3);
         assert_eq!(frame.subsubmodule, 9);
         assert_eq!(frame.frame_counter, 5);
+        assert_eq!(frame.saved_module_for_menu, 3);
+        assert_eq!(frame.modal_pause_flag, 6);
         assert_eq!(ram[SUBMODULE], 3);
         assert_eq!(ram[SUBSUBMODULE], 9);
         assert_eq!(ram[FRAME_COUNTER], 5);
-        assert_eq!(ram[SAVED_MODULE_FOR_MENU], 1);
+        assert_eq!(ram[SAVED_MODULE_FOR_MENU], 3);
+        assert_eq!(ram[MODAL_PAUSE_FLAG], 6);
     }
 
     #[test]

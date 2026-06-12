@@ -4577,7 +4577,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).add_subtype2(1);
         if (self.sprite_slot_view(k).subtype2() & 1)
             | self.frame_state().submodule
-            | self.frame_control_view().modal_pause_flag()
+            | self.frame_state().modal_pause_flag
             == 0
         {
             self.sprite_slot_view_mut(k).add_graphics(1);
@@ -20125,7 +20125,7 @@ impl ZeldaState {
                         | self.sprite_slot_view(k).g()
                         | self.frame_state().submodule
                         | self.sprite_slot_view(k).pause()
-                        | self.frame_control_view().modal_pause_flag()
+                        | self.frame_state().modal_pause_flag
                         == 0
                     {
                         let _ = self.sprite_spawn_fireball(k);
@@ -22467,7 +22467,7 @@ impl ZeldaState {
 
         if ((((k as u8) ^ self.frame_state().frame_counter) & 3)
             | self.frame_state().submodule
-            | self.frame_control_view().modal_pause_flag())
+            | self.frame_state().modal_pause_flag)
             != 0
         {
             return;
@@ -24965,7 +24965,7 @@ impl ZeldaState {
         let link_x = self.player_state_view().x();
         let link_y = self.player_state_view().y();
         if self.sprite_slot_view(k).state() == 9
-            && (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0
+            && (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0
             && cur_x.wrapping_sub(link_x).wrapping_add(0x18) < 0x30
             && link_y.wrapping_sub(cur_y).wrapping_add(0x20) < 0x30
             && (self.player_state_view().filtered_joypad_l() & 0x80) != 0
@@ -25493,7 +25493,7 @@ impl ZeldaState {
         segment.set_z_offset(z_offset);
         segment.set_direction(direction);
         if self.sprite_slot_view(k).state() == 9
-            && (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0
+            && (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0
         {
             let value = self.sprite_slot_view(k).subtype2().wrapping_add(1) & 63;
             self.sprite_slot_view_mut(k).set_subtype2(value);

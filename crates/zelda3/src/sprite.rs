@@ -2207,7 +2207,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_a(num);
         }
 
-        if (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0 {
+        if (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0 {
             if self.sprite_slot_view(k).delay_main() != 0 {
                 let value = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
@@ -2764,7 +2764,7 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn garnish11_withering_ganon_bat_flame(&mut self, k: usize) {
-        if (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0 {
+        if (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0 {
             let y = self.garnish_get_y(k).wrapping_sub(1);
             self.garnish_set_y(k, y);
         }
@@ -2851,7 +2851,7 @@ impl ZeldaState {
         const TRINEXX_ICE_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
 
         if self.garnish_slot_view(k).countdown() == 0x50
-            && (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0
+            && (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0
         {
             self.dungeon_update_tile_map_with_common_tile_for_garnish(
                 self.garnish_get_x(k),
@@ -2910,7 +2910,7 @@ impl ZeldaState {
 
         let mut j = self.garnish_slot_view(k).countdown();
         if j == 0x1e {
-            j = self.frame_state().submodule | self.frame_control_view().modal_pause_flag();
+            j = self.frame_state().submodule | self.frame_state().modal_pause_flag;
             if j == 0 {
                 self.dungeon_update_tile_map_with_common_tile_for_garnish(
                     self.garnish_get_x(k),
@@ -3068,8 +3068,7 @@ impl ZeldaState {
         if type_ == 0 {
             return;
         }
-        if (type_ == 5
-            || (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) == 0)
+        if (type_ == 5 || (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0)
             && self.garnish_slot_view(k).countdown() != 0
         {
             let value = self.garnish_slot_view(k).countdown().wrapping_sub(1);
@@ -3273,7 +3272,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).state() != 9 {
             return true;
         }
-        if self.frame_control_view().modal_pause_flag() != 0 || self.frame_state().submodule != 0 {
+        if self.frame_state().modal_pause_flag != 0 || self.frame_state().submodule != 0 {
             return true;
         }
         (self.sprite_slot_view(k).deflection_bits() & 0x80) == 0
@@ -3284,7 +3283,7 @@ impl ZeldaState {
     //   return (modal_pause_flag || submodule_index || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }
     pub(super) fn sprite_return_if_paused(&self, k: usize) -> bool {
-        self.frame_control_view().modal_pause_flag() != 0
+        self.frame_state().modal_pause_flag != 0
             || self.frame_state().submodule != 0
             || ((self.sprite_slot_view(k).deflection_bits() & 0x80) == 0
                 && self.sprite_slot_view(k).pause() != 0)
@@ -3306,7 +3305,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_return_if_phasing_out(&mut self, k: usize) -> bool {
         if self.sprite_slot_view(k).stunned() == 0
-            || (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) != 0
+            || (self.frame_state().submodule | self.frame_state().modal_pause_flag) != 0
         {
             return false;
         }
@@ -3892,7 +3891,7 @@ impl ZeldaState {
         }
         if ((self.frame_state().frame_counter & 3)
             | self.frame_state().submodule
-            | self.frame_control_view().modal_pause_flag())
+            | self.frame_state().modal_pause_flag)
             == 0
         {
             let value = self.sprite_slot_view(k).delay_main().wrapping_add(1);
@@ -4671,7 +4670,7 @@ impl ZeldaState {
             if self.sprite_slot_view(k).oam_flags() != 5 {
                 if ((delay & 7)
                     | self.frame_state().submodule
-                    | self.frame_control_view().modal_pause_flag())
+                    | self.frame_state().modal_pause_flag)
                     == 0
                 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
@@ -5123,7 +5122,7 @@ impl ZeldaState {
 
         if (self.frame_state().frame_counter & 1)
             | self.frame_state().submodule
-            | self.frame_control_view().modal_pause_flag()
+            | self.frame_state().modal_pause_flag
             != 0
         {
             return;
@@ -7284,7 +7283,7 @@ impl ZeldaState {
     pub(super) fn sprite_return_if_lifted(&mut self, k: usize) -> bool {
         if self.frame_state().submodule != 0
             || self.player_state_view().button_b_frames() != 0
-            || self.frame_control_view().modal_pause_flag() != 0
+            || self.frame_state().modal_pause_flag != 0
             || self.sprite_slot_view(k).floor() != self.player_state_view().lower_level_state()
         {
             return false;
@@ -9337,7 +9336,7 @@ mod tests {
 
         assert_eq!(s.dialogue_message_index_view().value(), 0x0140);
         assert_eq!(s.ram[SUBMODULE_INDEX], 2);
-        assert_eq!(s.frame_control_view().saved_module_for_menu(), 7);
+        assert_eq!(s.frame_state().saved_module_for_menu, 7);
         assert_eq!(s.ram[MAIN_MODULE_INDEX], 14);
 
         let mut dark = fresh_state();

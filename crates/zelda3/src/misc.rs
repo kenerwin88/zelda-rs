@@ -435,7 +435,7 @@ impl ZeldaState {
             && std::env::var_os("ZELDA3_SMV_LOADFILE_TIMING_HACKS").is_some()
             && self.frame_state().main_module == 5
             && self.frame_state().submodule == 0
-            && self.frame_control_view().saved_module_for_menu() == 0
+            && self.frame_state().saved_module_for_menu == 0
             && self.dialogue_message_index_view().value() == 0x000a
         {
             if self.replay_loadfile_stall == 0 {
@@ -698,7 +698,7 @@ impl ZeldaState {
             player.clear_item_hold_pose();
             player.clear_sprite_damage_disable_timer();
         }
-        let saved_module = self.frame_control_view().saved_module_for_menu();
+        let saved_module = self.frame_state().saved_module_for_menu;
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
         self.frame_control_view_mut().set_subsubmodule(0);

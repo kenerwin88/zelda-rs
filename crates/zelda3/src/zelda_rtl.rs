@@ -4001,7 +4001,7 @@ impl ZeldaState {
         let frame = *self.frame_state();
         let mut module = frame.main_module;
         if module == 14 {
-            module = self.frame_control_view().saved_module_for_menu();
+            module = self.frame_state().saved_module_for_menu;
         }
 
         if module == 9 {
@@ -8192,7 +8192,7 @@ mod tests {
         assert_eq!(prayer.ram[SUBMODULE_INDEX], 5);
         assert_eq!(prayer.ram[SAVED_MODULE_FOR_MENU], 9);
         assert_eq!(prayer.ram[MAIN_MODULE_INDEX], 14);
-        assert_eq!(prayer.frame_control_view().modal_pause_flag(), 1);
+        assert_eq!(prayer.frame_state().modal_pause_flag, 1);
         assert_eq!(prayer.player_state_view().y_button_action_timer(), 22);
         assert_eq!(prayer.player_state_view().state_bits(), 2);
         assert_eq!(link_test_byte(&prayer, LINK_DIRECTION), 0);

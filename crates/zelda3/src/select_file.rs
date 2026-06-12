@@ -13,7 +13,7 @@ impl ZeldaState {
     pub(super) fn module01_file_select(&mut self) {
         if self.state_recorder.replay_mode
             && std::env::var_os("ZELDA3_SMV_SELECT_FILE_TIMING_HACKS").is_some()
-            && self.frame_control_view().saved_module_for_menu() == 0
+            && self.frame_state().saved_module_for_menu == 0
             && self.dialogue_message_index_view().value() == 0x000a
         {
             let stall = match self.frame_state().submodule {

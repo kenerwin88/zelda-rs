@@ -80,7 +80,7 @@ impl ZeldaState {
     pub(super) fn overlord_spawn_boulder(&mut self) {
         if self.world_location_state().is_indoors()
             || self.garnish_state_view().boulder_trap_count() == 0
-            || (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) != 0
+            || (self.frame_state().submodule | self.frame_state().modal_pause_flag) != 0
         {
             return;
         }
@@ -115,7 +115,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_execute_all(&mut self) {
-        if (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) != 0 {
+        if (self.frame_state().submodule | self.frame_state().modal_pause_flag) != 0 {
             return;
         }
         for i in (0..=7).rev() {

@@ -8,6 +8,8 @@ pub(crate) struct FrameState {
     pub(crate) submodule: u8,
     pub(crate) subsubmodule: u8,
     pub(crate) frame_counter: u8,
+    pub(crate) saved_module_for_menu: u8,
+    pub(crate) modal_pause_flag: u8,
 }
 
 impl FrameState {
@@ -17,6 +19,8 @@ impl FrameState {
             submodule: ram_byte(ram, SUBMODULE),
             subsubmodule: ram_byte(ram, SUBSUBMODULE),
             frame_counter: ram_byte(ram, FRAME_COUNTER),
+            saved_module_for_menu: ram_byte(ram, SAVED_MODULE_FOR_MENU),
+            modal_pause_flag: ram_byte(ram, MODAL_PAUSE_FLAG),
         }
     }
 
@@ -25,6 +29,8 @@ impl FrameState {
         ram[SUBMODULE] = self.submodule;
         ram[SUBSUBMODULE] = self.subsubmodule;
         ram[FRAME_COUNTER] = self.frame_counter;
+        ram[SAVED_MODULE_FOR_MENU] = self.saved_module_for_menu;
+        ram[MODAL_PAUSE_FLAG] = self.modal_pause_flag;
     }
 
     pub(crate) fn main_module_word(&self) -> u16 {
@@ -63,7 +69,7 @@ impl<'a> NativeFrameStateView<'a> {
     }
 
     pub(crate) fn saved_module_for_menu(&self) -> u8 {
-        ram_byte(self.ram, SAVED_MODULE_FOR_MENU)
+        self.frame.saved_module_for_menu
     }
 
     pub(crate) fn raw_sfx_pan_value(&self) -> u8 {
@@ -71,7 +77,7 @@ impl<'a> NativeFrameStateView<'a> {
     }
 
     pub(crate) fn modal_pause_flag(&self) -> u8 {
-        ram_byte(self.ram, MODAL_PAUSE_FLAG)
+        self.frame.modal_pause_flag
     }
 
     pub(crate) fn nmi_thread_active(&self) -> bool {
@@ -161,7 +167,9 @@ impl<'a> NativeFrameStateViewMut<'a> {
     }
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
+        self.frame.saved_module_for_menu = value;
         self.ram[SAVED_MODULE_FOR_MENU] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
@@ -169,23 +177,26 @@ impl<'a> NativeFrameStateViewMut<'a> {
     }
 
     pub(crate) fn save_main_module_for_menu(&mut self) {
-        self.ram[SAVED_MODULE_FOR_MENU] = self.frame.main_module;
+        self.set_saved_module_for_menu(self.frame.main_module);
     }
 
     pub(crate) fn save_submodule_for_menu(&mut self) {
-        self.ram[SAVED_MODULE_FOR_MENU] = self.frame.submodule;
+        self.set_saved_module_for_menu(self.frame.submodule);
     }
 
     pub(crate) fn clear_modal_pause_flag(&mut self) {
-        self.ram[MODAL_PAUSE_FLAG] = 0;
+        self.set_modal_pause_flag(0);
     }
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
+        self.frame.modal_pause_flag = value;
         self.ram[MODAL_PAUSE_FLAG] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        self.ram[MODAL_PAUSE_FLAG] = self.ram[MODAL_PAUSE_FLAG].wrapping_add(1);
-        self.ram[MODAL_PAUSE_FLAG]
+        let value = self.frame.modal_pause_flag.wrapping_add(1);
+        self.set_modal_pause_flag(value);
+        value
     }
 }

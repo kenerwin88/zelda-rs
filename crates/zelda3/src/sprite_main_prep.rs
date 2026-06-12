@@ -5728,7 +5728,7 @@ mod tests {
         assert_eq!(s.ram[TILE_INTERACTION_SHARED_FLAG], 0);
         assert_eq!(s.ram[MESSAGING_MODULE], 0);
         assert_eq!(s.ram[SUBMODULE_INDEX], 2);
-        assert_eq!(s.frame_control_view().saved_module_for_menu(), 3);
+        assert_eq!(s.frame_state().saved_module_for_menu, 3);
         assert_eq!(s.ram[MAIN_MODULE_INDEX], 14);
         assert_eq!(s.sprite_slot_view(k).delay_main(), 0);
     }

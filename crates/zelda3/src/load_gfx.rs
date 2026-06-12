@@ -3407,7 +3407,7 @@ impl ZeldaState {
                     self.system_signals_view_mut().set_music_control(music);
                 }
             }
-            let saved_module = self.frame_control_view().saved_module_for_menu();
+            let saved_module = self.frame_state().saved_module_for_menu;
             self.frame_control_view_mut().set_main_module(saved_module);
             if self.frame_state().main_module == 6 {
                 self.sprite_reset_all();

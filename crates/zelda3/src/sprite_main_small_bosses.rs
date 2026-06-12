@@ -345,7 +345,7 @@ impl ZeldaState {
                 && (self.player_state_view().blink_countdown()
                     | self.player_state_view().sprite_damage_disable_timer()
                     | self.frame_state().submodule
-                    | self.frame_control_view().modal_pause_flag())
+                    | self.frame_state().modal_pause_flag)
                     == 0
             {
                 self.player_state_view_mut().set_given_damage(8);
