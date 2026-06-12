@@ -4283,8 +4283,8 @@ impl ZeldaState {
                     MAP_MODE_PERSPECTIVE_ZOOMS_FAR[223],
                 );
             } else if hdma_chans[0].table.as_deref() == Some(&ATTRACT_INDIRECT_HDMA_SETUP) {
-                let low = self.display_nmi_view().hdma_table_dynamic_entry(0);
-                let high = self.display_nmi_view().hdma_table_dynamic_entry(223);
+                let low = self.spotlight_hdma_view().hdma_table_dynamic_entry(0);
+                let high = self.spotlight_hdma_view().hdma_table_dynamic_entry(223);
                 self.set_mode7_perspective_correction(low, high);
             } else {
                 self.set_mode7_perspective_correction(0, 0);

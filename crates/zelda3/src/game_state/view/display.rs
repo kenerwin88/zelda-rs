@@ -21,10 +21,6 @@ impl<'a> DisplayNmiView<'a> {
         self.bg_vram_load_mode() != 0
     }
 
-    pub(crate) fn core_updates_disabled(&self) -> bool {
-        byte(self.ram, NMI_DISABLE_CORE_UPDATES) != 0
-    }
-
     pub(crate) fn core_update_disable_flag(&self) -> u8 {
         byte(self.ram, NMI_DISABLE_CORE_UPDATES)
     }
@@ -69,24 +65,8 @@ impl<'a> DisplayNmiView<'a> {
         self.hdma_enable_mask() & (1 << channel) != 0
     }
 
-    pub(crate) fn irq_flag(&self) -> u8 {
-        byte(self.ram, IRQ_FLAG)
-    }
-
-    pub(crate) fn irq_flag_has_vcounter_marker(&self) -> bool {
-        self.irq_flag() & 0x80 != 0
-    }
-
     pub(crate) fn mosaic_level(&self) -> u8 {
         byte(self.ram, MOSAIC_LEVEL)
-    }
-
-    pub(crate) fn nmi_copy_packets_flag(&self) -> u8 {
-        byte(self.ram, NMI_COPY_PACKETS_FLAG)
-    }
-
-    pub(crate) fn has_nmi_copy_packets(&self) -> bool {
-        self.nmi_copy_packets_flag() != 0
     }
 
     pub(crate) fn chr_halfslot_state(&self) -> u8 {
@@ -97,28 +77,8 @@ impl<'a> DisplayNmiView<'a> {
         byte(self.ram, MOSAIC_TARGET_LEVEL)
     }
 
-    pub(crate) fn virq_trigger(&self) -> u8 {
-        byte(self.ram, VIRQ_TRIGGER)
-    }
-
-    pub(crate) fn nmi_boolean(&self) -> u8 {
-        byte(self.ram, NMI_BOOLEAN)
-    }
-
-    pub(crate) fn is_nmi_thread_active(&self) -> bool {
-        byte(self.ram, NMI_THREAD_ACTIVE) != 0
-    }
-
     pub(crate) fn nmi_flag_update_polyhedral(&self) -> u8 {
         byte(self.ram, NMI_FLAG_UPDATE_POLYHEDRAL)
-    }
-
-    pub(crate) fn thread_other_stack(&self) -> u16 {
-        word(self.ram, POLY_THREAD_STACK)
-    }
-
-    pub(crate) fn update_tilemap_dst(&self) -> u8 {
-        byte(self.ram, NMI_UPDATE_TILEMAP_DST)
     }
 
     pub(crate) fn update_tilemap_src_data(&self) -> &[u8] {
@@ -127,24 +87,9 @@ impl<'a> DisplayNmiView<'a> {
         &self.ram[start.min(self.ram.len())..]
     }
 
-    pub(crate) fn animated_tile_data_src(&self) -> u16 {
-        word(self.ram, ANIMATED_TILE_DATA_SRC)
-    }
-
-    pub(crate) fn animated_tile_vram_addr(&self) -> u16 {
-        word(self.ram, ANIMATED_TILE_VRAM_ADDR)
-    }
-
     pub(crate) fn animated_tile_data(&self) -> &[u8] {
         let src = word(self.ram, ANIMATED_TILE_DATA_SRC) as usize;
         &self.ram[src.min(self.ram.len())..]
-    }
-
-    pub(crate) fn message_dma_dst_addr(&self) -> u16 {
-        word(
-            self.ram,
-            crate::game_state::constants::messaging::MESSAGE_DMA_DST_ADDR,
-        )
     }
 
     pub(crate) fn hud_tile_indices_buffer(&self) -> &[u8] {
@@ -222,34 +167,6 @@ impl<'a> DisplayNmiView<'a> {
         byte(self.ram, FLAG_TRAVEL_BIRD)
     }
 
-    pub(crate) fn w12sel_copy(&self) -> u8 {
-        byte(self.ram, W12SEL_COPY)
-    }
-
-    pub(crate) fn w34sel_copy(&self) -> u8 {
-        byte(self.ram, W34SEL_COPY)
-    }
-
-    pub(crate) fn wobjsel_copy(&self) -> u8 {
-        byte(self.ram, WOBJSEL_COPY)
-    }
-
-    pub(crate) fn tmw_copy(&self) -> u8 {
-        byte(self.ram, TMW_COPY)
-    }
-
-    pub(crate) fn tsw_copy(&self) -> u8 {
-        byte(self.ram, TSW_COPY)
-    }
-
-    pub(crate) fn overworld_fixed_color_plusminus(&self) -> u8 {
-        byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
-    }
-
-    pub(crate) fn hdma_table_dynamic_entry(&self, index: usize) -> u16 {
-        word(self.ram, HDMA_TABLE_DYNAMIC + index * 2)
-    }
-
     pub(crate) fn word_at(&self, addr: usize) -> u16 {
         word(self.ram, addr)
     }
@@ -309,30 +226,12 @@ impl<'a> DisplayNmiViewMut<'a> {
         self.ram[NMI_DISABLE_CORE_UPDATES]
     }
 
-    pub(crate) fn set_subroutine_index(&mut self, value: u8) {
-        self.ram[NMI_SUBROUTINE_INDEX] = value;
-    }
-
-    pub(crate) fn clear_subroutine_index(&mut self) {
-        self.set_subroutine_index(0);
-    }
-
-    pub(crate) fn take_subroutine_index(&mut self) -> u8 {
-        let subroutine_index = self.ram[NMI_SUBROUTINE_INDEX];
-        self.ram[NMI_SUBROUTINE_INDEX] = 0;
-        subroutine_index
-    }
-
     pub(crate) fn set_load_target_addr(&mut self, value: u8) {
         self.ram[NMI_LOAD_TARGET_ADDR] = value;
     }
 
     pub(crate) fn set_load_target_addr_word(&mut self, value: u16) {
         write_le_u16(self.ram, NMI_LOAD_TARGET_ADDR, value);
-    }
-
-    pub(crate) fn set_animated_tile_vram_addr(&mut self, value: u16) {
-        write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
     }
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
@@ -415,49 +314,16 @@ impl<'a> DisplayNmiViewMut<'a> {
         write_le_u16(self.ram, MOSAIC_TARGET_LEVEL, 0);
     }
 
-    pub(crate) fn set_nmi_copy_packets_flag(&mut self, value: u8) {
-        self.ram[NMI_COPY_PACKETS_FLAG] = value;
-    }
-
     pub(crate) fn request_nmi_copy_packets(&mut self) {
         self.ram[NMI_COPY_PACKETS_FLAG] = 1;
-    }
-
-    pub(crate) fn clear_nmi_copy_packets_flag(&mut self) {
-        self.ram[NMI_COPY_PACKETS_FLAG] = 0;
     }
 
     pub(crate) fn set_chr_halfslot_state(&mut self, value: u8) {
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = value;
     }
 
-    pub(crate) fn clear_chr_halfslot_state(&mut self) {
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
-    }
-
-    pub(crate) fn set_nmi_boolean(&mut self, value: u8) {
-        self.ram[NMI_BOOLEAN] = value;
-    }
-
-    pub(crate) fn set_nmi_flag_update_polyhedral(&mut self, value: u8) {
-        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = value;
-    }
-
     pub(crate) fn clear_nmi_flag_update_polyhedral(&mut self) {
         self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
-    }
-
-    pub(crate) fn set_thread_other_stack(&mut self, value: u16) {
-        write_le_u16(self.ram, POLY_THREAD_STACK, value);
-    }
-
-    pub(crate) fn clear_update_tilemap_dst(&mut self) {
-        self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
-    }
-
-    pub(crate) fn increment_chr_halfslot_state(&mut self) -> u8 {
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD].wrapping_add(1);
-        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD]
     }
 
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
@@ -470,88 +336,12 @@ impl<'a> DisplayNmiViewMut<'a> {
         self.ram[MOSAIC_LEVEL]
     }
 
-    pub(crate) fn set_overworld_fixed_color_plusminus(&mut self, value: u8) {
-        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
-    }
-
-    pub(crate) fn set_virq_trigger(&mut self, value: u8) {
-        self.ram[VIRQ_TRIGGER] = value;
-    }
-
-    pub(crate) fn set_dma_head_pointer(&mut self, value: u8) {
-        self.ram[DMA_HEAD_POINTER] = value;
-    }
-
-    pub(crate) fn set_dma_body_pointer(&mut self, value: u8) {
-        self.ram[DMA_BODY_POINTER] = value;
-    }
-
-    pub(crate) fn set_nmi_thread_active(&mut self, value: u8) {
-        self.ram[NMI_THREAD_ACTIVE] = value;
-    }
-
-    pub(crate) fn set_irq_flag(&mut self, value: u8) {
-        self.ram[IRQ_FLAG] = value;
-    }
-
-    pub(crate) fn clear_irq_flag(&mut self) {
-        self.set_irq_flag(0);
-    }
-
-    pub(crate) fn set_w12sel_copy(&mut self, value: u8) {
-        self.ram[W12SEL_COPY] = value;
-    }
-
-    pub(crate) fn set_w34sel_copy(&mut self, value: u8) {
-        self.ram[W34SEL_COPY] = value;
-    }
-
-    pub(crate) fn set_wobjsel_copy(&mut self, value: u8) {
-        self.ram[WOBJSEL_COPY] = value;
-    }
-
-    pub(crate) fn set_tmw_copy(&mut self, value: u8) {
-        self.ram[TMW_COPY] = value;
-    }
-
-    pub(crate) fn set_tsw_copy(&mut self, value: u8) {
-        self.ram[TSW_COPY] = value;
-    }
-
-    pub(crate) fn set_window_layer_masks(
-        &mut self,
-        w12sel: u8,
-        w34sel: u8,
-        wobjsel: u8,
-        tmw: u8,
-        tsw: u8,
-    ) {
-        self.set_w12sel_copy(w12sel);
-        self.set_w34sel_copy(w34sel);
-        self.set_wobjsel_copy(wobjsel);
-        self.set_tmw_copy(tmw);
-        self.set_tsw_copy(tsw);
-    }
-
-    pub(crate) fn clear_window_layer_masks(&mut self) {
-        self.set_window_layer_masks(0, 0, 0, 0, 0);
-    }
-
     pub(crate) fn clear_window_main_sub_masks(&mut self) {
-        self.set_tmw_copy(0);
-        self.set_tsw_copy(0);
+        write_le_u16(self.ram, TMW_COPY, 0);
     }
 
     pub(crate) fn tilemap_upload_buffer_mut(&mut self) -> &mut [u8] {
         &mut self.ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
-    }
-
-    pub(crate) fn set_message_dma_dst_addr(&mut self, value: u16) {
-        write_le_u16(
-            self.ram,
-            crate::game_state::constants::messaging::MESSAGE_DMA_DST_ADDR,
-            value,
-        );
     }
 
     pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
@@ -1288,10 +1078,6 @@ impl<'a> VramLoadStateViewMut<'a> {
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
         write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
     }
-
-    pub(crate) fn set_animated_tile_data_src(&mut self, value: u16) {
-        write_le_u16(self.ram, ANIMATED_TILE_DATA_SRC, value);
-    }
 }
 
 pub(crate) struct OverworldTileUpdateView<'a> {
@@ -1456,6 +1242,9 @@ impl<'a> SpotlightHdmaView<'a> {
     }
     pub(crate) fn window_y_buffer_byte(&self) -> u8 {
         byte(self.ram, SPOTLIGHT_WINDOW_Y_BUFFER)
+    }
+    pub(crate) fn hdma_table_dynamic_entry(&self, index: usize) -> u16 {
+        word(self.ram, HDMA_TABLE_DYNAMIC + index * 2)
     }
 }
 pub(crate) struct SpotlightHdmaViewMut<'a> {
