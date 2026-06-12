@@ -1229,7 +1229,7 @@ impl ZeldaState {
         let len = data.len().min(
             self.ram
                 .len()
-                .saturating_sub(self.vram_upload_data_view().data_base()),
+                .saturating_sub(self.display_state().vram_upload_buffer_base()),
         );
         self.vram_upload_data_view_mut().copy_bytes(0, &data[..len]);
         self.set_bg_vram_load_mode(1);

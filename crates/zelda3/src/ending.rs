@@ -2612,14 +2612,14 @@ impl ZeldaState {
             r16 = (r16 & 0x6800) ^ 0x800;
         }
         self.ending_scratch_view_mut().set_primary_word(r16);
-        let upload_base = self.vram_upload_data_view().data_base();
+        let upload_base = self.display_state().vram_upload_buffer_base();
         self.set_vram_upload_cursor((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn credits_add_ending_sequence_text(&mut self) {
-        let mut dst = self.vram_upload_data_view().data_base();
+        let mut dst = self.display_state().vram_upload_buffer_base();
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst, 0x0060);
         self.vram_upload_data_view_mut()
@@ -2652,7 +2652,7 @@ impl ZeldaState {
                 curo += 1;
             }
         }
-        let upload_base = self.vram_upload_data_view().data_base();
+        let upload_base = self.display_state().vram_upload_buffer_base();
         self.set_vram_upload_cursor((dst - upload_base) as u16);
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
         self.set_bg_vram_load_mode(1);

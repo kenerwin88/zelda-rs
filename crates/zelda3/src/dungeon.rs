@@ -5143,7 +5143,7 @@ impl ZeldaState {
 
         let base_dsto =
             (self.dungeon_state_view().replacement_tile_source_pos()).wrapping_add(xy(0, 2) as u16);
-        let mut upload = self.vram_upload_data_view().data_base();
+        let mut upload = self.display_state().vram_upload_buffer_base();
         for i in 0..4u16 {
             let col = base_dsto.wrapping_add(i);
             let vram_addr = self.Dungeon_MapVramAddr(col);

@@ -217,8 +217,16 @@ impl DisplayState {
         usize::from(self.vram_upload_cursor)
     }
 
+    pub(crate) fn vram_upload_buffer_base(&self) -> usize {
+        VRAM_UPLOAD_DATA
+    }
+
+    pub(crate) fn vram_upload_buffer_address(&self, offset: usize) -> usize {
+        self.vram_upload_buffer_base() + offset
+    }
+
     pub(crate) fn current_vram_upload_data_address(&self) -> usize {
-        VRAM_UPLOAD_DATA + self.vram_upload_cursor_usize()
+        self.vram_upload_buffer_address(self.vram_upload_cursor_usize())
     }
 
     pub(crate) fn incremental_vram_upload_counter_usize(&self) -> usize {

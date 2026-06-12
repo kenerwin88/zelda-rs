@@ -406,14 +406,6 @@ impl<'a> VramUploadDataView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn data_base(&self) -> usize {
-        VRAM_UPLOAD_DATA
-    }
-
-    pub(crate) fn data_address(&self, offset: usize) -> usize {
-        VRAM_UPLOAD_DATA + offset
-    }
-
     pub(crate) fn word(&self, offset: usize) -> u16 {
         word(self.ram, VRAM_UPLOAD_DATA + offset)
     }

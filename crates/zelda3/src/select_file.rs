@@ -216,7 +216,7 @@ impl ZeldaState {
         ];
 
         let mut dst = self.select_file_func1();
-        let upload_base = self.vram_upload_data_view().data_base();
+        let upload_base = self.display_state().vram_upload_buffer_base();
         self.vram_upload_data_view_mut()
             .copy_bytes(dst - upload_base, &SELECT_FILE_GFX0);
         dst += SELECT_FILE_GFX0.len();
@@ -241,7 +241,7 @@ impl ZeldaState {
 
     pub(super) fn select_file_func1(&mut self) -> usize {
         const BACKGROUND_CHECKERBOARD_TILES: [u16; 4] = [0x3581, 0x3582, 0x3591, 0x3592];
-        let mut dst = self.vram_upload_data_view().data_base();
+        let mut dst = self.display_state().vram_upload_buffer_base();
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst, 0x0010);
         dst += 2;
@@ -492,7 +492,9 @@ impl ZeldaState {
         const HEALTH_VRAM_OFFS: [usize; 3] = [0x16, 0x6a, 0xbe];
         let sram_base = k * 0x500;
 
-        let mut dst = self.vram_upload_data_view().data_address(NAME_VRAM_OFFS[k]);
+        let mut dst = self
+            .display_state()
+            .vram_upload_buffer_address(NAME_VRAM_OFFS[k]);
         for i in 0..6 {
             let t =
                 read_le_u16(&self.sram, sram_base + KSRM_OFFS_NAME + i * 2).wrapping_add(0x1800);
@@ -504,8 +506,8 @@ impl ZeldaState {
 
         let mut health = self.sram[sram_base + KSRM_OFFS_HEALTH] >> 3;
         let mut dst = self
-            .vram_upload_data_view()
-            .data_address(HEALTH_VRAM_OFFS[k]);
+            .display_state()
+            .vram_upload_buffer_address(HEALTH_VRAM_OFFS[k]);
         let dst_org = dst;
         let mut row = 10u8;
         loop {
@@ -611,7 +613,7 @@ impl ZeldaState {
     pub(super) fn file_picker_delete_header_stripe(&mut self) {
         const DST: [usize; 2] = [4, 0x1e];
         for j in (0..2).rev() {
-            let dst = self.vram_upload_data_view().data_address(DST[j]);
+            let dst = self.display_state().vram_upload_buffer_address(DST[j]);
             for i in 0..11 {
                 self.vram_upload_data_view_mut()
                     .write_le_u16_at(dst + i * 2, 0x00a9);
@@ -651,7 +653,7 @@ impl ZeldaState {
 
         for k in 0..3 {
             if self.select_file_scratch_view().save_slot_flag(k) & 1 != 0 {
-                let mut dst = self.vram_upload_data_view().data_address(DST[k]);
+                let mut dst = self.display_state().vram_upload_buffer_address(DST[k]);
                 for i in 0..6 {
                     let t = read_le_u16(&self.sram, k * 0x500 + KSRM_OFFS_NAME + i * 2)
                         .wrapping_add(0x1800);
@@ -706,9 +708,9 @@ impl ZeldaState {
             self.vram_upload_data_view_mut()
                 .copy_bytes(52, &COPY_TARGET_HEADER_STRIPE);
             if self.select_file_scratch_view().cursor() != 2 {
-                let dst = self
-                    .vram_upload_data_view()
-                    .data_address(self.select_file_scratch_view().cursor_usize() * 12);
+                let dst = self.display_state().vram_upload_buffer_address(
+                    self.select_file_scratch_view().cursor_usize() * 12,
+                );
                 self.vram_upload_data_view_mut()
                     .write_le_u16_at(dst + 52, 0x2762);
                 self.vram_upload_data_view_mut()
@@ -762,7 +764,7 @@ impl ZeldaState {
             if k * 2 == self.select_file_scratch_view().copy_source_slot_x2() as usize {
                 continue;
             }
-            let mut dst = self.vram_upload_data_view().data_address(DST[j]);
+            let mut dst = self.display_state().vram_upload_buffer_address(DST[j]);
             j += 1;
             let t = COPY_TARGET_SLOT_BLANK_TILES[k];
             self.vram_upload_data_view_mut().write_le_u16_at(dst, t);
@@ -984,9 +986,9 @@ impl ZeldaState {
                 .copy_bytes(0, &KILL_FILE_CONFIRM_STRIPE);
             self.increment_submodule();
             if self.select_file_scratch_view().cursor() != 2 {
-                let dst = self
-                    .vram_upload_data_view()
-                    .data_address(self.select_file_scratch_view().cursor_usize() * 12);
+                let dst = self.display_state().vram_upload_buffer_address(
+                    self.select_file_scratch_view().cursor_usize() * 12,
+                );
                 self.vram_upload_data_view_mut()
                     .write_le_u16_at(dst, 0x6762);
                 self.vram_upload_data_view_mut()
