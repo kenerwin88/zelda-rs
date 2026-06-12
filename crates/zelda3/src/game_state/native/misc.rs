@@ -4,6 +4,82 @@ use crate::types::{read_le_u16, write_le_u16};
 
 const MEMORIZED_TILE_ENTRY_SLOTS: usize = 0x80;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ScratchCounterState {
+    value: u8,
+}
+
+impl ScratchCounterState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            value: ram_byte(ram, TEMP_COUNTER),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TEMP_COUNTER] = self.value;
+    }
+
+    pub(crate) fn value(&self) -> u8 {
+        self.value
+    }
+
+    pub(crate) fn as_usize(&self) -> usize {
+        usize::from(self.value())
+    }
+
+    pub(crate) fn is_negative(&self) -> bool {
+        (self.value() as i8).is_negative()
+    }
+
+    pub(crate) fn set(&mut self, value: u8) {
+        self.value = value;
+    }
+
+    pub(crate) fn decrement(&mut self) -> u8 {
+        self.value = self.value.wrapping_sub(1);
+        self.value
+    }
+}
+
+pub(crate) struct NativeScratchCounterBridgeMut<'a> {
+    scratch_counter: &'a mut ScratchCounterState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeScratchCounterBridgeMut<'a> {
+    pub(crate) fn new(scratch_counter: &'a mut ScratchCounterState, ram: &'a mut [u8]) -> Self {
+        *scratch_counter = ScratchCounterState::load_from_ram(ram);
+        Self {
+            scratch_counter,
+            ram,
+        }
+    }
+
+    fn sync(&mut self) {
+        self.scratch_counter.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.scratch_counter,
+            ScratchCounterState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set(&mut self, value: u8) {
+        self.scratch_counter.set(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement(&mut self) -> u8 {
+        let value = self.scratch_counter.decrement();
+        self.sync();
+        value
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MemorizedTileState {
     count: u16,

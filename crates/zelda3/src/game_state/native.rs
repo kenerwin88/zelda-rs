@@ -58,8 +58,8 @@ pub(crate) use misc::{
     IntroSwordState, MemorizedTileState, MinigameState, NativeArcheryGameBridgeMut,
     NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeIntroSwordBridgeMut, NativeMemorizedTileBridgeMut,
-    NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut,
-    SaveLoadTransferState, SpriteBattleState,
+    NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeScratchCounterBridgeMut,
+    NativeSpriteBattleBridgeMut, SaveLoadTransferState, ScratchCounterState, SpriteBattleState,
 };
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
 pub(crate) use player::{
@@ -122,6 +122,7 @@ pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
+    pub(crate) scratch_counter: ScratchCounterState,
     pub(crate) minigame: MinigameState,
     pub(crate) intro_sword: IntroSwordState,
     pub(crate) archery_game: ArcheryGameState,
@@ -147,6 +148,7 @@ impl GameState {
             frame: FrameState::load_from_ram(ram),
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
+            scratch_counter: ScratchCounterState::load_from_ram(ram),
             minigame: MinigameState::load_from_ram(ram),
             intro_sword: IntroSwordState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
@@ -171,6 +173,7 @@ impl GameState {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
+        self.scratch_counter.write_to_ram(ram);
         self.minigame.write_to_ram(ram);
         self.intro_sword.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
@@ -425,6 +428,38 @@ mod tests {
         assert_eq!(features.bits(), 0x1234_5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS), 0x5678);
         assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS + 2), 0x1234);
+    }
+
+    #[test]
+    fn scratch_counter_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TEMP_COUNTER] = 0x80;
+
+        let mut counter = ScratchCounterState::load_from_ram(&ram);
+        assert_eq!(counter.value(), 0x80);
+        assert_eq!(counter.as_usize(), 0x80);
+        assert!(counter.is_negative());
+        counter.set(2);
+        assert_eq!(counter.decrement(), 1);
+        counter.write_to_ram(&mut ram);
+
+        assert_eq!(ram[TEMP_COUNTER], 1);
+    }
+
+    #[test]
+    fn native_scratch_counter_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TEMP_COUNTER] = 0;
+
+        let mut counter = ScratchCounterState::default();
+        {
+            let mut bridge = NativeScratchCounterBridgeMut::new(&mut counter, &mut ram);
+            assert_eq!(bridge.decrement(), 0xff);
+            bridge.set(7);
+        }
+
+        assert_eq!(counter.value(), 7);
+        assert_eq!(ram[TEMP_COUNTER], 7);
     }
 
     #[test]

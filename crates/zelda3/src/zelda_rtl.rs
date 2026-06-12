@@ -69,8 +69,8 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut,
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -85,18 +85,18 @@ use crate::game_state::{
     PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
     PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellState,
     RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
-    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
-    SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TempCounterView, TempCounterViewMut,
-    TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
-    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneState, WorldLocationState, WorldStateView,
+    SaveProgressViewMut, ScratchCounterState, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireState,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
+    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
+    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3182,12 +3182,12 @@ impl ZeldaState {
         NativeDungeonSecretBridgeMut::new(&mut self.game_state.dungeon_secret, &mut self.ram)
     }
 
-    pub(crate) fn temp_counter_view(&self) -> TempCounterView<'_> {
-        TempCounterView::new(&self.ram)
+    pub(crate) fn temp_counter_view(&self) -> &ScratchCounterState {
+        &self.game_state.scratch_counter
     }
 
-    pub(crate) fn temp_counter_view_mut(&mut self) -> TempCounterViewMut<'_> {
-        TempCounterViewMut::new(&mut self.ram)
+    pub(crate) fn temp_counter_view_mut(&mut self) -> NativeScratchCounterBridgeMut<'_> {
+        NativeScratchCounterBridgeMut::new(&mut self.game_state.scratch_counter, &mut self.ram)
     }
 
     pub(crate) fn overworld_event_info_view(&self) -> &OverworldEventInfoState {
