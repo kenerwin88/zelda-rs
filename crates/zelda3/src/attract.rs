@@ -173,7 +173,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_color_window_selection(0x80);
         self.palette_filter_view_mut().set_color_math_control(0x21);
-        self.display_nmi_view_mut().set_bg_mode(7);
+        self.set_bg_mode(7);
         self.world_map_load_light_world_map();
         self.ppu_scroll_copy_view_mut().set_mode7_center_y(0x00ed);
         self.ppu_scroll_copy_view_mut().set_mode7_center_x(0x0100);
@@ -313,7 +313,7 @@ impl ZeldaState {
     pub(super) fn attract_setup_conclusion_hdma(&mut self) {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
         self.set_hdma_enable_mask(0x80);
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.clear_core_update_disable_flag();
     }
 
@@ -440,7 +440,7 @@ impl ZeldaState {
             }
         } else {
             self.enable_force_blank();
-            self.display_nmi_view_mut().set_bg_mode(9);
+            self.set_bg_mode(9);
             self.erase_tile_maps_normal();
             self.attract_state_view_mut().increment_sequence();
             self.attract_state_view_mut().subtract_state(2);
@@ -1244,7 +1244,7 @@ impl ZeldaState {
         ];
         const BACKGROUND_CORNER_TILES: [u16; 4] = [0x09a1, 0x09a2, 0x09a3, 0x09a4];
 
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.display_nmi_view_mut().set_main_screen_layers(0x17);
         self.display_nmi_view_mut().set_sub_screen_layers(0);
         self.zelda_ppu_write(0x2107, 0x10);

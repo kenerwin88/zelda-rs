@@ -2433,7 +2433,7 @@ impl ZeldaState {
                 self.set_mosaic_level(0xf0);
             }
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2457,7 +2457,7 @@ impl ZeldaState {
             self.frame_control_view_mut().increment_subsubmodule();
             self.set_mosaic_level(0xf0);
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2484,7 +2484,7 @@ impl ZeldaState {
                 self.clear_mosaic_level();
             }
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2797,14 +2797,14 @@ impl ZeldaState {
         }
         self.set_mosaic_level(level);
         self.set_mosaic_copy((level >> 1) | 3);
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
     }
 
     pub(super) fn Player_SetCustomMosaicLevel(&mut self, level: u8) {
         self.clear_mosaic_direction();
         self.set_mosaic_level(level);
         self.set_mosaic_copy((level >> 1) | 3);
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
     }
 
     pub(super) fn Module07_16_UpdatePegs_Step1(&mut self) {

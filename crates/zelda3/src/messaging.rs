@@ -1401,7 +1401,7 @@ impl ZeldaState {
         self.system_signals_view_mut().set_sound_effect_2(16);
         self.system_signals_view_mut().set_ambient_sound_effect(5);
         self.system_signals_view_mut().set_music_control(0xf2);
-        self.display_nmi_view_mut().set_bg_mode(7);
+        self.set_bg_mode(7);
     }
 
     pub(super) fn WorldMap_LoadLightWorldMap(&mut self) {
@@ -1552,7 +1552,7 @@ impl ZeldaState {
     pub(super) fn Attract_SetUpConclusionHDMA(&mut self) {
         self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
         self.set_hdma_enable_mask(0x80);
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.clear_core_update_disable_flag();
     }
 

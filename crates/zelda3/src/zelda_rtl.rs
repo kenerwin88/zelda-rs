@@ -346,7 +346,6 @@ const LINK_DIRECTION: usize = 0x67;
 const INDEX_OF_INTERACTING_TILE: usize = 0x76;
 const ALLOW_SCROLL_Z: usize = 0x78;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
-const BGMODE_COPY: usize = 0x94;
 const W12SEL_COPY: usize = 0x96;
 const W34SEL_COPY: usize = 0x97;
 const WOBJSEL_COPY: usize = 0x98;
@@ -2001,6 +2000,11 @@ impl ZeldaState {
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_bg_vram_load_mode(value);
+    }
+
+    pub(crate) fn set_bg_mode(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_bg_mode(value);
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
@@ -5999,7 +6003,7 @@ mod tests {
 
         state.intro_initialize_background_settings();
 
-        assert_eq!(state.ram[BGMODE_COPY], 9);
+        assert_eq!(state.display_state().bg_mode, 9);
         assert_eq!(state.display_state().mosaic_copy, 0);
         assert_eq!(state.ppu.bg_layer[0].tilemap_adr, 0x1000);
         assert!(state.ppu.bg_layer[0].tilemap_wider);
@@ -8393,7 +8397,7 @@ mod tests {
         assert_eq!(state.display_state().mosaic_level, 0xc0);
         assert_eq!(state.display_state().mosaic_direction, 1);
         assert_eq!(state.display_state().mosaic_copy, 0x63);
-        assert_eq!(state.ram[BGMODE_COPY], 9);
+        assert_eq!(state.display_state().bg_mode, 9);
 
         state.set_mosaic_level(0x10);
         state.LinkZap_HandleMosaic();
@@ -8423,7 +8427,7 @@ mod tests {
         assert_eq!(state.player_state_view().auxiliary_state(), 0);
         assert_eq!(state.display_state().mosaic_level, 0);
         assert_eq!(state.display_state().mosaic_copy, 3);
-        assert_eq!(state.ram[BGMODE_COPY], 9);
+        assert_eq!(state.display_state().bg_mode, 9);
     }
 
     #[test]
@@ -8793,7 +8797,7 @@ mod tests {
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 1);
         assert_eq!(state.display_state().screen_brightness, 15);
         assert_eq!(state.ram[TM_COPY], 16);
-        assert_eq!(state.ram[BGMODE_COPY], 9);
+        assert_eq!(state.display_state().bg_mode, 9);
         assert_eq!(state.palette_filter_view().color_window_selection(), 0x20);
         assert_eq!(state.palette_filter_view().color_math_control(), 0x20);
         assert_eq!(state.palette_filter_view().fixed_color_red(), 0x20);

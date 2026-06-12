@@ -464,7 +464,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_handler_state(23);
             self.LoadGearPalettes_bunny();
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.dungeon_state_view_mut().clear_lights_out_request();
         self.dungeon_state_view_mut().set_header_collision(0);
         self.player_state_view_mut().clear_lower_level_states();
@@ -2204,7 +2204,7 @@ impl ZeldaState {
         if self.palette_filter_view().countdown() & 1 != 0 {
             self.decrement_mosaic_level_by(0x10);
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(7);
     }
 
@@ -2796,13 +2796,13 @@ impl ZeldaState {
         if self.palette_filter_view().countdown() & 1 != 0 {
             self.increment_mosaic_level_by(0x10);
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(7);
     }
 
     pub(super) fn Overworld_ResetMosaic_alwaysIncrease(&mut self) {
         self.increment_mosaic_level_by(0x10);
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(7);
     }
 
@@ -5379,7 +5379,7 @@ impl ZeldaState {
         if self.palette_filter_view().countdown() & 1 != 0 {
             self.increment_mosaic_level_by(0x10);
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(7);
     }
 

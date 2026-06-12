@@ -11210,7 +11210,7 @@ impl ZeldaState {
             self.hud_state_view_mut().set_super_bomb_indicator_timer(0);
             self.hud_remove_super_bomb_indicator();
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.follower_initialize();
         self.sprite_reset_all();
         self.dungeon_reset_sprites();
@@ -11631,7 +11631,7 @@ impl ZeldaState {
         {
             self.decrement_mosaic_level_by(0x10);
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
         self.ApplyPaletteFilter_bounce();
     }

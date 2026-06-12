@@ -559,7 +559,7 @@ impl ZeldaState {
         if self.world_location_state().overworld_screen_index() >= 128 {
             self.Palette_SetOwBgColor();
         }
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.frame_control_view_mut().increment_subsubmodule();
     }
 
@@ -630,7 +630,7 @@ impl ZeldaState {
         self.initialize_tilesets();
         self.palette_buffer_view_mut().set_sp6r_indoors(10);
         self.Dungeon_LoadPalettes();
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.ending_scratch_view_mut().clear_primary_word();
         self.set_screen_brightness(0);
         self.frame_control_view_mut().increment_submodule();
@@ -795,7 +795,7 @@ impl ZeldaState {
                 {
                     self.decrement_mosaic_level_by(0x10);
                 }
-                self.display_nmi_view_mut().set_bg_mode(9);
+                self.set_bg_mode(9);
                 self.set_mosaic_copy_from_level_or(7);
                 self.apply_palette_filter_bounce();
             }
@@ -3027,7 +3027,7 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_initialize_background_settings(&mut self) {
-        self.display_nmi_view_mut().set_bg_mode(9);
+        self.set_bg_mode(9);
         self.set_mosaic_copy(0);
         self.zelda_ppu_write(0x2107, 0x13);
         self.zelda_ppu_write(0x2108, 0x03);
