@@ -537,21 +537,3 @@ impl<'a> SpotlightHdmaViewMut<'a> {
         }
     }
 }
-
-pub(crate) struct OverworldPaletteBackupViewMut<'a> {
-    ram: &'a mut [u8],
-}
-impl<'a> OverworldPaletteBackupViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-    pub(crate) fn set_main_indoors_backup(&mut self, v: u8) {
-        self.ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = v;
-    }
-    pub(crate) fn set_aux3_bp7_backup(&mut self, v: u8) {
-        self.ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = v;
-    }
-    pub(crate) fn set_main_indoors_copy_backup(&mut self, v: u8) {
-        self.ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = v;
-    }
-}

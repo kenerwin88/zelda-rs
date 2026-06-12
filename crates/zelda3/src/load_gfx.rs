@@ -785,7 +785,7 @@ impl ZeldaState {
         self.overworld_palette_backup_view_mut()
             .set_main_indoors_backup(main_indoors);
         self.overworld_palette_backup_view_mut()
-            .set_aux3_bp7_backup(aux3_lo);
+            .set_aux3_bg_palette_7_backup(aux3_lo);
         self.overworld_palette_backup_view_mut()
             .set_main_indoors_copy_backup(main_indoors_copy);
         self.palette_filter_view_mut()

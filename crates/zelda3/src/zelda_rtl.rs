@@ -63,15 +63,15 @@ use crate::game_state::{
     NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteFilterBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoState, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
     OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
     OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterState,
     PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
@@ -4128,8 +4128,11 @@ impl ZeldaState {
 
     pub(crate) fn overworld_palette_backup_view_mut(
         &mut self,
-    ) -> OverworldPaletteBackupViewMut<'_> {
-        OverworldPaletteBackupViewMut::new(&mut self.ram)
+    ) -> NativeOverworldPaletteBackupBridgeMut<'_> {
+        NativeOverworldPaletteBackupBridgeMut::new(
+            &mut self.game_state.display.overworld_palette_backup,
+            &mut self.ram,
+        )
     }
 
     pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {

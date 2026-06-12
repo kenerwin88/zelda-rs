@@ -442,6 +442,53 @@ impl WaterHdmaWindowState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldPaletteBackupState {
+    main_indoors: u8,
+    aux3_bg_palette_7: u8,
+    main_indoors_copy: u8,
+}
+
+impl OverworldPaletteBackupState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            main_indoors: ram_byte(ram, OVERWORLD_PAL_MAIN_INDOORS_BACKUP),
+            aux3_bg_palette_7: ram_byte(ram, OVERWORLD_PAL_AUX3_BP7_BACKUP),
+            main_indoors_copy: ram_byte(ram, OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = self.main_indoors;
+        ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = self.aux3_bg_palette_7;
+        ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = self.main_indoors_copy;
+    }
+
+    pub(crate) fn main_indoors(&self) -> u8 {
+        self.main_indoors
+    }
+
+    pub(crate) fn aux3_bg_palette_7(&self) -> u8 {
+        self.aux3_bg_palette_7
+    }
+
+    pub(crate) fn main_indoors_copy(&self) -> u8 {
+        self.main_indoors_copy
+    }
+
+    pub(crate) fn set_main_indoors(&mut self, value: u8) {
+        self.main_indoors = value;
+    }
+
+    pub(crate) fn set_aux3_bg_palette_7(&mut self, value: u8) {
+        self.aux3_bg_palette_7 = value;
+    }
+
+    pub(crate) fn set_main_indoors_copy(&mut self, value: u8) {
+        self.main_indoors_copy = value;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) nmi_update_latch: u8,
@@ -491,6 +538,7 @@ pub(crate) struct DisplayState {
     pub(crate) trinexx_palette: TrinexxPaletteState,
     pub(crate) hud_inventory_order: HudInventoryOrderState,
     pub(crate) water_hdma_window: WaterHdmaWindowState,
+    pub(crate) overworld_palette_backup: OverworldPaletteBackupState,
 }
 
 impl DisplayState {
@@ -544,6 +592,7 @@ impl DisplayState {
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
             water_hdma_window: WaterHdmaWindowState::load_from_ram(ram),
+            overworld_palette_backup: OverworldPaletteBackupState::load_from_ram(ram),
         }
     }
 
@@ -620,6 +669,7 @@ impl DisplayState {
         self.trinexx_palette.write_to_ram(ram);
         self.hud_inventory_order.write_to_ram(ram);
         self.water_hdma_window.write_to_ram(ram);
+        self.overworld_palette_backup.write_to_ram(ram);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -1407,6 +1457,43 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
 
     pub(crate) fn write_tile_stripe_sentinel(&mut self, address: usize) {
         write_le_u16(self.ram, address, 0xffff);
+    }
+}
+
+pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
+    backup: &'a mut OverworldPaletteBackupState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
+    pub(crate) fn new(backup: &'a mut OverworldPaletteBackupState, ram: &'a mut [u8]) -> Self {
+        *backup = OverworldPaletteBackupState::load_from_ram(ram);
+        Self { backup, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.backup,
+            OverworldPaletteBackupState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_main_indoors_backup(&mut self, value: u8) {
+        self.backup.set_main_indoors(value);
+        self.ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_aux3_bg_palette_7_backup(&mut self, value: u8) {
+        self.backup.set_aux3_bg_palette_7(value);
+        self.ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_main_indoors_copy_backup(&mut self, value: u8) {
+        self.backup.set_main_indoors_copy(value);
+        self.ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = value;
+        self.debug_assert_matches_ram();
     }
 }
 

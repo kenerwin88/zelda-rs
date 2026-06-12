@@ -13,7 +13,8 @@ mod world;
 
 pub(crate) use display::{
     DisplayState, HudInventoryOrderState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativePaletteFilterBridgeMut,
+    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeOverworldPaletteBackupBridgeMut, NativePaletteFilterBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
     PaletteFilterState, TrinexxPaletteState, WaterHdmaWindowState,
 };
@@ -50,6 +51,8 @@ pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
+#[cfg(test)]
+use display::OverworldPaletteBackupState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
@@ -1702,6 +1705,51 @@ mod tests {
         assert_eq!(read_le_u16(&ram, WATERGATE_POS), 0x0880);
         assert_eq!(ram[SPOTLIGHT_Y_UPPER], 0x58);
         assert_eq!(ram[SPOTLIGHT_WINDOW_Y_BUFFER], 0x11);
+    }
+
+    #[test]
+    fn overworld_palette_backup_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = 0x12;
+        ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = 0x34;
+        ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = 0x56;
+
+        let mut backup = OverworldPaletteBackupState::load_from_ram(&ram);
+        assert_eq!(backup.main_indoors(), 0x12);
+        assert_eq!(backup.aux3_bg_palette_7(), 0x34);
+        assert_eq!(backup.main_indoors_copy(), 0x56);
+
+        backup.set_main_indoors(0x9a);
+        backup.set_aux3_bg_palette_7(0xbc);
+        backup.set_main_indoors_copy(0xde);
+        backup.write_to_ram(&mut ram);
+
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x9a);
+        assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0xbc);
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0xde);
+    }
+
+    #[test]
+    fn native_overworld_palette_backup_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = 0x12;
+        ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = 0x34;
+        ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = 0x56;
+
+        let mut backup = OverworldPaletteBackupState::default();
+        {
+            let mut bridge = NativeOverworldPaletteBackupBridgeMut::new(&mut backup, &mut ram);
+            bridge.set_main_indoors_backup(0x9a);
+            bridge.set_aux3_bg_palette_7_backup(0xbc);
+            bridge.set_main_indoors_copy_backup(0xde);
+        }
+
+        assert_eq!(backup.main_indoors(), 0x9a);
+        assert_eq!(backup.aux3_bg_palette_7(), 0xbc);
+        assert_eq!(backup.main_indoors_copy(), 0xde);
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x9a);
+        assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0xbc);
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0xde);
     }
 
     #[test]
