@@ -46,7 +46,10 @@ pub(crate) use misc::{
     ArcheryGameState, EnhancedFeaturesState, NativeArcheryGameBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
 };
-pub(crate) use player::{NativeSpecialExitPositionBridgeMut, PlayerState, SpecialExitPositionView};
+pub(crate) use player::{
+    NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
+    SpecialExitPositionView, SwimAccelerationView,
+};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
@@ -69,7 +72,7 @@ use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
-use player::SpecialExitPositionState;
+use player::{SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -524,6 +527,84 @@ mod tests {
         assert_eq!(read_le_u16(&ram, LINK_Y_COORD_SPEXIT), 0x0800);
         assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x0700);
         assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x0800);
+    }
+
+    #[test]
+    fn swim_acceleration_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SWIM_ACCELERATION_MODE, 1);
+        write_le_u16(&mut ram, SWIM_ACCELERATION_MODE + 2, 2);
+        write_le_u16(&mut ram, SWIM_SPEED_ACTIVE_FLAG, 3);
+        write_le_u16(&mut ram, SWIM_SPEED_ACTIVE_FLAG + 2, 4);
+        write_le_u16(&mut ram, SWIM_MAX_SPEED, 0x0180);
+        write_le_u16(&mut ram, SWIM_MAX_SPEED + 2, 0x0240);
+        write_le_u16(&mut ram, SWIM_ACCELERATION_DIRECTION, 5);
+        write_le_u16(&mut ram, SWIM_ACCELERATION_DIRECTION + 2, 6);
+        write_le_u16(&mut ram, SWIM_ACCELERATION, 7);
+        write_le_u16(&mut ram, SWIM_ACCELERATION + 2, 8);
+
+        let swim = SwimAccelerationState::load_from_ram(&ram);
+        assert_eq!(swim.mode(0), 1);
+        assert_eq!(swim.mode(2), 2);
+        assert_eq!(swim.mode(1), 0);
+        assert_eq!(swim.mode_low(1), 2);
+        assert_eq!(swim.speed_active_flag(0), 3);
+        assert_eq!(swim.speed_active_flag(2), 4);
+        assert_eq!(swim.max_speed(0), 0x0180);
+        assert_eq!(swim.max_speed(2), 0x0240);
+        assert_eq!(swim.acceleration_direction(0), 5);
+        assert_eq!(swim.acceleration_direction(2), 6);
+        assert_eq!(swim.acceleration(0), 7);
+        assert_eq!(swim.acceleration(2), 8);
+        assert!(swim.has_any_acceleration());
+
+        let mut projected = vec![0; WRAM_SIZE];
+        swim.write_to_ram(&mut projected);
+        assert_eq!(SwimAccelerationState::load_from_ram(&projected), swim);
+    }
+
+    #[test]
+    fn native_swim_acceleration_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SWIM_ACCELERATION_MODE, 0xffff);
+        write_le_u16(&mut ram, SWIM_ACCELERATION_MODE + 2, 0xffff);
+        write_le_u16(&mut ram, SWIM_SPEED_ACTIVE_FLAG, 0xffff);
+        write_le_u16(&mut ram, SWIM_MAX_SPEED, 0xffff);
+        write_le_u16(&mut ram, SWIM_ACCELERATION_DIRECTION + 2, 0xffff);
+        write_le_u16(&mut ram, SWIM_ACCELERATION, 0xffff);
+
+        let mut swim = SwimAccelerationState::default();
+        {
+            let mut bridge = NativeSwimAccelerationBridgeMut::new(&mut swim, &mut ram);
+            bridge.set_mode(0, 1);
+            bridge.set_mode(2, 2);
+            bridge.clear_mode_low_axis();
+            bridge.set_speed_active_flag(0, 3);
+            bridge.set_max_speed_both_axes(0x0180);
+            bridge.set_max_speed(2, 0x0240);
+            bridge.set_acceleration_direction(2, 4);
+            bridge.set_acceleration(0, 5);
+            bridge.set_acceleration(2, 6);
+            bridge.clear_axis_motion(0);
+            bridge.set_mode(1, 9);
+        }
+
+        assert_eq!(swim.mode(0), 0);
+        assert_eq!(swim.mode(2), 2);
+        assert_eq!(swim.speed_active_flag(0), 0);
+        assert_eq!(swim.max_speed(0), 0);
+        assert_eq!(swim.max_speed(2), 0x0240);
+        assert_eq!(swim.acceleration_direction(2), 4);
+        assert_eq!(swim.acceleration(0), 0);
+        assert_eq!(swim.acceleration(2), 6);
+        assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION_MODE), 0);
+        assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION_MODE + 2), 2);
+        assert_eq!(read_le_u16(&ram, SWIM_SPEED_ACTIVE_FLAG), 0);
+        assert_eq!(read_le_u16(&ram, SWIM_MAX_SPEED), 0);
+        assert_eq!(read_le_u16(&ram, SWIM_MAX_SPEED + 2), 0x0240);
+        assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION_DIRECTION + 2), 4);
+        assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION), 0);
+        assert_eq!(read_le_u16(&ram, SWIM_ACCELERATION + 2), 6);
     }
 
     #[test]

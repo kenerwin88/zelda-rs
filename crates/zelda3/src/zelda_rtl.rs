@@ -68,17 +68,17 @@ use crate::game_state::{
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
     NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpriteBattleBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    NativeSpriteBattleBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoState, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterState,
+    PlayerResourcesState, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
+    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
+    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
     PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
     QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
     RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
@@ -89,12 +89,12 @@ use crate::game_state::{
     SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteSlotView, SpriteSlotViewMut,
     SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
     SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
-    SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsState, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneState, WorldLocationState, WorldStateView,
+    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TagalongSlotViewMut,
+    TempCounterView, TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1776,11 +1776,14 @@ impl ZeldaState {
     }
 
     pub(crate) fn swim_acceleration_view(&self) -> SwimAccelerationView<'_> {
-        SwimAccelerationView::new(&self.ram)
+        SwimAccelerationView::new(&self.game_state.player.swim_acceleration)
     }
 
-    pub(crate) fn swim_acceleration_view_mut(&mut self) -> SwimAccelerationViewMut<'_> {
-        SwimAccelerationViewMut::new(&mut self.ram)
+    pub(crate) fn swim_acceleration_view_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
+        NativeSwimAccelerationBridgeMut::new(
+            &mut self.game_state.player.swim_acceleration,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn bg1_move_calc_view(&self) -> Bg1MoveCalcView<'_> {

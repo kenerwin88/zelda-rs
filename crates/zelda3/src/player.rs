@@ -542,6 +542,7 @@ impl ZeldaState {
             }
         }
         self.player_state_view_mut().cancel_dash_state();
+        self.swim_acceleration_view_mut().clear_mode_low_axis();
     }
 
     pub(super) fn repel_dash(&mut self) {

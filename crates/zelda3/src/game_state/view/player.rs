@@ -2687,7 +2687,6 @@ impl<'a> PlayerStateViewMut<'a> {
         self.ram[LINK_SPEED_SETTING] = 0;
         self.ram[LINK_IS_RUNNING] = 0;
         self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
-        write_le_u16(self.ram, SWIM_ACCELERATION_MODE, 0);
     }
 
     pub(crate) fn set_last_direction_moved_towards_from_facing(&mut self) {
@@ -3335,11 +3334,11 @@ impl<'a> SpecialExitPositionRawViewMut<'a> {
     }
 }
 
-pub(crate) struct SwimAccelerationView<'a> {
+pub(crate) struct SwimAccelerationRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> SwimAccelerationView<'a> {
+impl<'a> SwimAccelerationRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -3373,11 +3372,11 @@ impl<'a> SwimAccelerationView<'a> {
     }
 }
 
-pub(crate) struct SwimAccelerationViewMut<'a> {
+pub(crate) struct SwimAccelerationRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> SwimAccelerationViewMut<'a> {
+impl<'a> SwimAccelerationRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
