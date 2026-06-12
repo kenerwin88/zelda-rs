@@ -3101,7 +3101,7 @@ impl ZeldaState {
             && self.overworld_event_info_view().event_info(0x70) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(2)
         {
-            self.world_state_view_mut().set_trigger_special_entrance(3);
+            self.set_special_entrance_trigger(3);
             self.set_subsubmodule(0);
             self.scratch_word_view_mut()
                 .clear_module_transition_counter();
@@ -4359,7 +4359,7 @@ impl ZeldaState {
             .set_inner_position(0x0098, 0x0100);
         self.skull_woods_fire_scratch_view_mut()
             .set_outer_position(0x0098, 0x0100);
-        self.world_state_view_mut().set_trigger_special_entrance(2);
+        self.set_special_entrance_trigger(2);
         self.set_subsubmodule(0);
         self.scratch_word_view_mut()
             .clear_module_transition_counter();
@@ -5955,7 +5955,7 @@ impl ZeldaState {
             && self.overworld_event_info_view().event_info(0x47) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(3)
         {
-            self.world_state_view_mut().set_trigger_special_entrance(4);
+            self.set_special_entrance_trigger(4);
             self.set_subsubmodule(0);
             self.scratch_word_view_mut()
                 .clear_module_transition_counter();
@@ -9600,7 +9600,7 @@ impl ZeldaState {
             {
                 if self.ancilla_slot_view(k).step() == 2 {
                     if self.tower_seal_scratch_view_mut().tick_wait_countdown() == 0 {
-                        self.world_state_view_mut().set_trigger_special_entrance(5);
+                        self.set_special_entrance_trigger(5);
                         self.set_subsubmodule(0);
                         self.scratch_word_view_mut()
                             .clear_module_transition_counter();

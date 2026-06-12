@@ -83,6 +83,26 @@ impl OverworldMapUiState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldEntranceState {
+    pub(crate) special_entrance_trigger: u8,
+    pub(crate) sequence_counter: u8,
+}
+
+impl OverworldEntranceState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            special_entrance_trigger: ram_byte(ram, TRIGGER_SPECIAL_ENTRANCE),
+            sequence_counter: ram_byte(ram, OVERWORLD_ENTRANCE_SEQUENCE_COUNTER),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TRIGGER_SPECIAL_ENTRANCE] = self.special_entrance_trigger;
+        ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = self.sequence_counter;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldTransitionState {
     pub(crate) edge_direction_bits: u16,
     pub(crate) direction_bits: u16,
@@ -317,6 +337,57 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         let next = self.map_ui.birdtravel_status().wrapping_add(1);
         self.set_birdtravel_status(next);
+    }
+}
+
+pub(crate) struct NativeOverworldEntranceBridgeMut<'a> {
+    entrance: &'a mut OverworldEntranceState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldEntranceBridgeMut<'a> {
+    pub(crate) fn new(entrance: &'a mut OverworldEntranceState, ram: &'a mut [u8]) -> Self {
+        *entrance = OverworldEntranceState::load_from_ram(ram);
+        Self { entrance, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.entrance,
+            OverworldEntranceState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
+        self.entrance.special_entrance_trigger = value;
+        self.ram[TRIGGER_SPECIAL_ENTRANCE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_special_entrance_trigger(&mut self) {
+        self.set_special_entrance_trigger(0);
+    }
+
+    pub(crate) fn set_sequence_counter(&mut self, value: u8) {
+        self.entrance.sequence_counter = value;
+        self.ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_sequence_counter(&mut self) {
+        self.set_sequence_counter(0);
+    }
+
+    pub(crate) fn increment_sequence_counter(&mut self) -> u8 {
+        let next = self.entrance.sequence_counter.wrapping_add(1);
+        self.set_sequence_counter(next);
+        next
+    }
+
+    pub(crate) fn decrement_sequence_counter(&mut self) -> u8 {
+        let next = self.entrance.sequence_counter.wrapping_sub(1);
+        self.set_sequence_counter(next);
+        next
     }
 }
 

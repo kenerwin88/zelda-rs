@@ -1097,7 +1097,7 @@ impl ZeldaState {
         if (self.world_state_view().flag_custom_spell_anim_active()
             | self.player_state_view().immobilized_flag()
             | self.player_state_view().menu_block_flag()
-            | self.world_state_view().trigger_special_entrance())
+            | self.special_entrance_trigger())
             == 0
         {
             if self.player_state_view().filtered_joypad_h() & 0x10 != 0 {
@@ -1121,7 +1121,7 @@ impl ZeldaState {
             self.hud_handle_item_switch_inputs();
         }
 
-        if self.world_state_view().trigger_special_entrance() != 0 {
+        if self.special_entrance_trigger() != 0 {
             self.Overworld_AnimateEntrance();
         }
         self.replay_trace_ram_watch("module09-player-before-link-main");
@@ -1264,7 +1264,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_AnimateEntrance(&mut self) {
-        let j = self.world_state_view().trigger_special_entrance();
+        let j = self.special_entrance_trigger();
         self.player_state_view_mut().set_immobilized_flag(j);
         self.set_modal_pause_flag(j);
         self.set_core_update_disable_flag(j);
@@ -1279,9 +1279,8 @@ impl ZeldaState {
     }
 
     fn entrance_counter_inc_is(&mut self, target: u8) -> bool {
-        self.world_state_view_mut()
-            .increment_entrance_sequence_counter();
-        self.world_state_view().entrance_sequence_counter() == target
+        self.increment_entrance_sequence_counter();
+        self.entrance_sequence_counter() == target
     }
 
     fn entrance_draw_tiles(&mut self, entries: &[(u16, u16)]) {
@@ -1293,15 +1292,14 @@ impl ZeldaState {
 
     pub(super) fn OverworldEntrance_AdvanceAndBoom(&mut self) {
         self.increment_subsubmodule();
-        self.world_state_view_mut()
-            .clear_entrance_sequence_counter();
+        self.clear_entrance_sequence_counter();
         self.system_signals_view_mut().set_sound_effect_1(12);
         self.system_signals_view_mut().set_sound_effect_2(7);
     }
 
     pub(super) fn OverworldEntrance_PlayJingle(&mut self) {
         self.system_signals_view_mut().set_sound_effect_2(27);
-        self.world_state_view_mut().clear_trigger_special_entrance();
+        self.clear_special_entrance_trigger();
         self.set_subsubmodule(0);
         self.clear_core_update_disable_flag();
         self.player_state_view_mut().clear_immobilized();
@@ -1430,8 +1428,7 @@ impl ZeldaState {
             }
             _ => return,
         };
-        self.world_state_view_mut()
-            .clear_entrance_sequence_counter();
+        self.clear_entrance_sequence_counter();
         self.increment_subsubmodule();
         if self.frame_state().subsubmodule == 1 {
             let screen = self.world_location_state().overworld_screen_index() as usize;
@@ -1482,26 +1479,23 @@ impl ZeldaState {
 
         match self.frame_state().subsubmodule {
             0 => {
-                self.world_state_view_mut()
-                    .increment_entrance_sequence_counter();
-                let mut j = self.world_state_view().entrance_sequence_counter() as u16;
+                self.increment_entrance_sequence_counter();
+                let mut j = self.entrance_sequence_counter() as u16;
                 if j < 32 {
                     return;
                 }
                 j -= 32;
                 if j == 207 {
                     self.set_subsubmodule(1);
-                    self.world_state_view_mut()
-                        .clear_entrance_sequence_counter();
+                    self.clear_entrance_sequence_counter();
                 }
                 self.set_sub_screen_layers(u8::from(
                     BITS[(j >> 3) as usize] & (0x80 >> (j & 7)) != 0,
                 ));
             }
             1 | 2 => {
-                self.world_state_view_mut()
-                    .increment_entrance_sequence_counter();
-                let j = self.world_state_view().entrance_sequence_counter();
+                self.increment_entrance_sequence_counter();
+                let j = self.entrance_sequence_counter();
                 if j == 16 {
                     self.increment_subsubmodule();
                     self.system_signals_view_mut().set_ambient_sound_effect(7);
@@ -1587,36 +1581,32 @@ impl ZeldaState {
                     }
                     off += 8;
                 }
-                self.world_state_view_mut()
-                    .clear_entrance_sequence_counter();
+                self.clear_entrance_sequence_counter();
                 self.increment_subsubmodule();
             }
             6 => {
                 if self.frame_state().frame_counter & 1 == 0 {
-                    if self.world_state_view().entrance_sequence_counter() & 7 == 0 {
+                    if self.entrance_sequence_counter() & 7 == 0 {
                         self.PaletteFilter_RestoreAdditive(0xb0, 0xc0);
                         self.PaletteFilter_RestoreSubtractive(0xd0, 0xe0);
                         self.system_signals_view_mut().increment_cgram_update_flag();
                         self.system_signals_view_mut().set_sound_effect_2(2);
                     }
-                    self.world_state_view_mut()
-                        .decrement_entrance_sequence_counter();
-                    if self.world_state_view().entrance_sequence_counter() == 0 {
-                        self.world_state_view_mut()
-                            .set_entrance_sequence_counter(0x30);
+                    self.decrement_entrance_sequence_counter();
+                    if self.entrance_sequence_counter() == 0 {
+                        self.set_entrance_sequence_counter(0x30);
                         self.increment_subsubmodule();
                     }
                 }
             }
             7 => {
                 if self.frame_state().frame_counter & 1 == 0
-                    && self.world_state_view().entrance_sequence_counter() & 7 == 0
+                    && self.entrance_sequence_counter() & 7 == 0
                 {
                     self.system_signals_view_mut().set_sound_effect_2(2);
                 }
-                self.world_state_view_mut()
-                    .decrement_entrance_sequence_counter();
-                if self.world_state_view().entrance_sequence_counter() == 0 {
+                self.decrement_entrance_sequence_counter();
+                if self.entrance_sequence_counter() == 0 {
                     self.OverworldEntrance_DrawManyTR();
                     self.set_sub_screen_layers(0);
                     self.palette_filter_view_mut()
@@ -1652,11 +1642,9 @@ impl ZeldaState {
                 self.GanonTowerEntrance_Func1();
                 if self.display_state().sub_screen_layers == 0 {
                     self.set_sub_screen_layers(1);
-                    self.world_state_view_mut()
-                        .increment_entrance_sequence_counter();
-                    if self.world_state_view().entrance_sequence_counter() == 3 {
-                        self.world_state_view_mut()
-                            .clear_entrance_sequence_counter();
+                    self.increment_entrance_sequence_counter();
+                    if self.entrance_sequence_counter() == 3 {
+                        self.clear_entrance_sequence_counter();
                         self.system_signals_view_mut().set_ambient_sound_effect(7);
                     } else {
                         self.set_subsubmodule(0);
@@ -1735,8 +1723,7 @@ impl ZeldaState {
             12 => {
                 if self.entrance_counter_inc_is(72) {
                     self.OverworldEntrance_PlayJingle();
-                    self.world_state_view_mut()
-                        .clear_entrance_sequence_counter();
+                    self.clear_entrance_sequence_counter();
                     self.system_signals_view_mut().set_music_control(13);
                     self.system_signals_view_mut().set_ambient_sound_effect(9);
                 }
@@ -4836,7 +4823,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_DwDeathMountainPaletteAnimation(&mut self) {
-        if self.world_state_view().trigger_special_entrance() != 0 {
+        if self.special_entrance_trigger() != 0 {
             return;
         }
         let sc = self.world_location_state().overworld_screen_index();

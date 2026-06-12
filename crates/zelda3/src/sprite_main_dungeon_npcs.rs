@@ -2069,10 +2069,9 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_x_velocity(0);
                     self.sprite_slot_view_mut(k).set_y_velocity(0);
-                    self.world_state_view_mut().set_trigger_special_entrance(1);
+                    self.set_special_entrance_trigger(1);
                     self.set_subsubmodule(0);
-                    self.world_state_view_mut()
-                        .clear_entrance_sequence_counter();
+                    self.clear_entrance_sequence_counter();
                     self.sprite_slot_view_mut(k).set_direction(0);
                     self.player_state_view_mut().clear_immobilized();
                 }

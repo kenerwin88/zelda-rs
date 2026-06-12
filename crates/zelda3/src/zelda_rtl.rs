@@ -60,38 +60,38 @@ use crate::game_state::{
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView,
-    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16SourcePage,
-    OverworldPaletteBackupViewMut, OverworldScreenSizeView, OverworldScreenSizeViewMut,
-    OverworldScrollDeltaView, OverworldScrollDeltaViewMut, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    OverworldTileUpdateView, OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut,
-    PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
-    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView,
-    SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, StarTileView, StarTileViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
-    TrinexxPaletteViewMut, VramLoadStateView, VramLoadStateViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView,
+    NativeOverworldEntranceBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
+    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
+    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
+    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
+    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
+    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
+    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
+    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
+    VramLoadStateViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2100,6 +2100,62 @@ impl ZeldaState {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
             .increment_birdtravel_status();
+    }
+
+    pub(crate) fn special_entrance_trigger(&self) -> u8 {
+        self.game_state.overworld_entrance.special_entrance_trigger
+    }
+
+    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .set_special_entrance_trigger(value);
+    }
+
+    pub(crate) fn clear_special_entrance_trigger(&mut self) {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .clear_special_entrance_trigger();
+    }
+
+    pub(crate) fn entrance_sequence_counter(&self) -> u8 {
+        self.game_state.overworld_entrance.sequence_counter
+    }
+
+    pub(crate) fn set_entrance_sequence_counter(&mut self, value: u8) {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .set_sequence_counter(value);
+    }
+
+    pub(crate) fn clear_entrance_sequence_counter(&mut self) {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .clear_sequence_counter();
+    }
+
+    pub(crate) fn increment_entrance_sequence_counter(&mut self) -> u8 {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .increment_sequence_counter()
+    }
+
+    pub(crate) fn decrement_entrance_sequence_counter(&mut self) -> u8 {
+        NativeOverworldEntranceBridgeMut::new(
+            &mut self.game_state.overworld_entrance,
+            &mut self.ram,
+        )
+        .decrement_sequence_counter()
     }
 
     pub(crate) fn screen_transition_direction_bits(&self) -> u8 {
