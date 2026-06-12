@@ -113,6 +113,12 @@ const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
 ];
 
 const HUD_INVENTORY_ORDER_CAPACITY: usize = 24;
+const PALETTE_BANK_BYTES: usize = 512;
+const PALETTE_VISIBLE_BYTES: usize = 256;
+const VISIBLE_SUBPALETTE_CLEAR_START: usize = 32 * 2;
+const VISIBLE_SUBPALETTE_CLEAR_LEN: usize = 192;
+const SPRITE_SUBPALETTE_CLEAR_START: usize = 0x180;
+const SPRITE_SUBPALETTE_CLEAR_LEN: usize = 0x80;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PaletteFilterState {
@@ -661,7 +667,338 @@ impl OverworldPaletteBackupState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PaletteBufferState {
+    main: Vec<u8>,
+    aux: Vec<u8>,
+    overworld_backup: Vec<u8>,
+    overworld_aux_or_main_offset: u16,
+    sprite_palette_0_left: u8,
+    sprite_palette_5_left: u8,
+    sprite_palette_6_left: u8,
+    main_palette_indoors: u8,
+    hud_palette: u8,
+    sprite_palette_6_right_indoors: u8,
+    overworld_aux2_bg_palettes_5_to_7_high: u8,
+    overworld_aux3_bg_palette_7_low: u8,
+    overworld_palette_mode: u8,
+}
+
+impl Default for PaletteBufferState {
+    fn default() -> Self {
+        Self {
+            main: vec![0; PALETTE_BANK_BYTES],
+            aux: vec![0; PALETTE_BANK_BYTES],
+            overworld_backup: vec![0; PALETTE_BANK_BYTES],
+            overworld_aux_or_main_offset: 0,
+            sprite_palette_0_left: 0,
+            sprite_palette_5_left: 0,
+            sprite_palette_6_left: 0,
+            main_palette_indoors: 0,
+            hud_palette: 0,
+            sprite_palette_6_right_indoors: 0,
+            overworld_aux2_bg_palettes_5_to_7_high: 0,
+            overworld_aux3_bg_palette_7_low: 0,
+            overworld_palette_mode: 0,
+        }
+    }
+}
+
+impl PaletteBufferState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            main: read_palette_bank(ram, MAIN_PALETTE_BUFFER),
+            aux: read_palette_bank(ram, AUX_PALETTE_BUFFER),
+            overworld_backup: read_palette_bank(ram, MAPBAK_PALETTE),
+            overworld_aux_or_main_offset: read_le_u16(ram, OVERWORLD_PALETTE_AUX_OR_MAIN),
+            sprite_palette_0_left: ram_byte(ram, PALETTE_SP0L),
+            sprite_palette_5_left: ram_byte(ram, PALETTE_SP5L),
+            sprite_palette_6_left: ram_byte(ram, PALETTE_SP6L),
+            main_palette_indoors: ram_byte(ram, PALETTE_MAIN_INDOORS),
+            hud_palette: ram_byte(ram, HUD_PALETTE),
+            sprite_palette_6_right_indoors: ram_byte(ram, PALETTE_SP6R_INDOORS),
+            overworld_aux2_bg_palettes_5_to_7_high: ram_byte(ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI),
+            overworld_aux3_bg_palette_7_low: ram_byte(ram, OVERWORLD_PALETTE_AUX3_BP7_LO),
+            overworld_palette_mode: ram_byte(ram, OVERWORLD_PALETTE_MODE),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_palette_bank(ram, MAIN_PALETTE_BUFFER, &self.main);
+        write_palette_bank(ram, AUX_PALETTE_BUFFER, &self.aux);
+        write_palette_bank(ram, MAPBAK_PALETTE, &self.overworld_backup);
+        write_le_u16(
+            ram,
+            OVERWORLD_PALETTE_AUX_OR_MAIN,
+            self.overworld_aux_or_main_offset,
+        );
+        ram[PALETTE_SP0L] = self.sprite_palette_0_left;
+        ram[PALETTE_SP5L] = self.sprite_palette_5_left;
+        ram[PALETTE_SP6L] = self.sprite_palette_6_left;
+        ram[PALETTE_MAIN_INDOORS] = self.main_palette_indoors;
+        ram[HUD_PALETTE] = self.hud_palette;
+        ram[PALETTE_SP6R_INDOORS] = self.sprite_palette_6_right_indoors;
+        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = self.overworld_aux2_bg_palettes_5_to_7_high;
+        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = self.overworld_aux3_bg_palette_7_low;
+        ram[OVERWORLD_PALETTE_MODE] = self.overworld_palette_mode;
+    }
+
+    pub(crate) fn main_color(&self, index: usize) -> u16 {
+        read_palette_word(&self.main, index)
+    }
+
+    pub(crate) fn aux_color(&self, index: usize) -> u16 {
+        read_palette_word(&self.aux, index)
+    }
+
+    pub(crate) fn aux_visible_slice(&self) -> &[u8] {
+        &self.aux[..PALETTE_VISIBLE_BYTES]
+    }
+
+    pub(crate) fn main_full_slice(&self) -> &[u8] {
+        &self.main[..PALETTE_BANK_BYTES]
+    }
+
+    pub(crate) fn aux_full_slice(&self) -> &[u8] {
+        &self.aux[..PALETTE_BANK_BYTES]
+    }
+
+    pub(crate) fn overworld_palette_backup(&self) -> &[u8] {
+        &self.overworld_backup[..PALETTE_BANK_BYTES]
+    }
+
+    pub(crate) fn overworld_aux_or_main_offset(&self) -> u16 {
+        self.overworld_aux_or_main_offset
+    }
+}
+
+fn read_palette_bank(ram: &[u8], base: usize) -> Vec<u8> {
+    let mut bank = vec![0; PALETTE_BANK_BYTES];
+    let available = ram.len().saturating_sub(base).min(PALETTE_BANK_BYTES);
+    bank[..available].copy_from_slice(&ram[base..base + available]);
+    bank
+}
+
+fn write_palette_bank(ram: &mut [u8], base: usize, bank: &[u8]) {
+    let len = bank.len().min(PALETTE_BANK_BYTES);
+    ram[base..base + len].copy_from_slice(&bank[..len]);
+}
+
+fn read_palette_word(bank: &[u8], index: usize) -> u16 {
+    let offset = index * 2;
+    if offset + 1 >= bank.len() {
+        return 0;
+    }
+    u16::from(bank[offset]) | (u16::from(bank[offset + 1]) << 8)
+}
+
+fn write_palette_word(bank: &mut [u8], index: usize, value: u16) {
+    let offset = index * 2;
+    if offset + 1 < bank.len() {
+        bank[offset] = value as u8;
+        bank[offset + 1] = (value >> 8) as u8;
+    }
+}
+
+pub(crate) struct PaletteBufferView<'a> {
+    state: &'a PaletteBufferState,
+}
+
+impl<'a> PaletteBufferView<'a> {
+    pub(crate) fn new(state: &'a PaletteBufferState) -> Self {
+        Self { state }
+    }
+
+    pub(crate) fn main_color(&self, index: usize) -> u16 {
+        self.state.main_color(index)
+    }
+
+    pub(crate) fn aux_color(&self, index: usize) -> u16 {
+        self.state.aux_color(index)
+    }
+
+    pub(crate) fn aux_visible_slice(&self) -> &[u8] {
+        self.state.aux_visible_slice()
+    }
+
+    pub(crate) fn main_full_slice(&self) -> &[u8] {
+        self.state.main_full_slice()
+    }
+
+    pub(crate) fn aux_full_slice(&self) -> &[u8] {
+        self.state.aux_full_slice()
+    }
+
+    pub(crate) fn overworld_palette_backup(&self) -> &[u8] {
+        self.state.overworld_palette_backup()
+    }
+
+    pub(crate) fn overworld_aux_or_main_offset(&self) -> u16 {
+        self.state.overworld_aux_or_main_offset()
+    }
+}
+
+pub(crate) struct NativePaletteBufferBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativePaletteBufferBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        display.palette_buffer = PaletteBufferState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
+        self.display.palette_buffer.aux[VISIBLE_SUBPALETTE_CLEAR_START
+            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+        self.ram[AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
+            ..AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_main_visible_subpalettes(&mut self) {
+        self.display.palette_buffer.main[VISIBLE_SUBPALETTE_CLEAR_START
+            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+        self.ram[MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
+            ..MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
+        self.display.palette_buffer.aux[SPRITE_SUBPALETTE_CLEAR_START
+            ..SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+        self.ram[AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START
+            ..AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
+        write_palette_word(&mut self.display.palette_buffer.main, index, value);
+        write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+    }
+
+    pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
+        write_palette_word(&mut self.display.palette_buffer.aux, index, value);
+        write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+    }
+
+    pub(crate) fn set_overworld_aux_or_main_offset(&mut self, value: u16) {
+        self.display.palette_buffer.overworld_aux_or_main_offset = value;
+        write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, value);
+    }
+
+    pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
+        self.set_overworld_aux_or_main_offset(0);
+    }
+
+    pub(crate) fn select_overworld_aux_palette_offset(&mut self) {
+        self.set_overworld_aux_or_main_offset(0x0200);
+    }
+
+    pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
+        let value = self.display.palette_buffer.overworld_aux_or_main_offset & 0x00ff;
+        self.set_overworld_aux_or_main_offset(value);
+    }
+
+    pub(crate) fn clear_main_full(&mut self) {
+        self.display.palette_buffer.main.fill(0);
+        self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
+    }
+
+    pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
+        self.copy_aux_range_from(0, PALETTE_VISIBLE_BYTES, palette);
+    }
+
+    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
+        self.copy_aux_range_from(0, PALETTE_BANK_BYTES, palette);
+    }
+
+    pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
+        let len = palette.len().min(PALETTE_BANK_BYTES);
+        self.display.palette_buffer.overworld_backup[..len].copy_from_slice(&palette[..len]);
+        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
+    }
+
+    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
+        self.copy_main_range_from(0, PALETTE_BANK_BYTES, palette);
+    }
+
+    pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
+        self.copy_main_range_from(0, len.min(PALETTE_BANK_BYTES), src);
+    }
+
+    pub(crate) fn set_sp0l(&mut self, value: u8) {
+        self.display.palette_buffer.sprite_palette_0_left = value;
+        self.ram[PALETTE_SP0L] = value;
+    }
+
+    pub(crate) fn set_sp5l(&mut self, value: u8) {
+        self.display.palette_buffer.sprite_palette_5_left = value;
+        self.ram[PALETTE_SP5L] = value;
+    }
+
+    pub(crate) fn set_sp6l(&mut self, value: u8) {
+        self.display.palette_buffer.sprite_palette_6_left = value;
+        self.ram[PALETTE_SP6L] = value;
+    }
+
+    pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
+        self.display.palette_buffer.main_palette_indoors = value;
+        self.ram[PALETTE_MAIN_INDOORS] = value;
+    }
+
+    pub(crate) fn set_hud_palette(&mut self, value: u8) {
+        self.display.palette_buffer.hud_palette = value;
+        self.ram[HUD_PALETTE] = value;
+    }
+
+    pub(crate) fn set_sp6r_indoors(&mut self, value: u8) {
+        self.display.palette_buffer.sprite_palette_6_right_indoors = value;
+        self.ram[PALETTE_SP6R_INDOORS] = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
+        self.display
+            .palette_buffer
+            .overworld_aux2_bg_palettes_5_to_7_high = value;
+        self.ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
+        self.display.palette_buffer.overworld_aux3_bg_palette_7_low = value;
+        self.ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = value;
+    }
+
+    pub(crate) fn set_bg_tile_animation_countdown(&mut self, value: u16) {
+        self.display.bg_tile_animation_countdown = value;
+        write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
+    }
+
+    pub(crate) fn set_overworld_palette_mode(&mut self, value: u8) {
+        self.display.palette_buffer.overworld_palette_mode = value;
+        self.ram[OVERWORLD_PALETTE_MODE] = value;
+    }
+
+    fn copy_aux_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
+        self.display.palette_buffer.aux[start..start + len].copy_from_slice(&src[..len]);
+        self.ram[AUX_PALETTE_BUFFER + start..AUX_PALETTE_BUFFER + start + len]
+            .copy_from_slice(&src[..len]);
+    }
+
+    fn copy_main_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
+        self.display.palette_buffer.main[start..start + len].copy_from_slice(&src[..len]);
+        self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
+            .copy_from_slice(&src[..len]);
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) nmi_update_latch: u8,
@@ -707,6 +1044,7 @@ pub(crate) struct DisplayState {
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
     pub(crate) attract_vram_destination_address: u16,
+    pub(crate) palette_buffer: PaletteBufferState,
     pub(crate) palette_filter: PaletteFilterState,
     pub(crate) trinexx_palette: TrinexxPaletteState,
     pub(crate) hud_runtime: HudRuntimeState,
@@ -762,6 +1100,7 @@ impl DisplayState {
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
+            palette_buffer: PaletteBufferState::load_from_ram(ram),
             palette_filter: PaletteFilterState::load_from_ram(ram),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
             hud_runtime: HudRuntimeState::load_from_ram(ram),
@@ -840,6 +1179,7 @@ impl DisplayState {
             self.animated_tile_vram_destination_address,
         );
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
+        self.palette_buffer.write_to_ram(ram);
         self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
         self.hud_runtime.write_to_ram(ram);

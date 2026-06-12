@@ -19,9 +19,10 @@ pub(crate) use display::{
     DisplayState, HudInventoryOrderState, HudStateView, LinkDmaSourceSlot,
     NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
     NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, NativePaletteFilterBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    PaletteFilterState, TrinexxPaletteState, WaterHdmaWindowState,
+    NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
+    NativePaletteFilterBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, PaletteBufferView, PaletteFilterState, TrinexxPaletteState,
+    WaterHdmaWindowState,
 };
 pub(crate) use effects::{DoorDebrisView, EffectState, NativeDoorDebrisBridgeMut};
 pub(crate) use ending::{
@@ -82,7 +83,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use display::{HudRuntimeState, OverworldPaletteBackupState};
+use display::{HudRuntimeState, OverworldPaletteBackupState, PaletteBufferState};
 #[cfg(test)]
 use effects::DoorDebrisState;
 #[cfg(test)]
@@ -2917,6 +2918,96 @@ mod tests {
         assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x9a);
         assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0xbc);
         assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0xde);
+    }
+
+    #[test]
+    fn palette_buffer_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MAIN_PALETTE_BUFFER + 4, 0x1234);
+        write_le_u16(&mut ram, AUX_PALETTE_BUFFER + 6, 0x5678);
+        ram[AUX_PALETTE_BUFFER + 255] = 0x9a;
+        ram[MAPBAK_PALETTE + 511] = 0xbc;
+        write_le_u16(&mut ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
+        ram[PALETTE_SP0L] = 1;
+        ram[PALETTE_SP5L] = 2;
+        ram[PALETTE_SP6L] = 3;
+        ram[PALETTE_MAIN_INDOORS] = 4;
+        ram[HUD_PALETTE] = 5;
+        ram[PALETTE_SP6R_INDOORS] = 6;
+        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = 7;
+        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = 8;
+        ram[OVERWORLD_PALETTE_MODE] = 9;
+
+        let palette = PaletteBufferState::load_from_ram(&ram);
+        assert_eq!(palette.main_color(2), 0x1234);
+        assert_eq!(palette.aux_color(3), 0x5678);
+        assert_eq!(palette.aux_visible_slice()[255], 0x9a);
+        assert_eq!(palette.overworld_palette_backup()[511], 0xbc);
+        assert_eq!(palette.overworld_aux_or_main_offset(), 0x0200);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        palette.write_to_ram(&mut projected);
+        assert_eq!(PaletteBufferState::load_from_ram(&projected), palette);
+        assert_eq!(projected[PALETTE_SP0L], 1);
+        assert_eq!(projected[OVERWORLD_PALETTE_MODE], 9);
+    }
+
+    #[test]
+    fn native_palette_buffer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x12ab);
+
+        let mut display = DisplayState::default();
+        {
+            let mut bridge = NativePaletteBufferBridgeMut::new(&mut display, &mut ram);
+            bridge.set_main_color(2, 0x1234);
+            bridge.set_aux_color(3, 0x5678);
+            bridge.keep_overworld_aux_or_main_low_byte();
+            bridge.select_overworld_aux_palette_offset();
+            bridge.copy_aux_visible_from(&vec![0x22; 256]);
+            bridge.copy_main_palette_bytes(&[0x11, 0x22, 0x33, 0x44], 4);
+            bridge.backup_overworld_palette_from(&vec![0x77; 512]);
+            bridge.clear_aux_sprite_subpalettes();
+            bridge.set_sp0l(1);
+            bridge.set_sp5l(2);
+            bridge.set_sp6l(3);
+            bridge.set_palette_main_indoors(4);
+            bridge.set_hud_palette(5);
+            bridge.set_sp6r_indoors(6);
+            bridge.set_overworld_palette_aux2_hi(7);
+            bridge.set_overworld_palette_aux3_lo(8);
+            bridge.set_bg_tile_animation_countdown(0x9abc);
+            bridge.set_overworld_palette_mode(9);
+        }
+
+        assert_eq!(display.palette_buffer.main_color(0), 0x2211);
+        assert_eq!(display.palette_buffer.main_color(1), 0x4433);
+        assert_eq!(display.palette_buffer.aux_color(3), 0x2222);
+        assert_eq!(display.palette_buffer.aux_visible_slice()[0], 0x22);
+        assert_eq!(
+            display.palette_buffer.aux_full_slice()[0x180..0x200],
+            [0; 0x80]
+        );
+        assert_eq!(display.palette_buffer.overworld_palette_backup()[511], 0x77);
+        assert_eq!(
+            display.palette_buffer.overworld_aux_or_main_offset(),
+            0x0200
+        );
+        assert_eq!(display.bg_tile_animation_countdown, 0x9abc);
+        assert_eq!(read_le_u16(&ram, MAIN_PALETTE_BUFFER), 0x2211);
+        assert_eq!(read_le_u16(&ram, AUX_PALETTE_BUFFER + 6), 0x2222);
+        assert_eq!(ram[MAPBAK_PALETTE + 511], 0x77);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_PALETTE_AUX_OR_MAIN), 0x0200);
+        assert_eq!(ram[PALETTE_SP0L], 1);
+        assert_eq!(ram[PALETTE_SP5L], 2);
+        assert_eq!(ram[PALETTE_SP6L], 3);
+        assert_eq!(ram[PALETTE_MAIN_INDOORS], 4);
+        assert_eq!(ram[HUD_PALETTE], 5);
+        assert_eq!(ram[PALETTE_SP6R_INDOORS], 6);
+        assert_eq!(ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI], 7);
+        assert_eq!(ram[OVERWORLD_PALETTE_AUX3_BP7_LO], 8);
+        assert_eq!(read_le_u16(&ram, BG_TILE_ANIMATION_COUNTDOWN), 0x9abc);
+        assert_eq!(ram[OVERWORLD_PALETTE_MODE], 9);
     }
 
     #[test]

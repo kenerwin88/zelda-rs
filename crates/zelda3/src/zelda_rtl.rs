@@ -66,9 +66,9 @@ use crate::game_state::{
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSaveLoadTransferBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut, NativeSharedMessageTimerBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
@@ -78,17 +78,17 @@ use crate::game_state::{
     OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
     OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
-    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
+    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
+    SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
+    SelectFileScratchViewMut, SharedMessageTimerState, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
+    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
     SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
@@ -3220,11 +3220,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn palette_buffer_view(&self) -> PaletteBufferView<'_> {
-        PaletteBufferView::new(&self.ram)
+        PaletteBufferView::new(&self.game_state.display.palette_buffer)
     }
 
-    pub(crate) fn palette_buffer_view_mut(&mut self) -> PaletteBufferViewMut<'_> {
-        PaletteBufferViewMut::new(&mut self.ram)
+    pub(crate) fn palette_buffer_view_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
+        NativePaletteBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn palette_filter_view(&self) -> &PaletteFilterState {
