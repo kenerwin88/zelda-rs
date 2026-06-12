@@ -406,24 +406,12 @@ impl<'a> VramUploadDataView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn offset(&self) -> u16 {
-        word(self.ram, VRAM_UPLOAD_OFFSET)
-    }
-
-    pub(crate) fn offset_usize(&self) -> usize {
-        usize::from(self.offset())
-    }
-
     pub(crate) fn data_base(&self) -> usize {
         VRAM_UPLOAD_DATA
     }
 
     pub(crate) fn data_address(&self, offset: usize) -> usize {
         VRAM_UPLOAD_DATA + offset
-    }
-
-    pub(crate) fn current_data_address(&self) -> usize {
-        self.data_address(self.offset_usize())
     }
 
     pub(crate) fn word(&self, offset: usize) -> u16 {
@@ -458,16 +446,6 @@ impl<'a> VramUploadDataViewMut<'a> {
 
     pub(crate) fn set_offset(&mut self, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, value);
-    }
-
-    pub(crate) fn clear_offset(&mut self) {
-        self.set_offset(0);
-    }
-
-    pub(crate) fn advance_offset_by(&mut self, value: u16) -> u16 {
-        let next = read_le_u16(self.ram, VRAM_UPLOAD_OFFSET).wrapping_add(value);
-        write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, next);
-        next
     }
 
     pub(crate) fn set_byte(&mut self, offset: usize, value: u8) {
