@@ -9,7 +9,7 @@ mod frame;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
+    DisplayState, LinkDmaSourceSlot, NativeDisplayStateBridgeMut, NativeVramUploadBufferBridgeMut,
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
@@ -932,6 +932,44 @@ mod tests {
 
         assert_eq!(display.vram_upload_cursor, 0x0034);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0034);
+    }
+
+    #[test]
+    fn link_dma_source_slots_read_named_source_addresses() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let slots = [
+            (LinkDmaSourceSlot::BodyTop, DMA_SOURCE_ADDR_3),
+            (LinkDmaSourceSlot::BodyBottom, DMA_SOURCE_ADDR_0),
+            (LinkDmaSourceSlot::HeadTop, DMA_SOURCE_ADDR_4),
+            (LinkDmaSourceSlot::HeadBottom, DMA_SOURCE_ADDR_1),
+            (LinkDmaSourceSlot::HandLeft, DMA_SOURCE_ADDR_5),
+            (LinkDmaSourceSlot::HandRight, DMA_SOURCE_ADDR_2),
+            (LinkDmaSourceSlot::SwordUpper, DMA_SOURCE_ADDR_6),
+            (LinkDmaSourceSlot::SwordLower, DMA_SOURCE_ADDR_11),
+            (LinkDmaSourceSlot::ShieldUpper, DMA_SOURCE_ADDR_7),
+            (LinkDmaSourceSlot::ShieldLower, DMA_SOURCE_ADDR_12),
+            (LinkDmaSourceSlot::AuxUpper, DMA_SOURCE_ADDR_8),
+            (LinkDmaSourceSlot::AuxLower, DMA_SOURCE_ADDR_13),
+            (LinkDmaSourceSlot::PushUpper, DMA_SOURCE_ADDR_10),
+            (LinkDmaSourceSlot::PushLower, DMA_SOURCE_ADDR_15),
+            (LinkDmaSourceSlot::AnimatedTileUpper, DMA_SOURCE_ADDR_9),
+            (LinkDmaSourceSlot::AnimatedTileLower, DMA_SOURCE_ADDR_14),
+            (LinkDmaSourceSlot::HeadPointerUpper, DMA_SOURCE_ADDR_16),
+            (LinkDmaSourceSlot::HeadPointerLower, DMA_SOURCE_ADDR_18),
+            (LinkDmaSourceSlot::BodyPointerUpper, DMA_SOURCE_ADDR_17),
+            (LinkDmaSourceSlot::BodyPointerLower, DMA_SOURCE_ADDR_19),
+            (LinkDmaSourceSlot::TravelBirdUpper, DMA_SOURCE_ADDR_20),
+            (LinkDmaSourceSlot::TravelBirdLower, DMA_SOURCE_ADDR_21),
+        ];
+
+        for (index, (_, address)) in slots.iter().copied().enumerate() {
+            write_le_u16(&mut ram, address, 0x9000 + index as u16);
+        }
+
+        let display = DisplayState::default();
+        for (index, (slot, _)) in slots.iter().copied().enumerate() {
+            assert_eq!(display.link_dma_source(&ram, slot), 0x9000 + index as u16);
+        }
     }
 
     #[test]

@@ -5,6 +5,62 @@ use crate::game_state::constants::messaging::{
 use crate::game_state::constants::*;
 use crate::game_state::RamVramUploadBufferMut;
 use crate::types::{read_le_u16, write_le_u16};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LinkDmaSourceSlot {
+    BodyTop,
+    BodyBottom,
+    HeadTop,
+    HeadBottom,
+    HandLeft,
+    HandRight,
+    SwordUpper,
+    SwordLower,
+    ShieldUpper,
+    ShieldLower,
+    AuxUpper,
+    AuxLower,
+    PushUpper,
+    PushLower,
+    AnimatedTileUpper,
+    AnimatedTileLower,
+    HeadPointerUpper,
+    HeadPointerLower,
+    BodyPointerUpper,
+    BodyPointerLower,
+    TravelBirdUpper,
+    TravelBirdLower,
+}
+
+impl LinkDmaSourceSlot {
+    fn address(self) -> usize {
+        match self {
+            Self::BodyTop => DMA_SOURCE_ADDR_3,
+            Self::BodyBottom => DMA_SOURCE_ADDR_0,
+            Self::HeadTop => DMA_SOURCE_ADDR_4,
+            Self::HeadBottom => DMA_SOURCE_ADDR_1,
+            Self::HandLeft => DMA_SOURCE_ADDR_5,
+            Self::HandRight => DMA_SOURCE_ADDR_2,
+            Self::SwordUpper => DMA_SOURCE_ADDR_6,
+            Self::SwordLower => DMA_SOURCE_ADDR_11,
+            Self::ShieldUpper => DMA_SOURCE_ADDR_7,
+            Self::ShieldLower => DMA_SOURCE_ADDR_12,
+            Self::AuxUpper => DMA_SOURCE_ADDR_8,
+            Self::AuxLower => DMA_SOURCE_ADDR_13,
+            Self::PushUpper => DMA_SOURCE_ADDR_10,
+            Self::PushLower => DMA_SOURCE_ADDR_15,
+            Self::AnimatedTileUpper => DMA_SOURCE_ADDR_9,
+            Self::AnimatedTileLower => DMA_SOURCE_ADDR_14,
+            Self::HeadPointerUpper => DMA_SOURCE_ADDR_16,
+            Self::HeadPointerLower => DMA_SOURCE_ADDR_18,
+            Self::BodyPointerUpper => DMA_SOURCE_ADDR_17,
+            Self::BodyPointerLower => DMA_SOURCE_ADDR_19,
+            Self::TravelBirdUpper => DMA_SOURCE_ADDR_20,
+            Self::TravelBirdLower => DMA_SOURCE_ADDR_21,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
@@ -265,6 +321,15 @@ impl DisplayState {
         ram.get(self.vram_upload_buffer_address(offset))
             .copied()
             .unwrap_or(0)
+    }
+
+    pub(crate) fn link_dma_source(&self, ram: &[u8], slot: LinkDmaSourceSlot) -> u16 {
+        let address = slot.address();
+        if address + 1 < ram.len() {
+            read_le_u16(ram, address)
+        } else {
+            0
+        }
     }
 
     pub(crate) fn vram_upload_buffer_remaining<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
