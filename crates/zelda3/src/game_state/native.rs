@@ -674,6 +674,11 @@ mod tests {
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
         ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF] = 0xfa;
         ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + 1] = 0xce;
+        write_le_u16(
+            &mut ram,
+            crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + 6,
+            0x4567,
+        );
         ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B] = 0x56;
         ram[crate::game_state::constants::nmi::STRIPE_BUFFER_021B + 1] = 0x78;
         ram[crate::game_state::constants::nmi::BG_CHAR_BUFFER] = 0x9a;
@@ -775,6 +780,8 @@ mod tests {
             VRAM_UPLOAD_DATA + 0x0124
         );
         assert_eq!(&display.nmi_vram_packet_buffer(&ram)[..2], &[0xfa, 0xce]);
+        assert_eq!(display.overworld_tile_upload_word(&ram, 0), 0xcefa);
+        assert_eq!(display.overworld_tile_attribute_word(&ram, 3), 0x4567);
         assert_eq!(
             &display.tilemap_upload_stripe_buffer(&ram)[..2],
             &[0x24, 0x01]
@@ -1153,6 +1160,9 @@ mod tests {
             bridge.clear_star_tile_restore_phase();
             bridge.set_animated_tile_data_source_address(0xac80);
             bridge.set_animated_tile_vram_destination_address(0x3c00);
+            bridge.set_overworld_tile_attribute_word(7, 0x1234);
+            bridge.set_overworld_tile_upload_word(2, 0x5678);
+            bridge.terminate_overworld_tile_upload_words(3);
             bridge.copy_tilemap_upload_stripe_bytes(&[0xaa, 0xbb, 0xcc]);
         }
 
@@ -1274,6 +1284,27 @@ mod tests {
         assert_eq!(
             ram[crate::game_state::constants::nmi::VRAM_UPLOAD_DATA],
             0xcc
+        );
+        assert_eq!(
+            read_le_u16(
+                &ram,
+                crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + 14
+            ),
+            0x1234
+        );
+        assert_eq!(
+            read_le_u16(
+                &ram,
+                crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + 4
+            ),
+            0x5678
+        );
+        assert_eq!(
+            read_le_u16(
+                &ram,
+                crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + 6
+            ),
+            0xffff
         );
         assert_eq!(ram[INCREMENTAL_COUNTER_FOR_VRAM], 0);
         assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);

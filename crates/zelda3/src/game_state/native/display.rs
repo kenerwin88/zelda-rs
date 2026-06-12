@@ -433,6 +433,24 @@ impl DisplayState {
         &ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..]
     }
 
+    pub(crate) fn overworld_tile_attribute_word(&self, ram: &[u8], index: usize) -> u16 {
+        let address = crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + index * 2;
+        if address + 1 < ram.len() {
+            read_le_u16(ram, address)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn overworld_tile_upload_word(&self, ram: &[u8], index: usize) -> u16 {
+        let address = crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + index * 2;
+        if address + 1 < ram.len() {
+            read_le_u16(ram, address)
+        } else {
+            0
+        }
+    }
+
     pub(crate) fn tilemap_upload_stripe_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
         &ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
     }
@@ -1427,6 +1445,28 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.display.animated_tile_vram_destination_address = value;
         write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
         self.debug_assert_animated_tile_upload_metadata_matches_ram();
+    }
+
+    pub(crate) fn set_overworld_tile_attribute_word(&mut self, index: usize, value: u16) {
+        let address = crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + index * 2;
+        write_le_u16(self.ram, address, value);
+        debug_assert_eq!(
+            self.display.overworld_tile_attribute_word(self.ram, index),
+            value
+        );
+    }
+
+    pub(crate) fn set_overworld_tile_upload_word(&mut self, index: usize, value: u16) {
+        let address = crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + index * 2;
+        write_le_u16(self.ram, address, value);
+        debug_assert_eq!(
+            self.display.overworld_tile_upload_word(self.ram, index),
+            value
+        );
+    }
+
+    pub(crate) fn terminate_overworld_tile_upload_words(&mut self, index: usize) {
+        self.set_overworld_tile_upload_word(index, 0xffff);
     }
 
     pub(crate) fn copy_tilemap_upload_stripe_bytes(&mut self, bytes: &[u8]) {

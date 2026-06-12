@@ -69,29 +69,29 @@ use crate::game_state::{
     OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
     OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
     OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, OverworldTileUpdateView, OverworldTileUpdateViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
-    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
-    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
-    TrinexxPaletteViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
-    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
-    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
+    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
+    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
+    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
+    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
+    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpecialExitPositionViewMut,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView,
+    SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
+    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
+    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2822,6 +2822,26 @@ impl ZeldaState {
             .set_animated_tile_vram_destination_address(value);
     }
 
+    pub(crate) fn overworld_tile_attribute_word(&self, index: usize) -> u16 {
+        self.display_state()
+            .overworld_tile_attribute_word(&self.ram, index)
+    }
+
+    pub(crate) fn set_overworld_tile_attribute_word(&mut self, index: usize, value: u16) {
+        self.display_state_bridge_mut()
+            .set_overworld_tile_attribute_word(index, value);
+    }
+
+    pub(crate) fn set_overworld_tile_upload_word(&mut self, index: usize, value: u16) {
+        self.display_state_bridge_mut()
+            .set_overworld_tile_upload_word(index, value);
+    }
+
+    pub(crate) fn terminate_overworld_tile_upload_words(&mut self, index: usize) {
+        self.display_state_bridge_mut()
+            .terminate_overworld_tile_upload_words(index);
+    }
+
     pub(crate) fn copy_tilemap_upload_stripe_bytes(&mut self, bytes: &[u8]) {
         self.display_state_bridge_mut()
             .copy_tilemap_upload_stripe_bytes(bytes);
@@ -3751,14 +3771,6 @@ impl ZeldaState {
 
     pub(crate) fn overworld_sprite_loaded_view_mut(&mut self) -> OverworldSpriteLoadedViewMut<'_> {
         OverworldSpriteLoadedViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn overworld_tile_update_view(&self) -> OverworldTileUpdateView<'_> {
-        OverworldTileUpdateView::new(&self.ram)
-    }
-
-    pub(crate) fn overworld_tile_update_view_mut(&mut self) -> OverworldTileUpdateViewMut<'_> {
-        OverworldTileUpdateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn trinexx_palette_view(&self) -> TrinexxPaletteView<'_> {

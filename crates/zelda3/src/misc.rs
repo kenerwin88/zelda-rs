@@ -371,13 +371,10 @@ impl ZeldaState {
     pub(super) fn room_draw_adjust_torch_lighting_change(&mut self, x: u16, y: u16, r8: u16) {
         let ptr = self.src_ptr(y);
         let x = (x >> 1) as usize;
-        {
-            let mut tiles = self.overworld_tile_update_view_mut();
-            tiles.set_tile_attr_word(x, ptr[0]);
-            tiles.set_tile_attr_word(x + 64, ptr[1]);
-            tiles.set_tile_attr_word(x + 1, ptr[2]);
-            tiles.set_tile_attr_word(x + 65, ptr[3]);
-        }
+        self.set_overworld_tile_attribute_word(x, ptr[0]);
+        self.set_overworld_tile_attribute_word(x + 64, ptr[1]);
+        self.set_overworld_tile_attribute_word(x + 1, ptr[2]);
+        self.set_overworld_tile_attribute_word(x + 65, ptr[3]);
         self.dungeon_prep_overlay_dma_next_prep(0, r8);
     }
 
@@ -392,26 +389,26 @@ impl ZeldaState {
         let mut r8 = r8;
         for _ in 0..loops {
             let x = (r8 >> 1) as usize;
-            self.overworld_tile_update_view_mut().set_upload_word(dst + 0, ((r8 & 0x40) << 4) | ((r8 & 0x303f) >> 1) | ((r8 & 0x0f80) >> 2));
-            self.overworld_tile_update_view_mut().set_upload_word(dst + 1, r6);
-            let attr0 = self.overworld_tile_update_view().tile_attr_word(x + 0);
-            self.overworld_tile_update_view_mut().set_upload_word(dst + 2, attr0);
+            self.set_overworld_tile_upload_word(dst + 0, ((r8 & 0x40) << 4) | ((r8 & 0x303f) >> 1) | ((r8 & 0x0f80) >> 2));
+            self.set_overworld_tile_upload_word(dst + 1, r6);
+            let attr0 = self.overworld_tile_attribute_word(x + 0);
+            self.set_overworld_tile_upload_word(dst + 2, attr0);
             if r6 & 1 == 0 {
                 for j in 1..=3 {
-                    let attr = self.overworld_tile_update_view().tile_attr_word(x + j);
-                    self.overworld_tile_update_view_mut().set_upload_word(dst + 2 + j, attr);
+                    let attr = self.overworld_tile_attribute_word(x + j);
+                    self.set_overworld_tile_upload_word(dst + 2 + j, attr);
                 }
                 r8 = r8.wrapping_add(128);
             } else {
                 for (j, offset) in [64usize, 128, 192].into_iter().enumerate() {
-                    let attr = self.overworld_tile_update_view().tile_attr_word(x + offset);
-                    self.overworld_tile_update_view_mut().set_upload_word(dst + 3 + j, attr);
+                    let attr = self.overworld_tile_attribute_word(x + offset);
+                    self.set_overworld_tile_upload_word(dst + 3 + j, attr);
                 }
                 r8 = r8.wrapping_add(2);
             }
             dst += 6;
         }
-        self.overworld_tile_update_view_mut().terminate_upload_words(dst);
+        self.terminate_overworld_tile_upload_words(dst);
         dst
     }
 

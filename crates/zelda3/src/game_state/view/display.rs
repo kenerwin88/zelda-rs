@@ -615,53 +615,6 @@ impl<'a> GraphicsScratchViewMut<'a> {
     }
 }
 
-pub(crate) struct OverworldTileUpdateView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> OverworldTileUpdateView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn tile_attr_word(&self, index: usize) -> u16 {
-        word(
-            self.ram,
-            crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + index * 2,
-        )
-    }
-}
-
-pub(crate) struct OverworldTileUpdateViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> OverworldTileUpdateViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_tile_attr_word(&mut self, index: usize, value: u16) {
-        write_le_u16(
-            self.ram,
-            crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + index * 2,
-            value,
-        );
-    }
-
-    pub(crate) fn set_upload_word(&mut self, index: usize, value: u16) {
-        write_le_u16(
-            self.ram,
-            crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + index * 2,
-            value,
-        );
-    }
-
-    pub(crate) fn terminate_upload_words(&mut self, index: usize) {
-        self.set_upload_word(index, 0xffff);
-    }
-}
-
 pub(crate) struct TrinexxPaletteView<'a> {
     ram: &'a [u8],
 }
