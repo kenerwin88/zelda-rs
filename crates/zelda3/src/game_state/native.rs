@@ -170,25 +170,33 @@ impl<'a> NativeFrameStateViewMut<'a> {
         Self { frame, ram }
     }
 
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.frame, FrameState::load_from_ram(self.ram));
+    }
+
     pub(crate) fn set_main_module(&mut self, value: u8) {
         self.frame.main_module = value;
         self.ram[MAIN_MODULE] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
         self.frame.main_module = value as u8;
         self.frame.submodule = (value >> 8) as u8;
         write_le_u16(self.ram, MAIN_MODULE, value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
         self.frame.submodule = value;
         self.ram[SUBMODULE] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
         self.frame.subsubmodule = value;
         self.ram[SUBSUBMODULE] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_submodule(&mut self) {
@@ -214,6 +222,7 @@ impl<'a> NativeFrameStateViewMut<'a> {
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
         self.frame.frame_counter = value;
         self.ram[FRAME_COUNTER] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
@@ -265,15 +274,28 @@ impl<'a> NativeWorldLocationViewMut<'a> {
         }
     }
 
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.world_location,
+            WorldLocationState {
+                dungeon_room: self.ram_view.dungeon_room(),
+                overworld_screen: self.ram_view.overworld_screen_word(),
+                indoor_flag: self.ram_view.indoor_flag(),
+            }
+        );
+    }
+
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
         self.world_location.dungeon_room = value;
         self.ram_view.set_dungeon_room(value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
         self.world_location.dungeon_room =
             (self.world_location.dungeon_room & 0xff00) | u16::from(value);
         self.ram_view.set_dungeon_room_index(value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
@@ -292,16 +314,19 @@ impl<'a> NativeWorldLocationViewMut<'a> {
         self.world_location.overworld_screen =
             (self.world_location.overworld_screen & 0xff00) | u16::from(value);
         self.ram_view.set_overworld_screen(value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
         self.world_location.overworld_screen = value;
         self.ram_view.set_overworld_screen_word(value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
         self.world_location.indoor_flag = value;
         self.ram_view.set_indoor_flag(value);
+        self.debug_assert_matches_ram();
     }
 }
 

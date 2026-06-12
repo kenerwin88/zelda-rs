@@ -246,6 +246,18 @@ impl<'a> WorldStateViewMut<'a> {
         Self { ram }
     }
 
+    pub(crate) fn dungeon_room(&self) -> u16 {
+        word(self.ram, DUNGEON_ROOM)
+    }
+
+    pub(crate) fn overworld_screen_word(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCREEN_INDEX)
+    }
+
+    pub(crate) fn indoor_flag(&self) -> u8 {
+        byte(self.ram, PLAYER_IS_INDOORS)
+    }
+
     pub(crate) fn set_overlay_high(&mut self, value: u8) {
         self.ram[OVERLAY_INDEX + 1] = value;
     }
