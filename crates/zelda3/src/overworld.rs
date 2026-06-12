@@ -4285,8 +4285,7 @@ impl ZeldaState {
         self.set_edge_transition_direction_bits(dir);
         self.set_screen_transition_direction_bits(dir);
         let dir_enum = self.DirToEnum(dir as i32) as u8;
-        self.world_state_view_mut()
-            .set_transition_dir_enum(dir_enum);
+        self.set_transition_direction_enum(dir_enum);
         self.set_screen_transition(dir_enum);
         self.world_state_view_mut().set_ow_entrance_value(0);
         self.dungeon_state_view_mut()
@@ -4569,7 +4568,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_FinalizeEntryOntoScreen(&mut self) {
         self.link_handle_moving_animation_full_long_entry();
-        let transition_dir = self.world_state_view().transition_dir_enum();
+        let transition_dir = self.transition_direction_enum();
         let mut d: i16 = if transition_dir & 1 != 0 { 2 } else { -2 };
         if transition_dir & 2 != 0 {
             let link_x = self.player_state_view().x().wrapping_add_signed(d);
@@ -4605,7 +4604,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_Func1F(&mut self) {
         self.link_handle_moving_animation_full_long_entry();
-        let transition_dir = self.world_state_view().transition_dir_enum();
+        let transition_dir = self.transition_direction_enum();
         let vel: i8 = if transition_dir & 1 != 0 { 1 } else { -1 };
         if transition_dir & 2 != 0 {
             let link_x = self.player_state_view().x().wrapping_add_signed(vel as i16);
@@ -5113,8 +5112,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_direction(direction);
                 let trans = self.DirToEnum(direction as i32) as u16;
                 self.set_screen_transition_word(trans);
-                self.world_state_view_mut()
-                    .set_transition_dir_enum(trans as u8);
+                self.set_transition_direction_enum(trans as u8);
                 self.set_submodule(23);
                 self.set_main_module(11);
                 break;
@@ -5167,8 +5165,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_direction(direction);
                 let trans = self.DirToEnum(direction as i32) as u16;
                 self.set_screen_transition_word(trans);
-                self.world_state_view_mut()
-                    .set_transition_dir_enum(trans as u8);
+                self.set_transition_direction_enum(trans as u8);
                 self.set_submodule(36);
                 self.set_subsubmodule(0);
                 self.set_dungeon_room_index(0);

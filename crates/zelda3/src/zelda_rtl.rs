@@ -2190,6 +2190,18 @@ impl ZeldaState {
         .or_direction_bits_word(value)
     }
 
+    pub(crate) fn transition_direction_enum(&self) -> u8 {
+        self.game_state.overworld_transition.direction_enum()
+    }
+
+    pub(crate) fn set_transition_direction_enum(&mut self, value: u8) {
+        NativeOverworldTransitionBridgeMut::new(
+            &mut self.game_state.overworld_transition,
+            &mut self.ram,
+        )
+        .set_direction_enum(value);
+    }
+
     pub(crate) fn screen_transition(&self) -> u8 {
         self.game_state.overworld_transition.screen_transition()
     }

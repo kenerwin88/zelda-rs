@@ -86,6 +86,7 @@ impl OverworldMapUiState {
 pub(crate) struct OverworldTransitionState {
     pub(crate) edge_direction_bits: u16,
     pub(crate) direction_bits: u16,
+    pub(crate) direction_enum: u8,
     pub(crate) screen_transition: u16,
     pub(crate) transition_counter: u8,
     pub(crate) previous_direction_bits: u16,
@@ -98,6 +99,7 @@ impl OverworldTransitionState {
         Self {
             edge_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS),
             direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2),
+            direction_enum: ram_byte(ram, OVERWORLD_TRANSITION_DIR),
             screen_transition: read_le_u16(ram, OVERWORLD_SCREEN_TRANSITION),
             transition_counter: ram_byte(ram, TRANSITION_COUNTER),
             previous_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV),
@@ -113,6 +115,7 @@ impl OverworldTransitionState {
             self.edge_direction_bits,
         );
         write_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, self.direction_bits);
+        ram[OVERWORLD_TRANSITION_DIR] = self.direction_enum;
         write_le_u16(ram, OVERWORLD_SCREEN_TRANSITION, self.screen_transition);
         ram[TRANSITION_COUNTER] = self.transition_counter;
         write_le_u16(
@@ -138,6 +141,10 @@ impl OverworldTransitionState {
 
     pub(crate) fn direction_bits_word(&self) -> u16 {
         self.direction_bits
+    }
+
+    pub(crate) fn direction_enum(&self) -> u8 {
+        self.direction_enum
     }
 
     pub(crate) fn has_direction_bits(&self) -> bool {
@@ -383,6 +390,12 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn clear_edge_direction_bits(&mut self) {
         self.set_edge_direction_bits(0);
+    }
+
+    pub(crate) fn set_direction_enum(&mut self, value: u8) {
+        self.transition.direction_enum = value;
+        self.ram[OVERWORLD_TRANSITION_DIR] = value;
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
