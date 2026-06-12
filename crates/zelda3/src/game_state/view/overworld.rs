@@ -155,6 +155,21 @@ pub(crate) struct OverworldMap16DecodeView<'a> {
     ram: &'a [u8],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverworldMap16SourcePage {
+    Main,
+    Overlay,
+}
+
+impl OverworldMap16SourcePage {
+    fn base_address(self) -> usize {
+        match self {
+            Self::Main => 0x2000,
+            Self::Overlay => 0x4000,
+        }
+    }
+}
+
 impl<'a> OverworldMap16DecodeView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
@@ -166,6 +181,10 @@ impl<'a> OverworldMap16DecodeView<'a> {
 
     pub(crate) fn source_word(&self, index: usize) -> u16 {
         word(self.ram, OVERWORLD_MAP16_DECODE_SRC + index)
+    }
+
+    pub(crate) fn source_page_word(&self, page: OverworldMap16SourcePage, offset: usize) -> u16 {
+        word(self.ram, page.base_address() + offset)
     }
 
     pub(crate) fn decode_last(&self) -> u16 {
@@ -526,5 +545,27 @@ impl<'a> VramUploadDataViewMut<'a> {
 
     pub(crate) fn write_tile_stripe_sentinel(&mut self, abs_addr: usize) {
         write_le_u16(self.ram, abs_addr, 0xffff);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overworld_map16_source_pages_read_named_wram_pages() {
+        let mut ram = vec![0; 0x8000];
+        write_le_u16(&mut ram, 0x2000 + 0x010, 0x1234);
+        write_le_u16(&mut ram, 0x4000 + 0x010, 0xabcd);
+
+        let view = OverworldMap16DecodeView::new(&ram);
+        assert_eq!(
+            view.source_page_word(OverworldMap16SourcePage::Main, 0x010),
+            0x1234
+        );
+        assert_eq!(
+            view.source_page_word(OverworldMap16SourcePage::Overlay, 0x010),
+            0xabcd
+        );
     }
 }

@@ -167,10 +167,6 @@ impl<'a> DisplayNmiView<'a> {
         byte(self.ram, FLAG_TRAVEL_BIRD)
     }
 
-    pub(crate) fn word_at(&self, addr: usize) -> u16 {
-        word(self.ram, addr)
-    }
-
     pub(crate) fn ram_slice_at(&self, addr: usize, len: usize) -> &[u8] {
         let start = addr.min(self.ram.len());
         let end = (addr + len).min(self.ram.len());

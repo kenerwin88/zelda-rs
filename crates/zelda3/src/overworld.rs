@@ -944,7 +944,7 @@ impl ZeldaState {
         if load_map_data {
             self.Overworld_DrawQuadrantsAndOverlays();
         }
-        self.Map16ToMap8(0x2000, 0);
+        self.Map16ToMap8(OverworldMap16SourcePage::Main, 0);
         self.set_overworld_map16_y_unit(bak_y_unit);
         self.set_overworld_map16_dst_off(bak_dst_off);
         self.set_overworld_map16_src_off(bak_src_off);
@@ -964,7 +964,7 @@ impl ZeldaState {
 
     pub(super) fn LoadOverworldOverlay(&mut self) {
         self.OverworldLoad_LoadSubOverlayMap32();
-        self.Map16ToMap8(0x4000, 0x1000);
+        self.Map16ToMap8(OverworldMap16SourcePage::Overlay, 0x1000);
         self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
         self.increment_submodule();
@@ -2470,7 +2470,7 @@ impl ZeldaState {
         if self.overworld_map_is_small() {
             self.set_small_overworld_mirror_map_position();
         }
-        self.Map16ToMap8(0x2000, 0);
+        self.Map16ToMap8(OverworldMap16SourcePage::Main, 0);
         self.set_overworld_map16_y_unit(bak_y_unit);
         self.set_overworld_map16_dst_off(bak_dst_off);
         self.set_overworld_map16_src_off(bak_src_off);
@@ -3840,13 +3840,13 @@ impl ZeldaState {
         self.Overworld_DecompressAndDrawOneQuadrant(0x4000, si);
     }
 
-    pub(super) fn Map16ToMap8(&mut self, src: usize, r20: i32) {
+    pub(super) fn Map16ToMap8(&mut self, source_page: OverworldMap16SourcePage, r20: i32) {
         let map16_src = self.overworld_map16_src_off().wrapping_add(0x1000);
         self.set_overworld_map16_src_off(map16_src);
         let mut r14 = 0i32;
         let mut r10 = WORD_7F4000_OVERWORLD;
         for _ in 0..32 {
-            self.OverworldCopyMap16ToBuffer(src, r20 as u16, r14, r10);
+            self.OverworldCopyMap16ToBuffer(source_page, r20 as u16, r14, r10);
             r14 += 0x100;
             r10 += 4;
             let map16_src = self.overworld_map16_src_off().wrapping_sub(0x80);
@@ -3858,7 +3858,7 @@ impl ZeldaState {
 
     pub(super) fn OverworldCopyMap16ToBuffer(
         &mut self,
-        src: usize,
+        source_page: OverworldMap16SourcePage,
         r20: u16,
         mut r14: i32,
         mut r10: usize,
@@ -3867,7 +3867,9 @@ impl ZeldaState {
         let mut yr = (self.overworld_map16_src_off().wrapping_sub(0x410) & 0x1fff) as usize;
         let mut xr = self.overworld_map16_dst_off() as usize & 0x1f;
         for _ in 0..32 {
-            let value = self.display_nmi_view().word_at(src + yr);
+            let value = self
+                .overworld_map16_decode_view()
+                .source_page_word(source_page, yr);
             self.world_state_view_mut()
                 .set_dung_replacement_tile_state(xr, value);
             xr = (xr + 1) & 0x1f;
