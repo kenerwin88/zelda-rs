@@ -357,7 +357,7 @@ impl ZeldaState {
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let color_plus =
                     LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 self.display_nmi_view_mut()
                     .set_overworld_fixed_color_plusminus(color_plus);
                 self.frame_control_view_mut().set_submodule(10);
@@ -507,8 +507,8 @@ impl ZeldaState {
             self.main_show_text_message();
             self.dungeon_load_palettes();
             self.set_screen_brightness(15);
-            self.display_nmi_view_mut().set_main_screen_layers(4);
-            self.display_nmi_view_mut().set_sub_screen_layers(0);
+            self.set_main_screen_layers(4);
+            self.set_sub_screen_layers(0);
             self.frame_control_view_mut().set_main_module(27);
         }
     }

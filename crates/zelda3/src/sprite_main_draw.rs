@@ -3494,8 +3494,8 @@ impl ZeldaState {
                 }
                 if self.sprite_slot_view(k).delay_main() < 16 {
                     self.palette_filter_view_mut().set_color_math_control(0x7f);
-                    self.display_nmi_view_mut().set_main_screen_layers(6);
-                    self.display_nmi_view_mut().set_sub_screen_layers(0x10);
+                    self.set_main_screen_layers(6);
+                    self.set_sub_screen_layers(0x10);
                     self.PaletteFilter_SP5F();
                 }
                 if self.sprite_slot_view(k).z_velocity() != 0xff {

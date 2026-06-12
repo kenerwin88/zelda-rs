@@ -113,6 +113,8 @@ pub(crate) struct DisplayState {
     pub(crate) pending_nmi_subroutine: u8,
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) bg_mode: u8,
+    pub(crate) main_screen_layers: u8,
+    pub(crate) sub_screen_layers: u8,
     pub(crate) nmi_copy_packets_request: u8,
     pub(crate) pending_polyhedral_update: u8,
     pub(crate) chr_halfslot_request: u8,
@@ -140,6 +142,8 @@ impl DisplayState {
             pending_nmi_subroutine: ram_byte(ram, NMI_SUBROUTINE_INDEX),
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             bg_mode: ram_byte(ram, BGMODE_COPY),
+            main_screen_layers: ram_byte(ram, TM_COPY),
+            sub_screen_layers: ram_byte(ram, TS_COPY),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
             pending_polyhedral_update: ram_byte(ram, NMI_FLAG_UPDATE_POLYHEDRAL),
             chr_halfslot_request: ram_byte(ram, LOAD_CHR_HALFSLOT_EVEN_ODD),
@@ -166,6 +170,8 @@ impl DisplayState {
         ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[BGMODE_COPY] = self.bg_mode;
+        ram[TM_COPY] = self.main_screen_layers;
+        ram[TS_COPY] = self.sub_screen_layers;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = self.pending_polyhedral_update;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
@@ -194,6 +200,10 @@ impl DisplayState {
 
     pub(crate) fn has_bg_vram_load(&self) -> bool {
         self.bg_vram_load_mode != 0
+    }
+
+    pub(crate) fn layer_masks_word(&self) -> u16 {
+        u16::from(self.main_screen_layers) | (u16::from(self.sub_screen_layers) << 8)
     }
 
     pub(crate) fn has_nmi_copy_packets_request(&self) -> bool {
@@ -582,6 +592,11 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         debug_assert_eq!(self.display.bg_mode, ram_byte(self.ram, BGMODE_COPY));
     }
 
+    fn debug_assert_screen_layer_masks_match_ram(&self) {
+        debug_assert_eq!(self.display.main_screen_layers, ram_byte(self.ram, TM_COPY));
+        debug_assert_eq!(self.display.sub_screen_layers, ram_byte(self.ram, TS_COPY));
+    }
+
     fn debug_assert_nmi_copy_packets_request_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_copy_packets_request,
@@ -744,6 +759,51 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.display.bg_mode = value;
         self.ram[BGMODE_COPY] = value;
         self.debug_assert_bg_mode_matches_ram();
+    }
+
+    pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
+        self.display.main_screen_layers = value;
+        self.ram[TM_COPY] = value;
+        self.debug_assert_screen_layer_masks_match_ram();
+    }
+
+    pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
+        let layers = self.display.main_screen_layers & value;
+        self.set_main_screen_layers(layers);
+    }
+
+    pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
+        let layers = self.display.main_screen_layers | value;
+        self.set_main_screen_layers(layers);
+    }
+
+    pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
+        self.display.sub_screen_layers = value;
+        self.ram[TS_COPY] = value;
+        self.debug_assert_screen_layer_masks_match_ram();
+    }
+
+    pub(crate) fn clear_sub_screen_layers_word(&mut self) {
+        self.display.sub_screen_layers = 0;
+        write_le_u16(self.ram, TS_COPY, 0);
+        self.debug_assert_screen_layer_masks_match_ram();
+    }
+
+    pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
+        let layers = self.display.sub_screen_layers & value;
+        self.set_sub_screen_layers(layers);
+    }
+
+    pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
+        let layers = self.display.sub_screen_layers | value;
+        self.set_sub_screen_layers(layers);
+    }
+
+    pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
+        self.display.main_screen_layers = value as u8;
+        self.display.sub_screen_layers = (value >> 8) as u8;
+        write_le_u16(self.ram, TM_COPY, value);
+        self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
@@ -1048,6 +1108,8 @@ mod tests {
         ram[NMI_SUBROUTINE_INDEX] = 11;
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[BGMODE_COPY] = 7;
+        ram[TM_COPY] = 0x16;
+        ram[TS_COPY] = 0x01;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
@@ -1075,6 +1137,9 @@ mod tests {
         assert_eq!(display.bg_vram_load_mode, 3);
         assert!(display.has_bg_vram_load());
         assert_eq!(display.bg_mode, 7);
+        assert_eq!(display.main_screen_layers, 0x16);
+        assert_eq!(display.sub_screen_layers, 0x01);
+        assert_eq!(display.layer_masks_word(), 0x0116);
         assert_eq!(display.nmi_copy_packets_request, 1);
         assert!(display.has_nmi_copy_packets_request());
         assert_eq!(display.pending_polyhedral_update, 0xff);
@@ -1114,6 +1179,8 @@ mod tests {
         display.pending_nmi_subroutine = 0;
         display.bg_vram_load_mode = 0;
         display.bg_mode = 9;
+        display.main_screen_layers = 0x11;
+        display.sub_screen_layers = 0;
         display.nmi_copy_packets_request = 0;
         display.pending_polyhedral_update = 0;
         display.chr_halfslot_request = 0;
@@ -1138,6 +1205,8 @@ mod tests {
         assert_eq!(ram[NMI_SUBROUTINE_INDEX], 0);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[BGMODE_COPY], 9);
+        assert_eq!(ram[TM_COPY], 0x11);
+        assert_eq!(ram[TS_COPY], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
@@ -1182,6 +1251,8 @@ mod tests {
         ram[NMI_SUBROUTINE_INDEX] = 6;
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
         ram[BGMODE_COPY] = 7;
+        ram[TM_COPY] = 0x16;
+        ram[TS_COPY] = 0x01;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
         ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 3;
@@ -1214,6 +1285,14 @@ mod tests {
             view.clear_bg_vram_load_mode();
             view.set_bg_vram_load_mode(5);
             view.set_bg_mode(9);
+            view.set_layer_masks_word(0x0116);
+            view.and_main_screen_layers(0x15);
+            view.or_main_screen_layers(0x01);
+            view.and_sub_screen_layers(0x0f);
+            view.or_sub_screen_layers(0x10);
+            view.clear_sub_screen_layers_word();
+            view.set_main_screen_layers(0x11);
+            view.set_sub_screen_layers(0x02);
             view.clear_nmi_copy_packets_request();
             view.request_nmi_copy_packets();
             view.set_nmi_copy_packets_request(3);
@@ -1251,6 +1330,9 @@ mod tests {
         assert_eq!(display.pending_nmi_subroutine, 11);
         assert_eq!(display.bg_vram_load_mode, 5);
         assert_eq!(display.bg_mode, 9);
+        assert_eq!(display.main_screen_layers, 0x11);
+        assert_eq!(display.sub_screen_layers, 0x02);
+        assert_eq!(display.layer_masks_word(), 0x0211);
         assert_eq!(display.nmi_copy_packets_request, 3);
         assert_eq!(display.pending_polyhedral_update, 0xff);
         assert!(display.has_pending_polyhedral_update());
@@ -1278,6 +1360,9 @@ mod tests {
         assert_eq!(ram[NMI_SUBROUTINE_INDEX], 11);
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
         assert_eq!(ram[BGMODE_COPY], 9);
+        assert_eq!(ram[TM_COPY], 0x11);
+        assert_eq!(ram[TS_COPY], 0x02);
+        assert_eq!(ram[TMW_COPY], 0);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
         assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0xff);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 12);

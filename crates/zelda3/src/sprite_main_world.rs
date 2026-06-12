@@ -1162,7 +1162,7 @@ impl ZeldaState {
             1 => {
                 self.player_state_view_mut().immobilize();
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.display_nmi_view_mut().set_sub_screen_layers(2);
+                    self.set_sub_screen_layers(2);
                     self.palette_filter_view_mut().set_color_math_control(48);
                     self.palette_filter_view_mut().set_countdown(0);
                     self.palette_filter_view_mut()

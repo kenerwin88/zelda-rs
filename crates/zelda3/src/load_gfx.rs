@@ -1938,7 +1938,7 @@ impl ZeldaState {
                     self.world_location_state().overworld_screen_index(),
                     27 | 91
                 ) {
-                    self.display_nmi_view_mut().set_sub_screen_layers(1);
+                    self.set_sub_screen_layers(1);
                 }
                 self.frame_control_view_mut().decrement_submodule();
                 self.set_pending_nmi_subroutine(12);
@@ -1968,7 +1968,7 @@ impl ZeldaState {
             }
             11 => {
                 let t = self.world_location_state().overworld_screen_index();
-                self.display_nmi_view_mut().set_sub_screen_layers(matches!(
+                self.set_sub_screen_layers(matches!(
                     t,
                     0 | 0x70 | 0x40 | 0x5b | 3 | 5 | 7 | 0x43 | 0x45 | 0x47
                 ) as u8);
@@ -2192,13 +2192,13 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_WishPonds(&mut self) {
-        self.display_nmi_view_mut().set_sub_screen_layers(2);
+        self.set_sub_screen_layers(2);
         self.palette_filter_view_mut().set_color_math_control(0x30);
         self.PaletteFilter_WishPonds_Inner();
     }
 
     pub(super) fn PaletteFilter_Crystal(&mut self) {
-        self.display_nmi_view_mut().set_sub_screen_layers(1);
+        self.set_sub_screen_layers(1);
         self.PaletteFilter_WishPonds_Inner();
     }
 
@@ -2218,7 +2218,7 @@ impl ZeldaState {
             self.palette_buffer_view_mut()
                 .set_main_color(208 + i, color);
         }
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_sub_screen_layers(0);
         self.palette_filter_view_mut().set_color_math_control(32);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2256,7 +2256,7 @@ impl ZeldaState {
             self.palette_filter_range(t, t + 8);
             self.palette_filter_incr_countdown();
             if self.palette_filter_view().countdown_word() == 0 {
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 break;
             }
         }
@@ -2520,7 +2520,7 @@ impl ZeldaState {
         if self.palette_filter_view().countdown() == 0x20 {
             self.palette_filter_view_mut()
                 .set_darkening_or_lightening_screen(0xff);
-            self.display_nmi_view_mut().clear_sub_screen_layers_word();
+            self.clear_sub_screen_layers_word();
         }
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -3311,9 +3311,9 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_w12sel_copy(0x33);
         self.display_nmi_view_mut().set_w34sel_copy(3);
         self.display_nmi_view_mut().set_wobjsel_copy(0x33);
-        let main_screen = self.display_nmi_view().main_screen_layers();
+        let main_screen = self.display_state().main_screen_layers;
         self.display_nmi_view_mut().set_tmw_copy(main_screen);
-        let sub_screen = self.display_nmi_view().sub_screen_layers();
+        let sub_screen = self.display_state().sub_screen_layers;
         self.display_nmi_view_mut().set_tsw_copy(sub_screen);
         if self.world_location_state().is_outdoors() {
             self.palette_filter_view_mut().set_fixed_color_red(0x20);

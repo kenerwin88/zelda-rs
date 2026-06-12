@@ -10187,8 +10187,7 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_step(value);
                 self.frame_control_view_mut().increment_submodule();
                 let main_screen_layers = self.ppu_scroll_copy_view().mapbak_tm();
-                self.display_nmi_view_mut()
-                    .set_main_screen_layers(main_screen_layers);
+                self.set_main_screen_layers(main_screen_layers);
             }
         }
 

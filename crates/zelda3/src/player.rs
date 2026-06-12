@@ -1142,7 +1142,7 @@ impl ZeldaState {
         } else if self.player_state_view().about_to_jump_off_ledge() != 0 {
             0
         } else {
-            self.display_nmi_view().sub_screen_layers()
+            self.display_state().sub_screen_layers
         };
 
         let mut vel = RECOIL_VEL_Y[ts as usize];
@@ -1166,7 +1166,7 @@ impl ZeldaState {
         } else if self.player_state_view().about_to_jump_off_ledge() != 0 {
             0
         } else {
-            self.display_nmi_view().sub_screen_layers()
+            self.display_state().sub_screen_layers
         };
 
         let mut vel = RECOIL_VEL_X[ts as usize];
@@ -3126,7 +3126,7 @@ impl ZeldaState {
             && !self.player_state_view().is_in_deep_water()
         {
             self.link_cancel_dash();
-            if self.display_nmi_view().sub_screen_layers() == 0 {
+            if self.display_state().sub_screen_layers == 0 {
                 self.dungeon_handle_layer_change();
             } else {
                 self.player_state_view_mut().enter_deep_water_state();
@@ -6385,8 +6385,8 @@ impl ZeldaState {
                     .current_health()
                     .wrapping_sub(dmg);
                 let new_dmg = if new_dmg == 0 || new_dmg >= 0xa8 {
-                    let main_layers = self.display_nmi_view().main_screen_layers();
-                    let sub_layers = self.display_nmi_view().sub_screen_layers();
+                    let main_layers = self.display_state().main_screen_layers;
+                    let sub_layers = self.display_state().sub_screen_layers;
                     self.ppu_scroll_copy_view_mut().set_mapbak_tm(main_layers);
                     self.ppu_scroll_copy_view_mut().set_mapbak_ts(sub_layers);
                     let main_module = self.frame_state().main_module;

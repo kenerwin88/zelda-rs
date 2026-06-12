@@ -1244,8 +1244,8 @@ impl ZeldaState {
         const BACKGROUND_CORNER_TILES: [u16; 4] = [0x09a1, 0x09a2, 0x09a3, 0x09a4];
 
         self.set_bg_mode(9);
-        self.display_nmi_view_mut().set_main_screen_layers(0x17);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x17);
+        self.set_sub_screen_layers(0);
         self.zelda_ppu_write(0x2107, 0x10);
         self.zelda_ppu_write(0x2108, 0x00);
 

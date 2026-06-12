@@ -702,12 +702,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_SetFixedColAndScroll(&mut self) {
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_sub_screen_layers(0);
         let si = self.world_location_state().overworld_screen_index() as u16;
         let mut p = 0x19c6;
         if si == 0x80 {
             if self.world_location_state().dungeon_room == 0x181 {
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 p = if si & 0x40 != 0 { 0x2a32 } else { 0x2669 };
             }
         } else if si != 0x81 {
@@ -725,7 +725,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_fixed_color_blue(0x80);
         if si != 0 && si != 0x40 && si != 0x5b {
             if si == 0x70 {
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 self.system_signals_view_mut().increment_cgram_update_flag();
                 return;
             }
@@ -774,7 +774,7 @@ impl ZeldaState {
             self.world_state_view_mut().set_bg1_x(value);
             self.world_state_view_mut().set_bg1_y(0x06c0);
         }
-        self.display_nmi_view_mut().set_sub_screen_layers(1);
+        self.set_sub_screen_layers(1);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -828,7 +828,7 @@ impl ZeldaState {
             let room = self.world_location_state().dungeon_room;
             if room == 0x0180 {
                 if self.overworld_event_info_view().event_info(0x80) & 0x40 != 0 {
-                    self.display_nmi_view_mut().set_sub_screen_layers(0);
+                    self.set_sub_screen_layers(0);
                     self.frame_control_view_mut().increment_submodule();
                     return;
                 }
@@ -840,7 +840,7 @@ impl ZeldaState {
                 if room == 0x0182 || room == 0x0183 {
                     self.system_signals_view_mut().set_ambient_sound_effect(1);
                 }
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 self.frame_control_view_mut().increment_submodule();
                 return;
             }
@@ -882,8 +882,8 @@ impl ZeldaState {
             .clear_screen_transition_direction_bits_word();
         self.palette_filter_view_mut()
             .set_color_window_selection(0x82);
-        self.display_nmi_view_mut().set_main_screen_layers(0x16);
-        self.display_nmi_view_mut().set_sub_screen_layers(1);
+        self.set_main_screen_layers(0x16);
+        self.set_sub_screen_layers(1);
         let ambient_sound_effect = self
             .overworld_config_table_view()
             .music(self.world_location_state().overworld_screen_index() as usize)
@@ -903,7 +903,7 @@ impl ZeldaState {
             {
                 self.palette_filter_view_mut().set_color_math_control(0x20);
             } else {
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 self.palette_filter_view_mut().set_color_math_control(0x20);
             }
         }
@@ -1503,7 +1503,7 @@ impl ZeldaState {
                     self.world_state_view_mut()
                         .clear_entrance_sequence_counter();
                 }
-                self.display_nmi_view_mut().set_sub_screen_layers(u8::from(
+                self.set_sub_screen_layers(u8::from(
                     BITS[(j >> 3) as usize] & (0x80 >> (j & 7)) != 0,
                 ));
             }
@@ -1580,7 +1580,7 @@ impl ZeldaState {
             }
             5 => {
                 self.OverworldEntrance_DrawManyTR();
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 self.palette_filter_view_mut().set_color_window_selection(2);
                 self.palette_filter_view_mut().set_color_math_control(0x22);
                 let end = self.display_state().vram_upload_cursor_usize();
@@ -1627,7 +1627,7 @@ impl ZeldaState {
                     .decrement_entrance_sequence_counter();
                 if self.world_state_view().entrance_sequence_counter() == 0 {
                     self.OverworldEntrance_DrawManyTR();
-                    self.display_nmi_view_mut().set_sub_screen_layers(0);
+                    self.set_sub_screen_layers(0);
                     self.palette_filter_view_mut()
                         .set_color_window_selection(0x82);
                     self.palette_filter_view_mut().set_color_math_control(0x20);
@@ -1659,8 +1659,8 @@ impl ZeldaState {
             }
             2 => {
                 self.GanonTowerEntrance_Func1();
-                if self.display_nmi_view().sub_screen_layers() == 0 {
-                    self.display_nmi_view_mut().set_sub_screen_layers(1);
+                if self.display_state().sub_screen_layers == 0 {
+                    self.set_sub_screen_layers(1);
                     self.world_state_view_mut()
                         .increment_entrance_sequence_counter();
                     if self.world_state_view().entrance_sequence_counter() == 3 {
@@ -1872,8 +1872,8 @@ impl ZeldaState {
         self.world_state_view_mut().clear_screen_transition();
         self.frame_control_view_mut().set_submodule(0);
         if self.player_resources_view().current_health() == 0 {
-            let main_screen_layers = self.display_nmi_view().main_screen_layers();
-            let sub_screen_layers = self.display_nmi_view().sub_screen_layers();
+            let main_screen_layers = self.display_state().main_screen_layers;
+            let sub_screen_layers = self.display_state().sub_screen_layers;
             self.world_state_view_mut()
                 .set_mapbak_tm(main_screen_layers);
             self.world_state_view_mut().set_mapbak_ts(sub_screen_layers);
@@ -2494,7 +2494,7 @@ impl ZeldaState {
         if self.world_location_state().overworld_screen_index() == 0x1b
             || self.world_location_state().overworld_screen_index() == 0x5b
         {
-            self.display_nmi_view_mut().set_sub_screen_layers(1);
+            self.set_sub_screen_layers(1);
         }
         for i in 0..16 * 6 {
             self.palette_buffer_view_mut()
@@ -4736,7 +4736,7 @@ impl ZeldaState {
             .overworld_palette_backup()
             .to_vec();
         self.palette_buffer_view_mut().copy_aux_full_from(&mapbak);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_sub_screen_layers(0);
     }
 
     pub(super) fn Overworld_Memorize_Map16_Change(&mut self, pos: u16, value: u16) {
@@ -5045,8 +5045,8 @@ impl ZeldaState {
                 if self.world_state_view().overworld_area_index() != 0
                     && self.frame_state().main_module != 11
                 {
-                    self.display_nmi_view_mut().set_main_screen_layers(0x16);
-                    self.display_nmi_view_mut().set_sub_screen_layers(1);
+                    self.set_main_screen_layers(0x16);
+                    self.set_sub_screen_layers(1);
                     self.palette_filter_view_mut()
                         .set_color_window_selection(0x82);
                     self.palette_filter_view_mut().set_color_math_control(0x20);

@@ -590,11 +590,11 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             1 => {
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             2 => {
@@ -642,7 +642,7 @@ impl ZeldaState {
                 }
             }
             8 => {
-                self.display_nmi_view_mut().set_sub_screen_layers(0);
+                self.set_sub_screen_layers(0);
                 self.prepare_dungeon_exit_from_boss_fight();
                 self.sprite_slot_view_mut(k).set_state(0);
             }

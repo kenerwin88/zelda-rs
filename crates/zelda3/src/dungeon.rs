@@ -614,8 +614,8 @@ impl ZeldaState {
         if bg_properties == 2 {
             ts = 3;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts as u8);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts as u8);
         self.hud_restore_torch_background();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
     }
@@ -784,7 +784,7 @@ impl ZeldaState {
                 self.display_nmi_view_mut().set_wobjsel_copy(0);
                 self.display_nmi_view_mut().set_tmw_copy(22);
                 self.display_nmi_view_mut().set_tsw_copy(1);
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 self.palette_filter_view_mut().set_color_window_selection(2);
                 self.palette_filter_view_mut().set_color_math_control(98);
                 self.dungeon_state_view_mut()
@@ -1014,8 +1014,8 @@ impl ZeldaState {
         if self.dungeon_state_view().bg2_properties() == 2 {
             ts = 3;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts as u8);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts as u8);
         if self.dungeon_state_view().staircase_index() & 4 != 0 {
             self.dungeon_state_view_mut().decrement_current_floor();
         } else {
@@ -1056,8 +1056,8 @@ impl ZeldaState {
     pub(super) fn Module07_0E_00_InitPriorityAndScreens(&mut self) {
         self.SpiralStairs_MakeNearbyWallsHighPriority_Entering();
         if self.player_state_view().is_on_lower_level() {
-            self.display_nmi_view_mut().and_main_screen_layers(0x0f);
-            self.display_nmi_view_mut().or_sub_screen_layers(0x10);
+            self.and_main_screen_layers(0x0f);
+            self.or_sub_screen_layers(0x10);
             self.player_state_view_mut().set_lower_level_state(3);
         }
         self.frame_control_view_mut().increment_subsubmodule();
@@ -1069,8 +1069,8 @@ impl ZeldaState {
             TELEPORT_PIT_SECONDARY_LEVELS[plane],
             TELEPORT_PIT_PRIMARY_LEVELS[plane],
         );
-        self.display_nmi_view_mut().or_main_screen_layers(0x10);
-        self.display_nmi_view_mut().and_sub_screen_layers(0x0f);
+        self.or_main_screen_layers(0x10);
+        self.and_sub_screen_layers(0x0f);
         if self.dungeon_state_view().staircase_index() & 4 == 0 {
             self.SpiralStairs_MakeNearbyWallsLowPriority();
         }
@@ -1104,11 +1104,11 @@ impl ZeldaState {
         self.player_state_view_mut().set_x(x);
         self.player_state_view_mut().set_y(y);
 
-        if self.display_nmi_view().main_screen_layers() & 0x10 != 0 {
+        if self.display_state().main_screen_layers & 0x10 != 0 {
             if self.dungeon_state_view().current_staircase_plane() == 2 {
                 self.player_state_view_mut().set_lower_level_state(3);
-                self.display_nmi_view_mut().and_main_screen_layers(0x0f);
-                self.display_nmi_view_mut().or_sub_screen_layers(0x10);
+                self.and_main_screen_layers(0x0f);
+                self.or_sub_screen_layers(0x10);
                 if self.dungeon_state_view().staircase_lower_level_status() != 2 {
                     let y = self.player_state_view().y().wrapping_add(24);
                     self.player_state_view_mut().set_y(y);
@@ -1117,8 +1117,8 @@ impl ZeldaState {
             self.follower_initialize();
         } else {
             if self.dungeon_state_view().current_staircase_plane() != 2 {
-                self.display_nmi_view_mut().or_main_screen_layers(0x10);
-                self.display_nmi_view_mut().and_sub_screen_layers(0x0f);
+                self.or_main_screen_layers(0x10);
+                self.and_sub_screen_layers(0x0f);
                 if self.dungeon_state_view().staircase_lower_level_status() != 2 {
                     let y = self.player_state_view().y().wrapping_sub(24);
                     self.player_state_view_mut().set_y(y);
@@ -7106,7 +7106,7 @@ impl ZeldaState {
     pub(super) fn Dungeon_SetAttrForActivatedWaterOff(&mut self) {
         self.palette_filter_view_mut().set_color_window_selection(2);
         self.palette_filter_view_mut().set_color_math_control(0x32);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_sub_screen_layers(0);
         self.display_nmi_view_mut().set_w12sel_copy(0);
         self.dungeon_state_view_mut().set_header_collision(0);
         self.display_nmi_view_mut().clear_window_main_sub_masks();
@@ -9090,7 +9090,7 @@ impl ZeldaState {
         let mut i = self.dungeon_state_view().moving_wall_dot_pointer();
         if self.dungeon_state_view().header_tag(k) < 0x20 {
             self.dungeon_state_view_mut().set_header_collision(0);
-            self.display_nmi_view_mut().set_main_screen_layers(0x16);
+            self.set_main_screen_layers(0x16);
             i = i.wrapping_add(8);
         }
         i
@@ -9499,7 +9499,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_InterRoomTrans_State3(&mut self) {
         if self.dungeon_state_view().any_lights_out_request() != 0 {
-            self.display_nmi_view_mut().set_sub_screen_layers(0);
+            self.set_sub_screen_layers(0);
         }
         self.Dungeon_AdjustForRoomLayout();
         self.LoadNewSpriteGFXSet();
@@ -9555,8 +9555,8 @@ impl ZeldaState {
             tm = 0x17;
             ts = 0;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts);
         self.WaterFlood_BuildOneQuadrantForVRAM();
         self.frame_control_view_mut().increment_subsubmodule();
     }
@@ -9791,17 +9791,16 @@ impl ZeldaState {
             } else {
                 0x0016
             };
-            let tm_ts = self.display_nmi_view().main_screen_layers() as u16
-                | ((self.display_nmi_view().sub_screen_layers() as u16) << 8);
+            let tm_ts = self.display_state().main_screen_layers as u16
+                | ((self.display_state().sub_screen_layers as u16) << 8);
             if y != tm_ts
-                && (self.display_nmi_view().main_screen_layers() == 0x17
-                    || (self.display_nmi_view().main_screen_layers()
-                        | self.display_nmi_view().sub_screen_layers())
+                && (self.display_state().main_screen_layers == 0x17
+                    || (self.display_state().main_screen_layers
+                        | self.display_state().sub_screen_layers)
                         != 0x17)
             {
-                self.display_nmi_view_mut().set_main_screen_layers(y as u8);
-                self.display_nmi_view_mut()
-                    .set_sub_screen_layers((y >> 8) as u8);
+                self.set_main_screen_layers(y as u8);
+                self.set_sub_screen_layers((y >> 8) as u8);
             }
         }
         self.DungeonTransition_RunFiltering();
@@ -10091,8 +10090,8 @@ impl ZeldaState {
             tm = 0x17;
             ts = 0;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts as u8);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts as u8);
 
         self.player_state_view_mut().set_speed_modifier(1);
         if self.dungeon_state_view().staircase_index() & 4 != 0 {
@@ -10168,7 +10167,7 @@ impl ZeldaState {
                 const CRYSTAL_CUTSCENE_TILE_BASES: [u16; 7] =
                     [0x1618, 0x1658, 0x1658, 0x1618, 0x0658, 0x1618, 0x1658];
                 self.PaletteFilter_Crystal();
-                self.display_nmi_view_mut().set_sub_screen_layers(1);
+                self.set_sub_screen_layers(1);
                 self.player_state_view_mut().set_immobilized_flag(2);
                 let room = self.world_location_state().dungeon_room;
                 let j = DUNGEON_BOSS_ROOMS
@@ -10473,7 +10472,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut().decrement_lit_torches();
             if self.dungeon_state_view().lit_torches() < 3 {
                 if self.dungeon_state_view().lit_torches() == 0 {
-                    self.display_nmi_view_mut().set_sub_screen_layers(1);
+                    self.set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let torch = self.dungeon_state_view().lit_torches() as usize;
@@ -10833,8 +10832,8 @@ impl ZeldaState {
             tm = 0x17;
             ts = 0;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts as u8);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts as u8);
 
         self.player_state_view_mut().set_speed_modifier(1);
         if self.dungeon_state_view().staircase_index() & 4 != 0 {
@@ -11553,7 +11552,7 @@ impl ZeldaState {
             self.palette_buffer_view_mut().set_main_color(0x77, p6f);
             self.system_signals_view_mut().increment_cgram_update_flag();
         }
-        self.display_nmi_view_mut().set_sub_screen_layers(2);
+        self.set_sub_screen_layers(2);
     }
 
     pub(super) fn LayerEffect_InvisibleFloor(&mut self) {
@@ -11571,7 +11570,7 @@ impl ZeldaState {
             self.palette_buffer_view_mut().set_aux_color(0x7c, y);
             self.system_signals_view_mut().increment_cgram_update_flag();
         }
-        self.display_nmi_view_mut().set_sub_screen_layers(2);
+        self.set_sub_screen_layers(2);
     }
 
     pub(super) fn LayerEffect_Ganon(&mut self) {
@@ -11583,13 +11582,13 @@ impl ZeldaState {
         }
         self.dungeon_torch_view_mut().set_ganon_torch_count(count);
         if count == 0 {
-            self.display_nmi_view_mut().set_sub_screen_layers(0);
+            self.set_sub_screen_layers(0);
             self.palette_filter_view_mut().set_color_math_control(0xb3);
         } else if count == 1 {
-            self.display_nmi_view_mut().set_sub_screen_layers(2);
+            self.set_sub_screen_layers(2);
             self.palette_filter_view_mut().set_color_math_control(0x70);
         } else {
-            self.display_nmi_view_mut().set_sub_screen_layers(0);
+            self.set_sub_screen_layers(0);
             self.palette_filter_view_mut().set_color_math_control(0x70);
         }
     }
@@ -11620,8 +11619,8 @@ impl ZeldaState {
             tm = 0x17;
             ts = 0;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(tm);
-        self.display_nmi_view_mut().set_sub_screen_layers(ts);
+        self.set_main_screen_layers(tm);
+        self.set_sub_screen_layers(ts);
         self.WaterFlood_BuildOneQuadrantForVRAM();
         self.frame_control_view_mut().increment_subsubmodule();
     }

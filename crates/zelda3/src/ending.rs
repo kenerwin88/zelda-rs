@@ -2470,8 +2470,8 @@ impl ZeldaState {
         self.palette_buffer_view_mut().set_main_color(38, 0);
         self.palette_buffer_view_mut().set_aux_color(0, 0);
         self.palette_buffer_view_mut().set_main_color(0, 0);
-        self.display_nmi_view_mut().set_main_screen_layers(0x16);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x16);
+        self.set_sub_screen_layers(0);
         self.ending_scratch_view_mut().set_primary_word(0x6800);
         self.ending_scratch_view_mut().set_secondary_word(0);
         self.ending_credit_state_view_mut().clear_which_dung();
@@ -2730,8 +2730,8 @@ impl ZeldaState {
         self.poly_state_view_mut().set_shape_depth_bias_low(32);
         self.poly_state_view_mut().set_model(0);
         self.poly_state_view_mut().set_angle_a(16);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
-        self.display_nmi_view_mut().set_main_screen_layers(0x16);
+        self.set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x16);
     }
 }
 
@@ -2756,8 +2756,8 @@ fn break_triforce_handle_poly(state: &mut ZeldaState) {
 impl ZeldaState {
     pub(super) fn fade_music_and_reset_sram_mirror(&mut self) {
         self.set_irq_control_flag(0xff);
-        self.display_nmi_view_mut().set_main_screen_layers(0x15);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x15);
+        self.set_sub_screen_layers(0);
         self.world_state_view_mut().set_indoor_flag(0);
         self.system_signals_view_mut().set_music_control(0xf1);
         self.set_backdrop_color_black();
@@ -2822,8 +2822,8 @@ impl ZeldaState {
             self.frame_control_view_mut().increment_submodule();
             self.intro_setup_sword_and_intro_flash();
         } else if self.palette_filter_view().countdown() == 13 {
-            self.display_nmi_view_mut().set_main_screen_layers(0x15);
-            self.display_nmi_view_mut().set_sub_screen_layers(0);
+            self.set_main_screen_layers(0x15);
+            self.set_sub_screen_layers(0);
         }
     }
 
@@ -2843,7 +2843,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().set_color_window_selection(2);
             self.palette_filter_view_mut().set_color_math_control(0x22);
             self.palette_filter_view_mut().set_countdown_word(31);
-            self.display_nmi_view_mut().set_sub_screen_layers(2);
+            self.set_sub_screen_layers(2);
         }
     }
 
@@ -3005,8 +3005,8 @@ impl ZeldaState {
         self.display_nmi_view_mut()
             .set_core_update_disable_flag(0x80);
         self.enable_force_blank();
-        self.display_nmi_view_mut().set_main_screen_layers(16);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(16);
+        self.set_sub_screen_layers(0);
         self.intro_initialize_background_settings();
         self.palette_filter_view_mut()
             .set_color_window_selection(0x20);
@@ -3241,8 +3241,8 @@ impl ZeldaState {
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.intro_actor_view_mut(5).set_init_phase(1);
                     self.intro_actor_view_mut(5).set_subtype(3);
-                    self.display_nmi_view_mut().set_main_screen_layers(0x10);
-                    self.display_nmi_view_mut().set_sub_screen_layers(5);
+                    self.set_main_screen_layers(0x10);
+                    self.set_sub_screen_layers(5);
                     self.palette_filter_view_mut().set_color_window_selection(2);
                     self.palette_filter_view_mut().set_color_math_control(0x31);
                     self.frame_control_view_mut().set_subsubmodule(0);

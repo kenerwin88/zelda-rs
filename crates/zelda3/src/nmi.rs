@@ -667,8 +667,8 @@ impl ZeldaState {
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_red());
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_green());
         self.zelda_ppu_write(0x2132, self.palette_filter_view().fixed_color_blue());
-        self.zelda_ppu_write(0x212c, self.display_nmi_view().main_screen_layers());
-        self.zelda_ppu_write(0x212d, self.display_nmi_view().sub_screen_layers());
+        self.zelda_ppu_write(0x212c, self.display_state().main_screen_layers);
+        self.zelda_ppu_write(0x212d, self.display_state().sub_screen_layers);
         self.zelda_ppu_write(0x212e, self.display_nmi_view().tmw_copy());
         self.zelda_ppu_write(0x212f, self.display_nmi_view().tsw_copy());
         self.zelda_ppu_write(0x210d, self.ppu_scroll_copy_view().bg1_h_copy_low());

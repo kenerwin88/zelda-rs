@@ -1469,7 +1469,7 @@ impl ZeldaState {
         }
         self.hud_state_view_mut().set_dungeon_dark_with_lantern();
         if self.dungeon_state_view().bg2_properties() != 2 {
-            self.display_nmi_view_mut().set_sub_screen_layers(1);
+            self.set_sub_screen_layers(1);
         }
     }
 

@@ -1506,7 +1506,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut().decrement_lit_torches();
             if self.dungeon_state_view().lit_torches() < 3 {
                 if self.dungeon_state_view().lit_torches() == 0 {
-                    self.display_nmi_view_mut().set_sub_screen_layers(1);
+                    self.set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let plus = LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];

@@ -394,8 +394,8 @@ impl ZeldaState {
             self.sprite_trinexx_final_phase(k);
             return;
         }
-        self.display_nmi_view_mut().set_main_screen_layers(0x17);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x17);
+        self.set_sub_screen_layers(0);
         self.sprite_draw_trinexx_rock_head_and_body_for_small_bosses(k);
         if self.sprite_return_if_inactive_for_small_bosses(k) {
             return;

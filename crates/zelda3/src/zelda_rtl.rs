@@ -290,8 +290,6 @@ const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
 const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
 const FRAME_COUNTER: usize = 0x1a;
-const TM_COPY: usize = 0x1c;
-const TS_COPY: usize = 0x1d;
 // Shared zero-page scratch; NES_Ver2 aliases include BMWORK/CRTNL/CRTNR, but these slots
 // are reused by unrelated player, overworld, and tile-detection code paths.
 const SCRATCH_0: usize = 0x72;
@@ -2004,6 +2002,46 @@ impl ZeldaState {
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_bg_mode(value);
+    }
+
+    pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_main_screen_layers(value);
+    }
+
+    pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .and_main_screen_layers(value);
+    }
+
+    pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .or_main_screen_layers(value);
+    }
+
+    pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_sub_screen_layers(value);
+    }
+
+    pub(crate) fn clear_sub_screen_layers_word(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_sub_screen_layers_word();
+    }
+
+    pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .and_sub_screen_layers(value);
+    }
+
+    pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .or_sub_screen_layers(value);
+    }
+
+    pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_layer_masks_word(value);
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
@@ -3925,7 +3963,7 @@ impl ZeldaState {
             }
         } else if module == 7 {
             if !(self.dungeon_state_view().dungeon_dark_with_lantern()
-                && self.display_nmi_view().sub_screen_layers() != 0)
+                && self.display_state().sub_screen_layers != 0)
             {
                 let qm = (self.world_state_view().quadrant_fullsize_x() >> 1) as usize;
                 let bg2x = self.world_state_view().bg2_x();
@@ -8804,7 +8842,7 @@ mod tests {
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 1);
         assert_eq!(state.display_state().screen_brightness, 15);
-        assert_eq!(state.ram[TM_COPY], 16);
+        assert_eq!(state.display_state().main_screen_layers, 16);
         assert_eq!(state.display_state().bg_mode, 9);
         assert_eq!(state.palette_filter_view().color_window_selection(), 0x20);
         assert_eq!(state.palette_filter_view().color_math_control(), 0x20);
@@ -8928,8 +8966,8 @@ mod tests {
         state.module00_intro();
 
         assert_eq!(state.display_state().irq_control_flag, 0xff);
-        assert_eq!(state.ram[TM_COPY], 0x15);
-        assert_eq!(state.ram[TS_COPY], 0);
+        assert_eq!(state.display_state().main_screen_layers, 0x15);
+        assert_eq!(state.display_state().sub_screen_layers, 0);
         assert_eq!(state.world_location_state().indoor_flag, 0);
         assert_eq!(state.system_signals_view().music_control(), 0xf1);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 1);

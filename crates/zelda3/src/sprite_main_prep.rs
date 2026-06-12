@@ -2423,7 +2423,7 @@ impl ZeldaState {
                     if self.palette_filter_view().countdown() == 0 {
                         self.sprite_show_message_unconditional(0x8b);
                         self.Palette_RevertTranslucencySwap();
-                        self.display_nmi_view_mut().set_sub_screen_layers(0);
+                        self.set_sub_screen_layers(0);
                         self.palette_filter_view_mut().set_color_math_control(0x20);
                         self.system_signals_view_mut().increment_cgram_update_flag();
                         self.sprite_slot_view_mut(k).set_ai_state(5);
@@ -2491,7 +2491,7 @@ impl ZeldaState {
                         .set_inventory_item(idx, value);
                 }
                 self.Palette_AssertTranslucencySwap();
-                self.display_nmi_view_mut().set_sub_screen_layers(2);
+                self.set_sub_screen_layers(2);
                 self.palette_filter_view_mut().set_color_math_control(0x30);
                 self.system_signals_view_mut().increment_cgram_update_flag();
                 self.sprite_slot_view_mut(k).set_ai_state(8);
@@ -2643,7 +2643,7 @@ impl ZeldaState {
                     if self.palette_filter_view().countdown() == 0 {
                         self.sprite_show_message_unconditional(0x95);
                         self.Palette_RevertTranslucencySwap();
-                        self.display_nmi_view_mut().set_sub_screen_layers(0);
+                        self.set_sub_screen_layers(0);
                         self.palette_filter_view_mut().set_color_math_control(0x20);
                         self.system_signals_view_mut().increment_cgram_update_flag();
                         self.sprite_slot_view_mut(k).set_ai_state(7);
@@ -2679,7 +2679,7 @@ impl ZeldaState {
             }
             9 => {
                 self.Palette_AssertTranslucencySwap();
-                self.display_nmi_view_mut().set_sub_screen_layers(2);
+                self.set_sub_screen_layers(2);
                 self.palette_filter_view_mut().set_color_math_control(0x30);
                 self.system_signals_view_mut().increment_cgram_update_flag();
                 self.sprite_slot_view_mut(k).set_ai_state(10);

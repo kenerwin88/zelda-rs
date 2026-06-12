@@ -406,8 +406,8 @@ impl ZeldaState {
 
     pub(super) fn CleanUpAndPrepDesertPrayerHDMA(&mut self) {
         self.hdma_setup(0, 0x02c80c, 0x41, 0, 0x26, 0);
-        let main_layers = self.display_nmi_view().main_screen_layers();
-        let sub_layers = self.display_nmi_view().sub_screen_layers();
+        let main_layers = self.display_state().main_screen_layers;
+        let sub_layers = self.display_state().sub_screen_layers;
         {
             let mut d = self.display_nmi_view_mut();
             d.set_w12sel_copy(0x33);
@@ -860,8 +860,8 @@ impl ZeldaState {
         self.frame_control_view_mut().set_submodule(4);
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.set_screen_brightness(15);
-        self.display_nmi_view_mut().set_main_screen_layers(20);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(20);
+        self.set_sub_screen_layers(0);
         self.palette_filter_view_mut().set_color_math_control(32);
         self.messaging_state_view_mut().set_menu_animation_timer(64);
         self.palette_filter_view_mut().set_countdown(0);
@@ -1065,7 +1065,7 @@ impl ZeldaState {
             if self.save_progress_view().progress_indicator() != 0 {
                 self.SaveGameFile();
             }
-            self.display_nmi_view_mut().set_main_screen_layers(16);
+            self.set_main_screen_layers(16);
             self.world_state_view_mut().set_indoor_flag(0);
             self.death_func31();
             self.system_signals_view_mut().clear_restart_check_flag();
@@ -1145,8 +1145,7 @@ impl ZeldaState {
     pub(super) fn GameOver_Restore0E(&mut self) {
         self.Graphics_LoadChrHalfSlot();
         let sub_screen_layers = self.ppu_scroll_copy_view().mapbak_ts();
-        self.display_nmi_view_mut()
-            .set_sub_screen_layers(sub_screen_layers);
+        self.set_sub_screen_layers(sub_screen_layers);
         self.frame_control_view_mut().increment_submodule();
     }
 
@@ -1161,8 +1160,7 @@ impl ZeldaState {
             self.Overworld_SetFixedColAndScroll();
         }
         let sub_screen_layers = self.ppu_scroll_copy_view().mapbak_ts();
-        self.display_nmi_view_mut()
-            .set_sub_screen_layers(sub_screen_layers);
+        self.set_sub_screen_layers(sub_screen_layers);
         let saved_module = self.frame_control_view().saved_module_for_menu();
         self.frame_control_view_mut().set_main_module(saved_module);
         self.frame_control_view_mut().set_submodule(0);
@@ -1371,7 +1369,7 @@ impl ZeldaState {
         self.EnableForceBlank();
         self.set_mosaic_copy(3);
         self.world_state_view_mut().increment_overworld_map_state();
-        let tm_ts = self.display_nmi_view().layer_masks_word();
+        let tm_ts = self.display_state().layer_masks_word();
         self.ppu_scroll_copy_view_mut().set_mapbak_tm_word(tm_ts);
         let bg1hofs = self.world_state_view().bg1_x();
         let bg2hofs = self.world_state_view().bg2_x();
@@ -1545,7 +1543,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_bg1_y(bg1vofs);
         self.world_state_view_mut().set_bg2_y(bg2vofs);
         let tm_ts = self.ppu_scroll_copy_view().mapbak_tm_word();
-        self.display_nmi_view_mut().set_layer_masks_word(tm_ts);
+        self.set_layer_masks_word(tm_ts);
         self.Attract_SetUpConclusionHDMA();
     }
 
@@ -1924,8 +1922,8 @@ impl ZeldaState {
         let main_tile_theme = self.world_state_view().main_tile_theme_index();
         let sprite_gfx = self.sprite_system_view().graphics_index();
         let aux_tile_theme = self.world_state_view().aux_tile_theme_index();
-        let main_layers = self.display_nmi_view().main_screen_layers();
-        let sub_layers = self.display_nmi_view().sub_screen_layers();
+        let main_layers = self.display_state().main_screen_layers;
+        let sub_layers = self.display_state().sub_screen_layers;
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_main_tile_theme_index(main_tile_theme);
         self.ppu_scroll_copy_view_mut()
@@ -1939,8 +1937,8 @@ impl ZeldaState {
         self.sprite_system_view_mut()
             .set_graphics_index(graphics_index);
         self.sprite_system_view_mut().set_aux_tile_theme(64);
-        self.display_nmi_view_mut().set_main_screen_layers(0x16);
-        self.display_nmi_view_mut().set_sub_screen_layers(1);
+        self.set_main_screen_layers(0x16);
+        self.set_sub_screen_layers(1);
         self.EraseTileMaps_dungeonmap();
         self.InitializeTilesets();
         self.palette_buffer_view_mut()
@@ -2737,10 +2735,8 @@ impl ZeldaState {
 
         let main_screen_layers = self.ppu_scroll_copy_view().mapbak_tm();
         let sub_screen_layers = self.ppu_scroll_copy_view().mapbak_ts();
-        self.display_nmi_view_mut()
-            .set_main_screen_layers(main_screen_layers);
-        self.display_nmi_view_mut()
-            .set_sub_screen_layers(sub_screen_layers);
+        self.set_main_screen_layers(main_screen_layers);
+        self.set_sub_screen_layers(sub_screen_layers);
         let main_tile_theme = self.ppu_scroll_copy_view().mapbak_main_tile_theme_index();
         self.sprite_system_view_mut()
             .set_main_tile_theme(main_tile_theme);
@@ -3873,8 +3869,8 @@ impl ZeldaState {
 impl ZeldaState {
     pub(super) fn world_map_load_light_world_map(&mut self) {
         self.world_map_fill_tilemap_with_ef();
-        self.display_nmi_view_mut().set_main_screen_layers(0x11);
-        self.display_nmi_view_mut().set_sub_screen_layers(0);
+        self.set_main_screen_layers(0x11);
+        self.set_sub_screen_layers(0);
         self.transfer_mode7_characters();
         self.world_map_setup_hdma();
         self.load_overworld_map_palette();
