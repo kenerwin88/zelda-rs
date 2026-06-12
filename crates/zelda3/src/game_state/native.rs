@@ -118,6 +118,8 @@ pub(crate) struct DisplayState {
     pub(crate) nmi_thread_stack_pointer: u16,
     pub(crate) irq_control_flag: u8,
     pub(crate) vertical_irq_trigger: u8,
+    pub(crate) sprite_dma_head_pointer: u8,
+    pub(crate) sprite_dma_body_pointer: u8,
     pub(crate) nmi_load_target_address: u16,
     pub(crate) vram_upload_cursor: u16,
 }
@@ -136,6 +138,8 @@ impl DisplayState {
             nmi_thread_stack_pointer: read_le_u16(ram, POLY_THREAD_STACK),
             irq_control_flag: ram_byte(ram, IRQ_FLAG),
             vertical_irq_trigger: ram_byte(ram, VIRQ_TRIGGER),
+            sprite_dma_head_pointer: ram_byte(ram, DMA_HEAD_POINTER),
+            sprite_dma_body_pointer: ram_byte(ram, DMA_BODY_POINTER),
             nmi_load_target_address: read_le_u16(ram, NMI_LOAD_TARGET_ADDR),
             vram_upload_cursor: read_le_u16(ram, VRAM_UPLOAD_OFFSET),
         }
@@ -153,6 +157,8 @@ impl DisplayState {
         write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
         ram[IRQ_FLAG] = self.irq_control_flag;
         ram[VIRQ_TRIGGER] = self.vertical_irq_trigger;
+        ram[DMA_HEAD_POINTER] = self.sprite_dma_head_pointer;
+        ram[DMA_BODY_POINTER] = self.sprite_dma_body_pointer;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
     }
@@ -572,6 +578,17 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_sprite_dma_pointers_match_ram(&self) {
+        debug_assert_eq!(
+            self.display.sprite_dma_head_pointer,
+            ram_byte(self.ram, DMA_HEAD_POINTER)
+        );
+        debug_assert_eq!(
+            self.display.sprite_dma_body_pointer,
+            ram_byte(self.ram, DMA_BODY_POINTER)
+        );
+    }
+
     fn debug_assert_nmi_load_target_address_matches_ram(&self) {
         debug_assert_eq!(
             self.display.nmi_load_target_address,
@@ -725,6 +742,18 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         self.debug_assert_irq_control_matches_ram();
     }
 
+    pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
+        self.display.sprite_dma_head_pointer = value;
+        self.ram[DMA_HEAD_POINTER] = value;
+        self.debug_assert_sprite_dma_pointers_match_ram();
+    }
+
+    pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
+        self.display.sprite_dma_body_pointer = value;
+        self.ram[DMA_BODY_POINTER] = value;
+        self.debug_assert_sprite_dma_pointers_match_ram();
+    }
+
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
         self.display.nmi_load_target_address =
             (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
@@ -860,6 +889,8 @@ mod tests {
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         ram[IRQ_FLAG] = 0x80;
         ram[VIRQ_TRIGGER] = 0x90;
+        ram[DMA_HEAD_POINTER] = 0x20;
+        ram[DMA_BODY_POINTER] = 0xa0;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0124);
 
@@ -883,6 +914,8 @@ mod tests {
         assert!(display.has_irq_control_flag());
         assert!(display.irq_control_has_vcounter_marker());
         assert_eq!(display.vertical_irq_trigger, 0x90);
+        assert_eq!(display.sprite_dma_head_pointer, 0x20);
+        assert_eq!(display.sprite_dma_body_pointer, 0xa0);
         assert_eq!(display.nmi_load_target_address, 0x2146);
         assert_eq!(display.nmi_load_target_page(), 0x46);
         assert_eq!(display.vram_upload_cursor, 0x0124);
@@ -903,6 +936,8 @@ mod tests {
         display.nmi_thread_stack_pointer = 0x1f31;
         display.irq_control_flag = 0;
         display.vertical_irq_trigger = 0x70;
+        display.sprite_dma_head_pointer = 0x40;
+        display.sprite_dma_body_pointer = 0x80;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
         display.write_to_ram(&mut ram);
@@ -918,6 +953,8 @@ mod tests {
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
         assert_eq!(ram[IRQ_FLAG], 0);
         assert_eq!(ram[VIRQ_TRIGGER], 0x70);
+        assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
+        assert_eq!(ram[DMA_BODY_POINTER], 0x80);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
     }
@@ -953,6 +990,8 @@ mod tests {
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         ram[IRQ_FLAG] = 0x80;
         ram[VIRQ_TRIGGER] = 0x90;
+        ram[DMA_HEAD_POINTER] = 0x20;
+        ram[DMA_BODY_POINTER] = 0xa0;
         write_le_u16(&mut ram, NMI_LOAD_TARGET_ADDR, 0x2146);
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
@@ -982,6 +1021,8 @@ mod tests {
             view.clear_irq_control_flag();
             view.set_irq_control_flag(0xff);
             view.set_vertical_irq_trigger(0x70);
+            view.set_sprite_dma_head_pointer(0x40);
+            view.set_sprite_dma_body_pointer(0x80);
             view.set_nmi_load_target_page(0x80);
             view.set_nmi_load_target_address(0x1234);
         }
@@ -999,6 +1040,8 @@ mod tests {
         assert_eq!(display.irq_control_flag, 0xff);
         assert!(display.irq_control_has_vcounter_marker());
         assert_eq!(display.vertical_irq_trigger, 0x70);
+        assert_eq!(display.sprite_dma_head_pointer, 0x40);
+        assert_eq!(display.sprite_dma_body_pointer, 0x80);
         assert_eq!(display.nmi_load_target_address, 0x1234);
         assert_eq!(display.vram_upload_cursor, 0x0010);
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -1012,6 +1055,8 @@ mod tests {
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
         assert_eq!(ram[IRQ_FLAG], 0xff);
         assert_eq!(ram[VIRQ_TRIGGER], 0x70);
+        assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
+        assert_eq!(ram[DMA_BODY_POINTER], 0x80);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x1234);
         assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0010);
     }

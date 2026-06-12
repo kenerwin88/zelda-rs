@@ -2108,10 +2108,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).direction() < 8 {
             let j = (self.sprite_slot_view(k).direction() as usize) * 2
                 + self.sprite_slot_view(k).graphics() as usize;
-            self.display_nmi_view_mut()
-                .set_dma_head_pointer(KIKI_DMA[j * 2]);
-            self.display_nmi_view_mut()
-                .set_dma_body_pointer(KIKI_DMA[j * 2 + 1]);
+            self.set_sprite_dma_head_pointer(KIKI_DMA[j * 2]);
+            self.set_sprite_dma_body_pointer(KIKI_DMA[j * 2 + 1]);
             self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES1[j * 2..j * 2 + 2], Some(&mut info));
             if self.sprite_slot_view(k).pause() == 0 {
                 self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -2424,8 +2422,7 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        self.display_nmi_view_mut()
-            .set_dma_body_pointer(RETURNING_SMITHY_DMA[j]);
+        self.set_sprite_dma_body_pointer(RETURNING_SMITHY_DMA[j]);
         self.sprite_draw_multiple_player_deferred(
             k,
             &RETURNING_SMITHY_DRAW_FRAMES[j..j + 1],

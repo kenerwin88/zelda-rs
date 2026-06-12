@@ -42,8 +42,6 @@ const DIALOGUE_MESSAGE_INDEX_TAGALONG: usize = 0x1cf0;
 const SAVED_MODULE_FOR_MENU_TAGALONG: usize = 0x10c;
 const TAGALONG_MESSAGE_RESET_FLAG: usize = 0x223;
 const MESSAGING_MODULE_TAGALONG: usize = 0x1cd8;
-const TAGALONG_DMA_HEAD_POINTER: usize = 0x0ae8;
-const TAGALONG_DMA_BODY_POINTER: usize = 0x0aea;
 const PALETTE_SWAP_FLAG_TAGALONG: usize = 0x0abd;
 const SUPER_BOMB_INDICATOR_TIMER_TAGALONG: usize = 0x4b4;
 const SUPER_BOMB_INDICATOR_COUNTER_TAGALONG: usize = 0x4b5;
@@ -1672,7 +1670,7 @@ impl ZeldaState {
                 2,
             );
             oam += 4;
-            self.display_nmi_view_mut().set_dma_head_pointer(sprf.dma6);
+            self.set_sprite_dma_head_pointer(sprf.dma6);
         }
         self.set_oam_follower_at(
             oam,
@@ -1684,7 +1682,7 @@ impl ZeldaState {
                 | (self.oam_state_view().priority_word() >> 8) as u8,
             2,
         );
-        self.display_nmi_view_mut().set_dma_body_pointer(sprf.dma7);
+        self.set_sprite_dma_body_pointer(sprf.dma7);
     }
 
     pub(super) fn follower_check_for_trigger(&self, info: &TagalongMessageInfo) -> bool {

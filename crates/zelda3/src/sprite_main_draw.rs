@@ -16254,8 +16254,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).subtype2() != 2 {
             let j = usize::from(self.sprite_slot_view(k).direction()) * 4
                 + usize::from(self.sprite_slot_view(k).graphics()) * 2;
-            self.display_nmi_view_mut().set_dma_head_pointer(DMA[j]);
-            self.display_nmi_view_mut().set_dma_body_pointer(DMA[j + 1]);
+            self.set_sprite_dma_head_pointer(DMA[j]);
+            self.set_sprite_dma_body_pointer(DMA[j + 1]);
             self.sprite_draw_multiple_player_deferred(k, &D1[j..j + 2], None);
         } else {
             self.sprite_draw_multiple_player_deferred(k, &D0, None);
@@ -21615,9 +21615,8 @@ impl ZeldaState {
         ];
         let j = usize::from(self.sprite_slot_view(k).direction()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.display_nmi_view_mut().set_dma_head_pointer(DMA[j * 2]);
-        self.display_nmi_view_mut()
-            .set_dma_body_pointer(DMA[j * 2 + 1]);
+        self.set_sprite_dma_head_pointer(DMA[j * 2]);
+        self.set_sprite_dma_body_pointer(DMA[j * 2 + 1]);
         self.sprite_draw_multiple_player_deferred(k, &D[j * 2..j * 2 + 2], None);
     }
 

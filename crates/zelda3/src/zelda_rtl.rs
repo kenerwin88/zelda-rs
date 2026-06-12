@@ -822,8 +822,6 @@ const DMA_SOURCE_ADDR_15: usize = 0x0ada;
 const DMA_SOURCE_ADDR_9: usize = 0x0ae0;
 const DMA_SOURCE_ADDR_14: usize = 0x0ae2;
 // NES_Ver2: OPTHPT/OPTBPT, option head/body DMA pointers.
-const DMA_HEAD_POINTER: usize = 0x0ae8;
-const DMA_BODY_POINTER: usize = 0x0aea;
 const DMA_SOURCE_ADDR_16: usize = 0x0aec;
 const DMA_SOURCE_ADDR_18: usize = 0x0aee;
 const DMA_SOURCE_ADDR_17: usize = 0x0af0;
@@ -2074,6 +2072,16 @@ impl ZeldaState {
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .set_vertical_irq_trigger(value);
+    }
+
+    pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_sprite_dma_head_pointer(value);
+    }
+
+    pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .set_sprite_dma_body_pointer(value);
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {

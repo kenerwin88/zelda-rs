@@ -1227,8 +1227,8 @@ impl ZeldaState {
         match self.sprite_slot_view(k).c() {
             0 => {
                 // blinded
-                self.display_nmi_view_mut().set_dma_head_pointer(0);
-                self.display_nmi_view_mut().set_dma_body_pointer(0xA0);
+                self.set_sprite_dma_head_pointer(0);
+                self.set_sprite_dma_body_pointer(0xA0);
                 if self.sprite_slot_view(k).delay_aux2() == 0 {
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.increment_c();
