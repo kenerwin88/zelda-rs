@@ -61,37 +61,38 @@ use crate::game_state::{
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
-    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
-    OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
-    OverworldScrollDeltaViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, OverworldTileUpdateView,
-    OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut, PaletteFilterView,
-    PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
-    PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
-    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
-    SharedMessageTimerView, SharedMessageTimerViewMut, SkullWoodsFireScratchView,
-    SkullWoodsFireScratchViewMut, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
-    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
-    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
-    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
-    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
-    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
-    VramLoadStateViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
-    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
-    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView,
+    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
+    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldScreenSizeView, OverworldScreenSizeViewMut,
+    OverworldScrollDeltaView, OverworldScrollDeltaViewMut, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    OverworldTileUpdateView, OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut,
+    PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
+    SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut,
+    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView,
+    SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, StarTileView, StarTileViewMut, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
+    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
+    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
+    TrinexxPaletteViewMut, VramLoadStateView, VramLoadStateViewMut, VwfGlyphSpacingView,
+    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2100,6 +2101,26 @@ impl ZeldaState {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
             .increment_birdtravel_status();
+    }
+
+    pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
+        NativeOverworldMapZoomBridgeMut::new(
+            &mut self.game_state.overworld_map_zoom,
+            &mut self.ram,
+        )
+        .set_step_counter(value);
+    }
+
+    pub(crate) fn mode7_zoom_timer(&self) -> u8 {
+        self.game_state.overworld_map_zoom.timer
+    }
+
+    pub(crate) fn set_mode7_zoom_timer(&mut self, value: u8) {
+        NativeOverworldMapZoomBridgeMut::new(
+            &mut self.game_state.overworld_map_zoom,
+            &mut self.ram,
+        )
+        .set_timer(value);
     }
 
     pub(crate) fn special_entrance_trigger(&self) -> u8 {

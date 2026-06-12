@@ -342,8 +342,8 @@ impl ZeldaState {
             self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
             self.set_hdma_enable_mask(0xc0);
         } else if self.frame_state().submodule != 10 {
-            self.world_state_view_mut().set_mode7_zoom_step_counter(4);
-            self.world_state_view_mut().set_timer_for_mode7_zoom(12);
+            self.set_mode7_zoom_step_counter(4);
+            self.set_mode7_zoom_timer(12);
             self.set_overworld_map_flags(1);
             let y = self.special_exit_position_view().map_zoom_y();
             self.world_state_view_mut().set_bg1_y(y);
@@ -366,8 +366,8 @@ impl ZeldaState {
             self.OverworldMap_SetupHdma();
             self.set_hdma_enable_mask(0xc0);
         } else {
-            self.world_state_view_mut().set_mode7_zoom_step_counter(4);
-            self.world_state_view_mut().set_timer_for_mode7_zoom(33);
+            self.set_mode7_zoom_step_counter(4);
+            self.set_mode7_zoom_timer(33);
             self.set_overworld_map_flags(0);
             self.hdma_setup(0x0abdcf, 0x0abdcf, 0x42, 0x1b, 0x1e, 10);
             self.set_hdma_enable_mask(0xc0);

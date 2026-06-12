@@ -1453,9 +1453,8 @@ impl ZeldaState {
             self.dungeon_state_view_mut().set_draw_width_indicator(8);
             let t = (self.overworld_map_flags() ^ 1) & 1;
             self.set_overworld_map_flags(t | 0x80);
-            self.world_state_view_mut()
-                .set_timer_for_mode7_zoom(OVERWORLD_MAP_TIMER[t as usize]);
-            if self.world_state_view().timer_for_mode7_zoom() == 12 {
+            self.set_mode7_zoom_timer(OVERWORLD_MAP_TIMER[t as usize]);
+            if self.mode7_zoom_timer() == 12 {
                 let y = self.special_exit_position_view().map_zoom_y();
                 self.world_state_view_mut().set_bg1_y(y);
                 self.ppu_scroll_copy_view_mut()

@@ -83,6 +83,26 @@ impl OverworldMapUiState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldMapZoomState {
+    pub(crate) step_counter: u8,
+    pub(crate) timer: u8,
+}
+
+impl OverworldMapZoomState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            step_counter: ram_byte(ram, MODE7_ZOOM_STEP_COUNTER),
+            timer: ram_byte(ram, TIMER_FOR_MODE7_ZOOM),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[MODE7_ZOOM_STEP_COUNTER] = self.step_counter;
+        ram[TIMER_FOR_MODE7_ZOOM] = self.timer;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldEntranceState {
     pub(crate) special_entrance_trigger: u8,
     pub(crate) sequence_counter: u8,
@@ -364,6 +384,39 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn increment_birdtravel_status(&mut self) {
         let next = self.map_ui.birdtravel_status().wrapping_add(1);
         self.set_birdtravel_status(next);
+    }
+}
+
+pub(crate) struct NativeOverworldMapZoomBridgeMut<'a> {
+    zoom: &'a mut OverworldMapZoomState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
+    pub(crate) fn new(zoom: &'a mut OverworldMapZoomState, ram: &'a mut [u8]) -> Self {
+        *zoom = OverworldMapZoomState::load_from_ram(ram);
+        Self { zoom, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.zoom, OverworldMapZoomState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_step_counter(&mut self, value: u8) {
+        self.zoom.step_counter = value;
+        self.ram[MODE7_ZOOM_STEP_COUNTER] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.zoom.timer = value;
+        self.ram[TIMER_FOR_MODE7_ZOOM] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_timer(&mut self) {
+        let next = self.zoom.timer.wrapping_sub(1);
+        self.set_timer(next);
     }
 }
 
