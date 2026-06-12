@@ -5929,16 +5929,12 @@ mod tests {
         assert_eq!(fireball.garnish_slot_view(28).sprite(), k as u8);
 
         let mut skipped_fireball = fresh_state();
-        skipped_fireball
-            .frame_control_view_mut()
-            .set_frame_counter(1);
+        skipped_fireball.set_frame_counter(1);
         skipped_fireball.fireball_spawn_trail_garnish(k);
         assert_eq!(skipped_fireball.garnish_state_view().active_type(), 0);
 
         let mut firesnake = fresh_state();
-        firesnake
-            .frame_control_view_mut()
-            .set_frame_counter(k as u8);
+        firesnake.set_frame_counter(k as u8);
         firesnake.garnish_slot_view_mut(29).set_garnish_type(1);
         firesnake.sprite_set_x(k, 0x0167);
         firesnake.sprite_set_y(k, 0x02f0);
@@ -5955,9 +5951,7 @@ mod tests {
         assert_eq!(firesnake.garnish_slot_view(28).floor(), 2);
 
         let mut skipped_firesnake = fresh_state();
-        skipped_firesnake
-            .frame_control_view_mut()
-            .set_frame_counter((k as u8) ^ 1);
+        skipped_firesnake.set_frame_counter((k as u8) ^ 1);
         skipped_firesnake.firesnake_spawn_fireball(k);
         assert_eq!(skipped_firesnake.garnish_state_view().active_type(), 0);
 

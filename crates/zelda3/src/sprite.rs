@@ -9230,9 +9230,7 @@ mod tests {
         assert!(!active.sprite_return_if_paused(k));
 
         let mut global_pause = fresh_state();
-        global_pause
-            .frame_control_view_mut()
-            .set_modal_pause_flag(1);
+        global_pause.set_modal_pause_flag(1);
         assert!(global_pause.sprite_return_if_paused(k));
 
         let mut submodule = fresh_state();
@@ -9370,9 +9368,7 @@ mod tests {
         assert_eq!(same_axis.sprite_slot_view(k).direction(), 3);
 
         let mut opposite_axis = fresh_state();
-        opposite_axis
-            .frame_control_view_mut()
-            .set_frame_counter(0x20);
+        opposite_axis.set_frame_counter(0x20);
         opposite_axis.sprite_slot_view_mut(k).set_head_direction(2);
         opposite_axis.sprite_slot_view_mut(k).set_direction(0);
         assert!(opposite_axis.sprite_track_body_to_head(k));
