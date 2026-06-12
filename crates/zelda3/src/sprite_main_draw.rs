@@ -23044,7 +23044,7 @@ impl ZeldaState {
             if old == 11 {
                 self.dungeon_state_view_mut()
                     .toggle_orange_blue_barrier_state();
-                self.frame_control_view_mut().set_submodule(22);
+                self.set_submodule(22);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
             }
         }
@@ -23583,9 +23583,9 @@ impl ZeldaState {
                         == 0
                     && !self.player_state_view().is_immobilized()
                 {
-                    self.frame_control_view_mut().set_submodule(0x23);
+                    self.set_submodule(0x23);
                     self.player_state_view_mut().set_whirlpool_trigger();
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_subsubmodule(0);
                     self.player_state_view_mut().set_actual_velocity_xy(0, 0);
                     self.player_state_view_mut().set_handler_state(20);
                     let screen_bits = self.world_location_state().overworld_screen_index() & 0x40;
@@ -23645,9 +23645,9 @@ impl ZeldaState {
                 .wrapping_sub(self.player_state_view().y())
                 .wrapping_add(0x0f);
             if x < 0x51 && y < 0x12 {
-                self.frame_control_view_mut().set_submodule(35);
+                self.set_submodule(35);
                 self.player_state_view_mut().set_whirlpool_trigger();
-                self.frame_control_view_mut().set_subsubmodule(0);
+                self.set_subsubmodule(0);
                 self.player_state_view_mut().set_actual_velocity_xy(0, 0);
                 self.player_state_view_mut().set_handler_state(20);
                 let screen_bits = self.world_location_state().overworld_screen_index() & 0x40;
@@ -23670,8 +23670,8 @@ impl ZeldaState {
             }
             if self.sprite_check_damage_to_link_same_layer(k) {
                 if self.sprite_slot_view(k).a() == 0 {
-                    self.frame_control_view_mut().set_submodule(46);
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_submodule(46);
+                    self.set_subsubmodule(0);
                 }
             } else {
                 let value = 0;
@@ -26990,7 +26990,7 @@ mod tests {
         s.oam_state_view_mut().set_current_pointer(0x800);
         s.oam_state_view_mut().set_current_extended_pointer(0xa20);
         s.ram[SUBMODULE_INDEX] = 0;
-        s.frame_control_view_mut().clear_modal_pause_flag();
+        s.clear_modal_pause_flag();
         s.sprite_slot_view_mut(k).set_subtype2(0x10); // odd-mask passes -> ++subtype2 = 0x11 fails (& 1 == 1).
         s.sprite_slot_view_mut(k).set_graphics(2);
         s.sprite_draw_antfairy(k);

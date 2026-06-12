@@ -1921,6 +1921,91 @@ impl ZeldaState {
         &self.game_state.frame
     }
 
+    pub(crate) fn set_main_module(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_main_module(value);
+    }
+
+    pub(crate) fn set_main_module_word(&mut self, value: u16) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_main_module_word(value);
+    }
+
+    pub(crate) fn set_submodule(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_submodule(value);
+    }
+
+    pub(crate) fn increment_submodule(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .increment_submodule();
+    }
+
+    pub(crate) fn decrement_submodule(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .decrement_submodule();
+    }
+
+    pub(crate) fn set_subsubmodule(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_subsubmodule(value);
+    }
+
+    pub(crate) fn increment_subsubmodule(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .increment_subsubmodule();
+    }
+
+    pub(crate) fn decrement_subsubmodule(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .decrement_subsubmodule();
+    }
+
+    pub(crate) fn set_frame_counter(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_frame_counter(value);
+    }
+
+    pub(crate) fn increment_frame_counter(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .increment_frame_counter();
+    }
+
+    pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_saved_module_for_menu(value);
+    }
+
+    pub(crate) fn clear_saved_module_for_menu(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .clear_saved_module_for_menu();
+    }
+
+    pub(crate) fn save_main_module_for_menu(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .save_main_module_for_menu();
+    }
+
+    pub(crate) fn save_submodule_for_menu(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .save_submodule_for_menu();
+    }
+
+    pub(crate) fn clear_modal_pause_flag(&mut self) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .clear_modal_pause_flag();
+    }
+
+    pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .set_modal_pause_flag(value);
+    }
+
+    pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
+        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
+            .increment_modal_pause_flag()
+    }
+
     pub(crate) fn world_location_state(&self) -> &WorldLocationState {
         &self.game_state.world_location
     }
@@ -5031,7 +5116,7 @@ impl ZeldaState {
     }
 
     fn zelda_run_game_loop(&mut self) {
-        self.frame_control_view_mut().increment_frame_counter();
+        self.increment_frame_counter();
         self.replay_trace_ram_watch("game-loop-after-frame-counter");
         self.clear_oam_buffer();
         self.replay_trace_ram_watch("game-loop-after-clear-oam");
@@ -5276,7 +5361,7 @@ impl ZeldaState {
 
         if x == 6 {
             self.link_cancel_dash();
-            self.frame_control_view_mut().set_submodule(7);
+            self.set_submodule(7);
             self.player_state_view_mut().set_pit_data_index(6);
             self.player_state_view_mut().set_near_pit_state(3);
             self.player_state_view_mut().set_visibility_status(12);
@@ -5314,9 +5399,9 @@ impl ZeldaState {
                 self.handle_layer_of_destination();
             } else if self.world_location_state().overworld_screen_index() != 5 {
                 self.Overworld_GetPitDestination();
-                self.frame_control_view_mut().set_main_module(17);
-                self.frame_control_view_mut().set_submodule(0);
-                self.frame_control_view_mut().set_subsubmodule(0);
+                self.set_main_module(17);
+                self.set_submodule(0);
+                self.set_subsubmodule(0);
             } else {
                 self.replay_trace_submodule("pits-before-take-damage");
                 self.TakeDamageFromPit();
@@ -6144,7 +6229,7 @@ mod tests {
     #[test]
     fn credits_module_sets_oam_region_words_like_c() {
         let mut state = ZeldaState::new();
-        state.frame_control_view_mut().set_submodule(38);
+        state.set_submodule(38);
         for offset in 0..6 {
             state.ram[0x0fe0 + offset] = 0xff;
         }
@@ -7333,7 +7418,7 @@ mod tests {
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
-        state.frame_control_view_mut().set_main_module(7);
+        state.set_main_module(7);
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
@@ -7359,7 +7444,7 @@ mod tests {
         state.ram[IS_STANDING_IN_DOORWAY] = 1;
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 4);
-        state.frame_control_view_mut().set_main_module(7);
+        state.set_main_module(7);
         state.ram[SUBMODULE_INDEX] = 0;
         set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
@@ -7381,7 +7466,7 @@ mod tests {
     #[test]
     fn dungeon_edge_transition_right_starts_super_tile_scroll() {
         let mut state = ZeldaState::new();
-        state.frame_control_view_mut().set_main_module(7);
+        state.set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
@@ -7401,7 +7486,7 @@ mod tests {
     #[test]
     fn edge_transition_recoil_guard_restores_previous_position() {
         let mut state = ZeldaState::new();
-        state.frame_control_view_mut().set_main_module(7);
+        state.set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         state.player_state_view_mut().set_incapacitated_timer(5);
         state.player_state_view_mut().set_actual_x_velocity(12);
@@ -8186,7 +8271,7 @@ mod tests {
         let mut prayer = ZeldaState::new();
         prayer.player_state_view_mut().set_filtered_joypad_h(0x40);
         prayer.ram[ITEM_PICKUP_IN_PROGRESS_FLAG] = 1;
-        prayer.frame_control_view_mut().set_main_module(9);
+        prayer.set_main_module(9);
         set_link_test_byte(&mut prayer, LINK_DIRECTION, 0x0f);
         prayer.link_item_book();
         assert_eq!(prayer.ram[SUBMODULE_INDEX], 5);
@@ -8828,13 +8913,13 @@ mod tests {
     #[test]
     fn configure_ppu_side_space_matches_module_cases() {
         let mut state = ZeldaState::new();
-        state.frame_control_view_mut().set_main_module(20);
+        state.set_main_module(20);
         state.configure_ppu_side_space();
         assert_eq!(state.ppu.extra_left_cur, PPU_SIDE_SPACE_LIMIT as u8);
         assert_eq!(state.ppu.extra_right_cur, PPU_SIDE_SPACE_LIMIT as u8);
         assert_eq!(state.ppu.extra_bottom_cur, 16);
 
-        state.frame_control_view_mut().set_main_module(7);
+        state.set_main_module(7);
         state.world_state_view_mut().set_bg2_x(0x0110);
         state.world_state_view_mut().set_bg2_y(0x0108);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
@@ -9011,9 +9096,9 @@ mod tests {
     #[test]
     fn intro_fade_in_bg_start_skips_to_file_select_loader() {
         let mut state = ZeldaState::new();
-        state.frame_control_view_mut().set_main_module(0);
-        state.frame_control_view_mut().set_submodule(7);
-        state.frame_control_view_mut().set_subsubmodule(0xf3);
+        state.set_main_module(0);
+        state.set_submodule(7);
+        state.set_subsubmodule(0xf3);
         state.palette_filter_view_mut().set_countdown(0);
         state.player_state_view_mut().set_filtered_joypad_h(0x10);
         state.world_state_view_mut().set_indoor_flag(1);

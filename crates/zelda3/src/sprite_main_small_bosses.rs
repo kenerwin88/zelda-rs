@@ -2435,7 +2435,7 @@ mod tests {
         let spike = 2;
         let statue_even = 4;
         let statue_odd = 5;
-        s.frame_control_view_mut().set_frame_counter(0);
+        s.set_frame_counter(0);
         s.sprite_set_x(spike, 0x0100);
         s.sprite_set_y(spike, 0x0200);
 
@@ -2454,7 +2454,7 @@ mod tests {
         s.sprite_set_y(statue_odd, 0x0200);
         assert!(s.spike_block_check_statue_collision(spike));
 
-        s.frame_control_view_mut().set_frame_counter(1);
+        s.set_frame_counter(1);
         assert!(!s.spike_block_check_statue_collision(spike));
     }
 

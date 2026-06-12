@@ -2070,7 +2070,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_x_velocity(0);
                     self.sprite_slot_view_mut(k).set_y_velocity(0);
                     self.world_state_view_mut().set_trigger_special_entrance(1);
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_subsubmodule(0);
                     self.world_state_view_mut()
                         .clear_entrance_sequence_counter();
                     self.sprite_slot_view_mut(k).set_direction(0);

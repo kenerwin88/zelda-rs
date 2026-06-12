@@ -104,7 +104,7 @@ impl ZeldaState {
         self.world_state_view_mut().set_nmi_thread_active(0);
         self.clear_pending_polyhedral_update();
         self.system_signals_view_mut().set_music_control(11);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
         self.palette_buffer_view_mut().set_palette_main_indoors(6);
@@ -193,7 +193,7 @@ impl ZeldaState {
         self.erase_tile_maps_triforce();
         self.palette_load_for_file_select();
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn module_erase_file_1(&mut self) {
@@ -236,7 +236,7 @@ impl ZeldaState {
             t = t.wrapping_add(0x20);
         }
         self.vram_upload_data_view_mut().write_byte_at(dst, 0xff);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_bg_vram_load_mode(1);
     }
 
@@ -262,7 +262,7 @@ impl ZeldaState {
     pub(super) fn file_select_trigger_stripes_and_advance(&mut self) {
         self.select_file_scratch_view_mut()
             .restore_remembered_cursor();
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_bg_vram_load_mode(6);
     }
 
@@ -291,7 +291,7 @@ impl ZeldaState {
         self.vram_upload_data_view_mut().copy_bytes(0, &data);
         self.set_screen_brightness(0x0f);
         self.clear_core_update_disable_flag();
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_bg_vram_load_mode(6);
     }
 
@@ -343,9 +343,9 @@ impl ZeldaState {
                     .save_slot_flag(self.select_file_scratch_view().cursor_usize())
                     == 0
                 {
-                    self.frame_control_view_mut().set_main_module(4);
-                    self.frame_control_view_mut().set_submodule(0);
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_main_module(4);
+                    self.set_submodule(0);
+                    self.set_subsubmodule(0);
                 } else {
                     self.system_signals_view_mut().set_music_control(0xf1);
                     let slot = self
@@ -365,10 +365,10 @@ impl ZeldaState {
                 } else {
                     3
                 };
-                self.frame_control_view_mut().set_main_module(main_module);
+                self.set_main_module(main_module);
                 self.select_file_scratch_view_mut().clear_cursor();
-                self.frame_control_view_mut().set_submodule(0);
-                self.frame_control_view_mut().set_subsubmodule(0);
+                self.set_submodule(0);
+                self.set_subsubmodule(0);
             } else {
                 self.system_signals_view_mut().set_sound_effect_1(0x3c);
             }
@@ -558,7 +558,7 @@ impl ZeldaState {
                 self.zelda_write_sram();
             }
             self.return_to_file_select();
-            self.frame_control_view_mut().set_subsubmodule(0);
+            self.set_subsubmodule(0);
         }
     }
 
@@ -578,7 +578,7 @@ impl ZeldaState {
 
     pub(super) fn module_copy_file_2(&mut self) {
         self.set_bg_vram_load_mode(7);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_screen_brightness(0x0f);
         self.clear_core_update_disable_flag();
         let mut i = 0usize;
@@ -715,7 +715,7 @@ impl ZeldaState {
                 self.vram_upload_data_view_mut()
                     .write_le_u16_at(dst + 58, 0x4762);
             }
-            self.frame_control_view_mut().increment_submodule();
+            self.increment_submodule();
             self.select_file_scratch_view_mut().clear_cursor();
         }
     }
@@ -819,7 +819,7 @@ impl ZeldaState {
                 self.vram_upload_data_view_mut().set_word(52, 0x1462);
                 self.vram_upload_data_view_mut().set_word(58, 0x3462);
             }
-            self.frame_control_view_mut().increment_submodule();
+            self.increment_submodule();
             self.select_file_scratch_view_mut().clear_cursor();
         }
     }
@@ -876,7 +876,7 @@ impl ZeldaState {
 
     pub(super) fn kill_file_set_up(&mut self) {
         self.set_bg_vram_load_mode(8);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_screen_brightness(0x0f);
         self.clear_core_update_disable_flag();
         let mut i = 0usize;
@@ -983,7 +983,7 @@ impl ZeldaState {
             }
             self.vram_upload_data_view_mut()
                 .copy_bytes(0, &KILL_FILE_CONFIRM_STRIPE);
-            self.frame_control_view_mut().increment_submodule();
+            self.increment_submodule();
             if self.select_file_scratch_view().cursor() != 2 {
                 let dst = self
                     .vram_upload_data_view()
@@ -994,7 +994,7 @@ impl ZeldaState {
                     .write_le_u16_at(dst + 6, 0x8762);
             }
             let subsubmodule = self.select_file_scratch_view().cursor();
-            self.frame_control_view_mut().set_subsubmodule(subsubmodule);
+            self.set_subsubmodule(subsubmodule);
             self.select_file_scratch_view_mut().clear_cursor();
         }
     }
@@ -1028,12 +1028,12 @@ impl ZeldaState {
         self.vram_upload_data_view_mut()
             .write_le_u16_at(dst, 0xffff);
         self.set_bg_vram_load_mode(1);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn module_name_player_2(&mut self) {
         self.set_bg_vram_load_mode(5);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.set_screen_brightness(0x0f);
         self.clear_core_update_disable_flag();
     }
@@ -1278,9 +1278,9 @@ impl ZeldaState {
     }
 
     pub(super) fn return_to_file_select(&mut self) {
-        self.frame_control_view_mut().set_main_module(1);
-        self.frame_control_view_mut().set_submodule(1);
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_main_module(1);
+        self.set_submodule(1);
+        self.set_subsubmodule(0);
         self.select_file_scratch_view_mut().clear_cursor();
     }
 }

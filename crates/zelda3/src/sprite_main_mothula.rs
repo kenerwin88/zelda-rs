@@ -5133,7 +5133,7 @@ mod tests {
         // Configure the slot so `sprite_return_if_inactive_for_mothula`
         // returns false: state=9, no flags, no pause via defl bit 0x80.
         state.sprite_slot_view_mut(k).set_state(9);
-        state.frame_control_view_mut().clear_modal_pause_flag();
+        state.clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
         state.sprite_slot_view_mut(k).set_deflection_bits(0x80);
         state.sprite_slot_view_mut(k).set_pause(0);

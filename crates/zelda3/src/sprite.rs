@@ -7875,10 +7875,9 @@ impl ZeldaState {
             .clear_tile_interaction_shared_flag();
         self.messaging_state_view_mut().clear_module();
         let main_module = self.frame_state().main_module;
-        self.frame_control_view_mut().set_submodule(2);
-        self.frame_control_view_mut()
-            .set_saved_module_for_menu(main_module);
-        self.frame_control_view_mut().set_main_module(14);
+        self.set_submodule(2);
+        self.set_saved_module_for_menu(main_module);
+        self.set_main_module(14);
         self.sprite_nullify_hookshot_drag();
         self.player_state_view_mut().set_speed_setting(0);
         self.link_cancel_dash();
@@ -7902,10 +7901,9 @@ impl ZeldaState {
             .clear_tile_interaction_shared_flag();
         self.messaging_state_view_mut().clear_module();
         let main_module = self.frame_state().main_module;
-        self.frame_control_view_mut().set_submodule(2);
-        self.frame_control_view_mut()
-            .set_saved_module_for_menu(main_module);
-        self.frame_control_view_mut().set_main_module(14);
+        self.set_submodule(2);
+        self.set_saved_module_for_menu(main_module);
+        self.set_main_module(14);
     }
 
     // void Sprite_ApplyConveyor(int k, int j) {  // 9d8010
@@ -8390,7 +8388,7 @@ mod tests {
     fn sprite_apply_conveyor_skips_even_frames() {
         let mut s = fresh_state();
         let k = 3;
-        s.frame_control_view_mut().set_frame_counter(0);
+        s.set_frame_counter(0);
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
 
@@ -8410,7 +8408,7 @@ mod tests {
         ] {
             let mut s = fresh_state();
             let k = 3;
-            s.frame_control_view_mut().set_frame_counter(1);
+            s.set_frame_counter(1);
             s.sprite_set_x(k, 0x0100);
             s.sprite_set_y(k, 0x0200);
 
@@ -9033,7 +9031,7 @@ mod tests {
         s.oam_state_view_mut().set_current_pointer(OAM_BUF as u16);
         s.oam_state_view_mut()
             .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
-        s.frame_control_view_mut().set_frame_counter(0x94);
+        s.set_frame_counter(0x94);
         s.ram[0x0fa1] = 0x48;
         s.sprite_slot_view_mut(k).set_sprite_type(0x22);
         s.sprite_slot_view_mut(k).set_state(11);
@@ -9238,7 +9236,7 @@ mod tests {
         assert!(global_pause.sprite_return_if_paused(k));
 
         let mut submodule = fresh_state();
-        submodule.frame_control_view_mut().set_submodule(2);
+        submodule.set_submodule(2);
         assert!(submodule.sprite_return_if_paused(k));
 
         let mut sprite_pause = fresh_state();
@@ -9261,12 +9259,12 @@ mod tests {
 
         let mut blocked = fresh_state();
         blocked.sprite_slot_view_mut(k).set_stunned(4);
-        blocked.frame_control_view_mut().set_submodule(1);
+        blocked.set_submodule(1);
         assert!(!blocked.sprite_return_if_phasing_out(k));
         assert_eq!(blocked.sprite_slot_view(k).stunned(), 4);
 
         let mut high_timer = fresh_state();
-        high_timer.frame_control_view_mut().set_frame_counter(1);
+        high_timer.set_frame_counter(1);
         high_timer.sprite_slot_view_mut(k).set_stunned(0x28);
         assert!(!high_timer.sprite_return_if_phasing_out(k));
         assert_eq!(high_timer.sprite_slot_view(k).stunned(), 0x28);
@@ -9286,7 +9284,7 @@ mod tests {
         assert_eq!(expired.sprite_slot_view(k).pause(), 0);
 
         let mut even_visible = fresh_state();
-        even_visible.frame_control_view_mut().set_frame_counter(1);
+        even_visible.set_frame_counter(1);
         even_visible.sprite_slot_view_mut(k).set_stunned(2);
         even_visible.sprite_slot_view_mut(k).set_pause(7);
         assert!(even_visible.sprite_return_if_phasing_out(k));
@@ -9330,7 +9328,7 @@ mod tests {
         s.sprite_slot_view_mut(k).set_sprite_type(0x7a);
         s.sprite_slot_view_mut(k).set_health(4);
         s.sprite_slot_view_mut(k).set_incoming_damage(4);
-        s.frame_control_view_mut().set_main_module(7);
+        s.set_main_module(7);
 
         s.sprite_hit_timer31(k);
 
@@ -9358,14 +9356,14 @@ mod tests {
         assert_eq!(equal.sprite_slot_view(k).direction(), 2);
 
         let mut waiting = fresh_state();
-        waiting.frame_control_view_mut().set_frame_counter(1);
+        waiting.set_frame_counter(1);
         waiting.sprite_slot_view_mut(k).set_head_direction(0);
         waiting.sprite_slot_view_mut(k).set_direction(1);
         assert!(!waiting.sprite_track_body_to_head(k));
         assert_eq!(waiting.sprite_slot_view(k).direction(), 1);
 
         let mut same_axis = fresh_state();
-        same_axis.frame_control_view_mut().set_frame_counter(0x20);
+        same_axis.set_frame_counter(0x20);
         same_axis.sprite_slot_view_mut(k).set_head_direction(0);
         same_axis.sprite_slot_view_mut(k).set_direction(1);
         assert!(!same_axis.sprite_track_body_to_head(k));

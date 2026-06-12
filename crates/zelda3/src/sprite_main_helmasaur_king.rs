@@ -878,7 +878,7 @@ mod tests {
         // With frame_counter=0 and sprite_C=4 -> n = 3 iterations.
         let mut s = fresh_state();
         let k = 2;
-        s.frame_control_view_mut().set_frame_counter(0);
+        s.set_frame_counter(0);
         s.sprite_slot_view_mut(k).set_c(4);
         // Subtype2 starts so that one increment lands on a multiple-of-16 boundary.
         s.sprite_slot_view_mut(k).set_subtype2(14); // +3 -> 17, which has &15 == 1 (no sfx); but +2 -> 16 hits sfx
@@ -1034,8 +1034,8 @@ mod tests {
     #[test]
     fn attempt_damage_skips_when_frame_counter_not_modulo_eight() {
         let mut s = fresh_state();
-        s.frame_control_view_mut().set_frame_counter(1); // 1 & 7 != 0 -> early return
-                                                         // Link and sprite coords don't matter; just verify no state changes.
+        s.set_frame_counter(1); // 1 & 7 != 0 -> early return
+                                // Link and sprite coords don't matter; just verify no state changes.
         s.helmasaur_king_attempt_damage(2);
         // Nothing observable should change. Use repulsespark_timer as a canary
         // (it would have been written if damage logic ran).

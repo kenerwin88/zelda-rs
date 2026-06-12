@@ -835,9 +835,9 @@ impl ZeldaState {
         }
         self.hud_rebuild();
         self.world_state_view_mut().set_overworld_map_state(0);
-        self.frame_control_view_mut().set_submodule(0);
+        self.set_submodule(0);
         let saved_module = self.frame_state().saved_module_for_menu;
-        self.frame_control_view_mut().set_main_module(saved_module);
+        self.set_main_module(saved_module);
         if self.frame_state().submodule != 0 {
             self.hud_restore_torch_background();
         }

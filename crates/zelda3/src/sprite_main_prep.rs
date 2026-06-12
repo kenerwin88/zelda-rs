@@ -397,7 +397,7 @@ impl ZeldaState {
     // void SpritePrep_TrooperAndArcherSoldier(int k) {  // 869001
     pub(super) fn sprite_prep_trooper_and_archer_soldier(&mut self, k: usize) {
         let bak0 = self.frame_state().submodule;
-        self.frame_control_view_mut().set_submodule(0);
+        self.set_submodule(0);
         let deflection_bits = (self.sprite_slot_view(k).deflection_bits() >> 1) | 0x80;
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);
@@ -406,7 +406,7 @@ impl ZeldaState {
         let deflection_bits = self.sprite_slot_view(k).deflection_bits().wrapping_shl(1);
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);
-        self.frame_control_view_mut().set_submodule(bak0);
+        self.set_submodule(bak0);
     }
 
     pub(super) fn sprite_prep_mantle(&mut self, k: usize) {
@@ -5719,7 +5719,7 @@ mod tests {
         s.ram[MESSAGING_MODULE] = 9;
         s.ram[SUBMODULE_INDEX] = 1;
         s.ram[MAIN_MODULE_INDEX] = 3;
-        s.frame_control_view_mut().clear_saved_module_for_menu();
+        s.clear_saved_module_for_menu();
         s.sprite_slot_view_mut(k).set_delay_main(88);
 
         s.archery_game_guy_show_msg(k, 0x86);
@@ -5838,7 +5838,7 @@ mod tests {
 
         let mut puff = fresh_state();
         let puff_owner = 6;
-        puff.frame_control_view_mut().set_frame_counter(2);
+        puff.set_frame_counter(2);
         puff.garnish_slot_view_mut(14).set_garnish_type(1);
         puff.sprite_workspace_view_mut()
             .set_current_sprite_x(0x0200);
@@ -5910,7 +5910,7 @@ mod tests {
         assert_eq!(skipped_fire_bat.garnish_state_view().active_type(), 0);
 
         let mut fireball = fresh_state();
-        fireball.frame_control_view_mut().set_frame_counter(0);
+        fireball.set_frame_counter(0);
         fireball.garnish_slot_view_mut(29).set_garnish_type(1);
         fireball
             .sprite_workspace_view_mut()
@@ -6329,7 +6329,7 @@ mod tests {
         write_le_u16(&mut pink.ram, OAM_CUR_PTR, 0x0800);
         pink.sprite_set_x(k, 0x0100);
         pink.sprite_set_y(k, 0x0120);
-        pink.frame_control_view_mut().set_frame_counter(0x18);
+        pink.set_frame_counter(0x18);
         pink.pink_ball_distress(k);
         assert_eq!(pink.sprite_slot_view(k).pause(), 0);
 
@@ -6363,7 +6363,7 @@ mod tests {
 
         let mut sasha = fresh_state();
         sasha.sprite_slot_view_mut(k).set_state(9);
-        sasha.frame_control_view_mut().set_frame_counter(0x20);
+        sasha.set_frame_counter(0x20);
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x32);
         assert_eq!(sasha.sprite_slot_view(k).graphics(), 1);
@@ -6412,7 +6412,7 @@ mod tests {
         apple.sprite_slot_view_mut(k).set_state(9);
         apple.sprite_set_x(k, 0x0200);
         apple.sprite_set_y(k, 0x0300);
-        apple.frame_control_view_mut().set_frame_counter(0);
+        apple.set_frame_counter(0);
         apple.ram[0x0fa1] = 0;
         apple.spawn_apple(k);
         assert_eq!(apple.sprite_slot_view(15).sprite_type(), 0xac);
@@ -6482,7 +6482,7 @@ mod tests {
         assert_eq!(tree_eye.sprite_slot_view(15).subtype2(), 1);
 
         let mut pirogusu = fresh_state();
-        pirogusu.frame_control_view_mut().set_frame_counter(k as u8);
+        pirogusu.set_frame_counter(k as u8);
         pirogusu.garnish_slot_view_mut(14).set_garnish_type(1);
         pirogusu.sprite_set_x(k, 0x0110);
         pirogusu.sprite_set_y(k, 0x0220);
@@ -6551,7 +6551,7 @@ mod tests {
         assert_eq!(logic.dialogue_message_index_view().value(), 0xfe);
         assert_eq!(logic.sprite_slot_view(k).ai_state(), 0);
 
-        logic.frame_control_view_mut().set_submodule(2);
+        logic.set_submodule(2);
         logic.dialogue_message_index_view_mut().set_value(0xc9);
         logic.fairy_check_if_touchable(k);
         assert_eq!(logic.sprite_slot_view(k).delay_aux4(), 40);
@@ -6878,7 +6878,7 @@ mod tests {
         puffs.ram[OVERLORD_Y_LO_PREP + k + 7] = 0x07;
         puffs.ram[OVERLORD_GEN1_PREP + k + 7] = 0x78;
         puffs.ram[OVERLORD_GEN3_PREP + k + 7] = 0x09;
-        puffs.frame_control_view_mut().set_frame_counter(0);
+        puffs.set_frame_counter(0);
         puffs.sprite_prep_arrghi(k);
         assert_eq!(puffs.overlord_slot_view(2).x_low(), 0);
         assert_eq!(puffs.overlord_slot_view(3).x_low(), 0);

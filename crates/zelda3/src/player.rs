@@ -171,7 +171,7 @@ impl ZeldaState {
         } else {
             42
         };
-        self.frame_control_view_mut().set_submodule(submodule);
+        self.set_submodule(submodule);
         self.replay_trace_submodule("check_ability_to_swim-exit");
     }
 
@@ -2172,7 +2172,7 @@ impl ZeldaState {
                     self.Dungeon_FlagRoomData_Quadrants();
                     self.ancilla_sfx2_near(0x33);
                     self.player_state_view_mut().set_speed_setting(0);
-                    self.frame_control_view_mut().set_submodule(21);
+                    self.set_submodule(21);
                     let prev_room = self.world_location_state().dungeon_room_index();
                     self.dungeon_state_view_mut().set_room_index_prev(prev_room);
                     let room = self.dungeon_header_view().travel_destination(0);
@@ -3173,8 +3173,8 @@ impl ZeldaState {
             let stairs = self.tile_detect_position_view().inroom_staircase();
             if stairs & 0x77 != 0 {
                 let submodule = if stairs & 0x70 != 0 { 16 } else { 8 };
-                self.frame_control_view_mut().set_submodule(submodule);
-                self.frame_control_view_mut().set_main_module(7);
+                self.set_submodule(submodule);
+                self.set_main_module(7);
                 self.link_cancel_dash();
             } else {
                 const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
@@ -5043,10 +5043,9 @@ impl ZeldaState {
             self.inventory_state_view_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
-            self.frame_control_view_mut().set_submodule(4);
-            self.frame_control_view_mut()
-                .set_saved_module_for_menu(main_module);
-            self.frame_control_view_mut().set_main_module(14);
+            self.set_submodule(4);
+            self.set_saved_module_for_menu(main_module);
+            self.set_main_module(14);
             self.hud_state_view_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 4 {
@@ -5058,10 +5057,9 @@ impl ZeldaState {
             self.inventory_state_view_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
-            self.frame_control_view_mut().set_submodule(8);
-            self.frame_control_view_mut()
-                .set_saved_module_for_menu(main_module);
-            self.frame_control_view_mut().set_main_module(14);
+            self.set_submodule(8);
+            self.set_saved_module_for_menu(main_module);
+            self.set_main_module(14);
             self.hud_state_view_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 5 {
@@ -5076,10 +5074,9 @@ impl ZeldaState {
             self.inventory_state_view_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
-            self.frame_control_view_mut().set_submodule(9);
-            self.frame_control_view_mut()
-                .set_saved_module_for_menu(main_module);
-            self.frame_control_view_mut().set_main_module(14);
+            self.set_submodule(9);
+            self.set_saved_module_for_menu(main_module);
+            self.set_main_module(14);
             self.hud_state_view_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 6 {
@@ -5104,11 +5101,10 @@ impl ZeldaState {
 
     pub(super) fn link_perform_desert_prayer(&mut self) {
         let main_module = self.frame_state().main_module;
-        self.frame_control_view_mut().set_submodule(5);
-        self.frame_control_view_mut()
-            .set_saved_module_for_menu(main_module);
-        self.frame_control_view_mut().set_main_module(14);
-        self.frame_control_view_mut().set_modal_pause_flag(1);
+        self.set_submodule(5);
+        self.set_saved_module_for_menu(main_module);
+        self.set_main_module(14);
+        self.set_modal_pause_flag(1);
         self.player_state_view_mut().set_y_button_action_timer(22);
         self.player_state_view_mut().set_y_button_action_step(0);
         self.player_state_view_mut().set_state_bits(2);
@@ -5288,7 +5284,7 @@ impl ZeldaState {
             let y = self.player_state_view().y();
             let x = self.player_state_view().x();
             if screen == 0x18 && (0x760..0x7e0).contains(&y) && (0x1cf..0x230).contains(&x) {
-                self.frame_control_view_mut().set_submodule(45);
+                self.set_submodule(45);
                 self.ancilla_add_exploding_weather_vane(55, 0);
             }
         } else {
@@ -5437,7 +5433,7 @@ impl ZeldaState {
         const ETHER_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7];
         const FEATURES0_DIM_FLASHES: u32 = 65536;
 
-        self.frame_control_view_mut().increment_modal_pause_flag();
+        self.increment_modal_pause_flag();
         if (self
             .player_state_view_mut()
             .decrement_spin_attack_delay_timer() as i8)
@@ -5484,7 +5480,7 @@ impl ZeldaState {
             0, 1, 2, 3, 0, 1, 2, 3, 8, 9, 10, 11, 12, 10, 8, 13, 14, 15, 16, 17,
         ];
 
-        self.frame_control_view_mut().increment_modal_pause_flag();
+        self.increment_modal_pause_flag();
         if (self
             .player_state_view_mut()
             .decrement_spin_attack_delay_timer() as i8)
@@ -5521,7 +5517,7 @@ impl ZeldaState {
     pub(super) fn link_state_using_quake(&mut self) {
         const QUAKE_ANIM_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 19];
         const QUAKE_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 18, 19, 20, 22];
-        self.frame_control_view_mut().increment_modal_pause_flag();
+        self.increment_modal_pause_flag();
         self.player_state_view_mut().clear_actual_velocity_xy();
 
         if self.player_state_view().spin_animation_step_counter() == 10 {
@@ -5636,11 +5632,11 @@ impl ZeldaState {
             let x = self.player_state_view().x();
             self.bird_travel_destination_view_mut(15).set_position(x, y);
         }
-        self.frame_control_view_mut().set_submodule(35);
+        self.set_submodule(35);
         self.player_state_view_mut()
             .clear_pull_for_rupees_sprite_need();
         self.player_state_view_mut().set_whirlpool_trigger();
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_subsubmodule(0);
         self.player_state_view_mut().clear_actual_velocity_xy();
         self.player_state_view_mut().set_handler_state(20);
     }
@@ -6196,11 +6192,11 @@ impl ZeldaState {
     }
 
     fn start_mirror_transition(&mut self, submodule: u8) {
-        self.frame_control_view_mut().set_submodule(submodule);
+        self.set_submodule(submodule);
         self.player_state_view_mut()
             .clear_pull_for_rupees_sprite_need();
         self.player_state_view_mut().set_whirlpool_trigger();
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_subsubmodule(0);
         self.player_state_view_mut().clear_actual_velocity_xy();
         self.player_state_view_mut().set_handler_state(20);
     }
@@ -6350,7 +6346,7 @@ impl ZeldaState {
     pub(super) fn link_main(&mut self) {
         self.player_state_view_mut()
             .cache_previous_position_from_current_xy_order();
-        self.frame_control_view_mut().clear_modal_pause_flag();
+        self.clear_modal_pause_flag();
         if !self.player_state_view().is_immobilized() {
             self.link_control_handler();
         }
@@ -6390,10 +6386,9 @@ impl ZeldaState {
                     self.ppu_scroll_copy_view_mut().set_mapbak_tm(main_layers);
                     self.ppu_scroll_copy_view_mut().set_mapbak_ts(sub_layers);
                     let main_module = self.frame_state().main_module;
-                    self.frame_control_view_mut()
-                        .set_saved_module_for_menu(main_module);
-                    self.frame_control_view_mut().set_main_module(18);
-                    self.frame_control_view_mut().set_submodule(1);
+                    self.set_saved_module_for_menu(main_module);
+                    self.set_main_module(18);
+                    self.set_submodule(1);
                     self.player_state_view_mut().clear_blink_countdown();
                     self.player_resources_view_mut().set_heart_filler(0);
                     0
@@ -6876,8 +6871,8 @@ impl ZeldaState {
         self.player_state_view_mut().clear_pit_data_index();
         self.player_state_view_mut().clear_near_pit_state();
         self.player_state_view_mut().set_speed_setting(0);
-        self.frame_control_view_mut().set_subsubmodule(0);
-        self.frame_control_view_mut().set_submodule(0);
+        self.set_subsubmodule(0);
+        self.set_submodule(0);
         self.player_state_view_mut()
             .clear_sprite_damage_disable_timer();
         if self.follower_state_view().indicator() != 0
@@ -8438,7 +8433,7 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_pit_do_damage(&mut self) {
-        self.frame_control_view_mut().set_submodule(20);
+        self.set_submodule(20);
         if self
             .player_resources_view_mut()
             .decrement_current_health_by(8)

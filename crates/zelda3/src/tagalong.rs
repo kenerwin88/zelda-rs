@@ -1174,7 +1174,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut().increment_trapdoors_down_low();
             self.dungeon_state_view_mut().clear_current_door_pos();
             self.dungeon_state_view_mut().clear_door_animation_step();
-            self.frame_control_view_mut().set_submodule(5);
+            self.set_submodule(5);
             self.system_signals_view_mut().set_music_control(21);
             return;
         }
@@ -1794,9 +1794,9 @@ impl ZeldaState {
             self.world_state_view_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_view_mut().clear_module();
-            self.frame_control_view_mut().set_submodule(2);
-            self.frame_control_view_mut().save_main_module_for_menu();
-            self.frame_control_view_mut().set_main_module(14);
+            self.set_submodule(2);
+            self.save_main_module_for_menu();
+            self.set_main_module(14);
         }
     }
 

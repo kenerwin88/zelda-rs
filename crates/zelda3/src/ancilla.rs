@@ -3096,14 +3096,14 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_spin_animation_step_counter();
         self.player_state_view_mut().clear_direction_lock();
-        self.frame_control_view_mut().clear_modal_pause_flag();
+        self.clear_modal_pause_flag();
 
         if self.world_location_state().overworld_screen_index() == 0x70
             && self.overworld_event_info_view().event_info(0x70) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(2)
         {
             self.world_state_view_mut().set_trigger_special_entrance(3);
-            self.frame_control_view_mut().set_subsubmodule(0);
+            self.set_subsubmodule(0);
             self.scratch_word_view_mut()
                 .clear_module_transition_counter();
         }
@@ -3405,7 +3405,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_spin_animation_step_counter();
         self.player_state_view_mut().clear_direction_lock();
-        self.frame_control_view_mut().clear_modal_pause_flag();
+        self.clear_modal_pause_flag();
         if self.player_state_view().handler_state() != 26 {
             self.player_state_view_mut().clear_handler_state();
             self.player_state_view_mut().set_spin_attack_delay_timer(0);
@@ -4361,7 +4361,7 @@ impl ZeldaState {
         self.skull_woods_fire_scratch_view_mut()
             .set_outer_position(0x0098, 0x0100);
         self.world_state_view_mut().set_trigger_special_entrance(2);
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_subsubmodule(0);
         self.scratch_word_view_mut()
             .clear_module_transition_counter();
         let value = self.player_state_view().lower_level_state();
@@ -5949,7 +5949,7 @@ impl ZeldaState {
             .clear_spin_animation_step_counter();
         self.player_state_view_mut().clear_direction_lock();
         self.player_state_view_mut().set_spin_attack_delay_timer(0);
-        self.frame_control_view_mut().clear_modal_pause_flag();
+        self.clear_modal_pause_flag();
         self.world_state_view_mut().set_bg1_x_offset(0);
         self.world_state_view_mut().set_bg1_y_offset(0);
         if self.world_location_state().overworld_screen_index() == 0x47
@@ -5957,7 +5957,7 @@ impl ZeldaState {
             && self.ancilla_check_for_entrance_trigger(3)
         {
             self.world_state_view_mut().set_trigger_special_entrance(4);
-            self.frame_control_view_mut().set_subsubmodule(0);
+            self.set_subsubmodule(0);
             self.scratch_word_view_mut()
                 .clear_module_transition_counter();
         }
@@ -6604,7 +6604,7 @@ impl ZeldaState {
 
             if self.ancilla_slot_view(k).l() != 0 || self.ancilla_slot_view(k).step() != 0 {
                 if self.ancilla_slot_view(k).l() == 0 && self.ancilla_slot_view(k).step() != 0 {
-                    self.frame_control_view_mut().increment_modal_pause_flag();
+                    self.increment_modal_pause_flag();
                 }
                 self.ancilla_slot_view_mut(k).tick_z_velocity();
                 self.ancilla_move_z(k);
@@ -6614,7 +6614,7 @@ impl ZeldaState {
             if self.ancilla_slot_view(k).l() != 0 {
                 let x = self.ancilla_get_x(k);
                 if self.ancilla_slot_view(k).step() != 0 {
-                    self.frame_control_view_mut().increment_modal_pause_flag();
+                    self.increment_modal_pause_flag();
                 }
                 if !sign16(x) && x >= self.player_state_view().x() {
                     if self.ancilla_slot_view(k).step() != 0 {
@@ -6693,7 +6693,7 @@ impl ZeldaState {
                 self.follower_state_view_mut().set_appearance_none_flag(1);
                 let value = 2;
                 self.ancilla_slot_view_mut(k).set_step(value);
-                self.frame_control_view_mut().increment_modal_pause_flag();
+                self.increment_modal_pause_flag();
                 self.player_state_view_mut().clear_given_damage();
                 if self.world_location_state().is_indoors() {
                     let value = self.world_location_state().indoor_flag;
@@ -6756,10 +6756,9 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
             if self.ancilla_slot_view(k).l() == 0 && self.ancilla_slot_view(k).step() != 0 {
                 let main_module = self.frame_state().main_module;
-                self.frame_control_view_mut().set_submodule(10);
-                self.frame_control_view_mut()
-                    .set_saved_module_for_menu(main_module);
-                self.frame_control_view_mut().set_main_module(14);
+                self.set_submodule(10);
+                self.set_saved_module_for_menu(main_module);
+                self.set_main_module(14);
             }
         }
     }
@@ -6881,7 +6880,7 @@ impl ZeldaState {
         self.ancilla_draw_shadow(oam + 4, 1, x, y.wrapping_add(48), 0x30);
         if !sign16(x) && x >= 248 {
             self.ancilla_slot_view_mut(k).clear();
-            self.frame_control_view_mut().set_submodule(0);
+            self.set_submodule(0);
             self.inventory_state_view_mut().set_flute(3);
         }
     }
@@ -7199,7 +7198,7 @@ impl ZeldaState {
                     self.ancilla_slot_view_mut(k).set_timer(value);
                 }
             } else {
-                self.frame_control_view_mut().increment_modal_pause_flag();
+                self.increment_modal_pause_flag();
 
                 if self.ancilla_slot_view(k).step() != 0 && self.ancilla_slot_view(k).step() != 3 {
                     let value = self.ancilla_slot_view(k).aux_timer().wrapping_sub(1);
@@ -7285,7 +7284,7 @@ impl ZeldaState {
             self.link_receive_item(0x26, 0);
             let value = 0;
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-            self.frame_control_view_mut().clear_modal_pause_flag();
+            self.clear_modal_pause_flag();
             return;
         }
 
@@ -7321,7 +7320,7 @@ impl ZeldaState {
         let value = 0;
 
         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-        self.frame_control_view_mut().clear_modal_pause_flag();
+        self.clear_modal_pause_flag();
         let a = self.ancilla_slot_view(k).item_to_link();
         if self.ancilla_slot_view(k).step() == 3 && a != 0x10 && a != 0x26 && a != 0x0f && a != 0x20
         {
@@ -7469,8 +7468,8 @@ impl ZeldaState {
                 let i = (self.save_progress_view().palace_index_x2() >> 1) as usize;
                 self.player_resources_view_mut()
                     .add_crystal_flags(DUNGEON_CRYSTAL_PENDANT_BIT[i]);
-                self.frame_control_view_mut().set_submodule(0x18);
-                self.frame_control_view_mut().set_subsubmodule(0);
+                self.set_submodule(0x18);
+                self.set_subsubmodule(0);
                 self.palette_buffer_view_mut()
                     .clear_aux_visible_subpalettes();
                 self.palette_filter_view_mut().set_countdown_word(0);
@@ -9603,7 +9602,7 @@ impl ZeldaState {
                 if self.ancilla_slot_view(k).step() == 2 {
                     if self.tower_seal_scratch_view_mut().tick_wait_countdown() == 0 {
                         self.world_state_view_mut().set_trigger_special_entrance(5);
-                        self.frame_control_view_mut().set_subsubmodule(0);
+                        self.set_subsubmodule(0);
                         self.scratch_word_view_mut()
                             .clear_module_transition_counter();
                         self.ancilla_slot_view_mut(k).add_step(1);
@@ -10185,7 +10184,7 @@ impl ZeldaState {
             if self.oam_state_view().entry_y(oam) == 0xf0 {
                 let value = 3;
                 self.ancilla_slot_view_mut(k).set_step(value);
-                self.frame_control_view_mut().increment_submodule();
+                self.increment_submodule();
                 let main_screen_layers = self.ppu_scroll_copy_view().mapbak_tm();
                 self.set_main_screen_layers(main_screen_layers);
             }

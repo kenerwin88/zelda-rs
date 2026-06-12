@@ -330,9 +330,9 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut().set_bg2_v_copy(0);
         self.system_signals_view_mut().set_music_control(0xf1);
         self.attract_state_view_mut().set_sequence(0);
-        self.frame_control_view_mut().set_main_module(0);
-        self.frame_control_view_mut().set_submodule(10);
-        self.frame_control_view_mut().set_subsubmodule(10);
+        self.set_main_module(0);
+        self.set_submodule(10);
+        self.set_subsubmodule(10);
     }
 
     pub(super) fn attract_skip_to_file_select(&mut self) {

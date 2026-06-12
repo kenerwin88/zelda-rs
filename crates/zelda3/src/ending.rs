@@ -560,22 +560,22 @@ impl ZeldaState {
             self.Palette_SetOwBgColor();
         }
         self.set_bg_mode(9);
-        self.frame_control_view_mut().increment_subsubmodule();
+        self.increment_subsubmodule();
     }
 
     pub(super) fn credits_load_scene_overworld_overlay(&mut self) {
         self.Overworld_LoadOverlays2();
         self.system_signals_view_mut().set_music_control(0);
         self.system_signals_view_mut().set_ambient_sound_effect(0);
-        self.frame_control_view_mut().decrement_submodule();
-        self.frame_control_view_mut().increment_subsubmodule();
+        self.decrement_submodule();
+        self.increment_subsubmodule();
     }
 
     pub(super) fn credits_load_scene_overworld_load_map(&mut self) {
         self.Overworld_LoadAndBuildScreen();
         self.credits_prep_and_load_sprites();
         self.ending_scratch_view_mut().clear_primary_word();
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_subsubmodule(0);
     }
 
     pub(super) fn credits_operate_scrolling_and_tile_map(&mut self) {
@@ -605,7 +605,7 @@ impl ZeldaState {
         self.Overworld_LoadOverlays2();
         self.world_state_view_mut().set_bg1_y_low(0);
         self.world_state_view_mut().set_bg1_x_low(0);
-        self.frame_control_view_mut().decrement_submodule();
+        self.decrement_submodule();
     }
 
     pub(super) fn credits_load_scene_dungeon(&mut self) {
@@ -633,7 +633,7 @@ impl ZeldaState {
         self.set_bg_mode(9);
         self.ending_scratch_view_mut().clear_primary_word();
         self.set_screen_brightness(0);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.credits_prep_and_load_sprites();
     }
 
@@ -668,8 +668,8 @@ impl ZeldaState {
                 if self.frame_state().submodule == 10 {
                     self.world_state_view_mut().set_overworld_screen(91);
                     self.world_state_view_mut().set_indoor_flag(0);
-                    self.frame_control_view_mut().set_main_module(24);
-                    self.frame_control_view_mut().set_submodule(0);
+                    self.set_main_module(24);
+                    self.set_submodule(0);
                     self.world_state_view_mut().set_overworld_map_state(2);
                 }
             }
@@ -692,25 +692,25 @@ impl ZeldaState {
             }
             4 => {
                 self.Overworld_LoadOverlayAndMap();
-                self.frame_control_view_mut().set_subsubmodule(0);
+                self.set_subsubmodule(0);
             }
             5 => {
                 self.increment_screen_brightness();
                 if self.display_state().screen_brightness == 15 {
                     self.dungeon_state_view_mut().clear_savegame_state_bits();
-                    self.frame_control_view_mut().clear_modal_pause_flag();
+                    self.clear_modal_pause_flag();
                     self.Sprite_SpawnBatCrashCutscene();
                     self.player_state_view_mut().set_facing(2);
-                    self.frame_control_view_mut().set_saved_module_for_menu(9);
+                    self.set_saved_module_for_menu(9);
                     self.world_state_view_mut().set_indoor_flag(0);
                     self.world_state_view_mut().increment_overworld_map_state();
-                    self.frame_control_view_mut().set_subsubmodule(128);
+                    self.set_subsubmodule(128);
                     self.save_progress_view_mut().set_palace_index_x2(255);
                 }
             }
             6 => {}
             7 => {
-                self.frame_control_view_mut().decrement_subsubmodule();
+                self.decrement_subsubmodule();
                 if self.frame_state().subsubmodule == 0 {
                     self.world_state_view_mut().increment_overworld_map_state();
                 }
@@ -742,9 +742,9 @@ impl ZeldaState {
                 self.Palette_RevertTranslucencySwap();
                 self.Overworld_EnterSpecialArea();
                 self.Overworld_LoadOverlays2();
-                self.frame_control_view_mut().increment_subsubmodule();
-                self.frame_control_view_mut().set_main_module(25);
-                self.frame_control_view_mut().set_submodule(0);
+                self.increment_subsubmodule();
+                self.set_main_module(25);
+                self.set_submodule(0);
             }
             3 => {
                 self.sprite_system_view_mut().set_main_tile_theme(36);
@@ -754,13 +754,12 @@ impl ZeldaState {
                 self.Overworld_LoadAreaPalettesEx(4);
                 self.Overworld_LoadPalettes(14, 0);
                 self.SpecialOverworld_CopyPalettesToCache();
-                self.frame_control_view_mut().increment_subsubmodule();
+                self.increment_subsubmodule();
             }
             4 => {
                 let bak0 = self.frame_state().subsubmodule;
                 self.Module08_02_LoadAndAdvance();
-                self.frame_control_view_mut()
-                    .set_subsubmodule(bak0.wrapping_add(1));
+                self.set_subsubmodule(bak0.wrapping_add(1));
                 self.set_screen_brightness(15);
                 self.palette_filter_view_mut().set_countdown(31);
                 self.clear_mosaic_target_level();
@@ -775,8 +774,8 @@ impl ZeldaState {
                     player.set_lower_level_state(2);
                 }
                 self.system_signals_view_mut().set_music_control(32);
-                self.frame_control_view_mut().set_main_module(25);
-                self.frame_control_view_mut().set_submodule(0);
+                self.set_main_module(25);
+                self.set_submodule(0);
             }
             5 => {
                 self.player_state_view_mut()
@@ -786,7 +785,7 @@ impl ZeldaState {
                     self.player_state_view_mut()
                         .set_direction_and_last_direction(0);
                     self.player_state_view_mut().clear_animation_step();
-                    self.frame_control_view_mut().increment_subsubmodule();
+                    self.increment_subsubmodule();
                 }
             }
             6 => {
@@ -805,17 +804,17 @@ impl ZeldaState {
                 self.main_show_text_message();
                 self.RenderText();
                 self.ending_scratch_view_mut().set_primary_low(0x80);
-                self.frame_control_view_mut().set_main_module(25);
-                self.frame_control_view_mut().increment_subsubmodule();
+                self.set_main_module(25);
+                self.increment_subsubmodule();
             }
             8 | 10 => {
                 self.advance_polyhedral();
                 if self.frame_state().subsubmodule == 11 {
                     self.system_signals_view_mut().set_music_control(33);
-                    self.frame_control_view_mut().set_main_module(25);
+                    self.set_main_module(25);
                     self.player_state_view_mut()
                         .set_direction_and_last_direction(0);
-                    self.frame_control_view_mut().increment_submodule();
+                    self.increment_submodule();
                 }
             }
             9 => {
@@ -823,8 +822,8 @@ impl ZeldaState {
                 self.RenderText();
                 if self.frame_state().submodule == 0 {
                     self.world_state_view_mut().set_overworld_map_state(0);
-                    self.frame_control_view_mut().set_main_module(25);
-                    self.frame_control_view_mut().increment_subsubmodule();
+                    self.set_main_module(25);
+                    self.increment_subsubmodule();
                 }
             }
             11 => {
@@ -839,22 +838,22 @@ impl ZeldaState {
                 self.advance_polyhedral();
                 if self.ending_scratch_view_mut().decrement_primary_low() == 0 {
                     self.Palette_AnimGetMasterSword2();
-                    self.frame_control_view_mut().increment_submodule();
+                    self.increment_submodule();
                 }
             }
             13 => {
                 self.advance_polyhedral();
                 self.PaletteFilter_BlindingWhiteTriforce();
                 if self.palette_filter_view().darkening_or_lightening_screen() == 255 {
-                    self.frame_control_view_mut().increment_subsubmodule();
+                    self.increment_subsubmodule();
                 }
             }
             14 => {
                 self.decrement_screen_brightness();
                 if self.display_state().screen_brightness == 0 {
-                    self.frame_control_view_mut().set_main_module(26);
-                    self.frame_control_view_mut().set_submodule(0);
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_main_module(26);
+                    self.set_submodule(0);
+                    self.set_subsubmodule(0);
                     self.set_irq_control_flag(0xff);
                     self.deactivate_nmi_thread();
                     self.clear_pending_polyhedral_update();
@@ -1075,7 +1074,7 @@ impl ZeldaState {
         self.intro_actor_view_mut(1).set_subtype(5);
         self.intro_actor_view_mut(2).set_subtype(6);
         self.set_screen_brightness(15);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn credits_initialize_polyhedral(&mut self) {
@@ -1089,7 +1088,7 @@ impl ZeldaState {
             self.intro_actor_view_mut(k).set_subtype(7);
         }
         self.set_screen_brightness(15);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn advance_polyhedral(&mut self) {
@@ -1109,7 +1108,7 @@ impl ZeldaState {
                 if self.poly_state_view().config1() < 2 {
                     self.poly_state_view_mut().clear_config1();
                     self.attract_state_view_mut().increment_intro_step_index();
-                    self.frame_control_view_mut().increment_subsubmodule();
+                    self.increment_subsubmodule();
                 }
                 if self.frame_state().subsubmodule >= 10 {
                     self.attract_state_view_mut().increment_intro_step_index();
@@ -1134,7 +1133,7 @@ impl ZeldaState {
                     && self.poly_state_view().angle_a().wrapping_sub(11) >= 220
                 {
                     self.poly_state_view_mut().clear_angles();
-                    self.frame_control_view_mut().increment_subsubmodule();
+                    self.increment_subsubmodule();
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.system_signals_view_mut().set_sound_effect_1(44);
                     self.palette_buffer_view_mut().set_main_color(0xd7, 0x7fff);
@@ -1918,7 +1917,7 @@ impl ZeldaState {
                         self.credits_sprite_draw_set_shadow_prop(k, 2);
                         let bak0 = self.frame_state().main_module;
                         self.credits_sprite_draw_activate_and_run_sprite(k, 0x0c);
-                        self.frame_control_view_mut().set_main_module(bak0);
+                        self.set_main_module(bak0);
                         if self.sprite_slot_view(k).b() == 15 && self.sprite_slot_view(k).a() == 4 {
                             self.sprite_slot_view_mut(k + 2).set_delay_main(15);
                         }
@@ -2126,7 +2125,7 @@ impl ZeldaState {
             if r16 & 1 == 0 {
                 self.decrement_screen_brightness();
                 if self.display_state().screen_brightness == 0 {
-                    self.frame_control_view_mut().increment_submodule();
+                    self.increment_submodule();
                 } else {
                     self.ending_scratch_view_mut()
                         .set_primary_word(r16.wrapping_add(1));
@@ -2204,10 +2203,10 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(a);
         self.sprite_get_16_bit_coords_ending(k);
         let bak0 = self.frame_state().submodule;
-        self.frame_control_view_mut().set_submodule(0);
+        self.set_submodule(0);
         self.sprite_slot_view_mut(k).set_state(9);
         self.sprite_active_main_ending(k);
-        self.frame_control_view_mut().set_submodule(bak0);
+        self.set_submodule(bak0);
     }
 
     pub(super) fn credits_sprite_draw_preexisting_sprite_draw(&mut self, k: usize, a: u8) {
@@ -2487,7 +2486,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_fixed_color_red(0x3f);
         self.palette_filter_view_mut().set_fixed_color_green(0x5f);
         self.palette_filter_view_mut().set_fixed_color_blue(0x9f);
-        self.frame_control_view_mut().set_subsubmodule(64);
+        self.set_subsubmodule(64);
         self.set_screen_brightness(0);
         self.hdma_setup(0, 0xebd53, 0x42, 0, BG2HOFS as u8, 0);
         self.set_hdma_enable_mask(0x80);
@@ -2495,9 +2494,9 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_fade_out_fixed_col(&mut self) {
-        self.frame_control_view_mut().decrement_subsubmodule();
+        self.decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
-            self.frame_control_view_mut().set_subsubmodule(16);
+            self.set_subsubmodule(16);
             if self.palette_filter_view().fixed_color_red() != 32 {
                 self.palette_filter_view_mut().subtract_fixed_color_red(1);
             } else if self.palette_filter_view().fixed_color_green() != 64 {
@@ -2524,7 +2523,7 @@ impl ZeldaState {
                 .set_packed_bounds(a0, a0 >> 1, a1, a1 >> 1);
             if self.ppu_scroll_copy_view().bg3_v_copy2() == 3288 {
                 self.ending_scratch_view_mut().set_primary_word(0x80);
-                self.frame_control_view_mut().increment_submodule();
+                self.increment_submodule();
             } else {
                 self.ppu_scroll_copy_view_mut().add_bg3_v_copy2_signed(1);
                 let bg3v = self.ppu_scroll_copy_view().bg3_v_copy2();
@@ -2666,7 +2665,7 @@ impl ZeldaState {
         if self.frame_state().frame_counter & 15 == 0 {
             self.increment_screen_brightness();
             if self.display_state().screen_brightness == 15 {
-                self.frame_control_view_mut().increment_submodule();
+                self.increment_submodule();
             }
         }
         self.credits_animate_the_triangles();
@@ -2678,7 +2677,7 @@ impl ZeldaState {
                 .set_darkening_or_lightening_screen_word(0);
             self.palette_filter_view_mut().set_countdown_word(0);
             self.set_mosaic_target_level_word(0x1f);
-            self.frame_control_view_mut().increment_submodule();
+            self.increment_submodule();
             self.ending_scratch_view_mut().set_primary_word(0x00c0);
             self.ending_scratch_view_mut().set_secondary_word(0);
         }
@@ -2699,7 +2698,7 @@ impl ZeldaState {
             self.credits_animate_the_triangles();
             return;
         }
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.PaletteFilter_WishPonds_Inner();
     }
 
@@ -2707,7 +2706,7 @@ impl ZeldaState {
         if self.frame_state().frame_counter & 7 == 0 {
             self.PaletteFilter_SP5F();
             if self.palette_filter_view().countdown() == 0 {
-                self.frame_control_view_mut().increment_submodule();
+                self.increment_submodule();
             }
         }
         self.credits_hang_forever();
@@ -2764,9 +2763,9 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_link_state_block_for_ending();
         self.save_progress_view_mut().clear_dungeon_info();
-        self.frame_control_view_mut().set_main_module(1);
+        self.set_main_module(1);
         self.system_signals_view_mut().set_restart_check_flag(1);
-        self.frame_control_view_mut().set_submodule(0);
+        self.set_submodule(0);
     }
 
     pub(super) fn load_triforce_sprite_palette(&mut self) {
@@ -2818,8 +2817,8 @@ impl ZeldaState {
         }
         self.palette_fade_intro_one_step();
         if self.palette_filter_view().countdown() == 0 {
-            self.frame_control_view_mut().set_subsubmodule(42);
-            self.frame_control_view_mut().increment_submodule();
+            self.set_subsubmodule(42);
+            self.increment_submodule();
             self.intro_setup_sword_and_intro_flash();
         } else if self.palette_filter_view().countdown() == 13 {
             self.set_main_screen_layers(0x15);
@@ -2837,9 +2836,9 @@ impl ZeldaState {
         self.attract_state_view_mut().clear_intro_did_run_step();
         self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
-        self.frame_control_view_mut().decrement_subsubmodule();
+        self.decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
-            self.frame_control_view_mut().increment_submodule();
+            self.increment_submodule();
             self.palette_filter_view_mut().set_color_window_selection(2);
             self.palette_filter_view_mut().set_color_math_control(0x22);
             self.palette_filter_view_mut().set_countdown_word(31);
@@ -2861,9 +2860,9 @@ impl ZeldaState {
         {
             self.fade_music_and_reset_sram_mirror();
         } else {
-            self.frame_control_view_mut().decrement_subsubmodule();
+            self.decrement_subsubmodule();
             if self.frame_state().subsubmodule == 0 {
-                self.frame_control_view_mut().increment_submodule();
+                self.increment_submodule();
             }
         }
     }
@@ -2873,11 +2872,11 @@ impl ZeldaState {
         self.attract_state_view_mut().clear_intro_did_run_step();
         self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
-        self.frame_control_view_mut().decrement_subsubmodule();
+        self.decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
-            self.frame_control_view_mut().increment_submodule();
-            self.frame_control_view_mut().set_main_module(20);
-            self.frame_control_view_mut().set_submodule(0);
+            self.increment_submodule();
+            self.set_main_module(20);
+            self.set_submodule(0);
             self.player_state_view_mut().set_x(0);
         }
     }
@@ -2993,10 +2992,10 @@ impl ZeldaState {
     pub(super) fn intro_init(&mut self) {
         self.intro_setup_screen();
         self.set_screen_brightness(15);
-        self.frame_control_view_mut().set_subsubmodule(0);
+        self.set_subsubmodule(0);
         self.intro_startup_delay = 0;
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
         self.system_signals_view_mut().set_sound_effect_2(10);
         self.intro_init_continue();
     }
@@ -3040,7 +3039,7 @@ impl ZeldaState {
     pub(super) fn intro_init_continue(&mut self) {
         self.intro_display_logo();
         let t = self.frame_state().subsubmodule;
-        self.frame_control_view_mut().increment_subsubmodule();
+        self.increment_subsubmodule();
         match t {
             0..=7 => self.intro_clear1kb_blocks_of_wram(),
             8 => self.intro_load_text_pointers_and_palettes(),
@@ -3097,7 +3096,7 @@ impl ZeldaState {
             .set_darkening_or_lightening_screen_word(2);
         self.palette_filter_view_mut().set_countdown_word(31);
         self.clear_mosaic_target_level();
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn intro_initialize_triforce_poly_thread(&mut self) {
@@ -3114,7 +3113,7 @@ impl ZeldaState {
         self.intro_actor_view_mut(4).set_init_phase(1);
         self.intro_actor_view_mut(4).set_subtype(2);
         self.set_screen_brightness(15);
-        self.frame_control_view_mut().increment_submodule();
+        self.increment_submodule();
     }
 
     pub(super) fn intro_init_gfx_helper(&mut self) {
@@ -3207,7 +3206,7 @@ impl ZeldaState {
                 self.poly_state_view_mut().add_angle_b(5);
                 self.poly_state_view_mut().add_angle_a(3);
                 if self.poly_state_view().config1() < 225 {
-                    self.frame_control_view_mut().set_submodule(4);
+                    self.set_submodule(4);
                 }
                 if self.poly_state_view().config1() == 113 {
                     self.system_signals_view_mut().set_music_control(1);
@@ -3245,10 +3244,10 @@ impl ZeldaState {
                     self.set_sub_screen_layers(5);
                     self.palette_filter_view_mut().set_color_window_selection(2);
                     self.palette_filter_view_mut().set_color_math_control(0x31);
-                    self.frame_control_view_mut().set_subsubmodule(0);
+                    self.set_subsubmodule(0);
                     self.system_signals_view_mut().increment_cgram_update_flag();
                     self.set_bg_vram_load_mode(3);
-                    self.frame_control_view_mut().increment_submodule();
+                    self.increment_submodule();
                 }
             }
             _ => {}

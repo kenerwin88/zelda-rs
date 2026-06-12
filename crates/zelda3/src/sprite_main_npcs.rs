@@ -1071,7 +1071,7 @@ mod tests {
     }
 
     fn make_link_idle(state: &mut ZeldaState) {
-        state.frame_control_view_mut().clear_modal_pause_flag();
+        state.clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
         state.player_state_view_mut().clear_auxiliary_state();
         state.player_state_view_mut().clear_item_hold_pose();
@@ -1089,7 +1089,7 @@ mod tests {
         // frame_counter are written into sprite_oam_flags.
         let mut state = fresh_state();
         let k = 3;
-        state.frame_control_view_mut().set_frame_counter(0x20); // (0x20 >> 4) & 3 == 2 → palette = (2+1)<<1 = 6
+        state.set_frame_counter(0x20); // (0x20 >> 4) & 3 == 2 → palette = (2+1)<<1 = 6
         {
             let mut sprite = state.sprite_slot_view_mut(k);
             sprite.set_head_direction(1);
@@ -1105,7 +1105,7 @@ mod tests {
     fn bee_handle_z_skips_palette_when_head_dir_zero() {
         let mut state = fresh_state();
         let k = 5;
-        state.frame_control_view_mut().set_frame_counter(0xff);
+        state.set_frame_counter(0xff);
         {
             let mut sprite = state.sprite_slot_view_mut(k);
             sprite.set_head_direction(0);
@@ -1186,7 +1186,7 @@ mod tests {
             sprite.set_delay_aux4(1); // skip damage path
             sprite.set_delay_main(0);
         }
-        state.frame_control_view_mut().set_frame_counter(4);
+        state.set_frame_counter(4);
         state.player_state_view_mut().set_x(0x120);
         state.player_state_view_mut().set_y(0x220);
 
@@ -1382,7 +1382,7 @@ mod tests {
         // Make Sprite_ReturnIfInactive(k) return false: state=9, no flags.
         let k = 1;
         state.sprite_slot_view_mut(k).set_state(9);
-        state.frame_control_view_mut().clear_modal_pause_flag();
+        state.clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
         {
             let mut sprite = state.sprite_slot_view_mut(k);

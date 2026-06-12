@@ -1940,7 +1940,7 @@ impl ZeldaState {
                 ) {
                     self.set_sub_screen_layers(1);
                 }
-                self.frame_control_view_mut().decrement_submodule();
+                self.decrement_submodule();
                 self.set_pending_nmi_subroutine(12);
                 self.set_core_update_disable_flag(12);
             }
@@ -2248,7 +2248,7 @@ impl ZeldaState {
             self.palette_filter_view_mut()
                 .set_darkening_or_lightening_screen_word(0);
             self.system_signals_view_mut().increment_cgram_update_flag();
-            self.frame_control_view_mut().set_subsubmodule(1);
+            self.set_subsubmodule(1);
             return;
         }
         for _ in 0..2 {
@@ -2428,7 +2428,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().increment_countdown();
             if self.palette_filter_view().countdown() == 31 {
                 self.palette_filter_view_mut().set_countdown(0);
-                self.frame_control_view_mut().increment_subsubmodule();
+                self.increment_subsubmodule();
                 self.set_mosaic_level(0xf0);
             }
         }
@@ -2453,7 +2453,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().increment_countdown();
         if self.palette_filter_view().countdown() == 31 {
             self.palette_filter_view_mut().set_countdown(0);
-            self.frame_control_view_mut().increment_subsubmodule();
+            self.increment_subsubmodule();
             self.set_mosaic_level(0xf0);
         }
         self.set_bg_mode(9);
@@ -2479,7 +2479,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().increment_countdown();
             if self.palette_filter_view().countdown() == 31 {
                 self.palette_filter_view_mut().set_countdown(0);
-                self.frame_control_view_mut().increment_subsubmodule();
+                self.increment_subsubmodule();
                 self.clear_mosaic_level();
             }
         }
@@ -2505,7 +2505,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().increment_countdown();
         if self.palette_filter_view().countdown() == 31 {
             self.palette_filter_view_mut().set_countdown(0);
-            self.frame_control_view_mut().increment_subsubmodule();
+            self.increment_subsubmodule();
         }
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2878,7 +2878,7 @@ impl ZeldaState {
         self.palette_load_sp0l();
         self.palette_load_sp5l();
         self.palette_load_sp6l();
-        self.frame_control_view_mut().increment_subsubmodule();
+        self.increment_subsubmodule();
     }
 
     pub(super) fn Overworld_LoadAllPalettes(&mut self) {
@@ -3296,7 +3296,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(mode);
         self.palette_filter_view_mut().set_countdown_word(0);
-        self.frame_control_view_mut().increment_subsubmodule();
+        self.increment_subsubmodule();
     }
 
     pub(super) fn spotlight_open(&mut self) {
@@ -3393,8 +3393,8 @@ impl ZeldaState {
             } else {
                 self.iris_spotlight_reset_table();
             }
-            self.frame_control_view_mut().set_subsubmodule(0);
-            self.frame_control_view_mut().set_submodule(0);
+            self.set_subsubmodule(0);
+            self.set_submodule(0);
             let main_module = self.frame_state().main_module;
             if main_module == 7 || main_module == 16 {
                 if self.world_location_state().is_outdoors() {
@@ -3408,7 +3408,7 @@ impl ZeldaState {
                 }
             }
             let saved_module = self.frame_state().saved_module_for_menu;
-            self.frame_control_view_mut().set_main_module(saved_module);
+            self.set_main_module(saved_module);
             if self.frame_state().main_module == 6 {
                 self.sprite_reset_all();
             }

@@ -1738,7 +1738,7 @@ mod tests {
         let mut s = fresh_state();
         s.sprite_slot_view_mut(4).set_state(9);
         s.sprite_slot_view_mut(4).set_delay_main(0);
-        s.frame_control_view_mut().set_frame_counter(0); // even → adjust x_vel
+        s.set_frame_counter(0); // even → adjust x_vel
         s.sprite_slot_view_mut(4).set_x_velocity(10);
         s.ram[CUR_OBJECT_INDEX] = 0;
         s.sprite_flute_kid_quaver(4);
@@ -1820,7 +1820,7 @@ mod tests {
     fn faerie_handle_movement_animates_moves_and_clamps_low_z() {
         let mut s = fresh_state();
         let k = 3;
-        s.frame_control_view_mut().set_frame_counter(8);
+        s.set_frame_counter(8);
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
         s.sprite_slot_view_mut(k).set_x_velocity(16);
@@ -1843,7 +1843,7 @@ mod tests {
     fn faerie_handle_movement_averages_velocities_on_16_frame_tick() {
         let mut s = fresh_state();
         let k = 4;
-        s.frame_control_view_mut().set_frame_counter(16);
+        s.set_frame_counter(16);
         s.sprite_set_x(k, 0x0120);
         s.sprite_set_y(k, 0x0230);
         s.sprite_slot_view_mut(k).set_x_velocity(10);
