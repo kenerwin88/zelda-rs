@@ -809,10 +809,9 @@ impl ZeldaState {
         self.world_state_view_mut()
             .set_prev_screen_index_word(overworld_screen);
         self.store_overworld_prev_map16_load_state(self.overworld_map16_load_state());
-        let screen_transition = self.world_state_view().screen_transition();
-        self.world_state_view_mut()
-            .set_prev_screen_transition(screen_transition);
-        self.world_state_view_mut().save_prev_screen_trans_bits();
+        let screen_transition = self.screen_transition();
+        self.set_previous_screen_transition(screen_transition);
+        self.save_previous_screen_transition_direction_bits();
 
         self.world_state_view_mut().clear_overlay_index_word();
         self.ppu_scroll_copy_view_mut().clear_bg1_scroll_subpixels();
@@ -871,11 +870,10 @@ impl ZeldaState {
         let src = self.overworld_map16_src_off();
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
         self.set_overworld_map16_dst_off((src.wrapping_sub(0x10) & 0x003e) >> 1);
-        self.world_state_view_mut().clear_screen_transition();
+        self.clear_screen_transition();
         self.world_state_view_mut()
             .clear_overworld_screen_trans_dir_bits();
-        self.world_state_view_mut()
-            .clear_screen_transition_direction_bits_word();
+        self.clear_screen_transition_direction_bits_word();
         self.palette_filter_view_mut()
             .set_color_window_selection(0x82);
         self.set_main_screen_layers(0x16);
@@ -913,10 +911,9 @@ impl ZeldaState {
         let overworld_screen = self.world_state_view().prev_screen_index_word();
         self.set_overworld_screen_word(overworld_screen);
         self.store_overworld_map16_load_state(self.overworld_prev_map16_load_state());
-        let screen_transition = self.world_state_view().prev_screen_transition();
-        self.world_state_view_mut()
-            .set_screen_transition(screen_transition);
-        self.world_state_view_mut().restore_prev_screen_trans_bits();
+        let screen_transition = self.previous_screen_transition();
+        self.set_screen_transition(screen_transition);
+        self.restore_previous_screen_transition_direction_bits();
     }
 
     pub(super) fn Overworld_LoadOverlays(&mut self) {
@@ -1864,7 +1861,7 @@ impl ZeldaState {
             .clear_water_puzzle_state_changed();
         self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
-        self.world_state_view_mut().clear_screen_transition();
+        self.clear_screen_transition();
         self.set_submodule(0);
         if self.player_resources_view().current_health() == 0 {
             let main_screen_layers = self.display_state().main_screen_layers;
@@ -3317,7 +3314,7 @@ impl ZeldaState {
 
     pub(super) fn BufferAndBuildMap16Stripes_X(&mut self, mut dst: usize) -> usize {
         let strip = OVERWORLD_MAP16_STRIP_BACKTRACK_BY_DIRECTION
-            [((self.world_state_view().screen_transition_direction_bits() >> 1) & 1) as usize];
+            [((self.screen_transition_direction_bits() >> 1) & 1) as usize];
         let mut pos = self.overworld_map16_src_off().wrapping_sub(strip);
         let mut y_unit_index = self.overworld_map16_y_unit() as usize & 0x1f;
         for _ in 0..32 {
@@ -3366,8 +3363,7 @@ impl ZeldaState {
     }
 
     pub(super) fn BufferAndBuildMap16Stripes_Y(&mut self, mut dst: usize) -> usize {
-        let strip_index =
-            1 + ((self.world_state_view().screen_transition_direction_bits() >> 2) & 1) as usize;
+        let strip_index = 1 + ((self.screen_transition_direction_bits() >> 2) & 1) as usize;
         let mut pos = self
             .overworld_map16_src_off()
             .wrapping_sub(OVERWORLD_MAP16_STRIP_BACKTRACK_BY_DIRECTION[strip_index]);
@@ -3458,7 +3454,7 @@ impl ZeldaState {
 
     pub(super) fn OverworldTransitionScrollAndLoadMap(&mut self) {
         let before = self.overworld_map16_src_off();
-        let dst = match self.world_state_view().screen_transition_direction_bits() {
+        let dst = match self.screen_transition_direction_bits() {
             1 => self.BuildFullStripeDuringTransition_East(0),
             2 => self.BuildFullStripeDuringTransition_West(0),
             4 => self.BuildFullStripeDuringTransition_South(0),
@@ -3467,7 +3463,7 @@ impl ZeldaState {
                 self.set_submodule(0);
                 panic!(
                     "OverworldTransitionScrollAndLoadMap invalid direction {}",
-                    self.world_state_view().screen_transition_direction_bits()
+                    self.screen_transition_direction_bits()
                 );
             }
         };
@@ -3486,7 +3482,7 @@ impl ZeldaState {
                 "owstripe-scroll frame={} screen=0x{:04x} dir=0x{:02x} before=0x{:04x} after=0x{:04x} yunit=0x{:04x} dst=0x{:04x} sub={} subsub={}",
                 self.frame_state().frame_counter,
                 u16::from(self.world_location_state().overworld_screen_index()),
-                self.world_state_view().screen_transition_direction_bits(),
+                self.screen_transition_direction_bits(),
                 before,
                 self.overworld_map16_src_off(),
                 self.overworld_map16_y_unit(),
@@ -3498,8 +3494,7 @@ impl ZeldaState {
     }
 
     pub(super) fn TriggerAndFinishMapLoadStripe_Y(&mut self, mut n: i32) {
-        self.world_state_view_mut()
-            .set_screen_transition_direction_bits(8);
+        self.set_screen_transition_direction_bits(8);
         self.set_pending_nmi_subroutine(3);
         let mut dst = 0usize;
         self.write_overworld_vram_word(dst, 0x0080);
@@ -3516,8 +3511,7 @@ impl ZeldaState {
     }
 
     pub(super) fn TriggerAndFinishMapLoadStripe_X(&mut self, mut n: i32) {
-        self.world_state_view_mut()
-            .set_screen_transition_direction_bits(2);
+        self.set_screen_transition_direction_bits(2);
         self.set_pending_nmi_subroutine(3);
         let mut dst = 0usize;
         self.write_overworld_vram_word(dst, 0x8040);
@@ -3640,7 +3634,7 @@ impl ZeldaState {
     }
 
     pub(super) fn CreateInitialNewScreenMapToScroll(&mut self) {
-        let dir = self.world_state_view().screen_transition_direction_bits();
+        let dir = self.screen_transition_direction_bits();
         if self.overworld_map_is_small() {
             match dir {
                 1 => self.CreateInitialOWScreenView_Small_East(),
@@ -4047,42 +4041,36 @@ impl ZeldaState {
         let before = self.overworld_map16_src_off();
         let before_y_unit = self.overworld_map16_y_unit();
         let before_dst = self.overworld_map16_dst_off();
-        let dir = self.world_state_view().screen_transition_direction_bits();
+        let dir = self.screen_transition_direction_bits();
         let dst = match dir {
             1 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_East(0);
-                self.world_state_view_mut()
-                    .clear_screen_transition_direction_bits();
+                self.clear_screen_transition_direction_bits();
                 dst
             }
             2 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_West(0);
-                self.world_state_view_mut()
-                    .clear_screen_transition_direction_bits();
+                self.clear_screen_transition_direction_bits();
                 dst
             }
             4 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_South(0);
-                self.world_state_view_mut()
-                    .clear_screen_transition_direction_bits();
+                self.clear_screen_transition_direction_bits();
                 dst
             }
             5 | 6 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_South(0);
-                self.world_state_view_mut()
-                    .and_screen_transition_direction_bits(3);
+                self.and_screen_transition_direction_bits(3);
                 dst
             }
             8 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_North(0);
-                self.world_state_view_mut()
-                    .clear_screen_transition_direction_bits();
+                self.clear_screen_transition_direction_bits();
                 dst
             }
             9 | 10 => {
                 let dst = self.CheckForNewlyLoadedMapAreas_North(0);
-                self.world_state_view_mut()
-                    .and_screen_transition_direction_bits(3);
+                self.and_screen_transition_direction_bits(3);
                 dst
             }
             _ => {
@@ -4095,9 +4083,8 @@ impl ZeldaState {
         if dst != 0 {
             self.set_pending_nmi_subroutine(3);
         }
-        let screen_transition = self.world_state_view().screen_transition_direction_bits();
-        self.world_state_view_mut()
-            .set_screen_transition(screen_transition);
+        let screen_transition = self.screen_transition_direction_bits();
+        self.set_screen_transition(screen_transition);
         if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
             && matches!(
                 u16::from(self.world_location_state().overworld_screen_index()),
@@ -4115,7 +4102,7 @@ impl ZeldaState {
                 self.overworld_map16_y_unit(),
                 before_dst,
                 self.overworld_map16_dst_off(),
-                self.world_state_view().screen_transition(),
+                self.screen_transition(),
                 self.frame_state().submodule,
                 self.frame_state().subsubmodule,
                 self.player_state_view().x(),
@@ -4130,16 +4117,14 @@ impl ZeldaState {
         let rv = self.OverworldScrollTransition();
         if rv & 0x0f == 0 {
             let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
-            self.world_state_view_mut()
-                .set_screen_transition_direction_bits(direction_bits);
+            self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
-            self.world_state_view_mut()
-                .clear_screen_transition_direction_bits();
+            self.clear_screen_transition_direction_bits();
         }
     }
 
     pub(super) fn Module09_LoadNewSprites(&mut self) {
-        if self.world_state_view().screen_transition() == 1 {
+        if self.screen_transition() == 1 {
             let bg2v = self.world_state_view().bg2_y().wrapping_add(2);
             self.world_state_view_mut().set_bg2_y(bg2v);
             let link_y = self.player_state_view().y().wrapping_add(2);
@@ -4158,22 +4143,18 @@ impl ZeldaState {
         self.increment_submodule();
         if self.world_state_view().overworld_screen_trans_dir_bits() >= 4 {
             let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
-            self.world_state_view_mut()
-                .set_screen_transition_direction_bits(direction_bits);
+            self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
-            self.world_state_view_mut()
-                .clear_screen_transition_direction_bits();
+            self.clear_screen_transition_direction_bits();
         }
     }
 
     pub(super) fn Overworld_EaseOffScrollTransition(&mut self) {
         if self.overworld_map_is_small() {
             let direction_bits = self.world_state_view().overworld_screen_trans_dir_bits();
-            self.world_state_view_mut()
-                .set_screen_transition_direction_bits(direction_bits);
+            self.set_screen_transition_direction_bits(direction_bits);
             self.OverworldTransitionScrollAndLoadMap();
-            self.world_state_view_mut()
-                .clear_screen_transition_direction_bits();
+            self.clear_screen_transition_direction_bits();
         }
         self.increment_subsubmodule();
         if self.frame_state().subsubmodule < 8 {
@@ -4305,16 +4286,15 @@ impl ZeldaState {
         self.set_submodule(1);
         self.world_state_view_mut()
             .set_overworld_screen_trans_dir_bits(dir);
-        self.world_state_view_mut()
-            .set_screen_transition_direction_bits(dir);
+        self.set_screen_transition_direction_bits(dir);
         let dir_enum = self.DirToEnum(dir as i32) as u8;
         self.world_state_view_mut()
             .set_transition_dir_enum(dir_enum);
-        self.world_state_view_mut().set_screen_transition(dir_enum);
+        self.set_screen_transition(dir_enum);
         self.world_state_view_mut().set_ow_entrance_value(0);
         self.dungeon_state_view_mut()
             .set_big_rock_starting_address(0);
-        self.world_state_view_mut().set_transition_counter(0);
+        self.set_transition_counter(0);
 
         if old_screen & 0x3f == 0
             || self.world_location_state().overworld_screen_index() & 0xbf == 0
@@ -4505,8 +4485,7 @@ impl ZeldaState {
             .wrapping_add(1);
         if (value.wrapping_sub(0x10) as i16) >= 0 {
             value = value.wrapping_sub(0x10);
-            self.world_state_view_mut()
-                .or_screen_transition_direction_bits(OVERWORLD_SCROLL_DIRECTION_BITS[ya] as u8);
+            self.or_screen_transition_direction_bits(OVERWORLD_SCROLL_DIRECTION_BITS[ya] as u8);
         }
         self.world_state_view_mut()
             .set_opposed_scroll_counter_pair(ya, value);
@@ -4514,8 +4493,8 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldScrollTransition(&mut self) -> i32 {
-        self.world_state_view_mut().increment_transition_counter();
-        let y = self.world_state_view().screen_transition() as usize;
+        self.increment_transition_counter();
+        let y = self.screen_transition() as usize;
         let d = OVERWORLD_TRANSITION_SCROLL_DELTAS[y];
         let rv;
         if y < 2 {
@@ -4527,9 +4506,7 @@ impl ZeldaState {
             {
                 self.world_state_view_mut().set_bg1_y(rv);
             }
-            if self.world_state_view().transition_counter()
-                >= OVERWORLD_TRANSITION_PLAYER_MOVE_FRAMES[y]
-            {
+            if self.transition_counter() >= OVERWORLD_TRANSITION_PLAYER_MOVE_FRAMES[y] {
                 let link_y = self.player_state_view().y().wrapping_add_signed(d);
                 self.player_state_view_mut().set_y(link_y);
             }
@@ -4557,9 +4534,7 @@ impl ZeldaState {
             {
                 self.world_state_view_mut().set_bg1_x(rv);
             }
-            if self.world_state_view().transition_counter()
-                >= OVERWORLD_TRANSITION_PLAYER_MOVE_FRAMES[y]
-            {
+            if self.transition_counter() >= OVERWORLD_TRANSITION_PLAYER_MOVE_FRAMES[y] {
                 let link_x = self.player_state_view().x().wrapping_add_signed(d);
                 self.player_state_view_mut().set_x(link_x);
             }
@@ -4590,7 +4565,7 @@ impl ZeldaState {
             .set_flag_overworld_area_changed(1);
         self.increment_submodule();
         self.set_subsubmodule(0);
-        self.world_state_view_mut().set_transition_counter(0);
+        self.set_transition_counter(0);
         self.sprite_initialize_slots();
         rv as i32
     }
@@ -5136,13 +5111,11 @@ impl ZeldaState {
                     == u16::from(self.world_location_state().overworld_screen_index())
             {
                 self.set_dungeon_room(SPECIAL_SWITCH_AREA_EXITS[i]);
-                self.world_state_view_mut()
-                    .set_screen_transition_direction_bits(SPECIAL_SWITCH_AREA_DIRECTIONS[i]);
+                self.set_screen_transition_direction_bits(SPECIAL_SWITCH_AREA_DIRECTIONS[i]);
                 let direction = SPECIAL_SWITCH_AREA_DIRECTIONS[i];
                 self.player_state_view_mut().set_direction(direction);
                 let trans = self.DirToEnum(direction as i32) as u16;
-                self.world_state_view_mut()
-                    .set_screen_transition_word(trans);
+                self.set_screen_transition_word(trans);
                 self.world_state_view_mut()
                     .set_transition_dir_enum(trans as u8);
                 self.set_submodule(23);
@@ -5183,7 +5156,7 @@ impl ZeldaState {
                 self.world_state_view().overworld_offset_mask_y(),
                 pos,
                 a,
-                self.world_state_view().screen_transition_direction_bits(),
+                self.screen_transition_direction_bits(),
                 self.frame_state().submodule,
                 self.frame_state().subsubmodule,
             );
@@ -5196,8 +5169,7 @@ impl ZeldaState {
                 let direction = SPECIAL_SWITCH_AREA_B_DIRECTIONS[i];
                 self.player_state_view_mut().set_direction(direction);
                 let trans = self.DirToEnum(direction as i32) as u16;
-                self.world_state_view_mut()
-                    .set_screen_transition_word(trans);
+                self.set_screen_transition_word(trans);
                 self.world_state_view_mut()
                     .set_transition_dir_enum(trans as u8);
                 self.set_submodule(36);
@@ -5211,7 +5183,7 @@ impl ZeldaState {
                         u16::from(self.world_location_state().overworld_screen_index()),
                         a,
                         self.player_state_view().direction(),
-                        self.world_state_view().screen_transition_word(),
+                        self.screen_transition_word(),
                         self.player_state_view().x(),
                         self.player_state_view().y(),
                     );
@@ -5394,8 +5366,7 @@ impl ZeldaState {
             return;
         }
         self.world_state_view_mut().set_ow_countdown_transition(36);
-        self.world_state_view_mut()
-            .clear_screen_transition_direction_bits();
+        self.clear_screen_transition_direction_bits();
         self.increment_submodule();
     }
 
@@ -5406,8 +5377,7 @@ impl ZeldaState {
         }
         self.set_submodule(0);
         self.set_subsubmodule(0);
-        self.world_state_view_mut()
-            .clear_screen_transition_direction_bits();
+        self.clear_screen_transition_direction_bits();
     }
 
     pub(super) fn Module09_0A_WalkFromExiting_FacingDown(&mut self) {

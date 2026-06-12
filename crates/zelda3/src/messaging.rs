@@ -2721,7 +2721,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut().set_hud_palette(0);
         self.hud_rebuild();
 
-        self.world_state_view_mut().clear_screen_transition();
+        self.clear_screen_transition();
         self.dungeon_state_view_mut().clear_quadrant_upload_index();
         loop {
             self.WaterFlood_BuildOneQuadrantForVRAM();

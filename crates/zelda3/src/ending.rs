@@ -2339,8 +2339,7 @@ impl ZeldaState {
                     .world_state_view()
                     .screen_transition_direction_bits_word()
                     | if y_vel < 0 { 8 } else { 4 };
-                self.world_state_view_mut()
-                    .set_screen_transition_direction_bits_word(bits);
+                self.set_screen_transition_direction_bits_word(bits);
             }
             self.world_state_view_mut()
                 .set_overworld_scroll_counter_for_axis(which_axis, value);
@@ -2378,8 +2377,7 @@ impl ZeldaState {
                     .world_state_view()
                     .screen_transition_direction_bits_word()
                     | if x_vel < 0 { 2 } else { 1 };
-                self.world_state_view_mut()
-                    .set_screen_transition_direction_bits_word(bits);
+                self.set_screen_transition_direction_bits_word(bits);
             }
             self.world_state_view_mut()
                 .set_overworld_scroll_counter_for_axis(which_axis, value);

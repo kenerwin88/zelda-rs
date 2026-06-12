@@ -11,8 +11,8 @@ mod world;
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use world::{
-    NativeOverworldMapUiBridgeMut, NativeWorldLocationViewMut, OverworldMapUiState,
-    WorldLocationState,
+    NativeOverworldMapUiBridgeMut, NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut,
+    OverworldMapUiState, OverworldTransitionState, WorldLocationState,
 };
 
 #[cfg(test)]
@@ -29,6 +29,7 @@ pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) world_location: WorldLocationState,
     pub(crate) overworld_map_ui: OverworldMapUiState,
+    pub(crate) overworld_transition: OverworldTransitionState,
     pub(crate) display: DisplayState,
 }
 
@@ -38,6 +39,7 @@ impl GameState {
             frame: FrameState::load_from_ram(ram),
             world_location: WorldLocationState::load_from_ram(ram),
             overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
+            overworld_transition: OverworldTransitionState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
         }
     }
@@ -46,6 +48,7 @@ impl GameState {
         self.frame.write_to_ram(ram);
         self.world_location.write_to_ram(ram);
         self.overworld_map_ui.write_to_ram(ram);
+        self.overworld_transition.write_to_ram(ram);
         self.display.write_to_ram(ram);
     }
 }
@@ -223,6 +226,83 @@ mod tests {
         assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0206);
         assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x03);
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
+    }
+
+    #[test]
+    fn overworld_transition_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0108);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANSITION, 0x0203);
+        ram[TRANSITION_COUNTER] = 9;
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV, 0x0004);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV, 0x0002);
+        ram[OVERWORLD_SCREEN_TRANSITION_PREV] = 7;
+
+        let mut transition = OverworldTransitionState::load_from_ram(&ram);
+        assert_eq!(transition.direction_bits(), 8);
+        assert_eq!(transition.direction_bits_word(), 0x0108);
+        assert!(transition.has_direction_bits());
+        assert_eq!(transition.screen_transition(), 3);
+        assert_eq!(transition.screen_transition_word(), 0x0203);
+        assert_eq!(transition.transition_counter, 9);
+        assert_eq!(transition.previous_direction_bits, 4);
+        assert_eq!(transition.previous_direction_bits2, 2);
+        assert_eq!(transition.previous_screen_transition, 7);
+
+        transition.direction_bits = 0x0001;
+        transition.screen_transition = 0x0002;
+        transition.transition_counter = 5;
+        transition.previous_direction_bits = 0x0008;
+        transition.previous_direction_bits2 = 0x0004;
+        transition.previous_screen_transition = 6;
+        transition.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2), 1);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANSITION), 2);
+        assert_eq!(ram[TRANSITION_COUNTER], 5);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV), 8);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV), 4);
+        assert_eq!(ram[OVERWORLD_SCREEN_TRANSITION_PREV], 6);
+    }
+
+    #[test]
+    fn native_overworld_transition_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_SCREEN_TRANS_DIR_BITS] = 0x02;
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0108);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANSITION, 0x0203);
+        ram[TRANSITION_COUNTER] = 9;
+
+        let mut transition = OverworldTransitionState::default();
+        {
+            let mut bridge = NativeOverworldTransitionBridgeMut::new(&mut transition, &mut ram);
+            bridge.and_direction_bits(0x0b);
+            bridge.or_direction_bits(0x04);
+            assert_eq!(bridge.or_direction_bits_word(0x0100), 0x010c);
+            bridge.set_screen_transition(5);
+            bridge.increment_transition_counter();
+            bridge.save_previous_direction_bits();
+            bridge.clear_direction_bits_word();
+            bridge.restore_previous_direction_bits();
+            bridge.set_previous_screen_transition(6);
+        }
+
+        assert_eq!(transition.direction_bits_word(), 0x010c);
+        assert_eq!(transition.screen_transition_word(), 0x0205);
+        assert_eq!(transition.transition_counter, 10);
+        assert_eq!(transition.previous_direction_bits, 2);
+        assert_eq!(transition.previous_direction_bits2, 0x010c);
+        assert_eq!(transition.previous_screen_transition, 6);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS), 2);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2), 0x010c);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANSITION), 0x0205);
+        assert_eq!(ram[TRANSITION_COUNTER], 10);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV), 2);
+        assert_eq!(
+            read_le_u16(&ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV),
+            0x010c
+        );
+        assert_eq!(ram[OVERWORLD_SCREEN_TRANSITION_PREV], 6);
     }
 
     #[test]
