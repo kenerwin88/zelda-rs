@@ -114,6 +114,7 @@ pub(crate) struct DisplayState {
     pub(crate) bg_vram_load_mode: u8,
     pub(crate) bg_mode: u8,
     pub(crate) nmi_copy_packets_request: u8,
+    pub(crate) pending_polyhedral_update: u8,
     pub(crate) chr_halfslot_request: u8,
     pub(crate) nmi_thread_active: bool,
     pub(crate) nmi_thread_stack_pointer: u16,
@@ -140,6 +141,7 @@ impl DisplayState {
             bg_vram_load_mode: ram_byte(ram, NMI_LOAD_BG_FROM_VRAM),
             bg_mode: ram_byte(ram, BGMODE_COPY),
             nmi_copy_packets_request: ram_byte(ram, NMI_COPY_PACKETS_FLAG),
+            pending_polyhedral_update: ram_byte(ram, NMI_FLAG_UPDATE_POLYHEDRAL),
             chr_halfslot_request: ram_byte(ram, LOAD_CHR_HALFSLOT_EVEN_ODD),
             nmi_thread_active: ram_byte(ram, NMI_THREAD_ACTIVE) != 0,
             nmi_thread_stack_pointer: read_le_u16(ram, POLY_THREAD_STACK),
@@ -165,6 +167,7 @@ impl DisplayState {
         ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
         ram[BGMODE_COPY] = self.bg_mode;
         ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
+        ram[NMI_FLAG_UPDATE_POLYHEDRAL] = self.pending_polyhedral_update;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
         ram[NMI_THREAD_ACTIVE] = u8::from(self.nmi_thread_active);
         write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
@@ -195,6 +198,10 @@ impl DisplayState {
 
     pub(crate) fn has_nmi_copy_packets_request(&self) -> bool {
         self.nmi_copy_packets_request != 0
+    }
+
+    pub(crate) fn has_pending_polyhedral_update(&self) -> bool {
+        self.pending_polyhedral_update != 0
     }
 
     pub(crate) fn has_chr_halfslot_request(&self) -> bool {
@@ -582,6 +589,13 @@ impl<'a> NativeDisplayStateViewMut<'a> {
         );
     }
 
+    fn debug_assert_pending_polyhedral_update_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.pending_polyhedral_update,
+            ram_byte(self.ram, NMI_FLAG_UPDATE_POLYHEDRAL)
+        );
+    }
+
     fn debug_assert_chr_halfslot_request_matches_ram(&self) {
         debug_assert_eq!(
             self.display.chr_halfslot_request,
@@ -744,6 +758,20 @@ impl<'a> NativeDisplayStateViewMut<'a> {
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
         self.set_nmi_copy_packets_request(0);
+    }
+
+    pub(crate) fn set_pending_polyhedral_update(&mut self, value: u8) {
+        self.display.pending_polyhedral_update = value;
+        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = value;
+        self.debug_assert_pending_polyhedral_update_matches_ram();
+    }
+
+    pub(crate) fn request_polyhedral_nmi_update(&mut self) {
+        self.set_pending_polyhedral_update(0xff);
+    }
+
+    pub(crate) fn clear_pending_polyhedral_update(&mut self) {
+        self.set_pending_polyhedral_update(0);
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
@@ -1021,6 +1049,7 @@ mod tests {
         ram[NMI_LOAD_BG_FROM_VRAM] = 3;
         ram[BGMODE_COPY] = 7;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
+        ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 9;
         ram[NMI_THREAD_ACTIVE] = 1;
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
@@ -1048,6 +1077,8 @@ mod tests {
         assert_eq!(display.bg_mode, 7);
         assert_eq!(display.nmi_copy_packets_request, 1);
         assert!(display.has_nmi_copy_packets_request());
+        assert_eq!(display.pending_polyhedral_update, 0xff);
+        assert!(display.has_pending_polyhedral_update());
         assert_eq!(display.chr_halfslot_request, 9);
         assert!(display.has_chr_halfslot_request());
         assert!(display.nmi_thread_active);
@@ -1084,6 +1115,7 @@ mod tests {
         display.bg_vram_load_mode = 0;
         display.bg_mode = 9;
         display.nmi_copy_packets_request = 0;
+        display.pending_polyhedral_update = 0;
         display.chr_halfslot_request = 0;
         display.nmi_thread_active = false;
         display.nmi_thread_stack_pointer = 0x1f31;
@@ -1107,6 +1139,7 @@ mod tests {
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 0);
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 0);
+        assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 0);
         assert_eq!(ram[NMI_THREAD_ACTIVE], 0);
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
@@ -1150,6 +1183,7 @@ mod tests {
         ram[NMI_LOAD_BG_FROM_VRAM] = 2;
         ram[BGMODE_COPY] = 7;
         ram[NMI_COPY_PACKETS_FLAG] = 1;
+        ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
         ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 3;
         ram[NMI_THREAD_ACTIVE] = 1;
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
@@ -1183,6 +1217,8 @@ mod tests {
             view.clear_nmi_copy_packets_request();
             view.request_nmi_copy_packets();
             view.set_nmi_copy_packets_request(3);
+            view.clear_pending_polyhedral_update();
+            view.request_polyhedral_nmi_update();
             view.increment_chr_halfslot_request();
             view.clear_chr_halfslot_request();
             view.set_chr_halfslot_request(12);
@@ -1216,6 +1252,8 @@ mod tests {
         assert_eq!(display.bg_vram_load_mode, 5);
         assert_eq!(display.bg_mode, 9);
         assert_eq!(display.nmi_copy_packets_request, 3);
+        assert_eq!(display.pending_polyhedral_update, 0xff);
+        assert!(display.has_pending_polyhedral_update());
         assert_eq!(display.chr_halfslot_request, 12);
         assert!(display.nmi_thread_active);
         assert_eq!(display.nmi_thread_stack_pointer, 0x1f31);
@@ -1241,6 +1279,7 @@ mod tests {
         assert_eq!(ram[NMI_LOAD_BG_FROM_VRAM], 5);
         assert_eq!(ram[BGMODE_COPY], 9);
         assert_eq!(ram[NMI_COPY_PACKETS_FLAG], 3);
+        assert_eq!(ram[NMI_FLAG_UPDATE_POLYHEDRAL], 0xff);
         assert_eq!(ram[LOAD_CHR_HALFSLOT_EVEN_ODD], 12);
         assert_eq!(ram[NMI_THREAD_ACTIVE], 1);
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);

@@ -19,8 +19,7 @@ impl ZeldaState {
             if self.nmi_poly_upload_deferred != 0 {
                 self.nmi_poly_upload_deferred = self.nmi_poly_upload_deferred.saturating_sub(1);
                 if self.nmi_poly_upload_deferred == 0 && self.nmi_poly_upload_started {
-                    self.display_nmi_view_mut()
-                        .set_nmi_flag_update_polyhedral(0xff);
+                    self.request_polyhedral_nmi_update();
                     self.nmi_poly_upload_from_deferred =
                         self.nmi_poly_deferred_upload_bypasses_latch;
                     self.nmi_poly_deferred_upload_bypasses_latch = false;
@@ -541,7 +540,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_irqgfx(&mut self) {
-        if self.display_nmi_view().nmi_flag_update_polyhedral() != 0 {
+        if self.display_state().has_pending_polyhedral_update() {
             let poly_buf = self.display_nmi_view().polyhedral_buffer().to_vec();
             let mut display_vram = None;
             for i in 0..0x400 {
@@ -559,8 +558,7 @@ impl ZeldaState {
                 self.ppu.obj_vram_latch = Some(display_vram);
             }
             self.nmi_poly_upload_from_deferred = false;
-            self.display_nmi_view_mut()
-                .clear_nmi_flag_update_polyhedral();
+            self.clear_pending_polyhedral_update();
         }
     }
 

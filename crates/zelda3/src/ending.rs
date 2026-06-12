@@ -857,8 +857,7 @@ impl ZeldaState {
                     self.frame_control_view_mut().set_subsubmodule(0);
                     self.set_irq_control_flag(0xff);
                     self.deactivate_nmi_thread();
-                    self.display_nmi_view_mut()
-                        .clear_nmi_flag_update_polyhedral();
+                    self.clear_pending_polyhedral_update();
                     self.save_progress_view_mut().set_dark_world_state(0);
                 }
             }

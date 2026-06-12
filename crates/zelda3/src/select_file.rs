@@ -102,8 +102,7 @@ impl ZeldaState {
     pub(super) fn module_select_file_0(&mut self) {
         self.enable_force_blank();
         self.world_state_view_mut().set_nmi_thread_active(0);
-        self.world_state_view_mut()
-            .clear_nmi_flag_update_polyhedral();
+        self.clear_pending_polyhedral_update();
         self.system_signals_view_mut().set_music_control(11);
         self.frame_control_view_mut().increment_submodule();
         self.palette_buffer_view_mut()

@@ -979,7 +979,6 @@ const POLY_A: usize = 0x1f04;
 const POLY_B: usize = 0x1f05;
 const POLY_BASE_X: usize = 0x1f06;
 const POLY_BASE_Y: usize = 0x1f07;
-const NMI_FLAG_UPDATE_POLYHEDRAL: usize = 0x1f0c;
 const POLY_CONFIG_NUM_VERTEX: usize = 0x1f3f;
 const POLY_CONFIG_NUM_POLYS: usize = 0x1f40;
 const POLY_FROMLUT_PTR2: usize = 0x1f41;
@@ -2025,6 +2024,16 @@ impl ZeldaState {
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
         NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
             .clear_nmi_copy_packets_request();
+    }
+
+    pub(crate) fn request_polyhedral_nmi_update(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .request_polyhedral_nmi_update();
+    }
+
+    pub(crate) fn clear_pending_polyhedral_update(&mut self) {
+        NativeDisplayStateViewMut::new(&mut self.game_state.display, &mut self.ram)
+            .clear_pending_polyhedral_update();
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
@@ -3440,7 +3449,7 @@ impl ZeldaState {
             && frame.main_module == 0
             && matches!(frame.submodule, 3 | 4)
             && frame.frame_counter >= 0x85
-            && self.display_nmi_view().nmi_flag_update_polyhedral() != 0
+            && self.display_state().has_pending_polyhedral_update()
         {
             self.nmi_poly_upload_from_deferred = true;
             self.nmi_update_irqgfx();
@@ -4911,12 +4920,11 @@ impl ZeldaState {
 
     fn zelda_run_poly_loop(&mut self) {
         let can_run_poly = self.attract_state_view().intro_did_run_step() != 0
-            && self.display_nmi_view().nmi_flag_update_polyhedral() == 0;
+            && !self.display_state().has_pending_polyhedral_update();
         if can_run_poly {
             self.poly_run_frame();
             self.attract_state_view_mut().clear_intro_did_run_step();
-            self.display_nmi_view_mut()
-                .set_nmi_flag_update_polyhedral(0xff);
+            self.request_polyhedral_nmi_update();
         }
     }
 
