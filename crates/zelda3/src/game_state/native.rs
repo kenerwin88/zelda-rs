@@ -26,10 +26,10 @@ pub(crate) use display::{
     WaterHdmaWindowState,
 };
 pub(crate) use effects::{
-    BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
-    NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeTowerSealBridgeMut,
-    QuakeSpellState, SkullWoodsFireState, TowerSealState,
+    BlastWallState, BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
+    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeTowerSealBridgeMut, QuakeSpellState, SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1586,6 +1586,55 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_INNER_Y), 0x00f8);
         assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_X), 0x0098);
         assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_OUTER_Y), 0x0100);
+    }
+
+    #[test]
+    fn blast_wall_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BLAST_WALL_ENTRY_STATE] = 3;
+        ram[BLAST_WALL_SECONDARY_STATE] = 4;
+        ram[BLAST_WALL_DIRECTION] = 2;
+        write_le_u16(&mut ram, BLAST_WALL_CENTER_X, 0x1234);
+        write_le_u16(&mut ram, BLAST_WALL_CENTER_Y, 0x5678);
+
+        let mut wall = BlastWallState::load_from_ram(&ram);
+        assert_eq!(wall.direction(), 2);
+        assert_eq!(wall.center_x(), 0x1234);
+        assert_eq!(wall.center_y(), 0x5678);
+        wall.clear_entry_state();
+        wall.clear_secondary_state();
+        assert_eq!(wall.offset_center(-4, 8), (0x1230, 0x5680));
+        wall.write_to_ram(&mut ram);
+
+        assert_eq!(ram[BLAST_WALL_ENTRY_STATE], 0);
+        assert_eq!(ram[BLAST_WALL_SECONDARY_STATE], 0);
+        assert_eq!(ram[BLAST_WALL_DIRECTION], 2);
+        assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_X), 0x1230);
+        assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_Y), 0x5680);
+    }
+
+    #[test]
+    fn native_blast_wall_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BLAST_WALL_ENTRY_STATE] = 1;
+        ram[BLAST_WALL_SECONDARY_STATE] = 1;
+        write_le_u16(&mut ram, BLAST_WALL_CENTER_X, 0x0100);
+        write_le_u16(&mut ram, BLAST_WALL_CENTER_Y, 0x0200);
+
+        let mut wall = BlastWallState::default();
+        {
+            let mut bridge = NativeBlastWallBridgeMut::new(&mut wall, &mut ram);
+            bridge.clear_entry_state();
+            bridge.clear_secondary_state();
+            assert_eq!(bridge.offset_center(2, -3), (0x0102, 0x01fd));
+        }
+
+        assert_eq!(wall.center_x(), 0x0102);
+        assert_eq!(wall.center_y(), 0x01fd);
+        assert_eq!(ram[BLAST_WALL_ENTRY_STATE], 0);
+        assert_eq!(ram[BLAST_WALL_SECONDARY_STATE], 0);
+        assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_X), 0x0102);
+        assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_Y), 0x01fd);
     }
 
     #[test]

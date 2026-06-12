@@ -1,8 +1,9 @@
 use crate::game_state::constants::{
-    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_X, BOMBOS_BLAST_Y,
-    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
-    DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
-    QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
+    BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION, BLAST_WALL_ENTRY_STATE,
+    BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED,
+    BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X,
+    BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
+    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
     QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
     SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
     TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS, TOWER_SEAL_WAIT_COUNTDOWN,
@@ -21,6 +22,7 @@ pub(crate) struct EffectState {
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
     pub(crate) skull_woods_fire: SkullWoodsFireState,
+    pub(crate) blast_wall: BlastWallState,
 }
 
 impl EffectState {
@@ -32,6 +34,7 @@ impl EffectState {
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
             skull_woods_fire: SkullWoodsFireState::load_from_ram(ram),
+            blast_wall: BlastWallState::load_from_ram(ram),
         }
     }
 
@@ -42,6 +45,7 @@ impl EffectState {
         self.bombos_spell.write_to_ram(ram);
         self.tower_seal.write_to_ram(ram);
         self.skull_woods_fire.write_to_ram(ram);
+        self.blast_wall.write_to_ram(ram);
     }
 }
 
@@ -674,6 +678,98 @@ impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
         let y = self.state.retreat_inner_y(value);
         self.sync();
         y
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlastWallState {
+    entry_state: u8,
+    secondary_state: u8,
+    direction: u8,
+    center_x: u16,
+    center_y: u16,
+}
+
+impl BlastWallState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            entry_state: ram.get(BLAST_WALL_ENTRY_STATE).copied().unwrap_or(0),
+            secondary_state: ram.get(BLAST_WALL_SECONDARY_STATE).copied().unwrap_or(0),
+            direction: ram.get(BLAST_WALL_DIRECTION).copied().unwrap_or(0),
+            center_x: read_le_u16(ram, BLAST_WALL_CENTER_X),
+            center_y: read_le_u16(ram, BLAST_WALL_CENTER_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[BLAST_WALL_ENTRY_STATE] = self.entry_state;
+        ram[BLAST_WALL_SECONDARY_STATE] = self.secondary_state;
+        ram[BLAST_WALL_DIRECTION] = self.direction;
+        write_le_u16(ram, BLAST_WALL_CENTER_X, self.center_x);
+        write_le_u16(ram, BLAST_WALL_CENTER_Y, self.center_y);
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.direction
+    }
+
+    pub(crate) fn center_x(&self) -> u16 {
+        self.center_x
+    }
+
+    pub(crate) fn center_y(&self) -> u16 {
+        self.center_y
+    }
+
+    pub(crate) fn clear_entry_state(&mut self) {
+        self.entry_state = 0;
+    }
+
+    pub(crate) fn clear_secondary_state(&mut self) {
+        self.secondary_state = 0;
+    }
+
+    pub(crate) fn offset_center(&mut self, x_delta: i8, y_delta: i8) -> (u16, u16) {
+        self.center_y = self.center_y.wrapping_add(y_delta as i16 as u16);
+        self.center_x = self.center_x.wrapping_add(x_delta as i16 as u16);
+        (self.center_x, self.center_y)
+    }
+}
+
+pub(crate) struct NativeBlastWallBridgeMut<'a> {
+    state: &'a mut BlastWallState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeBlastWallBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut BlastWallState, ram: &'a mut [u8]) -> Self {
+        *state = BlastWallState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, BlastWallState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn clear_entry_state(&mut self) {
+        self.state.clear_entry_state();
+        self.sync();
+    }
+
+    pub(crate) fn clear_secondary_state(&mut self) {
+        self.state.clear_secondary_state();
+        self.sync();
+    }
+
+    pub(crate) fn offset_center(&mut self, x_delta: i8, y_delta: i8) -> (u16, u16) {
+        let center = self.state.offset_center(x_delta, y_delta);
+        self.sync();
+        center
     }
 }
 

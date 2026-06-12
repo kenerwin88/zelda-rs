@@ -425,54 +425,6 @@ impl<'a> BlastWallFireballViewMut<'a> {
     }
 }
 
-pub(crate) struct BlastWallScratchView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> BlastWallScratchView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn direction(&self) -> u8 {
-        byte(self.ram, BLAST_WALL_DIRECTION)
-    }
-
-    pub(crate) fn center_x(&self) -> u16 {
-        read_le_u16(self.ram, BLAST_WALL_CENTER_X)
-    }
-
-    pub(crate) fn center_y(&self) -> u16 {
-        read_le_u16(self.ram, BLAST_WALL_CENTER_Y)
-    }
-}
-
-pub(crate) struct BlastWallScratchViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> BlastWallScratchViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn clear_entry_state(&mut self) {
-        self.ram[BLAST_WALL_ENTRY_STATE] = 0;
-    }
-
-    pub(crate) fn clear_secondary_state(&mut self) {
-        self.ram[BLAST_WALL_SECONDARY_STATE] = 0;
-    }
-
-    pub(crate) fn offset_center(&mut self, x_delta: i8, y_delta: i8) -> (u16, u16) {
-        let y = read_le_u16(self.ram, BLAST_WALL_CENTER_Y).wrapping_add(y_delta as i16 as u16);
-        let x = read_le_u16(self.ram, BLAST_WALL_CENTER_X).wrapping_add(x_delta as i16 as u16);
-        write_le_u16(self.ram, BLAST_WALL_CENTER_Y, y);
-        write_le_u16(self.ram, BLAST_WALL_CENTER_X, x);
-        (x, y)
-    }
-}
-
 pub(crate) struct SkullWoodsFireView<'a> {
     ram: &'a [u8],
     slot: usize,

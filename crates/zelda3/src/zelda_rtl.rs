@@ -31,30 +31,29 @@ use crate::game_state::{
     AttractStateView, AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
     Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationState, BlastWallExplosionView,
     BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
-    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut,
-    BombosBlastView, BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut,
-    BombosSpellState, CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryView,
-    ChainChompHistoryViewMut, DecodedMessageTextState, DialogueMessageIndexState,
-    DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
-    DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderView,
-    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut,
-    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
-    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EndingScratchView,
-    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView,
-    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
-    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
-    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
-    IntroSwordState, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
-    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
-    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
-    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBombosSpellBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut,
-    NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
+    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
+    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
+    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView,
+    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DualLayerTileCacheView,
+    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
+    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList,
+    DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
+    EffectAngleScratchState, EndingCreditState, EndingScratchView, EndingScratchViewMut,
+    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
+    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
+    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
+    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
@@ -3667,12 +3666,12 @@ impl ZeldaState {
         BlastWallFireballViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn blast_wall_scratch_view(&self) -> BlastWallScratchView<'_> {
-        BlastWallScratchView::new(&self.ram)
+    pub(crate) fn blast_wall_scratch_view(&self) -> &BlastWallState {
+        &self.game_state.effects.blast_wall
     }
 
-    pub(crate) fn blast_wall_scratch_view_mut(&mut self) -> BlastWallScratchViewMut<'_> {
-        BlastWallScratchViewMut::new(&mut self.ram)
+    pub(crate) fn blast_wall_scratch_view_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
+        NativeBlastWallBridgeMut::new(&mut self.game_state.effects.blast_wall, &mut self.ram)
     }
 
     pub(crate) fn skull_woods_fire_view(&self, slot: usize) -> SkullWoodsFireView<'_> {
