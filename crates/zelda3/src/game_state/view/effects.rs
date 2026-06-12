@@ -1343,11 +1343,11 @@ impl<'a> LanmolaSegmentMotionViewMut<'a> {
     }
 }
 
-pub(crate) struct DoorDebrisView<'a> {
+pub(crate) struct DoorDebrisRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> DoorDebrisView<'a> {
+impl<'a> DoorDebrisRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -1373,11 +1373,11 @@ impl<'a> DoorDebrisView<'a> {
     }
 }
 
-pub(crate) struct DoorDebrisViewMut<'a> {
+pub(crate) struct DoorDebrisRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> DoorDebrisViewMut<'a> {
+impl<'a> DoorDebrisRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

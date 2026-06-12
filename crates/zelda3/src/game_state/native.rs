@@ -5,6 +5,7 @@
 //! projected to or loaded from WRAM during the transition.
 
 mod display;
+mod effects;
 mod ending;
 mod frame;
 mod inventory;
@@ -22,6 +23,7 @@ pub(crate) use display::{
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
     PaletteFilterState, TrinexxPaletteState, WaterHdmaWindowState,
 };
+pub(crate) use effects::{DoorDebrisView, EffectState, NativeDoorDebrisBridgeMut};
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
     NativeIntroSceneBridgeMut,
@@ -72,6 +74,8 @@ use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{HudRuntimeState, OverworldPaletteBackupState};
 #[cfg(test)]
+use effects::DoorDebrisState;
+#[cfg(test)]
 use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
@@ -102,6 +106,7 @@ pub(crate) struct GameState {
     pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
     pub(crate) display: DisplayState,
+    pub(crate) effects: EffectState,
     pub(crate) ending: EndingState,
     pub(crate) messaging: MessagingState,
 }
@@ -119,6 +124,7 @@ impl GameState {
             inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
+            effects: EffectState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
             messaging: MessagingState::load_from_ram(ram),
         }
@@ -135,6 +141,7 @@ impl GameState {
         self.inventory.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.display.write_to_ram(ram);
+        self.effects.write_to_ram(ram);
         self.ending.write_to_ram(ram);
         self.messaging.write_to_ram(ram);
     }
@@ -693,6 +700,57 @@ mod tests {
 
         assert_eq!(cycle.next_index_for_slot(3), 1);
         assert_eq!(ram[PRIZE_DROP_CYCLE + 3], 1);
+    }
+
+    #[test]
+    fn door_debris_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DOOR_DEBRIS_X + 4, 0x1234);
+        write_le_u16(&mut ram, DOOR_DEBRIS_Y + 4, 0x5678);
+        ram[DOOR_DEBRIS_X + 7] = 0x9a;
+        ram[DOOR_DEBRIS_Y + 7] = 0xbc;
+        ram[DOOR_DEBRIS_DIRECTION + 7] = 3;
+
+        let debris = DoorDebrisState::load_from_ram(&ram);
+        assert_eq!(debris.x_word(2), 0x1234);
+        assert_eq!(debris.y_word(2), 0x5678);
+        assert_eq!(debris.x(7), 0x9a);
+        assert_eq!(debris.y(7), 0xbc);
+        assert_eq!(debris.direction(7), 3);
+        assert_eq!(debris.x_word(5), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        debris.write_to_ram(&mut projected);
+        assert_eq!(DoorDebrisState::load_from_ram(&projected), debris);
+    }
+
+    #[test]
+    fn native_door_debris_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DOOR_DEBRIS_X + 3] = 0xff;
+        ram[DOOR_DEBRIS_Y + 3] = 0xff;
+        ram[DOOR_DEBRIS_DIRECTION + 3] = 0xff;
+
+        let mut debris = DoorDebrisState::default();
+        {
+            let mut bridge = NativeDoorDebrisBridgeMut::new(&mut debris, &mut ram);
+            bridge.set_y_low_and_x_low_from_word(3, 0x1234);
+            bridge.set_x_word(2, 0x4567);
+            bridge.set_y_word(2, 0x89ab);
+            bridge.set_direction(3, 2);
+            bridge.set_direction(12, 1);
+        }
+
+        assert_eq!(debris.x(3), 0x12);
+        assert_eq!(debris.y(3), 0x34);
+        assert_eq!(debris.x_word(2), 0x4567);
+        assert_eq!(debris.y_word(2), 0x89ab);
+        assert_eq!(debris.direction(3), 2);
+        assert_eq!(ram[DOOR_DEBRIS_X + 3], 0x12);
+        assert_eq!(ram[DOOR_DEBRIS_Y + 3], 0x34);
+        assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_X + 4), 0x4567);
+        assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_Y + 4), 0x89ab);
+        assert_eq!(ram[DOOR_DEBRIS_DIRECTION + 3], 2);
     }
 
     #[test]
