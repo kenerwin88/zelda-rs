@@ -59,10 +59,10 @@ use crate::game_state::{
     MessagingRenderBufferViewMut, MessagingStateView, MessagingStateViewMut, MessagingTextView,
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
-    MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateView,
-    NativeFrameStateViewMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeVramUploadDataViewMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateViewMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadDataViewMut,
+    NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
     OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
@@ -74,7 +74,7 @@ use crate::game_state::{
     PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
     PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut,
     PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameControlView, RoomBoundsView,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RamFrameStateView, RoomBoundsView,
     RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView,
     SaveProgressViewMut, ScratchWordView, ScratchWordViewMut, SelectFileScratchView,
     SelectFileScratchViewMut, SharedMessageTimerView, SharedMessageTimerViewMut,
@@ -1898,16 +1898,8 @@ impl ZeldaState {
         PlayerResourcesViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn native_frame_control_view(&self) -> NativeFrameStateView<'_> {
-        NativeFrameStateView::new(&self.game_state.frame, &self.ram)
-    }
-
-    pub(crate) fn native_frame_control_view_mut(&mut self) -> NativeFrameStateViewMut<'_> {
-        NativeFrameStateViewMut::new(&mut self.game_state.frame, &mut self.ram)
-    }
-
-    pub(crate) fn ram_frame_control_view(&self) -> RamFrameControlView<'_> {
-        RamFrameControlView::new(&self.ram)
+    pub(crate) fn ram_frame_state_view(&self) -> RamFrameStateView<'_> {
+        RamFrameStateView::new(&self.ram)
     }
 
     pub(crate) fn frame_state(&self) -> &FrameState {
@@ -6542,7 +6534,7 @@ mod tests {
     }
 
     #[test]
-    fn migrated_select_file_frame_control_uses_semantic_views() {
+    fn migrated_select_file_frame_state_uses_semantic_accessors() {
         for (path, source) in [
             ("ancilla.rs", include_str!("ancilla.rs")),
             ("attract.rs", include_str!("attract.rs")),
@@ -6592,7 +6584,7 @@ mod tests {
     }
 
     #[test]
-    fn zelda_rtl_frame_control_raw_slots_are_guard_needles_only() {
+    fn zelda_rtl_frame_state_raw_slots_are_guard_needles_only() {
         let source = include_str!("zelda_rtl.rs");
         for needle in [
             concat!("self.", "ram[MAIN_MODULE_INDEX]"),

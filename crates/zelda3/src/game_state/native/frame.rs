@@ -38,59 +38,6 @@ impl FrameState {
     }
 }
 
-pub(crate) struct NativeFrameStateView<'a> {
-    frame: &'a FrameState,
-    ram: &'a [u8],
-}
-
-impl<'a> NativeFrameStateView<'a> {
-    pub(crate) fn new(frame: &'a FrameState, ram: &'a [u8]) -> Self {
-        Self { frame, ram }
-    }
-
-    pub(crate) fn main_module(&self) -> u8 {
-        self.frame.main_module
-    }
-
-    pub(crate) fn main_module_word(&self) -> u16 {
-        self.frame.main_module_word()
-    }
-
-    pub(crate) fn submodule(&self) -> u8 {
-        self.frame.submodule
-    }
-
-    pub(crate) fn subsubmodule(&self) -> u8 {
-        self.frame.subsubmodule
-    }
-
-    pub(crate) fn frame_counter(&self) -> u8 {
-        self.frame.frame_counter
-    }
-
-    pub(crate) fn saved_module_for_menu(&self) -> u8 {
-        self.frame.saved_module_for_menu
-    }
-
-    pub(crate) fn modal_pause_flag(&self) -> u8 {
-        self.frame.modal_pause_flag
-    }
-
-    pub(crate) fn nmi_thread_active(&self) -> bool {
-        ram_byte(self.ram, NMI_THREAD_ACTIVE) != 0
-    }
-
-    pub(crate) fn selected_run_thread(&self) -> u8 {
-        if self.nmi_thread_active()
-            && crate::types::read_le_u16(self.ram, POLY_THREAD_STACK) != 0x1f31
-        {
-            RUN_POLY_THREAD
-        } else {
-            RUN_MAIN_THREAD
-        }
-    }
-}
-
 pub(crate) struct NativeFrameStateViewMut<'a> {
     frame: &'a mut FrameState,
     ram: &'a mut [u8],

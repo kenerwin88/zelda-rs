@@ -9,7 +9,7 @@ mod frame;
 mod world;
 
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadDataViewMut};
-pub(crate) use frame::{FrameState, NativeFrameStateView, NativeFrameStateViewMut};
+pub(crate) use frame::{FrameState, NativeFrameStateViewMut};
 pub(crate) use world::{NativeWorldLocationViewMut, WorldLocationState};
 
 #[cfg(test)]

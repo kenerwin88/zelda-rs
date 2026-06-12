@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) struct RamFrameControlView<'a> {
+pub(crate) struct RamFrameStateView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> RamFrameControlView<'a> {
+impl<'a> RamFrameStateView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -47,85 +47,6 @@ impl<'a> RamFrameControlView<'a> {
         } else {
             RUN_MAIN_THREAD
         }
-    }
-}
-
-pub(crate) struct RamFrameControlViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> RamFrameControlViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_main_module(&mut self, value: u8) {
-        self.ram[MAIN_MODULE] = value;
-    }
-
-    pub(crate) fn set_main_module_word(&mut self, value: u16) {
-        write_le_u16(self.ram, MAIN_MODULE, value);
-    }
-
-    pub(crate) fn set_submodule(&mut self, value: u8) {
-        self.ram[SUBMODULE] = value;
-    }
-
-    pub(crate) fn set_subsubmodule(&mut self, value: u8) {
-        self.ram[SUBSUBMODULE] = value;
-    }
-
-    pub(crate) fn increment_submodule(&mut self) {
-        self.ram[SUBMODULE] = self.ram[SUBMODULE].wrapping_add(1);
-    }
-
-    pub(crate) fn decrement_submodule(&mut self) {
-        self.ram[SUBMODULE] = self.ram[SUBMODULE].wrapping_sub(1);
-    }
-
-    pub(crate) fn increment_subsubmodule(&mut self) {
-        self.ram[SUBSUBMODULE] = self.ram[SUBSUBMODULE].wrapping_add(1);
-    }
-
-    pub(crate) fn decrement_subsubmodule(&mut self) {
-        self.ram[SUBSUBMODULE] = self.ram[SUBSUBMODULE].wrapping_sub(1);
-    }
-
-    pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        self.ram[FRAME_COUNTER] = value;
-    }
-
-    pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        self.ram[SAVED_MODULE_FOR_MENU] = value;
-    }
-
-    pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        self.set_saved_module_for_menu(0);
-    }
-
-    pub(crate) fn save_main_module_for_menu(&mut self) {
-        self.ram[SAVED_MODULE_FOR_MENU] = self.ram[MAIN_MODULE];
-    }
-
-    pub(crate) fn save_submodule_for_menu(&mut self) {
-        self.ram[SAVED_MODULE_FOR_MENU] = self.ram[SUBMODULE];
-    }
-
-    pub(crate) fn increment_frame_counter(&mut self) {
-        self.ram[FRAME_COUNTER] = self.ram[FRAME_COUNTER].wrapping_add(1);
-    }
-
-    pub(crate) fn clear_modal_pause_flag(&mut self) {
-        self.ram[MODAL_PAUSE_FLAG] = 0;
-    }
-
-    pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        self.ram[MODAL_PAUSE_FLAG] = value;
-    }
-
-    pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        self.ram[MODAL_PAUSE_FLAG] = self.ram[MODAL_PAUSE_FLAG].wrapping_add(1);
-        self.ram[MODAL_PAUSE_FLAG]
     }
 }
 
