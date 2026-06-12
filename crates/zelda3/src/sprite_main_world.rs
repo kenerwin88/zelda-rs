@@ -244,7 +244,7 @@ impl ZeldaState {
                                 self.somaria_platform_handle_drag(k);
                             }
                         }
-                        if self.world_state_view().dungeon_room_index() != 36 {
+                        if self.world_location_state().dungeon_room_index() != 36 {
                             let j = usize::from(self.sprite_slot_view(k).direction());
                             let dx = self
                                 .player_state_view()
@@ -663,8 +663,8 @@ impl ZeldaState {
     //   See sprite_main.c:2077..2140 for the full switch on sprite_ai_state[k]
     //   driving the pendant -> sword scene.
     pub(super) fn master_sword_main(&mut self, k: usize) {
-        let ow = self.world_state_view().overworld_screen() as usize;
-        if self.frame_control_view().main_module() != 26
+        let ow = self.world_location_state().overworld_screen_index() as usize;
+        if self.frame_state().main_module != 26
             && (self.overworld_event_info_view().event_info(ow) & 0x40) != 0
         {
             self.sprite_slot_view_mut(k).set_state(0);
@@ -845,7 +845,7 @@ impl ZeldaState {
         self.sprite_draw_single_large_for_world(k);
         if self.sprite_slot_view(k).a() != 0 {
             self.sprite_move_xy(k);
-            if (self.frame_control_view().frame_counter() & 3) == 0 {
+            if (self.frame_state().frame_counter & 3) == 0 {
                 self.master_sword_spawn_replacement_light_beam(k);
             } else {
                 return;
@@ -1050,7 +1050,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                let mix = (((k as u8) << 1) ^ self.frame_control_view().frame_counter()) & 0xe;
+                let mix = (((k as u8) << 1) ^ self.frame_state().frame_counter) & 0xe;
                 let oam_flags = (self.sprite_slot_view(k).oam_flags() & !0xe) | mix;
                 self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -1141,7 +1141,7 @@ impl ZeldaState {
             self.system_signals_view_mut().set_ambient_sound_effect(11);
             self.sprite_slot_view_mut(k).set_b(11);
         }
-        let graphics = (self.frame_control_view().frame_counter() >> 5) & 1;
+        let graphics = (self.frame_state().frame_counter >> 5) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -1174,7 +1174,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                if (self.frame_control_view().frame_counter() & 15) == 0 {
+                if (self.frame_state().frame_counter & 15) == 0 {
                     self.palette_filter_sp5f_for_world();
                     if self.palette_filter_view().countdown() == 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -1302,9 +1302,9 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_main() == 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
-        if (self.frame_control_view().frame_counter() & 1) == 0 {
+        if (self.frame_state().frame_counter & 1) == 0 {
             let cur = self.sprite_system_view().cur_object_index();
-            let bit = ((self.frame_control_view().frame_counter() >> 5) ^ cur) & 1;
+            let bit = ((self.frame_state().frame_counter >> 5) ^ cur) & 1;
             let delta: u8 = if bit != 0 { 0xff } else { 1 };
             self.sprite_slot_view_mut(k).add_x_velocity(delta);
         }
@@ -1414,9 +1414,9 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn faerie_handle_movement(&mut self, k: usize) {
-        let graphics = (self.frame_control_view().frame_counter() >> 3) & 1;
+        let graphics = (self.frame_state().frame_counter >> 3) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
-        if self.world_state_view().is_indoors() && self.sprite_slot_view(k).delay_aux1() == 0 {
+        if self.world_location_state().is_indoors() && self.sprite_slot_view(k).delay_aux1() == 0 {
             if (self.sprite_check_tile_collision(k) & 3) != 0 {
                 let x_velocity = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
                 let direction = 0u8.wrapping_sub(self.sprite_slot_view(k).direction());
@@ -1440,7 +1440,7 @@ impl ZeldaState {
             }
         }
         self.sprite_move_xy(k);
-        if (self.frame_control_view().frame_counter() & 63) == 0 {
+        if (self.frame_state().frame_counter & 63) == 0 {
             let x = (self.player_state_view().x() & !0xff)
                 .wrapping_add(u16::from(self.get_random_number()));
             let y = (self.player_state_view().y() & !0xff)
@@ -1449,7 +1449,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_a(pt.y);
             self.sprite_slot_view_mut(k).set_direction(pt.x);
         }
-        if (self.frame_control_view().frame_counter() & 15) == 0 {
+        if (self.frame_state().frame_counter & 15) == 0 {
             let y_velocity = (((self.sprite_slot_view(k).a() as i8)
                 + (self.sprite_slot_view(k).y_velocity() as i8))
                 >> 1) as u8;

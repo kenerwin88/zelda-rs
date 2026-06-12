@@ -142,7 +142,7 @@ impl ZeldaState {
                 .set_blind_head_anim_counter(next);
         }
         self.sprite_check_damage_to_and_from_link(k);
-        if (((k as u8) ^ self.frame_control_view().frame_counter()) & 0x1f) == 0 {
+        if (((k as u8) ^ self.frame_state().frame_counter) & 0x1f) == 0 {
             let jbak = self.sprite_slot_view(k).direction();
             let direction = self.sprite_direction_to_face_link(k, None);
             self.sprite_slot_view_mut(k).set_direction(direction);
@@ -170,7 +170,7 @@ impl ZeldaState {
 
         if c == 2 {
             for j in (0..=15usize).rev() {
-                let cond = (((self.frame_control_view().frame_counter() ^ j as u8) & 7)
+                let cond = (((self.frame_state().frame_counter ^ j as u8) & 7)
                     | self.sprite_slot_view(j).hit_timer())
                     == 0;
                 if j != self.sprite_system_view().cur_object_index() as usize
@@ -258,7 +258,7 @@ impl ZeldaState {
             self.sprite_check_damage_from_link(k);
         }
         self.sprite_move_xy(k);
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             self.sprite_check_tile_collision(k);
         }
         self.thrown_sprite_tile_and_sprite_interaction(k);
@@ -349,7 +349,7 @@ impl ZeldaState {
     pub(super) fn probe_check_tile_solidity(&mut self, k: usize) -> bool {
         let cur_x = self.sprite_workspace_view().current_sprite_x();
         let cur_y = self.sprite_workspace_view().current_sprite_y();
-        let tiletype = if self.world_state_view().is_indoors() {
+        let tiletype = if self.world_location_state().is_indoors() {
             let mut t = if self.sprite_slot_view(k).floor() >= 1 {
                 0x1000
             } else {
@@ -631,7 +631,7 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).state() == 5 {
-            if self.frame_control_view().submodule() == 0 {
+            if self.frame_state().submodule == 0 {
                 self.sprite_slot_view_mut(k).increment_subtype2();
                 self.guard_tick_and_update_body(k);
                 self.sprite_slot_view_mut(k).increment_subtype2();
@@ -892,7 +892,7 @@ impl ZeldaState {
     //   Sprite_SpawnProbeAlways(k, r15);
     // }
     pub(super) fn sprite_guard_send_out_probe(&mut self, k: usize) {
-        let lo = (k as u8).wrapping_add(self.frame_control_view().frame_counter()) & 3;
+        let lo = (k as u8).wrapping_add(self.frame_state().frame_counter) & 3;
         if lo != 0 || self.sprite_slot_view(k).pause() != 0 {
             return;
         }
@@ -1199,7 +1199,7 @@ impl ZeldaState {
 
     // Soldier_Func12 — proxy. Calls speed-toward-link/animation step.
     fn soldier_func12_for_guard(&mut self, k: usize) {
-        if ((k as u8) ^ self.frame_control_view().frame_counter()) & 0x1f == 0 {
+        if ((k as u8) ^ self.frame_state().frame_counter) & 0x1f == 0 {
             if self.sprite_slot_view(k).g() == 0 {
                 self.sprite_slot_view_mut(k).set_g(1);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 4);
@@ -1339,7 +1339,7 @@ impl ZeldaState {
                     sprite.set_delay_main(24);
                     return;
                 }
-                if ((self.frame_control_view().frame_counter() ^ (k as u8)) & 7) == 0 {
+                if ((self.frame_state().frame_counter ^ (k as u8)) & 7) == 0 {
                     let dir = self.sprite_direction_to_face_link(k, None);
                     {
                         let mut sprite = self.sprite_slot_view_mut(k);

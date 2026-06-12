@@ -8421,7 +8421,7 @@ mod tests {
 
         state.run_frame_internal(0, crate::RUN_MAIN);
 
-        assert_eq!(state.frame_control_view().frame_counter(), 1);
+        assert_eq!(state.frame_state().frame_counter, 1);
         assert_eq!(state.ram[NMI_BOOLEAN], 1);
         for i in 4..128 {
             assert_eq!(state.ram[OAM_BUF + i * 4 + 1], 0xf0);

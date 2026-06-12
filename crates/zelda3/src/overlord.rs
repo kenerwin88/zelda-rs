@@ -78,11 +78,9 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_spawn_boulder(&mut self) {
-        if self.world_state_view().is_indoors()
+        if self.world_location_state().is_indoors()
             || self.garnish_state_view().boulder_trap_count() == 0
-            || (self.frame_control_view().submodule()
-                | self.frame_control_view().modal_pause_flag())
-                != 0
+            || (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) != 0
         {
             return;
         }
@@ -117,9 +115,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_execute_all(&mut self) {
-        if (self.frame_control_view().submodule() | self.frame_control_view().modal_pause_flag())
-            != 0
-        {
+        if (self.frame_state().submodule | self.frame_control_view().modal_pause_flag()) != 0 {
             return;
         }
         for i in (0..=7).rev() {
@@ -353,7 +349,7 @@ impl ZeldaState {
         const OVERLORD_WIZZROBE_Y: [i8; 4] = [16, 16, 64, -32];
         const OVERLORD_WIZZROBE_DELAY: [u8; 4] = [0, 16, 32, 48];
         if self.overlord_slot_view(k).gen2() != 128 {
-            if self.frame_control_view().frame_counter() & 1 != 0 {
+            if self.frame_state().frame_counter & 1 != 0 {
                 let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
                 self.overlord_slot_view_mut(k).set_gen2(value);
             }
@@ -563,7 +559,7 @@ impl ZeldaState {
 
     pub(super) fn overlord09_wallmaster_spawner(&mut self, k: usize) {
         if self.overlord_slot_view(k).gen2() != 128 {
-            if self.frame_control_view().frame_counter() & 1 == 0 {
+            if self.frame_state().frame_counter & 1 == 0 {
                 let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
                 self.overlord_slot_view_mut(k).set_gen2(value);
             }
@@ -764,7 +760,7 @@ impl ZeldaState {
         let y = self
             .overlord_get_y(k)
             .wrapping_sub(self.world_state_view().bg2_y());
-        if (x | y) & 0xff00 != 0 || self.frame_control_view().frame_counter() & 0x0f != 0 {
+        if (x | y) & 0xff00 != 0 || self.frame_state().frame_counter & 0x0f != 0 {
             return;
         }
         self.sprite_workspace_view_mut().set_shared_scratch_a(0);
@@ -794,9 +790,7 @@ impl ZeldaState {
             self.overlord_slot_view_mut(k).set_gen2(value);
             return;
         }
-        if self.frame_control_view().frame_counter() & 1 == 0
-            && self.overlord_slot_view(k).gen2() != 0
-        {
+        if self.frame_state().frame_counter & 1 == 0 && self.overlord_slot_view(k).gen2() != 0 {
             let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
             self.overlord_slot_view_mut(k).set_gen2(value);
         }
@@ -853,10 +847,10 @@ impl ZeldaState {
 
     pub(super) fn overlord_check_if_active(&mut self, k: usize) {
         const OVERLORD_IN_RANGE_OFFS: [u16; 2] = [0x0130, (-0x40i16) as u16];
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             return;
         }
-        let j = (self.frame_control_view().frame_counter() & 1) as usize;
+        let j = (self.frame_state().frame_counter & 1) as usize;
         let x = self
             .world_state_view()
             .bg2_x()
@@ -985,7 +979,7 @@ impl ZeldaState {
     }
 
     fn get_tile_attribute_for_overlord(&mut self, floor: u8, x: u16, y: u16) -> u8 {
-        let tiletype = if self.world_state_view().is_indoors() {
+        let tiletype = if self.world_location_state().is_indoors() {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;

@@ -232,7 +232,7 @@ impl ZeldaState {
         }
         self.bee_bzzt(k);
         self.sprite_move_xy(k);
-        let graphics = (((k as u8) ^ self.frame_control_view().frame_counter()) >> 1) & 1;
+        let graphics = (((k as u8) ^ self.frame_state().frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
             self.sprite_check_damage_to_link_for_npcs(k);
@@ -245,7 +245,7 @@ impl ZeldaState {
             }
         }
 
-        if self.frame_control_view().frame_counter() == 0 && self.sprite_slot_view(k).a() != 16 {
+        if self.frame_state().frame_counter == 0 && self.sprite_slot_view(k).a() != 16 {
             let a = self.sprite_slot_view(k).a().wrapping_sub(8);
             self.sprite_slot_view_mut(k).set_a(a);
         }
@@ -279,8 +279,7 @@ impl ZeldaState {
     pub(super) fn bee_handle_z(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_z(16);
         if self.sprite_slot_view(k).head_direction() != 0 {
-            let palette =
-                (((self.frame_control_view().frame_counter() >> 4) & 3).wrapping_add(1)) << 1;
+            let palette = (((self.frame_state().frame_counter >> 4) & 3).wrapping_add(1)) << 1;
             let oam_flags = self.sprite_slot_view(k).oam_flags();
             self.sprite_slot_view_mut(k)
                 .set_oam_flags((oam_flags & 0xf1) | palette);
@@ -402,7 +401,7 @@ impl ZeldaState {
     // }
     pub(super) fn bee_handle_interactions(&mut self, k: usize) {
         let dmi = self.dialogue_message_index_view().value();
-        if self.frame_control_view().submodule() == 2 && (dmi == 0xc8 || dmi == 0xca) {
+        if self.frame_state().submodule == 2 && (dmi == 0xc8 || dmi == 0xca) {
             self.sprite_slot_view_mut(k).set_delay_aux4(40);
         }
     }
@@ -488,7 +487,7 @@ impl ZeldaState {
                 }
                 self.bee_bzzt(k);
                 self.sprite_move_xy(k);
-                let graphics = (((k as u8) ^ self.frame_control_view().frame_counter()) >> 1) & 1;
+                let graphics = (((k as u8) ^ self.frame_state().frame_counter) >> 1) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).head_direction() != 0 {
                     self.sprite_spawn_sparkle_garnish_for_npcs(k);
@@ -510,7 +509,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     return;
                 }
-                if (((k as u8) ^ self.frame_control_view().frame_counter()) & 3) != 0 {
+                if (((k as u8) ^ self.frame_state().frame_counter) & 3) != 0 {
                     return;
                 }
                 let mut pt2 = Point16U { x: 0, y: 0 };
@@ -524,7 +523,7 @@ impl ZeldaState {
                         .y()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                 }
-                if (((k as u8) ^ self.frame_control_view().frame_counter()) & 7) != 0 {
+                if (((k as u8) ^ self.frame_state().frame_counter) & 7) != 0 {
                     return;
                 }
                 let pt = self.sprite_project_speed_towards_location(k, pt2.x, pt2.y, 32);
@@ -579,7 +578,7 @@ impl ZeldaState {
     //     SpriteSfx_QueueSfx3WithPan(k, 0x2c);
     // }
     pub(super) fn bee_bzzt(&mut self, k: usize) {
-        if (((k as u8) ^ self.frame_control_view().frame_counter()) & 31) == 0 {
+        if (((k as u8) ^ self.frame_state().frame_counter) & 31) == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2c);
         }
     }
@@ -967,7 +966,7 @@ impl ZeldaState {
         let Some(info) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let time = self.frame_control_view().frame_counter();
+        let time = self.frame_state().frame_counter;
         self.sprite_draw_distress_custom_for_npcs(info.0, info.1, time);
     }
 

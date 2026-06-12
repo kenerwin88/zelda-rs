@@ -340,12 +340,12 @@ impl ZeldaState {
                     trimmed.parse::<u8>().ok()
                 }
             })
-            .is_none_or(|frame| frame == self.frame_control_view().frame_counter())
+            .is_none_or(|frame| frame == self.frame_state().frame_counter)
     }
 
     // void SwishEvery16Frames(int k) {  // 9d8aa9
     pub(super) fn swish_every16_frames(&mut self, k: usize) {
-        if (self.frame_control_view().frame_counter() & 15) == 0 {
+        if (self.frame_state().frame_counter & 15) == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x06);
         }
     }
@@ -474,7 +474,7 @@ impl ZeldaState {
         if self.replay_trace_ganon_matches() {
             eprintln!(
                 "R ganon fc={} entry k={} ai=0x{:02x} delay=0x{:02x} health=0x{:02x} subtype=0x{:02x} d=0x{:02x} hit=0x{:02x} aux1=0x{:02x} aux2=0x{:02x} aux4=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.frame_control_view().frame_counter(),
+                self.frame_state().frame_counter,
                 k,
                 self.sprite_slot_view(k).ai_state(),
                 self.sprite_slot_view(k).delay_main(),
@@ -695,7 +695,7 @@ impl ZeldaState {
                     self.sprite_approach_target_speed(k, pt.x, pt.y);
                     self.sprite_move_xy(k);
                     if self.sprite_slot_view(k).delay_main() == 0
-                        || (self.frame_control_view().frame_counter() & 1) != 0
+                        || (self.frame_state().frame_counter & 1) != 0
                     {
                         self.sprite_slot_view_mut(k).set_graphics(255);
                         return;
@@ -703,7 +703,7 @@ impl ZeldaState {
                     const GFX5: [u8; 2] = [2, 10];
                     let graphics = GFX5[(self.sprite_slot_view(k).direction() & 1) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
-                    if (self.frame_control_view().frame_counter() & 7) == 0 {
+                    if (self.frame_state().frame_counter & 7) == 0 {
                         let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
                         let j = self.sprite_spawn_dynamically(k, 0xd6, &mut info);
                         if j >= 0 {
@@ -1010,8 +1010,7 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            let graphics =
-                LOCAL_GRAPHICS[usize::from((self.frame_control_view().frame_counter() >> 2) & 3)];
+            let graphics = LOCAL_GRAPHICS[usize::from((self.frame_state().frame_counter >> 2) & 3)];
             self.sprite_slot_view_mut(k).set_graphics(graphics);
             if self.sprite_slot_view(k).delay_main() != 0 {
                 if self.sprite_slot_view(k).delay_main() < 208 {
@@ -1304,7 +1303,7 @@ impl ZeldaState {
         //   if (!(frame_counter & 15))
         //     SpriteSfx_QueueSfx3WithPan(k, 0x6);
         // }
-        if (self.frame_control_view().frame_counter() & 15) == 0 {
+        if (self.frame_state().frame_counter & 15) == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x6);
         }
     }
@@ -1339,7 +1338,7 @@ impl ZeldaState {
         if self.replay_trace_ganon_matches() {
             eprintln!(
                 "R ganon fc={} select k={} a=0x{:02x} ai=0x{:02x} delay=0x{:02x} health=0x{:02x} subtype=0x{:02x} d=0x{:02x} target=0x{:02x}/0x{:02x}",
-                self.frame_control_view().frame_counter(),
+                self.frame_state().frame_counter,
                 k,
                 a,
                 self.sprite_slot_view(k).ai_state(),
@@ -1403,7 +1402,7 @@ impl ZeldaState {
 
         self.ganon_draw_emit_body_oam_for_ganon(k, info);
         self.ganon_draw_patch_head_oam_for_ganon(k);
-        if self.frame_control_view().submodule() != 0 {
+        if self.frame_state().submodule != 0 {
             self.sprite_correct_oam_entries_for_ganon(k, 9, 0xff);
         }
 
