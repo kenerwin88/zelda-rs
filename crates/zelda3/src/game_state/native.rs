@@ -674,6 +674,8 @@ mod tests {
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_BASE, 0x4841);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_LIMIT, 0x007f);
         write_le_u16(&mut ram, messaging::MESSAGE_DMA_TILE_SENTINEL, 0xffff);
+        ram[HUD_TILE_INDICES_BUFFER] = 0xbe;
+        ram[HUD_TILE_INDICES_BUFFER + 1] = 0xef;
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
         ram[0xa680] = 0xde;
@@ -741,6 +743,7 @@ mod tests {
         assert_eq!(display.message_dma_tile_base, 0x4841);
         assert_eq!(display.message_dma_tile_limit, 0x007f);
         assert_eq!(display.message_dma_tile_sentinel, 0xffff);
+        assert_eq!(&display.message_dma_tile_indices(&ram)[..2], &[0xbe, 0xef]);
         assert_eq!(display.animated_tile_data_source_address, 0xa680);
         assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
         assert_eq!(&display.animated_tile_data(&ram)[..2], &[0xde, 0xad]);

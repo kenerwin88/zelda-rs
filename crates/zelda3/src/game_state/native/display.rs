@@ -279,6 +279,10 @@ impl DisplayState {
         usize::from(self.message_dma_destination_address)
     }
 
+    pub(crate) fn message_dma_tile_indices<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[HUD_TILE_INDICES_BUFFER..]
+    }
+
     pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
         self.travel_bird_tile_offset != 0
     }

@@ -83,7 +83,10 @@ impl ZeldaState {
         if self.system_signals_view().should_update_hud() {
             let dst = self.display_state().message_dma_destination_address_usize();
             if dst + 165 <= self.ppu.vram.len() {
-                let hud_buf = self.display_nmi_view().hud_tile_indices_buffer().to_vec();
+                let hud_buf = self
+                    .display_state()
+                    .message_dma_tile_indices(&self.ram)
+                    .to_vec();
                 for i in 0..165 {
                     self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
                 }

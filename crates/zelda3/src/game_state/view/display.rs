@@ -9,10 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn hud_tile_indices_buffer(&self) -> &[u8] {
-        &self.ram[HUD_TILE_INDICES_BUFFER..]
-    }
-
     pub(crate) fn oam_buf(&self) -> &[u8] {
         &self.ram[OAM_BUF..]
     }
