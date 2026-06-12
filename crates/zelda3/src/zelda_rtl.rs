@@ -48,20 +48,19 @@ use crate::game_state::{
     FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
     GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
     HappinessPondRupeeView, HappinessPondRupeeViewMut, HitboxScratchOffsetView,
-    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, HudStateViewMut,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut,
-    InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
-    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut,
-    MemorizedTileView, MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState,
-    MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut,
-    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroSceneBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    HitboxScratchOffsetViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
+    IntroActorViewMut, IntroSceneState, IntroSwordView, IntroSwordViewMut, InventoryStateView,
+    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MazeGameTimerViewMut, MemorizedTileView,
+    MemorizedTileViewMut, MessagingRenderBufferState, MessagingRuntimeState, MinigameStateView,
+    MinigameStateViewMut, MirrorWarpScratchView, MirrorWarpScratchViewMut, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeEndingCreditBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -3212,11 +3211,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn hud_state_view(&self) -> HudStateView<'_> {
-        HudStateView::new(&self.ram)
+        HudStateView::new(&self.game_state.display.hud_runtime, &self.ram)
     }
 
-    pub(crate) fn hud_state_view_mut(&mut self) -> HudStateViewMut<'_> {
-        HudStateViewMut::new(&mut self.ram)
+    pub(crate) fn hud_state_view_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
+        NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn hud_inventory_order_state(&self) -> HudInventoryOrderState {

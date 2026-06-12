@@ -253,6 +253,179 @@ impl HudInventoryOrderState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HudRuntimeState {
+    super_bomb_indicator_timer: u8,
+    super_bomb_indicator_counter: u8,
+    rupee_sfx_sound_delay: u8,
+    heart_animation_active: u8,
+    heart_refill_countdown: u8,
+    heart_refill_animation_subpixel: u8,
+    flashing_circle_timer: u8,
+    previous_menu_joypad_h: u8,
+    equipment_menu_exit_state: u8,
+    bottle_menu_row: u8,
+    dungeon_dark_with_lantern: u8,
+    module_tick_counter: u8,
+}
+
+impl HudRuntimeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            super_bomb_indicator_timer: ram_byte(ram, SUPER_BOMB_INDICATOR_TIMER),
+            super_bomb_indicator_counter: ram_byte(ram, SUPER_BOMB_INDICATOR_COUNTER),
+            rupee_sfx_sound_delay: ram_byte(ram, RUPEE_SFX_SOUND_DELAY),
+            heart_animation_active: ram_byte(ram, IS_DOING_HEART_ANIMATION),
+            heart_refill_countdown: ram_byte(ram, HEART_REFILL_COUNTDOWN),
+            heart_refill_animation_subpixel: ram_byte(ram, HEART_REFILL_ANIM_SUBPOS),
+            flashing_circle_timer: ram_byte(ram, FLASHING_CIRCLE_TIMER),
+            previous_menu_joypad_h: ram_byte(ram, MENU_PREV_JOYPAD_H),
+            equipment_menu_exit_state: ram_byte(ram, EQUIPMENT_MENU_EXIT_STATE),
+            bottle_menu_row: ram_byte(ram, BOTTLE_MENU_ROW),
+            dungeon_dark_with_lantern: ram_byte(ram, HDR_DUNGEON_DARK_WITH_LANTERN),
+            module_tick_counter: ram_byte(ram, HUD_MODULE_TICK_COUNTER),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[SUPER_BOMB_INDICATOR_TIMER] = self.super_bomb_indicator_timer;
+        ram[SUPER_BOMB_INDICATOR_COUNTER] = self.super_bomb_indicator_counter;
+        ram[RUPEE_SFX_SOUND_DELAY] = self.rupee_sfx_sound_delay;
+        ram[IS_DOING_HEART_ANIMATION] = self.heart_animation_active;
+        ram[HEART_REFILL_COUNTDOWN] = self.heart_refill_countdown;
+        ram[HEART_REFILL_ANIM_SUBPOS] = self.heart_refill_animation_subpixel;
+        ram[FLASHING_CIRCLE_TIMER] = self.flashing_circle_timer;
+        ram[MENU_PREV_JOYPAD_H] = self.previous_menu_joypad_h;
+        ram[EQUIPMENT_MENU_EXIT_STATE] = self.equipment_menu_exit_state;
+        ram[BOTTLE_MENU_ROW] = self.bottle_menu_row;
+        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = self.dungeon_dark_with_lantern;
+        ram[HUD_MODULE_TICK_COUNTER] = self.module_tick_counter;
+    }
+
+    pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
+        self.super_bomb_indicator_timer
+    }
+
+    pub(crate) fn super_bomb_indicator_counter(&self) -> u8 {
+        self.super_bomb_indicator_counter
+    }
+
+    pub(crate) fn rupee_sfx_sound_delay(&self) -> u8 {
+        self.rupee_sfx_sound_delay
+    }
+
+    pub(crate) fn is_doing_heart_animation(&self) -> bool {
+        self.heart_animation_active != 0
+    }
+
+    pub(crate) fn is_doing_heart_animation_raw(&self) -> u8 {
+        self.heart_animation_active
+    }
+
+    pub(crate) fn heart_refill_countdown(&self) -> u8 {
+        self.heart_refill_countdown
+    }
+
+    pub(crate) fn heart_refill_anim_subpos(&self) -> u8 {
+        self.heart_refill_animation_subpixel
+    }
+
+    pub(crate) fn flashing_circle_timer(&self) -> u8 {
+        self.flashing_circle_timer
+    }
+
+    pub(crate) fn prev_joypad_h(&self) -> u8 {
+        self.previous_menu_joypad_h
+    }
+
+    pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
+        self.equipment_menu_exit_state
+    }
+
+    pub(crate) fn bottle_menu_row(&self) -> u8 {
+        self.bottle_menu_row
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
+        self.dungeon_dark_with_lantern != 0
+    }
+
+    pub(crate) fn tick_counter(&self) -> u8 {
+        self.module_tick_counter
+    }
+}
+
+pub(crate) struct HudStateView<'a> {
+    runtime: &'a HudRuntimeState,
+    ram: &'a [u8],
+}
+
+impl<'a> HudStateView<'a> {
+    pub(crate) fn new(runtime: &'a HudRuntimeState, ram: &'a [u8]) -> Self {
+        Self { runtime, ram }
+    }
+
+    pub(crate) fn floor_changed_timer_low(&self) -> u8 {
+        ram_byte(self.ram, HUD_FLOOR_CHANGED_TIMER)
+    }
+
+    pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
+        self.runtime.super_bomb_indicator_timer()
+    }
+
+    pub(crate) fn super_bomb_indicator_counter(&self) -> u8 {
+        self.runtime.super_bomb_indicator_counter()
+    }
+
+    pub(crate) fn rupee_sfx_sound_delay(&self) -> u8 {
+        self.runtime.rupee_sfx_sound_delay()
+    }
+
+    pub(crate) fn is_doing_heart_animation(&self) -> bool {
+        self.runtime.is_doing_heart_animation()
+    }
+
+    pub(crate) fn is_doing_heart_animation_raw(&self) -> u8 {
+        self.runtime.is_doing_heart_animation_raw()
+    }
+
+    pub(crate) fn heart_refill_countdown(&self) -> u8 {
+        self.runtime.heart_refill_countdown()
+    }
+
+    pub(crate) fn heart_refill_anim_subpos(&self) -> u8 {
+        self.runtime.heart_refill_anim_subpos()
+    }
+
+    pub(crate) fn flashing_circle_timer(&self) -> u8 {
+        self.runtime.flashing_circle_timer()
+    }
+
+    pub(crate) fn prev_joypad_h(&self) -> u8 {
+        self.runtime.prev_joypad_h()
+    }
+
+    pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
+        self.runtime.equipment_menu_exit_state()
+    }
+
+    pub(crate) fn bottle_menu_row(&self) -> u8 {
+        self.runtime.bottle_menu_row()
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
+        self.runtime.dungeon_dark_with_lantern()
+    }
+
+    pub(crate) fn tick_counter(&self) -> u8 {
+        self.runtime.tick_counter()
+    }
+
+    pub(crate) fn tile_word(&self, tile: usize) -> u16 {
+        read_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TrinexxPaletteState {
     pub(crate) red_shell_delay: u8,
     pub(crate) blue_shell_delay: u8,
@@ -536,6 +709,7 @@ pub(crate) struct DisplayState {
     pub(crate) attract_vram_destination_address: u16,
     pub(crate) palette_filter: PaletteFilterState,
     pub(crate) trinexx_palette: TrinexxPaletteState,
+    pub(crate) hud_runtime: HudRuntimeState,
     pub(crate) hud_inventory_order: HudInventoryOrderState,
     pub(crate) water_hdma_window: WaterHdmaWindowState,
     pub(crate) overworld_palette_backup: OverworldPaletteBackupState,
@@ -590,6 +764,7 @@ impl DisplayState {
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
             palette_filter: PaletteFilterState::load_from_ram(ram),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
+            hud_runtime: HudRuntimeState::load_from_ram(ram),
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
             water_hdma_window: WaterHdmaWindowState::load_from_ram(ram),
             overworld_palette_backup: OverworldPaletteBackupState::load_from_ram(ram),
@@ -667,6 +842,7 @@ impl DisplayState {
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
         self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
+        self.hud_runtime.write_to_ram(ram);
         self.hud_inventory_order.write_to_ram(ram);
         self.water_hdma_window.write_to_ram(ram);
         self.overworld_palette_backup.write_to_ram(ram);
@@ -1178,6 +1354,116 @@ impl<'a> NativeHudInventoryOrderBridgeMut<'a> {
                 .swap(HUD_INVENTORY_ORDER + old_pos, HUD_INVENTORY_ORDER + new_pos);
         }
         self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeHudStateBridgeMut<'a> {
+    display: &'a mut DisplayState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeHudStateBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        display.hud_runtime = HudRuntimeState::load_from_ram(ram);
+        Self { display, ram }
+    }
+
+    fn sync_runtime(&mut self) {
+        self.display.hud_runtime.write_to_ram(self.ram);
+        self.debug_assert_runtime_matches_ram();
+    }
+
+    fn debug_assert_runtime_matches_ram(&self) {
+        debug_assert_eq!(
+            self.display.hud_runtime,
+            HudRuntimeState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_floor_changed_timer(&mut self, value: u16) {
+        write_le_u16(self.ram, HUD_FLOOR_CHANGED_TIMER, value);
+    }
+
+    pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
+        self.display.hud_runtime.super_bomb_indicator_timer = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
+        self.display.hud_runtime.super_bomb_indicator_counter = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
+        self.display.hud_runtime.rupee_sfx_sound_delay = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_is_doing_heart_animation(&mut self, value: u8) {
+        self.display.hud_runtime.heart_animation_active = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_tile_word(&mut self, tile: usize, value: u16) {
+        write_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2, value);
+    }
+
+    pub(crate) fn clear_is_doing_heart_animation(&mut self) {
+        self.set_is_doing_heart_animation(0);
+    }
+
+    pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
+        self.display.hud_runtime.heart_refill_countdown = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_heart_refill_anim_subpos(&mut self, value: u8) {
+        self.display.hud_runtime.heart_refill_animation_subpixel = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
+        self.display.hud_runtime.flashing_circle_timer = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
+        self.display.hud_runtime.previous_menu_joypad_h = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn clear_prev_joypad_h(&mut self) {
+        self.set_prev_joypad_h(0);
+    }
+
+    pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
+        self.display.hud_runtime.equipment_menu_exit_state = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
+        self.display.hud_runtime.bottle_menu_row = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
+        let row = self.display.hud_runtime.bottle_menu_row.wrapping_sub(1);
+        self.set_bottle_menu_row(row);
+        row
+    }
+
+    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
+        self.display.hud_runtime.dungeon_dark_with_lantern = 1;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn set_tick_counter(&mut self, value: u8) {
+        self.display.hud_runtime.module_tick_counter = value;
+        self.sync_runtime();
+    }
+
+    pub(crate) fn clear_floor_changed_timer_low(&mut self) {
+        self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
     }
 }
 

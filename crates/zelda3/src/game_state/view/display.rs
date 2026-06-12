@@ -149,11 +149,11 @@ impl<'a> PaletteBufferViewMut<'a> {
     }
 }
 
-pub(crate) struct HudStateView<'a> {
+pub(crate) struct HudRawStateView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> HudStateView<'a> {
+impl<'a> HudRawStateView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -162,68 +162,16 @@ impl<'a> HudStateView<'a> {
         byte(self.ram, HUD_FLOOR_CHANGED_TIMER)
     }
 
-    pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
-        byte(self.ram, SUPER_BOMB_INDICATOR_TIMER)
-    }
-
-    pub(crate) fn super_bomb_indicator_counter(&self) -> u8 {
-        byte(self.ram, SUPER_BOMB_INDICATOR_COUNTER)
-    }
-
-    pub(crate) fn rupee_sfx_sound_delay(&self) -> u8 {
-        byte(self.ram, RUPEE_SFX_SOUND_DELAY)
-    }
-
-    pub(crate) fn is_doing_heart_animation(&self) -> bool {
-        byte(self.ram, IS_DOING_HEART_ANIMATION) != 0
-    }
-
-    pub(crate) fn is_doing_heart_animation_raw(&self) -> u8 {
-        byte(self.ram, IS_DOING_HEART_ANIMATION)
-    }
-
-    pub(crate) fn heart_refill_countdown(&self) -> u8 {
-        byte(self.ram, HEART_REFILL_COUNTDOWN)
-    }
-
-    pub(crate) fn heart_refill_anim_subpos(&self) -> u8 {
-        byte(self.ram, HEART_REFILL_ANIM_SUBPOS)
-    }
-
-    pub(crate) fn flashing_circle_timer(&self) -> u8 {
-        byte(self.ram, FLASHING_CIRCLE_TIMER)
-    }
-
-    pub(crate) fn prev_joypad_h(&self) -> u8 {
-        byte(self.ram, MENU_PREV_JOYPAD_H)
-    }
-
-    pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
-        byte(self.ram, EQUIPMENT_MENU_EXIT_STATE)
-    }
-
-    pub(crate) fn bottle_menu_row(&self) -> u8 {
-        byte(self.ram, BOTTLE_MENU_ROW)
-    }
-
-    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
-        byte(self.ram, HDR_DUNGEON_DARK_WITH_LANTERN) != 0
-    }
-
-    pub(crate) fn tick_counter(&self) -> u8 {
-        byte(self.ram, HUD_MODULE_TICK_COUNTER)
-    }
-
     pub(crate) fn tile_word(&self, tile: usize) -> u16 {
         word(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2)
     }
 }
 
-pub(crate) struct HudStateViewMut<'a> {
+pub(crate) struct HudRawStateViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> HudStateViewMut<'a> {
+impl<'a> HudRawStateViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
@@ -232,69 +180,8 @@ impl<'a> HudStateViewMut<'a> {
         write_le_u16(self.ram, HUD_FLOOR_CHANGED_TIMER, value);
     }
 
-    pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
-        self.ram[SUPER_BOMB_INDICATOR_TIMER] = value;
-    }
-
-    pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
-        self.ram[SUPER_BOMB_INDICATOR_COUNTER] = value;
-    }
-
-    pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
-        self.ram[RUPEE_SFX_SOUND_DELAY] = value;
-    }
-
-    pub(crate) fn set_is_doing_heart_animation(&mut self, value: u8) {
-        self.ram[IS_DOING_HEART_ANIMATION] = value;
-    }
-
     pub(crate) fn set_tile_word(&mut self, tile: usize, value: u16) {
         write_le_u16(self.ram, HUD_TILE_INDICES_BUFFER + tile * 2, value);
-    }
-
-    pub(crate) fn clear_is_doing_heart_animation(&mut self) {
-        self.ram[IS_DOING_HEART_ANIMATION] = 0;
-    }
-
-    pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
-        self.ram[HEART_REFILL_COUNTDOWN] = value;
-    }
-
-    pub(crate) fn set_heart_refill_anim_subpos(&mut self, value: u8) {
-        self.ram[HEART_REFILL_ANIM_SUBPOS] = value;
-    }
-
-    pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
-        self.ram[FLASHING_CIRCLE_TIMER] = value;
-    }
-
-    pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
-        self.ram[MENU_PREV_JOYPAD_H] = value;
-    }
-
-    pub(crate) fn clear_prev_joypad_h(&mut self) {
-        self.ram[MENU_PREV_JOYPAD_H] = 0;
-    }
-
-    pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
-        self.ram[EQUIPMENT_MENU_EXIT_STATE] = value;
-    }
-
-    pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
-        self.ram[BOTTLE_MENU_ROW] = value;
-    }
-
-    pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
-        self.ram[BOTTLE_MENU_ROW] = self.ram[BOTTLE_MENU_ROW].wrapping_sub(1);
-        self.ram[BOTTLE_MENU_ROW]
-    }
-
-    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
-    }
-
-    pub(crate) fn set_tick_counter(&mut self, value: u8) {
-        self.ram[HUD_MODULE_TICK_COUNTER] = value;
     }
 
     pub(crate) fn clear_floor_changed_timer_low(&mut self) {

@@ -13,8 +13,9 @@ mod misc;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, HudInventoryOrderState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
-    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut,
+    DisplayState, HudInventoryOrderState, HudStateView, LinkDmaSourceSlot,
+    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteFilterBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
     PaletteFilterState, TrinexxPaletteState, WaterHdmaWindowState,
@@ -57,7 +58,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use display::OverworldPaletteBackupState;
+use display::{HudRuntimeState, OverworldPaletteBackupState};
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
@@ -2547,6 +2548,104 @@ mod tests {
         assert_eq!(display.hud_inventory_order.item(22), 2);
         assert_eq!(read_le_u16(&ram, HUD_INVENTORY_ORDER), 0x1701);
         assert_eq!(ram[HUD_INVENTORY_ORDER + 22], 2);
+    }
+
+    #[test]
+    fn hud_runtime_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SUPER_BOMB_INDICATOR_TIMER] = 7;
+        ram[SUPER_BOMB_INDICATOR_COUNTER] = 2;
+        ram[RUPEE_SFX_SOUND_DELAY] = 5;
+        ram[IS_DOING_HEART_ANIMATION] = 1;
+        ram[HEART_REFILL_COUNTDOWN] = 6;
+        ram[HEART_REFILL_ANIM_SUBPOS] = 0x80;
+        ram[FLASHING_CIRCLE_TIMER] = 0x10;
+        ram[MENU_PREV_JOYPAD_H] = 0x40;
+        ram[EQUIPMENT_MENU_EXIT_STATE] = 3;
+        ram[BOTTLE_MENU_ROW] = 9;
+        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
+        ram[HUD_MODULE_TICK_COUNTER] = 0x33;
+
+        let runtime = HudRuntimeState::load_from_ram(&ram);
+        assert_eq!(runtime.super_bomb_indicator_timer(), 7);
+        assert_eq!(runtime.super_bomb_indicator_counter(), 2);
+        assert_eq!(runtime.rupee_sfx_sound_delay(), 5);
+        assert!(runtime.is_doing_heart_animation());
+        assert_eq!(runtime.is_doing_heart_animation_raw(), 1);
+        assert_eq!(runtime.heart_refill_countdown(), 6);
+        assert_eq!(runtime.heart_refill_anim_subpos(), 0x80);
+        assert_eq!(runtime.flashing_circle_timer(), 0x10);
+        assert_eq!(runtime.prev_joypad_h(), 0x40);
+        assert_eq!(runtime.equipment_menu_exit_state(), 3);
+        assert_eq!(runtime.bottle_menu_row(), 9);
+        assert!(runtime.dungeon_dark_with_lantern());
+        assert_eq!(runtime.tick_counter(), 0x33);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        runtime.write_to_ram(&mut projected);
+        assert_eq!(projected[SUPER_BOMB_INDICATOR_TIMER], 7);
+        assert_eq!(projected[SUPER_BOMB_INDICATOR_COUNTER], 2);
+        assert_eq!(projected[RUPEE_SFX_SOUND_DELAY], 5);
+        assert_eq!(projected[IS_DOING_HEART_ANIMATION], 1);
+        assert_eq!(projected[HEART_REFILL_COUNTDOWN], 6);
+        assert_eq!(projected[HEART_REFILL_ANIM_SUBPOS], 0x80);
+        assert_eq!(projected[FLASHING_CIRCLE_TIMER], 0x10);
+        assert_eq!(projected[MENU_PREV_JOYPAD_H], 0x40);
+        assert_eq!(projected[EQUIPMENT_MENU_EXIT_STATE], 3);
+        assert_eq!(projected[BOTTLE_MENU_ROW], 9);
+        assert_eq!(projected[HDR_DUNGEON_DARK_WITH_LANTERN], 1);
+        assert_eq!(projected[HUD_MODULE_TICK_COUNTER], 0x33);
+    }
+
+    #[test]
+    fn native_hud_state_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BOTTLE_MENU_ROW] = 5;
+        ram[HUD_TILE_INDICES_BUFFER + 4] = 0x34;
+        ram[HUD_TILE_INDICES_BUFFER + 5] = 0x12;
+        let mut display = DisplayState::default();
+
+        {
+            let mut bridge = NativeHudStateBridgeMut::new(&mut display, &mut ram);
+            bridge.set_super_bomb_indicator_timer(8);
+            bridge.set_super_bomb_indicator_counter(3);
+            bridge.set_rupee_sfx_sound_delay(4);
+            bridge.set_is_doing_heart_animation(1);
+            bridge.set_heart_refill_countdown(7);
+            bridge.set_heart_refill_anim_subpos(0x20);
+            bridge.set_flashing_circle_timer(0x10);
+            bridge.set_prev_joypad_h(0x80);
+            bridge.set_equipment_menu_exit_state(2);
+            assert_eq!(bridge.decrement_bottle_menu_row(), 4);
+            bridge.set_dungeon_dark_with_lantern();
+            bridge.set_tick_counter(0x44);
+            bridge.set_floor_changed_timer(0x1234);
+            bridge.clear_floor_changed_timer_low();
+            bridge.set_tile_word(2, 0xbeef);
+            bridge.clear_is_doing_heart_animation();
+            bridge.clear_prev_joypad_h();
+        }
+
+        assert_eq!(display.hud_runtime.super_bomb_indicator_timer(), 8);
+        assert_eq!(display.hud_runtime.super_bomb_indicator_counter(), 3);
+        assert_eq!(display.hud_runtime.rupee_sfx_sound_delay(), 4);
+        assert!(!display.hud_runtime.is_doing_heart_animation());
+        assert_eq!(display.hud_runtime.heart_refill_countdown(), 7);
+        assert_eq!(display.hud_runtime.heart_refill_anim_subpos(), 0x20);
+        assert_eq!(display.hud_runtime.flashing_circle_timer(), 0x10);
+        assert_eq!(display.hud_runtime.prev_joypad_h(), 0);
+        assert_eq!(display.hud_runtime.equipment_menu_exit_state(), 2);
+        assert_eq!(display.hud_runtime.bottle_menu_row(), 4);
+        assert!(display.hud_runtime.dungeon_dark_with_lantern());
+        assert_eq!(display.hud_runtime.tick_counter(), 0x44);
+        assert_eq!(ram[SUPER_BOMB_INDICATOR_TIMER], 8);
+        assert_eq!(ram[SUPER_BOMB_INDICATOR_COUNTER], 3);
+        assert_eq!(ram[RUPEE_SFX_SOUND_DELAY], 4);
+        assert_eq!(ram[IS_DOING_HEART_ANIMATION], 0);
+        assert_eq!(ram[MENU_PREV_JOYPAD_H], 0);
+        assert_eq!(ram[HUD_FLOOR_CHANGED_TIMER], 0);
+        assert_eq!(ram[HUD_FLOOR_CHANGED_TIMER + 1], 0x12);
+        assert_eq!(read_le_u16(&ram, HUD_TILE_INDICES_BUFFER + 4), 0xbeef);
     }
 
     #[test]
