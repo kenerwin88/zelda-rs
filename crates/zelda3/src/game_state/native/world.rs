@@ -370,6 +370,26 @@ impl OverworldState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldState {
+    pub(crate) location: WorldLocationState,
+    pub(crate) overworld: OverworldState,
+}
+
+impl WorldState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            location: WorldLocationState::load_from_ram(ram),
+            overworld: OverworldState::load_from_ram(ram),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.location.write_to_ram(ram);
+        self.overworld.write_to_ram(ram);
+    }
+}
+
 pub(crate) struct NativeWorldLocationViewMut<'a> {
     world_location: &'a mut WorldLocationState,
     ram_view: WorldStateViewMut<'a>,
