@@ -69,6 +69,14 @@ impl<'a> DisplayNmiView<'a> {
         self.hdma_enable_mask() & (1 << channel) != 0
     }
 
+    pub(crate) fn irq_flag(&self) -> u8 {
+        byte(self.ram, IRQ_FLAG)
+    }
+
+    pub(crate) fn irq_flag_has_vcounter_marker(&self) -> bool {
+        self.irq_flag() & 0x80 != 0
+    }
+
     pub(crate) fn mosaic_level(&self) -> u8 {
         byte(self.ram, MOSAIC_LEVEL)
     }
@@ -87,6 +95,10 @@ impl<'a> DisplayNmiView<'a> {
 
     pub(crate) fn mosaic_target_level(&self) -> u8 {
         byte(self.ram, MOSAIC_TARGET_LEVEL)
+    }
+
+    pub(crate) fn virq_trigger(&self) -> u8 {
+        byte(self.ram, VIRQ_TRIGGER)
     }
 
     pub(crate) fn nmi_boolean(&self) -> u8 {
@@ -232,6 +244,10 @@ impl<'a> DisplayNmiView<'a> {
 
     pub(crate) fn overworld_fixed_color_plusminus(&self) -> u8 {
         byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
+    }
+
+    pub(crate) fn hdma_table_dynamic_entry(&self, index: usize) -> u16 {
+        word(self.ram, HDMA_TABLE_DYNAMIC + index * 2)
     }
 
     pub(crate) fn word_at(&self, addr: usize) -> u16 {
@@ -476,6 +492,10 @@ impl<'a> DisplayNmiViewMut<'a> {
 
     pub(crate) fn set_irq_flag(&mut self, value: u8) {
         self.ram[IRQ_FLAG] = value;
+    }
+
+    pub(crate) fn clear_irq_flag(&mut self) {
+        self.set_irq_flag(0);
     }
 
     pub(crate) fn set_w12sel_copy(&mut self, value: u8) {

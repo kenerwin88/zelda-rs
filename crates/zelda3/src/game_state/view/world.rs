@@ -97,6 +97,14 @@ impl<'a> WorldStateView<'a> {
         (byte(self.ram, QUADRANT_FULLSIZE_Y) >> 1) as usize
     }
 
+    pub(crate) fn quadrant_fullsize_x(&self) -> u8 {
+        byte(self.ram, QUADRANT_FULLSIZE_X)
+    }
+
+    pub(crate) fn quadrant_fullsize_y(&self) -> u8 {
+        byte(self.ram, QUADRANT_FULLSIZE_Y)
+    }
+
     pub(crate) fn dungeon_quadrant_visit_index(
         &self,
         player_quadrant_y: u8,
@@ -122,6 +130,18 @@ impl<'a> WorldStateView<'a> {
 
     pub(crate) fn map16_load_y_unit(&self) -> u16 {
         word(self.ram, MAP16_LOAD_Y_UNIT)
+    }
+
+    pub(crate) fn scroll_x_start(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_X_START)
+    }
+
+    pub(crate) fn scroll_x_end(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_X_END)
+    }
+
+    pub(crate) fn scroll_y_end(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_Y_END)
     }
 
     pub(crate) fn exit_screen_index(&self) -> u16 {
@@ -752,6 +772,18 @@ impl<'a> WorldStateViewMut<'a> {
         word(self.ram, CAMERA_X_COORD_SCROLL_HI)
     }
 
+    pub(crate) fn scroll_x_start(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_X_START)
+    }
+
+    pub(crate) fn scroll_x_end(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_X_END)
+    }
+
+    pub(crate) fn scroll_y_end(&self) -> u16 {
+        word(self.ram, OVERWORLD_SCROLL_Y_END)
+    }
+
     pub(crate) fn camera_scroll_low_for_axis(&self, horizontal: bool) -> u16 {
         if horizontal {
             word(self.ram, CAMERA_X_COORD_SCROLL_LOW)
@@ -813,6 +845,29 @@ impl<'a> WorldStateViewMut<'a> {
 
     pub(crate) fn set_left_right_scroll_target_end(&mut self, value: u16) {
         write_le_u16(self.ram, LEFT_RIGHT_SCROLL_TARGET_END, value);
+    }
+
+    pub(crate) fn cache_scroll_targets(&mut self) {
+        copy_word(
+            self.ram,
+            UP_DOWN_SCROLL_TARGET_CACHED,
+            UP_DOWN_SCROLL_TARGET,
+        );
+        copy_word(
+            self.ram,
+            UP_DOWN_SCROLL_TARGET_END_CACHED,
+            UP_DOWN_SCROLL_TARGET_END,
+        );
+        copy_word(
+            self.ram,
+            LEFT_RIGHT_SCROLL_TARGET_CACHED,
+            LEFT_RIGHT_SCROLL_TARGET,
+        );
+        copy_word(
+            self.ram,
+            LEFT_RIGHT_SCROLL_TARGET_END_CACHED,
+            LEFT_RIGHT_SCROLL_TARGET_END,
+        );
     }
 
     pub(crate) fn set_overworld_scroll_up_counter(&mut self, value: u16) {

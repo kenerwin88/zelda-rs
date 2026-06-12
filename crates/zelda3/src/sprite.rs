@@ -163,8 +163,8 @@ const REPULSESPARK_TIMER_SPRITE: usize = 0x0fac;
 const REPULSESPARK_X_LO_SPRITE: usize = 0x0fad;
 const REPULSESPARK_Y_LO_SPRITE: usize = 0x0fae;
 const SRAM_PROGRESS_INDICATOR_SPRITE: usize = 0x0f3c5;
-const SPRITE_RESET_SCRATCH_A: usize = 0x0ff8;
-const SPRITE_RESET_SCRATCH_B: usize = 0x0ffb;
+const SPRITE_RESET_WORK_A: usize = 0x0ff8;
+const SPRITE_RESET_WORK_B: usize = 0x0ffb;
 const ACTIVATE_BOMB_TRAP_OVERLORD_SPRITE: usize = 0x0cf4;
 const OAM_REGION_BASE_SPRITE: usize = 0x0fe0;
 const SPR_RANGED_BASED_TOGGLER: usize = 0x0fb7;
@@ -6399,7 +6399,7 @@ impl ZeldaState {
     //   if (sprite_give_damage[k] || repulsespark_timer)
     //     return;
     //   repulsespark_timer = 5;
-    //   int j = SPRITE_SHARED_SCRATCH_A;
+    //   int j = SPRITE_SHARED_WORK_A;
     //   repulsespark_x_lo = ancilla_x_lo[j] + 4;
     //   repulsespark_y_lo = ancilla_y_lo[j];
     //   repulsespark_floor_status = link_is_on_lower_level;
@@ -7602,11 +7602,11 @@ impl ZeldaState {
     //     Sprite_CheckTileCollisionSingleLayer(k);
     //     return;
     //   }
-    //   SPRITE_SHARED_SCRATCH_A = sprite_floor[k];
+    //   SPRITE_SHARED_WORK_A = sprite_floor[k];
     //   sprite_floor[k] = 1;
     //   Sprite_CheckTileCollisionSingleLayer(k);
     //   if (dung_hdr_collision == 4) {
-    //     sprite_floor[k] = SPRITE_SHARED_SCRATCH_A;
+    //     sprite_floor[k] = SPRITE_SHARED_WORK_A;
     //     return;
     //   }
     //   sprite_floor[k] = 0;

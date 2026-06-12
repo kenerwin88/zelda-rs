@@ -10,15 +10,15 @@ impl<'a> EffectAngleScratchView<'a> {
     }
 
     pub(crate) fn angle(&self, slot: usize) -> u8 {
-        byte(self.ram, EFFECT_ANGLE_SCRATCH + slot)
+        byte(self.ram, EFFECT_ANGLE_WORK + slot)
     }
 
     pub(crate) fn trailing_angle(&self) -> u8 {
-        byte(self.ram, EFFECT_ANGLE_SCRATCH + 4)
+        byte(self.ram, EFFECT_ANGLE_WORK + 4)
     }
 
     pub(crate) fn radial_radius(&self) -> u8 {
-        byte(self.ram, EFFECT_ANGLE_SCRATCH + 8)
+        byte(self.ram, EFFECT_ANGLE_WORK + 8)
     }
 }
 
@@ -32,7 +32,7 @@ impl<'a> EffectAngleScratchViewMut<'a> {
     }
 
     pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
-        self.ram[EFFECT_ANGLE_SCRATCH + slot] = value;
+        self.ram[EFFECT_ANGLE_WORK + slot] = value;
     }
 
     pub(crate) fn set_angles4(&mut self, values: &[u8], start: usize) {
@@ -42,23 +42,23 @@ impl<'a> EffectAngleScratchViewMut<'a> {
     }
 
     pub(crate) fn add_angle_mod64(&mut self, slot: usize, value: u8) -> u8 {
-        let angle = self.ram[EFFECT_ANGLE_SCRATCH + slot].wrapping_add(value) & 0x3f;
-        self.ram[EFFECT_ANGLE_SCRATCH + slot] = angle;
+        let angle = self.ram[EFFECT_ANGLE_WORK + slot].wrapping_add(value) & 0x3f;
+        self.ram[EFFECT_ANGLE_WORK + slot] = angle;
         angle
     }
 
     pub(crate) fn set_trailing_angle(&mut self, value: u8) {
-        self.ram[EFFECT_ANGLE_SCRATCH + 4] = value;
+        self.ram[EFFECT_ANGLE_WORK + 4] = value;
     }
 
     pub(crate) fn add_trailing_angle_mod64(&mut self, value: u8) -> u8 {
-        let angle = self.ram[EFFECT_ANGLE_SCRATCH + 4].wrapping_add(value) & 0x3f;
-        self.ram[EFFECT_ANGLE_SCRATCH + 4] = angle;
+        let angle = self.ram[EFFECT_ANGLE_WORK + 4].wrapping_add(value) & 0x3f;
+        self.ram[EFFECT_ANGLE_WORK + 4] = angle;
         angle
     }
 
     pub(crate) fn set_radial_radius(&mut self, value: u8) {
-        self.ram[EFFECT_ANGLE_SCRATCH + 8] = value;
+        self.ram[EFFECT_ANGLE_WORK + 8] = value;
     }
 }
 
@@ -1580,15 +1580,15 @@ impl<'a> DrawScratchPositionView<'a> {
     }
 
     pub(crate) fn x_low(&self) -> u8 {
-        byte(self.ram, DRAW_SCRATCH_POSITION_X)
+        byte(self.ram, DRAW_WORK_POSITION_X)
     }
 
     pub(crate) fn y_low(&self) -> u8 {
-        byte(self.ram, DRAW_SCRATCH_POSITION_Y)
+        byte(self.ram, DRAW_WORK_POSITION_Y)
     }
 
     pub(crate) fn low_position_word(&self) -> u16 {
-        word(self.ram, DRAW_SCRATCH_POSITION_X)
+        word(self.ram, DRAW_WORK_POSITION_X)
     }
 }
 
@@ -1602,28 +1602,28 @@ impl<'a> DrawScratchPositionViewMut<'a> {
     }
 
     pub(crate) fn set_low_position(&mut self, x: u8, y: u8) {
-        self.ram[DRAW_SCRATCH_POSITION_X] = x;
-        self.ram[DRAW_SCRATCH_POSITION_Y] = y;
+        self.ram[DRAW_WORK_POSITION_X] = x;
+        self.ram[DRAW_WORK_POSITION_Y] = y;
     }
 
     pub(crate) fn set_low_position_word(&mut self, value: u16) {
-        write_le_u16(self.ram, DRAW_SCRATCH_POSITION_X, value);
+        write_le_u16(self.ram, DRAW_WORK_POSITION_X, value);
     }
 
     pub(crate) fn set_word_bytes(&mut self, low: u8, high: u8) {
-        self.ram[DRAW_SCRATCH_POSITION_X] = low;
-        self.ram[DRAW_SCRATCH_POSITION_Y] = high;
+        self.ram[DRAW_WORK_POSITION_X] = low;
+        self.ram[DRAW_WORK_POSITION_Y] = high;
     }
 
     pub(crate) fn offset_low_position(&mut self, dx: u8, dy: u8) -> (u8, u8) {
-        let x = self.ram[DRAW_SCRATCH_POSITION_X].wrapping_add(dx);
-        let y = self.ram[DRAW_SCRATCH_POSITION_Y].wrapping_add(dy);
+        let x = self.ram[DRAW_WORK_POSITION_X].wrapping_add(dx);
+        let y = self.ram[DRAW_WORK_POSITION_Y].wrapping_add(dy);
         self.set_low_position(x, y);
         (x, y)
     }
 
     pub(crate) fn set_flags_high(&mut self, value: u8) {
-        self.ram[DRAW_SCRATCH_FLAGS_HI] = value;
+        self.ram[DRAW_WORK_FLAGS_HI] = value;
     }
 }
 
@@ -1637,11 +1637,11 @@ impl<'a> HitboxScratchOffsetView<'a> {
     }
 
     pub(crate) fn x_high_offset(&self) -> u8 {
-        byte(self.ram, HITBOX_SCRATCH_X_OFFSET)
+        byte(self.ram, HITBOX_WORK_X_OFFSET)
     }
 
     pub(crate) fn y_low_offset(&self) -> u8 {
-        byte(self.ram, HITBOX_SCRATCH_Y_OFFSET)
+        byte(self.ram, HITBOX_WORK_Y_OFFSET)
     }
 }
 
@@ -1655,16 +1655,16 @@ impl<'a> HitboxScratchOffsetViewMut<'a> {
     }
 
     pub(crate) fn set_x_high_offset(&mut self, value: u8) {
-        self.ram[HITBOX_SCRATCH_X_OFFSET] = value;
+        self.ram[HITBOX_WORK_X_OFFSET] = value;
     }
 
     pub(crate) fn set_y_low_offset(&mut self, value: u8) {
-        self.ram[HITBOX_SCRATCH_Y_OFFSET] = value;
+        self.ram[HITBOX_WORK_Y_OFFSET] = value;
     }
 
     pub(crate) fn set_offsets(&mut self, y_low: u8, x_high: u8) {
-        self.ram[HITBOX_SCRATCH_Y_OFFSET] = y_low;
-        self.ram[HITBOX_SCRATCH_X_OFFSET] = x_high;
+        self.ram[HITBOX_WORK_Y_OFFSET] = y_low;
+        self.ram[HITBOX_WORK_X_OFFSET] = x_high;
     }
 }
 

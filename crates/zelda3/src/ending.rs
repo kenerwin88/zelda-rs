@@ -902,8 +902,7 @@ impl ZeldaState {
         let r18 = self.ending_scratch_view().secondary_word();
         loop {
             for j in 0..15 {
-                write_le_u16(
-                    &mut self.ram,
+                self.native_ram_bridge_view_mut().set_word_at(
                     INTRO_CLEAR_BLOCK_BASE + i as usize + j * INTRO_CLEAR_BLOCK_STRIDE,
                     0,
                 );
@@ -1153,11 +1152,8 @@ impl ZeldaState {
             3 => {
                 self.attract_state_view_mut().decrement_intro_step_timer();
                 if self.attract_state_view().intro_step_timer() == 0 {
-                    write_le_u16(
-                        &mut self.ram,
-                        MAIN_PALETTE_BUFFER + 0xd7 * 2,
-                        POLYHEDRAL_PALETTE[7],
-                    );
+                    self.palette_buffer_view_mut()
+                        .set_main_color(0xd7, POLYHEDRAL_PALETTE[7]);
                     self.system_signals_view_mut().increment_cgram_update_flag();
                     self.attract_state_view_mut().increment_intro_step_index();
                 }

@@ -22,6 +22,7 @@ mod overworld;
 mod player;
 mod poly;
 mod ppu;
+mod raw;
 mod sprites;
 mod world;
 
@@ -38,6 +39,7 @@ pub(crate) use overworld::*;
 pub(crate) use player::*;
 pub(crate) use poly::*;
 pub(crate) use ppu::*;
+pub(crate) use raw::*;
 pub(crate) use sprites::*;
 pub(crate) use world::*;
 

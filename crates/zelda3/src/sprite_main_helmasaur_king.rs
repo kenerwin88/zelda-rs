@@ -290,7 +290,7 @@ impl ZeldaState {
     //   static const uint8 kHelmasaurFireball_TriSplit_Delay[6] = {32, 80, 128, 32, 80, 128};
     //   SpriteSfx_QueueSfx3WithPan(k, 0x36);
     //   sprite_state[k] = 0;
-    //   SPRITE_SHARED_SCRATCH_A = GetRandomNumber();
+    //   SPRITE_SHARED_WORK_A = GetRandomNumber();
     //   for (int i = 2; i >= 0; i--) {
     //     SpriteSpawnInfo info;
     //     int j = Sprite_SpawnDynamically(k, 0x70, &info);
@@ -300,7 +300,7 @@ impl ZeldaState {
     //       sprite_y_vel[j] = kHelmasaurFireball_TriSplit_Yvel[i];
     //       sprite_ai_state[j] = 3;
     //       sprite_ignore_projectile[j] = 3;
-    //       sprite_delay_main[j] = kHelmasaurFireball_TriSplit_Delay[(SPRITE_SHARED_SCRATCH_A & 3) + i];
+    //       sprite_delay_main[j] = kHelmasaurFireball_TriSplit_Delay[(SPRITE_SHARED_WORK_A & 3) + i];
     //       sprite_head_dir[j] = 0;
     //       sprite_graphics[j] = 1;
     //     }

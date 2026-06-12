@@ -33,6 +33,10 @@ impl<'a> FrameControlView<'a> {
         byte(self.ram, SAVED_MODULE_FOR_MENU)
     }
 
+    pub(crate) fn raw_sfx_pan_value(&self) -> u8 {
+        byte(self.ram, RAW_SFX_PAN_VALUE)
+    }
+
     pub(crate) fn modal_pause_flag(&self) -> u8 {
         byte(self.ram, MODAL_PAUSE_FLAG)
     }
@@ -322,6 +326,10 @@ impl<'a> SystemSignalsViewMut<'a> {
 
     pub(crate) fn clear_cgram_update_flag(&mut self) {
         self.ram[FLAG_UPDATE_CGRAM_IN_NMI] = 0;
+    }
+
+    pub(crate) fn set_bugs_fixed(&mut self, value: u8) {
+        self.ram[RAM_BUGS_FIXED] = value;
     }
 
     pub(crate) fn save_current_music_as_last(&mut self) {

@@ -848,7 +848,7 @@ impl<'a> SpriteWorkspaceView<'a> {
     }
 
     pub(crate) fn shared_scratch_a(&self) -> u8 {
-        byte(self.ram, SPRITE_SHARED_SCRATCH_A)
+        byte(self.ram, SPRITE_SHARED_WORK_A)
     }
 
     pub(crate) fn tile_type(&self) -> u8 {
@@ -856,21 +856,21 @@ impl<'a> SpriteWorkspaceView<'a> {
     }
 
     pub(crate) fn prep_shared_counter(&self) -> u8 {
-        byte(self.ram, SPRITE_RESET_SCRATCH_A)
+        byte(self.ram, SPRITE_RESET_WORK_A)
     }
 
     pub(crate) fn reset_scratch_a(&self) -> u8 {
-        byte(self.ram, SPRITE_RESET_SCRATCH_A)
+        byte(self.ram, SPRITE_RESET_WORK_A)
     }
 
     /// Alias of `reset_scratch_a`: the Armos Knights fight reuses the
     /// shared scratch byte as the remaining-knight counter.
     pub(crate) fn armos_knight_remaining_count(&self) -> u8 {
-        byte(self.ram, SPRITE_RESET_SCRATCH_A)
+        byte(self.ram, SPRITE_RESET_WORK_A)
     }
 
     pub(crate) fn reset_scratch_b(&self) -> u8 {
-        byte(self.ram, SPRITE_RESET_SCRATCH_B)
+        byte(self.ram, SPRITE_RESET_WORK_B)
     }
 
     pub(crate) fn graphics_subset(&self, slot: usize) -> u8 {
@@ -932,7 +932,7 @@ impl<'a> SpriteWorkspaceViewMut<'a> {
     }
 
     pub(crate) fn set_shared_scratch_a(&mut self, value: u8) {
-        self.ram[SPRITE_SHARED_SCRATCH_A] = value;
+        self.ram[SPRITE_SHARED_WORK_A] = value;
     }
 
     pub(crate) fn set_room_marker_word(&mut self, slot: usize, value: u16) {
@@ -944,44 +944,44 @@ impl<'a> SpriteWorkspaceViewMut<'a> {
     }
 
     pub(crate) fn set_prep_shared_counter(&mut self, value: u8) {
-        self.ram[SPRITE_RESET_SCRATCH_A] = value;
+        self.ram[SPRITE_RESET_WORK_A] = value;
     }
 
     pub(crate) fn increment_prep_shared_counter(&mut self) -> u8 {
-        self.ram[SPRITE_RESET_SCRATCH_A] = self.ram[SPRITE_RESET_SCRATCH_A].wrapping_add(1);
-        self.ram[SPRITE_RESET_SCRATCH_A]
+        self.ram[SPRITE_RESET_WORK_A] = self.ram[SPRITE_RESET_WORK_A].wrapping_add(1);
+        self.ram[SPRITE_RESET_WORK_A]
     }
 
     pub(crate) fn decrement_prep_shared_counter(&mut self) -> u8 {
-        self.ram[SPRITE_RESET_SCRATCH_A] = self.ram[SPRITE_RESET_SCRATCH_A].wrapping_sub(1);
-        self.ram[SPRITE_RESET_SCRATCH_A]
+        self.ram[SPRITE_RESET_WORK_A] = self.ram[SPRITE_RESET_WORK_A].wrapping_sub(1);
+        self.ram[SPRITE_RESET_WORK_A]
     }
 
     /// Alias of `decrement_prep_shared_counter` for the Armos Knights
     /// fight, which reuses the shared scratch byte as the
     /// remaining-knight counter. Returns the new value.
     pub(crate) fn decrement_armos_knight_remaining_count(&mut self) -> u8 {
-        self.ram[SPRITE_RESET_SCRATCH_A] = self.ram[SPRITE_RESET_SCRATCH_A].wrapping_sub(1);
-        self.ram[SPRITE_RESET_SCRATCH_A]
+        self.ram[SPRITE_RESET_WORK_A] = self.ram[SPRITE_RESET_WORK_A].wrapping_sub(1);
+        self.ram[SPRITE_RESET_WORK_A]
     }
 
     /// Alias of `set_prep_shared_counter(0)` for the Vitreous fight,
     /// which reuses the shared scratch byte as the eyeball release
     /// counter.
     pub(crate) fn clear_vitreous_eyeball_release_count(&mut self) {
-        self.ram[SPRITE_RESET_SCRATCH_A] = 0;
+        self.ram[SPRITE_RESET_WORK_A] = 0;
     }
 
     pub(crate) fn set_reset_scratch_a(&mut self, value: u8) {
-        self.ram[SPRITE_RESET_SCRATCH_A] = value;
+        self.ram[SPRITE_RESET_WORK_A] = value;
     }
 
     pub(crate) fn clear_agahnim_phase_scratch(&mut self) {
-        self.ram[SPRITE_RESET_SCRATCH_A] = 0;
+        self.ram[SPRITE_RESET_WORK_A] = 0;
     }
 
     pub(crate) fn set_reset_scratch_b(&mut self, value: u8) {
-        self.ram[SPRITE_RESET_SCRATCH_B] = value;
+        self.ram[SPRITE_RESET_WORK_B] = value;
     }
 
     pub(crate) fn set_graphics_subset(&mut self, slot: usize, value: u8) {
@@ -1039,10 +1039,10 @@ impl<'a> SpriteWorkspaceViewMut<'a> {
     }
 
     pub(crate) fn set_killed_sprite_load_block(&mut self, block: u16) {
-        self.ram[SPRITE_LOAD_BLOCK_SCRATCH] = block as u8;
+        self.ram[SPRITE_LOAD_BLOCK_STATE] = block as u8;
         write_le_u16(
             self.ram,
-            SPRITE_LOAD_BLOCK_SCRATCH + 1,
+            SPRITE_LOAD_BLOCK_STATE + 1,
             (block >> 3).wrapping_add(0xef80),
         );
     }

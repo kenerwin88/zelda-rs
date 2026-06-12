@@ -1,5 +1,7 @@
 use super::*;
 
+const FALL_HOLE_SCAN_INDEX_LOCAL: usize = 0x02c9;
+
 pub(crate) struct PlayerStateView<'a> {
     ram: &'a [u8],
 }
@@ -545,7 +547,7 @@ impl<'a> PlayerStateView<'a> {
     }
 
     pub(crate) fn item_action_step_var(&self) -> u8 {
-        byte(self.ram, LINK_ITEM_ACTION_STEP_SCRATCH)
+        byte(self.ram, LINK_ITEM_ACTION_STEP)
     }
 
     pub(crate) fn throw_oam_state_index(&self) -> u8 {
@@ -2148,7 +2150,7 @@ impl<'a> PlayerStateViewMut<'a> {
     }
 
     pub(crate) fn set_item_action_step_var(&mut self, value: u8) {
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = value;
+        self.ram[LINK_ITEM_ACTION_STEP] = value;
     }
 
     pub(crate) fn set_throw_oam_state_index(&mut self, value: u8) {
@@ -2156,23 +2158,21 @@ impl<'a> PlayerStateViewMut<'a> {
     }
 
     pub(crate) fn clear_item_action_step_var(&mut self) {
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = 0;
+        self.ram[LINK_ITEM_ACTION_STEP] = 0;
     }
 
     pub(crate) fn increment_item_action_step_var(&mut self) -> u8 {
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] =
-            self.ram[LINK_ITEM_ACTION_STEP_SCRATCH].wrapping_add(1);
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH]
+        self.ram[LINK_ITEM_ACTION_STEP] = self.ram[LINK_ITEM_ACTION_STEP].wrapping_add(1);
+        self.ram[LINK_ITEM_ACTION_STEP]
     }
 
     pub(crate) fn advance_item_action_step_var_wrapping_7_to_1(&mut self) -> u8 {
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] =
-            if self.ram[LINK_ITEM_ACTION_STEP_SCRATCH].wrapping_add(1) == 7 {
-                1
-            } else {
-                self.ram[LINK_ITEM_ACTION_STEP_SCRATCH].wrapping_add(1)
-            };
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH]
+        self.ram[LINK_ITEM_ACTION_STEP] = if self.ram[LINK_ITEM_ACTION_STEP].wrapping_add(1) == 7 {
+            1
+        } else {
+            self.ram[LINK_ITEM_ACTION_STEP].wrapping_add(1)
+        };
+        self.ram[LINK_ITEM_ACTION_STEP]
     }
 
     pub(crate) fn clear_near_moveable_statue(&mut self) {
@@ -2851,12 +2851,12 @@ impl<'a> PlayerStateViewMut<'a> {
     pub(crate) fn clear_action_scratch_state(&mut self) {
         self.ram[LINK_DEBUG_VALUE_1] = 0;
         self.ram[LINK_DEBUG_VALUE_2] = 0;
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = 0;
+        self.ram[LINK_ITEM_ACTION_STEP] = 0;
         self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
     }
 
     pub(crate) fn clear_lift_throw_scratch_state(&mut self) {
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = 0;
+        self.ram[LINK_ITEM_ACTION_STEP] = 0;
         self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
     }
 
@@ -2904,7 +2904,7 @@ impl<'a> PlayerStateViewMut<'a> {
         self.ram[LINK_POSITION_MODE] = 0;
         self.ram[LINK_DEBUG_VALUE_1] = 0;
         self.ram[LINK_DEBUG_VALUE_2] = 0;
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = 0;
+        self.ram[LINK_ITEM_ACTION_STEP] = 0;
         self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
         self.ram[Y_BUTTON_ACTION_STEP] = 0;
         self.ram[LINK_IS_TRANSFORMING] = 0;
@@ -3137,7 +3137,7 @@ impl<'a> PlayerStateViewMut<'a> {
         self.ram[LINK_POSITION_MODE] = 0;
         self.ram[LINK_DEBUG_VALUE_1] = 0;
         self.ram[LINK_DEBUG_VALUE_2] = 0;
-        self.ram[LINK_ITEM_ACTION_STEP_SCRATCH] = 0;
+        self.ram[LINK_ITEM_ACTION_STEP] = 0;
         self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
         self.ram[Y_BUTTON_ACTION_STEP] = 0;
         self.ram[Y_BUTTON_ACTION_FLAGS] = 0;
@@ -3734,6 +3734,10 @@ impl<'a> TileDetectPositionViewMut<'a> {
 
     pub(crate) fn set_interacting_tile_low(&mut self, value: u8) {
         self.ram[INDEX_OF_INTERACTING_TILE] = value;
+    }
+
+    pub(crate) fn set_fall_hole_scan_index(&mut self, value: u8) {
+        self.ram[FALL_HOLE_SCAN_INDEX_LOCAL] = value;
     }
 
     /// Y coordinate scratch word at 0x72 shared with tile interaction

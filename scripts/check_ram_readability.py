@@ -31,6 +31,18 @@ DIRECT_RAM_RE = re.compile(
     r"read_le_u16\(\s*&self\.ram\s*,\s*0x[0-9A-Fa-f]+|"
     r"write_le_u16\(\s*&mut self\.ram\s*,\s*0x[0-9A-Fa-f]+)"
 )
+DIRECT_RAM_ANY_RE = re.compile(
+    r"(?:\bself\.ram\[\s*[^]\n]+|"
+    r"\bread_le_u16\(\s*&self\.ram\s*,\s*[^)\n]+|"
+    r"\bwrite_le_u16\(\s*&mut self\.ram\s*,\s*[^)\n]+)"
+)
+NATIVE_BRIDGE_RE = re.compile(
+    r"\bnative_ram_bridge_view(?:_mut)?\(\)\s*\.(?:"
+    r"byte_at|word_at|long_at|range|watched_byte|"
+    r"set_byte_at|set_word_at|set_long_at|range_mut|copy_to|fill|"
+    r"move_link_axis_by_velocity|move_link_axis_by_subpixel_delta"
+    r")\b"
+)
 WEAK_NAME_RE = re.compile(r"(?:^|_)(UNK\d*|SOME|VAR\d*|TMP|SCRATCH)(?:_|$)")
 REVIEWED_WEAK_RAM_NAMES = {
     "ATTRACT_VAR7": "write-only attract scene work RAM; source label is the unrelated shared PYFLCH alias",
@@ -70,6 +82,10 @@ def rust_files() -> list[Path]:
     return sorted(SRC_ROOT.rglob("*.rs"))
 
 
+def is_semantic_view_source(path: Path) -> bool:
+    return path.is_relative_to(SRC_ROOT / "game_state" / "view")
+
+
 def is_public_ram_constant_registry(path: Path) -> bool:
     return path == SRC_ROOT / "game_state" / "constants.rs"
 
@@ -78,17 +94,121 @@ def line_for_offset(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def is_inside_simple_string_literal(text: str, offset: int) -> bool:
+    line_start = text.rfind("\n", 0, offset) + 1
+    prefix = text[line_start:offset]
+    escaped = False
+    in_string = False
+    for char in prefix:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            in_string = not in_string
+    return in_string
+
+
+def enclosing_function_name(text: str, offset: int) -> str | None:
+    before = text[:offset]
+    match = None
+    for match in re.finditer(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?fn\s+([A-Za-z0-9_]+)\s*\(",
+        before,
+        re.MULTILINE,
+    ):
+        pass
+    return match.group(1) if match else None
+
+
 def check_file(path: Path) -> list[Finding]:
     text = path.read_text()
     findings: list[Finding] = []
     checks = [
         (ADDRESS_NAME_RE, "address-derived RAM constant name"),
         (C_ADDRESS_NAME_RE, "C-style address-derived RAM name in Rust source"),
-        (DIRECT_RAM_RE, "direct hex RAM access; use a named constant"),
     ]
+    if not is_semantic_view_source(path):
+        checks.append((DIRECT_RAM_RE, "direct hex RAM access; use a named constant"))
     for pattern, message in checks:
         for match in pattern.finditer(text):
             findings.append(Finding(path, line_for_offset(text, match.start()), message))
+    return findings
+
+
+def direct_ram_findings() -> list[Finding]:
+    findings: list[Finding] = []
+    for path in rust_files():
+        if is_semantic_view_source(path):
+            continue
+        text = path.read_text()
+        for match in DIRECT_RAM_ANY_RE.finditer(text):
+            if is_inside_simple_string_literal(text, match.start()):
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    "direct RAM access outside semantic view layer",
+                )
+            )
+    return findings
+
+
+ALLOWED_NATIVE_BRIDGE_FUNCTIONS = {
+    "sync_overworld_map16_load_from_ram",
+    "set_rom_startup_timing",
+    "run_frame_internal",
+    "emu_sync_memory_region",
+    "load_snes_state",
+    "save_snes_state",
+    "state_recorder_read_next_replay_state",
+    "zelda_run_frame",
+    "state_recoder_multi_patch_patch",
+    "zelda_initialization_code",
+    "startup_initialize_memory",
+    "intro_clear1kb_blocks_of_wram",
+    "move_link_coord",
+    "move_link_coord_subpixel_delta",
+    "decrement_word",
+    "ram_byte",
+    "set_ram_byte",
+    "copy_to_ram",
+    "fill_ram",
+    "read_u8_ram",
+    "write_u8_ram",
+    "read_u16_ram",
+    "write_u16_ram",
+    "read_u32_ram",
+    "write_u32_ram",
+}
+
+
+def is_allowed_native_bridge_use(path: Path, text: str, offset: int) -> bool:
+    if is_semantic_view_source(path):
+        return True
+    if is_inside_simple_string_literal(text, offset):
+        return True
+    fn_name = enclosing_function_name(text, offset)
+    if path.name != "zelda_rtl.rs" and fn_name != "intro_clear1kb_blocks_of_wram":
+        return False
+    return fn_name in ALLOWED_NATIVE_BRIDGE_FUNCTIONS
+
+
+def native_bridge_findings() -> list[Finding]:
+    findings: list[Finding] = []
+    for path in rust_files():
+        text = path.read_text()
+        for match in NATIVE_BRIDGE_RE.finditer(text):
+            if is_allowed_native_bridge_use(path, text, match.start()):
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    "native RAM bridge use outside approved bridge boundary",
+                )
+            )
     return findings
 
 
@@ -454,6 +574,16 @@ def main() -> int:
         action="store_true",
         help="print non-failing warnings for UNK/SOME/VAR/TMP/SCRATCH RAM names",
     )
+    parser.add_argument(
+        "--report-direct-ram",
+        action="store_true",
+        help="print non-failing direct RAM access sites outside game_state/view",
+    )
+    parser.add_argument(
+        "--report-native-bridge",
+        action="store_true",
+        help="print non-failing NativeRamBridgeView use outside approved runtime bridge boundaries",
+    )
     args = parser.parse_args()
 
     findings = [finding for path in rust_files() for finding in check_file(path)]
@@ -469,6 +599,18 @@ def main() -> int:
         for finding in weak_findings:
             rel = finding.path.relative_to(REPO_ROOT)
             print(f"{rel}:{finding.line}: warning: {finding.message}", file=sys.stderr)
+
+    direct_findings = direct_ram_findings() if args.report_direct_ram else []
+    if direct_findings:
+        for finding in direct_findings:
+            rel = finding.path.relative_to(REPO_ROOT)
+            print(f"{rel}:{finding.line}: note: {finding.message}", file=sys.stderr)
+
+    native_bridge_findings_list = native_bridge_findings() if args.report_native_bridge else []
+    if native_bridge_findings_list:
+        for finding in native_bridge_findings_list:
+            rel = finding.path.relative_to(REPO_ROOT)
+            print(f"{rel}:{finding.line}: note: {finding.message}", file=sys.stderr)
 
     if args.write_doc:
         doc_path = args.doc if args.doc.is_absolute() else REPO_ROOT / args.doc
@@ -494,6 +636,10 @@ def main() -> int:
     message = f"ram readability ok ({len(constants)} RAM constants)"
     if args.warn_weak_names:
         message += f"; {len(weak_findings)} weak-name warning(s)"
+    if args.report_direct_ram:
+        message += f"; {len(direct_findings)} non-view direct RAM access note(s)"
+    if args.report_native_bridge:
+        message += f"; {len(native_bridge_findings_list)} non-boundary native bridge note(s)"
     print(message)
     return 0
 

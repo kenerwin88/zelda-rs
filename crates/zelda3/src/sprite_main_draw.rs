@@ -79,7 +79,7 @@ const SPRITE_TILETYPE_DRAW: usize = 0x0fa5;
 const ACTIVE_OVERLORD_INDEX_DRAW: usize = 0x0fde;
 // variables.h:766..768 — garnish_active / tmp_counter / shared draw scratch.
 const GARNISH_ACTIVE_DRAW: usize = 0x0fb4;
-const SPRITE_DRAW_SCRATCH_Y_OR_FLAGS: usize = 0x0fb6;
+const SPRITE_DRAW_WORK_Y_OR_FLAGS: usize = 0x0fb6;
 // variables.h:910 — sram_progress_indicator_3.
 const SRAM_PROGRESS_INDICATOR_3_DRAW: usize = 0x0f3c9;
 // hud.c private table mirrored for bomb shop purchase gating.

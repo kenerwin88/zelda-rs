@@ -34,7 +34,7 @@ pub(super) struct PrepOamCoordsRet {
 // `Sprite_DelayAux3` is shared scratch (variables.h:0xee0).
 const SPRITE_DELAY_AUX3_SB: usize = 0x0ee0;
 // Shared scratch used by small-boss draw/update routines.
-const SMALL_BOSS_SHARED_SCRATCH_A: usize = 0x0fb6;
+const SMALL_BOSS_SHARED_WORK_A: usize = 0x0fb6;
 const VITREOUS_EYEBALL_RELEASE_COUNT: usize = 0x0ff8;
 // `overlord_x_hi` (variables.h:0xb10).
 const OVERLORD_X_HI_SB: usize = 0x0b10;
@@ -1573,7 +1573,7 @@ impl ZeldaState {
     //         sprite_flags3[j] = 0x40;
     //       }
     //     }
-    //     SPRITE_SHARED_SCRATCH_A = 1;
+    //     SPRITE_SHARED_WORK_A = 1;
     //   } else {
     //     int j = Sprite_SpawnDynamically(k, sprite_type[k], &info);
     //     if (j >= 0) {
@@ -2178,7 +2178,7 @@ const _SMALL_BOSSES_EYES_GFX_KEEPALIVE: &[u8] = &VITREOUS_SMALL_EYE_GRAPHICS;
 #[allow(dead_code)]
 const _SMALL_BOSSES_SCRATCH_KEEPALIVE: &[usize] = &[
     SPRITE_DELAY_AUX3_SB,
-    SMALL_BOSS_SHARED_SCRATCH_A,
+    SMALL_BOSS_SHARED_WORK_A,
     OVERLORD_X_HI_SB,
 ];
 
@@ -2388,7 +2388,7 @@ mod tests {
         s.sprite_set_y(k, 0x0210);
         s.sidenexx_exhale_danger(k);
 
-        assert_eq!(s.ram[SMALL_BOSS_SHARED_SCRATCH_A], 1);
+        assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 1);
         assert_eq!(s.system_signals_view().sound_effect_2() & 0x3f, 0x19);
         for (slot, c) in [(15usize, (-2i8) as u8), (14, 1u8)] {
             assert_eq!(s.sprite_slot_view(slot).sprite_type(), 0xcd);
@@ -2415,7 +2415,7 @@ mod tests {
         s.sprite_slot_view_mut(15).set_flags2(0xff);
         s.sidenexx_exhale_danger(k);
 
-        assert_eq!(s.ram[SMALL_BOSS_SHARED_SCRATCH_A], 0);
+        assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 0);
         assert_eq!(s.system_signals_view().sound_effect_1() & 0x3f, 0x2a);
         assert_eq!(s.sprite_slot_view(15).sprite_type(), 0xcc);
         assert_eq!(s.sprite_slot_view(15).state(), 9);

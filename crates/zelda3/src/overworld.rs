@@ -20,13 +20,13 @@ const MAP16_LOAD_Y_UNIT_OVERWORLD: usize = 0x0088;
 const WORD_7F4000_OVERWORLD: usize = 0x14000;
 const UVRAM_DATA_OVERWORLD: usize = 0x1100;
 const OVERWORLD_MAP16_DECODE_SRC: usize = 0x14000;
-const OVERWORLD_DECOMP_SCRATCH: usize = 0x14400;
+const OVERWORLD_DECOMP_BUFFER: usize = 0x14400;
 const MAP16_DECODE_0_OVERWORLD: usize = 0x14400;
 const MAP16_DECODE_1_OVERWORLD: usize = 0x14410;
 const MAP16_DECODE_2_OVERWORLD: usize = 0x14420;
 const MAP16_DECODE_3_OVERWORLD: usize = 0x14430;
 const MAP16_DECODE_LAST_OVERWORLD: usize = 0x14440;
-const MAP16_DECODE_TMP_OVERWORLD: usize = 0x14442;
+const MAP16_DECODE_WORK_WORD_OVERWORLD: usize = 0x14442;
 const DUNG_REPLACEMENT_TILE_STATE_OVERWORLD: usize = 0x0500;
 const ORANGE_BLUE_BARRIER_STATE_OVERWORLD: usize = 0x0c172;
 const SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF: usize = 0x0c174;
@@ -3298,19 +3298,9 @@ impl ZeldaState {
         state: SmallOverworldMap16ScrollBackupState,
     ) {
         self.set_small_overworld_map16_scroll_backup_state(state);
-        write_le_u16(
-            &mut self.ram,
-            ORANGE_BLUE_BARRIER_STATE_OVERWORLD,
+        self.world_state_view_mut().set_small_ow_scroll_backup(
             state.src_off,
-        );
-        write_le_u16(
-            &mut self.ram,
-            SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF,
             state.dst_off,
-        );
-        write_le_u16(
-            &mut self.ram,
-            SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT,
             state.y_unit,
         );
     }
@@ -3791,12 +3781,12 @@ impl ZeldaState {
 
     pub(super) fn Overworld_DecompressAndDrawOneQuadrant(&mut self, mut dst: usize, screen: i32) {
         let hibytes = self.GetOverworldHibytes(screen);
-        self.Decompress_bank02(OVERWORLD_DECOMP_SCRATCH, &hibytes);
+        self.Decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes);
         self.overworld_map16_decode_view_mut()
             .copy_scratch_to_source_words_high(256);
 
         let lobytes = self.GetOverworldLobytes(screen);
-        self.Decompress_bank02(OVERWORLD_DECOMP_SCRATCH, &lobytes);
+        self.Decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes);
         self.overworld_map16_decode_view_mut()
             .copy_scratch_to_source_words_low(256);
 
@@ -4933,31 +4923,16 @@ impl ZeldaState {
                 self.system_signals_view_mut().set_sound_effect_1(54);
             }
             for i in 1..8 {
-                write_le_u16(
-                    &mut self.ram,
-                    MAIN_PALETTE_BUFFER + (0x30 + i) * 2,
-                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1],
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    MAIN_PALETTE_BUFFER + (0x38 + i) * 2,
-                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7],
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    MAIN_PALETTE_BUFFER + (0x48 + i) * 2,
-                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14],
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    MAIN_PALETTE_BUFFER + (0x70 + i) * 2,
-                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21],
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    MAIN_PALETTE_BUFFER + (0x78 + i) * 2,
-                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28],
-                );
+                self.palette_buffer_view_mut()
+                    .set_main_color(0x30 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1]);
+                self.palette_buffer_view_mut()
+                    .set_main_color(0x38 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7]);
+                self.palette_buffer_view_mut()
+                    .set_main_color(0x48 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14]);
+                self.palette_buffer_view_mut()
+                    .set_main_color(0x70 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21]);
+                self.palette_buffer_view_mut()
+                    .set_main_color(0x78 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28]);
             }
         }
 
@@ -4970,11 +4945,8 @@ impl ZeldaState {
             yy = ((self.frame_control_view().frame_counter() & 0x0c) as usize) * 2;
         }
         for i in 0..8 {
-            write_le_u16(
-                &mut self.ram,
-                MAIN_PALETTE_BUFFER + (0x68 + i) * 2,
-                DARK_WORLD_PALETTE_ANIMATION_PHASE2[yy + i],
-            );
+            self.palette_buffer_view_mut()
+                .set_main_color(0x68 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE2[yy + i]);
         }
     }
 

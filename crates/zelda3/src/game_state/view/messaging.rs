@@ -559,11 +559,11 @@ impl<'a> SelectFileScratchView<'a> {
     }
 
     pub(crate) fn choice(&self, index: usize) -> u8 {
-        byte(self.ram, SELECT_FILE_CHOICE_SCRATCH + index)
+        byte(self.ram, SELECT_FILE_CHOICE_WORK + index)
     }
 
     pub(crate) fn cursor(&self) -> u8 {
-        byte(self.ram, SELECT_FILE_CURSOR_SCRATCH)
+        byte(self.ram, SELECT_FILE_CURSOR_WORK)
     }
 
     pub(crate) fn cursor_usize(&self) -> usize {
@@ -575,7 +575,7 @@ impl<'a> SelectFileScratchView<'a> {
     }
 
     pub(crate) fn target_word(&self) -> u16 {
-        word(self.ram, SELECT_FILE_TARGET_SCRATCH)
+        word(self.ram, SELECT_FILE_TARGET_WORK)
     }
 
     pub(crate) fn copy_source_slot_x2(&self) -> u16 {
@@ -661,11 +661,11 @@ impl<'a> SelectFileScratchViewMut<'a> {
     }
 
     pub(crate) fn set_choice(&mut self, index: usize, value: u8) {
-        self.ram[SELECT_FILE_CHOICE_SCRATCH + index] = value;
+        self.ram[SELECT_FILE_CHOICE_WORK + index] = value;
     }
 
     pub(crate) fn set_cursor(&mut self, value: u8) {
-        self.ram[SELECT_FILE_CURSOR_SCRATCH] = value;
+        self.ram[SELECT_FILE_CURSOR_WORK] = value;
     }
 
     pub(crate) fn clear_cursor(&mut self) {
@@ -673,17 +673,17 @@ impl<'a> SelectFileScratchViewMut<'a> {
     }
 
     pub(crate) fn clear_transition_scratch(&mut self) {
-        self.ram[SELECT_FILE_TRANSITION_SCRATCH] = 0;
+        self.ram[SELECT_FILE_TRANSITION_WORK] = 0;
     }
 
     pub(crate) fn increment_cursor(&mut self) -> u8 {
-        self.ram[SELECT_FILE_CURSOR_SCRATCH] = self.ram[SELECT_FILE_CURSOR_SCRATCH].wrapping_add(1);
-        self.ram[SELECT_FILE_CURSOR_SCRATCH]
+        self.ram[SELECT_FILE_CURSOR_WORK] = self.ram[SELECT_FILE_CURSOR_WORK].wrapping_add(1);
+        self.ram[SELECT_FILE_CURSOR_WORK]
     }
 
     pub(crate) fn decrement_cursor(&mut self) -> u8 {
-        self.ram[SELECT_FILE_CURSOR_SCRATCH] = self.ram[SELECT_FILE_CURSOR_SCRATCH].wrapping_sub(1);
-        self.ram[SELECT_FILE_CURSOR_SCRATCH]
+        self.ram[SELECT_FILE_CURSOR_WORK] = self.ram[SELECT_FILE_CURSOR_WORK].wrapping_sub(1);
+        self.ram[SELECT_FILE_CURSOR_WORK]
     }
 
     pub(crate) fn set_remembered_cursor(&mut self, value: u8) {
@@ -695,15 +695,15 @@ impl<'a> SelectFileScratchViewMut<'a> {
     }
 
     pub(crate) fn remember_current_cursor(&mut self) {
-        self.ram[SELECT_FILE_REMEMBERED_CURSOR] = self.ram[SELECT_FILE_CURSOR_SCRATCH];
+        self.ram[SELECT_FILE_REMEMBERED_CURSOR] = self.ram[SELECT_FILE_CURSOR_WORK];
     }
 
     pub(crate) fn restore_remembered_cursor(&mut self) {
-        self.ram[SELECT_FILE_CURSOR_SCRATCH] = self.ram[SELECT_FILE_REMEMBERED_CURSOR];
+        self.ram[SELECT_FILE_CURSOR_WORK] = self.ram[SELECT_FILE_REMEMBERED_CURSOR];
     }
 
     pub(crate) fn set_target_word(&mut self, value: u16) {
-        write_le_u16(self.ram, SELECT_FILE_TARGET_SCRATCH, value);
+        write_le_u16(self.ram, SELECT_FILE_TARGET_WORK, value);
     }
 
     pub(crate) fn set_copy_source_slot_x2(&mut self, value: u16) {
@@ -722,7 +722,7 @@ impl<'a> SelectFileScratchViewMut<'a> {
         self.ram[SELECT_FILE_NAME_COLUMN] = 0;
         self.ram[SELECT_FILE_NAME_SLOT] = 0;
         self.ram[SELECT_FILE_NAME_ROW] = 0;
-        self.ram[SELECT_FILE_CHOICE_SCRATCH] = 0;
+        self.ram[SELECT_FILE_CHOICE_WORK] = 0;
         self.ram[SELECT_FILE_COPY_SOURCE_SLOT_X2] = 0;
         self.ram[SELECT_FILE_NAME_CURSOR_Y] = 0x83;
         write_le_u16(self.ram, SELECT_FILE_NAME_SCROLL_X, 0x01f0);

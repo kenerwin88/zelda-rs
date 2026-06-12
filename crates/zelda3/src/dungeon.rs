@@ -372,11 +372,8 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .store_overworld_exit_position_from_current();
             let overworld_screen = self.world_state_view().overworld_screen_word();
-            write_le_u16(
-                &mut self.ram,
-                ENTRANCE_BACKUP_OVERWORLD_SCREEN,
-                overworld_screen,
-            );
+            self.world_state_view_mut()
+                .set_exit_screen_index(overworld_screen);
             copy_le_u16(
                 &mut self.ram,
                 ENTRANCE_BACKUP_MAP16_LOAD_SRC_OFF,
@@ -1363,12 +1360,15 @@ impl ZeldaState {
         for i in 0..max_words {
             let word = read_word_from_slice(&doors, i * 2);
             if word == 0xffff {
-                write_le_u16(&mut self.ram, dst + i * 2, 0);
+                self.dungeon_state_view_mut()
+                    .set_room_door_info_word(dst, i, 0);
                 return;
             }
-            write_le_u16(&mut self.ram, dst + i * 2, word);
+            self.dungeon_state_view_mut()
+                .set_room_door_info_word(dst, i, word);
         }
-        write_le_u16(&mut self.ram, dst + max_words * 2, 0);
+        self.dungeon_state_view_mut()
+            .set_room_door_info_word(dst, max_words, 0);
     }
 
     fn copy_room_door_tilemap_addresses(&mut self, room: usize) {
@@ -2190,16 +2190,10 @@ impl ZeldaState {
             0xd8 => {
                 let count_x = width as u16 + 2;
                 let count_y = height as u16 + 2;
-                write_le_u16(
-                    &mut self.ram,
-                    WATER_HDMA_WINDOW_X_RADIUS_DUNGEON,
-                    count_x << 4,
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    WATER_HDMA_WINDOW_Y_RADIUS_DUNGEON,
-                    count_y << 4,
-                );
+                self.dungeon_state_view_mut()
+                    .set_water_hdma_x_radius(count_x << 4);
+                self.dungeon_state_view_mut()
+                    .set_water_hdma_y_radius(count_y << 4);
                 self.dungeon_state_view_mut()
                     .set_water_hdma_y_target((count_y << 4).wrapping_sub(24));
                 let hdma0 = ((dsto & 0x003f) << 3)
@@ -2478,78 +2472,74 @@ impl ZeldaState {
             0x18 => self.RoomDraw_CellLock(dsto),
             0x19 => self.RoomDraw_Chest(dsto),
             0x1b => {
-                self.write_stairs_table(DUNG_STAIRS_TABLE_1, DUNG_NUM_STAIRS_1, dsto);
+                self.dungeon_state_view_mut()
+                    .append_stair_table_position(DungeonStairList::Stairs1, dsto);
                 self.Object_DrawNx4_BothBgs(4, src, dsto);
             }
             0x1c => {
-                self.write_stairs_table(DUNG_STAIRS_TABLE_2, DUNG_NUM_STAIRS_2, dsto);
+                self.dungeon_state_view_mut()
+                    .append_stair_table_position(DungeonStairList::Stairs2, dsto);
                 self.Object_DrawNx4_BothBgs(4, src, dsto);
             }
             0x1d => {
-                self.write_stairs_table(DUNG_STAIRS_TABLE_2, DUNG_NUM_STAIRS_WET, dsto);
+                self.dungeon_state_view_mut()
+                    .append_stair_table_position(DungeonStairList::WetStairs, dsto);
                 self.RoomDraw_4x4(src, dsto);
             }
             0x1e => {
-                let next = self.write_stairs_table(
-                    DUNG_INTER_STARCASES,
-                    DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS,
-                    dsto,
+                let next = self
+                    .dungeon_state_view_mut()
+                    .append_interroom_staircase(DungeonStairList::InterRoomUpNorthStraight, dsto);
+                self.dungeon_state_view_mut().sync_stair_list_counts(
+                    &[
+                        DungeonStairList::InterRoomUpNorthStraight,
+                        DungeonStairList::InterRoomUpSouthStraight,
+                        DungeonStairList::InterRoomSouthDown,
+                        DungeonStairList::WallDownNorthSpiral,
+                        DungeonStairList::WallDownNorthSpiralBg1,
+                        DungeonStairList::InterRoomDownNorthStraight,
+                        DungeonStairList::InterRoomDownSouthStraight,
+                    ],
+                    next,
                 );
-                for offset in [
-                    DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS,
-                    DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS,
-                    DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS,
-                    DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS,
-                    DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2,
-                    DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS,
-                    DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS,
-                ] {
-                    write_le_u16(&mut self.ram, offset, next);
-                }
                 self.RoomDraw_Object_Nx4(4, src, dsto);
             }
             0x1f => {
-                let next = self.write_stairs_table(
-                    DUNG_INTER_STARCASES,
-                    DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS,
-                    dsto,
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS,
+                let next = self
+                    .dungeon_state_view_mut()
+                    .append_interroom_staircase(DungeonStairList::InterRoomDownNorthStraight, dsto);
+                self.dungeon_state_view_mut().sync_stair_list_counts(
+                    &[
+                        DungeonStairList::InterRoomDownNorthStraight,
+                        DungeonStairList::InterRoomDownSouthStraight,
+                    ],
                     next,
                 );
                 self.RoomDraw_Object_Nx4(4, src, dsto);
             }
             0x20 => {
-                let next = self.write_stairs_table(
-                    DUNG_INTER_STARCASES,
-                    DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS,
-                    dsto,
+                let next = self
+                    .dungeon_state_view_mut()
+                    .append_interroom_staircase(DungeonStairList::InterRoomUpSouthStraight, dsto);
+                self.dungeon_state_view_mut().sync_stair_list_counts(
+                    &[
+                        DungeonStairList::InterRoomUpSouthStraight,
+                        DungeonStairList::InterRoomSouthDown,
+                        DungeonStairList::WallDownNorthSpiral,
+                        DungeonStairList::WallDownNorthSpiralBg1,
+                        DungeonStairList::InterRoomDownNorthStraight,
+                        DungeonStairList::InterRoomDownSouthStraight,
+                    ],
+                    next,
                 );
-                for offset in [
-                    DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS,
-                    DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS,
-                    DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS,
-                    DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2,
-                    DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS,
-                    DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS,
-                ] {
-                    write_le_u16(&mut self.ram, offset, next);
-                }
                 self.RoomDraw_Object_Nx4(4, src, dsto);
             }
             0x21 => {
-                let next = self.write_stairs_table(
-                    DUNG_INTER_STARCASES,
-                    DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS,
-                    dsto,
-                );
-                write_le_u16(
-                    &mut self.ram,
-                    DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS,
-                    next,
-                );
+                let next = self
+                    .dungeon_state_view_mut()
+                    .append_interroom_staircase(DungeonStairList::InterRoomDownSouthStraight, dsto);
+                self.dungeon_state_view_mut()
+                    .set_stair_list_count(DungeonStairList::InterRoomDownSouthStraight, next);
                 self.RoomDraw_Object_Nx4(4, src, dsto);
             }
             0x26 => self.RoomDraw_LowerDoorStairsUp(src, dsto, true),
@@ -2605,22 +2595,19 @@ impl ZeldaState {
                     let room = self.world_state_view().dungeon_room() as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0 {
                         self.dungeon_state_view_mut().clear_bg2_properties();
-                        self.write_stairs_table(DUNG_STAIRS_TABLE_2, DUNG_NUM_STAIRS_WET, dsto);
+                        self.dungeon_state_view_mut()
+                            .append_stair_table_position(DungeonStairList::WetStairs, dsto);
                     } else {
                         self.palette_filter_view_mut().set_color_window_selection(2);
                         self.palette_filter_view_mut().set_color_math_control(0x62);
-                        self.write_stairs_table(
-                            DUNG_STAIRS_TABLE_2,
-                            DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+                        self.dungeon_state_view_mut().append_stair_table_position(
+                            DungeonStairList::InRoomUpSouthWater,
                             dsto,
                         );
                     }
                 } else {
-                    self.write_stairs_table(
-                        DUNG_STAIRS_TABLE_2,
-                        DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
-                        dsto,
-                    );
+                    self.dungeon_state_view_mut()
+                        .append_stair_table_position(DungeonStairList::InRoomUpSouthWater, dsto);
                 }
                 self.RoomDraw_4x4(src, dsto);
             }
@@ -3261,11 +3248,8 @@ impl ZeldaState {
             .unwrap_or(0)
             / 2;
         let door = self.dungeon_state_view().current_door_index() as usize >> 1;
-        write_le_u16(
-            &mut self.ram,
-            DUNG_DOOR_TILEMAP_ADDRESS + door * 2,
-            2 * (dsto + 10),
-        );
+        self.dungeon_state_view_mut()
+            .set_door_tilemap_address(door, 2 * (dsto + 10));
         self.dungeon_state_view_mut()
             .set_door_type_word(door, ((door as u16) << 8) | DOOR_TYPE_LG_EXPLOSION as u16);
         if self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(door & 7)
@@ -3421,11 +3405,8 @@ impl ZeldaState {
         if slot < 16 {
             self.dungeon_state_view_mut()
                 .set_door_direction_word(slot, direction);
-            write_le_u16(
-                &mut self.ram,
-                DUNG_DOOR_TILEMAP_ADDRESS + slot * 2,
-                dsto * 2,
-            );
+            self.dungeon_state_view_mut()
+                .set_door_tilemap_address(slot, dsto * 2);
             self.dungeon_state_view_mut()
                 .set_door_type_word(slot, ((slot as u16) << 8) | door_type as u16);
         }
@@ -3460,11 +3441,8 @@ impl ZeldaState {
             return remapped as u16;
         }
 
-        write_le_u16(
-            &mut self.ram,
-            INVISIBLE_DOOR_DIR_AND_INDEX_X2,
-            (((slot as u16) << 8) | direction) * 2,
-        );
+        self.dungeon_state_view_mut()
+            .set_invisible_door_marker(slot, direction);
         let opened =
             self.dungeon_state_view().opened_doors_including_adjacent() | upper_bitmask(slot);
         self.dungeon_state_view_mut()
@@ -4106,11 +4084,8 @@ impl ZeldaState {
             .wrapping_add(2);
         self.dungeon_state_view_mut().set_misc_object_index(next);
         let load_ptr = self.dungeon_state_view().load_ptr_offset();
-        write_le_u16(
-            &mut self.ram,
-            DUNG_OBJECT_POS_IN_OBJDATA + index * 2,
-            load_ptr,
-        );
+        self.dungeon_state_view_mut()
+            .set_object_data_pos(index, load_ptr);
         let tilemap_pos = dsto * 2 | self.room_plane_tilemap_bit();
         let below = [
             self.tile_word(src_below, 0),
@@ -4171,11 +4146,8 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_replacement_tile_state(index, 0x4040);
         let load_ptr = self.dungeon_state_view().load_ptr_offset();
-        write_le_u16(
-            &mut self.ram,
-            DUNG_OBJECT_POS_IN_OBJDATA + index * 2,
-            load_ptr,
-        );
+        self.dungeon_state_view_mut()
+            .set_object_data_pos(index, load_ptr);
         let plane = if self.dungeon_state_view().first_line_pointer_row0() != 0x4000 {
             0
         } else {
@@ -4533,11 +4505,8 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_replacement_tile_state(index, 0x1111);
         let load_ptr = self.dungeon_state_view().load_ptr_offset();
-        write_le_u16(
-            &mut self.ram,
-            DUNG_OBJECT_POS_IN_OBJDATA + index * 2,
-            load_ptr,
-        );
+        self.dungeon_state_view_mut()
+            .set_object_data_pos(index, load_ptr);
         let plane_bit = self.room_plane_tilemap_bit();
         self.dungeon_state_view_mut()
             .set_object_tilemap_pos(index, dsto * 2 | plane_bit);
@@ -4814,19 +4783,6 @@ impl ZeldaState {
         self.RoomData_DrawObject_nx4_both_bgs(src, dsto, n);
     }
 
-    pub(super) fn write_stairs_table(
-        &mut self,
-        table_offset: usize,
-        count_offset: usize,
-        dsto: u16,
-    ) -> u16 {
-        let index = read_le_u16(&self.ram, count_offset) as usize >> 1;
-        write_le_u16(&mut self.ram, table_offset + index * 2, dsto);
-        let next = read_le_u16(&self.ram, count_offset).wrapping_add(2);
-        write_le_u16(&mut self.ram, count_offset, next);
-        next
-    }
-
     pub(super) fn RoomData_DrawObject_nx4_both_bgs(&mut self, src: usize, dsto: u16, columns: u16) {
         for x in 0..columns {
             for y in 0..4 {
@@ -4854,21 +4810,15 @@ impl ZeldaState {
             .wrapping_add(2);
         self.dungeon_state_view_mut().set_misc_object_index(next);
         let load_ptr = self.dungeon_state_view().load_ptr_offset();
-        write_le_u16(
-            &mut self.ram,
-            DUNG_OBJECT_POS_IN_OBJDATA + index * 2,
-            load_ptr,
-        );
+        self.dungeon_state_view_mut()
+            .set_object_data_pos(index, load_ptr);
         let plane = if self.dungeon_state_view().first_line_pointer_row0() != 0x4000 {
             0
         } else {
             0x2000
         };
-        write_le_u16(
-            &mut self.ram,
-            DUNG_OBJECT_TILEMAP_POS + index * 2,
-            dsto.wrapping_mul(2) | plane,
-        );
+        self.dungeon_state_view_mut()
+            .set_object_tilemap_pos(index, dsto.wrapping_mul(2) | plane);
         let ul = self.room_read_current(dsto);
         let ll = self.room_read_current(dsto + 64);
         let ur = self.room_read_current(dsto + 1);
@@ -4981,7 +4931,7 @@ impl ZeldaState {
 
     pub(super) fn room_read_current(&self, dsto: u16) -> u16 {
         let base = self.dungeon_state_view().first_line_pointer_row0() as usize;
-        read_le_u16(&self.ram, base + dsto as usize * 2)
+        self.dungeon_state_view().room_tilemap_word(base, dsto)
     }
 
     pub(super) fn DstoPtr(&self, d: u16) -> usize {
@@ -4989,7 +4939,7 @@ impl ZeldaState {
     }
 
     pub(super) fn room_read_bg(&self, base: usize, dsto: u16) -> u16 {
-        read_le_u16(&self.ram, base + dsto as usize * 2)
+        self.dungeon_state_view().room_tilemap_word(base, dsto)
     }
 
     pub(super) fn room_read_bg1(&self, dsto: u16) -> u16 {
@@ -5011,7 +4961,8 @@ impl ZeldaState {
                 caller.line()
             );
         }
-        write_le_u16(&mut self.ram, offset, tile);
+        self.dungeon_state_view_mut()
+            .set_room_tilemap_word(base, dsto, tile);
     }
 
     #[track_caller]
@@ -5058,7 +5009,8 @@ impl ZeldaState {
                 for y in 0..2 {
                     for x in 0..4 {
                         let src = read_word_from_slice(tile_data, src_offset + (y * 4 + x) * 2);
-                        write_le_u16(&mut self.ram, base + cursor + xy(x, y) * 2, src);
+                        self.dungeon_state_view_mut()
+                            .set_room_tilemap_word_by_byte_offset(base, cursor + xy(x, y) * 2, src);
                     }
                 }
                 cursor += xy(0, 2) * 2;
@@ -5113,7 +5065,9 @@ impl ZeldaState {
             loop {
                 for y in 0..4 {
                     for x in 0..2 {
-                        let value = read_le_u16(&self.ram, source_base + src + xy(x, y) * 2);
+                        let value = self
+                            .dungeon_state_view()
+                            .room_tilemap_word_by_byte_offset(source_base, src + xy(x, y) * 2);
                         self.vram_upload_data_view_mut()
                             .set_tilemap_word((p + y * 32 + x) * 2, value);
                     }
@@ -5195,15 +5149,19 @@ impl ZeldaState {
         for i in 0..4u16 {
             let col = base_dsto.wrapping_add(i);
             let vram_addr = self.Dungeon_MapVramAddr(col);
-            write_le_u16(&mut self.ram, upload, vram_addr);
-            write_le_u16(&mut self.ram, upload + 2, 0x0980);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(upload, vram_addr);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(upload + 2, 0x0980);
             for y in 0..5usize {
                 let tile = self.dungeon_state_view().bg2_tile(col as usize + y * 64);
-                write_le_u16(&mut self.ram, upload + 4 + y * 2, tile);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(upload + 4 + y * 2, tile);
             }
             upload += 14;
         }
-        write_le_u16(&mut self.ram, upload, 0xffff);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(upload, 0xffff);
         self.display_nmi_view_mut().set_bg_vram_load_mode(1);
     }
 
@@ -5381,7 +5339,7 @@ impl ZeldaState {
     }
 
     pub(super) fn asset_u16_from_ram(&self, offset: usize, index: usize) -> u16 {
-        read_le_u16(&self.ram, offset + index * 2)
+        self.dungeon_state_view().ram_asset_word(offset, index)
     }
 
     pub(super) fn SetAndSaveVisitedQuadrantFlags(&mut self) {
@@ -5564,16 +5522,10 @@ impl ZeldaState {
     pub(super) fn DungeonTransition_AdjustCamera_X(&mut self, arg: u8) {
         const UP_DOWN_SCROLL: [u16; 4] = [0, 256, 256, 0];
         let index = arg as usize * 2;
-        write_le_u16(
-            &mut self.ram,
-            LEFT_RIGHT_SCROLL_TARGET,
-            UP_DOWN_SCROLL[index],
-        );
-        write_le_u16(
-            &mut self.ram,
-            LEFT_RIGHT_SCROLL_TARGET_END,
-            UP_DOWN_SCROLL[index + 1],
-        );
+        self.world_state_view_mut()
+            .set_left_right_scroll_target(UP_DOWN_SCROLL[index]);
+        self.world_state_view_mut()
+            .set_left_right_scroll_target_end(UP_DOWN_SCROLL[index + 1]);
     }
 
     pub(super) fn DungeonTransition_AdjustCamera_Y(&mut self, arg: u8) {
@@ -5595,31 +5547,19 @@ impl ZeldaState {
             if player.quadrant_x() != 0 {
                 index += 1;
             }
-            write_le_u16(
-                &mut self.ram,
-                CAMERA_X_COORD_SCROLL_LOW,
-                CAMERA_BOUNDS_X[index],
-            );
-            write_le_u16(
-                &mut self.ram,
-                CAMERA_X_COORD_SCROLL_HI,
-                CAMERA_BOUNDS_X[index].wrapping_add(2),
-            );
+            self.world_state_view_mut()
+                .set_camera_x_coord_scroll_low(CAMERA_BOUNDS_X[index]);
+            self.world_state_view_mut()
+                .set_camera_x_coord_scroll_hi(CAMERA_BOUNDS_X[index].wrapping_add(2));
         } else {
             let mut index = if player.direction() & 4 != 0 { 0 } else { 2 };
             if player.quadrant_y() != 0 {
                 index += 1;
             }
-            write_le_u16(
-                &mut self.ram,
-                CAMERA_Y_COORD_SCROLL_LOW,
-                CAMERA_BOUNDS_Y[index],
-            );
-            write_le_u16(
-                &mut self.ram,
-                CAMERA_Y_COORD_SCROLL_HI,
-                CAMERA_BOUNDS_Y[index].wrapping_add(2),
-            );
+            self.world_state_view_mut()
+                .set_camera_y_coord_scroll_low(CAMERA_BOUNDS_Y[index]);
+            self.world_state_view_mut()
+                .set_camera_y_coord_scroll_hi(CAMERA_BOUNDS_Y[index].wrapping_add(2));
         }
     }
 
@@ -6117,12 +6057,12 @@ impl ZeldaState {
         if data < 0x80 {
             if data != 8 {
                 let mask = 1u16 << index;
-                let pot_addr = POTS_REVEALED_IN_ROOM_DUNGEON + room * 2;
-                let revealed = read_le_u16(&self.ram, pot_addr);
+                let revealed = self.dungeon_state_view().pots_revealed_in_room(room);
                 if revealed & mask != 0 {
                     return;
                 }
-                write_le_u16(&mut self.ram, pot_addr, revealed | mask);
+                self.dungeon_state_view_mut()
+                    .mark_pot_revealed_in_room(room, mask);
             }
             self.dungeon_secret_scratch_view_mut().or_pending_kind(data);
         } else if data != 0x88 {
@@ -6690,11 +6630,8 @@ impl ZeldaState {
         while self.dungeon_state_view().door_type_and_slot(door) & !1 != 0x30 {
             door += 1;
         }
-        write_le_u16(
-            &mut self.ram,
-            CRUSH_WALL_DOOR_INDEX_X2_DUNGEON,
-            (door * 2) as u16,
-        );
+        self.dungeon_state_view_mut()
+            .set_blast_wall_door_index(door);
 
         let mut i = (((self.player_state_view().y() >> 8) & 1) + 1) * 2;
         if self.dungeon_state_view().door_direction(door) & 2 != 0 {
@@ -7575,17 +7512,23 @@ impl ZeldaState {
             let mut cols = r10;
             loop {
                 let vram_addr = self.Dungeon_MapVramAddrNoSwap(dsto);
-                write_le_u16(&mut self.ram, upload, vram_addr);
-                write_le_u16(&mut self.ram, upload + 2, r6 | 0x0a00);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(upload, vram_addr);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(upload + 2, r6 | 0x0a00);
                 for y in 0..5u16 {
                     let tile = self.room_read_bg2(dsto + y * 64);
-                    write_le_u16(&mut self.ram, upload + 4 + y as usize * 2, tile);
+                    self.vram_upload_data_view_mut()
+                        .write_le_u16_at(upload + 4 + y as usize * 2, tile);
                 }
-                write_le_u16(&mut self.ram, upload + 14, vram_addr.wrapping_add(0x04a0));
-                write_le_u16(&mut self.ram, upload + 16, r6 | 0x0e00);
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(upload + 14, vram_addr.wrapping_add(0x04a0));
+                self.vram_upload_data_view_mut()
+                    .write_le_u16_at(upload + 16, r6 | 0x0e00);
                 for y in 0..7u16 {
                     let tile = self.room_read_bg2(dsto + (y + 5) * 64);
-                    write_le_u16(&mut self.ram, upload + 18 + y as usize * 2, tile);
+                    self.vram_upload_data_view_mut()
+                        .write_le_u16_at(upload + 18 + y as usize * 2, tile);
                 }
                 dsto = dsto.wrapping_add(1);
                 upload += 32;
@@ -7602,7 +7545,8 @@ impl ZeldaState {
             dsto = dsto.wrapping_add(BLAST_WALL_STRIPE_ROW_ADVANCES[tab_index] >> 1);
             r10 = 3;
         }
-        write_le_u16(&mut self.ram, upload, 0xffff);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(upload, 0xffff);
     }
 
     pub(super) fn Dungeon_DrawRoomOverlay(&mut self, src: &[u8]) {
@@ -8406,11 +8350,8 @@ impl ZeldaState {
                     self.write_attr2(j as usize + xy(0, 0), attr);
                     self.write_attr2(j as usize + xy(0, 1), attr);
                     if k & 0x8000 != 0 {
-                        write_le_u16(
-                            &mut self.ram,
-                            DUNG_CHEST_LOCATIONS + (i >> 1) * 2,
-                            k & 0x7fff,
-                        );
+                        self.dungeon_state_view_mut()
+                            .set_chest_location_for_offset_x2(i, k & 0x7fff);
                         self.write_attr2(j as usize + xy(2, 1), attr);
                         self.write_attr2(j as usize + xy(0, 2), attr);
                         self.write_attr2(j as usize + xy(2, 2), attr);
@@ -8423,9 +8364,9 @@ impl ZeldaState {
 
         if !skip_big_key_locks {
             while i != self.dungeon_state_view().num_big_key_locks_x2() as usize {
-                let offset = DUNG_CHEST_LOCATIONS + (i >> 1) * 2;
-                let k = read_le_u16(&self.ram, offset);
-                write_le_u16(&mut self.ram, offset, k | 0x8000);
+                let k = self.dungeon_state_view().chest_location_for_offset_x2(i);
+                self.dungeon_state_view_mut()
+                    .set_chest_location_for_offset_x2(i, k | 0x8000);
                 let j = (k & 0x7fff) >> 1;
                 self.write_attr2(j as usize + xy(0, 0), attr);
                 self.write_attr2(j as usize + xy(0, 1), attr);
@@ -9333,11 +9274,15 @@ impl ZeldaState {
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
             let vram_addr = self.Dungeon_MapVramAddr(tile_pos);
-            write_le_u16(&mut self.ram, base, vram_addr);
-            write_le_u16(&mut self.ram, base + 2, 0x0100);
-            write_le_u16(&mut self.ram, base + 4, src[i]);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(base, vram_addr);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(base + 2, 0x0100);
+            self.vram_upload_data_view_mut()
+                .write_le_u16_at(base + 4, src[i]);
         }
-        write_le_u16(&mut self.ram, dst + 24, 0xffff);
+        self.vram_upload_data_view_mut()
+            .write_le_u16_at(dst + 24, 0xffff);
         let next_upload = self.vram_upload_data_view().offset().wrapping_add(24);
         self.vram_upload_data_view_mut().set_offset(next_upload);
 
@@ -10514,11 +10459,8 @@ impl ZeldaState {
             .set_object_tilemap_pos(idx, r8);
 
         let obj_pos = (self.dungeon_state_view().object_pos_in_objdata(idx) & 0x00ff) >> 1;
-        write_le_u16(
-            &mut self.ram,
-            DUNG_TORCH_DATA_DUNGEON + obj_pos as usize * 2,
-            r8,
-        );
+        self.dungeon_torch_view_mut()
+            .set_torch_data_word(obj_pos as usize, r8);
 
         r8 &= 0x3fff;
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
@@ -11223,16 +11165,8 @@ impl ZeldaState {
         self.dungeon_load_palettes();
 
         let room = self.world_state_view().dungeon_room();
-        write_le_u16(
-            &mut self.ram,
-            DUNG_LOADE_BGOFFS_H_COPY,
-            (room & 0x000f) << 9,
-        );
-        write_le_u16(
-            &mut self.ram,
-            DUNG_LOADE_BGOFFS_V_COPY,
-            (room & 0x0ff0) << 5,
-        );
+        self.dungeon_state_view_mut()
+            .set_loading_bg_offsets((room & 0x000f) << 9, (room & 0x0ff0) << 5);
         if room == 0x0104 && self.save_progress_view().progress_flags() & 0x10 != 0 {
             self.dungeon_state_view_mut().clear_lights_out_request();
         }
@@ -11819,11 +11753,8 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.world_state_view_mut()
                     .set_camera_y_coord_scroll_low(camera_low);
-                write_le_u16(
-                    &mut self.ram,
-                    CAMERA_Y_COORD_SCROLL_HI,
-                    camera_low.wrapping_add(2),
-                );
+                self.world_state_view_mut()
+                    .set_camera_y_coord_scroll_hi(camera_low.wrapping_add(2));
             }
         }
 
@@ -11881,11 +11812,8 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.world_state_view_mut()
                     .set_camera_x_coord_scroll_low(camera_low);
-                write_le_u16(
-                    &mut self.ram,
-                    CAMERA_X_COORD_SCROLL_HI,
-                    camera_low.wrapping_add(2),
-                );
+                self.world_state_view_mut()
+                    .set_camera_x_coord_scroll_hi(camera_low.wrapping_add(2));
             }
         }
 

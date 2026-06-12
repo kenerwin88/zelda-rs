@@ -378,6 +378,19 @@ impl<'a> PpuScrollCopyViewMut<'a> {
         copy_word(self.ram, BG2_V_SCROLL_COPY2_CACHED, BG2_Y_SCROLL);
     }
 
+    pub(crate) fn cache_camera_scroll(&mut self) {
+        copy_word(
+            self.ram,
+            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
+            CAMERA_Y_COORD_SCROLL_LOW,
+        );
+        copy_word(
+            self.ram,
+            CAMERA_X_COORD_SCROLL_LOW_CACHED,
+            CAMERA_X_COORD_SCROLL_LOW,
+        );
+    }
+
     pub(crate) fn save_special_exit_bg2_live_scroll(&mut self) {
         copy_word(self.ram, BG2_H_SCROLL_COPY2_SPECIAL_EXIT, BG2_X_SCROLL);
         copy_word(self.ram, BG2_V_SCROLL_COPY2_SPECIAL_EXIT, BG2_Y_SCROLL);

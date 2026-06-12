@@ -1657,17 +1657,17 @@ impl ZeldaState {
     //   static const int8 kThiefSpawn_Yvel[6] = {-32, -16, 16, 32, 16, -16};
     //   tmp_counter = 5;
     //   do {
-    //     SPRITE_SHARED_SCRATCH_A = GetRandomNumber() & 3;
+    //     SPRITE_SHARED_WORK_A = GetRandomNumber() & 3;
     //     int j;
-    //     if (SPRITE_SHARED_SCRATCH_A == 1) j = link_num_arrows;
-    //     else if (SPRITE_SHARED_SCRATCH_A == 2) j = link_item_bombs;
+    //     if (SPRITE_SHARED_WORK_A == 1) j = link_num_arrows;
+    //     else if (SPRITE_SHARED_WORK_A == 2) j = link_item_bombs;
     //     else j = link_rupees_goal;
     //     if (!j) return;
     //     SpriteSpawnInfo info;
-    //     j = Sprite_SpawnDynamicallyEx(k, kThiefSpawn_Items[SPRITE_SHARED_SCRATCH_A], &info, 7);
+    //     j = Sprite_SpawnDynamicallyEx(k, kThiefSpawn_Items[SPRITE_SHARED_WORK_A], &info, 7);
     //     if (j < 0) return;
-    //     if (SPRITE_SHARED_SCRATCH_A == 1) link_num_arrows--;
-    //     else if (SPRITE_SHARED_SCRATCH_A == 2) link_item_bombs--;
+    //     if (SPRITE_SHARED_WORK_A == 1) link_num_arrows--;
+    //     else if (SPRITE_SHARED_WORK_A == 2) link_item_bombs--;
     //     else link_rupees_goal--;
     //     Sprite_SetX(j, link_x_coord);
     //     Sprite_SetY(j, link_y_coord);

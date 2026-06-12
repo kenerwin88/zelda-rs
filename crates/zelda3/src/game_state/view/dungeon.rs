@@ -25,6 +25,9 @@ const DUNG_INTER_STAIRCASE_TABLE_LOCAL: usize = 0x06b0;
 const DUNG_STAIRS_TABLE_1_LOCAL: usize = 0x06b8;
 const DUNG_STAIRS_TABLE_2_LOCAL: usize = 0x06ec;
 const STAR_SHAPED_SWITCHES_TILE_LOCAL: usize = 0x06a0;
+const POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL: usize = 0x0f580;
+const ROOM_BG1_TILEMAP_BASE_LOCAL: usize = 0x4000;
+const ROOM_BG2_TILEMAP_BASE_LOCAL: usize = 0x2000;
 
 #[derive(Clone, Copy)]
 pub(crate) enum DungeonStairList {
@@ -449,6 +452,10 @@ impl<'a> DungeonStateView<'a> {
         word(self.ram, INVISIBLE_DOOR_DIR_AND_INDEX_X2)
     }
 
+    pub(crate) fn pots_revealed_in_room(&self, room: usize) -> u16 {
+        word(self.ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2)
+    }
+
     pub(crate) fn toggle_floor_count_x2(&self) -> u16 {
         word(self.ram, DUNG_NUM_TOGGLE_FLOOR)
     }
@@ -510,6 +517,26 @@ impl<'a> DungeonStateView<'a> {
 
     pub(crate) fn object_pos_in_objdata(&self, index: usize) -> u16 {
         word(self.ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2)
+    }
+
+    pub(crate) fn room_tilemap_word(&self, base: usize, dsto: u16) -> u16 {
+        word(self.ram, base + dsto as usize * 2)
+    }
+
+    pub(crate) fn room_tilemap_word_by_byte_offset(&self, base: usize, byte_offset: usize) -> u16 {
+        word(self.ram, base + byte_offset)
+    }
+
+    pub(crate) fn bg1_tilemap_base(&self) -> usize {
+        ROOM_BG1_TILEMAP_BASE_LOCAL
+    }
+
+    pub(crate) fn bg2_tilemap_base(&self) -> usize {
+        ROOM_BG2_TILEMAP_BASE_LOCAL
+    }
+
+    pub(crate) fn ram_asset_word(&self, offset: usize, index: usize) -> u16 {
+        word(self.ram, offset + index * 2)
     }
 
     pub(crate) fn has_opened_door_mask(&self, mask: u16) -> bool {
@@ -1216,6 +1243,18 @@ impl<'a> DungeonStateViewMut<'a> {
         next
     }
 
+    pub(crate) fn append_stair_table_position(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        write_le_u16(self.ram, list.tilemap_table() + index * 2, tilemap_pos);
+        let next = self.stair_list_count(list).wrapping_add(2);
+        self.set_stair_list_count(list, next);
+        next
+    }
+
     pub(crate) fn clear_room_parser_words(&mut self, offsets: &[usize]) {
         for &offset in offsets {
             write_le_u16(self.ram, offset, 0);
@@ -1224,6 +1263,28 @@ impl<'a> DungeonStateViewMut<'a> {
 
     pub(crate) fn clear_invisible_door_marker(&mut self) {
         write_le_u16(self.ram, INVISIBLE_DOOR_DIR_AND_INDEX_X2, 0xffff);
+    }
+
+    pub(crate) fn set_invisible_door_marker(&mut self, slot: usize, direction: u16) {
+        write_le_u16(
+            self.ram,
+            INVISIBLE_DOOR_DIR_AND_INDEX_X2,
+            (((slot as u16) << 8) | direction) * 2,
+        );
+    }
+
+    pub(crate) fn mark_pot_revealed_in_room(&mut self, room: usize, mask: u16) -> u16 {
+        let revealed = read_le_u16(self.ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2) | mask;
+        write_le_u16(
+            self.ram,
+            POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2,
+            revealed,
+        );
+        revealed
+    }
+
+    pub(crate) fn set_room_door_info_word(&mut self, dst: usize, index: usize, value: u16) {
+        write_le_u16(self.ram, dst + index * 2, value);
     }
 
     pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
@@ -1584,6 +1645,19 @@ impl<'a> DungeonStateViewMut<'a> {
         self.set_bg2_tile((pos >> 1) as usize, value);
     }
 
+    pub(crate) fn set_room_tilemap_word(&mut self, base: usize, dsto: u16, value: u16) {
+        write_le_u16(self.ram, base + dsto as usize * 2, value);
+    }
+
+    pub(crate) fn set_room_tilemap_word_by_byte_offset(
+        &mut self,
+        base: usize,
+        byte_offset: usize,
+        value: u16,
+    ) {
+        write_le_u16(self.ram, base + byte_offset, value);
+    }
+
     pub(crate) fn clear_door_tilemap_addresses(&mut self) {
         self.ram[DUNG_DOOR_TILEMAP_ADDRESS..DUNG_DOOR_TILEMAP_ADDRESS + 32].fill(0);
     }
@@ -1941,6 +2015,10 @@ impl<'a> DungeonStateViewMut<'a> {
     pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
         self.ram[IS_STANDING_IN_DOORWAY_CACHED] = value;
     }
+
+    pub(crate) fn cache_standing_in_doorway(&mut self) {
+        self.ram[IS_STANDING_IN_DOORWAY_CACHED] = self.ram[IS_STANDING_IN_DOORWAY];
+    }
 }
 
 pub(crate) struct DungeonEntranceBackupViewMut<'a> {
@@ -2135,15 +2213,15 @@ impl<'a> ScratchWordView<'a> {
     }
 
     pub(crate) fn high(&self) -> u8 {
-        byte(self.ram, SCRATCH_R16 + 1)
+        byte(self.ram, DUNGEON_WORK_R16 + 1)
     }
 
     pub(crate) fn word(&self) -> u16 {
-        word(self.ram, SCRATCH_R16)
+        word(self.ram, DUNGEON_WORK_R16)
     }
 
     pub(crate) fn minigame_previous_chest_choice(&self) -> u8 {
-        byte(self.ram, SCRATCH_R16)
+        byte(self.ram, DUNGEON_WORK_R16)
     }
 }
 
@@ -2157,13 +2235,13 @@ impl<'a> ScratchWordViewMut<'a> {
     }
 
     pub(crate) fn decrement_high(&mut self) -> u8 {
-        let next = self.ram[SCRATCH_R16 + 1].wrapping_sub(1);
-        self.ram[SCRATCH_R16 + 1] = next;
+        let next = self.ram[DUNGEON_WORK_R16 + 1].wrapping_sub(1);
+        self.ram[DUNGEON_WORK_R16 + 1] = next;
         next
     }
 
     pub(crate) fn set_word(&mut self, value: u16) {
-        write_le_u16(self.ram, SCRATCH_R16, value);
+        write_le_u16(self.ram, DUNGEON_WORK_R16, value);
     }
 
     pub(crate) fn clear_word(&mut self) {
@@ -2171,8 +2249,8 @@ impl<'a> ScratchWordViewMut<'a> {
     }
 
     pub(crate) fn set_liftable_tile_probe_position(&mut self, y: u16, x: u16) {
-        write_le_u16(self.ram, SCRATCH_R16, y);
-        write_le_u16(self.ram, SCRATCH_R18, x);
+        write_le_u16(self.ram, DUNGEON_WORK_R16, y);
+        write_le_u16(self.ram, DUNGEON_WORK_R18, x);
     }
 
     pub(crate) fn set_ganon_door_bounce_countdown(&mut self, value: u16) {
@@ -2180,17 +2258,17 @@ impl<'a> ScratchWordViewMut<'a> {
     }
 
     pub(crate) fn decrement_ganon_door_bounce_low(&mut self) -> u8 {
-        let next = self.ram[SCRATCH_R16].wrapping_sub(1);
-        self.ram[SCRATCH_R16] = next;
+        let next = self.ram[DUNGEON_WORK_R16].wrapping_sub(1);
+        self.ram[DUNGEON_WORK_R16] = next;
         next
     }
 
     pub(crate) fn clear_module_transition_counter(&mut self) {
-        self.ram[SCRATCH_R16] = 0;
+        self.ram[DUNGEON_WORK_R16] = 0;
     }
 
     pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {
-        self.ram[SCRATCH_R16] = value;
+        self.ram[DUNGEON_WORK_R16] = value;
     }
 }
 
@@ -2204,19 +2282,19 @@ impl<'a> EndingScratchView<'a> {
     }
 
     pub(crate) fn primary_word(&self) -> u16 {
-        word(self.ram, ENDING_SCRATCH_PRIMARY)
+        word(self.ram, ENDING_WORK_PRIMARY)
     }
 
     pub(crate) fn secondary_word(&self) -> u16 {
-        word(self.ram, ENDING_SCRATCH_SECONDARY)
+        word(self.ram, ENDING_WORK_SECONDARY)
     }
 
     pub(crate) fn primary_low(&self) -> u8 {
-        byte(self.ram, ENDING_SCRATCH_PRIMARY)
+        byte(self.ram, ENDING_WORK_PRIMARY)
     }
 
     pub(crate) fn secondary_low(&self) -> u8 {
-        byte(self.ram, ENDING_SCRATCH_SECONDARY)
+        byte(self.ram, ENDING_WORK_SECONDARY)
     }
 }
 
@@ -2230,11 +2308,11 @@ impl<'a> EndingScratchViewMut<'a> {
     }
 
     pub(crate) fn set_primary_word(&mut self, value: u16) {
-        write_le_u16(self.ram, ENDING_SCRATCH_PRIMARY, value);
+        write_le_u16(self.ram, ENDING_WORK_PRIMARY, value);
     }
 
     pub(crate) fn set_secondary_word(&mut self, value: u16) {
-        write_le_u16(self.ram, ENDING_SCRATCH_SECONDARY, value);
+        write_le_u16(self.ram, ENDING_WORK_SECONDARY, value);
     }
 
     pub(crate) fn clear_primary_word(&mut self) {
@@ -2242,17 +2320,17 @@ impl<'a> EndingScratchViewMut<'a> {
     }
 
     pub(crate) fn set_primary_low(&mut self, value: u8) {
-        self.ram[ENDING_SCRATCH_PRIMARY] = value;
+        self.ram[ENDING_WORK_PRIMARY] = value;
     }
 
     pub(crate) fn decrement_primary_low(&mut self) -> u8 {
-        self.ram[ENDING_SCRATCH_PRIMARY] = self.ram[ENDING_SCRATCH_PRIMARY].wrapping_sub(1);
-        self.ram[ENDING_SCRATCH_PRIMARY]
+        self.ram[ENDING_WORK_PRIMARY] = self.ram[ENDING_WORK_PRIMARY].wrapping_sub(1);
+        self.ram[ENDING_WORK_PRIMARY]
     }
 
     pub(crate) fn increment_secondary_low(&mut self) -> u8 {
-        self.ram[ENDING_SCRATCH_SECONDARY] = self.ram[ENDING_SCRATCH_SECONDARY].wrapping_add(1);
-        self.ram[ENDING_SCRATCH_SECONDARY]
+        self.ram[ENDING_WORK_SECONDARY] = self.ram[ENDING_WORK_SECONDARY].wrapping_add(1);
+        self.ram[ENDING_WORK_SECONDARY]
     }
 }
 

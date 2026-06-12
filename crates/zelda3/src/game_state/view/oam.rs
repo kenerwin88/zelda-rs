@@ -208,6 +208,63 @@ impl<'a> OamStateViewMut<'a> {
         self.ram[addr + 3] = flags;
     }
 
+    pub(crate) fn write_entry_with_extended(
+        &mut self,
+        addr: usize,
+        x: u16,
+        y: u8,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        self.write_entry(addr, x as u8, y, charnum, flags);
+        let ext_index = (addr - OAM_BUF) / 4;
+        self.set_extended_byte(ext_index, big | ((x >> 8) as u8 & 1));
+    }
+
+    pub(crate) fn write_clipped_entry_with_extended(
+        &mut self,
+        addr: usize,
+        x: u16,
+        y: u16,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        let clipped_y = if y.wrapping_add(0x10) < 0x100 {
+            y as u8
+        } else {
+            0xf0
+        };
+        self.write_entry_with_extended(addr, x, clipped_y, charnum, flags, big);
+    }
+
+    pub(crate) fn write_indexed_entry_with_extended(
+        &mut self,
+        index: usize,
+        x: u8,
+        y: u8,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        self.write_entry(OAM_BUF + index * 4, x, y, charnum, flags);
+        self.set_extended_byte(index, big);
+    }
+
+    pub(crate) fn write_indexed_clipped_entry_with_extended(
+        &mut self,
+        index: usize,
+        x: u16,
+        y: u16,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) {
+        let addr = OAM_BUF + index * 4;
+        self.write_clipped_entry_with_extended(addr, x, y, charnum, flags, big);
+    }
+
     pub(crate) fn write_current_entry_with_extended(
         &mut self,
         x: u8,

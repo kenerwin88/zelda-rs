@@ -203,13 +203,13 @@ impl<'a> OverworldMap16DecodeViewMut<'a> {
     pub(crate) fn copy_scratch_to_source_words_high(&mut self, len: usize) {
         for i in 0..len {
             self.ram[OVERWORLD_MAP16_DECODE_SRC + 1 + i * 2] =
-                self.ram[OVERWORLD_DECOMP_SCRATCH + i];
+                self.ram[OVERWORLD_DECOMP_BUFFER + i];
         }
     }
 
     pub(crate) fn copy_scratch_to_source_words_low(&mut self, len: usize) {
         for i in 0..len {
-            self.ram[OVERWORLD_MAP16_DECODE_SRC + i * 2] = self.ram[OVERWORLD_DECOMP_SCRATCH + i];
+            self.ram[OVERWORLD_MAP16_DECODE_SRC + i * 2] = self.ram[OVERWORLD_DECOMP_BUFFER + i];
         }
     }
 
@@ -222,11 +222,11 @@ impl<'a> OverworldMap16DecodeViewMut<'a> {
     }
 
     pub(crate) fn decomp_scratch_byte_mut(&mut self, index: usize) -> &mut u8 {
-        &mut self.ram[OVERWORLD_DECOMP_SCRATCH + index]
+        &mut self.ram[OVERWORLD_DECOMP_BUFFER + index]
     }
 
     pub(crate) fn decomp_scratch_slice_mut(&mut self) -> &mut [u8] {
-        &mut self.ram[OVERWORLD_DECOMP_SCRATCH..]
+        &mut self.ram[OVERWORLD_DECOMP_BUFFER..]
     }
 
     pub(crate) fn decode_block_fill(&mut self, dst: usize, table: &[u8], x: usize) {
@@ -247,7 +247,7 @@ impl<'a> OverworldMap16DecodeViewMut<'a> {
     }
 
     pub(crate) fn set_decode_tmp(&mut self, value: u16) {
-        write_le_u16(self.ram, MAP16_DECODE_TMP, value);
+        write_le_u16(self.ram, MAP16_DECODE_WORK_WORD, value);
     }
 
     pub(crate) fn write_decoded_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {

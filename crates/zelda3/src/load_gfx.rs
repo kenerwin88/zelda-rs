@@ -2681,9 +2681,8 @@ impl ZeldaState {
                     r12_pair
                 };
                 if r4 < 240 {
-                    write_le_u16(
-                        &mut self.ram,
-                        HDMA_TABLE_DYNAMIC + r4 as usize * 2,
+                    self.spotlight_hdma_view_mut().set_hdma_table_dynamic_entry(
+                        r4 as usize,
                         if a != 0xffff { a } else { 0x00ff },
                     );
                 }
@@ -2700,9 +2699,8 @@ impl ZeldaState {
                 r12_pair
             };
             if r6 < 240 {
-                write_le_u16(
-                    &mut self.ram,
-                    HDMA_TABLE_DYNAMIC + r6 as usize * 2,
+                self.spotlight_hdma_view_mut().set_hdma_table_dynamic_entry(
+                    r6 as usize,
                     if a != 0xffff { a } else { 0x00ff },
                 );
             }
