@@ -9,10 +9,6 @@ impl<'a> DisplayNmiView<'a> {
         Self { ram }
     }
 
-    pub(crate) fn oam_buf(&self) -> &[u8] {
-        &self.ram[OAM_BUF..]
-    }
-
     pub(crate) fn tilemap_upload_buffer(&self) -> &[u8] {
         &self.ram[crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER..]
     }

@@ -663,6 +663,8 @@ mod tests {
         ram[VIRQ_TRIGGER] = 0x90;
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
+        ram[OAM_BUF] = 0xca;
+        ram[OAM_BUF + 1] = 0xfe;
         ram[HDMAEN_COPY] = 0xc0;
         ram[MOSAIC_COPY] = 0x73;
         ram[MOSAIC_LEVEL] = 0x70;
@@ -722,6 +724,7 @@ mod tests {
         assert_eq!(display.vertical_irq_trigger, 0x90);
         assert_eq!(display.sprite_dma_head_pointer, 0x20);
         assert_eq!(display.sprite_dma_body_pointer, 0xa0);
+        assert_eq!(&display.sprite_oam_shadow_buffer(&ram)[..2], &[0xca, 0xfe]);
         assert_eq!(display.hdma_enable_mask, 0xc0);
         assert!(display.is_hdma_channel_enabled(6));
         assert!(display.is_hdma_channel_enabled(7));

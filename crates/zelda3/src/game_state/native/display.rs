@@ -219,6 +219,10 @@ impl DisplayState {
         self.hdma_enable_mask & (1 << channel) != 0
     }
 
+    pub(crate) fn sprite_oam_shadow_buffer<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+        &ram[OAM_BUF..]
+    }
+
     pub(crate) fn mosaic_target_level_word(&self) -> u16 {
         u16::from(self.mosaic_target_level)
     }

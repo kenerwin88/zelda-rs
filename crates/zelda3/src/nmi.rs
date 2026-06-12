@@ -95,7 +95,10 @@ impl ZeldaState {
 
         self.system_signals_view_mut().clear_hud_update_flag();
         self.system_signals_view_mut().clear_cgram_update_flag();
-        let oam_buf = self.display_nmi_view().oam_buf().to_vec();
+        let oam_buf = self
+            .display_state()
+            .sprite_oam_shadow_buffer(&self.ram)
+            .to_vec();
         for i in 0..self.ppu.oam.len() {
             self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
         }
