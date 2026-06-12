@@ -33,24 +33,24 @@ use crate::game_state::{
     BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
     BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallScratchView, BlastWallScratchViewMut,
     BombosBlastView, BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut,
-    BombosSpellScratchView, BombosSpellScratchViewMut, CachedSpriteSlotView,
-    CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
-    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView,
-    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DualLayerTileCacheView,
-    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList,
-    DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
-    EffectAngleScratchState, EndingCreditState, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
-    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeDecodedMessageTextBridgeMut,
+    BombosSpellState, CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryView,
+    ChainChompHistoryViewMut, DecodedMessageTextState, DialogueMessageIndexState,
+    DialogueNumberState, DiggingGamePrizeView, DiggingGamePrizeViewMut, DisplayState,
+    DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderView,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut,
+    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
+    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EndingScratchView,
+    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView,
+    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
+    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
+    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBombosSpellBridgeMut, NativeDecodedMessageTextBridgeMut,
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
     NativeDialogueSourceOffsetBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut,
@@ -3599,12 +3599,12 @@ impl ZeldaState {
         BombosBlastViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn bombos_spell_scratch_view(&self) -> BombosSpellScratchView<'_> {
-        BombosSpellScratchView::new(&self.ram)
+    pub(crate) fn bombos_spell_scratch_view(&self) -> &BombosSpellState {
+        &self.game_state.effects.bombos_spell
     }
 
-    pub(crate) fn bombos_spell_scratch_view_mut(&mut self) -> BombosSpellScratchViewMut<'_> {
-        BombosSpellScratchViewMut::new(&mut self.ram)
+    pub(crate) fn bombos_spell_scratch_view_mut(&mut self) -> NativeBombosSpellBridgeMut<'_> {
+        NativeBombosSpellBridgeMut::new(&mut self.game_state.effects.bombos_spell, &mut self.ram)
     }
 
     pub(crate) fn tower_seal_orbit_view(&self, slot: usize) -> TowerSealOrbitView<'_> {

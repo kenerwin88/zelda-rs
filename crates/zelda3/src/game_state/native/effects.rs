@@ -1,4 +1,6 @@
 use crate::game_state::constants::{
+    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_X, BOMBOS_BLAST_Y,
+    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
     DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK,
     QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
     QUAKE_SCREEN_SHAKE_Y,
@@ -6,12 +8,15 @@ use crate::game_state::constants::{
 use crate::types::{read_le_u16, write_le_u16};
 
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
+const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
+const BOMBOS_BLAST_SLOTS: usize = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EffectState {
     pub(crate) door_debris: DoorDebrisState,
     pub(crate) angle_scratch: EffectAngleScratchState,
     pub(crate) quake_spell: QuakeSpellState,
+    pub(crate) bombos_spell: BombosSpellState,
 }
 
 impl EffectState {
@@ -20,6 +25,7 @@ impl EffectState {
             door_debris: DoorDebrisState::load_from_ram(ram),
             angle_scratch: EffectAngleScratchState::load_from_ram(ram),
             quake_spell: QuakeSpellState::load_from_ram(ram),
+            bombos_spell: BombosSpellState::load_from_ram(ram),
         }
     }
 
@@ -27,6 +33,7 @@ impl EffectState {
         self.door_debris.write_to_ram(ram);
         self.angle_scratch.write_to_ram(ram);
         self.quake_spell.write_to_ram(ram);
+        self.bombos_spell.write_to_ram(ram);
     }
 }
 
@@ -270,6 +277,190 @@ impl<'a> NativeQuakeSpellBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BombosSpellState {
+    mode: u8,
+    fire_column_radius: u8,
+    blast_release_locked: u8,
+    blast_release_countdown: u8,
+    fire_column_seed_x: [u16; BOMBOS_FIRE_COLUMN_SEED_SLOTS],
+    fire_column_seed_y: [u16; BOMBOS_FIRE_COLUMN_SEED_SLOTS],
+    blast_x: [u16; BOMBOS_BLAST_SLOTS],
+    blast_y: [u16; BOMBOS_BLAST_SLOTS],
+}
+
+impl BombosSpellState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            mode: ram.get(BOMBOS_MODE).copied().unwrap_or(0),
+            fire_column_radius: ram.get(BOMBOS_FIRE_COLUMN_RADIUS).copied().unwrap_or(0),
+            blast_release_locked: ram.get(BOMBOS_BLAST_RELEASE_LOCKED).copied().unwrap_or(0),
+            blast_release_countdown: ram
+                .get(BOMBOS_BLAST_RELEASE_COUNTDOWN)
+                .copied()
+                .unwrap_or(0),
+            fire_column_seed_x: read_word_bank::<BOMBOS_FIRE_COLUMN_SEED_SLOTS>(
+                ram,
+                BOMBOS_FIRE_COLUMN_SEED_X,
+            ),
+            fire_column_seed_y: read_word_bank::<BOMBOS_FIRE_COLUMN_SEED_SLOTS>(
+                ram,
+                BOMBOS_FIRE_COLUMN_SEED_Y,
+            ),
+            blast_x: read_word_bank::<BOMBOS_BLAST_SLOTS>(ram, BOMBOS_BLAST_X),
+            blast_y: read_word_bank::<BOMBOS_BLAST_SLOTS>(ram, BOMBOS_BLAST_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[BOMBOS_MODE] = self.mode;
+        ram[BOMBOS_FIRE_COLUMN_RADIUS] = self.fire_column_radius;
+        ram[BOMBOS_BLAST_RELEASE_LOCKED] = self.blast_release_locked;
+        ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = self.blast_release_countdown;
+        write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_X, self.fire_column_seed_x);
+        write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_Y, self.fire_column_seed_y);
+        write_word_bank(ram, BOMBOS_BLAST_X, self.blast_x);
+        write_word_bank(ram, BOMBOS_BLAST_Y, self.blast_y);
+    }
+
+    pub(crate) fn mode(&self) -> u8 {
+        self.mode
+    }
+
+    pub(crate) fn fire_column_radius(&self) -> u8 {
+        self.fire_column_radius
+    }
+
+    pub(crate) fn blast_release_locked(&self) -> bool {
+        self.blast_release_locked != 0
+    }
+
+    pub(crate) fn fire_column_seed_x(&self, slot: usize) -> u16 {
+        self.fire_column_seed_x.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn fire_column_seed_y(&self, slot: usize) -> u16 {
+        self.fire_column_seed_y.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn blast_x(&self, slot: usize) -> u16 {
+        self.blast_x.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn blast_y(&self, slot: usize) -> u16 {
+        self.blast_y.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_mode(&mut self, value: u8) {
+        self.mode = value;
+    }
+
+    pub(crate) fn set_fire_column_radius(&mut self, value: u8) {
+        self.fire_column_radius = value;
+    }
+
+    pub(crate) fn grow_fire_column_radius(&mut self, value: u8, limit: u8) -> u8 {
+        let next = self.fire_column_radius.wrapping_add(value);
+        let radius = if next >= limit { limit } else { next };
+        self.fire_column_radius = radius;
+        radius
+    }
+
+    pub(crate) fn set_blast_release_locked(&mut self, value: bool) {
+        self.blast_release_locked = u8::from(value);
+    }
+
+    pub(crate) fn set_blast_release_countdown(&mut self, value: u8) {
+        self.blast_release_countdown = value;
+    }
+
+    pub(crate) fn tick_blast_release_countdown(&mut self) -> u8 {
+        self.blast_release_countdown = self.blast_release_countdown.wrapping_sub(1);
+        self.blast_release_countdown
+    }
+
+    pub(crate) fn set_fire_column_seed_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(seed_x) = self.fire_column_seed_x.get_mut(slot) {
+            *seed_x = x;
+        }
+        if let Some(seed_y) = self.fire_column_seed_y.get_mut(slot) {
+            *seed_y = y;
+        }
+    }
+
+    pub(crate) fn set_blast_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(blast_x) = self.blast_x.get_mut(slot) {
+            *blast_x = x;
+        }
+        if let Some(blast_y) = self.blast_y.get_mut(slot) {
+            *blast_y = y;
+        }
+    }
+}
+
+pub(crate) struct NativeBombosSpellBridgeMut<'a> {
+    state: &'a mut BombosSpellState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeBombosSpellBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8]) -> Self {
+        *state = BombosSpellState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, BombosSpellState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_mode(&mut self, value: u8) {
+        self.state.set_mode(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_fire_column_radius(&mut self, value: u8) {
+        self.state.set_fire_column_radius(value);
+        self.sync();
+    }
+
+    pub(crate) fn grow_fire_column_radius(&mut self, value: u8, limit: u8) -> u8 {
+        let radius = self.state.grow_fire_column_radius(value, limit);
+        self.sync();
+        radius
+    }
+
+    pub(crate) fn set_blast_release_locked(&mut self, value: bool) {
+        self.state.set_blast_release_locked(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_blast_release_countdown(&mut self, value: u8) {
+        self.state.set_blast_release_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_blast_release_countdown(&mut self) -> u8 {
+        let value = self.state.tick_blast_release_countdown();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_fire_column_seed_position(&mut self, slot: usize, x: u16, y: u16) {
+        self.state.set_fire_column_seed_position(slot, x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_blast_position(&mut self, slot: usize, x: u16, y: u16) {
+        self.state.set_blast_position(slot, x, y);
+        self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DoorDebrisState {
     x_bytes: [u8; DOOR_DEBRIS_BANK_LEN],
     y_bytes: [u8; DOOR_DEBRIS_BANK_LEN],
@@ -309,6 +500,20 @@ impl DoorDebrisState {
 
     pub(crate) fn y_word(&self, slot: usize) -> u16 {
         word_from_bank(self.y_bytes, slot)
+    }
+}
+
+fn read_word_bank<const N: usize>(ram: &[u8], base: usize) -> [u16; N] {
+    let mut bank = [0; N];
+    for (slot, value) in bank.iter_mut().enumerate() {
+        *value = read_le_u16(ram, base + slot * 2);
+    }
+    bank
+}
+
+fn write_word_bank<const N: usize>(ram: &mut [u8], base: usize, bank: [u16; N]) {
+    for (slot, value) in bank.iter().copied().enumerate() {
+        write_le_u16(ram, base + slot * 2, value);
     }
 }
 

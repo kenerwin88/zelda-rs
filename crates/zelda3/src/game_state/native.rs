@@ -26,8 +26,9 @@ pub(crate) use display::{
     WaterHdmaWindowState,
 };
 pub(crate) use effects::{
-    DoorDebrisView, EffectAngleScratchState, EffectState, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeQuakeSpellBridgeMut, QuakeSpellState,
+    BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
+    NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
+    NativeQuakeSpellBridgeMut, QuakeSpellState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1414,6 +1415,80 @@ mod tests {
         assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_X), 0x4567);
         assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_Y), 0x89ab);
         assert_eq!(read_le_u16(&ram, QUAKE_SCREEN_SHAKE_Y), 9);
+    }
+
+    #[test]
+    fn bombos_spell_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BOMBOS_MODE] = 2;
+        ram[BOMBOS_FIRE_COLUMN_RADIUS] = 16;
+        ram[BOMBOS_BLAST_RELEASE_LOCKED] = 1;
+        ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 0x80;
+        write_le_u16(&mut ram, BOMBOS_FIRE_COLUMN_SEED_X, 0x1234);
+        write_le_u16(&mut ram, BOMBOS_FIRE_COLUMN_SEED_Y, 0x5678);
+        write_le_u16(&mut ram, BOMBOS_BLAST_X + 4, 0x9abc);
+        write_le_u16(&mut ram, BOMBOS_BLAST_Y + 4, 0xdef0);
+
+        let mut bombos = BombosSpellState::load_from_ram(&ram);
+        assert_eq!(bombos.mode(), 2);
+        assert_eq!(bombos.fire_column_radius(), 16);
+        assert!(bombos.blast_release_locked());
+        assert_eq!(bombos.fire_column_seed_x(0), 0x1234);
+        assert_eq!(bombos.fire_column_seed_y(0), 0x5678);
+        assert_eq!(bombos.blast_x(2), 0x9abc);
+        assert_eq!(bombos.blast_y(2), 0xdef0);
+
+        bombos.set_mode(1);
+        assert_eq!(bombos.grow_fire_column_radius(200, 207), 207);
+        bombos.set_blast_release_locked(false);
+        assert_eq!(bombos.tick_blast_release_countdown(), 0x7f);
+        bombos.set_fire_column_seed_position(1, 0x1111, 0x2222);
+        bombos.set_blast_position(3, 0x3333, 0x4444);
+        bombos.write_to_ram(&mut ram);
+
+        assert_eq!(ram[BOMBOS_MODE], 1);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIUS], 207);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_LOCKED], 0);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_COUNTDOWN], 0x7f);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_X + 2), 0x1111);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_Y + 2), 0x2222);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_X + 6), 0x3333);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_Y + 6), 0x4444);
+    }
+
+    #[test]
+    fn native_bombos_spell_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BOMBOS_FIRE_COLUMN_RADIUS] = 10;
+        ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 1;
+
+        let mut bombos = BombosSpellState::default();
+        {
+            let mut bridge = NativeBombosSpellBridgeMut::new(&mut bombos, &mut ram);
+            bridge.set_mode(2);
+            assert_eq!(bridge.grow_fire_column_radius(5, 207), 15);
+            bridge.set_blast_release_locked(true);
+            assert_eq!(bridge.tick_blast_release_countdown(), 0);
+            bridge.set_blast_release_countdown(4);
+            bridge.set_fire_column_seed_position(0, 0x1234, 0x5678);
+            bridge.set_blast_position(15, 0x9abc, 0xdef0);
+        }
+
+        assert_eq!(bombos.mode(), 2);
+        assert_eq!(bombos.fire_column_radius(), 15);
+        assert!(bombos.blast_release_locked());
+        assert_eq!(bombos.fire_column_seed_x(0), 0x1234);
+        assert_eq!(bombos.fire_column_seed_y(0), 0x5678);
+        assert_eq!(bombos.blast_x(15), 0x9abc);
+        assert_eq!(bombos.blast_y(15), 0xdef0);
+        assert_eq!(ram[BOMBOS_MODE], 2);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIUS], 15);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_LOCKED], 1);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_COUNTDOWN], 4);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_X), 0x1234);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_Y), 0x5678);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_X + 30), 0x9abc);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_Y + 30), 0xdef0);
     }
 
     #[test]
