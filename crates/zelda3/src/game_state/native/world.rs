@@ -47,6 +47,45 @@ impl WorldLocationState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WeatherVaneState {
+    pub(crate) countdown: u16,
+    pub(crate) music_latch: u8,
+    pub(crate) source_slot: u8,
+    pub(crate) oam_offset: u8,
+}
+
+impl WeatherVaneState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            countdown: read_le_u16(ram, WEATHERVANE_COUNTDOWN),
+            music_latch: ram_byte(ram, WEATHERVANE_MUSIC_LATCH),
+            source_slot: ram_byte(ram, WEATHERVANE_SOURCE_SLOT),
+            oam_offset: ram_byte(ram, WEATHERVANE_OAM_OFFSET),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, WEATHERVANE_COUNTDOWN, self.countdown);
+        ram[WEATHERVANE_MUSIC_LATCH] = self.music_latch;
+        ram[WEATHERVANE_SOURCE_SLOT] = self.source_slot;
+        ram[WEATHERVANE_OAM_OFFSET] = self.oam_offset;
+    }
+
+    pub(crate) fn tick_countdown(&mut self) -> u16 {
+        self.countdown = self.countdown.wrapping_sub(1);
+        self.countdown
+    }
+
+    pub(crate) fn reset_oam_offset(&mut self) {
+        self.oam_offset = 0;
+    }
+
+    pub(crate) fn advance_oam_offset(&mut self, value: u8) {
+        self.oam_offset = self.oam_offset.wrapping_add(value);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BirdTravelStatusesState {
     slots: [u8; BIRD_TRAVEL_STATUS_SLOTS],
 }
@@ -548,6 +587,7 @@ impl OverworldTransitionState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverworldState {
     pub(crate) map_ui: OverworldMapUiState,
+    pub(crate) weather_vane: WeatherVaneState,
     pub(crate) bird_travel_destinations: BirdTravelDestinationsState,
     pub(crate) map_zoom: OverworldMapZoomState,
     pub(crate) screen_size: OverworldScreenSizeState,
@@ -562,6 +602,7 @@ impl OverworldState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             map_ui: OverworldMapUiState::load_from_ram(ram),
+            weather_vane: WeatherVaneState::load_from_ram(ram),
             bird_travel_destinations: BirdTravelDestinationsState::load_from_ram(ram),
             map_zoom: OverworldMapZoomState::load_from_ram(ram),
             screen_size: OverworldScreenSizeState::load_from_ram(ram),
@@ -575,6 +616,7 @@ impl OverworldState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.map_ui.write_to_ram(ram);
+        self.weather_vane.write_to_ram(ram);
         self.bird_travel_destinations.write_to_ram(ram);
         self.map_zoom.write_to_ram(ram);
         self.screen_size.write_to_ram(ram);
@@ -774,6 +816,62 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
         self.map_ui.bird_travel_statuses.increment_status(slot);
         self.ram[BIRD_TRAVEL_STATUS + slot] = self.ram[BIRD_TRAVEL_STATUS + slot].wrapping_add(1);
+        self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeWeatherVaneBridgeMut<'a> {
+    weather_vane: &'a mut WeatherVaneState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWeatherVaneBridgeMut<'a> {
+    pub(crate) fn new(weather_vane: &'a mut WeatherVaneState, ram: &'a mut [u8]) -> Self {
+        *weather_vane = WeatherVaneState::load_from_ram(ram);
+        Self { weather_vane, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.weather_vane,
+            WeatherVaneState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u16) {
+        self.weather_vane.countdown = value;
+        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn tick_countdown(&mut self) -> u16 {
+        let value = self.weather_vane.tick_countdown();
+        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn set_music_latch(&mut self, value: u8) {
+        self.weather_vane.music_latch = value;
+        self.ram[WEATHERVANE_MUSIC_LATCH] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_source_slot(&mut self, value: u8) {
+        self.weather_vane.source_slot = value;
+        self.ram[WEATHERVANE_SOURCE_SLOT] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn reset_oam_offset(&mut self) {
+        self.weather_vane.reset_oam_offset();
+        self.ram[WEATHERVANE_OAM_OFFSET] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn advance_oam_offset(&mut self, value: u8) {
+        self.weather_vane.advance_oam_offset(value);
+        self.ram[WEATHERVANE_OAM_OFFSET] = self.ram[WEATHERVANE_OAM_OFFSET].wrapping_add(value);
         self.debug_assert_matches_ram();
     }
 }

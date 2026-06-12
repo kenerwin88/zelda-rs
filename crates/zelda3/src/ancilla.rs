@@ -3993,11 +3993,8 @@ impl ZeldaState {
         self.system_signals_view_mut()
             .set_ambient_sound_effect(0x17);
 
-        {
-            let mut weather_vane = self.weather_vane_state_view_mut();
-            weather_vane.set_music_latch(0);
-            weather_vane.set_countdown(0x0280);
-        }
+        self.set_weather_vane_music_latch(0);
+        self.set_weather_vane_countdown(0x0280);
 
         for i in (0..=11).rev() {
             self.weather_vane_debris_view_mut(i).initialize(
@@ -5633,12 +5630,12 @@ impl ZeldaState {
     }
 
     fn ancilla37_weathervane_explosion(&mut self, k: usize) {
-        if self.weather_vane_state_view_mut().tick_countdown() != 0 {
+        if self.tick_weather_vane_countdown() != 0 {
             return;
         }
-        self.weather_vane_state_view_mut().set_countdown(1);
-        if self.weather_vane_state_view_mut().music_latch() == 0 {
-            self.weather_vane_state_view_mut().set_music_latch(1);
+        self.set_weather_vane_countdown(1);
+        if self.weather_vane_music_latch() == 0 {
+            self.set_weather_vane_music_latch(1);
             self.system_signals_view_mut().set_music_control(0xf3);
         }
         if self.ancilla_slot_view_mut(k).tick_g() != 0 {
@@ -5657,11 +5654,8 @@ impl ZeldaState {
                 self.ancilla_add_cutscene_duck(0x38, 0);
             }
         }
-        {
-            let mut weather_vane = self.weather_vane_state_view_mut();
-            weather_vane.set_source_slot(k as u8);
-            weather_vane.reset_oam_offset();
-        }
+        self.set_weather_vane_source_slot(k as u8);
+        self.reset_weather_vane_oam_offset();
         for i in (0..=11).rev() {
             if self.weather_vane_debris_view(i).is_finished() {
                 continue;
@@ -6772,9 +6766,9 @@ impl ZeldaState {
             return;
         }
         let oam = self.oam_state_view().current_pointer_usize()
-            + ((self.weather_vane_state_view().oam_offset() >> 2) as usize) * 4;
+            + ((self.weather_vane_state().oam_offset >> 2) as usize) * 4;
         self.ancilla_set_oam(oam, x, y, WEATHERVANE_EXPLODE_CHAR[i as usize], 0x3c, 0);
-        self.weather_vane_state_view_mut().advance_oam_offset(4);
+        self.advance_weather_vane_oam_offset(4);
     }
 
     fn ancilla38_cutscene_duck(&mut self, k: usize) {

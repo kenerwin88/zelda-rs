@@ -968,60 +968,6 @@ impl<'a> HappinessPondRupeeViewMut<'a> {
     }
 }
 
-pub(crate) struct WeatherVaneStateView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> WeatherVaneStateView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn oam_offset(&self) -> u8 {
-        byte(self.ram, WEATHERVANE_OAM_OFFSET)
-    }
-}
-
-pub(crate) struct WeatherVaneStateViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> WeatherVaneStateViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_countdown(&mut self, value: u16) {
-        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
-    }
-
-    pub(crate) fn tick_countdown(&mut self) -> u16 {
-        let value = read_le_u16(self.ram, WEATHERVANE_COUNTDOWN).wrapping_sub(1);
-        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
-        value
-    }
-
-    pub(crate) fn set_music_latch(&mut self, value: u8) {
-        self.ram[WEATHERVANE_MUSIC_LATCH] = value;
-    }
-
-    pub(crate) fn music_latch(&self) -> u8 {
-        byte(self.ram, WEATHERVANE_MUSIC_LATCH)
-    }
-
-    pub(crate) fn set_source_slot(&mut self, slot: u8) {
-        self.ram[WEATHERVANE_SOURCE_SLOT] = slot;
-    }
-
-    pub(crate) fn reset_oam_offset(&mut self) {
-        self.ram[WEATHERVANE_OAM_OFFSET] = 0;
-    }
-
-    pub(crate) fn advance_oam_offset(&mut self, value: u8) {
-        self.ram[WEATHERVANE_OAM_OFFSET] = self.ram[WEATHERVANE_OAM_OFFSET].wrapping_add(value);
-    }
-}
-
 pub(crate) struct WeatherVaneDebrisState {
     pub(crate) y: u16,
     pub(crate) x: u16,

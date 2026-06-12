@@ -18,8 +18,8 @@ pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWorldLocationBridgeMut, OverworldMap16State,
-    WorldLocationState, WorldState,
+    NativeOverworldTransitionBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OverworldMap16State, WeatherVaneState, WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -207,6 +207,10 @@ mod tests {
         ram[BIRD_TRAVEL_X_HI + 3] = 0x12;
         ram[BIRD_TRAVEL_Y_LO + 3] = 0x78;
         ram[BIRD_TRAVEL_Y_HI + 3] = 0x56;
+        write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0x0280);
+        ram[WEATHERVANE_MUSIC_LATCH] = 1;
+        ram[WEATHERVANE_SOURCE_SLOT] = 7;
+        ram[WEATHERVANE_OAM_OFFSET] = 0x10;
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
@@ -249,6 +253,15 @@ mod tests {
                 y: 0x5678,
             }
         );
+        assert_eq!(
+            state.world.overworld.weather_vane,
+            WeatherVaneState {
+                countdown: 0x0280,
+                music_latch: 1,
+                source_slot: 7,
+                oam_offset: 0x10,
+            }
+        );
         assert_eq!(state.world.overworld.map16.active_load.src_off, 0x1234);
         assert_eq!(state.world.overworld.entrance.sequence_counter, 3);
         assert_eq!(state.world.overworld.exit.special_exit_screen, 0x0033);
@@ -280,6 +293,10 @@ mod tests {
             .overworld
             .bird_travel_destinations
             .set_destination(3, 0x2345, 0x6789);
+        state.world.overworld.weather_vane.countdown = 0x0001;
+        state.world.overworld.weather_vane.music_latch = 2;
+        state.world.overworld.weather_vane.source_slot = 9;
+        state.world.overworld.weather_vane.oam_offset = 0x20;
         state.world.overworld.map16.active_load.src_off = 0x4567;
         state.world.overworld.entrance.sequence_counter = 9;
         state.world.overworld.exit.exit_screen = 0x0044;
@@ -304,6 +321,10 @@ mod tests {
         assert_eq!(ram[BIRD_TRAVEL_X_HI + 3], 0x23);
         assert_eq!(ram[BIRD_TRAVEL_Y_LO + 3], 0x89);
         assert_eq!(ram[BIRD_TRAVEL_Y_HI + 3], 0x67);
+        assert_eq!(read_le_u16(&ram, WEATHERVANE_COUNTDOWN), 0x0001);
+        assert_eq!(ram[WEATHERVANE_MUSIC_LATCH], 2);
+        assert_eq!(ram[WEATHERVANE_SOURCE_SLOT], 9);
+        assert_eq!(ram[WEATHERVANE_OAM_OFFSET], 0x20);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x4567);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 9);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX_EXIT), 0x0044);
@@ -369,6 +390,72 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
         assert_eq!(ram[BIRD_TRAVEL_STATUS + 15], 0xff);
         assert_eq!(ram[BIRD_TRAVEL_STATUS + 1], 0);
+    }
+
+    #[test]
+    fn weather_vane_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0x0280);
+        ram[WEATHERVANE_MUSIC_LATCH] = 3;
+        ram[WEATHERVANE_SOURCE_SLOT] = 4;
+        ram[WEATHERVANE_OAM_OFFSET] = 0x10;
+
+        let mut weather_vane = WeatherVaneState::load_from_ram(&ram);
+        assert_eq!(
+            weather_vane,
+            WeatherVaneState {
+                countdown: 0x0280,
+                music_latch: 3,
+                source_slot: 4,
+                oam_offset: 0x10,
+            }
+        );
+
+        assert_eq!(weather_vane.tick_countdown(), 0x027f);
+        weather_vane.reset_oam_offset();
+        weather_vane.advance_oam_offset(0xfc);
+        weather_vane.music_latch = 1;
+        weather_vane.source_slot = 7;
+        weather_vane.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, WEATHERVANE_COUNTDOWN), 0x027f);
+        assert_eq!(ram[WEATHERVANE_MUSIC_LATCH], 1);
+        assert_eq!(ram[WEATHERVANE_SOURCE_SLOT], 7);
+        assert_eq!(ram[WEATHERVANE_OAM_OFFSET], 0xfc);
+    }
+
+    #[test]
+    fn native_weather_vane_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0x0000);
+        ram[WEATHERVANE_MUSIC_LATCH] = 0;
+        ram[WEATHERVANE_SOURCE_SLOT] = 2;
+        ram[WEATHERVANE_OAM_OFFSET] = 0xfe;
+
+        let mut weather_vane = WeatherVaneState::default();
+        {
+            let mut bridge = NativeWeatherVaneBridgeMut::new(&mut weather_vane, &mut ram);
+            assert_eq!(bridge.tick_countdown(), 0xffff);
+            bridge.set_countdown(0x0280);
+            bridge.set_music_latch(1);
+            bridge.set_source_slot(5);
+            bridge.reset_oam_offset();
+            bridge.advance_oam_offset(4);
+        }
+
+        assert_eq!(
+            weather_vane,
+            WeatherVaneState {
+                countdown: 0x0280,
+                music_latch: 1,
+                source_slot: 5,
+                oam_offset: 4,
+            }
+        );
+        assert_eq!(read_le_u16(&ram, WEATHERVANE_COUNTDOWN), 0x0280);
+        assert_eq!(ram[WEATHERVANE_MUSIC_LATCH], 1);
+        assert_eq!(ram[WEATHERVANE_SOURCE_SLOT], 5);
+        assert_eq!(ram[WEATHERVANE_OAM_OFFSET], 4);
     }
 
     #[test]

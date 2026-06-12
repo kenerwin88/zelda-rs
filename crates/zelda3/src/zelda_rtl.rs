@@ -63,21 +63,22 @@ use crate::game_state::{
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldSpriteLoadedView,
-    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
-    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
+    NativeRamBridgeViewMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
+    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
+    PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView,
+    PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
+    PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
+    PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
     SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
     SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
@@ -89,8 +90,8 @@ use crate::game_state::{
     TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
     TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
     TrinexxPaletteViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
-    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
-    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3576,12 +3577,43 @@ impl ZeldaState {
         HappinessPondRupeeViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn weather_vane_state_view(&self) -> WeatherVaneStateView<'_> {
-        WeatherVaneStateView::new(&self.ram)
+    pub(crate) fn weather_vane_state(&self) -> WeatherVaneState {
+        self.game_state.world.overworld.weather_vane
     }
 
-    pub(crate) fn weather_vane_state_view_mut(&mut self) -> WeatherVaneStateViewMut<'_> {
-        WeatherVaneStateViewMut::new(&mut self.ram)
+    fn weather_vane_bridge_mut(&mut self) -> NativeWeatherVaneBridgeMut<'_> {
+        NativeWeatherVaneBridgeMut::new(
+            &mut self.game_state.world.overworld.weather_vane,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn set_weather_vane_countdown(&mut self, value: u16) {
+        self.weather_vane_bridge_mut().set_countdown(value);
+    }
+
+    pub(crate) fn tick_weather_vane_countdown(&mut self) -> u16 {
+        self.weather_vane_bridge_mut().tick_countdown()
+    }
+
+    pub(crate) fn weather_vane_music_latch(&self) -> u8 {
+        self.game_state.world.overworld.weather_vane.music_latch
+    }
+
+    pub(crate) fn set_weather_vane_music_latch(&mut self, value: u8) {
+        self.weather_vane_bridge_mut().set_music_latch(value);
+    }
+
+    pub(crate) fn set_weather_vane_source_slot(&mut self, value: u8) {
+        self.weather_vane_bridge_mut().set_source_slot(value);
+    }
+
+    pub(crate) fn reset_weather_vane_oam_offset(&mut self) {
+        self.weather_vane_bridge_mut().reset_oam_offset();
+    }
+
+    pub(crate) fn advance_weather_vane_oam_offset(&mut self, value: u8) {
+        self.weather_vane_bridge_mut().advance_oam_offset(value);
     }
 
     pub(crate) fn weather_vane_debris_view(&self, slot: usize) -> WeatherVaneDebrisView<'_> {
