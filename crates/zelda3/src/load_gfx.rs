@@ -338,10 +338,10 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_wobjsel_copy(0);
         self.display_nmi_view_mut().set_tmw_copy(0);
         self.display_nmi_view_mut().set_tsw_copy(0);
-        if self.frame_control_view().main_module() == 20 {
+        if self.frame_state().main_module == 20 {
             self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
             self.display_nmi_view_mut().set_hdma_enable_mask(0xc0);
-        } else if self.frame_control_view().submodule() != 10 {
+        } else if self.frame_state().submodule != 10 {
             self.world_state_view_mut().set_mode7_zoom_step_counter(4);
             self.world_state_view_mut().set_timer_for_mode7_zoom(12);
             self.world_state_view_mut().set_overworld_map_flags(1);
@@ -376,7 +376,7 @@ impl ZeldaState {
 
     pub(super) fn load_overworld_map_palette(&mut self) {
         if let Some(palette) = self.asset_raw(93).map(Vec::from) {
-            let offset = if self.world_state_view().overworld_screen() & 0x40 != 0 {
+            let offset = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
                 0x100
             } else {
                 0
@@ -710,10 +710,10 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_restore_coldata(&mut self) {
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             return;
         }
-        let rgb = match self.world_state_view().overworld_screen() {
+        let rgb = match self.world_location_state().overworld_screen_index() {
             3 | 5 | 7 => 0x8c4c26u32,
             0x43 | 0x45 | 0x47 => 0x874a26,
             0x5b => 0x894f33,
@@ -841,7 +841,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sprite_main(&mut self) {
-        let offset = if self.world_state_view().overworld_screen() & 0x40 != 0 {
+        let offset = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
             60 * 2
         } else {
             0
@@ -880,7 +880,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sprite_environment(&mut self) {
-        if self.world_state_view().is_indoors() {
+        if self.world_location_state().is_indoors() {
             self.palette_load_sprite_environment_dungeon();
         } else {
             self.palette_misc_sprite_outdoors();
@@ -888,7 +888,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_misc_sprite_outdoors(&mut self) {
-        let t = if self.world_state_view().overworld_screen() & 0x40 != 0 {
+        let t = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
             9
         } else {
             7
@@ -1328,7 +1328,7 @@ impl ZeldaState {
         };
         self.do3_to_4_high_to_vram(0x4400, &data);
 
-        if self.frame_control_view().main_module() == 1 {
+        if self.frame_state().main_module == 1 {
             self.load_sprite_graphics(
                 0x4800,
                 94,
@@ -1863,7 +1863,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_subroutine_index(nmi);
         self.display_nmi_view_mut()
             .set_core_update_disable_flag(nmi);
-        let xt = if self.world_state_view().overworld_screen() & 0x40 != 0 {
+        let xt = if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
             8
         } else {
             0
@@ -1934,7 +1934,10 @@ impl ZeldaState {
             }
             5 => {
                 self.PreOverworld_LoadOverlays();
-                if matches!(self.world_state_view().overworld_screen(), 27 | 91) {
+                if matches!(
+                    self.world_location_state().overworld_screen_index(),
+                    27 | 91
+                ) {
                     self.display_nmi_view_mut().set_sub_screen_layers(1);
                 }
                 self.frame_control_view_mut().decrement_submodule();
@@ -1956,7 +1959,7 @@ impl ZeldaState {
                 self.display_nmi_view_mut().set_core_update_disable_flag(12);
             }
             10 => {
-                let t = self.world_state_view().overworld_screen() & 0xbf;
+                let t = self.world_location_state().overworld_screen_index() & 0xbf;
                 self.DecompressAnimatedOverworldTiles(if matches!(t, 3 | 5 | 7) {
                     0x58
                 } else {
@@ -1964,7 +1967,7 @@ impl ZeldaState {
                 });
             }
             11 => {
-                let t = self.world_state_view().overworld_screen();
+                let t = self.world_location_state().overworld_screen_index();
                 self.display_nmi_view_mut().set_sub_screen_layers(matches!(
                     t,
                     0 | 0x70 | 0x40 | 0x5b | 3 | 5 | 7 | 0x43 | 0x45 | 0x47
@@ -2237,7 +2240,7 @@ impl ZeldaState {
         } else {
             0x40
         };
-        if self.frame_control_view().subsubmodule() == 0 {
+        if self.frame_state().subsubmodule == 0 {
             for i in 0..8 {
                 let color = self.palette_buffer_view().aux_color(t + i);
                 self.palette_buffer_view_mut().set_main_color(t + i, color);
@@ -2337,7 +2340,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown_word(0);
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(2);
-        if self.world_state_view().overworld_screen() == 27 {
+        if self.world_location_state().overworld_screen_index() == 27 {
             self.palette_buffer_view_mut().set_aux_color(0, 0);
             self.palette_buffer_view_mut().set_aux_color(32, 0);
             self.palette_buffer_view_mut().set_main_color(0, 0);
@@ -2390,7 +2393,7 @@ impl ZeldaState {
             if self.palette_filter_view().countdown() == 31 {
                 self.palette_filter_view_mut()
                     .xor_darkening_or_lightening_screen(2);
-                if self.frame_control_view().main_module() != 21 {
+                if self.frame_state().main_module != 21 {
                     return;
                 }
                 self.display_nmi_view_mut().clear_hdma_enable_mask();
@@ -2410,7 +2413,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_WhirlpoolBlue(&mut self) {
-        if self.frame_control_view().frame_counter() & 1 != 0 {
+        if self.frame_state().frame_counter & 1 != 0 {
             for i in 0x20..0x100 {
                 let mut color = self.palette_buffer_view().main_color(i);
                 if (color & 0x7c00) != 0x7c00 {
@@ -2460,7 +2463,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreBlue(&mut self) {
-        if self.frame_control_view().frame_counter() & 1 != 0 {
+        if self.frame_state().frame_counter & 1 != 0 {
             for i in 0x20..0x100 {
                 let aux = self.palette_buffer_view().aux_color(i) & 0x7c00;
                 let mut color = self.palette_buffer_view().main_color(i);
@@ -2847,7 +2850,7 @@ impl ZeldaState {
                         a = 0x20;
                         if self.dungeon_state_view().bg2_properties() == 2 {
                             self.Palette_AssertTranslucencySwap();
-                            if self.world_state_view().dungeon_room_index() == 13 {
+                            if self.world_location_state().dungeon_room_index() == 13 {
                                 self.graphics_scratch_view_mut()
                                     .clear_agahnim_palette_settings(6);
                                 self.Palette_LoadAgahnim();
@@ -2894,9 +2897,9 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldLoadScreensPaletteSet(&mut self) {
-        let sc = self.world_state_view().overworld_screen() & 0x3f;
+        let sc = self.world_location_state().overworld_screen_index() & 0x3f;
         let mut x = if matches!(sc, 3 | 5 | 7) { 2 } else { 0 };
-        if self.world_state_view().overworld_screen() & 0x40 != 0 {
+        if self.world_location_state().overworld_screen_index() & 0x40 != 0 {
             x += 1;
         }
         self.Overworld_LoadAreaPalettesEx(x);
@@ -3222,7 +3225,7 @@ impl ZeldaState {
 
     pub(super) fn HandleScreenFlash(&mut self) {
         let j = self.attract_state_view().intro_palette_flash_count();
-        if j == 0 || self.frame_control_view().submodule() != 0 {
+        if j == 0 || self.frame_state().submodule != 0 {
             return;
         }
         self.attract_state_view_mut()
@@ -3247,7 +3250,7 @@ impl ZeldaState {
 impl ZeldaState {
     pub(super) fn handle_screen_flash(&mut self) {
         let flash = self.attract_state_view().intro_palette_flash_count();
-        if flash == 0 || self.frame_control_view().submodule() != 0 {
+        if flash == 0 || self.frame_state().submodule != 0 {
             return;
         }
         self.attract_state_view_mut()
@@ -3314,7 +3317,7 @@ impl ZeldaState {
         self.display_nmi_view_mut().set_tmw_copy(main_screen);
         let sub_screen = self.display_nmi_view().sub_screen_layers();
         self.display_nmi_view_mut().set_tsw_copy(sub_screen);
-        if self.world_state_view().is_outdoors() {
+        if self.world_location_state().is_outdoors() {
             self.palette_filter_view_mut().set_fixed_color_red(0x20);
             self.palette_filter_view_mut().set_fixed_color_green(0x40);
             self.palette_filter_view_mut().set_fixed_color_blue(0x80);
@@ -3395,9 +3398,9 @@ impl ZeldaState {
             }
             self.frame_control_view_mut().set_subsubmodule(0);
             self.frame_control_view_mut().set_submodule(0);
-            let main_module = self.frame_control_view().main_module();
+            let main_module = self.frame_state().main_module;
             if main_module == 7 || main_module == 16 {
-                if self.world_state_view().is_outdoors() {
+                if self.world_location_state().is_outdoors() {
                     let ambient = self.overworld_config_table_view().current_music() >> 4;
                     self.system_signals_view_mut()
                         .set_ambient_sound_effect(ambient);
@@ -3409,7 +3412,7 @@ impl ZeldaState {
             }
             let saved_module = self.frame_control_view().saved_module_for_menu();
             self.frame_control_view_mut().set_main_module(saved_module);
-            if self.frame_control_view().main_module() == 6 {
+            if self.frame_state().main_module == 6 {
                 self.sprite_reset_all();
             }
         }
@@ -3509,7 +3512,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_get_ow_bg_color(&self) -> u16 {
-        let ow_screen = u16::from(self.world_state_view().overworld_screen());
+        let ow_screen = u16::from(self.world_location_state().overworld_screen_index());
         if ow_screen < 0x80 {
             return if ow_screen & 0x40 != 0 {
                 0x2A32
@@ -3517,7 +3520,7 @@ impl ZeldaState {
                 0x2669
             };
         }
-        let room = self.world_state_view().dungeon_room();
+        let room = self.world_location_state().dungeon_room;
         if room == 0x180 || room == 0x182 || room == 0x183 {
             return 0x19C6;
         }
