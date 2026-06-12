@@ -331,6 +331,117 @@ impl LinkDmaSources {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WaterHdmaWindowState {
+    window_x: u16,
+    window_y: u16,
+    window_y_radius: u16,
+    window_x_radius: u16,
+    watergate_spotlight_y_upper: u16,
+    watergate_pointer: u8,
+    watergate_tilemap_pos_x2: u16,
+}
+
+impl WaterHdmaWindowState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            window_x: read_le_u16(ram, WATER_HDMA_WINDOW_X),
+            window_y: read_le_u16(ram, WATER_HDMA_WINDOW_Y),
+            window_y_radius: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS),
+            window_x_radius: read_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS),
+            watergate_spotlight_y_upper: read_le_u16(ram, WATERGATE_SPOTLIGHT_Y_UPPER),
+            watergate_pointer: ram_byte(ram, WATERGATE_POINTER),
+            watergate_tilemap_pos_x2: read_le_u16(ram, WATERGATE_POS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, WATER_HDMA_WINDOW_X, self.window_x);
+        write_le_u16(ram, WATER_HDMA_WINDOW_Y, self.window_y);
+        write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.window_y_radius);
+        write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.window_x_radius);
+        write_le_u16(
+            ram,
+            WATERGATE_SPOTLIGHT_Y_UPPER,
+            self.watergate_spotlight_y_upper,
+        );
+        ram[WATERGATE_POINTER] = self.watergate_pointer;
+        write_le_u16(ram, WATERGATE_POS, self.watergate_tilemap_pos_x2);
+    }
+
+    pub(crate) fn window_x(&self) -> u16 {
+        self.window_x
+    }
+
+    pub(crate) fn window_y(&self) -> u16 {
+        self.window_y
+    }
+
+    pub(crate) fn window_y_radius(&self) -> u16 {
+        self.window_y_radius
+    }
+
+    pub(crate) fn window_x_radius(&self) -> u16 {
+        self.window_x_radius
+    }
+
+    pub(crate) fn watergate_spotlight_y_upper(&self) -> u16 {
+        self.watergate_spotlight_y_upper
+    }
+
+    pub(crate) fn watergate_pointer(&self) -> u8 {
+        self.watergate_pointer
+    }
+
+    pub(crate) fn watergate_tilemap_pos_x2(&self) -> u16 {
+        self.watergate_tilemap_pos_x2
+    }
+
+    pub(crate) fn decrement_watergate_spotlight_y_upper(&mut self) -> u16 {
+        self.watergate_spotlight_y_upper = self.watergate_spotlight_y_upper.wrapping_sub(1);
+        self.watergate_spotlight_y_upper
+    }
+
+    pub(crate) fn set_watergate_pointer(&mut self, value: u8) {
+        self.watergate_pointer = value;
+    }
+
+    pub(crate) fn increment_watergate_pointer(&mut self) -> u8 {
+        self.watergate_pointer = self.watergate_pointer.wrapping_add(1);
+        self.watergate_pointer
+    }
+
+    pub(crate) fn set_watergate_tilemap_pos_x2(&mut self, value: u16) {
+        self.watergate_tilemap_pos_x2 = value;
+    }
+
+    pub(crate) fn set_window_x(&mut self, value: u16) {
+        self.window_x = value;
+    }
+
+    pub(crate) fn set_window_y(&mut self, value: u16) {
+        self.window_y = value;
+    }
+
+    pub(crate) fn set_window_x_radius(&mut self, value: u16) {
+        self.window_x_radius = value;
+    }
+
+    pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
+        self.window_y_radius = (self.window_y_radius & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn increment_window_y_radius_byte(&mut self) -> u8 {
+        let next = (self.window_y_radius as u8).wrapping_add(1);
+        self.set_window_y_radius_byte(next);
+        next
+    }
+
+    pub(crate) fn set_watergate_spotlight_y_upper(&mut self, value: u16) {
+        self.watergate_spotlight_y_upper = value;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
     pub(crate) nmi_update_latch: u8,
@@ -379,6 +490,7 @@ pub(crate) struct DisplayState {
     pub(crate) palette_filter: PaletteFilterState,
     pub(crate) trinexx_palette: TrinexxPaletteState,
     pub(crate) hud_inventory_order: HudInventoryOrderState,
+    pub(crate) water_hdma_window: WaterHdmaWindowState,
 }
 
 impl DisplayState {
@@ -431,6 +543,7 @@ impl DisplayState {
             palette_filter: PaletteFilterState::load_from_ram(ram),
             trinexx_palette: TrinexxPaletteState::load_from_ram(ram),
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
+            water_hdma_window: WaterHdmaWindowState::load_from_ram(ram),
         }
     }
 
@@ -506,6 +619,7 @@ impl DisplayState {
         self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
         self.hud_inventory_order.write_to_ram(ram);
+        self.water_hdma_window.write_to_ram(ram);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -1085,6 +1199,100 @@ impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
         let value = self.display.trinexx_palette.increment_blue_shell_step();
         self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] =
             self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP].wrapping_add(1);
+        self.debug_assert_matches_ram();
+        value
+    }
+}
+
+pub(crate) struct NativeWaterHdmaWindowBridgeMut<'a> {
+    water: &'a mut WaterHdmaWindowState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
+    pub(crate) fn new(water: &'a mut WaterHdmaWindowState, ram: &'a mut [u8]) -> Self {
+        *water = WaterHdmaWindowState::load_from_ram(ram);
+        Self { water, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.water, WaterHdmaWindowState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn decrement_watergate_spotlight_y_upper(&mut self) -> u16 {
+        let value = self.water.decrement_watergate_spotlight_y_upper();
+        write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, value);
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn set_watergate_pointer(&mut self, value: u8) {
+        self.water.set_watergate_pointer(value);
+        self.ram[WATERGATE_POINTER] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_watergate_pointer(&mut self) -> u8 {
+        let value = self.water.increment_watergate_pointer();
+        self.ram[WATERGATE_POINTER] = value;
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn set_watergate_tilemap_pos_x2(&mut self, value: u16) {
+        self.water.set_watergate_tilemap_pos_x2(value);
+        write_le_u16(self.ram, WATERGATE_POS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_x(&mut self, value: u16) {
+        self.water.set_window_x(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_y(&mut self, value: u16) {
+        self.water.set_window_y(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_x_radius(&mut self, value: u16) {
+        self.water.set_window_x_radius(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X_RADIUS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
+        self.water.set_window_y_radius_byte(value);
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_window_y_radius_byte(&mut self) -> u8 {
+        let value = self.water.increment_window_y_radius_byte();
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn set_watergate_spotlight_y_upper(&mut self, value: u16) {
+        self.water.set_watergate_spotlight_y_upper(value);
+        write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn copy_watergate_spotlight_to_spotlight_upper(&mut self) {
+        self.ram[SPOTLIGHT_Y_UPPER] = self.ram[WATERGATE_SPOTLIGHT_Y_UPPER];
+    }
+
+    pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
+        self.copy_watergate_spotlight_to_spotlight_upper();
+        self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(1);
+        let x_radius_minus_margin = self.ram[WATER_HDMA_WINDOW_X_RADIUS].wrapping_sub(8);
+        let value = self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(x_radius_minus_margin);
+        self.water.set_window_y_radius_byte(value);
+        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
         self.debug_assert_matches_ram();
         value
     }

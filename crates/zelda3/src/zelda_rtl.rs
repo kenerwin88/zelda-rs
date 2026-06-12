@@ -67,9 +67,9 @@ use crate::game_state::{
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut, NativeRamBridgeView,
     NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSystemSignalsBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
     OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
@@ -91,9 +91,9 @@ use crate::game_state::{
     SystemSignalsState, TagalongSlotView, TagalongSlotViewMut, TempCounterView, TempCounterViewMut,
     TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
     TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TrinexxPaletteState, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
-    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView,
+    TrinexxPaletteState, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowState,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4106,12 +4106,15 @@ impl ZeldaState {
         SpotlightHdmaViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn water_hdma_window_view(&self) -> WaterHdmaWindowView<'_> {
-        WaterHdmaWindowView::new(&self.ram)
+    pub(crate) fn water_hdma_window_view(&self) -> &WaterHdmaWindowState {
+        &self.game_state.display.water_hdma_window
     }
 
-    pub(crate) fn water_hdma_window_view_mut(&mut self) -> WaterHdmaWindowViewMut<'_> {
-        WaterHdmaWindowViewMut::new(&mut self.ram)
+    pub(crate) fn water_hdma_window_view_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
+        NativeWaterHdmaWindowBridgeMut::new(
+            &mut self.game_state.display.water_hdma_window,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn overworld_palette_backup_view_mut(

@@ -14,8 +14,8 @@ mod world;
 pub(crate) use display::{
     DisplayState, HudInventoryOrderState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
     NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativePaletteFilterBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, PaletteFilterState,
-    TrinexxPaletteState,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    PaletteFilterState, TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1335,6 +1335,13 @@ mod tests {
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
         write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x0168);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X, 0x0120);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y, 0x0140);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y_RADIUS, 0x0030);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X_RADIUS, 0x0040);
+        write_le_u16(&mut ram, WATERGATE_SPOTLIGHT_Y_UPPER, 0x0050);
+        ram[WATERGATE_POINTER] = 0x06;
+        write_le_u16(&mut ram, WATERGATE_POS, 0x0780);
         ram[0xa680] = 0xde;
         ram[0xa681] = 0xad;
 
@@ -1465,6 +1472,16 @@ mod tests {
         assert_eq!(display.animated_tile_vram_destination_usize(), 0x3b00);
         assert_eq!(display.attract_vram_destination_address, 0x0168);
         assert!(!display.attract_vram_destination_high_is_clear());
+        assert_eq!(display.water_hdma_window.window_x(), 0x0120);
+        assert_eq!(display.water_hdma_window.window_y(), 0x0140);
+        assert_eq!(display.water_hdma_window.window_y_radius(), 0x0030);
+        assert_eq!(display.water_hdma_window.window_x_radius(), 0x0040);
+        assert_eq!(
+            display.water_hdma_window.watergate_spotlight_y_upper(),
+            0x0050
+        );
+        assert_eq!(display.water_hdma_window.watergate_pointer(), 0x06);
+        assert_eq!(display.water_hdma_window.watergate_tilemap_pos_x2(), 0x0780);
 
         display.screen_brightness = 0x80;
         display.nmi_update_latch = 0;
@@ -1505,6 +1522,17 @@ mod tests {
         display.animated_tile_data_source_address = 0xac80;
         display.animated_tile_vram_destination_address = 0x3c00;
         display.attract_vram_destination_address = 0x0068;
+        display.water_hdma_window.set_window_x(0x0220);
+        display.water_hdma_window.set_window_y(0x0240);
+        display.water_hdma_window.set_window_y_radius_byte(0x31);
+        display.water_hdma_window.set_window_x_radius(0x0048);
+        display
+            .water_hdma_window
+            .set_watergate_spotlight_y_upper(0x0058);
+        display.water_hdma_window.set_watergate_pointer(0x07);
+        display
+            .water_hdma_window
+            .set_watergate_tilemap_pos_x2(0x0880);
         display.write_to_ram(&mut ram);
 
         assert_eq!(ram[INIDISP_COPY], 0x80);
@@ -1558,6 +1586,13 @@ mod tests {
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X), 0x0220);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y), 0x0240);
+        assert_eq!(ram[WATER_HDMA_WINDOW_Y_RADIUS], 0x31);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X_RADIUS), 0x0048);
+        assert_eq!(read_le_u16(&ram, WATERGATE_SPOTLIGHT_Y_UPPER), 0x0058);
+        assert_eq!(ram[WATERGATE_POINTER], 0x07);
+        assert_eq!(read_le_u16(&ram, WATERGATE_POS), 0x0880);
     }
 
     #[test]
@@ -1579,6 +1614,90 @@ mod tests {
         assert_eq!(display.attract_vram_destination_address, 0x0068);
         assert!(display.attract_vram_destination_high_is_clear());
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn water_hdma_window_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X, 0x0120);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y, 0x0140);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y_RADIUS, 0x0230);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X_RADIUS, 0x0040);
+        write_le_u16(&mut ram, WATERGATE_SPOTLIGHT_Y_UPPER, 0x0050);
+        ram[WATERGATE_POINTER] = 0x06;
+        write_le_u16(&mut ram, WATERGATE_POS, 0x0780);
+
+        let mut water = WaterHdmaWindowState::load_from_ram(&ram);
+        assert_eq!(water.window_x(), 0x0120);
+        assert_eq!(water.window_y(), 0x0140);
+        assert_eq!(water.window_y_radius(), 0x0230);
+        assert_eq!(water.window_x_radius(), 0x0040);
+        assert_eq!(water.watergate_spotlight_y_upper(), 0x0050);
+        assert_eq!(water.watergate_pointer(), 0x06);
+        assert_eq!(water.watergate_tilemap_pos_x2(), 0x0780);
+
+        water.set_window_x(0x0220);
+        water.set_window_y(0x0240);
+        water.set_window_x_radius(0x0048);
+        water.set_window_y_radius_byte(0x31);
+        water.decrement_watergate_spotlight_y_upper();
+        assert_eq!(water.increment_watergate_pointer(), 0x07);
+        water.set_watergate_tilemap_pos_x2(0x0880);
+        water.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X), 0x0220);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y), 0x0240);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x0231);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X_RADIUS), 0x0048);
+        assert_eq!(read_le_u16(&ram, WATERGATE_SPOTLIGHT_Y_UPPER), 0x004f);
+        assert_eq!(ram[WATERGATE_POINTER], 0x07);
+        assert_eq!(read_le_u16(&ram, WATERGATE_POS), 0x0880);
+    }
+
+    #[test]
+    fn native_water_hdma_window_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X, 0x0120);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y, 0x0140);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_Y_RADIUS, 0x0230);
+        write_le_u16(&mut ram, WATER_HDMA_WINDOW_X_RADIUS, 0x0040);
+        write_le_u16(&mut ram, WATERGATE_SPOTLIGHT_Y_UPPER, 0x0050);
+        ram[WATERGATE_POINTER] = 0x06;
+        write_le_u16(&mut ram, WATERGATE_POS, 0x0780);
+        write_le_u16(&mut ram, SPOTLIGHT_Y_UPPER, 0x1111);
+        write_le_u16(&mut ram, SPOTLIGHT_WINDOW_Y_BUFFER, 0x2210);
+
+        let mut water = WaterHdmaWindowState::default();
+        {
+            let mut bridge = NativeWaterHdmaWindowBridgeMut::new(&mut water, &mut ram);
+            bridge.set_window_x(0x0220);
+            bridge.set_window_y(0x0240);
+            bridge.set_window_x_radius(0x0048);
+            bridge.set_window_y_radius_byte(0x31);
+            assert_eq!(bridge.decrement_watergate_spotlight_y_upper(), 0x004f);
+            bridge.set_watergate_spotlight_y_upper(0x0058);
+            bridge.set_watergate_pointer(0x07);
+            assert_eq!(bridge.increment_watergate_pointer(), 0x08);
+            bridge.set_watergate_tilemap_pos_x2(0x0880);
+            assert_eq!(bridge.advance_watergate_window_y_radius(), 0x51);
+        }
+
+        assert_eq!(water.window_x(), 0x0220);
+        assert_eq!(water.window_y(), 0x0240);
+        assert_eq!(water.window_y_radius(), 0x0251);
+        assert_eq!(water.window_x_radius(), 0x0048);
+        assert_eq!(water.watergate_spotlight_y_upper(), 0x0058);
+        assert_eq!(water.watergate_pointer(), 0x08);
+        assert_eq!(water.watergate_tilemap_pos_x2(), 0x0880);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X), 0x0220);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y), 0x0240);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x0251);
+        assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X_RADIUS), 0x0048);
+        assert_eq!(read_le_u16(&ram, WATERGATE_SPOTLIGHT_Y_UPPER), 0x0058);
+        assert_eq!(ram[WATERGATE_POINTER], 0x08);
+        assert_eq!(read_le_u16(&ram, WATERGATE_POS), 0x0880);
+        assert_eq!(ram[SPOTLIGHT_Y_UPPER], 0x58);
+        assert_eq!(ram[SPOTLIGHT_WINDOW_Y_BUFFER], 0x11);
     }
 
     #[test]
