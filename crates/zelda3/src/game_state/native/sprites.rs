@@ -1,23 +1,84 @@
 use crate::game_state::constants::{
     MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
 };
 use crate::types::{read_le_u16, write_le_u16};
+
+const SPRITE_SLOT_COUNT: usize = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
     pub(crate) maze_game_timer: MazeGameTimerState,
+    pub(crate) prize_drop_cycle: PrizeDropCycleState,
 }
 
 impl SpriteState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
+            prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.maze_game_timer.write_to_ram(ram);
+        self.prize_drop_cycle.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PrizeDropCycleState {
+    next_indices: [u8; SPRITE_SLOT_COUNT],
+}
+
+impl PrizeDropCycleState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut next_indices = [0; SPRITE_SLOT_COUNT];
+        for (slot, index) in next_indices.iter_mut().enumerate() {
+            *index = ram.get(PRIZE_DROP_CYCLE + slot).copied().unwrap_or(0);
+        }
+        Self { next_indices }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, index) in self.next_indices.iter().copied().enumerate() {
+            ram[PRIZE_DROP_CYCLE + slot] = index;
+        }
+    }
+
+    pub(crate) fn next_index_for_slot(&self, slot: usize) -> u8 {
+        self.next_indices.get(slot).copied().unwrap_or(0)
+    }
+}
+
+pub(crate) struct NativePrizeDropCycleBridgeMut<'a> {
+    state: &'a mut PrizeDropCycleState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativePrizeDropCycleBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut PrizeDropCycleState, ram: &'a mut [u8]) -> Self {
+        *state = PrizeDropCycleState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    pub(crate) fn take_next_index(&mut self, slot: usize) -> u8 {
+        let Some(index) = self.state.next_indices.get_mut(slot) else {
+            return 0;
+        };
+        let current = *index;
+        *index = current.wrapping_add(1) & 7;
+        self.sync();
+        current
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, PrizeDropCycleState::load_from_ram(self.ram));
     }
 }
 

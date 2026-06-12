@@ -66,8 +66,8 @@ use crate::game_state::{
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpriteBattleBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
     NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
@@ -79,22 +79,21 @@ use crate::game_state::{
     PlayerResourcesState, PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView,
     PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut,
     PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
-    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
-    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
-    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
-    SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
-    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
-    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TagalongSlotViewMut,
-    TempCounterView, TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut,
-    TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState, VwfRenderState,
-    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView,
+    PpuScrollCopyViewMut, PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellScratchView, QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut,
+    SaveLoadScratchView, SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut,
+    ScratchWordView, ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut,
+    SharedMessageTimerState, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
+    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
+    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteState,
+    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
+    WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3980,8 +3979,11 @@ impl ZeldaState {
         EtherOrbitViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn prize_drop_cycle_view_mut(&mut self) -> PrizeDropCycleViewMut<'_> {
-        PrizeDropCycleViewMut::new(&mut self.ram)
+    pub(crate) fn prize_drop_cycle_view_mut(&mut self) -> NativePrizeDropCycleBridgeMut<'_> {
+        NativePrizeDropCycleBridgeMut::new(
+            &mut self.game_state.sprites.prize_drop_cycle,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dual_layer_tile_cache_view(&self) -> DualLayerTileCacheView<'_> {

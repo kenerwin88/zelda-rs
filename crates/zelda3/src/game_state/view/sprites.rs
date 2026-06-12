@@ -1197,11 +1197,11 @@ impl<'a> EtherOrbitViewMut<'a> {
     }
 }
 
-pub(crate) struct PrizeDropCycleViewMut<'a> {
+pub(crate) struct PrizeDropCycleRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> PrizeDropCycleViewMut<'a> {
+impl<'a> PrizeDropCycleRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

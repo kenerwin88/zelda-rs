@@ -51,7 +51,9 @@ pub(crate) use player::{
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
     SpecialExitPositionView, SwimAccelerationView,
 };
-pub(crate) use sprites::{MazeGameTimerView, NativeMazeGameTimerBridgeMut, SpriteState};
+pub(crate) use sprites::{
+    MazeGameTimerView, NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut, SpriteState,
+};
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
@@ -76,7 +78,7 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 #[cfg(test)]
 use player::{SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
-use sprites::MazeGameTimerState;
+use sprites::{MazeGameTimerState, PrizeDropCycleState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
@@ -656,6 +658,41 @@ mod tests {
         assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_HI), 1);
         assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_LO), 1);
         assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_HI), 1);
+    }
+
+    #[test]
+    fn prize_drop_cycle_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[PRIZE_DROP_CYCLE] = 2;
+        ram[PRIZE_DROP_CYCLE + 15] = 7;
+
+        let cycle = PrizeDropCycleState::load_from_ram(&ram);
+        assert_eq!(cycle.next_index_for_slot(0), 2);
+        assert_eq!(cycle.next_index_for_slot(15), 7);
+        assert_eq!(cycle.next_index_for_slot(16), 0);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        cycle.write_to_ram(&mut projected);
+        assert_eq!(PrizeDropCycleState::load_from_ram(&projected), cycle);
+        assert_eq!(projected[PRIZE_DROP_CYCLE], 2);
+        assert_eq!(projected[PRIZE_DROP_CYCLE + 15], 7);
+    }
+
+    #[test]
+    fn native_prize_drop_cycle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[PRIZE_DROP_CYCLE + 3] = 7;
+
+        let mut cycle = PrizeDropCycleState::default();
+        {
+            let mut bridge = NativePrizeDropCycleBridgeMut::new(&mut cycle, &mut ram);
+            assert_eq!(bridge.take_next_index(3), 7);
+            assert_eq!(bridge.take_next_index(3), 0);
+            assert_eq!(bridge.take_next_index(18), 0);
+        }
+
+        assert_eq!(cycle.next_index_for_slot(3), 1);
+        assert_eq!(ram[PRIZE_DROP_CYCLE + 3], 1);
     }
 
     #[test]
