@@ -87,7 +87,11 @@ def is_semantic_view_source(path: Path) -> bool:
 
 
 def is_game_state_access_layer(path: Path) -> bool:
-    return is_semantic_view_source(path) or path == SRC_ROOT / "game_state" / "native.rs"
+    return (
+        is_semantic_view_source(path)
+        or path == SRC_ROOT / "game_state" / "native.rs"
+        or path.is_relative_to(SRC_ROOT / "game_state" / "native")
+    )
 
 
 def is_public_ram_constant_registry(path: Path) -> bool:
