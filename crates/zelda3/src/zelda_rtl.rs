@@ -1581,7 +1581,7 @@ impl ZeldaState {
             self.system_signals_view().ambient_sound_effect(),
             self.system_signals_view().sound_effect_1(),
             self.system_signals_view().sound_effect_2(),
-            self.frame_control_view().raw_sfx_pan_value(),
+            self.system_signals_view().raw_sfx_pan_value(),
         );
     }
 

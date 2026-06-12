@@ -33,10 +33,6 @@ impl<'a> RamFrameControlView<'a> {
         byte(self.ram, SAVED_MODULE_FOR_MENU)
     }
 
-    pub(crate) fn raw_sfx_pan_value(&self) -> u8 {
-        byte(self.ram, RAW_SFX_PAN_VALUE)
-    }
-
     pub(crate) fn modal_pause_flag(&self) -> u8 {
         byte(self.ram, MODAL_PAUSE_FLAG)
     }
@@ -196,6 +192,10 @@ impl<'a> SystemSignalsView<'a> {
 
     pub(crate) fn ambient_sound_effect_is_clear(&self) -> bool {
         self.ambient_sound_effect() == 0
+    }
+
+    pub(crate) fn raw_sfx_pan_value(&self) -> u8 {
+        byte(self.ram, RAW_SFX_PAN_VALUE)
     }
 
     pub(crate) fn should_update_cgram(&self) -> bool {

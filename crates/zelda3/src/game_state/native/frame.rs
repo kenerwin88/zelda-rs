@@ -72,10 +72,6 @@ impl<'a> NativeFrameStateView<'a> {
         self.frame.saved_module_for_menu
     }
 
-    pub(crate) fn raw_sfx_pan_value(&self) -> u8 {
-        ram_byte(self.ram, RAW_SFX_PAN_VALUE)
-    }
-
     pub(crate) fn modal_pause_flag(&self) -> u8 {
         self.frame.modal_pause_flag
     }
