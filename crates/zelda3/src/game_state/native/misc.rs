@@ -523,6 +523,208 @@ impl<'a> NativeMinigameBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct IntroSwordState {
+    y_position: u16,
+    sparkle_timer: u8,
+    sparkle_step: u8,
+    animation_step: u8,
+    sparkle_y_offset: u8,
+    flash_rgb_channel: u8,
+    flash_rgb_channel_high: u8,
+}
+
+impl IntroSwordState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            y_position: read_le_u16(ram, INTRO_SWORD_YPOS),
+            sparkle_timer: ram_byte(ram, INTRO_SWORD_SPARKLE_TIMER),
+            sparkle_step: ram_byte(ram, INTRO_SWORD_SPARKLE_STEP),
+            animation_step: ram_byte(ram, INTRO_SWORD_ANIM_STEP),
+            sparkle_y_offset: ram_byte(ram, INTRO_SWORD_SPARKLE_Y_OFFSET),
+            flash_rgb_channel: ram_byte(ram, INTRO_SWORD_FLASH_RGB_CHANNEL),
+            flash_rgb_channel_high: ram_byte(ram, INTRO_SWORD_FLASH_RGB_CHANNEL + 1),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, INTRO_SWORD_YPOS, self.y_position);
+        ram[INTRO_SWORD_SPARKLE_TIMER] = self.sparkle_timer;
+        ram[INTRO_SWORD_SPARKLE_STEP] = self.sparkle_step;
+        ram[INTRO_SWORD_ANIM_STEP] = self.animation_step;
+        ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = self.sparkle_y_offset;
+        ram[INTRO_SWORD_FLASH_RGB_CHANNEL] = self.flash_rgb_channel;
+        ram[INTRO_SWORD_FLASH_RGB_CHANNEL + 1] = self.flash_rgb_channel_high;
+    }
+
+    pub(crate) fn ypos(&self) -> u16 {
+        self.y_position
+    }
+
+    pub(crate) fn sparkle_timer(&self) -> u8 {
+        self.sparkle_timer
+    }
+
+    pub(crate) fn sparkle_step(&self) -> u8 {
+        self.sparkle_step
+    }
+
+    pub(crate) fn anim_phase(&self) -> u8 {
+        self.animation_step >> 1
+    }
+
+    pub(crate) fn anim_step_raw(&self) -> u8 {
+        self.animation_step
+    }
+
+    pub(crate) fn sparkle_y_offset(&self) -> u8 {
+        self.sparkle_y_offset
+    }
+
+    pub(crate) fn flash_rgb_channel(&self) -> usize {
+        usize::from(self.flash_rgb_channel)
+    }
+
+    pub(crate) fn reset_sword_state(&mut self) {
+        self.sparkle_step = 7;
+        self.animation_step = 0;
+        self.sparkle_y_offset = 0;
+        self.y_position = (-130i16) as u16;
+    }
+
+    pub(crate) fn set_ypos(&mut self, value: u16) {
+        self.y_position = value;
+    }
+
+    pub(crate) fn advance_ypos(&mut self) {
+        self.y_position = self.y_position.wrapping_add(16);
+    }
+
+    pub(crate) fn decrement_sparkle_timer(&mut self) {
+        self.sparkle_timer = self.sparkle_timer.wrapping_sub(1);
+    }
+
+    pub(crate) fn set_sparkle_timer(&mut self, value: u8) {
+        self.sparkle_timer = value;
+    }
+
+    pub(crate) fn set_sparkle_step(&mut self, value: u8) {
+        self.sparkle_step = value;
+    }
+
+    pub(crate) fn decrement_sparkle_step_check_negative(&mut self) -> bool {
+        self.sparkle_step = self.sparkle_step.wrapping_sub(1);
+        (self.sparkle_step as i8) < 0
+    }
+
+    pub(crate) fn advance_anim_step(&mut self) {
+        self.animation_step = self.animation_step.wrapping_add(2);
+    }
+
+    pub(crate) fn set_sparkle_y_offset(&mut self, value: u8) {
+        self.sparkle_y_offset = value;
+    }
+
+    pub(crate) fn advance_sparkle_y_offset(&mut self) {
+        self.sparkle_y_offset = self.sparkle_y_offset.wrapping_add(4);
+    }
+
+    pub(crate) fn set_flash_rgb_channel_word(&mut self, value: u16) {
+        self.flash_rgb_channel = value as u8;
+        self.flash_rgb_channel_high = (value >> 8) as u8;
+    }
+
+    pub(crate) fn cycle_flash_rgb_channel(&mut self) {
+        self.flash_rgb_channel = if self.flash_rgb_channel == 2 {
+            0
+        } else {
+            self.flash_rgb_channel.wrapping_add(1)
+        };
+    }
+}
+
+pub(crate) struct NativeIntroSwordBridgeMut<'a> {
+    intro_sword: &'a mut IntroSwordState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeIntroSwordBridgeMut<'a> {
+    pub(crate) fn new(intro_sword: &'a mut IntroSwordState, ram: &'a mut [u8]) -> Self {
+        *intro_sword = IntroSwordState::load_from_ram(ram);
+        Self { intro_sword, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.intro_sword, IntroSwordState::load_from_ram(self.ram));
+    }
+
+    fn sync(&mut self) {
+        self.intro_sword.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn reset_sword_state(&mut self) {
+        self.intro_sword.reset_sword_state();
+        self.sync();
+    }
+
+    pub(crate) fn set_ypos(&mut self, value: u16) {
+        self.intro_sword.set_ypos(value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_ypos(&mut self) {
+        self.intro_sword.advance_ypos();
+        self.sync();
+    }
+
+    pub(crate) fn decrement_sparkle_timer(&mut self) {
+        self.intro_sword.decrement_sparkle_timer();
+        self.sync();
+    }
+
+    pub(crate) fn set_sparkle_timer(&mut self, value: u8) {
+        self.intro_sword.set_sparkle_timer(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sparkle_step(&mut self, value: u8) {
+        self.intro_sword.set_sparkle_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_sparkle_step_check_negative(&mut self) -> bool {
+        let is_negative = self.intro_sword.decrement_sparkle_step_check_negative();
+        self.sync();
+        is_negative
+    }
+
+    pub(crate) fn advance_anim_step(&mut self) {
+        self.intro_sword.advance_anim_step();
+        self.sync();
+    }
+
+    pub(crate) fn set_sparkle_y_offset(&mut self, value: u8) {
+        self.intro_sword.set_sparkle_y_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_sparkle_y_offset(&mut self) {
+        self.intro_sword.advance_sparkle_y_offset();
+        self.sync();
+    }
+
+    pub(crate) fn set_flash_rgb_channel_word(&mut self, value: u16) {
+        self.intro_sword.set_flash_rgb_channel_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn cycle_flash_rgb_channel(&mut self) {
+        self.intro_sword.cycle_flash_rgb_channel();
+        self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {
     hit_counter: u8,
     arrows_left: u8,

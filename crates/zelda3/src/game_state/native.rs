@@ -49,11 +49,11 @@ pub(crate) use messaging::{
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
-    MemorizedTileState, MinigameState, NativeArcheryGameBridgeMut,
+    IntroSwordState, MemorizedTileState, MinigameState, NativeArcheryGameBridgeMut,
     NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
-    NativeEnhancedFeaturesBridgeMut, NativeMemorizedTileBridgeMut, NativeMinigameBridgeMut,
-    NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut, SaveLoadTransferState,
-    SpriteBattleState,
+    NativeEnhancedFeaturesBridgeMut, NativeIntroSwordBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut,
+    SaveLoadTransferState, SpriteBattleState,
 };
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
 pub(crate) use player::{
@@ -117,6 +117,7 @@ pub(crate) struct GameState {
     pub(crate) system_signals: SystemSignalsState,
     pub(crate) enhanced_features: EnhancedFeaturesState,
     pub(crate) minigame: MinigameState,
+    pub(crate) intro_sword: IntroSwordState,
     pub(crate) archery_game: ArcheryGameState,
     pub(crate) sprite_battle: SpriteBattleState,
     pub(crate) memorized_tiles: MemorizedTileState,
@@ -141,6 +142,7 @@ impl GameState {
             system_signals: SystemSignalsState::load_from_ram(ram),
             enhanced_features: EnhancedFeaturesState::load_from_ram(ram),
             minigame: MinigameState::load_from_ram(ram),
+            intro_sword: IntroSwordState::load_from_ram(ram),
             archery_game: ArcheryGameState::load_from_ram(ram),
             sprite_battle: SpriteBattleState::load_from_ram(ram),
             memorized_tiles: MemorizedTileState::load_from_ram(ram),
@@ -164,6 +166,7 @@ impl GameState {
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
         self.minigame.write_to_ram(ram);
+        self.intro_sword.write_to_ram(ram);
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
         self.memorized_tiles.write_to_ram(ram);
@@ -643,6 +646,75 @@ mod tests {
         assert_eq!(ram[FLAG_FOR_BOOMERANG_IN_PLACE], 0);
         assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_X), 0x4567);
         assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_Y), 0xcdef);
+    }
+
+    #[test]
+    fn intro_sword_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, INTRO_SWORD_YPOS, 0x1234);
+        ram[INTRO_SWORD_SPARKLE_TIMER] = 5;
+        ram[INTRO_SWORD_SPARKLE_STEP] = 1;
+        ram[INTRO_SWORD_ANIM_STEP] = 4;
+        ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = 7;
+        write_le_u16(&mut ram, INTRO_SWORD_FLASH_RGB_CHANNEL, 0xab02);
+
+        let mut intro_sword = IntroSwordState::load_from_ram(&ram);
+        assert_eq!(intro_sword.ypos(), 0x1234);
+        assert_eq!(intro_sword.sparkle_timer(), 5);
+        assert_eq!(intro_sword.sparkle_step(), 1);
+        assert_eq!(intro_sword.anim_phase(), 2);
+        assert_eq!(intro_sword.anim_step_raw(), 4);
+        assert_eq!(intro_sword.sparkle_y_offset(), 7);
+        assert_eq!(intro_sword.flash_rgb_channel(), 2);
+
+        intro_sword.advance_ypos();
+        intro_sword.decrement_sparkle_timer();
+        intro_sword.advance_anim_step();
+        intro_sword.advance_sparkle_y_offset();
+        intro_sword.cycle_flash_rgb_channel();
+        intro_sword.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, INTRO_SWORD_YPOS), 0x1244);
+        assert_eq!(ram[INTRO_SWORD_SPARKLE_TIMER], 4);
+        assert_eq!(ram[INTRO_SWORD_ANIM_STEP], 6);
+        assert_eq!(ram[INTRO_SWORD_SPARKLE_Y_OFFSET], 11);
+        assert_eq!(read_le_u16(&ram, INTRO_SWORD_FLASH_RGB_CHANNEL), 0xab00);
+    }
+
+    #[test]
+    fn native_intro_sword_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, INTRO_SWORD_YPOS, 0x1234);
+        ram[INTRO_SWORD_SPARKLE_TIMER] = 5;
+        ram[INTRO_SWORD_SPARKLE_STEP] = 0;
+        ram[INTRO_SWORD_ANIM_STEP] = 4;
+        ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = 7;
+        write_le_u16(&mut ram, INTRO_SWORD_FLASH_RGB_CHANNEL, 0xab01);
+
+        let mut intro_sword = IntroSwordState::default();
+        {
+            let mut bridge = NativeIntroSwordBridgeMut::new(&mut intro_sword, &mut ram);
+            bridge.advance_ypos();
+            bridge.decrement_sparkle_timer();
+            assert!(bridge.decrement_sparkle_step_check_negative());
+            bridge.advance_anim_step();
+            bridge.advance_sparkle_y_offset();
+            bridge.cycle_flash_rgb_channel();
+            bridge.set_flash_rgb_channel_word(0x0201);
+        }
+
+        assert_eq!(intro_sword.ypos(), 0x1244);
+        assert_eq!(intro_sword.sparkle_timer(), 4);
+        assert_eq!(intro_sword.sparkle_step(), 0xff);
+        assert_eq!(intro_sword.anim_step_raw(), 6);
+        assert_eq!(intro_sword.sparkle_y_offset(), 11);
+        assert_eq!(intro_sword.flash_rgb_channel(), 1);
+        assert_eq!(read_le_u16(&ram, INTRO_SWORD_YPOS), 0x1244);
+        assert_eq!(ram[INTRO_SWORD_SPARKLE_TIMER], 4);
+        assert_eq!(ram[INTRO_SWORD_SPARKLE_STEP], 0xff);
+        assert_eq!(ram[INTRO_SWORD_ANIM_STEP], 6);
+        assert_eq!(ram[INTRO_SWORD_SPARKLE_Y_OFFSET], 11);
+        assert_eq!(read_le_u16(&ram, INTRO_SWORD_FLASH_RGB_CHANNEL), 0x0201);
     }
 
     #[test]

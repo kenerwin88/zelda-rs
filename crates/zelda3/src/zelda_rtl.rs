@@ -46,10 +46,10 @@ use crate::game_state::{
     GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
     HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
-    IntroSwordView, IntroSwordViewMut, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    IntroSwordState, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
+    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -57,11 +57,11 @@ use crate::game_state::{
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEndingCreditBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeEnhancedFeaturesBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -3372,12 +3372,12 @@ impl ZeldaState {
             .set_death_count_digit_tile_base(value);
     }
 
-    pub(crate) fn intro_sword_view(&self) -> IntroSwordView<'_> {
-        IntroSwordView::new(&self.ram)
+    pub(crate) fn intro_sword_view(&self) -> &IntroSwordState {
+        &self.game_state.intro_sword
     }
 
-    pub(crate) fn intro_sword_view_mut(&mut self) -> IntroSwordViewMut<'_> {
-        IntroSwordViewMut::new(&mut self.ram)
+    pub(crate) fn intro_sword_view_mut(&mut self) -> NativeIntroSwordBridgeMut<'_> {
+        NativeIntroSwordBridgeMut::new(&mut self.game_state.intro_sword, &mut self.ram)
     }
 
     pub(crate) fn graphics_scratch_view_mut(&mut self) -> GraphicsScratchViewMut<'_> {
