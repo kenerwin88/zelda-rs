@@ -3231,22 +3231,14 @@ impl ZeldaState {
 
     fn store_overworld_prev_map16_load_state(&mut self, state: OverworldMap16LoadState) {
         self.set_overworld_prev_map16_load_state(state);
-        self.world_state_view_mut().set_prev_map16_load_state(
-            state.src_off,
-            state.dst_off,
-            state.y_unit,
-        );
     }
 
     fn store_overworld_spexit_map16_src_off(&mut self, src_off: u16) {
         self.set_overworld_spexit_map16_src_off(src_off);
-        self.world_state_view_mut()
-            .set_spexit_map16_src_off(src_off);
     }
 
     fn store_overworld_exit_map16_src_off(&mut self, src_off: u16) {
         self.set_overworld_exit_map16_src_off(src_off);
-        self.world_state_view_mut().set_exit_map16_src_off(src_off);
     }
 
     fn store_small_overworld_map16_scroll_backup(
@@ -3254,11 +3246,6 @@ impl ZeldaState {
         state: SmallOverworldMap16ScrollBackupState,
     ) {
         self.set_small_overworld_map16_scroll_backup_state(state);
-        self.world_state_view_mut().set_small_ow_scroll_backup(
-            state.src_off,
-            state.dst_off,
-            state.y_unit,
-        );
     }
 
     fn overworld_map16_src_off(&self) -> u16 {

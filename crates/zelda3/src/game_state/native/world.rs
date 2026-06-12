@@ -110,18 +110,106 @@ pub struct OverworldMap16LoadState {
 }
 
 impl OverworldMap16LoadState {
+    fn load_from_ram_at(ram: &[u8], src_off: usize, dst_off: usize, y_unit: usize) -> Self {
+        Self {
+            src_off: read_le_u16(ram, src_off),
+            dst_off: read_le_u16(ram, dst_off),
+            y_unit: read_le_u16(ram, y_unit),
+        }
+    }
+
+    fn write_to_ram_at(&self, ram: &mut [u8], src_off: usize, dst_off: usize, y_unit: usize) {
+        write_le_u16(ram, src_off, self.src_off);
+        write_le_u16(ram, dst_off, self.dst_off);
+        write_le_u16(ram, y_unit, self.y_unit);
+    }
+
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self::load_from_ram_at(
+            ram,
+            MAP16_LOAD_SRC_OFF,
+            MAP16_LOAD_DST_OFF,
+            MAP16_LOAD_Y_UNIT,
+        )
+    }
+
+    pub(crate) fn load_previous_from_ram(ram: &[u8]) -> Self {
+        Self::load_from_ram_at(
+            ram,
+            MAP16_LOAD_SRC_OFF_PREV,
+            MAP16_LOAD_DST_OFF_PREV,
+            MAP16_LOAD_Y_UNIT_PREV,
+        )
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.write_to_ram_at(
+            ram,
+            MAP16_LOAD_SRC_OFF,
+            MAP16_LOAD_DST_OFF,
+            MAP16_LOAD_Y_UNIT,
+        );
+    }
+
+    pub(crate) fn write_previous_to_ram(&self, ram: &mut [u8]) {
+        self.write_to_ram_at(
+            ram,
+            MAP16_LOAD_SRC_OFF_PREV,
+            MAP16_LOAD_DST_OFF_PREV,
+            MAP16_LOAD_Y_UNIT_PREV,
+        );
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SmallOverworldMap16ScrollBackupState {
+    pub src_off: u16,
+    pub dst_off: u16,
+    pub y_unit: u16,
+}
+
+impl SmallOverworldMap16ScrollBackupState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF),
-            dst_off: read_le_u16(ram, MAP16_LOAD_DST_OFF),
-            y_unit: read_le_u16(ram, MAP16_LOAD_Y_UNIT),
+            src_off: read_le_u16(ram, ORANGE_BLUE_BARRIER_STATE),
+            dst_off: read_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF),
+            y_unit: read_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, MAP16_LOAD_SRC_OFF, self.src_off);
-        write_le_u16(ram, MAP16_LOAD_DST_OFF, self.dst_off);
-        write_le_u16(ram, MAP16_LOAD_Y_UNIT, self.y_unit);
+        write_le_u16(ram, ORANGE_BLUE_BARRIER_STATE, self.src_off);
+        write_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, self.dst_off);
+        write_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, self.y_unit);
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldMap16State {
+    pub(crate) active_load: OverworldMap16LoadState,
+    pub(crate) previous_load: OverworldMap16LoadState,
+    pub(crate) special_exit_src_off: u16,
+    pub(crate) exit_src_off: u16,
+    pub(crate) small_scroll_backup: SmallOverworldMap16ScrollBackupState,
+}
+
+impl OverworldMap16State {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            active_load: OverworldMap16LoadState::load_from_ram(ram),
+            previous_load: OverworldMap16LoadState::load_previous_from_ram(ram),
+            special_exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT),
+            exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT),
+            small_scroll_backup: SmallOverworldMap16ScrollBackupState::load_from_ram(ram),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.active_load.write_to_ram(ram);
+        self.previous_load.write_previous_to_ram(ram);
+        write_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT, self.special_exit_src_off);
+        write_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT, self.exit_src_off);
+        self.small_scroll_backup.write_to_ram(ram);
     }
 }
 
@@ -443,27 +531,48 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeOverworldMap16LoadBridgeMut<'a> {
-    map16: &'a mut OverworldMap16LoadState,
+pub(crate) struct NativeOverworldMap16BridgeMut<'a> {
+    map16: &'a mut OverworldMap16State,
     ram: &'a mut [u8],
 }
 
-impl<'a> NativeOverworldMap16LoadBridgeMut<'a> {
-    pub(crate) fn new(map16: &'a mut OverworldMap16LoadState, ram: &'a mut [u8]) -> Self {
-        *map16 = OverworldMap16LoadState::load_from_ram(ram);
+impl<'a> NativeOverworldMap16BridgeMut<'a> {
+    pub(crate) fn new(map16: &'a mut OverworldMap16State, ram: &'a mut [u8]) -> Self {
+        *map16 = OverworldMap16State::load_from_ram(ram);
         Self { map16, ram }
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.map16,
-            OverworldMap16LoadState::load_from_ram(self.ram)
-        );
+        debug_assert_eq!(*self.map16, OverworldMap16State::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_state(&mut self, state: OverworldMap16LoadState) {
-        *self.map16 = state;
-        self.map16.write_to_ram(self.ram);
+    pub(crate) fn set_active_load(&mut self, state: OverworldMap16LoadState) {
+        self.map16.active_load = state;
+        state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_previous_load(&mut self, state: OverworldMap16LoadState) {
+        self.map16.previous_load = state;
+        state.write_previous_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_special_exit_src_off(&mut self, src_off: u16) {
+        self.map16.special_exit_src_off = src_off;
+        write_le_u16(self.ram, MAP16_LOAD_SRC_OFF_SPEXIT, src_off);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_exit_src_off(&mut self, src_off: u16) {
+        self.map16.exit_src_off = src_off;
+        write_le_u16(self.ram, MAP16_LOAD_SRC_OFF_EXIT, src_off);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_small_scroll_backup(&mut self, state: SmallOverworldMap16ScrollBackupState) {
+        self.map16.small_scroll_backup = state;
+        state.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 }

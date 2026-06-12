@@ -60,40 +60,40 @@ use crate::game_state::{
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut,
-    NativeOverworldMap16LoadBridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldTransitionBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView,
-    OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldConfigTableViewMut, OverworldEventInfoView, OverworldEventInfoViewMut,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldPaletteBackupViewMut, OverworldScreenSizeView,
-    OverworldScreenSizeViewMut, OverworldScrollDeltaView, OverworldScrollDeltaViewMut,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, OverworldTileUpdateView, OverworldTileUpdateViewMut,
-    PaletteBufferView, PaletteBufferViewMut, PaletteFilterView, PaletteFilterViewMut,
-    PlayerResourcesView, PlayerResourcesViewMut, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PrizeDropCycleViewMut,
-    PushedBlockView, PushedBlockViewMut, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
-    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView,
-    SaveLoadScratchViewMut, SaveProgressView, SaveProgressViewMut, ScratchWordView,
-    ScratchWordViewMut, SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldPaletteBackupViewMut, OverworldScreenSizeView, OverworldScreenSizeViewMut,
+    OverworldScrollDeltaView, OverworldScrollDeltaViewMut, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    OverworldTileUpdateView, OverworldTileUpdateViewMut, PaletteBufferView, PaletteBufferViewMut,
+    PaletteFilterView, PaletteFilterViewMut, PlayerResourcesView, PlayerResourcesViewMut,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PrizeDropCycleViewMut, PushedBlockView, PushedBlockViewMut,
+    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
+    SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerView,
     SharedMessageTimerViewMut, SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SpecialExitPositionView, SpecialExitPositionViewMut,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleView, SpriteBattleViewMut, SpriteSlotView,
-    SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, StarTileView, StarTileViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SwimAccelerationViewMut, SystemSignalsView, SystemSignalsViewMut, TagalongSlotView,
-    TagalongSlotViewMut, TempCounterView, TempCounterViewMut, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealScratchView,
-    TowerSealScratchViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TrinexxPaletteView,
-    TrinexxPaletteViewMut, VramLoadStateView, VramLoadStateViewMut, VwfGlyphSpacingView,
-    VwfGlyphSpacingViewMut, WaterHdmaWindowView, WaterHdmaWindowViewMut, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneStateView, WeatherVaneStateViewMut, WorldLocationState,
-    WorldStateView,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpecialExitPositionViewMut, SpotlightHdmaView, SpotlightHdmaViewMut,
+    SpriteBattleView, SpriteBattleViewMut, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, StarTileView,
+    StarTileViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SwimAccelerationViewMut, SystemSignalsView,
+    SystemSignalsViewMut, TagalongSlotView, TagalongSlotViewMut, TempCounterView,
+    TempCounterViewMut, TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealScratchView, TowerSealScratchViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TrinexxPaletteView, TrinexxPaletteViewMut, VramLoadStateView,
+    VramLoadStateViewMut, VwfGlyphSpacingView, VwfGlyphSpacingViewMut, WaterHdmaWindowView,
+    WaterHdmaWindowViewMut, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneStateView,
+    WeatherVaneStateViewMut, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1414,14 +1414,6 @@ pub struct ZeldaState {
     replay_reload_file_select_stall: u8,
     #[serde(skip)]
     replay_loadfile_stall: u8,
-    #[serde(skip)]
-    overworld_prev_map16_load: OverworldMap16LoadState,
-    #[serde(skip)]
-    overworld_spexit_map16_src_off: u16,
-    #[serde(skip)]
-    overworld_exit_map16_src_off: u16,
-    #[serde(skip)]
-    small_overworld_map16_scroll_backup: SmallOverworldMap16ScrollBackupState,
     ending_coords: sprite::PrepOamCoordsRet,
     #[serde(skip)]
     intro_poly_vram_history: Vec<(u8, Vec<u16>, Vec<u16>)>,
@@ -1435,13 +1427,6 @@ pub struct ZeldaState {
     emu_runframe: Option<ZeldaRunFrameFunc>,
     #[serde(skip)]
     emu_syncall: Option<ZeldaSyncAllFunc>,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct SmallOverworldMap16ScrollBackupState {
-    pub src_off: u16,
-    pub dst_off: u16,
-    pub y_unit: u16,
 }
 
 #[derive(Clone)]
@@ -1468,14 +1453,6 @@ fn default_gloves_color() -> [u16; 2] {
 const SEMANTIC_MAP16_LOAD_SRC_OFF: usize = 0x0084;
 const SEMANTIC_MAP16_LOAD_DST_OFF: usize = 0x0086;
 const SEMANTIC_MAP16_LOAD_Y_UNIT: usize = 0x0088;
-const SEMANTIC_MAP16_LOAD_SRC_OFF_SPEXIT: usize = 0x0c10e;
-const SEMANTIC_MAP16_LOAD_SRC_OFF_EXIT: usize = 0x0c14e;
-const SEMANTIC_SMALL_OW_MAP16_SRC_OFF_BACKUP: usize = 0x0c172;
-const SEMANTIC_SMALL_OW_MAP16_DST_OFF_BACKUP: usize = 0x0c174;
-const SEMANTIC_SMALL_OW_MAP16_Y_UNIT_BACKUP: usize = 0x0c176;
-const SEMANTIC_MAP16_LOAD_SRC_OFF_PREV: usize = 0x0c215;
-const SEMANTIC_MAP16_LOAD_Y_UNIT_PREV: usize = 0x0c217;
-const SEMANTIC_MAP16_LOAD_DST_OFF_PREV: usize = 0x0c219;
 
 fn wram_patch_addr(addr: usize) -> u32 {
     debug_assert!(addr < WRAM_SIZE);
@@ -3778,52 +3755,53 @@ impl ZeldaState {
     }
 
     pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {
-        self.game_state.overworld_map16_load
+        self.game_state.overworld_map16.active_load
     }
 
     pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
-        NativeOverworldMap16LoadBridgeMut::new(
-            &mut self.game_state.overworld_map16_load,
-            &mut self.ram,
-        )
-        .set_state(state);
+        NativeOverworldMap16BridgeMut::new(&mut self.game_state.overworld_map16, &mut self.ram)
+            .set_active_load(state);
     }
 
     pub fn overworld_prev_map16_load_state(&self) -> OverworldMap16LoadState {
-        self.overworld_prev_map16_load
+        self.game_state.overworld_map16.previous_load
     }
 
     pub fn set_overworld_prev_map16_load_state(&mut self, state: OverworldMap16LoadState) {
-        self.overworld_prev_map16_load = state;
+        NativeOverworldMap16BridgeMut::new(&mut self.game_state.overworld_map16, &mut self.ram)
+            .set_previous_load(state);
     }
 
     pub fn overworld_spexit_map16_src_off(&self) -> u16 {
-        self.overworld_spexit_map16_src_off
+        self.game_state.overworld_map16.special_exit_src_off
     }
 
     pub fn set_overworld_spexit_map16_src_off(&mut self, src_off: u16) {
-        self.overworld_spexit_map16_src_off = src_off;
+        NativeOverworldMap16BridgeMut::new(&mut self.game_state.overworld_map16, &mut self.ram)
+            .set_special_exit_src_off(src_off);
     }
 
     pub fn overworld_exit_map16_src_off(&self) -> u16 {
-        self.overworld_exit_map16_src_off
+        self.game_state.overworld_map16.exit_src_off
     }
 
     pub fn set_overworld_exit_map16_src_off(&mut self, src_off: u16) {
-        self.overworld_exit_map16_src_off = src_off;
+        NativeOverworldMap16BridgeMut::new(&mut self.game_state.overworld_map16, &mut self.ram)
+            .set_exit_src_off(src_off);
     }
 
     pub fn small_overworld_map16_scroll_backup_state(
         &self,
     ) -> SmallOverworldMap16ScrollBackupState {
-        self.small_overworld_map16_scroll_backup
+        self.game_state.overworld_map16.small_scroll_backup
     }
 
     pub fn set_small_overworld_map16_scroll_backup_state(
         &mut self,
         state: SmallOverworldMap16ScrollBackupState,
     ) {
-        self.small_overworld_map16_scroll_backup = state;
+        NativeOverworldMap16BridgeMut::new(&mut self.game_state.overworld_map16, &mut self.ram)
+            .set_small_scroll_backup(state);
     }
 
     pub(crate) fn sync_native_game_state_from_ram(&mut self) {
@@ -3862,35 +3840,8 @@ impl ZeldaState {
     }
 
     pub fn sync_overworld_map16_load_from_ram(&mut self) {
-        self.game_state.overworld_map16_load = OverworldMap16LoadState::load_from_ram(&self.ram);
-        self.overworld_prev_map16_load = OverworldMap16LoadState {
-            src_off: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_MAP16_LOAD_SRC_OFF_PREV),
-            dst_off: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_MAP16_LOAD_DST_OFF_PREV),
-            y_unit: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_MAP16_LOAD_Y_UNIT_PREV),
-        };
-        self.overworld_spexit_map16_src_off = self
-            .native_ram_bridge_view()
-            .word_at(SEMANTIC_MAP16_LOAD_SRC_OFF_SPEXIT);
-        self.overworld_exit_map16_src_off = self
-            .native_ram_bridge_view()
-            .word_at(SEMANTIC_MAP16_LOAD_SRC_OFF_EXIT);
-        self.small_overworld_map16_scroll_backup = SmallOverworldMap16ScrollBackupState {
-            src_off: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_SMALL_OW_MAP16_SRC_OFF_BACKUP),
-            dst_off: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_SMALL_OW_MAP16_DST_OFF_BACKUP),
-            y_unit: self
-                .native_ram_bridge_view()
-                .word_at(SEMANTIC_SMALL_OW_MAP16_Y_UNIT_BACKUP),
-        };
+        self.game_state.overworld_map16 =
+            crate::game_state::OverworldMap16State::load_from_ram(&self.ram);
     }
 
     pub fn new() -> Self {
@@ -3930,10 +3881,6 @@ impl ZeldaState {
             bsnes_intro_step_hold_alternate: false,
             replay_reload_file_select_stall: 0,
             replay_loadfile_stall: 0,
-            overworld_prev_map16_load: OverworldMap16LoadState::default(),
-            overworld_spexit_map16_src_off: 0,
-            overworld_exit_map16_src_off: 0,
-            small_overworld_map16_scroll_backup: SmallOverworldMap16ScrollBackupState::default(),
             ending_coords: sprite::PrepOamCoordsRet::default(),
             intro_poly_vram_history: Vec::new(),
             intro_poly_presented_vram: None,

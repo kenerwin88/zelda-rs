@@ -4,6 +4,6 @@ pub(crate) mod constants;
 mod native;
 mod view;
 
-pub use native::OverworldMap16LoadState;
 pub(crate) use native::*;
+pub use native::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 pub(crate) use view::*;

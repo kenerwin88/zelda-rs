@@ -10,14 +10,14 @@ mod world;
 
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
-pub use world::OverworldMap16LoadState;
 pub(crate) use world::{
-    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut,
-    NativeOverworldMap16LoadBridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativeWorldLocationViewMut, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
-    OverworldMapZoomState, OverworldTransitionState, WorldLocationState,
+    NativeOverworldEntranceBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeWorldLocationViewMut, OverworldEntranceState,
+    OverworldExitState, OverworldMap16State, OverworldMapUiState, OverworldMapZoomState,
+    OverworldTransitionState, WorldLocationState,
 };
+pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
 #[cfg(test)]
 use crate::game_state::constants::*;
@@ -34,7 +34,7 @@ pub(crate) struct GameState {
     pub(crate) world_location: WorldLocationState,
     pub(crate) overworld_map_ui: OverworldMapUiState,
     pub(crate) overworld_map_zoom: OverworldMapZoomState,
-    pub(crate) overworld_map16_load: OverworldMap16LoadState,
+    pub(crate) overworld_map16: OverworldMap16State,
     pub(crate) overworld_entrance: OverworldEntranceState,
     pub(crate) overworld_exit: OverworldExitState,
     pub(crate) overworld_transition: OverworldTransitionState,
@@ -48,7 +48,7 @@ impl GameState {
             world_location: WorldLocationState::load_from_ram(ram),
             overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
             overworld_map_zoom: OverworldMapZoomState::load_from_ram(ram),
-            overworld_map16_load: OverworldMap16LoadState::load_from_ram(ram),
+            overworld_map16: OverworldMap16State::load_from_ram(ram),
             overworld_entrance: OverworldEntranceState::load_from_ram(ram),
             overworld_exit: OverworldExitState::load_from_ram(ram),
             overworld_transition: OverworldTransitionState::load_from_ram(ram),
@@ -61,7 +61,7 @@ impl GameState {
         self.world_location.write_to_ram(ram);
         self.overworld_map_ui.write_to_ram(ram);
         self.overworld_map_zoom.write_to_ram(ram);
-        self.overworld_map16_load.write_to_ram(ram);
+        self.overworld_map16.write_to_ram(ram);
         self.overworld_entrance.write_to_ram(ram);
         self.overworld_exit.write_to_ram(ram);
         self.overworld_transition.write_to_ram(ram);
@@ -288,50 +288,127 @@ mod tests {
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_PREV, 0x2345);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF_PREV, 0x0067);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT_PREV, 0x0008);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_SPEXIT, 0x3456);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_EXIT, 0x4567);
+        write_le_u16(&mut ram, ORANGE_BLUE_BARRIER_STATE, 0x5678);
+        write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, 0x0079);
+        write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, 0x000a);
 
-        let mut map16 = OverworldMap16LoadState::load_from_ram(&ram);
-        assert_eq!(map16.src_off, 0x1234);
-        assert_eq!(map16.dst_off, 0x0056);
-        assert_eq!(map16.y_unit, 0x0007);
+        let mut map16 = OverworldMap16State::load_from_ram(&ram);
+        assert_eq!(map16.active_load.src_off, 0x1234);
+        assert_eq!(map16.active_load.dst_off, 0x0056);
+        assert_eq!(map16.active_load.y_unit, 0x0007);
+        assert_eq!(map16.previous_load.src_off, 0x2345);
+        assert_eq!(map16.previous_load.dst_off, 0x0067);
+        assert_eq!(map16.previous_load.y_unit, 0x0008);
+        assert_eq!(map16.special_exit_src_off, 0x3456);
+        assert_eq!(map16.exit_src_off, 0x4567);
+        assert_eq!(map16.small_scroll_backup.src_off, 0x5678);
+        assert_eq!(map16.small_scroll_backup.dst_off, 0x0079);
+        assert_eq!(map16.small_scroll_backup.y_unit, 0x000a);
 
-        map16.src_off = 0x2222;
-        map16.dst_off = 0x0034;
-        map16.y_unit = 0x0009;
+        map16.active_load.src_off = 0x2222;
+        map16.active_load.dst_off = 0x0034;
+        map16.active_load.y_unit = 0x0009;
+        map16.previous_load.src_off = 0x3333;
+        map16.previous_load.dst_off = 0x0045;
+        map16.previous_load.y_unit = 0x000b;
+        map16.special_exit_src_off = 0x4444;
+        map16.exit_src_off = 0x5555;
+        map16.small_scroll_backup = SmallOverworldMap16ScrollBackupState {
+            src_off: 0x6666,
+            dst_off: 0x0056,
+            y_unit: 0x000c,
+        };
         map16.write_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x2222);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0034);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT), 0x0009);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_PREV), 0x3333);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF_PREV), 0x0045);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT_PREV), 0x000b);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_SPEXIT), 0x4444);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_EXIT), 0x5555);
+        assert_eq!(read_le_u16(&ram, ORANGE_BLUE_BARRIER_STATE), 0x6666);
+        assert_eq!(
+            read_le_u16(&ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF),
+            0x0056
+        );
+        assert_eq!(
+            read_le_u16(&ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT),
+            0x000c
+        );
     }
 
     #[test]
-    fn native_overworld_map16_load_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_map16_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
         write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_PREV, 0x2345);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF_PREV, 0x0067);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT_PREV, 0x0008);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_SPEXIT, 0x3456);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_EXIT, 0x4567);
+        write_le_u16(&mut ram, ORANGE_BLUE_BARRIER_STATE, 0x5678);
+        write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, 0x0079);
+        write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, 0x000a);
 
-        let mut map16 = OverworldMap16LoadState::default();
+        let mut map16 = OverworldMap16State::default();
         {
-            let mut bridge = NativeOverworldMap16LoadBridgeMut::new(&mut map16, &mut ram);
-            bridge.set_state(OverworldMap16LoadState {
+            let mut bridge = NativeOverworldMap16BridgeMut::new(&mut map16, &mut ram);
+            bridge.set_active_load(OverworldMap16LoadState {
                 src_off: 0x3456,
                 dst_off: 0x0078,
                 y_unit: 0x000a,
             });
+            bridge.set_previous_load(OverworldMap16LoadState {
+                src_off: 0x4567,
+                dst_off: 0x0089,
+                y_unit: 0x000b,
+            });
+            bridge.set_special_exit_src_off(0x5678);
+            bridge.set_exit_src_off(0x6789);
+            bridge.set_small_scroll_backup(SmallOverworldMap16ScrollBackupState {
+                src_off: 0x789a,
+                dst_off: 0x009b,
+                y_unit: 0x000c,
+            });
         }
 
-        assert_eq!(
-            map16,
-            OverworldMap16LoadState {
-                src_off: 0x3456,
-                dst_off: 0x0078,
-                y_unit: 0x000a,
-            }
-        );
+        assert_eq!(map16.active_load.src_off, 0x3456);
+        assert_eq!(map16.active_load.dst_off, 0x0078);
+        assert_eq!(map16.active_load.y_unit, 0x000a);
+        assert_eq!(map16.previous_load.src_off, 0x4567);
+        assert_eq!(map16.previous_load.dst_off, 0x0089);
+        assert_eq!(map16.previous_load.y_unit, 0x000b);
+        assert_eq!(map16.special_exit_src_off, 0x5678);
+        assert_eq!(map16.exit_src_off, 0x6789);
+        assert_eq!(map16.small_scroll_backup.src_off, 0x789a);
+        assert_eq!(map16.small_scroll_backup.dst_off, 0x009b);
+        assert_eq!(map16.small_scroll_backup.y_unit, 0x000c);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x3456);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0078);
         assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT), 0x000a);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_PREV), 0x4567);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF_PREV), 0x0089);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT_PREV), 0x000b);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_SPEXIT), 0x5678);
+        assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF_EXIT), 0x6789);
+        assert_eq!(read_le_u16(&ram, ORANGE_BLUE_BARRIER_STATE), 0x789a);
+        assert_eq!(
+            read_le_u16(&ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF),
+            0x009b
+        );
+        assert_eq!(
+            read_le_u16(&ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT),
+            0x000c
+        );
     }
 
     #[test]
