@@ -11,6 +11,7 @@ mod frame;
 mod inventory;
 mod messaging;
 mod misc;
+mod oam;
 mod player;
 mod sprites;
 mod world;
@@ -53,6 +54,7 @@ pub(crate) use misc::{
     NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut, SaveLoadTransferState,
     SpriteBattleState,
 };
+pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
 pub(crate) use player::{
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSwimAccelerationBridgeMut, PlayerState, PushedBlockView, SpecialExitPositionView,
@@ -127,6 +129,7 @@ pub(crate) struct GameState {
     pub(crate) effects: EffectState,
     pub(crate) ending: EndingState,
     pub(crate) messaging: MessagingState,
+    pub(crate) oam: OamState,
 }
 
 impl GameState {
@@ -149,6 +152,7 @@ impl GameState {
             effects: EffectState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
             messaging: MessagingState::load_from_ram(ram),
+            oam: OamState::load_from_ram(ram),
         }
     }
 
@@ -170,6 +174,7 @@ impl GameState {
         self.effects.write_to_ram(ram);
         self.ending.write_to_ram(ram);
         self.messaging.write_to_ram(ram);
+        self.oam.write_to_ram(ram);
     }
 }
 

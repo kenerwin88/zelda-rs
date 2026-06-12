@@ -61,7 +61,7 @@ use crate::game_state::{
     NativeIntroSceneBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -74,7 +74,7 @@ use crate::game_state::{
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
     NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
     OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
     OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
@@ -4095,11 +4095,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn oam_state_view(&self) -> OamStateView<'_> {
-        OamStateView::new(&self.ram)
+        OamStateView::new(&self.game_state.oam)
     }
 
-    pub(crate) fn oam_state_view_mut(&mut self) -> OamStateViewMut<'_> {
-        OamStateViewMut::new(&mut self.ram)
+    pub(crate) fn oam_state_view_mut(&mut self) -> NativeOamStateBridgeMut<'_> {
+        NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
     pub(crate) fn overworld_sprite_presence_view(&self) -> OverworldSpritePresenceView<'_> {

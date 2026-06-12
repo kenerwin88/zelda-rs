@@ -8957,12 +8957,14 @@ mod tests {
         s.oam_state_view_mut().set_current_pointer(OAM_BUF as u16);
         s.oam_state_view_mut()
             .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
-        s.ram[OAM_BUF] = 0x30;
-        s.ram[OAM_BUF + 1] = 0x04;
-        s.ram[OAM_BUF + 4] = 0xf0;
-        s.ram[OAM_BUF + 5] = 0xef;
-        s.ram[BYTEWISE_EXTENDED_OAM] = 2;
-        s.ram[BYTEWISE_EXTENDED_OAM + 1] = 0;
+        s.oam_state_view_mut()
+            .write_entry(OAM_BUF, 0x30, 0x04, 0, 0);
+        s.oam_state_view_mut()
+            .write_entry(OAM_BUF + 4, 0xf0, 0xef, 0, 0);
+        s.oam_state_view_mut()
+            .set_extended_byte_at(BYTEWISE_EXTENDED_OAM, 2);
+        s.oam_state_view_mut()
+            .set_extended_byte_at(BYTEWISE_EXTENDED_OAM + 1, 0);
 
         s.sprite_correct_oam_entries(k, 1, 0xff);
 
@@ -8971,9 +8973,10 @@ mod tests {
         assert_eq!(s.ram[OAM_BUF + 1], 0x04);
         assert_eq!(s.ram[OAM_BUF + 5], 0xf0);
 
-        s.ram[OAM_BUF] = 0x30;
-        s.ram[OAM_BUF + 1] = 0x04;
-        s.ram[BYTEWISE_EXTENDED_OAM] = 2;
+        s.oam_state_view_mut()
+            .write_entry(OAM_BUF, 0x30, 0x04, 0, 0);
+        s.oam_state_view_mut()
+            .set_extended_byte_at(BYTEWISE_EXTENDED_OAM, 2);
         s.sprite_correct_oam_entries(k, 0, 0);
         assert_eq!(s.ram[BYTEWISE_EXTENDED_OAM], 0);
     }
