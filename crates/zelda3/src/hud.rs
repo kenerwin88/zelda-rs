@@ -227,7 +227,7 @@ impl ZeldaState {
         self.hud_search_for_equipped_item();
         self.hud_update_hud();
         self.hud_rebuild();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
     }
 
     pub(super) fn check_palace_item_posession(&self) -> u8 {
@@ -400,7 +400,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_logic(&mut self) {
-        if self.world_state_view().overworld_map_state() != 0 {
+        if self.overworld_map_state() != 0 {
             return;
         }
         if self.player_resources_view().magic_filler() != 0 {
@@ -548,7 +548,7 @@ impl ZeldaState {
     pub(super) fn hud_module_run(&mut self) {
         let tick = self.hud_state_view().tick_counter().wrapping_add(1);
         self.hud_state_view_mut().set_tick_counter(tick);
-        match self.world_state_view().overworld_map_state() {
+        match self.overworld_map_state() {
             0 => self.hud_clear_tile_map(),
             1 => self.hud_init(),
             2 => self.hud_bring_menu_down(),
@@ -574,7 +574,7 @@ impl ZeldaState {
         self.system_signals_view_mut().set_sound_effect_2(17);
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
     }
 
     fn hud_have_any_items(&self) -> bool {
@@ -613,14 +613,14 @@ impl ZeldaState {
         self.hud_state_view_mut().set_flashing_circle_timer(16);
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
     }
 
     pub(super) fn hud_bring_menu_down(&mut self) {
         let bg3 = self.ppu_scroll_copy_view().bg3_v_copy2().wrapping_sub(8);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(bg3);
         if bg3 == 0xff18 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
     }
 
@@ -637,10 +637,9 @@ impl ZeldaState {
             } else {
                 4
             };
-            self.world_state_view_mut()
-                .set_overworld_map_state(overworld_map_state);
+            self.set_overworld_map_state(overworld_map_state);
         } else if self.player_state_view().filtered_joypad_h() != 0 {
-            self.world_state_view_mut().set_overworld_map_state(5);
+            self.set_overworld_map_state(5);
         }
     }
 
@@ -739,7 +738,7 @@ impl ZeldaState {
         }
 
         if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
-            self.world_state_view_mut().set_overworld_map_state(5);
+            self.set_overworld_map_state(5);
             self.system_signals_view_mut().set_sound_effect_2(18);
             return;
         }
@@ -794,7 +793,7 @@ impl ZeldaState {
         if self.save_progress_view().hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
             && !USE_NEW_STYLE_INVENTORY
         {
-            self.world_state_view_mut().set_overworld_map_state(7);
+            self.set_overworld_map_state(7);
         }
 
         self.set_pending_nmi_subroutine(1);
@@ -802,7 +801,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_update_hud(&mut self) {
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
         self.hud_rebuild();
         self.hud_update_equipped_item();
     }
@@ -833,7 +832,7 @@ impl ZeldaState {
             return;
         }
         self.hud_rebuild();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.set_submodule(0);
         let saved_module = self.frame_state().saved_module_for_menu;
         self.set_main_module(saved_module);
@@ -853,7 +852,7 @@ impl ZeldaState {
 
     pub(super) fn hud_goto_bottle_menu(&mut self) {
         self.hud_state_view_mut().set_bottle_menu_row(0);
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
     }
 
     pub(super) fn hud_init_bottle_menu(&mut self) {
@@ -864,7 +863,7 @@ impl ZeldaState {
         let row = self.hud_state_view().bottle_menu_row().wrapping_add(1);
         self.hud_state_view_mut().set_bottle_menu_row(row);
         if row == 19 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
             self.hud_state_view_mut().set_bottle_menu_row(17);
         }
         self.set_pending_nmi_subroutine(1);
@@ -894,7 +893,7 @@ impl ZeldaState {
         let row = self.hud_state_view().bottle_menu_row().wrapping_sub(1);
         self.hud_state_view_mut().set_bottle_menu_row(row);
         if (row as i8) < 0 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
@@ -908,7 +907,7 @@ impl ZeldaState {
         self.hud_state_view_mut().set_flashing_circle_timer(tc);
         if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.system_signals_view_mut().set_sound_effect_2(18);
-            self.world_state_view_mut().set_overworld_map_state(5);
+            self.set_overworld_map_state(5);
         } else if self.player_state_view().filtered_joypad_h()
             & (JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT)
             != 0
@@ -924,7 +923,7 @@ impl ZeldaState {
             self.system_signals_view_mut().set_sound_effect_2(32);
             self.hud_draw_y_button_items();
             self.hud_draw_selected_y_button_item();
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
             self.hud_state_view_mut().set_bottle_menu_row(0);
             return;
         }
@@ -975,7 +974,7 @@ impl ZeldaState {
         let row = self.hud_state_view().bottle_menu_row().wrapping_add(1);
         self.hud_state_view_mut().set_bottle_menu_row(row);
         if row == 19 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
@@ -984,7 +983,7 @@ impl ZeldaState {
     pub(super) fn hud_restore_normal_menu(&mut self) {
         self.hud_draw_progress_icons();
         self.hud_draw_equipment_box();
-        self.world_state_view_mut().set_overworld_map_state(4);
+        self.set_overworld_map_state(4);
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
     }

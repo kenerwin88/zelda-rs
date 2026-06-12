@@ -349,11 +349,11 @@ impl ZeldaState {
         self.clear_hdma_enable_mask();
         self.Dungeon_LoadRoom();
         self.world_state_view_mut().clear_screen_transition();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.Dungeon_UploadRoomQuadrants();
         self.set_hdma_enable_mask(hdma);
         self.clear_pending_nmi_subroutine();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
     }
 
@@ -896,7 +896,7 @@ impl ZeldaState {
         };
         self.dungeon_state_view_mut()
             .set_staircase_move_counter(staircase_move_counter);
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.ResetTransitionPropsAndAdvanceSubmodule();
     }
 
@@ -1049,7 +1049,7 @@ impl ZeldaState {
             .decrement_staircase_move_counter();
         if self.dungeon_state_view().staircase_move_counter() == 0 {
             self.increment_subsubmodule();
-            self.world_state_view_mut().set_overworld_map_state(0);
+            self.set_overworld_map_state(0);
         }
     }
 
@@ -4049,7 +4049,7 @@ impl ZeldaState {
         } else if self.world_location_state().dungeon_room_index() == 0x0d {
             self.set_main_module(24);
             self.set_submodule(0);
-            self.world_state_view_mut().set_overworld_map_state(0);
+            self.set_overworld_map_state(0);
             self.palette_filter_view_mut().set_color_math_control(0x20);
         } else {
             if j >= 3 {
@@ -5020,7 +5020,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_UploadRoomQuadrants(&mut self) {
         self.dungeon_state_view_mut().clear_quadrant_upload_index();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         while self.dungeon_state_view().quadrant_upload_index() != 16 {
             self.TileMapPrep_NotWaterOnTag();
             self.upload_tilemap_now();
@@ -5028,7 +5028,7 @@ impl ZeldaState {
             self.upload_tilemap_now();
         }
         self.clear_pending_nmi_subroutine();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
     }
 
@@ -5360,7 +5360,7 @@ impl ZeldaState {
     }
 
     pub(super) fn ResetTransitionPropsAndAdvance_ResetInterface(&mut self) {
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.ResetTransitionPropsAndAdvanceSubmodule();
     }
 
@@ -7889,13 +7889,13 @@ impl ZeldaState {
         if self.dungeon_state_view().orange_blue_barrier_state() != 0 {
             self.Dungeon_FlipCrystalPegAttribute();
         }
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
     }
 
     pub(super) fn Dungeon_LoadAttribute_Selectable(&mut self) {
-        match self.world_state_view().overworld_map_state() {
+        match self.overworld_map_state() {
             0 => {
-                self.world_state_view_mut().set_overworld_map_state(1);
+                self.set_overworld_map_state(1);
                 self.dungeon_state_view_mut()
                     .set_draw_width_indicator_word(0);
                 self.dungeon_state_view_mut()
@@ -7906,7 +7906,7 @@ impl ZeldaState {
             2 => self.Dungeon_LoadObjectAttribute(),
             3 => self.Dungeon_LoadDoorAttribute(),
             4 => {
-                self.world_state_view_mut().set_overworld_map_state(5);
+                self.set_overworld_map_state(5);
                 if self.dungeon_state_view().orange_blue_barrier_state() != 0 {
                     self.Dungeon_FlipCrystalPegAttribute();
                 }
@@ -7915,7 +7915,7 @@ impl ZeldaState {
             // C Dungeon_LoadAttribute_Selectable asserts outside states 0..=5.
             _ => panic!(
                 "Dungeon_LoadAttribute_Selectable overworld_map_state {}",
-                self.world_state_view().overworld_map_state()
+                self.overworld_map_state()
             ),
         }
     }
@@ -7940,7 +7940,7 @@ impl ZeldaState {
                 .set_draw_width_indicator_word(width);
         }
         if self.dungeon_state_view().draw_height_indicator_word() == 0x2000 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
     }
 
@@ -8413,7 +8413,7 @@ impl ZeldaState {
                 i += 2;
             }
         }
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
     }
 
     fn hud_tags_suppress_big_key_locks(&self) -> bool {
@@ -8431,7 +8431,7 @@ impl ZeldaState {
         }
         self.Dungeon_LoadSingleDoorTileAttribute();
         self.ChangeDoorToSwitch();
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
     }
 
     pub(super) fn Dungeon_LoadToggleDoorAttr_OtherEntry(&mut self, door: i32) {
@@ -9441,7 +9441,7 @@ impl ZeldaState {
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX_sprite();
         self.increment_subsubmodule();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         let dungeon_room_index = self.world_location_state().dungeon_room_index();
         self.dungeon_state_view_mut()
             .set_room_index2(dungeon_room_index);
@@ -9554,7 +9554,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_07_11_CacheRoomAndSetMusic(&mut self) {
-        if self.world_state_view().overworld_map_state() == 5 {
+        if self.overworld_map_state() == 5 {
             self.ResetThenCacheRoomEntryProperties();
             self.Dungeon_PlayMusicIfDefeated();
             self.Graphics_LoadChrHalfSlot();
@@ -9716,7 +9716,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_InterRoomTrans_State12(&mut self) {
         if self.frame_state().submodule == 2 {
-            if self.world_state_view().overworld_map_state() != 5 {
+            if self.overworld_map_state() != 5 {
                 return;
             }
             self.SubtileTransitionCalculateLanding();
@@ -10013,7 +10013,7 @@ impl ZeldaState {
                 if (self.palette_filter_view().darkening_or_lightening_screen()
                     | self.palette_filter_view().countdown())
                     == 0
-                    && self.world_state_view().overworld_map_state() == 5
+                    && self.overworld_map_state() == 5
                 {
                     self.ResetThenCacheRoomEntryProperties();
                 }
@@ -10845,7 +10845,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_19_SetSongAndFilter(&mut self) {
-        if self.world_state_view().overworld_map_state() == 5
+        if self.overworld_map_state() == 5
             && self.palette_filter_view().darkening_or_lightening_screen() == 0
         {
             self.increment_subsubmodule();
@@ -11264,7 +11264,7 @@ impl ZeldaState {
     }
 
     pub(super) fn reset_then_cache_room_entry_properties(&mut self) {
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
         self.world_state_view_mut().clear_screen_transition();
         self.set_submodule(0);
@@ -11387,7 +11387,7 @@ impl ZeldaState {
             == 0
         {
             if self.player_state_view().filtered_joypad_h() & 0x10 != 0 {
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.set_submodule(1);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
@@ -11396,7 +11396,7 @@ impl ZeldaState {
                 if self.save_progress_view().palace_index_x2() != 0xff
                     && self.world_location_state().dungeon_room_index() != 0
                 {
-                    self.world_state_view_mut().set_overworld_map_state(0);
+                    self.set_overworld_map_state(0);
                     self.set_submodule(3);
                     self.save_main_module_for_menu();
                     self.set_main_module(14);
@@ -11405,7 +11405,7 @@ impl ZeldaState {
             } else if self.player_state_view().joypad1h_last() & 0x20 != 0
                 && self.save_progress_view().progress_indicator() != 0
             {
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.DisplaySelectMenu();
                 return;
             }
@@ -11591,7 +11591,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_15_0F_FinalizeAndCacheEntry(&mut self) {
-        if self.world_state_view().overworld_map_state() == 5 {
+        if self.overworld_map_state() == 5 {
             self.SetAndSaveVisitedQuadrantFlags();
             self.set_submodule(0);
             self.ResetThenCacheRoomEntryProperties();

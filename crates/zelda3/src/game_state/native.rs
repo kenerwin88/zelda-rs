@@ -10,7 +10,10 @@ mod world;
 
 pub(crate) use display::{DisplayState, NativeDisplayStateViewMut, NativeVramUploadBufferMut};
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
-pub(crate) use world::{NativeWorldLocationViewMut, WorldLocationState};
+pub(crate) use world::{
+    NativeOverworldMapUiBridgeMut, NativeWorldLocationViewMut, OverworldMapUiState,
+    WorldLocationState,
+};
 
 #[cfg(test)]
 use crate::game_state::constants::*;
@@ -25,6 +28,7 @@ fn ram_byte(ram: &[u8], offset: usize) -> u8 {
 pub(crate) struct GameState {
     pub(crate) frame: FrameState,
     pub(crate) world_location: WorldLocationState,
+    pub(crate) overworld_map_ui: OverworldMapUiState,
     pub(crate) display: DisplayState,
 }
 
@@ -33,6 +37,7 @@ impl GameState {
         Self {
             frame: FrameState::load_from_ram(ram),
             world_location: WorldLocationState::load_from_ram(ram),
+            overworld_map_ui: OverworldMapUiState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
         }
     }
@@ -40,6 +45,7 @@ impl GameState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
         self.world_location.write_to_ram(ram);
+        self.overworld_map_ui.write_to_ram(ram);
         self.display.write_to_ram(ram);
     }
 }
@@ -167,6 +173,56 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0126);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+    }
+
+    #[test]
+    fn overworld_map_ui_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0205);
+        ram[OVERWORLD_MAP_FLAGS] = 0x81;
+        write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0307);
+
+        let mut map_ui = OverworldMapUiState::load_from_ram(&ram);
+        assert_eq!(map_ui.map_state(), 5);
+        assert_eq!(map_ui.map_state_word(), 0x0205);
+        assert_eq!(map_ui.map_flags, 0x81);
+        assert_eq!(map_ui.birdtravel_status(), 7);
+        assert_eq!(map_ui.birdtravel_status_word(), 0x0307);
+
+        map_ui.map_state = 0x0104;
+        map_ui.map_flags = 0x40;
+        map_ui.birdtravel_status = 0x0008;
+        map_ui.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0104);
+        assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x40);
+        assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0008);
+    }
+
+    #[test]
+    fn native_overworld_map_ui_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0205);
+        ram[OVERWORLD_MAP_FLAGS] = 0x81;
+        write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0307);
+
+        let mut map_ui = OverworldMapUiState::default();
+        {
+            let mut bridge = NativeOverworldMapUiBridgeMut::new(&mut map_ui, &mut ram);
+            bridge.increment_map_state();
+            bridge.and_map_flags(!0x80);
+            bridge.or_map_flags(0x02);
+            bridge.increment_birdtravel_status();
+            bridge.and_birdtravel_status(7);
+            bridge.set_birdtravel_status_word(0x0004);
+        }
+
+        assert_eq!(map_ui.map_state_word(), 0x0206);
+        assert_eq!(map_ui.map_flags, 0x03);
+        assert_eq!(map_ui.birdtravel_status_word(), 0x0004);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_MAP_STATE), 0x0206);
+        assert_eq!(ram[OVERWORLD_MAP_FLAGS], 0x03);
+        assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
     }
 
     #[test]

@@ -43,6 +43,45 @@ impl WorldLocationState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldMapUiState {
+    pub(crate) map_state: u16,
+    pub(crate) map_flags: u8,
+    pub(crate) birdtravel_status: u16,
+}
+
+impl OverworldMapUiState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            map_state: read_le_u16(ram, OVERWORLD_MAP_STATE),
+            map_flags: ram_byte(ram, OVERWORLD_MAP_FLAGS),
+            birdtravel_status: read_le_u16(ram, BIRDTRAVEL_STATUS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, OVERWORLD_MAP_STATE, self.map_state);
+        ram[OVERWORLD_MAP_FLAGS] = self.map_flags;
+        write_le_u16(ram, BIRDTRAVEL_STATUS, self.birdtravel_status);
+    }
+
+    pub(crate) fn map_state(&self) -> u8 {
+        self.map_state as u8
+    }
+
+    pub(crate) fn map_state_word(&self) -> u16 {
+        self.map_state
+    }
+
+    pub(crate) fn birdtravel_status(&self) -> u8 {
+        self.birdtravel_status as u8
+    }
+
+    pub(crate) fn birdtravel_status_word(&self) -> u16 {
+        self.birdtravel_status
+    }
+}
+
 pub(crate) struct NativeWorldLocationViewMut<'a> {
     world_location: &'a mut WorldLocationState,
     ram_view: WorldStateViewMut<'a>,
@@ -124,5 +163,81 @@ impl<'a> Deref for NativeWorldLocationViewMut<'a> {
 impl<'a> DerefMut for NativeWorldLocationViewMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ram_view
+    }
+}
+
+pub(crate) struct NativeOverworldMapUiBridgeMut<'a> {
+    map_ui: &'a mut OverworldMapUiState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldMapUiBridgeMut<'a> {
+    pub(crate) fn new(map_ui: &'a mut OverworldMapUiState, ram: &'a mut [u8]) -> Self {
+        *map_ui = OverworldMapUiState::load_from_ram(ram);
+        Self { map_ui, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.map_ui, OverworldMapUiState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_map_state(&mut self, value: u8) {
+        self.map_ui.map_state = (self.map_ui.map_state & 0xff00) | u16::from(value);
+        self.ram[OVERWORLD_MAP_STATE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_map_state_word(&mut self, value: u16) {
+        self.map_ui.map_state = value;
+        write_le_u16(self.ram, OVERWORLD_MAP_STATE, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_map_state(&mut self) {
+        let next = self.map_ui.map_state().wrapping_add(1);
+        self.set_map_state(next);
+    }
+
+    pub(crate) fn set_map_flags(&mut self, value: u8) {
+        self.map_ui.map_flags = value;
+        self.ram[OVERWORLD_MAP_FLAGS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn and_map_flags(&mut self, value: u8) {
+        let next = self.map_ui.map_flags & value;
+        self.set_map_flags(next);
+    }
+
+    pub(crate) fn or_map_flags(&mut self, value: u8) {
+        let next = self.map_ui.map_flags | value;
+        self.set_map_flags(next);
+    }
+
+    pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
+        self.map_ui.birdtravel_status = (self.map_ui.birdtravel_status & 0xff00) | u16::from(value);
+        self.ram[BIRDTRAVEL_STATUS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
+        self.map_ui.birdtravel_status = value;
+        write_le_u16(self.ram, BIRDTRAVEL_STATUS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
+        let next = self.map_ui.birdtravel_status() & value;
+        self.set_birdtravel_status(next);
+    }
+
+    pub(crate) fn decrement_birdtravel_status(&mut self) {
+        let next = self.map_ui.birdtravel_status().wrapping_sub(1);
+        self.set_birdtravel_status(next);
+    }
+
+    pub(crate) fn increment_birdtravel_status(&mut self) {
+        let next = self.map_ui.birdtravel_status().wrapping_add(1);
+        self.set_birdtravel_status(next);
     }
 }

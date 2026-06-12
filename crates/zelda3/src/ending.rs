@@ -654,12 +654,12 @@ impl ZeldaState {
         self.world_state_view_mut().set_bg1_x(hofs1);
         self.world_state_view_mut().set_bg2_y(vofs2);
         self.world_state_view_mut().set_bg2_x(hofs2);
-        match self.world_state_view().overworld_map_state() {
+        match self.overworld_map_state() {
             0 => {
                 self.dungeon_handle_layer_effect();
                 self.CallForDuckIndoors();
                 self.SaveDungeonKeys();
-                self.world_state_view_mut().increment_overworld_map_state();
+                self.increment_overworld_map_state();
                 self.player_state_view_mut().increment_immobilized_flag();
             }
             1 => {
@@ -669,7 +669,7 @@ impl ZeldaState {
                     self.set_indoor_flag(0);
                     self.set_main_module(24);
                     self.set_submodule(0);
-                    self.world_state_view_mut().set_overworld_map_state(2);
+                    self.set_overworld_map_state(2);
                 }
             }
             2 => {
@@ -677,13 +677,13 @@ impl ZeldaState {
                 self.decrement_screen_brightness();
                 if self.display_state().screen_brightness == 0 {
                     self.enable_force_blank();
-                    self.world_state_view_mut().increment_overworld_map_state();
+                    self.increment_overworld_map_state();
                     self.hud_rebuild_indoor();
                     self.player_state_view_mut().clear_movement_velocity();
                 }
             }
             3 => {
-                self.world_state_view_mut().set_birdtravel_status(8);
+                self.set_birdtravel_status(8);
                 self.bird_travel_status_view_mut().clear(1);
                 self.FluteMenu_LoadSelectedScreen();
                 self.LoadOWMusicIfNeeded();
@@ -702,7 +702,7 @@ impl ZeldaState {
                     self.player_state_view_mut().set_facing(2);
                     self.set_saved_module_for_menu(9);
                     self.set_indoor_flag(0);
-                    self.world_state_view_mut().increment_overworld_map_state();
+                    self.increment_overworld_map_state();
                     self.set_subsubmodule(128);
                     self.save_progress_view_mut().set_palace_index_x2(255);
                 }
@@ -711,7 +711,7 @@ impl ZeldaState {
             7 => {
                 self.decrement_subsubmodule();
                 if self.frame_state().subsubmodule == 0 {
-                    self.world_state_view_mut().increment_overworld_map_state();
+                    self.increment_overworld_map_state();
                 }
             }
             8 => self.BirdTravel_Finish_Doit(),
@@ -820,7 +820,7 @@ impl ZeldaState {
                 self.advance_polyhedral();
                 self.RenderText();
                 if self.frame_state().submodule == 0 {
-                    self.world_state_view_mut().set_overworld_map_state(0);
+                    self.set_overworld_map_state(0);
                     self.set_main_module(25);
                     self.increment_subsubmodule();
                 }

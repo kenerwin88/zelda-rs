@@ -10070,7 +10070,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
-                    self.world_state_view_mut().increment_overworld_map_state();
+                    self.increment_overworld_map_state();
                 }
             }
             _ => {}

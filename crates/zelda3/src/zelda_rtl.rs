@@ -60,9 +60,9 @@ use crate::game_state::{
     MessagingTextViewMut, MinigameStateView, MinigameStateViewMut, MirrorWarpScratchView,
     MirrorWarpScratchViewMut, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceView,
     MultiselectChoiceViewMut, NativeDisplayStateViewMut, NativeFrameStateBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeVramUploadBufferMut,
-    NativeWorldLocationViewMut, OamStateView, OamStateViewMut, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
+    NativeOverworldMapUiBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
+    NativeVramUploadBufferMut, NativeWorldLocationViewMut, OamStateView, OamStateViewMut,
+    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldConfigTableViewMut,
     OverworldEventInfoView, OverworldEventInfoViewMut, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16SourcePage, OverworldPaletteBackupViewMut,
     OverworldScreenSizeView, OverworldScreenSizeViewMut, OverworldScrollDeltaView,
@@ -2024,6 +2024,81 @@ impl ZeldaState {
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
         NativeWorldLocationViewMut::new(&mut self.game_state.world_location, &mut self.ram)
             .set_indoor_flag(value);
+    }
+
+    pub(crate) fn overworld_map_state(&self) -> u8 {
+        self.game_state.overworld_map_ui.map_state()
+    }
+
+    pub(crate) fn overworld_map_state_word(&self) -> u16 {
+        self.game_state.overworld_map_ui.map_state_word()
+    }
+
+    pub(crate) fn set_overworld_map_state(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .set_map_state(value);
+    }
+
+    pub(crate) fn set_overworld_map_state_word(&mut self, value: u16) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .set_map_state_word(value);
+    }
+
+    pub(crate) fn increment_overworld_map_state(&mut self) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .increment_map_state();
+    }
+
+    pub(crate) fn overworld_map_flags(&self) -> u8 {
+        self.game_state.overworld_map_ui.map_flags
+    }
+
+    pub(crate) fn set_overworld_map_flags(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .set_map_flags(value);
+    }
+
+    pub(crate) fn and_overworld_map_flags(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .and_map_flags(value);
+    }
+
+    pub(crate) fn or_overworld_map_flags(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .or_map_flags(value);
+    }
+
+    pub(crate) fn birdtravel_status(&self) -> u8 {
+        self.game_state.overworld_map_ui.birdtravel_status()
+    }
+
+    pub(crate) fn birdtravel_status_word(&self) -> u16 {
+        self.game_state.overworld_map_ui.birdtravel_status_word()
+    }
+
+    pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .set_birdtravel_status(value);
+    }
+
+    pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .set_birdtravel_status_word(value);
+    }
+
+    pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .and_birdtravel_status(value);
+    }
+
+    pub(crate) fn decrement_birdtravel_status(&mut self) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .decrement_birdtravel_status();
+    }
+
+    pub(crate) fn increment_birdtravel_status(&mut self) {
+        NativeOverworldMapUiBridgeMut::new(&mut self.game_state.overworld_map_ui, &mut self.ram)
+            .increment_birdtravel_status();
     }
 
     pub(crate) fn display_state(&self) -> &DisplayState {
@@ -4277,10 +4352,7 @@ impl ZeldaState {
         }
 
         if module == 9 {
-            if frame.main_module == 14
-                && frame.submodule == 7
-                && self.world_state_view().overworld_map_state() >= 4
-            {
+            if frame.main_module == 14 && frame.submodule == 7 && self.overworld_map_state() >= 4 {
                 extra_left = PPU_SIDE_SPACE_LIMIT;
                 extra_right = PPU_SIDE_SPACE_LIMIT;
                 extra_bottom = 16;

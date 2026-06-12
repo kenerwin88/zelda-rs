@@ -344,7 +344,7 @@ impl ZeldaState {
         } else if self.frame_state().submodule != 10 {
             self.world_state_view_mut().set_mode7_zoom_step_counter(4);
             self.world_state_view_mut().set_timer_for_mode7_zoom(12);
-            self.world_state_view_mut().set_overworld_map_flags(1);
+            self.set_overworld_map_flags(1);
             let y = self.special_exit_position_view().map_zoom_y();
             self.world_state_view_mut().set_bg1_y(y);
             self.ppu_scroll_copy_view_mut()
@@ -368,7 +368,7 @@ impl ZeldaState {
         } else {
             self.world_state_view_mut().set_mode7_zoom_step_counter(4);
             self.world_state_view_mut().set_timer_for_mode7_zoom(33);
-            self.world_state_view_mut().set_overworld_map_flags(0);
+            self.set_overworld_map_flags(0);
             self.hdma_setup(0x0abdcf, 0x0abdcf, 0x42, 0x1b, 0x1e, 10);
             self.set_hdma_enable_mask(0xc0);
         }
@@ -1855,8 +1855,8 @@ impl ZeldaState {
     }
 
     pub(super) fn AnimateMirrorWarp(&mut self) {
-        let st = self.world_state_view().overworld_map_state() as usize;
-        self.world_state_view_mut().increment_overworld_map_state();
+        let st = self.overworld_map_state() as usize;
+        self.increment_overworld_map_state();
         let nmi = MIRROR_WARP_LOAD_NEXT_NMI_LOAD.get(st).copied().unwrap_or(0);
         self.set_pending_nmi_subroutine(nmi);
         self.set_core_update_disable_flag(nmi);
@@ -1873,7 +1873,7 @@ impl ZeldaState {
                     .increment_load_step_counter()
                     != 32
                 {
-                    self.world_state_view_mut().set_overworld_map_state(0);
+                    self.set_overworld_map_state(0);
                 } else {
                     self.SetTargetOverworldWarpToPyramid();
                 }
@@ -2010,7 +2010,7 @@ impl ZeldaState {
                 self.handle_followers_after_mirroring();
             }
             14 => {
-                self.world_state_view_mut().set_overworld_map_state(14);
+                self.set_overworld_map_state(14);
             }
             _ => {}
         }

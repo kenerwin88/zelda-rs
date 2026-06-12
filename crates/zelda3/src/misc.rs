@@ -194,7 +194,7 @@ impl ZeldaState {
 
     fn kill_agahnim_load_music(&mut self) {
         self.clear_core_update_disable_flag();
-        self.world_state_view_mut().increment_overworld_map_state();
+        self.increment_overworld_map_state();
         self.increment_submodule();
         self.LoadOWMusicIfNeeded();
     }
@@ -204,7 +204,7 @@ impl ZeldaState {
         self.world_state_view_mut()
             .set_overworld_screen_trans_dir_bits(8);
         self.InitializeMirrorHDMA();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.PaletteFilter_InitializeWhiteFilter();
         self.Overworld_LoadGFXAndScreenSize();
         self.increment_submodule();
@@ -272,7 +272,7 @@ impl ZeldaState {
     fn kill_aghanim_func7(&mut self) {
         self.RenderText();
         if self.frame_state().submodule == 0 {
-            self.world_state_view_mut().set_overworld_map_state(0);
+            self.set_overworld_map_state(0);
             self.system_signals_view_mut().set_ambient_sound_effect(5);
             if !self.inventory_state_view().has_moon_pearl() {
                 self.dialogue_message_index_view_mut().set_value(0x36);
@@ -305,7 +305,7 @@ impl ZeldaState {
             .set_event_bits(0x1b, 32);
         self.save_progress_view_mut().set_palace_index_x2(255);
         self.set_submodule(0);
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.clear_core_update_disable_flag();
         self.set_main_module(9);
         self.world_state_view_mut().set_bg1_y_low(0);
@@ -449,7 +449,7 @@ impl ZeldaState {
         }
 
         self.enable_force_blank();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.player_state_view_mut()
             .clear_somaria_block_bg_check_flag();
         self.follower_state_view_mut()
@@ -587,12 +587,12 @@ impl ZeldaState {
 
     pub(super) fn boss_victory_heal(&mut self) {
         if !self.hud_refill_magic_power() {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
         if !self.hud_refill_health() {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         }
-        if self.world_state_view().overworld_map_state() == 0 {
+        if self.overworld_map_state() == 0 {
             self.player_state_view_mut()
                 .clear_button_mask_b_y_bits(0x40);
             self.Dungeon_ResetTorchBackgroundAndPlayerInner();
@@ -603,7 +603,7 @@ impl ZeldaState {
             self.set_subsubmodule(16);
             self.player_state_view_mut().increment_immobilized_flag();
         }
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.hud_refill_logic();
     }
 
@@ -771,7 +771,7 @@ impl ZeldaState {
             if value & 7 == 7 {
                 self.save_progress_view_mut().set_map_icons_indicator(4);
             }
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
         } else if item == 0x22 {
             self.inventory_state_view_mut()
                 .set_item_memory_value_if_empty(value_addr, 1);
@@ -784,7 +784,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_picking_throw_state(2);
             }
         } else if item == 0x20 {
-            self.world_state_view_mut().increment_overworld_map_state();
+            self.increment_overworld_map_state();
             for i in (0..=4).rev() {
                 if matches!(self.ancilla_slot_view(i).ancilla_type(), 7 | 0x2c) {
                     self.ancilla_slot_view_mut(i).clear();

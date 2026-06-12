@@ -1105,14 +1105,14 @@ impl ZeldaState {
             == 0
         {
             if self.player_state_view().filtered_joypad_h() & 0x10 != 0 {
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.set_submodule(1);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
                 return;
             }
             if self.DidPressButtonForMap() {
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.set_submodule(7);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
@@ -1862,7 +1862,7 @@ impl ZeldaState {
         self.follower_initialize();
         self.dungeon_state_view_mut()
             .clear_water_puzzle_state_changed();
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
         self.world_state_view_mut().clear_screen_transition();
         self.set_submodule(0);
@@ -2398,7 +2398,7 @@ impl ZeldaState {
         self.save_submodule_for_menu();
         self.set_submodule(0);
         self.set_subsubmodule(0);
-        self.world_state_view_mut().set_overworld_map_state(0);
+        self.set_overworld_map_state(0);
         self.clear_core_update_disable_flag();
     }
 
@@ -2409,7 +2409,7 @@ impl ZeldaState {
                 if self.world_location_state().overworld_screen_index() >= 0x80 {
                     self.set_submodule(0);
                     self.set_subsubmodule(0);
-                    self.world_state_view_mut().set_overworld_map_state(0);
+                    self.set_overworld_map_state(0);
                     return;
                 }
                 self.system_signals_view_mut().set_music_control(8);
@@ -2424,7 +2424,7 @@ impl ZeldaState {
                     | self.save_progress_view().dark_world_state();
                 self.set_overworld_screen(screen);
                 self.world_state_view_mut().set_overworld_area_index(screen);
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.PaletteFilter_InitializeWhiteFilter();
                 self.Overworld_LoadGFXAndScreenSize();
                 self.increment_subsubmodule();
@@ -2513,7 +2513,7 @@ impl ZeldaState {
             0 => {
                 self.system_signals_view_mut().set_sound_effect_1(0x34);
                 self.system_signals_view_mut().set_ambient_sound_effect(5);
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.palette_filter_view_mut().set_countdown(0);
                 self.increment_subsubmodule();
             }
@@ -2608,7 +2608,7 @@ impl ZeldaState {
                     .set_music_control(music_control);
                 self.set_submodule(0);
                 self.set_subsubmodule(0);
-                self.world_state_view_mut().set_overworld_map_state(0);
+                self.set_overworld_map_state(0);
                 self.clear_core_update_disable_flag();
             }
             _ => {}
@@ -2792,10 +2792,9 @@ impl ZeldaState {
 
     pub(super) fn FluteMenu_LoadTransport(&mut self) {
         self.memorized_tile_view_mut().clear_count();
-        let k = self.world_state_view().birdtravel_status() as usize;
-        let bird_travel_index_x2 = self.world_state_view().birdtravel_status_word() << 1;
-        self.world_state_view_mut()
-            .set_birdtravel_status_word(bird_travel_index_x2);
+        let k = self.birdtravel_status() as usize;
+        let bird_travel_index_x2 = self.birdtravel_status_word() << 1;
+        self.set_birdtravel_status_word(bird_travel_index_x2);
         self.Overworld_LoadBirdTravelPos(k);
     }
 
