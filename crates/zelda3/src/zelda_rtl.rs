@@ -34,24 +34,24 @@ use crate::game_state::{
     BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
-    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeView,
-    DiggingGamePrizeViewMut, DisplayState, DoorDebrisView, DualLayerTileCacheView,
-    DungeonEntranceBackupViewMut, DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList,
-    DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
-    EffectAngleScratchState, EndingCreditState, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut,
-    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState,
+    DisplayState, DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut,
+    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView,
+    DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchState,
+    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut, FollowerStateView,
+    FollowerStateViewMut, FrameState, GameState, GarnishSlotView, GarnishSlotViewMut,
+    GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView,
+    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
+    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView, InventoryStateViewMut,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
     NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
@@ -3835,12 +3835,15 @@ impl ZeldaState {
         NativeDoorDebrisBridgeMut::new(&mut self.game_state.effects.door_debris, &mut self.ram)
     }
 
-    pub(crate) fn digging_game_prize_view(&self) -> DiggingGamePrizeView<'_> {
-        DiggingGamePrizeView::new(&self.ram)
+    pub(crate) fn digging_game_prize_view(&self) -> &DiggingGamePrizeState {
+        &self.game_state.effects.digging_game_prize
     }
 
-    pub(crate) fn digging_game_prize_view_mut(&mut self) -> DiggingGamePrizeViewMut<'_> {
-        DiggingGamePrizeViewMut::new(&mut self.ram)
+    pub(crate) fn digging_game_prize_view_mut(&mut self) -> NativeDiggingGamePrizeBridgeMut<'_> {
+        NativeDiggingGamePrizeBridgeMut::new(
+            &mut self.game_state.effects.digging_game_prize,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn draw_scratch_position_view(&self) -> SpriteDrawWorkPositionView<'_> {

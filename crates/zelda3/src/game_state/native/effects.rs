@@ -2,7 +2,8 @@ use crate::game_state::constants::{
     BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION, BLAST_WALL_ENTRY_STATE,
     BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED,
     BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X,
-    BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
+    BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
+    DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
     EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
     QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
     SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
@@ -23,6 +24,7 @@ pub(crate) struct EffectState {
     pub(crate) tower_seal: TowerSealState,
     pub(crate) skull_woods_fire: SkullWoodsFireState,
     pub(crate) blast_wall: BlastWallState,
+    pub(crate) digging_game_prize: DiggingGamePrizeState,
 }
 
 impl EffectState {
@@ -35,6 +37,7 @@ impl EffectState {
             tower_seal: TowerSealState::load_from_ram(ram),
             skull_woods_fire: SkullWoodsFireState::load_from_ram(ram),
             blast_wall: BlastWallState::load_from_ram(ram),
+            digging_game_prize: DiggingGamePrizeState::load_from_ram(ram),
         }
     }
 
@@ -46,6 +49,7 @@ impl EffectState {
         self.tower_seal.write_to_ram(ram);
         self.skull_woods_fire.write_to_ram(ram);
         self.blast_wall.write_to_ram(ram);
+        self.digging_game_prize.write_to_ram(ram);
     }
 }
 
@@ -770,6 +774,82 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
         let center = self.state.offset_center(x_delta, y_delta);
         self.sync();
         center
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DiggingGamePrizeState {
+    attempts: u8,
+    spawned_marker: u8,
+}
+
+impl DiggingGamePrizeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            attempts: ram.get(DIGGING_GAME_PRIZE_ATTEMPTS).copied().unwrap_or(0),
+            spawned_marker: ram.get(DIGGING_GAME_PRIZE_SPAWNED).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DIGGING_GAME_PRIZE_ATTEMPTS] = self.attempts;
+        ram[DIGGING_GAME_PRIZE_SPAWNED] = self.spawned_marker;
+    }
+
+    pub(crate) fn attempts(&self) -> u8 {
+        self.attempts
+    }
+
+    pub(crate) fn spawned_marker(&self) -> u8 {
+        self.spawned_marker
+    }
+
+    pub(crate) fn increment_attempts(&mut self) {
+        self.attempts = self.attempts.wrapping_add(1);
+    }
+
+    pub(crate) fn mark_spawned(&mut self) {
+        self.spawned_marker = 0xeb;
+    }
+
+    pub(crate) fn clear_prize_spawned(&mut self) {
+        self.spawned_marker = 0;
+    }
+}
+
+pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
+    state: &'a mut DiggingGamePrizeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DiggingGamePrizeState, ram: &'a mut [u8]) -> Self {
+        *state = DiggingGamePrizeState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DiggingGamePrizeState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn increment_attempts(&mut self) {
+        self.state.increment_attempts();
+        self.sync();
+    }
+
+    pub(crate) fn mark_spawned(&mut self) {
+        self.state.mark_spawned();
+        self.sync();
+    }
+
+    pub(crate) fn clear_prize_spawned(&mut self) {
+        self.state.clear_prize_spawned();
+        self.sync();
     }
 }
 

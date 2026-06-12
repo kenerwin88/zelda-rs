@@ -26,10 +26,11 @@ pub(crate) use display::{
     WaterHdmaWindowState,
 };
 pub(crate) use effects::{
-    BlastWallState, BombosSpellState, DoorDebrisView, EffectAngleScratchState, EffectState,
-    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeTowerSealBridgeMut, QuakeSpellState, SkullWoodsFireState, TowerSealState,
+    BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
+    EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
+    NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeTowerSealBridgeMut,
+    QuakeSpellState, SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -1635,6 +1636,42 @@ mod tests {
         assert_eq!(ram[BLAST_WALL_SECONDARY_STATE], 0);
         assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_X), 0x0102);
         assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_Y), 0x01fd);
+    }
+
+    #[test]
+    fn digging_game_prize_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 24;
+        ram[DIGGING_GAME_PRIZE_SPAWNED] = 0;
+
+        let mut prize = DiggingGamePrizeState::load_from_ram(&ram);
+        assert_eq!(prize.attempts(), 24);
+        assert_eq!(prize.spawned_marker(), 0);
+        prize.increment_attempts();
+        prize.mark_spawned();
+        prize.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DIGGING_GAME_PRIZE_ATTEMPTS], 25);
+        assert_eq!(ram[DIGGING_GAME_PRIZE_SPAWNED], 0xeb);
+    }
+
+    #[test]
+    fn native_digging_game_prize_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 0xff;
+        ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
+
+        let mut prize = DiggingGamePrizeState::default();
+        {
+            let mut bridge = NativeDiggingGamePrizeBridgeMut::new(&mut prize, &mut ram);
+            bridge.increment_attempts();
+            bridge.clear_prize_spawned();
+        }
+
+        assert_eq!(prize.attempts(), 0);
+        assert_eq!(prize.spawned_marker(), 0);
+        assert_eq!(ram[DIGGING_GAME_PRIZE_ATTEMPTS], 0);
+        assert_eq!(ram[DIGGING_GAME_PRIZE_SPAWNED], 0);
     }
 
     #[test]
