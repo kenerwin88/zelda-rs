@@ -271,6 +271,60 @@ impl<'a> NativeDungeonSecretBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SaveLoadTransferState {
+    source_offset: u16,
+}
+
+impl SaveLoadTransferState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            source_offset: read_le_u16(ram, SAVE_LOAD_SOURCE_OFFSET),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
+    }
+
+    pub(crate) fn source_offset(&self) -> u16 {
+        self.source_offset
+    }
+
+    pub(crate) fn source_offset_usize(&self) -> usize {
+        usize::from(self.source_offset)
+    }
+
+    pub(crate) fn set_source_offset(&mut self, value: u16) {
+        self.source_offset = value;
+    }
+}
+
+pub(crate) struct NativeSaveLoadTransferBridgeMut<'a> {
+    transfer: &'a mut SaveLoadTransferState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
+    pub(crate) fn new(transfer: &'a mut SaveLoadTransferState, ram: &'a mut [u8]) -> Self {
+        *transfer = SaveLoadTransferState::load_from_ram(ram);
+        Self { transfer, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.transfer,
+            SaveLoadTransferState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_source_offset(&mut self, value: u16) {
+        self.transfer.set_source_offset(value);
+        write_le_u16(self.ram, SAVE_LOAD_SOURCE_OFFSET, value);
+        self.debug_assert_matches_ram();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArcheryGameState {
     hit_counter: u8,
     arrows_left: u8,

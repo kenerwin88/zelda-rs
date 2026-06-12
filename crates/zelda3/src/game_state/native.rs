@@ -48,7 +48,8 @@ pub(crate) use messaging::{
 pub(crate) use misc::{
     ArcheryGameState, DungeonSecretState, EnhancedFeaturesState, MemorizedTileState,
     NativeArcheryGameBridgeMut, NativeDungeonSecretBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeSpriteBattleBridgeMut, SpriteBattleState,
+    NativeMemorizedTileBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSpriteBattleBridgeMut,
+    SaveLoadTransferState, SpriteBattleState,
 };
 pub(crate) use player::{
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
@@ -107,6 +108,7 @@ pub(crate) struct GameState {
     pub(crate) sprite_battle: SpriteBattleState,
     pub(crate) memorized_tiles: MemorizedTileState,
     pub(crate) dungeon_secret: DungeonSecretState,
+    pub(crate) save_load_transfer: SaveLoadTransferState,
     pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
@@ -127,6 +129,7 @@ impl GameState {
             sprite_battle: SpriteBattleState::load_from_ram(ram),
             memorized_tiles: MemorizedTileState::load_from_ram(ram),
             dungeon_secret: DungeonSecretState::load_from_ram(ram),
+            save_load_transfer: SaveLoadTransferState::load_from_ram(ram),
             sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
@@ -146,6 +149,7 @@ impl GameState {
         self.sprite_battle.write_to_ram(ram);
         self.memorized_tiles.write_to_ram(ram);
         self.dungeon_secret.write_to_ram(ram);
+        self.save_load_transfer.write_to_ram(ram);
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
@@ -497,6 +501,36 @@ mod tests {
         assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND], 4);
         assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND + 1], 0);
         assert_eq!(ram[OVERWORLD_SECRET_SUBST_CTR], 0);
+    }
+
+    #[test]
+    fn save_load_transfer_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SAVE_LOAD_SOURCE_OFFSET, 0x1234);
+
+        let mut transfer = SaveLoadTransferState::load_from_ram(&ram);
+        assert_eq!(transfer.source_offset(), 0x1234);
+        assert_eq!(transfer.source_offset_usize(), 0x1234);
+
+        transfer.set_source_offset(0x4567);
+        transfer.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x4567);
+    }
+
+    #[test]
+    fn native_save_load_transfer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SAVE_LOAD_SOURCE_OFFSET, 0x1234);
+
+        let mut transfer = SaveLoadTransferState::default();
+        {
+            let mut bridge = NativeSaveLoadTransferBridgeMut::new(&mut transfer, &mut ram);
+            bridge.set_source_offset(0x4567);
+        }
+
+        assert_eq!(transfer.source_offset(), 0x4567);
+        assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x4567);
     }
 
     #[test]

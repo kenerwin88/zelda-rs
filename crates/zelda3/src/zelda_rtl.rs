@@ -68,21 +68,21 @@ use crate::game_state::{
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSharedMessageTimerBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut, OamStateView, OamStateViewMut,
-    OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState,
-    OverworldMap16DecodeView, OverworldMap16DecodeViewMut, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut,
-    OverworldSpritePresenceView, OverworldSpritePresenceViewMut, PaletteBufferView,
-    PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut,
-    PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyView, PpuScrollCopyViewMut, PushedBlockView,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView, QuakeSpellScratchViewMut,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadScratchView, SaveLoadScratchViewMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpriteBattleBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OamStateViewMut, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedView,
+    OverworldSpriteLoadedViewMut, OverworldSpritePresenceView, OverworldSpritePresenceViewMut,
+    PaletteBufferView, PaletteBufferViewMut, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
+    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
+    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
+    PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellScratchView,
+    QuakeSpellScratchViewMut, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState,
     SaveProgressView, SaveProgressViewMut, ScratchWordView, ScratchWordViewMut,
     SelectFileScratchView, SelectFileScratchViewMut, SharedMessageTimerState,
     SkullWoodsFireScratchView, SkullWoodsFireScratchViewMut, SkullWoodsFireView,
@@ -3154,12 +3154,12 @@ impl ZeldaState {
         EndingScratchViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn save_load_scratch_view(&self) -> SaveLoadScratchView<'_> {
-        SaveLoadScratchView::new(&self.ram)
+    pub(crate) fn save_load_scratch_view(&self) -> &SaveLoadTransferState {
+        &self.game_state.save_load_transfer
     }
 
-    pub(crate) fn save_load_scratch_view_mut(&mut self) -> SaveLoadScratchViewMut<'_> {
-        SaveLoadScratchViewMut::new(&mut self.ram)
+    pub(crate) fn save_load_scratch_view_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
+        NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
     }
 
     pub(crate) fn dungeon_map_scratch_view(&self) -> DungeonMapScratchView<'_> {

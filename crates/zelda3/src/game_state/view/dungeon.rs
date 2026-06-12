@@ -2334,11 +2334,11 @@ impl<'a> EndingScratchViewMut<'a> {
     }
 }
 
-pub(crate) struct SaveLoadScratchView<'a> {
+pub(crate) struct SaveLoadTransferRawView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> SaveLoadScratchView<'a> {
+impl<'a> SaveLoadTransferRawView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -2352,11 +2352,11 @@ impl<'a> SaveLoadScratchView<'a> {
     }
 }
 
-pub(crate) struct SaveLoadScratchViewMut<'a> {
+pub(crate) struct SaveLoadTransferRawViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> SaveLoadScratchViewMut<'a> {
+impl<'a> SaveLoadTransferRawViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }
