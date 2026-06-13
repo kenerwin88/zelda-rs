@@ -3977,7 +3977,7 @@ impl ZeldaState {
         self.set_weather_vane_countdown(0x0280);
 
         for i in (0..=11).rev() {
-            self.weather_vane_debris_view_mut(i).initialize(
+            self.weather_vane_debris_mut(i).initialize(
                 u16::from(WEATHERVANE_DEBRIS_START_X[i]) | 0x0200,
                 u16::from(WEATHERVANE_DEBRIS_START_Y[i]) | 0x0700,
                 WEATHERVANE_DEBRIS_X_VELOCITY[i] as u8,
@@ -5625,13 +5625,13 @@ impl ZeldaState {
         self.set_weather_vane_source_slot(k as u8);
         self.reset_weather_vane_oam_offset();
         for i in (0..=11).rev() {
-            if self.weather_vane_debris_view(i).is_finished() {
+            if self.weather_vane_debris(i).is_finished() {
                 continue;
             }
-            let draw_state = self.weather_vane_debris_view_mut(i).tick_animation();
-            let z_velocity = self.weather_vane_debris_view_mut(i).tick_z_velocity();
+            let draw_state = self.weather_vane_debris_mut(i).tick_animation();
+            let z_velocity = self.weather_vane_debris_mut(i).tick_z_velocity();
 
-            let mut debris = self.weather_vane_debris_view(i).snapshot();
+            let mut debris = self.weather_vane_debris(i).snapshot();
             debris.z_velocity = z_velocity;
             {
                 let mut ancilla = self.ancilla_slot_view_mut(k);
@@ -5650,17 +5650,17 @@ impl ZeldaState {
 
             let landed_z = self.ancilla_slot_view(k).z();
             self.ancilla_draw_weathervane_explosion_wood_debris(k);
-            self.weather_vane_debris_view_mut(i)
+            self.weather_vane_debris_mut(i)
                 .mark_finished_if_landed(landed_z);
             let ancilla = self.ancilla_slot_view(k);
             let debris_y = ancilla.y();
             let debris_x = ancilla.x();
             let debris_z = ancilla.z();
-            self.weather_vane_debris_view_mut(i)
+            self.weather_vane_debris_mut(i)
                 .save_position(debris_x, debris_y, debris_z);
         }
         for i in (0..=11).rev() {
-            if !self.weather_vane_debris_view(i).is_finished() {
+            if !self.weather_vane_debris(i).is_finished() {
                 return;
             }
         }

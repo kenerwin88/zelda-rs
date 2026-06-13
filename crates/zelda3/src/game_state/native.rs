@@ -58,8 +58,9 @@ pub(crate) use effects::{
     NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut, NativeQuakeBoltBridgeMut,
     NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState,
-    TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
+    NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
+    SkullWoodsFireState, TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
+    WeatherVaneDebrisSlotState,
 };
 pub(crate) use ending::{
     AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
@@ -2016,6 +2017,68 @@ mod tests {
         }
         assert!(!effects.happiness_pond_rupees.rupee(4).is_active());
         assert_eq!(ram[HAPPINESS_POND_ACTIVE + 4], 0);
+    }
+
+    #[test]
+    fn native_weather_vane_debris_bridge_updates_transient_slots() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut effects = EffectState::load_from_ram(&ram);
+
+        {
+            let mut bridge = NativeWeatherVaneDebrisBridgeMut::new(
+                &mut effects.weather_vane_debris,
+                &mut ram,
+                3,
+            );
+            bridge.initialize(0x1234, 0x5678, 0x9a, 0xbc, 0xde, 0x21, 1);
+        }
+        let debris = effects.weather_vane_debris.debris(3).snapshot();
+        assert_eq!(
+            debris,
+            effects::WeatherVaneDebrisSnapshot {
+                y: 0x5678,
+                x: 0x1234,
+                z: 0x21,
+                y_velocity: 0xbc,
+                x_velocity: 0x9a,
+                z_velocity: 0xde,
+                draw_state: 1,
+            }
+        );
+        assert_eq!(ram[WEATHERVANE_ANIM_TIMER + 3], 1);
+
+        {
+            let mut bridge = NativeWeatherVaneDebrisBridgeMut::new(
+                &mut effects.weather_vane_debris,
+                &mut ram,
+                3,
+            );
+            assert_eq!(bridge.tick_animation(), 1);
+            assert_eq!(bridge.tick_z_velocity(), 0xdd);
+            bridge.mark_finished_if_landed(0xef);
+        }
+        assert!(!effects.weather_vane_debris.debris(3).is_finished());
+        {
+            let mut bridge = NativeWeatherVaneDebrisBridgeMut::new(
+                &mut effects.weather_vane_debris,
+                &mut ram,
+                3,
+            );
+            bridge.mark_finished_if_landed(0xf0);
+            bridge.save_position(0xabcd, 0xef01, 0x45);
+        }
+        let debris = effects.weather_vane_debris.debris(3);
+        assert!(debris.is_finished());
+        assert_eq!(debris.snapshot().x, 0xabcd);
+        assert_eq!(debris.snapshot().y, 0xef01);
+        assert_eq!(debris.snapshot().z, 0x45);
+        assert_eq!(ram[WEATHERVANE_X_LO + 3], 0xcd);
+        assert_eq!(ram[WEATHERVANE_X_HI + 3], 0xab);
+        assert_eq!(ram[WEATHERVANE_Y_LO + 3], 0x01);
+        assert_eq!(ram[WEATHERVANE_Y_HI + 3], 0xef);
+        assert_eq!(ram[WEATHERVANE_Z + 3], 0x45);
+        assert_eq!(ram[WEATHERVANE_Z_VELOCITY + 3], 0xdd);
+        assert_eq!(ram[WEATHERVANE_DRAW_STATE + 3], 0xff);
     }
 
     #[test]

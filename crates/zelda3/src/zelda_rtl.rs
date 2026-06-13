@@ -100,7 +100,7 @@ use crate::game_state::{
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
     NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
     NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
@@ -118,9 +118,8 @@ use crate::game_state::{
     SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState,
     TagalongSlotRead, TileDetectionState, TowerSealOrbitState, TowerSealSparkleState,
     TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldCameraBoundariesState,
-    WorldLocationState, WorldPaletteThemeState, WorldRegionState, WorldScrollState,
-    WorldTransientState,
+    WeatherVaneDebrisSlotState, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
+    WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4067,15 +4066,19 @@ impl ZeldaState {
         self.weather_vane_bridge_mut().advance_oam_offset(value);
     }
 
-    pub(crate) fn weather_vane_debris_view(&self, slot: usize) -> WeatherVaneDebrisView<'_> {
-        WeatherVaneDebrisView::new(&self.ram, slot)
+    pub(crate) fn weather_vane_debris(&self, slot: usize) -> WeatherVaneDebrisSlotState {
+        self.game_state.effects.weather_vane_debris.debris(slot)
     }
 
-    pub(crate) fn weather_vane_debris_view_mut(
+    pub(crate) fn weather_vane_debris_mut(
         &mut self,
         slot: usize,
-    ) -> WeatherVaneDebrisViewMut<'_> {
-        WeatherVaneDebrisViewMut::new(&mut self.ram, slot)
+    ) -> NativeWeatherVaneDebrisBridgeMut<'_> {
+        NativeWeatherVaneDebrisBridgeMut::new(
+            &mut self.game_state.effects.weather_vane_debris,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn bird_travel_destination(&self, slot: usize) -> BirdTravelDestinationState {

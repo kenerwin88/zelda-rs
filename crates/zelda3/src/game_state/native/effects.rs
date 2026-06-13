@@ -19,7 +19,10 @@ use crate::game_state::constants::{
     TOWER_SEAL_BASE_SPARKLE_Y_LO, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE,
     TOWER_SEAL_RING_RADIUS, TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER,
     TOWER_SEAL_SPARKLE_X_HI, TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI,
-    TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN,
+    TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN, WEATHERVANE_ANIM_TIMER,
+    WEATHERVANE_DRAW_STATE, WEATHERVANE_X_HI, WEATHERVANE_X_LO, WEATHERVANE_X_VELOCITY,
+    WEATHERVANE_Y_HI, WEATHERVANE_Y_LO, WEATHERVANE_Y_VELOCITY, WEATHERVANE_Z,
+    WEATHERVANE_Z_VELOCITY,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -31,6 +34,7 @@ const QUAKE_BOLT_SLOTS: usize = 5;
 const TOWER_SEAL_ORBIT_SLOTS: usize = 8;
 const TOWER_SEAL_SPARKLE_SLOTS: usize = 24;
 const HAPPINESS_POND_RUPEE_SLOTS: usize = 10;
+const WEATHER_VANE_DEBRIS_SLOTS: usize = 12;
 const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
 const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
 const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
@@ -44,6 +48,7 @@ pub(crate) struct EffectState {
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
     pub(crate) happiness_pond_rupees: HappinessPondRupeesState,
+    pub(crate) weather_vane_debris: WeatherVaneDebrisState,
     pub(crate) entrance_effects: EntranceEffectState,
     pub(crate) digging_game_prize: DiggingGamePrizeState,
 }
@@ -58,6 +63,7 @@ impl EffectState {
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
             happiness_pond_rupees: HappinessPondRupeesState::load_from_ram(ram),
+            weather_vane_debris: WeatherVaneDebrisState::load_from_ram(ram),
             entrance_effects: EntranceEffectState::load_from_ram(ram),
             digging_game_prize: DiggingGamePrizeState::load_from_ram(ram),
         }
@@ -1031,6 +1037,155 @@ impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
         self.ram[HAPPINESS_POND_ITEM_TO_LINK + self.slot] = state.item_to_link;
         self.ram[HAPPINESS_POND_TIMER + self.slot] = state.timer;
         self.ram[HAPPINESS_POND_STEP + self.slot] = state.step;
+        self.reload();
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WeatherVaneDebrisState {
+    y: [u16; WEATHER_VANE_DEBRIS_SLOTS],
+    x: [u16; WEATHER_VANE_DEBRIS_SLOTS],
+    z: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+    y_velocity: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+    x_velocity: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+    z_velocity: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+    animation_timer: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+    draw_state: [u8; WEATHER_VANE_DEBRIS_SLOTS],
+}
+
+impl WeatherVaneDebrisState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..WEATHER_VANE_DEBRIS_SLOTS {
+            state.y[slot] = read_split_u16(ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, slot);
+            state.x[slot] = read_split_u16(ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, slot);
+            state.z[slot] = ram.get(WEATHERVANE_Z + slot).copied().unwrap_or(0);
+            state.y_velocity[slot] = ram.get(WEATHERVANE_Y_VELOCITY + slot).copied().unwrap_or(0);
+            state.x_velocity[slot] = ram.get(WEATHERVANE_X_VELOCITY + slot).copied().unwrap_or(0);
+            state.z_velocity[slot] = ram.get(WEATHERVANE_Z_VELOCITY + slot).copied().unwrap_or(0);
+            state.animation_timer[slot] =
+                ram.get(WEATHERVANE_ANIM_TIMER + slot).copied().unwrap_or(0);
+            state.draw_state[slot] = ram.get(WEATHERVANE_DRAW_STATE + slot).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn debris(&self, slot: usize) -> WeatherVaneDebrisSlotState {
+        WeatherVaneDebrisSlotState {
+            snapshot: self.snapshot(slot),
+        }
+    }
+
+    fn snapshot(&self, slot: usize) -> WeatherVaneDebrisSnapshot {
+        WeatherVaneDebrisSnapshot {
+            y: self.y.get(slot).copied().unwrap_or(0),
+            x: self.x.get(slot).copied().unwrap_or(0),
+            z: self.z.get(slot).copied().unwrap_or(0),
+            y_velocity: self.y_velocity.get(slot).copied().unwrap_or(0),
+            x_velocity: self.x_velocity.get(slot).copied().unwrap_or(0),
+            z_velocity: self.z_velocity.get(slot).copied().unwrap_or(0),
+            draw_state: self.draw_state.get(slot).copied().unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WeatherVaneDebrisSlotState {
+    snapshot: WeatherVaneDebrisSnapshot,
+}
+
+impl WeatherVaneDebrisSlotState {
+    pub(crate) fn is_finished(&self) -> bool {
+        self.snapshot.draw_state == 0xff
+    }
+
+    pub(crate) fn snapshot(&self) -> WeatherVaneDebrisSnapshot {
+        self.snapshot
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WeatherVaneDebrisSnapshot {
+    pub(crate) y: u16,
+    pub(crate) x: u16,
+    pub(crate) z: u8,
+    pub(crate) y_velocity: u8,
+    pub(crate) x_velocity: u8,
+    pub(crate) z_velocity: u8,
+    pub(crate) draw_state: u8,
+}
+
+pub(crate) struct NativeWeatherVaneDebrisBridgeMut<'a> {
+    state: &'a mut WeatherVaneDebrisState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut WeatherVaneDebrisState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = WeatherVaneDebrisState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = WeatherVaneDebrisState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn initialize(
+        &mut self,
+        x: u16,
+        y: u16,
+        x_velocity: u8,
+        y_velocity: u8,
+        z_velocity: u8,
+        z: u8,
+        draw_state: u8,
+    ) {
+        self.ram[WEATHERVANE_Y_VELOCITY + self.slot] = y_velocity;
+        self.ram[WEATHERVANE_X_VELOCITY + self.slot] = x_velocity;
+        self.ram[WEATHERVANE_Z_VELOCITY + self.slot] = z_velocity;
+        write_split_u16(self.ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, self.slot, y);
+        write_split_u16(self.ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, self.slot, x);
+        self.ram[WEATHERVANE_Z + self.slot] = z;
+        self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = 1;
+        self.ram[WEATHERVANE_DRAW_STATE + self.slot] = draw_state;
+        self.reload();
+    }
+
+    pub(crate) fn tick_animation(&mut self) -> u8 {
+        let timer = self.ram[WEATHERVANE_ANIM_TIMER + self.slot].wrapping_sub(1);
+        self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = timer;
+        if (timer as i8).is_negative() {
+            self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = 1;
+            self.ram[WEATHERVANE_DRAW_STATE + self.slot] ^= 1;
+        }
+        let draw_state = self.ram[WEATHERVANE_DRAW_STATE + self.slot];
+        self.reload();
+        draw_state
+    }
+
+    pub(crate) fn tick_z_velocity(&mut self) -> u8 {
+        let z_velocity = self.ram[WEATHERVANE_Z_VELOCITY + self.slot].wrapping_sub(1);
+        self.ram[WEATHERVANE_Z_VELOCITY + self.slot] = z_velocity;
+        self.reload();
+        z_velocity
+    }
+
+    pub(crate) fn mark_finished_if_landed(&mut self, z: u8) {
+        if z >= 0xf0 {
+            self.ram[WEATHERVANE_DRAW_STATE + self.slot] = 0xff;
+            self.reload();
+        }
+    }
+
+    pub(crate) fn save_position(&mut self, x: u16, y: u16, z: u8) {
+        write_split_u16(self.ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, self.slot, y);
+        write_split_u16(self.ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, self.slot, x);
+        self.ram[WEATHERVANE_Z + self.slot] = z;
         self.reload();
     }
 }
