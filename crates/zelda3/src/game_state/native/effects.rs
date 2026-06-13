@@ -33,6 +33,8 @@ use crate::types::{read_le_u16, write_le_u16};
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
 const BOMBOS_FIRE_COLUMN_SLOTS: usize = 16;
 const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
+const BOMBOS_FIRE_COLUMN_Y_LOW_RADIAL_OFFSET: usize =
+    BOMBOS_FIRE_COLUMN_Y_LO - BOMBOS_FIRE_COLUMN_RADIAL_ANGLE;
 const BOMBOS_BLAST_SLOTS: usize = 16;
 const QUAKE_BOLT_SLOTS: usize = 5;
 const TOWER_SEAL_ORBIT_SLOTS: usize = 8;
@@ -522,6 +524,29 @@ impl BombosSpellState {
         ram[BOMBOS_FIRE_COLUMN_RADIUS] = self.fire_column_radius;
         ram[BOMBOS_BLAST_RELEASE_LOCKED] = self.blast_release_locked;
         ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = self.blast_release_countdown;
+        for slot in 0..BOMBOS_FIRE_COLUMN_SLOTS {
+            ram[BOMBOS_FIRE_COLUMN_TIMER + slot] = self.fire_column_timers[slot];
+            ram[BOMBOS_FIRE_COLUMN_PHASE + slot] = self.fire_column_phases[slot];
+            ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + slot] = self.fire_column_radial_angles[slot];
+            write_split_u16(
+                ram,
+                BOMBOS_FIRE_COLUMN_X_LO,
+                BOMBOS_FIRE_COLUMN_X_HI,
+                slot,
+                self.fire_column_x[slot],
+            );
+            write_split_u16(
+                ram,
+                BOMBOS_FIRE_COLUMN_Y_LO,
+                BOMBOS_FIRE_COLUMN_Y_HI,
+                slot,
+                self.fire_column_y[slot],
+            );
+        }
+        for slot in 0..BOMBOS_BLAST_SLOTS {
+            ram[BOMBOS_BLAST_PHASE + slot] = self.blast_phases[slot];
+            ram[BOMBOS_BLAST_TIMER + slot] = self.blast_timers[slot];
+        }
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_X, self.fire_column_seed_x);
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_Y, self.fire_column_seed_y);
         write_word_bank(ram, BOMBOS_BLAST_X, self.blast_x);
@@ -557,6 +582,7 @@ impl BombosSpellState {
     pub(crate) fn blast(&self, slot: usize) -> BombosBlastState {
         BombosBlastState {
             phase: self.blast_phases.get(slot).copied().unwrap_or(0),
+            timer: self.blast_timers.get(slot).copied().unwrap_or(0),
         }
     }
 
@@ -621,6 +647,109 @@ impl BombosSpellState {
             *blast_y = y;
         }
     }
+
+    fn set_fire_column_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.fire_column_timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_fire_column_timer(&mut self, slot: usize) -> u8 {
+        let value = self
+            .fire_column_timers
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_fire_column_timer(slot, value);
+        value
+    }
+
+    fn set_fire_column_phase(&mut self, slot: usize, value: u8) {
+        if let Some(phase) = self.fire_column_phases.get_mut(slot) {
+            *phase = value;
+        }
+    }
+
+    fn advance_fire_column_phase(&mut self, slot: usize) -> u8 {
+        let value = self
+            .fire_column_phases
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(1);
+        self.set_fire_column_phase(slot, value);
+        value
+    }
+
+    fn set_fire_column_radial_angle(&mut self, slot: usize, value: u8) {
+        if let Some(angle) = self.fire_column_radial_angles.get_mut(slot) {
+            *angle = value;
+        }
+        if let Some(position_slot) = slot.checked_sub(BOMBOS_FIRE_COLUMN_Y_LOW_RADIAL_OFFSET) {
+            if let Some(y) = self.fire_column_y.get_mut(position_slot) {
+                *y = (*y & 0xff00) | u16::from(value);
+            }
+        }
+    }
+
+    fn add_fire_column_radial_angle(&mut self, slot: usize, value: u8) -> u8 {
+        let angle = self
+            .fire_column_radial_angles
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(value);
+        self.set_fire_column_radial_angle(slot, angle);
+        angle
+    }
+
+    fn set_fire_column_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(position) = self.fire_column_x.get_mut(slot) {
+            *position = x;
+        }
+        if let Some(position) = self.fire_column_y.get_mut(slot) {
+            *position = y;
+        }
+        let radial_slot = slot + BOMBOS_FIRE_COLUMN_Y_LOW_RADIAL_OFFSET;
+        if let Some(angle) = self.fire_column_radial_angles.get_mut(radial_slot) {
+            *angle = y as u8;
+        }
+    }
+
+    fn set_blast_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.blast_timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_blast_timer(&mut self, slot: usize) -> u8 {
+        let value = self
+            .blast_timers
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_blast_timer(slot, value);
+        value
+    }
+
+    fn set_blast_phase(&mut self, slot: usize, value: u8) {
+        if let Some(phase) = self.blast_phases.get_mut(slot) {
+            *phase = value;
+        }
+    }
+
+    fn advance_blast_phase(&mut self, slot: usize) -> u8 {
+        let value = self
+            .blast_phases
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(1);
+        self.set_blast_phase(slot, value);
+        value
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -657,11 +786,16 @@ impl BombosFireColumnState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BombosBlastState {
     phase: u8,
+    timer: u8,
 }
 
 impl BombosBlastState {
     pub(crate) fn phase(&self) -> u8 {
         self.phase
+    }
+
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
     }
 }
 
@@ -672,7 +806,6 @@ pub(crate) struct NativeBombosSpellBridgeMut<'a> {
 
 impl<'a> NativeBombosSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8]) -> Self {
-        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -736,80 +869,54 @@ pub(crate) struct NativeBombosFireColumnBridgeMut<'a> {
 
 impl<'a> NativeBombosFireColumnBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = BombosSpellState::load_from_ram(self.ram);
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
-    fn write_byte_and_reload(&mut self, offset: usize, value: u8) {
-        self.ram[offset + self.slot] = value;
-        self.reload();
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, BombosSpellState::load_from_ram(self.ram));
     }
 
     pub(crate) fn set_timer(&mut self, value: u8) {
-        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_TIMER, value);
+        self.state.set_fire_column_timer(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn tick_timer(&mut self) -> u8 {
-        let value = self
-            .ram
-            .get(BOMBOS_FIRE_COLUMN_TIMER + self.slot)
-            .copied()
-            .unwrap_or(0)
-            .wrapping_sub(1);
-        self.set_timer(value);
+        let value = self.state.tick_fire_column_timer(self.slot);
+        self.sync();
         value
     }
 
     pub(crate) fn set_phase(&mut self, value: u8) {
-        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_PHASE, value);
+        self.state.set_fire_column_phase(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn advance_phase(&mut self) -> u8 {
-        let value = self
-            .ram
-            .get(BOMBOS_FIRE_COLUMN_PHASE + self.slot)
-            .copied()
-            .unwrap_or(0)
-            .wrapping_add(1);
-        self.set_phase(value);
+        let value = self.state.advance_fire_column_phase(self.slot);
+        self.sync();
         value
     }
 
     pub(crate) fn add_radial_angle(&mut self, value: u8) -> u8 {
-        let angle = self
-            .ram
-            .get(BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + self.slot)
-            .copied()
-            .unwrap_or(0)
-            .wrapping_add(value);
-        self.set_radial_angle(angle);
+        let angle = self.state.add_fire_column_radial_angle(self.slot, value);
+        self.sync();
         angle
     }
 
     pub(crate) fn set_radial_angle(&mut self, value: u8) {
-        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_RADIAL_ANGLE, value);
+        self.state.set_fire_column_radial_angle(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        write_split_u16(
-            self.ram,
-            BOMBOS_FIRE_COLUMN_X_LO,
-            BOMBOS_FIRE_COLUMN_X_HI,
-            self.slot,
-            x,
-        );
-        write_split_u16(
-            self.ram,
-            BOMBOS_FIRE_COLUMN_Y_LO,
-            BOMBOS_FIRE_COLUMN_Y_HI,
-            self.slot,
-            y,
-        );
-        self.reload();
+        self.state.set_fire_column_position(self.slot, x, y);
+        self.sync();
     }
 }
 
@@ -821,46 +928,37 @@ pub(crate) struct NativeBombosBlastBridgeMut<'a> {
 
 impl<'a> NativeBombosBlastBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = BombosSpellState::load_from_ram(self.ram);
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
-    fn write_byte_and_reload(&mut self, offset: usize, value: u8) {
-        self.ram[offset + self.slot] = value;
-        self.reload();
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, BombosSpellState::load_from_ram(self.ram));
     }
 
     pub(crate) fn set_phase(&mut self, value: u8) {
-        self.write_byte_and_reload(BOMBOS_BLAST_PHASE, value);
+        self.state.set_blast_phase(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn advance_phase(&mut self) -> u8 {
-        let value = self
-            .ram
-            .get(BOMBOS_BLAST_PHASE + self.slot)
-            .copied()
-            .unwrap_or(0)
-            .wrapping_add(1);
-        self.set_phase(value);
+        let value = self.state.advance_blast_phase(self.slot);
+        self.sync();
         value
     }
 
     pub(crate) fn set_timer(&mut self, value: u8) {
-        self.write_byte_and_reload(BOMBOS_BLAST_TIMER, value);
+        self.state.set_blast_timer(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn tick_timer(&mut self) -> u8 {
-        let value = self
-            .ram
-            .get(BOMBOS_BLAST_TIMER + self.slot)
-            .copied()
-            .unwrap_or(0)
-            .wrapping_sub(1);
-        self.set_timer(value);
+        let value = self.state.tick_blast_timer(self.slot);
+        self.sync();
         value
     }
 }

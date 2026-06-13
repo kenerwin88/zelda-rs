@@ -2301,7 +2301,7 @@ mod tests {
         ram[BOMBOS_FIRE_COLUMN_RADIUS] = 10;
         ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 1;
 
-        let mut bombos = BombosSpellState::default();
+        let mut bombos = BombosSpellState::load_from_ram(&ram);
         {
             let mut bridge = NativeBombosSpellBridgeMut::new(&mut bombos, &mut ram);
             bridge.set_mode(2);
@@ -2331,6 +2331,45 @@ mod tests {
     }
 
     #[test]
+    fn native_bombos_spell_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[BOMBOS_MODE] = 1;
+        native_ram[BOMBOS_FIRE_COLUMN_RADIUS] = 10;
+        native_ram[BOMBOS_BLAST_RELEASE_LOCKED] = 1;
+        native_ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 2;
+        write_le_u16(&mut native_ram, BOMBOS_FIRE_COLUMN_SEED_X + 2, 0x1234);
+        write_le_u16(&mut native_ram, BOMBOS_FIRE_COLUMN_SEED_Y + 2, 0x5678);
+        write_le_u16(&mut native_ram, BOMBOS_BLAST_X + 8, 0x9abc);
+        write_le_u16(&mut native_ram, BOMBOS_BLAST_Y + 8, 0xdef0);
+        let mut bombos = BombosSpellState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeBombosSpellBridgeMut::new(&mut bombos, &mut ram);
+            assert_eq!(bridge.grow_fire_column_radius(5, 207), 15);
+            assert_eq!(bridge.tick_blast_release_countdown(), 1);
+            bridge.set_fire_column_seed_position(2, 0x1111, 0x2222);
+            bridge.set_blast_position(4, 0x3333, 0x4444);
+        }
+
+        assert_eq!(bombos.mode(), 1);
+        assert_eq!(bombos.fire_column_radius(), 15);
+        assert!(bombos.blast_release_locked());
+        assert_eq!(bombos.fire_column_seed_x(2), 0x1111);
+        assert_eq!(bombos.fire_column_seed_y(2), 0x2222);
+        assert_eq!(bombos.blast_x(4), 0x3333);
+        assert_eq!(bombos.blast_y(4), 0x4444);
+        assert_eq!(ram[BOMBOS_MODE], 1);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIUS], 15);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_LOCKED], 1);
+        assert_eq!(ram[BOMBOS_BLAST_RELEASE_COUNTDOWN], 1);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_X + 4), 0x1111);
+        assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_Y + 4), 0x2222);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_X + 8), 0x3333);
+        assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_Y + 8), 0x4444);
+    }
+
+    #[test]
     fn native_bombos_slot_bridges_preserve_overlapping_fire_column_layout() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[BOMBOS_FIRE_COLUMN_TIMER + 3] = 1;
@@ -2338,7 +2377,7 @@ mod tests {
         ram[BOMBOS_BLAST_TIMER + 7] = 1;
         ram[BOMBOS_BLAST_PHASE + 7] = 0xfe;
 
-        let mut bombos = BombosSpellState::default();
+        let mut bombos = BombosSpellState::load_from_ram(&ram);
         {
             let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 3);
             assert_eq!(column.tick_timer(), 0);
@@ -2372,6 +2411,53 @@ mod tests {
         assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + 7], 0x77);
         assert_eq!(ram[BOMBOS_BLAST_TIMER + 7], 0);
         assert_eq!(ram[BOMBOS_BLAST_PHASE + 7], 0xff);
+    }
+
+    #[test]
+    fn native_bombos_slot_bridges_project_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[BOMBOS_FIRE_COLUMN_TIMER + 3] = 2;
+        native_ram[BOMBOS_FIRE_COLUMN_PHASE + 3] = 0x40;
+        native_ram[BOMBOS_FIRE_COLUMN_X_LO + 3] = 0x34;
+        native_ram[BOMBOS_FIRE_COLUMN_X_HI + 3] = 0x12;
+        native_ram[BOMBOS_FIRE_COLUMN_Y_LO + 3] = 0x78;
+        native_ram[BOMBOS_FIRE_COLUMN_Y_HI + 3] = 0x56;
+        native_ram[BOMBOS_BLAST_TIMER + 7] = 2;
+        native_ram[BOMBOS_BLAST_PHASE + 7] = 0x80;
+        let mut bombos = BombosSpellState::load_from_ram(&native_ram);
+
+        {
+            let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 3);
+            assert_eq!(column.tick_timer(), 1);
+            assert_eq!(column.advance_phase(), 0x41);
+        }
+        {
+            let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 7);
+            column.set_radial_angle(0x9a);
+        }
+        {
+            let mut blast = NativeBombosBlastBridgeMut::new(&mut bombos, &mut ram, 7);
+            assert_eq!(blast.tick_timer(), 1);
+            assert_eq!(blast.advance_phase(), 0x81);
+        }
+
+        assert_eq!(bombos.fire_column(3).timer(), 1);
+        assert_eq!(bombos.fire_column(3).phase(), 0x41);
+        assert_eq!(bombos.fire_column(3).x(), 0x1234);
+        assert_eq!(bombos.fire_column(3).y(), 0x569a);
+        assert_eq!(bombos.fire_column(7).radial_angle(), 0x9a);
+        assert_eq!(bombos.blast(7).timer(), 1);
+        assert_eq!(bombos.blast(7).phase(), 0x81);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_TIMER + 3], 1);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_PHASE + 3], 0x41);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_X_LO + 3], 0x34);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_X_HI + 3], 0x12);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_Y_LO + 3], 0x9a);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_Y_HI + 3], 0x56);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + 7], 0x9a);
+        assert_eq!(ram[BOMBOS_BLAST_TIMER + 7], 1);
+        assert_eq!(ram[BOMBOS_BLAST_PHASE + 7], 0x81);
     }
 
     #[test]
