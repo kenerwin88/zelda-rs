@@ -2404,7 +2404,6 @@ pub(crate) struct NativeWorldRegionBridgeMut<'a> {
 
 impl<'a> NativeWorldRegionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut WorldRegionState, ram: &'a mut [u8]) -> Self {
-        *state = WorldRegionState::load_from_ram(ram);
         Self { state, ram }
     }
 

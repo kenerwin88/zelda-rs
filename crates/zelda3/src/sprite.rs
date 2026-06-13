@@ -8372,7 +8372,7 @@ mod tests {
         s.overlord_slot_mut(7).set_overlord_type(1);
         s.sprite_workspace_mut().set_room_origin_y_high(0x20);
         s.sprite_workspace_mut().set_room_origin_x_high(0x10);
-        write_le_u16(&mut s.ram, OVERWORLD_AREA_INDEX_SPRITE, 0x1234);
+        s.world_region_mut().set_overworld_area_index_word(0x1234);
 
         s.dungeon_load_single_overlord(&[0x83, 0xe4, 10]);
 
@@ -8398,7 +8398,7 @@ mod tests {
     #[test]
     fn sprite_initialize_slots_clears_stale_sprite_and_overlord_slots() {
         let mut s = fresh_state();
-        s.ram[OVERWORLD_AREA_INDEX_SPRITE] = 0x34;
+        s.world_region_mut().set_overworld_area_index(0x34);
         s.player_state_mut().set_picking_throw_state(7);
         s.player_state_mut().set_state_bits(0x80);
 
@@ -9178,7 +9178,7 @@ mod tests {
         dark.sprite_slot_mut(k).set_sprite_type(0x7a);
         dark.sprite_slot_mut(k).set_health(1);
         dark.sprite_slot_mut(k).set_incoming_damage(1);
-        dark.ram[IS_IN_DARK_WORLD_SPRITE] = 1;
+        dark.world_region_mut().set_dark_world_region_index(1);
         dark.sprite_hit_timer31(k);
         assert_eq!(dark.dialogue_message_index().value(), 0);
     }

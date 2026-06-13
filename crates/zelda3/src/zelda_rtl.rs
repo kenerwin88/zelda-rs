@@ -2052,7 +2052,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_region(&self) -> WorldRegionState {
-        WorldRegionState::load_from_ram(&self.ram)
+        self.game_state.world.region
     }
 
     pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {

@@ -4613,7 +4613,7 @@ mod tests {
     fn dark_world_enemy_prep_uses_second_property_row() {
         let mut s = fresh_state();
         let k = 3;
-        s.ram[IS_IN_DARK_WORLD_PREP] = 1;
+        s.world_region_mut().set_dark_world_region_index(1);
         s.sprite_prep_keese(k);
         assert_eq!(s.sprite_slot(k).bump_damage(), 0x85);
         assert_eq!(s.sprite_slot(k).health(), 4);
@@ -4830,7 +4830,7 @@ mod tests {
         let k = 10;
         s.sprite_slot_mut(k).set_x_low(0x20);
         s.sprite_slot_mut(k).set_y_low(0x30);
-        s.ram[IS_IN_DARK_WORLD_PREP] = 1;
+        s.world_region_mut().set_dark_world_region_index(1);
         s.sprite_prep_agahnim(k);
         assert_eq!(s.sprite_slot(k).graphics(), 0);
         assert_eq!(s.sprite_slot(k).direction(), 3);
@@ -5283,7 +5283,7 @@ mod tests {
         s.sprite_slot_mut(k).set_state(9);
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
-        s.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_PREP] = 1;
+        s.world_region_mut().set_flag_overworld_area_changed(1);
         s.inventory_items_mut().set_mushroom(1);
         write_le_u16(&mut s.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x80);
 
@@ -5317,7 +5317,9 @@ mod tests {
 
         let mut skipped_powder = fresh_state();
         skipped_powder.sprite_slot_mut(k).set_state(9);
-        skipped_powder.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_PREP] = 0;
+        skipped_powder
+            .world_region_mut()
+            .clear_flag_overworld_area_changed();
         skipped_powder.inventory_items_mut().set_mushroom(1);
         write_le_u16(&mut skipped_powder.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x80);
         skipped_powder.sprite_prep_potion_shop(k);

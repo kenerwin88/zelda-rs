@@ -3256,6 +3256,104 @@ mod tests {
     }
 
     #[test]
+    fn world_region_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, CURRENT_AREA_OF_PLAYER, 0x0102);
+        write_le_u16(&mut ram, OVERWORLD_AREA_INDEX, 0x0304);
+        write_le_u16(&mut ram, OVERWORLD_AREA_INDEX_SPEXIT, 0x0506);
+        write_le_u16(&mut ram, OVERWORLD_AREA_INDEX_EXIT, 0x0708);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_PREV, 0x090a);
+        write_le_u16(&mut ram, OVERLAY_INDEX, 0x0b0c);
+        ram[RNG_SEED] = 0x0d;
+        ram[IS_IN_DARK_WORLD_FLAG] = 0x0e;
+        ram[FLAG_OVERWORLD_AREA_CHANGED] = 0x0f;
+        write_le_u16(&mut ram, WHICH_ENTRANCE, 0x1011);
+        write_le_u16(&mut ram, OW_ENTRANCE_VALUE, 0x1213);
+
+        let region = WorldRegionState::load_from_ram(&ram);
+        assert_eq!(region.current_area_of_player_word(), 0x0102);
+        assert_eq!(region.overworld_area_index_word(), 0x0304);
+        assert_eq!(region.spexit_area_index(), 0x0506);
+        assert_eq!(region.prev_screen_index_word(), 0x090a);
+        assert_eq!(region.overlay_index(), 0x0c);
+        assert_eq!(region.rng_seed(), 0x0d);
+        assert_eq!(region.dark_world_region_index(), 0x0e);
+        assert!(region.is_in_dark_world());
+        assert!(region.flag_overworld_area_changed());
+        assert_eq!(region.which_entrance(), 0x1011);
+        assert_eq!(region.ow_entrance_value(), 0x1213);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        region.write_to_ram(&mut projected);
+        assert_eq!(WorldRegionState::load_from_ram(&projected), region);
+    }
+
+    #[test]
+    fn native_world_region_bridge_dual_writes_changes_from_native_state() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut region = WorldRegionState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
+            bridge.set_current_area_of_player_word(0x0102);
+            bridge.set_overworld_area_index_word(0x0304);
+            bridge.save_spexit_area_index();
+            bridge.save_exit_area_index();
+            bridge.set_prev_screen_index_word(0x0506);
+            bridge.set_overlay_index_word(0x0708);
+            bridge.set_rng_seed(0x09);
+            bridge.set_dark_world_region_index(0x0a);
+            bridge.set_flag_overworld_area_changed(0x0b);
+            bridge.set_which_entrance(0x0c0d);
+            bridge.set_ow_entrance_value(0x0e0f);
+        }
+
+        assert_eq!(region.current_area_of_player_word(), 0x0102);
+        assert_eq!(region.overworld_area_index_word(), 0x0304);
+        assert_eq!(region.spexit_area_index(), 0x0304);
+        assert_eq!(region.prev_screen_index_word(), 0x0506);
+        assert_eq!(region.overlay_index(), 0x08);
+        assert_eq!(region.rng_seed(), 0x09);
+        assert_eq!(region.dark_world_region_index(), 0x0a);
+        assert!(region.flag_overworld_area_changed());
+        assert_eq!(region.which_entrance(), 0x0c0d);
+        assert_eq!(region.ow_entrance_value(), 0x0e0f);
+        assert_eq!(WorldRegionState::load_from_ram(&ram), region);
+    }
+
+    #[test]
+    fn native_world_region_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut region = WorldRegionState::default();
+        {
+            let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
+            bridge.set_current_area_of_player_word(0x0102);
+            bridge.set_overworld_area_index_word(0x0304);
+            bridge.set_rng_seed(0x05);
+            bridge.set_dark_world_region_index(0x06);
+            bridge.set_which_entrance(0x0708);
+        }
+
+        write_le_u16(&mut ram, CURRENT_AREA_OF_PLAYER, 0xaaaa);
+        write_le_u16(&mut ram, OVERWORLD_AREA_INDEX, 0xbbbb);
+        ram[RNG_SEED] = 0xcc;
+        ram[IS_IN_DARK_WORLD_FLAG] = 0xdd;
+        write_le_u16(&mut ram, WHICH_ENTRANCE, 0xeeee);
+
+        {
+            let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
+            bridge.set_ow_entrance_value(0x090a);
+        }
+
+        assert_eq!(region.current_area_of_player_word(), 0x0102);
+        assert_eq!(region.overworld_area_index_word(), 0x0304);
+        assert_eq!(region.rng_seed(), 0x05);
+        assert_eq!(region.dark_world_region_index(), 0x06);
+        assert_eq!(region.which_entrance(), 0x0708);
+        assert_eq!(region.ow_entrance_value(), 0x090a);
+        assert_eq!(WorldRegionState::load_from_ram(&ram), region);
+    }
+
+    #[test]
     fn world_scroll_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, BG1_X_SCROLL, 0x0101);

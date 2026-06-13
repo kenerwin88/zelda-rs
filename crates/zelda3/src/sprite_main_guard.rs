@@ -1551,7 +1551,7 @@ mod tests {
         let k = 1;
         state.sprite_slot_mut(k).set_g(15);
         state.ram[SRAM_PROGRESS_INDICATOR] = 2;
-        state.ram[OVERWORLD_AREA_INDEX_GUARD] = 24;
+        state.world_region_mut().set_overworld_area_index(24);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot(k).g(), 16);
         assert_eq!(state.system_signals().music_control(), 12);
