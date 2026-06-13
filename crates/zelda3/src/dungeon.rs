@@ -1334,7 +1334,7 @@ impl ZeldaState {
         self.dungeon_doors_mut().set_opened_doors(saved & 0xf000);
         self.dungeon_doors_mut()
             .set_opened_doors_including_adjacent((saved & 0xf000) | 0x0f00);
-        self.dungeon_state_view_mut()
+        self.dungeon_savegame_state_mut()
             .set_savegame_state_bits((saved & 0x0ff0) << 4);
         self.dungeon_room_load_mut()
             .set_quadrants_visited(saved & 0x000f);
@@ -5757,7 +5757,7 @@ impl ZeldaState {
         for (&tile_pos, &tile) in positions.iter().zip(tiles.iter()) {
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile(tile_pos as usize, tile);
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
@@ -5824,7 +5824,7 @@ impl ZeldaState {
         }
 
         for &tile_pos in &tile_positions {
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
@@ -5854,9 +5854,9 @@ impl ZeldaState {
             .set_bg2_tile((pos + 64) as usize, tile);
 
         let attr = u16::from(self.dungeon_tile_attribute(tile as usize)) * 0x0101;
-        self.dungeon_state_view_mut()
+        self.dungeon_bg2_attributes_mut()
             .set_bg2_attr_word(pos as usize, attr);
-        self.dungeon_state_view_mut()
+        self.dungeon_bg2_attributes_mut()
             .set_bg2_attr_word((pos + 64) as usize, attr);
 
         let vram_addr_0 = self.Dungeon_MapVramAddr(pos);
@@ -6638,7 +6638,7 @@ impl ZeldaState {
             self.dungeon_moving_floor_mut().set_floor_y_offset_low(1);
             self.dungeon_header_view_mut().clear_header_tag(1);
             let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
-            self.dungeon_state_view_mut()
+            self.dungeon_savegame_state_mut()
                 .set_savegame_state_bits(save_bits);
             self.dungeon_environment_mut()
                 .clear_water_puzzle_state_changed();
@@ -6663,7 +6663,7 @@ impl ZeldaState {
         self.system_signals_view_mut().increment_cgram_update_flag();
         self.dungeon_header_view_mut().clear_header_tag(1);
         let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
-        self.dungeon_state_view_mut()
+        self.dungeon_savegame_state_mut()
             .set_savegame_state_bits(save_bits);
         self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
@@ -6688,7 +6688,7 @@ impl ZeldaState {
         self.set_subsubmodule(0);
         self.dungeon_header_view_mut().clear_header_tag(1);
         let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
-        self.dungeon_state_view_mut()
+        self.dungeon_savegame_state_mut()
             .set_savegame_state_bits(save_bits);
         self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
@@ -6958,9 +6958,9 @@ impl ZeldaState {
             let yy = self.dungeon_state_view().chest_reveal_cursor_x2();
             let pos = (self.dungeon_state_view().chest_location_for_cursor(yy) >> 1) & 0x1fff;
 
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr_word(pos as usize, attr);
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr_word((pos + 64) as usize, attr);
             attr = attr.wrapping_add(0x0101);
 
@@ -9032,7 +9032,7 @@ impl ZeldaState {
         self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
         let save_bits = self.dungeon_savegame_state().savegame_state_bits() | (0x1000 >> k);
-        self.dungeon_state_view_mut()
+        self.dungeon_savegame_state_mut()
             .set_savegame_state_bits(save_bits);
         self.system_signals_view_mut().set_ambient_sound_effect(7);
         self.player_state_view_mut().immobilize();
@@ -9136,7 +9136,7 @@ impl ZeldaState {
                 self.main_show_text_message();
                 return None;
             }
-            self.dungeon_state_view_mut()
+            self.dungeon_savegame_state_mut()
                 .or_savegame_state_bits(CHEST_OPEN_MASKS[chest_idx_org]);
             self.system_signals_view_mut().set_sound_effect_1(0x29);
             self.system_signals_view_mut().set_sound_effect_2(0x15);
@@ -9167,12 +9167,12 @@ impl ZeldaState {
                             self.main_show_text_message();
                             return None;
                         }
-                        self.dungeon_state_view_mut()
+                        self.dungeon_savegame_state_mut()
                             .or_savegame_state_bits(CHEST_OPEN_MASKS[chest_idx_org]);
                         let chest_position = self.OpenBigChestResult(loc);
                         return Some((item, chest_position));
                     }
-                    self.dungeon_state_view_mut()
+                    self.dungeon_savegame_state_mut()
                         .or_savegame_state_bits(CHEST_OPEN_MASKS[chest_idx_org]);
                     let src = self.read_predefined_tile_words(0x14a4, 4);
                     let chest_position = self.apply_opened_chest_tiles(loc >> 1, loc, &src);
@@ -9214,9 +9214,9 @@ impl ZeldaState {
             }
         }
 
-        self.dungeon_state_view_mut()
+        self.dungeon_bg2_attributes_mut()
             .set_bg2_attr_word(pos as usize, 0x0202);
-        self.dungeon_state_view_mut()
+        self.dungeon_bg2_attributes_mut()
             .set_bg2_attr_word(pos as usize + 64, 0x0202);
 
         let src = self.read_predefined_tile_words(0x14a4, 4);
@@ -9262,7 +9262,7 @@ impl ZeldaState {
                 if save_bits & 0x4000 != 0 {
                     choice = 0;
                 } else {
-                    self.dungeon_state_view_mut()
+                    self.dungeon_savegame_state_mut()
                         .set_savegame_state_bits(save_bits | 0x4000);
                 }
             }
@@ -9293,7 +9293,7 @@ impl ZeldaState {
         }
         self.dungeon_prep_overlay_dma_next_prep(0, loc);
         for &tile_pos in &[pos, pos + 2, pos + 64, pos + 66, pos + 128, pos + 130] {
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr_word(tile_pos as usize, 0x2727);
         }
         self.Dungeon_FlagRoomData_Quadrants();

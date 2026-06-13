@@ -3836,13 +3836,13 @@ impl ZeldaState {
                 let m1 = self.overworld_map16_to_map8_word(&map8, k, 1);
                 let m2 = self.overworld_map16_to_map8_word(&map8, k, 2);
                 let m3 = self.overworld_map16_to_map8_word(&map8, k, 3);
-                self.dungeon_state_view_mut()
+                self.dungeon_bg2_attributes_mut()
                     .set_bg2_attr_word(r14 as usize, m0);
-                self.dungeon_state_view_mut()
+                self.dungeon_bg2_attributes_mut()
                     .set_bg2_attr_word(r14 as usize + 64, m2);
-                self.dungeon_state_view_mut()
+                self.dungeon_bg2_attributes_mut()
                     .set_bg2_attr_word(r14 as usize + 2, m1);
-                self.dungeon_state_view_mut()
+                self.dungeon_bg2_attributes_mut()
                     .set_bg2_attr_word(r14 as usize + 66, m3);
                 r14 += 4;
             }

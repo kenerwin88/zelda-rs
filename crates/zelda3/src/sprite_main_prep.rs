@@ -4748,7 +4748,7 @@ mod tests {
         let mut finished = fresh_state();
         finished.sprite_slot_view_mut(2).set_state(9);
         finished
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x8000);
         assert!(finished.sprite_return_if_boss_finished(2));
         assert_eq!(finished.sprite_slot_view(2).state(), 0);
@@ -4976,7 +4976,7 @@ mod tests {
         let mut cutscene_done = fresh_state();
         cutscene_done.sprite_slot_view_mut(k).set_state(9);
         cutscene_done
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x4000);
         cutscene_done.sprite_prep_cutscene_agahnim(k);
         assert_eq!(cutscene_done.sprite_slot_view(k).state(), 0);
@@ -5146,7 +5146,7 @@ mod tests {
         indoor.ram[ITEM_DROP_COUNTER] = 1;
         indoor.sprite_slot_view_mut(k).set_graphics(4);
         indoor
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x2000);
         indoor.sprite_slot_view_mut(k).set_state(9);
         indoor.sprite_prep_bonk_item(k);
@@ -5466,12 +5466,12 @@ mod tests {
         dungeon.sprite_slot_view_mut(k).set_state(9);
         dungeon.sprite_slot_view_mut(k).set_x_high(0);
         dungeon
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x4000);
         dungeon.heart_upgrade_check_if_already_obtained(k);
         assert_eq!(dungeon.sprite_slot_view(k).state(), 0);
         dungeon
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x0001);
         dungeon.heart_upgrade_set_obtained_flag(k);
         assert_eq!(
@@ -5481,7 +5481,7 @@ mod tests {
 
         dungeon.sprite_slot_view_mut(k).set_x_high(1);
         dungeon
-            .dungeon_state_view_mut()
+            .dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x0002);
         dungeon.heart_upgrade_set_obtained_flag(k);
         assert_eq!(

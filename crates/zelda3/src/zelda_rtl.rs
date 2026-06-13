@@ -6717,7 +6717,7 @@ impl ZeldaState {
         for (i, &tile_pos) in positions.iter().enumerate() {
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile(tile_pos as usize, src[i]);
-            self.dungeon_state_view_mut()
+            self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
@@ -9946,7 +9946,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         state
-            .dungeon_state_view_mut()
+            .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x09);
 
         state.tile_detect_main_handler(0);
@@ -9967,7 +9967,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_NEED_FOR_POOF_FOR_TRANSFORM, 1);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         state
-            .dungeon_state_view_mut()
+            .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x0d);
 
         state.tile_detect_main_handler(0);
@@ -9987,7 +9987,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         state
-            .dungeon_state_view_mut()
+            .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x0e);
 
         state.tile_detect_main_handler(0);
@@ -10002,7 +10002,7 @@ mod tests {
         let mut state = ZeldaState::new();
         state.player_state_view_mut().set_lower_level_state(1);
         state
-            .dungeon_state_view_mut()
+            .dungeon_bg2_attributes_mut()
             .set_bg2_attr(0x1000 + 0x145, 0x72);
 
         assert_eq!(state.push_block_get_target_tile_flag(5, 0x28), 0x72);
@@ -10017,7 +10017,7 @@ mod tests {
             .dungeon_bg2_attributes_mut()
             .set_bg2_attr(0x18 * 8 + 4, 0);
         state
-            .dungeon_state_view_mut()
+            .dungeon_bg2_attributes_mut()
             .set_bg2_attr(0x18 * 8 + 5, 11);
 
         assert!(state.push_block_attempt_to_push_the_block(0, 0x20, 0x20));
