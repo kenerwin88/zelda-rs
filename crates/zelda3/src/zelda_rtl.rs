@@ -1980,7 +1980,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_location_state(&self) -> WorldLocationState {
-        WorldLocationState::load_from_ram(&self.ram)
+        self.game_state.world.location
     }
 
     fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {

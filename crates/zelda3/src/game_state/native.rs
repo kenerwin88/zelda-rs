@@ -2972,13 +2972,13 @@ mod tests {
     }
 
     #[test]
-    fn native_world_location_mut_view_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_world_location_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, DUNGEON_ROOM, 0x0124);
         write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX, 0x0040);
         ram[PLAYER_IS_INDOORS] = 1;
 
-        let mut world = WorldLocationState::default();
+        let mut world = WorldLocationState::load_from_ram(&ram);
         {
             let mut bridge = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
             bridge.increment_dungeon_room_index_by(2);
@@ -2992,6 +2992,34 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0126);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
         assert_eq!(ram[PLAYER_IS_INDOORS], 0);
+    }
+
+    #[test]
+    fn native_world_location_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut world = WorldLocationState {
+            dungeon_room: 0x0124,
+            overworld_screen: 0x0040,
+            indoor_flag: 1,
+        };
+        world.write_to_ram(&mut ram);
+
+        write_le_u16(&mut ram, DUNGEON_ROOM, 0x00aa);
+        write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX, 0x00bb);
+        ram[PLAYER_IS_INDOORS] = 0xcc;
+
+        {
+            let mut bridge = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
+            bridge.set_overworld_screen(0x5b);
+        }
+
+        assert_eq!(world.dungeon_room, 0x0124);
+        assert_eq!(world.overworld_screen, 0x005b);
+        assert_eq!(world.indoor_flag, 1);
+        assert_eq!(WorldLocationState::load_from_ram(&ram), world);
+        assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0124);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
+        assert_eq!(ram[PLAYER_IS_INDOORS], 1);
     }
 
     #[test]

@@ -2877,7 +2877,6 @@ pub(crate) struct NativeWorldLocationBridgeMut<'a> {
 
 impl<'a> NativeWorldLocationBridgeMut<'a> {
     pub(crate) fn new(world_location: &'a mut WorldLocationState, ram: &'a mut [u8]) -> Self {
-        *world_location = WorldLocationState::load_from_ram(ram);
         Self {
             world_location,
             ram,
