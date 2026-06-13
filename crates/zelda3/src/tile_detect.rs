@@ -609,7 +609,7 @@ impl ZeldaState {
                 self.tile_detect_position_view_mut().set_misc_tiles(misc);
                 self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
                 if tile != 0x63
-                    && self.dungeon_state_view().chest_location((tile - 0x58) as usize)
+                    && self.dungeon_room_items().chest_location((tile - 0x58) as usize)
                         >= 0x8000
                 {
                     self.tile_detect_position_view_mut().set_collision_bits(r14);

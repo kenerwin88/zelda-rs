@@ -30,17 +30,17 @@ pub(crate) use display::{
 };
 pub(crate) use dungeon::{
     DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState, DungeonHeaderState,
-    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomLoadState,
-    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
+    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomItemState,
+    DungeonRoomLoadState, DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
     DungeonScratchWordState, DungeonStairListsState, DungeonStairMovementState, DungeonState,
     DungeonTorchState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
     NativeDungeonEntranceBackupBridgeMut, NativeDungeonEnvironmentBridgeMut,
     NativeDungeonHeaderBridgeMut, NativeDungeonMovingFloorBridgeMut,
-    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomLoadBridgeMut,
-    NativeDungeonRoomTilemapBridgeMut, NativeDungeonRoomTrackingBridgeMut,
-    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
-    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
-    NativeDungeonTorchBridgeMut,
+    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomItemBridgeMut,
+    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomTilemapBridgeMut,
+    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
+    NativeDungeonScratchWordBridgeMut, NativeDungeonStairListsBridgeMut,
+    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,

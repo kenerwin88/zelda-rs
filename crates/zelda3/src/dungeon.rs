@@ -2413,7 +2413,7 @@ impl ZeldaState {
                     self.RoomDraw_WaterHoldingObject(5, 0x162c, dsto);
                     return;
                 }
-                self.dungeon_state_view_mut()
+                self.dungeon_room_items_mut()
                     .set_replacement_tile_source_x2(dsto * 2);
                 self.RoomDraw_WaterHoldingObject(3, src, dsto);
             }
@@ -2580,13 +2580,13 @@ impl ZeldaState {
                 const CHEST_OPEN_MASKS: [u16; 6] = [0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000];
                 let loc = dsto * 2 | 0x8000 | self.room_plane_tilemap_bit();
                 let chest = self
-                    .dungeon_state_view_mut()
+                    .dungeon_room_items_mut()
                     .append_chest_location_and_sync_big_key_count(loc);
                 if chest < CHEST_OPEN_MASKS.len()
                     && self.dungeon_savegame_state().savegame_state_bits() & CHEST_OPEN_MASKS[chest]
                         != 0
                 {
-                    self.dungeon_state_view_mut().clear_chest_location(chest);
+                    self.dungeon_room_items_mut().clear_chest_location(chest);
                     self.RoomDraw_1x3_rightwards(0x14c4, dsto, 4);
                 } else {
                     self.RoomDraw_1x3_rightwards(0x14ac, dsto, 4);
@@ -4075,7 +4075,7 @@ impl ZeldaState {
         ];
         self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(index, tilemap_pos);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, below);
         self.RoomDraw_Rightwards2x2(src, dsto);
     }
@@ -4136,7 +4136,7 @@ impl ZeldaState {
         };
         self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(index, dsto * 2 | plane);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, [0x19d8, 0x19d9, 0x59d8, 0x59d9]);
         self.RoomDraw_Rightwards2x2(src, dsto);
     }
@@ -4321,15 +4321,15 @@ impl ZeldaState {
 
     pub(super) fn RoomDraw_CellLock(&mut self, dsto: u16) {
         const CHEST_OPEN_MASKS: [u16; 6] = [0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000];
-        let index = self.dungeon_state_view_mut().advance_big_key_lock_count();
+        let index = self.dungeon_room_items_mut().advance_big_key_lock_count();
         if index < CHEST_OPEN_MASKS.len()
             && self.dungeon_savegame_state().savegame_state_bits() & CHEST_OPEN_MASKS[index] == 0
         {
-            self.dungeon_state_view_mut()
+            self.dungeon_room_items_mut()
                 .set_chest_location(index, dsto * 2);
             self.RoomDraw_Rightwards2x2(0x1494, dsto);
         } else if index < 6 {
-            self.dungeon_state_view_mut().clear_chest_location(index);
+            self.dungeon_room_items_mut().clear_chest_location(index);
         }
     }
 
@@ -4443,13 +4443,13 @@ impl ZeldaState {
             return;
         }
         let index = self
-            .dungeon_state_view_mut()
+            .dungeon_room_items_mut()
             .advance_chest_and_big_key_counts();
         if index >= CHEST_OPEN_MASKS.len() {
             return;
         }
         let location = 2 * (dsto | self.room_plane_offset());
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_chest_location(index, location);
         let tag_slot = self.chest_tag_gate_slot();
         if self.dungeon_savegame_state().savegame_state_bits() & CHEST_OPEN_MASKS[index] == 0 {
@@ -4462,7 +4462,7 @@ impl ZeldaState {
             }
             self.RoomDraw_Rightwards2x2(0x149c, dsto);
         } else {
-            self.dungeon_state_view_mut().clear_chest_location(index);
+            self.dungeon_room_items_mut().clear_chest_location(index);
             if let Some(slot) = tag_slot {
                 self.dungeon_header_view_mut().clear_header_tag(slot);
             }
@@ -4492,7 +4492,7 @@ impl ZeldaState {
         let plane_bit = self.room_plane_tilemap_bit();
         self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(index, dsto * 2 | plane_bit);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, [0x0d0e, 0x0d1e, 0x4d0e, 0x4d1e]);
         let src = if self.save_progress_view().dark_world_state() != 0 {
             0x0e92
@@ -4806,7 +4806,7 @@ impl ZeldaState {
         let ll = self.room_read_current(dsto + 64);
         let ur = self.room_read_current(dsto + 1);
         let lr = self.room_read_current(dsto + 65);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, [ul, ll, ur, lr]);
         self.RoomDraw_Rightwards2x2(src, dsto);
     }
@@ -4830,7 +4830,7 @@ impl ZeldaState {
         let ll = self.room_read_current(dsto + 64);
         let ur = self.room_read_current(dsto + 1);
         let lr = self.room_read_current(dsto + 65);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(x, [ul, ll, ur, lr]);
         self.RoomDraw_Rightwards2x2(0x0e52, dsto);
     }
@@ -5109,7 +5109,7 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_AdjustWaterVomit(&mut self, src: usize, depth: i32) {
         let mut dsto =
-            (self.dungeon_state_view().replacement_tile_source_pos()).wrapping_add(xy(0, 2) as u16);
+            (self.dungeon_room_items().replacement_tile_source_pos()).wrapping_add(xy(0, 2) as u16);
         let mut row = 0usize;
         let mut remaining = depth;
         loop {
@@ -5127,7 +5127,7 @@ impl ZeldaState {
         }
 
         let base_dsto =
-            (self.dungeon_state_view().replacement_tile_source_pos()).wrapping_add(xy(0, 2) as u16);
+            (self.dungeon_room_items().replacement_tile_source_pos()).wrapping_add(xy(0, 2) as u16);
         let mut upload = self.display_state().vram_upload_buffer_base();
         for i in 0..4u16 {
             let col = base_dsto.wrapping_add(i);
@@ -5875,7 +5875,7 @@ impl ZeldaState {
     pub(super) fn RoomDraw_16x16Single(&mut self, index: u8) {
         let index = (index >> 1) as usize;
         let pos = (self.dungeon_object_tracking().object_tilemap_pos(index) & 0x3fff) >> 1;
-        let [ul, ll, ur, lr] = self.dungeon_state_view().replacement_tilemap_quad(index);
+        let [ul, ll, ur, lr] = self.dungeon_room_items().replacement_tilemap_quad(index);
         let attr = self.dungeon_tile_attribute(lr as usize);
         self.Dungeon_Store2x2(pos, ul, ll, ur, lr, attr);
     }
@@ -6046,13 +6046,13 @@ impl ZeldaState {
             self.system_signals_view_mut().set_sound_effect_2(0x1b);
             let src_words = self.read_predefined_tile_words(0x05ba, 16);
             for chunk in src_words.chunks_exact(4).take(4) {
-                self.dungeon_state_view_mut()
+                self.dungeon_room_items_mut()
                     .set_replacement_tilemap_quad(k, [chunk[0], chunk[1], chunk[2], chunk[3]]);
                 k += 1;
             }
         } else {
             let k = self.dungeon_object_tracking().misc_object_index() as usize >> 1;
-            self.dungeon_state_view_mut()
+            self.dungeon_room_items_mut()
                 .set_replacement_tilemap_quad(k, [0x0d0b, 0x0d1b, 0x4d0b, 0x4d1b]);
         }
     }
@@ -6887,7 +6887,7 @@ impl ZeldaState {
 
     pub(super) fn PushPressurePlate(&mut self, attr: u8) {
         self.set_submodule(5);
-        if attr == 0x23 || self.dungeon_state_view().replacement_tile_destination_x2() == 0 {
+        if attr == 0x23 || self.dungeon_room_items().replacement_tile_destination_x2() == 0 {
             return;
         }
         self.save_submodule_for_menu();
@@ -6896,10 +6896,10 @@ impl ZeldaState {
         let link_y = self.player_state_view().y().wrapping_add(2);
         self.player_state_view_mut().set_y(link_y);
 
-        let mut pos = self.dungeon_state_view().replacement_tile_destination_x2();
+        let mut pos = self.dungeon_room_items().replacement_tile_destination_x2();
         if self.dungeon_bg2_attributes().bg2_attr_word(pos as usize) & 0xfe00 != 0x2400 {
             pos = pos.wrapping_add(1);
-            self.dungeon_state_view_mut()
+            self.dungeon_room_items_mut()
                 .set_replacement_tile_destination_x2(pos);
         }
         self.Dungeon_UpdateTileMapWithCommonTile(
@@ -6951,12 +6951,12 @@ impl ZeldaState {
     pub(super) fn RoomTag_OperateChestReveal(&mut self, k: usize) {
         self.dungeon_header_view_mut().clear_header_tag(k);
         self.clear_vram_upload_cursor();
-        self.dungeon_state_view_mut().clear_chest_reveal_cursor();
+        self.dungeon_room_items_mut().clear_chest_reveal_cursor();
 
         let mut attr = 0x5858;
         loop {
-            let yy = self.dungeon_state_view().chest_reveal_cursor_x2();
-            let pos = (self.dungeon_state_view().chest_location_for_cursor(yy) >> 1) & 0x1fff;
+            let yy = self.dungeon_room_items().chest_reveal_cursor_x2();
+            let pos = (self.dungeon_room_items().chest_location_for_cursor(yy) >> 1) & 0x1fff;
 
             self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr_word(pos as usize, attr);
@@ -6987,23 +6987,23 @@ impl ZeldaState {
             self.advance_vram_upload_cursor_by(24);
 
             let next = yy.wrapping_add(2);
-            self.dungeon_state_view_mut()
+            self.dungeon_room_items_mut()
                 .set_chest_reveal_cursor_x2(next);
             if self
-                .dungeon_state_view()
+                .dungeon_room_items()
                 .chest_reveal_cursor_reached_end(next)
             {
                 break;
             }
         }
 
-        self.dungeon_state_view_mut().clear_chest_reveal_cursor();
+        self.dungeon_room_items_mut().clear_chest_reveal_cursor();
         self.system_signals_view_mut().set_sound_effect_2(26);
         self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn RoomTag_BuildChestStripes(&self, pos: u16, y: u16) -> u16 {
-        let loc = self.dungeon_state_view().chest_location_for_cursor(y);
+        let loc = self.dungeon_room_items().chest_location_for_cursor(y);
         let pos = pos.wrapping_add(loc);
         (((pos & 0x0040) << 4) | ((pos & 0x303f) >> 1) | ((pos & 0x0f80) >> 2)).swap_bytes()
     }
@@ -7016,7 +7016,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_MaybeCheckShutters(&mut self, attr_out: &mut u8) -> bool {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .clear_replacement_tile_destination();
         if self.player_state_view().is_immobilized()
             || self.player_state_view().has_auxiliary_state()
@@ -7036,7 +7036,7 @@ impl ZeldaState {
                     return false;
                 }
                 *attr_out = t as u8;
-                self.dungeon_state_view_mut()
+                self.dungeon_room_items_mut()
                     .set_replacement_tile_destination_x2(q);
                 return true;
             }
@@ -7045,7 +7045,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_CheckForPressedSwitch(&mut self, y_out: &mut u8) -> bool {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_items_mut()
             .clear_replacement_tile_destination();
         if self.player_state_view().is_immobilized()
             || self.player_state_view().has_auxiliary_state()
@@ -7065,7 +7065,7 @@ impl ZeldaState {
                     return false;
                 }
                 *y_out = u8::from(t == 0x3b3b);
-                self.dungeon_state_view_mut()
+                self.dungeon_room_items_mut()
                     .set_replacement_tile_destination_x2(q);
                 return true;
             }
@@ -7966,8 +7966,8 @@ impl ZeldaState {
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::ActivatedWaterLadders),
                 self.dungeon_object_tracking().misc_object_index(),
                 self.dungeon_torch_state().torch_index(),
-                self.dungeon_state_view().num_chests_x2(),
-                self.dungeon_state_view().num_big_key_locks_x2(),
+                self.dungeon_room_items().num_chests_x2(),
+                self.dungeon_room_items().num_big_key_locks_x2(),
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs1),
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs2),
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::WetStairs),
@@ -8298,17 +8298,17 @@ impl ZeldaState {
 
         let mut attr = 0x5858u16;
         let mut i = 0usize;
-        let skip_big_key_locks = self.dungeon_state_view().num_chests_x2() != 0
+        let skip_big_key_locks = self.dungeon_room_items().num_chests_x2() != 0
             && self.hud_tags_suppress_big_key_locks();
-        if self.dungeon_state_view().num_chests_x2() != 0 && !skip_big_key_locks {
-            while i != self.dungeon_state_view().num_chests_x2() as usize {
-                let k = self.dungeon_state_view().chest_location_for_offset_x2(i);
+        if self.dungeon_room_items().num_chests_x2() != 0 && !skip_big_key_locks {
+            while i != self.dungeon_room_items().num_chests_x2() as usize {
+                let k = self.dungeon_room_items().chest_location_for_offset_x2(i);
                 if k != 0 {
                     let j = (k & 0x7fff) >> 1;
                     self.write_attr2(j as usize + xy(0, 0), attr);
                     self.write_attr2(j as usize + xy(0, 1), attr);
                     if k & 0x8000 != 0 {
-                        self.dungeon_state_view_mut()
+                        self.dungeon_room_items_mut()
                             .set_chest_location_for_offset_x2(i, k & 0x7fff);
                         self.write_attr2(j as usize + xy(2, 1), attr);
                         self.write_attr2(j as usize + xy(0, 2), attr);
@@ -8321,9 +8321,9 @@ impl ZeldaState {
         }
 
         if !skip_big_key_locks {
-            while i != self.dungeon_state_view().num_big_key_locks_x2() as usize {
-                let k = self.dungeon_state_view().chest_location_for_offset_x2(i);
-                self.dungeon_state_view_mut()
+            while i != self.dungeon_room_items().num_big_key_locks_x2() as usize {
+                let k = self.dungeon_room_items().chest_location_for_offset_x2(i);
+                self.dungeon_room_items_mut()
                     .set_chest_location_for_offset_x2(i, k | 0x8000);
                 let j = (k & 0x7fff) >> 1;
                 self.write_attr2(j as usize + xy(0, 0), attr);
@@ -8671,8 +8671,8 @@ impl ZeldaState {
                     self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
                     self.dungeon_stair_lists().inter_staircase_pos(0),
                     self.dungeon_object_tracking().misc_object_index(),
-                    self.dungeon_state_view().num_chests_x2(),
-                    self.dungeon_state_view().num_big_key_locks_x2(),
+                    self.dungeon_room_items().num_chests_x2(),
+                    self.dungeon_room_items().num_big_key_locks_x2(),
                     self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorth),
                     self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomSouthDown),
                     self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterPseudoUpNorth),
@@ -9127,7 +9127,7 @@ impl ZeldaState {
             return self.OpenMiniGameChestResult();
         }
         let chest_idx_org = tile.wrapping_sub(0x58) as usize;
-        let loc = self.dungeon_state_view().chest_location(chest_idx_org);
+        let loc = self.dungeon_room_items().chest_location(chest_idx_org);
         let palace_mask =
             upper_bitmask((self.save_progress_view().palace_index_x2_word() >> 1) as usize);
         if loc >= 0x8000 {
@@ -10085,7 +10085,7 @@ impl ZeldaState {
         }
         let link_y = self.player_state_view().y().wrapping_sub(2);
         self.player_state_view_mut().set_y(link_y);
-        let pos = self.dungeon_state_view().replacement_tile_destination_x2();
+        let pos = self.dungeon_room_items().replacement_tile_destination_x2();
         self.Dungeon_UpdateTileMapWithCommonTile(
             i32::from((pos & 0x003f) << 3),
             i32::from((pos >> 3) & 0x01f8),

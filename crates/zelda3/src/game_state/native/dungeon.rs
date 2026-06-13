@@ -6,25 +6,29 @@ use crate::game_state::constants::{
     DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR,
-    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_BG1, DUNG_BG2, DUNG_CUR_DOOR_IDX,
-    DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD,
-    DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT,
-    DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR,
-    DUNG_DRAW_WIDTH_INDICATOR, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED, DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
+    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_BG1, DUNG_BG2,
+    DUNG_CHEST_LOCATIONS, DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR,
+    DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
+    DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED,
+    DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR,
+    DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED, DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
     DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
     DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
     DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
     DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
     DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
-    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
-    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1,
-    DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS,
-    DUNG_OVERLAY_TO_LOAD, DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT,
-    DUNG_WANT_LIGHTS_OUT_COPY, DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT,
-    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
-    MOVING_FLOOR_BG_CHECK_FLAGS, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
-    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
+    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_BIGKEY_LOCKS_X2, DUNG_NUM_CHESTS_X2,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
+    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
+    DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
+    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
+    DUNG_QUADRANTS_VISITED, DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2,
+    DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
+    DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
+    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
+    ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_MAP_STATE,
+    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
+    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
     WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
     WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
@@ -48,6 +52,7 @@ const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
+const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
@@ -102,6 +107,7 @@ pub(crate) struct DungeonState {
     pub(crate) room_load: DungeonRoomLoadState,
     pub(crate) environment: DungeonEnvironmentState,
     pub(crate) room_tilemaps: DungeonRoomTilemapState,
+    pub(crate) room_items: DungeonRoomItemState,
 }
 
 impl DungeonState {
@@ -122,6 +128,7 @@ impl DungeonState {
             room_load: DungeonRoomLoadState::load_from_ram(ram),
             environment: DungeonEnvironmentState::load_from_ram(ram),
             room_tilemaps: DungeonRoomTilemapState::load_from_ram(ram),
+            room_items: DungeonRoomItemState::load_from_ram(ram),
         }
     }
 
@@ -1620,6 +1627,182 @@ impl DungeonStairMovementState {
 
     fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
         self.in_room_kind = value;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomItemState {
+    num_chests_x2: u16,
+    num_big_key_locks_x2: u16,
+    chest_reveal_cursor_x2: u16,
+    replacement_tile_destination_x2: u16,
+    replacement_tile_source_x2: u16,
+    chest_locations: [u16; DUNGEON_ROOM_ITEM_SLOT_COUNT],
+    replacement_tilemap_quads: [[u16; 4]; DUNGEON_ROOM_ITEM_SLOT_COUNT],
+}
+
+impl DungeonRoomItemState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut chest_locations = [0; DUNGEON_ROOM_ITEM_SLOT_COUNT];
+        let mut replacement_tilemap_quads = [[0; 4]; DUNGEON_ROOM_ITEM_SLOT_COUNT];
+        for index in 0..DUNGEON_ROOM_ITEM_SLOT_COUNT {
+            chest_locations[index] = read_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2);
+            replacement_tilemap_quads[index] = [
+                read_le_u16(ram, REPLACEMENT_TILEMAP_UL + index * 2),
+                read_le_u16(ram, REPLACEMENT_TILEMAP_LL + index * 2),
+                read_le_u16(ram, REPLACEMENT_TILEMAP_UR + index * 2),
+                read_le_u16(ram, REPLACEMENT_TILEMAP_LR + index * 2),
+            ];
+        }
+        Self {
+            num_chests_x2: read_le_u16(ram, DUNG_NUM_CHESTS_X2),
+            num_big_key_locks_x2: read_le_u16(ram, DUNG_NUM_BIGKEY_LOCKS_X2),
+            chest_reveal_cursor_x2: read_le_u16(ram, OVERWORLD_MAP_STATE),
+            replacement_tile_destination_x2: read_le_u16(ram, DUNG_REPLACEMENT_TILE_DST_POS_X2),
+            replacement_tile_source_x2: read_le_u16(ram, DUNG_REPLACEMENT_TILE_SRC_POS_X2),
+            chest_locations,
+            replacement_tilemap_quads,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNG_NUM_CHESTS_X2, self.num_chests_x2);
+        write_le_u16(ram, DUNG_NUM_BIGKEY_LOCKS_X2, self.num_big_key_locks_x2);
+        write_le_u16(ram, OVERWORLD_MAP_STATE, self.chest_reveal_cursor_x2);
+        write_le_u16(
+            ram,
+            DUNG_REPLACEMENT_TILE_DST_POS_X2,
+            self.replacement_tile_destination_x2,
+        );
+        write_le_u16(
+            ram,
+            DUNG_REPLACEMENT_TILE_SRC_POS_X2,
+            self.replacement_tile_source_x2,
+        );
+        for (index, &location) in self.chest_locations.iter().enumerate() {
+            write_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2, location);
+        }
+        for (index, quad) in self.replacement_tilemap_quads.iter().enumerate() {
+            write_le_u16(ram, REPLACEMENT_TILEMAP_UL + index * 2, quad[0]);
+            write_le_u16(ram, REPLACEMENT_TILEMAP_LL + index * 2, quad[1]);
+            write_le_u16(ram, REPLACEMENT_TILEMAP_UR + index * 2, quad[2]);
+            write_le_u16(ram, REPLACEMENT_TILEMAP_LR + index * 2, quad[3]);
+        }
+    }
+
+    pub(crate) fn num_chests_x2(&self) -> u16 {
+        self.num_chests_x2
+    }
+
+    pub(crate) fn num_big_key_locks_x2(&self) -> u16 {
+        self.num_big_key_locks_x2
+    }
+
+    pub(crate) fn chest_reveal_cursor_x2(&self) -> u16 {
+        self.chest_reveal_cursor_x2
+    }
+
+    pub(crate) fn chest_reveal_cursor_reached_end(&self, cursor_x2: u16) -> bool {
+        cursor_x2 == self.num_chests_x2
+    }
+
+    pub(crate) fn replacement_tile_destination_x2(&self) -> u16 {
+        self.replacement_tile_destination_x2
+    }
+
+    pub(crate) fn replacement_tile_source_x2(&self) -> u16 {
+        self.replacement_tile_source_x2
+    }
+
+    pub(crate) fn replacement_tile_source_pos(&self) -> u16 {
+        self.replacement_tile_source_x2 >> 1
+    }
+
+    pub(crate) fn chest_location(&self, index: usize) -> u16 {
+        self.chest_locations.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn chest_location_for_cursor(&self, cursor_x2: u16) -> u16 {
+        self.chest_location(usize::from(cursor_x2 >> 1))
+    }
+
+    pub(crate) fn chest_location_for_offset_x2(&self, offset_x2: usize) -> u16 {
+        self.chest_location(offset_x2 >> 1)
+    }
+
+    pub(crate) fn replacement_tilemap_quad(&self, index: usize) -> [u16; 4] {
+        self.replacement_tilemap_quads
+            .get(index)
+            .copied()
+            .unwrap_or([0; 4])
+    }
+
+    fn set_num_chests_x2(&mut self, value: u16) {
+        self.num_chests_x2 = value;
+    }
+
+    fn set_num_big_key_locks_x2(&mut self, value: u16) {
+        self.num_big_key_locks_x2 = value;
+    }
+
+    fn append_chest_location_and_sync_big_key_count(&mut self, value: u16) -> usize {
+        let index = self.advance_chest_and_big_key_counts();
+        self.set_chest_location(index, value);
+        index
+    }
+
+    fn advance_chest_and_big_key_counts(&mut self) -> usize {
+        let index = usize::from(self.num_chests_x2) >> 1;
+        let next = ((index + 1) * 2) as u16;
+        self.set_num_chests_x2(next);
+        self.set_num_big_key_locks_x2(next);
+        index
+    }
+
+    fn advance_big_key_lock_count(&mut self) -> usize {
+        let index = usize::from(self.num_big_key_locks_x2) >> 1;
+        self.set_num_big_key_locks_x2(((index + 1) * 2) as u16);
+        index
+    }
+
+    fn set_chest_location(&mut self, index: usize, value: u16) {
+        if let Some(location) = self.chest_locations.get_mut(index) {
+            *location = value;
+        }
+    }
+
+    fn set_chest_location_for_offset_x2(&mut self, offset_x2: usize, value: u16) {
+        self.set_chest_location(offset_x2 >> 1, value);
+    }
+
+    fn set_chest_reveal_cursor_x2(&mut self, value: u16) {
+        self.chest_reveal_cursor_x2 = value;
+    }
+
+    fn clear_chest_reveal_cursor(&mut self) {
+        self.set_chest_reveal_cursor_x2(0);
+    }
+
+    fn set_replacement_tile_destination_x2(&mut self, value: u16) {
+        self.replacement_tile_destination_x2 = value;
+    }
+
+    fn set_replacement_tile_source_x2(&mut self, value: u16) {
+        self.replacement_tile_source_x2 = value;
+    }
+
+    fn clear_replacement_tile_destination(&mut self) {
+        self.set_replacement_tile_destination_x2(0);
+    }
+
+    fn clear_chest_location(&mut self, index: usize) {
+        self.set_chest_location(index, 0);
+    }
+
+    fn set_replacement_tilemap_quad(&mut self, index: usize, quad: [u16; 4]) {
+        if let Some(slot) = self.replacement_tilemap_quads.get_mut(index) {
+            *slot = quad;
+        }
     }
 }
 
@@ -3603,6 +3786,93 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
 
     pub(crate) fn copy_bg1_draw_line_offsets(&mut self) {
         self.state.copy_bg1_draw_line_offsets();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomItemBridgeMut<'a> {
+    state: &'a mut DungeonRoomItemState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomItemState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomItemState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonRoomItemState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn append_chest_location_and_sync_big_key_count(&mut self, value: u16) -> usize {
+        let index = self
+            .state
+            .append_chest_location_and_sync_big_key_count(value);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn advance_chest_and_big_key_counts(&mut self) -> usize {
+        let index = self.state.advance_chest_and_big_key_counts();
+        self.sync();
+        index
+    }
+
+    pub(crate) fn advance_big_key_lock_count(&mut self) -> usize {
+        let index = self.state.advance_big_key_lock_count();
+        self.sync();
+        index
+    }
+
+    pub(crate) fn set_chest_location(&mut self, index: usize, value: u16) {
+        self.state.set_chest_location(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_chest_location_for_offset_x2(&mut self, offset_x2: usize, value: u16) {
+        self.state
+            .set_chest_location_for_offset_x2(offset_x2, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_chest_reveal_cursor_x2(&mut self, value: u16) {
+        self.state.set_chest_reveal_cursor_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_chest_reveal_cursor(&mut self) {
+        self.state.clear_chest_reveal_cursor();
+        self.sync();
+    }
+
+    pub(crate) fn set_replacement_tile_destination_x2(&mut self, value: u16) {
+        self.state.set_replacement_tile_destination_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_replacement_tile_source_x2(&mut self, value: u16) {
+        self.state.set_replacement_tile_source_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_replacement_tile_destination(&mut self) {
+        self.state.clear_replacement_tile_destination();
+        self.sync();
+    }
+
+    pub(crate) fn clear_chest_location(&mut self, index: usize) {
+        self.state.clear_chest_location(index);
+        self.sync();
+    }
+
+    pub(crate) fn set_replacement_tilemap_quad(&mut self, index: usize, quad: [u16; 4]) {
+        self.state.set_replacement_tilemap_quad(index, quad);
         self.sync();
     }
 }
