@@ -3180,8 +3180,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_header(&self) -> DungeonHeaderState {
-        DungeonHeaderState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_header(&self) -> &DungeonHeaderState {
+        &self.game_state.dungeon.header
     }
 
     pub(crate) fn dungeon_header_mut(&mut self) -> NativeDungeonHeaderBridgeMut<'_> {
@@ -3199,16 +3199,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_torch_state(&self) -> DungeonTorchState {
-        DungeonTorchState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_torch_state(&self) -> &DungeonTorchState {
+        &self.game_state.dungeon.torch
     }
 
     pub(crate) fn dungeon_torch_mut(&mut self) -> NativeDungeonTorchBridgeMut<'_> {
         NativeDungeonTorchBridgeMut::new(&mut self.game_state.dungeon.torch, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_savegame_state(&self) -> DungeonSavegameState {
-        DungeonSavegameState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_savegame_state(&self) -> &DungeonSavegameState {
+        &self.game_state.dungeon.savegame_state
     }
 
     pub(crate) fn dungeon_savegame_state_mut(&mut self) -> NativeDungeonSavegameBridgeMut<'_> {
@@ -3218,8 +3218,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_bg2_attributes(&self) -> DungeonBg2AttributeState {
-        DungeonBg2AttributeState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_bg2_attributes(&self) -> &DungeonBg2AttributeState {
+        &self.game_state.dungeon.bg2_attributes
     }
 
     pub(crate) fn dungeon_tile_attribute(&self, tile: usize) -> u8 {
@@ -3233,8 +3233,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_stair_lists(&self) -> DungeonStairListsState {
-        DungeonStairListsState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_stair_lists(&self) -> &DungeonStairListsState {
+        &self.game_state.dungeon.stair_lists
     }
 
     pub(crate) fn dungeon_stair_lists_mut(&mut self) -> NativeDungeonStairListsBridgeMut<'_> {
@@ -3244,8 +3244,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_stair_movement(&self) -> DungeonStairMovementState {
-        DungeonStairMovementState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_stair_movement(&self) -> &DungeonStairMovementState {
+        &self.game_state.dungeon.stair_movement
     }
 
     pub(crate) fn dungeon_stair_movement_mut(&mut self) -> NativeDungeonStairMovementBridgeMut<'_> {
@@ -3255,8 +3255,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_moving_floor(&self) -> DungeonMovingFloorState {
-        DungeonMovingFloorState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_moving_floor(&self) -> &DungeonMovingFloorState {
+        &self.game_state.dungeon.moving_floor
     }
 
     pub(crate) fn dungeon_moving_floor_mut(&mut self) -> NativeDungeonMovingFloorBridgeMut<'_> {
@@ -3266,8 +3266,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tracking(&self) -> DungeonRoomTrackingState {
-        DungeonRoomTrackingState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_tracking(&self) -> &DungeonRoomTrackingState {
+        &self.game_state.dungeon.room_tracking
     }
 
     pub(crate) fn dungeon_room_tracking_mut(&mut self) -> NativeDungeonRoomTrackingBridgeMut<'_> {
@@ -3277,8 +3277,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_object_tracking(&self) -> DungeonObjectTrackingState {
-        DungeonObjectTrackingState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_object_tracking(&self) -> &DungeonObjectTrackingState {
+        &self.game_state.dungeon.object_tracking
     }
 
     pub(crate) fn dungeon_object_tracking_mut(
@@ -3290,24 +3290,24 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_doors(&self) -> DungeonDoorState {
-        DungeonDoorState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_doors(&self) -> &DungeonDoorState {
+        &self.game_state.dungeon.doors
     }
 
     pub(crate) fn dungeon_doors_mut(&mut self) -> NativeDungeonDoorBridgeMut<'_> {
         NativeDungeonDoorBridgeMut::new(&mut self.game_state.dungeon.doors, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_room_load(&self) -> DungeonRoomLoadState {
-        DungeonRoomLoadState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_load(&self) -> &DungeonRoomLoadState {
+        &self.game_state.dungeon.room_load
     }
 
     pub(crate) fn dungeon_room_load_mut(&mut self) -> NativeDungeonRoomLoadBridgeMut<'_> {
         NativeDungeonRoomLoadBridgeMut::new(&mut self.game_state.dungeon.room_load, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_environment(&self) -> DungeonEnvironmentState {
-        DungeonEnvironmentState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_environment(&self) -> &DungeonEnvironmentState {
+        &self.game_state.dungeon.environment
     }
 
     pub(crate) fn dungeon_environment_mut(&mut self) -> NativeDungeonEnvironmentBridgeMut<'_> {
@@ -3317,8 +3317,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tilemaps(&self) -> DungeonRoomTilemapState {
-        DungeonRoomTilemapState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_tilemaps(&self) -> &DungeonRoomTilemapState {
+        &self.game_state.dungeon.room_tilemaps
     }
 
     pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
@@ -3328,16 +3328,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_items(&self) -> DungeonRoomItemState {
-        DungeonRoomItemState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_items(&self) -> &DungeonRoomItemState {
+        &self.game_state.dungeon.room_items
     }
 
     pub(crate) fn dungeon_room_items_mut(&mut self) -> NativeDungeonRoomItemBridgeMut<'_> {
         NativeDungeonRoomItemBridgeMut::new(&mut self.game_state.dungeon.room_items, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_room_effects(&self) -> DungeonRoomEffectsState {
-        DungeonRoomEffectsState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_effects(&self) -> &DungeonRoomEffectsState {
+        &self.game_state.dungeon.room_effects
     }
 
     pub(crate) fn dungeon_room_effects_mut(&mut self) -> NativeDungeonRoomEffectsBridgeMut<'_> {
@@ -3347,8 +3347,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_parser(&self) -> DungeonRoomParserState {
-        DungeonRoomParserState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_parser(&self) -> &DungeonRoomParserState {
+        &self.game_state.dungeon.room_parser
     }
 
     pub(crate) fn dungeon_room_parser_mut(&mut self) -> NativeDungeonRoomParserBridgeMut<'_> {
@@ -3358,8 +3358,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_doors(&self) -> DungeonRoomDoorSetupState {
-        DungeonRoomDoorSetupState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_doors(&self) -> &DungeonRoomDoorSetupState {
+        &self.game_state.dungeon.door_setup
     }
 
     pub(crate) fn dungeon_room_doors_mut(&mut self) -> NativeDungeonRoomDoorSetupBridgeMut<'_> {
@@ -3369,8 +3369,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_runtime(&self) -> DungeonRoomRuntimeState {
-        DungeonRoomRuntimeState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_runtime(&self) -> &DungeonRoomRuntimeState {
+        &self.game_state.dungeon.room_runtime
     }
 
     pub(crate) fn dungeon_room_runtime_mut(&mut self) -> NativeDungeonRoomRuntimeBridgeMut<'_> {
@@ -3380,8 +3380,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_movable_blocks(&self) -> DungeonMovableBlockState {
-        DungeonMovableBlockState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_movable_blocks(&self) -> &DungeonMovableBlockState {
+        &self.game_state.dungeon.movable_blocks
     }
 
     pub(crate) fn dungeon_movable_blocks_mut(&mut self) -> NativeDungeonMovableBlockBridgeMut<'_> {
@@ -3398,8 +3398,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn scratch_word(&self) -> DungeonScratchWordState {
-        DungeonScratchWordState::load_from_ram(&self.ram)
+    pub(crate) fn scratch_word(&self) -> &DungeonScratchWordState {
+        &self.game_state.dungeon.scratch_word
     }
 
     pub(crate) fn scratch_word_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
@@ -3409,8 +3409,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn ending_scratch(&self) -> DungeonScratchWordState {
-        DungeonScratchWordState::load_from_ram(&self.ram)
+    pub(crate) fn ending_scratch(&self) -> &DungeonScratchWordState {
+        &self.game_state.dungeon.scratch_word
     }
 
     pub(crate) fn ending_scratch_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
@@ -8189,8 +8189,9 @@ mod tests {
     fn item_receipt_places_chest_item_with_c_offsets() {
         let mut state = ZeldaState::new();
         state.ram[ITEM_RECEIPT_METHOD] = 1;
-        write_le_u16(&mut state.ram, DUNG_LOADE_BGOFFS_H_COPY, 0x1200);
-        write_le_u16(&mut state.ram, DUNG_LOADE_BGOFFS_V_COPY, 0x3400);
+        state
+            .dungeon_room_load_mut()
+            .set_loading_bg_offsets(0x1200, 0x3400);
 
         set_link_test_byte(&mut state, LINK_RECEIVEITEM_INDEX, 0);
         state.ancilla_add_item_receipt(0x22, 4, 0x0182);
@@ -8607,11 +8608,13 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
-        state.ram[DUNG_HDR_COLLISION] = 1;
+        state.dungeon_room_load_mut().set_header_collision(1);
         state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
             crate::game_state::constants::player::LAYER_COLLISION_BOTH;
-        write_le_u16(&mut state.ram, DUNG_FLOOR_X_VEL, 2);
-        write_le_u16(&mut state.ram, DUNG_FLOOR_Y_VEL, 0xffff);
+        state.dungeon_moving_floor_mut().set_floor_x_velocity(2);
+        state
+            .dungeon_moving_floor_mut()
+            .set_floor_y_velocity(0xffff);
 
         state.link_move_position();
 
@@ -8697,7 +8700,9 @@ mod tests {
     fn apply_links_movement_to_camera_adjusts_crossed_x_quadrant() {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(1);
-        state.ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] = 0x20;
+        state
+            .dungeon_room_load_mut()
+            .set_layout_and_starting_quadrant(0x20);
         state.set_dungeon_room(2);
         state.room_bounds_mut().set_x_bound(0, 0x0100);
         state.room_bounds_mut().set_x_bound(2, 0x0120);
@@ -8858,7 +8863,7 @@ mod tests {
         state.player_state_mut().set_facing(8);
         state.player_state_mut().set_lower_level_state(1);
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
-        state.ram[DUNG_CUR_FLOOR] = 0xff;
+        state.dungeon_stair_movement_mut().set_current_floor(0xff);
 
         state.cache_camera_properties_if_outdoors();
 
@@ -8926,7 +8931,9 @@ mod tests {
         assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
         assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
 
-        write_le_u16(&mut state.ram, KIND_OF_IN_ROOM_STAIRCASE, 2);
+        state
+            .dungeon_stair_movement_mut()
+            .set_kind_of_in_room_staircase_word(2);
         state.player_state_mut().set_lower_level_state(0);
         state.dungeon_handle_layer_change();
         assert_eq!(state.player_state().lower_level_state(), 0);
@@ -9315,7 +9322,7 @@ mod tests {
     #[test]
     fn halt_link_when_using_items_stops_floor_and_platform_motion() {
         let mut state = ZeldaState::new();
-        state.ram[DUNG_HDR_COLLISION_2] = 2;
+        state.dungeon_room_load_mut().set_header_collision_2(2);
         state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
             crate::game_state::constants::player::LAYER_COLLISION_BOTH;
         set_link_test_byte(&mut state, LINK_Y_VEL, 0x80);
@@ -9452,7 +9459,7 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 2);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
-        state.ram[DUNG_HDR_COLLISION_2] = 2;
+        state.dungeon_room_load_mut().set_header_collision_2(2);
         state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
             crate::game_state::constants::player::LAYER_COLLISION_BOTH;
         set_link_test_byte(&mut state, LINK_Y_VEL, 7);

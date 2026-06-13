@@ -1093,11 +1093,12 @@ mod tests {
     }
 
     #[test]
-    fn native_dungeon_scratch_word_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, DUNGEON_WORK_R16, 0x0201);
+    fn native_dungeon_scratch_word_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, DUNGEON_WORK_R16, 0x0201);
+        let mut scratch = DungeonScratchWordState::load_from_ram(&native_ram);
 
-        let mut scratch = DungeonScratchWordState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram);
             assert_eq!(bridge.decrement_high(), 1);

@@ -8296,8 +8296,8 @@ mod tests {
         let k = 2;
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
-        write_le_u16(&mut s.ram, DUNG_FLOOR_X_VEL, 0xfffe);
-        write_le_u16(&mut s.ram, DUNG_FLOOR_Y_VEL, 0x0003);
+        s.dungeon_moving_floor_mut().set_floor_x_velocity(0xfffe);
+        s.dungeon_moving_floor_mut().set_floor_y_velocity(0x0003);
 
         s.sprite_fall_adjust_position(k);
 

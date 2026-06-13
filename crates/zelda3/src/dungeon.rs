@@ -12116,23 +12116,22 @@ mod tests {
             .dungeon_stair_lists_mut()
             .set_inter_staircase_pos(0, pos as u16);
 
-        write_le_u16(&mut state.ram, DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS, 0);
-        write_le_u16(&mut state.ram, DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS, 2);
-        write_le_u16(&mut state.ram, DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2, 2);
-        write_le_u16(
-            &mut state.ram,
-            DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS,
+        state
+            .dungeon_stair_lists_mut()
+            .set_stair_list_count(DungeonStairList::InterRoomUpNorth, 0);
+        state.dungeon_stair_lists_mut().sync_stair_list_counts(
+            &[
+                DungeonStairList::WallUpNorthSpiral,
+                DungeonStairList::WallUpNorthSpiralBg1,
+                DungeonStairList::InterRoomUpNorthStraight,
+                DungeonStairList::InterRoomUpSouthStraight,
+                DungeonStairList::InterRoomSouthDown,
+                DungeonStairList::WallDownNorthSpiral,
+                DungeonStairList::WallDownNorthSpiralBg1,
+                DungeonStairList::InterPseudoUpNorth,
+            ],
             2,
         );
-        write_le_u16(
-            &mut state.ram,
-            DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS,
-            2,
-        );
-        write_le_u16(&mut state.ram, DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS, 2);
-        write_le_u16(&mut state.ram, DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS, 2);
-        write_le_u16(&mut state.ram, DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2, 2);
-        write_le_u16(&mut state.ram, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, 2);
 
         state.DrawCompletelyOpenDoor();
 
