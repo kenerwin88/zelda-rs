@@ -2822,8 +2822,8 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_color_window_selection(2);
         self.palette_filter_view_mut().set_color_math_control(0xb3);
 
-        let mut torch = self.dungeon_state_view().lit_torches();
-        if self.dungeon_state_view().wants_lights_out() == 0 {
+        let mut torch = self.dungeon_torch_state().lit_torches();
+        if self.dungeon_torch_state().wants_lights_out() == 0 {
             let mut a = 0x20;
             if self.dungeon_room_load().bg2_properties() != 0 {
                 a = 0x32;

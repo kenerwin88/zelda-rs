@@ -1501,16 +1501,17 @@ impl ZeldaState {
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
         self.request_nmi_copy_packets();
 
-        if self.dungeon_state_view().wants_lights_out() != 0
-            && self.dungeon_state_view().lit_torches() != 0
+        if self.dungeon_torch_state().wants_lights_out() != 0
+            && self.dungeon_torch_state().lit_torches() != 0
         {
-            self.dungeon_state_view_mut().decrement_lit_torches();
-            if self.dungeon_state_view().lit_torches() < 3 {
-                if self.dungeon_state_view().lit_torches() == 0 {
+            self.dungeon_torch_mut().decrement_lit_torches();
+            if self.dungeon_torch_state().lit_torches() < 3 {
+                if self.dungeon_torch_state().lit_torches() == 0 {
                     self.set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-                let plus = LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
+                let plus =
+                    LIT_TORCHES_COLOR_PLUS[self.dungeon_torch_state().lit_torches() as usize];
                 self.set_overworld_fixed_color_adjustment(plus);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);

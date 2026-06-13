@@ -12,16 +12,18 @@ use crate::game_state::constants::{
     DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR,
     DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES,
     DUNG_HDR_BG2_PROPERTIES_BACKUP, DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2,
-    DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT,
-    DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
-    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
-    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
+    DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
+    DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY,
+    DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
+    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
+    DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
     DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
-    DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT,
-    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX,
-    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
-    WATER_SIDE_STEP_SWITCH,
+    DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT,
+    DUNG_WANT_LIGHTS_OUT_COPY, DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT,
+    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX,
+    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
+    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -1562,8 +1564,13 @@ impl DungeonSavegameState {
 pub(crate) struct DungeonTorchState {
     timers: [u8; DUNGEON_TORCH_TIMER_COUNT],
     attr: u8,
+    lit_torches: u8,
+    lights_out_request: u8,
+    lights_out_request_copy: u8,
+    dark_with_lantern: u8,
     ganon_torch_count: u8,
     torches_start_index: u16,
+    torch_index: u16,
     object_data_positions: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
 }
 
@@ -1582,8 +1589,13 @@ impl DungeonTorchState {
         Self {
             timers,
             attr: ram.get(DUNGEON_TORCH_ATTR).copied().unwrap_or(0),
+            lit_torches: ram.get(DUNG_NUM_LIT_TORCHES).copied().unwrap_or(0),
+            lights_out_request: ram.get(DUNG_WANT_LIGHTS_OUT).copied().unwrap_or(0),
+            lights_out_request_copy: ram.get(DUNG_WANT_LIGHTS_OUT_COPY).copied().unwrap_or(0),
+            dark_with_lantern: ram.get(HDR_DUNGEON_DARK_WITH_LANTERN).copied().unwrap_or(0),
             ganon_torch_count: ram.get(GANON_TORCH_COUNT).copied().unwrap_or(0),
             torches_start_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES_START),
+            torch_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES),
             object_data_positions,
         }
     }
@@ -1591,8 +1603,13 @@ impl DungeonTorchState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].copy_from_slice(&self.timers);
         ram[DUNGEON_TORCH_ATTR] = self.attr;
+        ram[DUNG_NUM_LIT_TORCHES] = self.lit_torches;
+        ram[DUNG_WANT_LIGHTS_OUT] = self.lights_out_request;
+        ram[DUNG_WANT_LIGHTS_OUT_COPY] = self.lights_out_request_copy;
+        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = self.dark_with_lantern;
         ram[GANON_TORCH_COUNT] = self.ganon_torch_count;
         write_le_u16(ram, DUNG_INDEX_OF_TORCHES_START, self.torches_start_index);
+        write_le_u16(ram, DUNG_INDEX_OF_TORCHES, self.torch_index);
         for (index, position) in self.object_data_positions.iter().enumerate() {
             write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
         }
@@ -1610,12 +1627,40 @@ impl DungeonTorchState {
         self.attr
     }
 
+    pub(crate) fn lit_torches(&self) -> u8 {
+        self.lit_torches
+    }
+
+    pub(crate) fn wants_lights_out(&self) -> u8 {
+        self.lights_out_request
+    }
+
+    pub(crate) fn wants_lights_out_copy(&self) -> u8 {
+        self.lights_out_request_copy
+    }
+
+    pub(crate) fn any_lights_out_request(&self) -> u8 {
+        self.lights_out_request | self.lights_out_request_copy
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
+        self.dark_with_lantern != 0
+    }
+
+    pub(crate) fn dungeon_dark_with_lantern_raw(&self) -> u8 {
+        self.dark_with_lantern
+    }
+
     pub(crate) fn ganon_torch_count(&self) -> u8 {
         self.ganon_torch_count
     }
 
     pub(crate) fn torches_start_index(&self) -> u16 {
         self.torches_start_index
+    }
+
+    pub(crate) fn torch_index(&self) -> u16 {
+        self.torch_index
     }
 
     pub(crate) fn torch_object_data_pos(&self, index: usize) -> u16 {
@@ -1632,6 +1677,65 @@ impl DungeonTorchState {
         if let Some(timer) = self.timers.get_mut(index) {
             *timer = value;
         }
+    }
+
+    fn clear_lit_torches(&mut self) {
+        self.lit_torches = 0;
+    }
+
+    fn set_lit_torches(&mut self, value: u8) {
+        self.lit_torches = value;
+    }
+
+    fn increment_lit_torches(&mut self) -> u8 {
+        self.lit_torches = self.lit_torches.wrapping_add(1);
+        self.lit_torches
+    }
+
+    fn decrement_lit_torches(&mut self) -> u8 {
+        self.lit_torches = self.lit_torches.wrapping_sub(1);
+        self.lit_torches
+    }
+
+    fn set_lights_out_request(&mut self, value: u8) {
+        self.lights_out_request = value;
+    }
+
+    fn clear_lights_out_request(&mut self) {
+        self.lights_out_request = 0;
+    }
+
+    fn set_lights_out_request_copy(&mut self, value: u8) {
+        self.lights_out_request_copy = value;
+    }
+
+    fn copy_lights_out_request(&mut self) {
+        self.lights_out_request_copy = self.lights_out_request;
+    }
+
+    fn clear_lights_out_requests(&mut self) {
+        self.lights_out_request = 0;
+        self.lights_out_request_copy = 0;
+    }
+
+    fn set_dungeon_dark_with_lantern(&mut self) {
+        self.dark_with_lantern = 1;
+    }
+
+    fn set_dungeon_dark_with_lantern_raw(&mut self, value: u8) {
+        self.dark_with_lantern = value;
+    }
+
+    fn clear_dungeon_dark_with_lantern(&mut self) {
+        self.dark_with_lantern = 0;
+    }
+
+    fn set_torch_index_range_start(&mut self, value: u16) {
+        self.torches_start_index = value;
+    }
+
+    fn set_torch_index(&mut self, value: u16) {
+        self.torch_index = value;
     }
 
     fn set_attr(&mut self, value: u8) {
@@ -2938,6 +3042,93 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         if index < DUNGEON_TORCH_TIMER_COUNT {
             self.ram[TORCH_TIMERS + index] = value;
         }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_lit_torches(&mut self) {
+        self.torch.clear_lit_torches();
+        self.ram[DUNG_NUM_LIT_TORCHES] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_lit_torches(&mut self, value: u8) {
+        self.torch.set_lit_torches(value);
+        self.ram[DUNG_NUM_LIT_TORCHES] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_lit_torches(&mut self) -> u8 {
+        let value = self.torch.increment_lit_torches();
+        self.ram[DUNG_NUM_LIT_TORCHES] = value;
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn decrement_lit_torches(&mut self) -> u8 {
+        let value = self.torch.decrement_lit_torches();
+        self.ram[DUNG_NUM_LIT_TORCHES] = value;
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn set_lights_out_request(&mut self, value: u8) {
+        self.torch.set_lights_out_request(value);
+        self.ram[DUNG_WANT_LIGHTS_OUT] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_lights_out_request(&mut self) {
+        self.torch.clear_lights_out_request();
+        self.ram[DUNG_WANT_LIGHTS_OUT] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_lights_out_request_copy(&mut self, value: u8) {
+        self.torch.set_lights_out_request_copy(value);
+        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn copy_lights_out_request(&mut self) {
+        self.torch.copy_lights_out_request();
+        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = self.ram[DUNG_WANT_LIGHTS_OUT];
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_lights_out_requests(&mut self) {
+        self.torch.clear_lights_out_requests();
+        self.ram[DUNG_WANT_LIGHTS_OUT] = 0;
+        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
+        self.torch.set_dungeon_dark_with_lantern();
+        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_dungeon_dark_with_lantern_raw(&mut self, value: u8) {
+        self.torch.set_dungeon_dark_with_lantern_raw(value);
+        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_dungeon_dark_with_lantern(&mut self) {
+        self.torch.clear_dungeon_dark_with_lantern();
+        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
+        self.torch.set_torch_index_range_start(value);
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_torch_index(&mut self, value: u16) {
+        self.torch.set_torch_index(value);
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
         self.debug_assert_matches_ram();
     }
 

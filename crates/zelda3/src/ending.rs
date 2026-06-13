@@ -611,9 +611,8 @@ impl ZeldaState {
         self.world_region_mut()
             .set_which_entrance(ENDING_SCENE_ENTRANCES[i]);
         self.Dungeon_LoadEntrance();
-        self.dungeon_state_view_mut().clear_lit_torches();
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_lit_torches();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.decompress_animated_dungeon_tiles(
             DUNG_ANIMATED_TILES[self.sprite_system_view().main_tile_theme() as usize] as usize,

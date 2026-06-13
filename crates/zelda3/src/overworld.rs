@@ -462,7 +462,7 @@ impl ZeldaState {
             self.LoadGearPalettes_bunny();
         }
         self.set_bg_mode(9);
-        self.dungeon_state_view_mut().clear_lights_out_request();
+        self.dungeon_torch_mut().clear_lights_out_request();
         self.dungeon_room_load_mut().set_header_collision(0);
         self.player_state_view_mut().clear_lower_level_states();
         self.increment_submodule();
@@ -474,8 +474,7 @@ impl ZeldaState {
 
     pub(super) fn LoadOverworldFromDungeon(&mut self) {
         self.set_indoor_flag(0);
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.set_overworld_fixed_color_adjustment(0);
         self.save_progress_view_mut().set_palace_index_x2(0xff);
         self.memorized_tile_view_mut().clear_count();

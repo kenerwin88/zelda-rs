@@ -1457,9 +1457,9 @@ impl ZeldaState {
 
     pub(super) fn hud_restore_torch_background(&mut self) {
         if self.inventory_items().torch() == 0
-            || self.dungeon_state_view().wants_lights_out() == 0
+            || self.dungeon_torch_state().wants_lights_out() == 0
             || self.hud_state_view().dungeon_dark_with_lantern()
-            || self.dungeon_state_view().lit_torches() != 0
+            || self.dungeon_torch_state().lit_torches() != 0
         {
             return;
         }

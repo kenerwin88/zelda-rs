@@ -5320,7 +5320,7 @@ impl ZeldaState {
                 extra_bottom = self.world_scroll().scroll_y_end().wrapping_sub(bg2y);
             }
         } else if module == 7 {
-            if !(self.dungeon_state_view().dungeon_dark_with_lantern()
+            if !(self.dungeon_torch_state().dungeon_dark_with_lantern()
                 && self.display_state().sub_screen_layers != 0)
             {
                 let qm = (self.world_transient().quadrant_fullsize_x() >> 1) as usize;

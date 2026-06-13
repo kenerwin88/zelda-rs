@@ -336,9 +336,8 @@ impl ZeldaState {
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {
         self.world_region_mut().set_which_entrance_byte(room);
         self.Dungeon_LoadEntrance();
-        self.dungeon_state_view_mut().clear_lit_torches();
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_lit_torches();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_ResetTorchBackgroundAndPlayer();
     }
@@ -1217,9 +1216,9 @@ impl ZeldaState {
         }
 
         let misc_objs = self.dungeon_object_tracking().misc_object_index();
-        self.dungeon_state_view_mut()
+        self.dungeon_torch_mut()
             .set_torch_index_range_start(misc_objs);
-        self.dungeon_state_view_mut().set_torch_index(misc_objs);
+        self.dungeon_torch_mut().set_torch_index(misc_objs);
         let mut i = 0usize;
         loop {
             if self.dungeon_state_view().torch_data_word(i) == room {
@@ -1304,8 +1303,8 @@ impl ZeldaState {
             .set_bg2_properties(header[0] >> 5);
         self.dungeon_room_load_mut()
             .set_header_collision((header[0] >> 2) & 7);
-        self.dungeon_state_view_mut().copy_lights_out_request();
-        self.dungeon_state_view_mut()
+        self.dungeon_torch_mut().copy_lights_out_request();
+        self.dungeon_torch_mut()
             .set_lights_out_request(header[0] & 1);
         let pal = DUNG_PAL_INFOS[header[1] as usize];
         self.palette_buffer_view_mut()
@@ -2727,7 +2726,7 @@ impl ZeldaState {
                 self.RoomDraw_Rightwards2x2(src, dsto);
             }
             0x20 => {
-                self.dungeon_state_view_mut().increment_lit_torches();
+                self.dungeon_torch_mut().increment_lit_torches();
                 self.RoomDraw_Rightwards2x2(src, dsto);
             }
             0x22 | 0x28 => self.Object_Draw_5x4(src, dsto),
@@ -4831,9 +4830,9 @@ impl ZeldaState {
     }
 
     pub(super) fn DrawObjects_LightableTorch(&mut self, dsto_x2: u16, slot: u16) {
-        let x = self.dungeon_state_view().torch_index() as usize >> 1;
-        let next = self.dungeon_state_view().torch_index().wrapping_add(2);
-        self.dungeon_state_view_mut().set_torch_index(next);
+        let x = self.dungeon_torch_state().torch_index() as usize >> 1;
+        let next = self.dungeon_torch_state().torch_index().wrapping_add(2);
+        self.dungeon_torch_mut().set_torch_index(next);
         self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(x, dsto_x2);
         self.dungeon_object_tracking_mut()
@@ -4842,8 +4841,8 @@ impl ZeldaState {
         let dsto = (dsto_x2 >> 1) & 0x1fff;
         if dsto_x2 & 0x8000 != 0 {
             src_img = 0x0eca;
-            if self.dungeon_state_view().lit_torches() < 3 {
-                self.dungeon_state_view_mut().increment_lit_torches();
+            if self.dungeon_torch_state().lit_torches() < 3 {
+                self.dungeon_torch_mut().increment_lit_torches();
             }
         }
         self.RoomDraw_Rightwards2x2(src_img, dsto);
@@ -5203,7 +5202,7 @@ impl ZeldaState {
         const LAMP_CONE_SCROLL_BASELINES: [i16; 4] = [64, 64, 82, -176];
         const LAMP_CONE_SCROLL_CLAMPS: [u16; 4] = [128, 384, 160, 160];
 
-        if !self.dungeon_state_view().dungeon_dark_with_lantern()
+        if !self.dungeon_torch_state().dungeon_dark_with_lantern()
             || self.frame_state().submodule == 20
         {
             return;
@@ -5352,14 +5351,13 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown(0);
         self.set_mosaic_target_level(31);
         self.dungeon_state_view_mut().clear_reserved_gfx_config();
-        self.dungeon_state_view_mut().clear_lit_torches();
-        if self.dungeon_state_view().dungeon_dark_with_lantern() {
+        self.dungeon_torch_mut().clear_lit_torches();
+        if self.dungeon_torch_state().dungeon_dark_with_lantern() {
             self.palette_filter_view_mut()
                 .set_color_window_selection(0x02);
             self.palette_filter_view_mut().set_color_math_control(0xb3);
         }
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
         self.Overworld_CopyPalettesToCache();
         self.increment_subsubmodule();
@@ -7961,7 +7959,7 @@ impl ZeldaState {
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorthWater),
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::ActivatedWaterLadders),
                 self.dungeon_object_tracking().misc_object_index(),
-                self.dungeon_state_view().torch_index(),
+                self.dungeon_torch_state().torch_index(),
                 self.dungeon_state_view().num_chests_x2(),
                 self.dungeon_state_view().num_big_key_locks_x2(),
                 self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs1),
@@ -8280,16 +8278,16 @@ impl ZeldaState {
             attr = attr.wrapping_add(0x0101);
         }
 
-        if i != self.dungeon_state_view().torch_index() as usize {
+        if i != self.dungeon_torch_state().torch_index() as usize {
             attr = 0xc0c0;
-            while i != self.dungeon_state_view().torch_index() as usize {
+            while i != self.dungeon_torch_state().torch_index() as usize {
                 let j = (self.dungeon_object_tracking().object_tilemap_pos(i >> 1) & 0x3fff) >> 1;
                 self.write_attr2(j as usize + xy(0, 0), attr);
                 self.write_attr2(j as usize + xy(0, 1), attr);
                 i += 2;
                 attr = (attr & 0xefef).wrapping_add(0x0101);
             }
-            self.dungeon_state_view_mut().set_torch_index(0);
+            self.dungeon_torch_mut().set_torch_index(0);
         }
 
         let mut attr = 0x5858u16;
@@ -9368,7 +9366,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State13(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
         self.Dungeon_IntraRoomTrans_State5();
@@ -9423,9 +9421,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_00_InitializeTransition(&mut self) {
-        let bak = self.dungeon_state_view().dungeon_dark_with_lantern_raw();
+        let bak = self.dungeon_torch_state().dungeon_dark_with_lantern_raw();
         self.ResetTransitionPropsAndAdvanceSubmodule();
-        self.dungeon_state_view_mut()
+        self.dungeon_torch_mut()
             .set_dungeon_dark_with_lantern_raw(bak);
     }
 
@@ -9439,15 +9437,14 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites();
-        if !self.dungeon_state_view().dungeon_dark_with_lantern() {
+        if !self.dungeon_torch_state().dungeon_dark_with_lantern() {
             self.MirrorBg1Bg2Offs();
         }
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State3(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             self.set_sub_screen_layers(0);
         }
         self.Dungeon_AdjustForRoomLayout();
@@ -9641,9 +9638,8 @@ impl ZeldaState {
         self.player_state_view_mut().set_y(new_y);
 
         let bak = self.frame_state().subsubmodule;
-        self.dungeon_state_view_mut().clear_lit_torches();
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_lit_torches();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
         let animated =
@@ -9671,7 +9667,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State10(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
         self.Dungeon_InterRoomTrans_notDarkRoom();
@@ -9689,7 +9685,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State9(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
         self.Dungeon_InterRoomTrans_State4();
@@ -9712,7 +9708,7 @@ impl ZeldaState {
                 return;
             }
             self.SubtileTransitionCalculateLanding();
-            if self.dungeon_state_view().any_lights_out_request() != 0 {
+            if self.dungeon_torch_state().any_lights_out_request() != 0 {
                 self.ApplyPaletteFilter_bounce();
             }
         }
@@ -9834,7 +9830,7 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonTransition_Subtile_ApplyFilter(&mut self) {
-        if self.dungeon_state_view().wants_lights_out() == 0 {
+        if self.dungeon_torch_state().wants_lights_out() == 0 {
             self.increment_subsubmodule();
             return;
         }
@@ -9866,10 +9862,10 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonTransition_RunFiltering(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-            let torch = if self.dungeon_state_view().wants_lights_out() != 0 {
-                self.dungeon_state_view().lit_torches() as usize
+            let torch = if self.dungeon_torch_state().wants_lights_out() != 0 {
+                self.dungeon_torch_state().lit_torches() as usize
             } else {
                 3
             };
@@ -9884,7 +9880,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_FadedFilter(&mut self) {
-        if self.dungeon_state_view().any_lights_out_request() != 0 {
+        if self.dungeon_torch_state().any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
             if self.palette_filter_view().countdown() != 0 {
                 self.ApplyPaletteFilter_bounce();
@@ -10411,16 +10407,16 @@ impl ZeldaState {
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
         self.request_nmi_copy_packets();
 
-        if self.dungeon_state_view().wants_lights_out() != 0
-            && self.dungeon_state_view().lit_torches() != 0
+        if self.dungeon_torch_state().wants_lights_out() != 0
+            && self.dungeon_torch_state().lit_torches() != 0
         {
-            self.dungeon_state_view_mut().decrement_lit_torches();
-            if self.dungeon_state_view().lit_torches() < 3 {
-                if self.dungeon_state_view().lit_torches() == 0 {
+            self.dungeon_torch_mut().decrement_lit_torches();
+            if self.dungeon_torch_state().lit_torches() < 3 {
+                if self.dungeon_torch_state().lit_torches() == 0 {
                     self.set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-                let torch = self.dungeon_state_view().lit_torches() as usize;
+                let torch = self.dungeon_torch_state().lit_torches() as usize;
                 self.dungeon_state_view_mut()
                     .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
                 self.set_submodule(10);
@@ -10879,7 +10875,7 @@ impl ZeldaState {
         {
             self.increment_subsubmodule();
         }
-        if !self.dungeon_state_view().dungeon_dark_with_lantern() {
+        if !self.dungeon_torch_state().dungeon_dark_with_lantern() {
             self.MirrorBg1Bg2Offs();
         }
     }
@@ -11097,9 +11093,8 @@ impl ZeldaState {
         self.Dungeon_LoadEntrance();
         self.load_pre_dungeon_keys();
         self.hud_rebuild();
-        self.dungeon_state_view_mut().clear_lit_torches();
-        self.dungeon_state_view_mut()
-            .clear_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().clear_lit_torches();
+        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
 
@@ -11117,14 +11112,14 @@ impl ZeldaState {
         self.dungeon_room_load_mut()
             .set_loading_bg_offsets((room & 0x000f) << 9, (room & 0x0ff0) << 5);
         if room == 0x0104 && self.save_progress_view().progress_flags() & 0x10 != 0 {
-            self.dungeon_state_view_mut().clear_lights_out_request();
+            self.dungeon_torch_mut().clear_lights_out_request();
         }
         self.SetAndSaveVisitedQuadrantFlags();
 
         const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
         self.palette_filter_view_mut().set_color_window_selection(2);
-        let mut torch = self.dungeon_state_view().lit_torches() as usize;
-        let color_math_control = if self.dungeon_state_view().wants_lights_out() == 0 {
+        let mut torch = self.dungeon_torch_state().lit_torches() as usize;
+        let color_math_control = if self.dungeon_torch_state().wants_lights_out() == 0 {
             torch = 3;
             if self.dungeon_room_load().bg2_properties() == 7 {
                 0x32
@@ -11172,7 +11167,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().set_fixed_color_red(0x30);
             self.palette_filter_view_mut().set_fixed_color_green(0x50);
             self.palette_filter_view_mut().set_fixed_color_blue(0x80);
-            self.dungeon_state_view_mut().clear_lights_out_requests();
+            self.dungeon_torch_mut().clear_lights_out_requests();
             self.link_tuck_into_bed();
         }
 

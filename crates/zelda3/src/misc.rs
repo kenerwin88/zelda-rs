@@ -350,13 +350,13 @@ impl ZeldaState {
         self.system_signals_view_mut().set_sound_effect_1(sfx);
         self.request_nmi_copy_packets();
 
-        if self.dungeon_state_view().wants_lights_out() != 0 {
-            let lit = self.dungeon_state_view().lit_torches();
-            self.dungeon_state_view_mut().increment_lit_torches();
+        if self.dungeon_torch_state().wants_lights_out() != 0 {
+            let lit = self.dungeon_torch_state().lit_torches();
+            self.dungeon_torch_mut().increment_lit_torches();
             if lit < 3 {
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let color_plus =
-                    LIT_TORCHES_COLOR_PLUS[self.dungeon_state_view().lit_torches() as usize];
+                    LIT_TORCHES_COLOR_PLUS[self.dungeon_torch_state().lit_torches() as usize];
                 self.set_sub_screen_layers(0);
                 self.set_overworld_fixed_color_adjustment(color_plus);
                 self.set_submodule(10);
