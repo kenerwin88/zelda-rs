@@ -6247,7 +6247,7 @@ mod tests {
         ram[TEXT_DIALOGUE_POINTERS + 1] = 0x22;
         ram[TEXT_DIALOGUE_POINTERS + 2] = 0x33;
 
-        let mut messaging = MessagingState::default();
+        let mut messaging = MessagingState::load_from_ram(&ram);
         {
             let mut bridge = NativeDecodedMessageTextBridgeMut::new(&mut messaging, &mut ram);
             assert_eq!(bridge.load_decoded_dialogue(&[1, 2, 3]), 3);
@@ -6269,6 +6269,117 @@ mod tests {
         assert_eq!(ram[TEXT_DIALOGUE_POINTERS], 0xde);
         assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 1], 0xc0);
         assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 2], 0xff);
+    }
+
+    #[test]
+    fn native_decoded_message_text_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MESSAGING_TEXT_BUFFER] = 0xff;
+        ram[TEXT_DIALOGUE_POINTERS] = 0xee;
+        ram[TEXT_DIALOGUE_POINTERS + 1] = 0xdd;
+        ram[TEXT_DIALOGUE_POINTERS + 2] = 0xcc;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[MESSAGING_TEXT_BUFFER] = 0x12;
+        native_ram[MESSAGING_TEXT_BUFFER + 1] = 0x34;
+        native_ram[TEXT_DIALOGUE_POINTERS] = 0x11;
+        native_ram[TEXT_DIALOGUE_POINTERS + 1] = 0x22;
+        native_ram[TEXT_DIALOGUE_POINTERS + 2] = 0x33;
+        let mut messaging = MessagingState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDecodedMessageTextBridgeMut::new(&mut messaging, &mut ram);
+            assert_eq!(
+                bridge.write_decoded_text_at(MESSAGING_TEXT_BUFFER + 1, &[0xaa]),
+                1
+            );
+            bridge.set_dialogue_pointer(0, 0x445566);
+        }
+
+        assert_eq!(messaging.decoded_text.byte(0), 0x12);
+        assert_eq!(messaging.decoded_text.byte(1), 0xaa);
+        assert_eq!(messaging.dialogue_pointers.pointer(0), 0x445566);
+        assert_eq!(ram[MESSAGING_TEXT_BUFFER], 0x12);
+        assert_eq!(ram[MESSAGING_TEXT_BUFFER + 1], 0xaa);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS], 0x66);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 1], 0x55);
+        assert_eq!(ram[TEXT_DIALOGUE_POINTERS + 2], 0x44);
+    }
+
+    #[test]
+    fn native_messaging_runtime_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MESSAGING_MODULE] = 1;
+        ram[TEXT_WAIT_COUNTDOWN] = 0x34;
+        ram[TEXT_WAIT_COUNTDOWN + 1] = 0x12;
+        ram[MULTISELECT_CHOICE] = 3;
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = 7;
+
+        let mut messaging = MessagingState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeMessagingRuntimeBridgeMut::new(&mut messaging, &mut ram);
+            bridge.set_module(2);
+            bridge.clear_text_wait_countdown();
+            bridge.increment_text_incremental_state();
+            bridge.init_msgbox_state_from(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0x1c,
+                4, 0, 0, 0, 0, 0,
+            ]);
+        }
+
+        assert_eq!(messaging.runtime.module(), 1);
+        assert_eq!(messaging.runtime.dialogue_text_color(), 0x39);
+        assert_eq!(messaging.runtime.text_wait_countdown2(), 0x1c);
+        assert_eq!(messaging.runtime.dialogue_scroll_speed(), 4);
+        assert_eq!(messaging.multiselect_choice.value(), 5);
+        assert_eq!(messaging.dialogue_source_offset.bank_offset_low_nibble(), 0);
+        assert_eq!(ram[MESSAGING_MODULE], 1);
+        assert_eq!(
+            ram[crate::game_state::constants::messaging::DIALOGUE_TEXT_COLOR],
+            0x39
+        );
+        assert_eq!(ram[TEXT_WAIT_COUNTDOWN2], 0x1c);
+        assert_eq!(ram[DIALOGUE_SCROLL_SPEED], 4);
+        assert_eq!(ram[MULTISELECT_CHOICE], 5);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 0);
+    }
+
+    #[test]
+    fn native_messaging_runtime_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MESSAGING_MODULE] = 0xff;
+        ram[TEXT_INCREMENTAL_STATE] = 0xee;
+        ram[TEXT_WAIT_COUNTDOWN] = 0xdd;
+        ram[TEXT_WAIT_COUNTDOWN + 1] = 0xcc;
+        ram[MULTISELECT_CHOICE] = 0xbb;
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0xaa;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[MESSAGING_MODULE] = 3;
+        native_ram[TEXT_INCREMENTAL_STATE] = 4;
+        native_ram[TEXT_WAIT_COUNTDOWN] = 0x34;
+        native_ram[TEXT_WAIT_COUNTDOWN + 1] = 0x12;
+        native_ram[MULTISELECT_CHOICE] = 6;
+        native_ram[DIALOGUE_MSG_SRC_OFFS + 2] = 9;
+        let mut messaging = MessagingState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeMessagingRuntimeBridgeMut::new(&mut messaging, &mut ram);
+            bridge.increment_text_incremental_state();
+            bridge.clear_text_wait_countdown();
+        }
+
+        assert_eq!(messaging.runtime.module(), 3);
+        assert_eq!(messaging.runtime.text_incremental_state(), 5);
+        assert_eq!(messaging.runtime.text_wait_countdown(), 0x1200);
+        assert_eq!(messaging.multiselect_choice.value(), 6);
+        assert_eq!(messaging.dialogue_source_offset.bank_offset_low_nibble(), 9);
+        assert_eq!(ram[MESSAGING_MODULE], 3);
+        assert_eq!(ram[TEXT_INCREMENTAL_STATE], 5);
+        assert_eq!(ram[TEXT_WAIT_COUNTDOWN], 0);
+        assert_eq!(ram[TEXT_WAIT_COUNTDOWN + 1], 0x12);
+        assert_eq!(ram[MULTISELECT_CHOICE], 6);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 9);
     }
 
     #[test]

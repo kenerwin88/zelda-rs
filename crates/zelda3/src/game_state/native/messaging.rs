@@ -1,3 +1,4 @@
+use crate::game_state::constants::messaging::DIALOGUE_TEXT_COLOR;
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -472,6 +473,10 @@ impl DialogueSourceOffsetState {
         self.bank_offset_low_nibble
     }
 
+    pub(crate) fn set_bank_offset_low_nibble(&mut self, value: u8) {
+        self.bank_offset_low_nibble = value;
+    }
+
     pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
         self.bank_offset_low_nibble = self.bank_offset_low_nibble.wrapping_add(1);
         self.bank_offset_low_nibble
@@ -585,6 +590,7 @@ pub(crate) struct MessagingRuntimeState {
     pub(crate) menu_animation_timer: u8,
     pub(crate) game_over_letter_cursor: u8,
     pub(crate) flag_which_music_type_messaging: u8,
+    pub(crate) dialogue_text_color: u8,
     pub(crate) dialogue_scroll_speed: u8,
     pub(crate) text_incremental_state: u8,
     pub(crate) vwf_line_speed_cur: u8,
@@ -609,6 +615,7 @@ impl MessagingRuntimeState {
                 .get(FLAG_WHICH_MUSIC_TYPE_MESSAGING)
                 .copied()
                 .unwrap_or(0),
+            dialogue_text_color: ram.get(DIALOGUE_TEXT_COLOR).copied().unwrap_or(0),
             dialogue_scroll_speed: ram.get(DIALOGUE_SCROLL_SPEED).copied().unwrap_or(0),
             text_incremental_state: ram.get(TEXT_INCREMENTAL_STATE).copied().unwrap_or(0),
             vwf_line_speed_cur: ram.get(VWF_LINE_SPEED_CUR).copied().unwrap_or(0),
@@ -632,6 +639,7 @@ impl MessagingRuntimeState {
         ram[MENU_ANIMATION_TIMER] = self.menu_animation_timer;
         ram[GAME_OVER_LETTER_CURSOR] = self.game_over_letter_cursor;
         ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = self.flag_which_music_type_messaging;
+        ram[DIALOGUE_TEXT_COLOR] = self.dialogue_text_color;
         ram[DIALOGUE_SCROLL_SPEED] = self.dialogue_scroll_speed;
         ram[TEXT_INCREMENTAL_STATE] = self.text_incremental_state;
         ram[VWF_LINE_SPEED_CUR] = self.vwf_line_speed_cur;
@@ -672,6 +680,10 @@ impl MessagingRuntimeState {
         self.flag_which_music_type_messaging
     }
 
+    pub(crate) fn dialogue_text_color(&self) -> u8 {
+        self.dialogue_text_color
+    }
+
     pub(crate) fn dialogue_scroll_speed(&self) -> u8 {
         self.dialogue_scroll_speed
     }
@@ -710,6 +722,61 @@ impl MessagingRuntimeState {
 
     pub(crate) fn message_or_sprite_state_cache(&self) -> u8 {
         self.message_or_sprite_state_cache
+    }
+
+    pub(crate) fn init_msgbox_state_from(
+        &mut self,
+        data: &[u8],
+        multiselect_choice: &mut MultiselectChoiceState,
+    ) {
+        let byte_at = |addr: usize| data.get(addr - TEXT_MSGBOX_TOPLEFT_COPY).copied();
+        let word_at = |addr: usize| {
+            let offset = addr - TEXT_MSGBOX_TOPLEFT_COPY;
+            Some(u16::from(*data.get(offset)?) | (u16::from(*data.get(offset + 1)?) << 8))
+        };
+
+        if let Some(value) = word_at(TEXT_MSGBOX_TOPLEFT_COPY) {
+            self.text_msgbox_topleft_copy = value;
+        }
+        if let Some(value) = word_at(TEXT_MSGBOX_TOPLEFT) {
+            self.text_msgbox_topleft = value;
+        }
+        if let Some(value) = byte_at(TEXT_RENDER_STATE) {
+            self.text_render_state = value;
+        }
+        if let Some(value) = byte_at(VWF_LINE_SPEED_CUR) {
+            self.vwf_line_speed_cur = value;
+        }
+        if let Some(value) = byte_at(VWF_LINE_SPEED) {
+            self.vwf_line_speed = value;
+        }
+        if let Some(value) = byte_at(TEXT_INCREMENTAL_STATE) {
+            self.text_incremental_state = value;
+        }
+        if let Some(value) = byte_at(MESSAGING_MODULE) {
+            self.module = value;
+        }
+        if let Some(value) = word_at(DIALOGUE_MSG_READ_POS) {
+            self.dialogue_msg_read_pos = value;
+        }
+        if let Some(value) = byte_at(DIALOGUE_TEXT_COLOR) {
+            self.dialogue_text_color = value;
+        }
+        if let Some(value) = word_at(TEXT_WAIT_COUNTDOWN) {
+            self.text_wait_countdown = value;
+        }
+        if let Some(value) = word_at(TEXT_TILEMAP_CUR) {
+            self.text_tilemap_cur = value;
+        }
+        if let Some(value) = byte_at(MULTISELECT_CHOICE) {
+            multiselect_choice.set_value(value);
+        }
+        if let Some(value) = byte_at(TEXT_WAIT_COUNTDOWN2) {
+            self.text_wait_countdown2 = value;
+        }
+        if let Some(value) = byte_at(DIALOGUE_SCROLL_SPEED) {
+            self.dialogue_scroll_speed = value;
+        }
     }
 }
 
@@ -978,6 +1045,7 @@ impl MessagingState {
         self.dialogue_source_offset.write_to_ram(ram);
         self.decoded_text.write_to_ram(ram);
         self.dialogue_pointers.write_to_ram(ram);
+        self.runtime.write_to_ram(ram);
         self.shared_message_timer.write_to_ram(ram);
         self.render_buffer.write_to_ram(ram);
         self.vwf_render.write_to_ram(ram);
@@ -1344,9 +1412,13 @@ pub(crate) struct NativeDecodedMessageTextBridgeMut<'a> {
 
 impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
     pub(crate) fn new(messaging: &'a mut MessagingState, ram: &'a mut [u8]) -> Self {
-        messaging.decoded_text = DecodedMessageTextState::load_from_ram(ram);
-        messaging.dialogue_pointers = DialoguePointerTableState::load_from_ram(ram);
         Self { messaging, ram }
+    }
+
+    fn sync(&mut self) {
+        self.messaging.decoded_text.write_to_ram(self.ram);
+        self.messaging.dialogue_pointers.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1362,9 +1434,7 @@ impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
 
     pub(crate) fn load_decoded_dialogue(&mut self, decoded: &[u8]) -> usize {
         let len = self.messaging.decoded_text.load_decoded_dialogue(decoded);
-        self.ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + len]
-            .copy_from_slice(&decoded[..len]);
-        self.debug_assert_matches_ram();
+        self.sync();
         len
     }
 
@@ -1374,7 +1444,7 @@ impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
             .decoded_text
             .write_decoded_text_at(dst, decoded);
         if len != 0 {
-            self.ram[dst..dst + len].copy_from_slice(&decoded[..len]);
+            self.sync();
         }
         self.debug_assert_matches_ram();
         len
@@ -1382,11 +1452,7 @@ impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
 
     pub(crate) fn set_dialogue_pointer(&mut self, index: usize, pointer: u32) {
         self.messaging.dialogue_pointers.set_pointer(index, pointer);
-        let dst = TEXT_DIALOGUE_POINTERS + index * 3;
-        self.ram[dst] = pointer as u8;
-        self.ram[dst + 1] = (pointer >> 8) as u8;
-        self.ram[dst + 2] = (pointer >> 16) as u8;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1397,8 +1463,14 @@ pub(crate) struct NativeMessagingRuntimeBridgeMut<'a> {
 
 impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
     pub(crate) fn new(messaging: &'a mut MessagingState, ram: &'a mut [u8]) -> Self {
-        *messaging = MessagingState::load_from_ram(ram);
         Self { messaging, ram }
+    }
+
+    fn sync(&mut self) {
+        self.messaging.runtime.write_to_ram(self.ram);
+        self.messaging.multiselect_choice.write_to_ram(self.ram);
+        self.messaging.dialogue_source_offset.write_to_ram(self.ram);
+        self.debug_assert_runtime_matches_ram();
     }
 
     fn debug_assert_runtime_matches_ram(&self) {
@@ -1410,12 +1482,15 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
             self.messaging.multiselect_choice,
             MultiselectChoiceState::load_from_ram(self.ram)
         );
+        debug_assert_eq!(
+            self.messaging.dialogue_source_offset,
+            DialogueSourceOffsetState::load_from_ram(self.ram)
+        );
     }
 
     pub(crate) fn set_module(&mut self, value: u8) {
         self.messaging.runtime.module = value;
-        self.ram[MESSAGING_MODULE] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_module(&mut self) {
@@ -1424,14 +1499,12 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn clear_message_or_sprite_state_cache(&mut self) {
         self.messaging.runtime.message_or_sprite_state_cache = 0;
-        self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] = 0;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_text_render_state(&mut self, value: u8) {
         self.messaging.runtime.text_render_state = value;
-        self.ram[TEXT_RENDER_STATE] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_text_render_state(&mut self) -> u8 {
@@ -1442,8 +1515,7 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_text_wait_countdown2(&mut self, value: u8) {
         self.messaging.runtime.text_wait_countdown2 = value;
-        self.ram[TEXT_WAIT_COUNTDOWN2] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_text_wait_countdown2(&mut self) {
@@ -1458,8 +1530,7 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_menu_animation_timer(&mut self, value: u8) {
         self.messaging.runtime.menu_animation_timer = value;
-        self.ram[MENU_ANIMATION_TIMER] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_menu_animation_timer(&mut self) -> u8 {
@@ -1470,8 +1541,7 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_game_over_letter_cursor(&mut self, value: u8) {
         self.messaging.runtime.game_over_letter_cursor = value;
-        self.ram[GAME_OVER_LETTER_CURSOR] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_effect_index(&mut self, value: u8) {
@@ -1513,14 +1583,12 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn clear_flag_which_music_type_messaging(&mut self) {
         self.messaging.runtime.flag_which_music_type_messaging = 0;
-        self.ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = 0;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn xor_message_or_sprite_state_cache(&mut self, value: u8) {
         self.messaging.runtime.message_or_sprite_state_cache ^= value;
-        self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] ^= value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_text_incremental_state(&mut self) {
@@ -1529,63 +1597,53 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
             .runtime
             .text_incremental_state
             .wrapping_add(1);
-        self.ram[TEXT_INCREMENTAL_STATE] = self.ram[TEXT_INCREMENTAL_STATE].wrapping_add(1);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_vwf_line_speed_cur(&mut self) {
         self.messaging.runtime.vwf_line_speed_cur =
             self.messaging.runtime.vwf_line_speed_cur.wrapping_sub(1);
-        self.ram[VWF_LINE_SPEED_CUR] = self.ram[VWF_LINE_SPEED_CUR].wrapping_sub(1);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_vwf_line_speed(&mut self, value: u8) {
         self.messaging.runtime.vwf_line_speed = value;
-        self.ram[VWF_LINE_SPEED] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_vwf_line_speed_cur(&mut self, value: u8) {
         self.messaging.runtime.vwf_line_speed_cur = value;
-        self.ram[VWF_LINE_SPEED_CUR] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_dialogue_scroll_speed(&mut self, value: u8) {
         self.messaging.runtime.dialogue_scroll_speed = value;
-        self.ram[DIALOGUE_SCROLL_SPEED] = value;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_text_wait_countdown(&mut self, value: u16) {
         self.messaging.runtime.text_wait_countdown = value;
-        write_le_u16(self.ram, TEXT_WAIT_COUNTDOWN, value);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_text_wait_countdown(&mut self) {
         self.messaging.runtime.text_wait_countdown &= 0xff00;
-        self.ram[TEXT_WAIT_COUNTDOWN] = 0;
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_text_msgbox_topleft(&mut self, value: u16) {
         self.messaging.runtime.text_msgbox_topleft = value;
-        write_le_u16(self.ram, TEXT_MSGBOX_TOPLEFT, value);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_text_msgbox_topleft_copy(&mut self, value: u16) {
         self.messaging.runtime.text_msgbox_topleft_copy = value;
-        write_le_u16(self.ram, TEXT_MSGBOX_TOPLEFT_COPY, value);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_text_tilemap_cur(&mut self, value: u16) {
         self.messaging.runtime.text_tilemap_cur = value;
-        write_le_u16(self.ram, TEXT_TILEMAP_CUR, value);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_dialogue_msg_read_pos(&mut self) {
@@ -1594,16 +1652,22 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_dialogue_msg_read_pos(&mut self, value: u16) {
         self.messaging.runtime.dialogue_msg_read_pos = value;
-        write_le_u16(self.ram, DIALOGUE_MSG_READ_POS, value);
-        self.debug_assert_runtime_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn init_msgbox_state_from(&mut self, data: &[u8]) {
-        self.ram[TEXT_MSGBOX_TOPLEFT_COPY..TEXT_MSGBOX_TOPLEFT_COPY + data.len()]
-            .copy_from_slice(data);
-        self.messaging.runtime = MessagingRuntimeState::load_from_ram(self.ram);
-        self.messaging.multiselect_choice = MultiselectChoiceState::load_from_ram(self.ram);
-        self.debug_assert_runtime_matches_ram();
+        self.messaging
+            .runtime
+            .init_msgbox_state_from(data, &mut self.messaging.multiselect_choice);
+        if let Some(value) = data
+            .get(DIALOGUE_MSG_SRC_OFFS + 2 - TEXT_MSGBOX_TOPLEFT_COPY)
+            .copied()
+        {
+            self.messaging
+                .dialogue_source_offset
+                .set_bank_offset_low_nibble(value);
+        }
+        self.sync();
     }
 }
 
