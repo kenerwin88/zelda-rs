@@ -7,6 +7,8 @@ const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
 const OVERWORLD_EVENT_INFO_SCREENS: usize = 160;
 const OVERWORLD_CONFIG_SCREENS: usize = 160;
 const ROOM_BOUND_COUNT: usize = 4;
+const SCROLL_TARGET_COUNT: usize = 4;
+const SCROLL_COUNTER_COUNT: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverworldMap16SourcePage {
@@ -313,6 +315,248 @@ impl WorldScrollState {
 
     pub(crate) fn scroll_y_end(&self) -> u16 {
         self.scroll_y_end
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldCameraBoundariesState {
+    pub(crate) camera_y_low: u16,
+    pub(crate) camera_y_hi: u16,
+    pub(crate) camera_x_low: u16,
+    pub(crate) camera_x_hi: u16,
+    pub(crate) scroll_targets: [u16; SCROLL_TARGET_COUNT],
+    pub(crate) cached_scroll_targets: [u16; SCROLL_TARGET_COUNT],
+    pub(crate) special_exit_scroll_targets: [u16; SCROLL_TARGET_COUNT],
+    pub(crate) exit_scroll_targets: [u16; SCROLL_TARGET_COUNT],
+    pub(crate) scroll_counters: [u16; SCROLL_COUNTER_COUNT],
+    pub(crate) special_exit_scroll_counters: [u16; SCROLL_COUNTER_COUNT],
+    pub(crate) exit_scroll_counters: [u16; SCROLL_COUNTER_COUNT],
+    pub(crate) special_exit_camera_y_low: u16,
+    pub(crate) special_exit_camera_x_low: u16,
+    pub(crate) exit_camera_y_low: u16,
+    pub(crate) exit_camera_x_low: u16,
+    pub(crate) cached_camera_y_low: u16,
+    pub(crate) cached_camera_x_low: u16,
+    pub(crate) special_exit_room_bounds_y_start: u16,
+    pub(crate) special_exit_room_bounds_y_end: u16,
+    pub(crate) special_exit_room_bounds_x_start: u16,
+    pub(crate) special_exit_room_bounds_x_end: u16,
+}
+
+impl WorldCameraBoundariesState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW),
+            camera_y_hi: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_HI),
+            camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW),
+            camera_x_hi: read_le_u16(ram, CAMERA_X_COORD_SCROLL_HI),
+            scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET),
+            cached_scroll_targets: [
+                read_le_u16(ram, UP_DOWN_SCROLL_TARGET_CACHED),
+                read_le_u16(ram, UP_DOWN_SCROLL_TARGET_END_CACHED),
+                read_le_u16(ram, LEFT_RIGHT_SCROLL_TARGET_CACHED),
+                read_le_u16(ram, LEFT_RIGHT_SCROLL_TARGET_END_CACHED),
+            ],
+            special_exit_scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET_SPEXIT),
+            exit_scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET_EXIT),
+            scroll_counters: read_scroll_counters(ram, OVERWORLD_SCROLL_UP_COUNTER),
+            special_exit_scroll_counters: read_scroll_counters(
+                ram,
+                OVERWORLD_SCROLL_UP_COUNTER_SPEXIT,
+            ),
+            exit_scroll_counters: read_scroll_counters(ram, OVERWORLD_SCROLL_UP_COUNTER_EXIT),
+            special_exit_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_SPEXIT),
+            special_exit_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT),
+            exit_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_EXIT),
+            exit_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_EXIT),
+            cached_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
+            cached_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_CACHED),
+            special_exit_room_bounds_y_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START),
+            special_exit_room_bounds_y_end: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_END),
+            special_exit_room_bounds_x_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_X_START),
+            special_exit_room_bounds_x_end: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_X_END),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW, self.camera_y_low);
+        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_HI, self.camera_y_hi);
+        write_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW, self.camera_x_low);
+        write_le_u16(ram, CAMERA_X_COORD_SCROLL_HI, self.camera_x_hi);
+        write_scroll_targets(ram, UP_DOWN_SCROLL_TARGET, self.scroll_targets);
+        write_le_u16(
+            ram,
+            UP_DOWN_SCROLL_TARGET_CACHED,
+            self.cached_scroll_targets[0],
+        );
+        write_le_u16(
+            ram,
+            UP_DOWN_SCROLL_TARGET_END_CACHED,
+            self.cached_scroll_targets[1],
+        );
+        write_le_u16(
+            ram,
+            LEFT_RIGHT_SCROLL_TARGET_CACHED,
+            self.cached_scroll_targets[2],
+        );
+        write_le_u16(
+            ram,
+            LEFT_RIGHT_SCROLL_TARGET_END_CACHED,
+            self.cached_scroll_targets[3],
+        );
+        write_scroll_targets(
+            ram,
+            UP_DOWN_SCROLL_TARGET_SPEXIT,
+            self.special_exit_scroll_targets,
+        );
+        write_scroll_targets(ram, UP_DOWN_SCROLL_TARGET_EXIT, self.exit_scroll_targets);
+        write_scroll_counters(ram, OVERWORLD_SCROLL_UP_COUNTER, self.scroll_counters);
+        write_scroll_counters(
+            ram,
+            OVERWORLD_SCROLL_UP_COUNTER_SPEXIT,
+            self.special_exit_scroll_counters,
+        );
+        write_scroll_counters(
+            ram,
+            OVERWORLD_SCROLL_UP_COUNTER_EXIT,
+            self.exit_scroll_counters,
+        );
+        write_le_u16(
+            ram,
+            CAMERA_Y_COORD_SCROLL_LOW_SPEXIT,
+            self.special_exit_camera_y_low,
+        );
+        write_le_u16(
+            ram,
+            CAMERA_X_COORD_SCROLL_LOW_SPEXIT,
+            self.special_exit_camera_x_low,
+        );
+        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_EXIT, self.exit_camera_y_low);
+        write_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_EXIT, self.exit_camera_x_low);
+        write_le_u16(
+            ram,
+            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
+            self.cached_camera_y_low,
+        );
+        write_le_u16(
+            ram,
+            CAMERA_X_COORD_SCROLL_LOW_CACHED,
+            self.cached_camera_x_low,
+        );
+        write_le_u16(
+            ram,
+            SPECIAL_EXIT_ROOM_BOUNDS_Y_START,
+            self.special_exit_room_bounds_y_start,
+        );
+        write_le_u16(
+            ram,
+            SPECIAL_EXIT_ROOM_BOUNDS_Y_END,
+            self.special_exit_room_bounds_y_end,
+        );
+        write_le_u16(
+            ram,
+            SPECIAL_EXIT_ROOM_BOUNDS_X_START,
+            self.special_exit_room_bounds_x_start,
+        );
+        write_le_u16(
+            ram,
+            SPECIAL_EXIT_ROOM_BOUNDS_X_END,
+            self.special_exit_room_bounds_x_end,
+        );
+    }
+
+    pub(crate) fn camera_y_coord_scroll_low(&self) -> u16 {
+        self.camera_y_low
+    }
+
+    pub(crate) fn camera_y_coord_scroll_hi(&self) -> u16 {
+        self.camera_y_hi
+    }
+
+    pub(crate) fn camera_x_coord_scroll_low(&self) -> u16 {
+        self.camera_x_low
+    }
+
+    pub(crate) fn camera_x_coord_scroll_hi(&self) -> u16 {
+        self.camera_x_hi
+    }
+
+    pub(crate) fn camera_scroll_low_for_axis(&self, horizontal: bool) -> u16 {
+        if horizontal {
+            self.camera_x_low
+        } else {
+            self.camera_y_low
+        }
+    }
+
+    pub(crate) fn camera_scroll_hi_for_axis(&self, horizontal: bool) -> u16 {
+        if horizontal {
+            self.camera_x_hi
+        } else {
+            self.camera_y_hi
+        }
+    }
+
+    pub(crate) fn up_down_scroll_target(&self, index: usize) -> u16 {
+        self.scroll_targets[index]
+    }
+
+    pub(crate) fn overworld_scroll_counter_for_axis(&self, ya: usize) -> u16 {
+        self.scroll_counters[ya]
+    }
+
+    pub(crate) fn spexit_camera_y_scroll_low(&self) -> u16 {
+        self.special_exit_camera_y_low
+    }
+
+    pub(crate) fn spexit_camera_x_scroll_low(&self) -> u16 {
+        self.special_exit_camera_x_low
+    }
+
+    pub(crate) fn spexit_room_bound_y_start(&self) -> u16 {
+        self.special_exit_room_bounds_y_start
+    }
+
+    pub(crate) fn spexit_room_bound_y_end(&self) -> u16 {
+        self.special_exit_room_bounds_y_end
+    }
+
+    pub(crate) fn spexit_room_bound_x_start(&self) -> u16 {
+        self.special_exit_room_bounds_x_start
+    }
+
+    pub(crate) fn spexit_room_bound_x_end(&self) -> u16 {
+        self.special_exit_room_bounds_x_end
+    }
+}
+
+fn read_scroll_targets(ram: &[u8], base: usize) -> [u16; SCROLL_TARGET_COUNT] {
+    [
+        read_le_u16(ram, base),
+        read_le_u16(ram, base + 2),
+        read_le_u16(ram, base + 4),
+        read_le_u16(ram, base + 6),
+    ]
+}
+
+fn write_scroll_targets(ram: &mut [u8], base: usize, targets: [u16; SCROLL_TARGET_COUNT]) {
+    for (index, value) in targets.iter().enumerate() {
+        write_le_u16(ram, base + index * 2, *value);
+    }
+}
+
+fn read_scroll_counters(ram: &[u8], base: usize) -> [u16; SCROLL_COUNTER_COUNT] {
+    [
+        read_le_u16(ram, base),
+        read_le_u16(ram, base + 2),
+        read_le_u16(ram, base + 4),
+        read_le_u16(ram, base + 6),
+    ]
+}
+
+fn write_scroll_counters(ram: &mut [u8], base: usize, counters: [u16; SCROLL_COUNTER_COUNT]) {
+    for (index, value) in counters.iter().enumerate() {
+        write_le_u16(ram, base + index * 2, *value);
     }
 }
 
@@ -1319,6 +1563,7 @@ impl RoomBoundsState {
 pub(crate) struct WorldState {
     pub(crate) location: WorldLocationState,
     pub(crate) scroll: WorldScrollState,
+    pub(crate) camera_boundaries: WorldCameraBoundariesState,
     pub(crate) palette_theme: WorldPaletteThemeState,
     pub(crate) overworld: OverworldState,
     pub(crate) room_bounds: RoomBoundsState,
@@ -1329,6 +1574,7 @@ impl WorldState {
         Self {
             location: WorldLocationState::load_from_ram(ram),
             scroll: WorldScrollState::load_from_ram(ram),
+            camera_boundaries: WorldCameraBoundariesState::load_from_ram(ram),
             palette_theme: WorldPaletteThemeState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
             room_bounds: RoomBoundsState::load_from_ram(ram),
@@ -1338,6 +1584,7 @@ impl WorldState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.location.write_to_ram(ram);
         self.scroll.write_to_ram(ram);
+        self.camera_boundaries.write_to_ram(ram);
         self.palette_theme.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
         self.room_bounds.write_to_ram(ram);
@@ -1525,6 +1772,242 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
 
     pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
         self.state.overworld_offset_mask_x = value;
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeWorldCameraBoundariesBridgeMut<'a> {
+    state: &'a mut WorldCameraBoundariesState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut WorldCameraBoundariesState, ram: &'a mut [u8]) -> Self {
+        *state = WorldCameraBoundariesState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            WorldCameraBoundariesState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_camera_y_coord_scroll_low(&mut self, value: u16) {
+        self.state.camera_y_low = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_camera_y_coord_scroll_hi(&mut self, value: u16) {
+        self.state.camera_y_hi = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_camera_x_coord_scroll_low(&mut self, value: u16) {
+        self.state.camera_x_low = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_camera_x_coord_scroll_hi(&mut self, value: u16) {
+        self.state.camera_x_hi = value;
+        self.sync();
+    }
+
+    pub(crate) fn add_camera_scroll_for_axis(&mut self, horizontal: bool, delta: i16) -> u16 {
+        let hi = if horizontal {
+            self.state.camera_x_hi = self.state.camera_x_hi.wrapping_add_signed(delta);
+            self.state.camera_x_low = self.state.camera_x_hi.wrapping_add(2);
+            self.state.camera_x_hi
+        } else {
+            self.state.camera_y_hi = self.state.camera_y_hi.wrapping_add_signed(delta);
+            self.state.camera_y_low = self.state.camera_y_hi.wrapping_add(2);
+            self.state.camera_y_hi
+        };
+        self.sync();
+        hi
+    }
+
+    pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
+        if horizontal {
+            self.state.camera_x_hi = value;
+            self.state.camera_x_low = value.wrapping_add(2);
+        } else {
+            self.state.camera_y_hi = value;
+            self.state.camera_y_low = value.wrapping_add(2);
+        }
+        self.sync();
+    }
+
+    pub(crate) fn set_up_down_scroll_target(&mut self, value: u16) {
+        self.state.scroll_targets[0] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_up_down_scroll_target_end(&mut self, value: u16) {
+        self.state.scroll_targets[1] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_left_right_scroll_target(&mut self, value: u16) {
+        self.state.scroll_targets[2] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_left_right_scroll_target_end(&mut self, value: u16) {
+        self.state.scroll_targets[3] = value;
+        self.sync();
+    }
+
+    pub(crate) fn cache_scroll_targets(&mut self) {
+        self.state.cached_scroll_targets = self.state.scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn restore_scroll_targets_from_cached(&mut self) {
+        self.state.scroll_targets = self.state.cached_scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_scroll_up_counter(&mut self, value: u16) {
+        self.state.scroll_counters[0] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_scroll_down_counter(&mut self, value: u16) {
+        self.state.scroll_counters[1] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_scroll_left_counter(&mut self, value: u16) {
+        self.state.scroll_counters[2] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_scroll_right_counter(&mut self, value: u16) {
+        self.state.scroll_counters[3] = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_scroll_counter_for_axis(&mut self, ya: usize, value: u16) {
+        self.state.scroll_counters[ya] = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_opposed_scroll_counters(&mut self, ya: usize) {
+        self.state.scroll_counters[ya] = 0;
+        self.state.scroll_counters[ya ^ 1] = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_opposed_scroll_counter_pair(&mut self, ya: usize, value: u16) {
+        self.state.scroll_counters[ya] = value;
+        self.state.scroll_counters[ya ^ 1] = (0u16).wrapping_sub(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_special_exit_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.state.special_exit_room_bounds_y_start = y_start;
+        self.state.special_exit_room_bounds_y_end = y_end;
+        self.state.special_exit_room_bounds_x_start = x_start;
+        self.state.special_exit_room_bounds_x_end = x_end;
+        self.sync();
+    }
+
+    pub(crate) fn copy_spexit_scroll_targets(&mut self) {
+        self.state.special_exit_scroll_targets = self.state.scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn copy_spexit_scroll_counters(&mut self) {
+        self.state.special_exit_scroll_counters = self.state.scroll_counters;
+        self.sync();
+    }
+
+    pub(crate) fn restore_spexit_scroll_targets(&mut self) {
+        self.state.scroll_targets = self.state.special_exit_scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn restore_spexit_scroll_counters(&mut self) {
+        self.state.scroll_counters = self.state.special_exit_scroll_counters;
+        self.sync();
+    }
+
+    pub(crate) fn copy_exit_scroll_targets(&mut self) {
+        self.state.exit_scroll_targets = self.state.scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn copy_exit_scroll_counters(&mut self) {
+        self.state.exit_scroll_counters = self.state.scroll_counters;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_scroll_targets(&mut self) {
+        self.state.scroll_targets = self.state.exit_scroll_targets;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_scroll_counters(&mut self) {
+        self.state.scroll_counters = self.state.exit_scroll_counters;
+        self.sync();
+    }
+
+    pub(crate) fn save_spexit_camera_coords(&mut self) {
+        self.state.special_exit_camera_y_low = self.state.camera_y_low;
+        self.state.special_exit_camera_x_low = self.state.camera_x_low;
+        self.sync();
+    }
+
+    pub(crate) fn save_exit_camera_coords(&mut self) {
+        self.state.exit_camera_y_low = self.state.camera_y_low;
+        self.state.exit_camera_x_low = self.state.camera_x_low;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_camera_scroll(&mut self) {
+        self.state.camera_y_low = self.state.exit_camera_y_low;
+        self.state.camera_y_hi = self.state.exit_camera_y_low.wrapping_sub(2);
+        self.state.camera_x_low = self.state.exit_camera_x_low;
+        self.state.camera_x_hi = self.state.exit_camera_x_low.wrapping_sub(2);
+        self.sync();
+    }
+
+    pub(crate) fn restore_special_exit_camera_scroll(&mut self) {
+        self.state.camera_y_low = self.state.special_exit_camera_y_low;
+        self.state.camera_y_hi = self.state.special_exit_camera_y_low.wrapping_sub(2);
+        self.state.camera_x_low = self.state.special_exit_camera_x_low;
+        self.state.camera_x_hi = self.state.special_exit_camera_x_low.wrapping_sub(2);
+        self.sync();
+    }
+
+    pub(crate) fn restore_camera_y_from_cached_indoor(&mut self) {
+        self.state.camera_y_low = self.state.cached_camera_y_low;
+        self.state.camera_y_hi = self.state.cached_camera_y_low.wrapping_add(2);
+        self.sync();
+    }
+
+    pub(crate) fn restore_camera_x_from_cached_indoor(&mut self) {
+        self.state.camera_x_low = self.state.cached_camera_x_low;
+        self.state.camera_x_hi = self.state.cached_camera_x_low.wrapping_add(2);
+        self.sync();
+    }
+
+    pub(crate) fn update_camera_hi_outdoor(&mut self) {
+        self.state.camera_y_hi = self.state.camera_y_low.wrapping_sub(2);
+        self.state.camera_x_hi = self.state.camera_x_low.wrapping_sub(2);
         self.sync();
     }
 }

@@ -557,10 +557,12 @@ impl ZeldaState {
         let door_settings = self.asset_u16(assets.door_settings, i);
         self.world_state_view_mut()
             .set_ow_entrance_value(door_settings);
-        self.world_state_view_mut().set_up_down_scroll_target(0);
+        self.world_camera_boundaries_mut()
+            .set_up_down_scroll_target(0);
         self.world_state_view_mut()
             .set_up_down_scroll_target_end(0x0110);
-        self.world_state_view_mut().set_left_right_scroll_target(0);
+        self.world_camera_boundaries_mut()
+            .set_left_right_scroll_target(0);
         self.world_state_view_mut()
             .set_left_right_scroll_target_end(0x0100);
 
@@ -10267,7 +10269,7 @@ impl ZeldaState {
             t
         };
 
-        if (t & 0x01fc) == self.world_state_view().up_down_scroll_target(i) {
+        if (t & 0x01fc) == self.world_camera_boundaries().up_down_scroll_target(i) {
             self.SetAndSaveVisitedQuadrantFlags();
             self.increment_subsubmodule();
             self.set_transition_counter(0);
@@ -10759,7 +10761,7 @@ impl ZeldaState {
             & !3;
         self.world_scroll_mut().set_bg1_y(y);
         self.world_scroll_mut().set_bg2_y(y);
-        if (y & 0x01fc) == self.world_state_view().up_down_scroll_target(i) {
+        if (y & 0x01fc) == self.world_camera_boundaries().up_down_scroll_target(i) {
             if self.frame_state().submodule >= 18 {
                 i += 2;
             }
@@ -11662,11 +11664,11 @@ impl ZeldaState {
             for _ in 0..steps {
                 let mut qm = self.world_state_view().vertical_room_bounds_base_index();
                 if moving_up {
-                    if y > self.world_state_view().camera_y_coord_scroll_low() {
+                    if y > self.world_camera_boundaries().camera_y_coord_scroll_low() {
                         continue;
                     }
                 } else {
-                    if y < self.world_state_view().camera_y_coord_scroll_hi() {
+                    if y < self.world_camera_boundaries().camera_y_coord_scroll_hi() {
                         continue;
                     }
                     qm += 2;
@@ -11715,11 +11717,11 @@ impl ZeldaState {
             for _ in 0..steps {
                 let mut qm = self.world_state_view().horizontal_room_bounds_base_index();
                 if moving_left {
-                    if x > self.world_state_view().camera_x_coord_scroll_low() {
+                    if x > self.world_camera_boundaries().camera_x_coord_scroll_low() {
                         continue;
                     }
                 } else {
-                    if x < self.world_state_view().camera_x_coord_scroll_hi() {
+                    if x < self.world_camera_boundaries().camera_x_coord_scroll_hi() {
                         continue;
                     }
                     qm += 2;

@@ -605,7 +605,8 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut()
             .save_special_exit_bg2_live_scroll();
         self.special_exit_position_view_mut().store_from_player();
-        self.world_state_view_mut().save_spexit_camera_coords();
+        self.world_camera_boundaries_mut()
+            .save_spexit_camera_coords();
         let overworld_screen = self.world_location_state().overworld_screen;
         self.set_special_exit_screen_index(overworld_screen);
         let map16 = self.overworld_map16_load_state();
@@ -616,8 +617,10 @@ impl ZeldaState {
         let right = self.room_bounds_view().packed_right();
         self.world_state_view_mut()
             .set_special_exit_room_bounds(top, bottom, left, right);
-        self.world_state_view_mut().copy_spexit_scroll_targets();
-        self.world_state_view_mut().copy_spexit_scroll_counters();
+        self.world_camera_boundaries_mut()
+            .copy_spexit_scroll_targets();
+        self.world_camera_boundaries_mut()
+            .copy_spexit_scroll_counters();
         self.world_palette_theme_mut()
             .save_special_exit_tile_themes();
         self.sprite_system_view_mut()
@@ -635,8 +638,8 @@ impl ZeldaState {
                 self.overworld_spexit_map16_src_off(),
                 self.overworld_map16_y_unit(),
                 self.overworld_map16_dst_off(),
-                self.world_state_view().spexit_camera_x_scroll_low(),
-                self.world_state_view().spexit_camera_y_scroll_low(),
+                self.world_camera_boundaries().spexit_camera_x_scroll_low(),
+                self.world_camera_boundaries().spexit_camera_y_scroll_low(),
                 self.world_location_state().dungeon_room,
                 self.frame_state().main_module,
                 self.frame_state().submodule,
@@ -1820,7 +1823,8 @@ impl ZeldaState {
             .restore_quadrant_fullsize_from_cached();
         self.player_state_view_mut().restore_quadrants_from_cached();
         if self.world_location_state().is_outdoors() {
-            self.world_state_view_mut().update_camera_hi_outdoor();
+            self.world_camera_boundaries_mut()
+                .update_camera_hi_outdoor();
         }
 
         self.player_state_view_mut().restore_facing_from_cached();
@@ -2949,7 +2953,8 @@ impl ZeldaState {
         self.set_overworld_map16_y_unit((src.wrapping_sub(0x400) & 0x0f80) >> 7);
         self.set_overworld_map16_dst_off((src.wrapping_sub(0x10) & 0x003e) >> 1);
 
-        self.world_state_view_mut().restore_exit_camera_scroll();
+        self.world_camera_boundaries_mut()
+            .restore_exit_camera_scroll();
 
         self.room_bounds_view_mut()
             .copy_y_bounds_from(OW_SCROLL_VARS0_EXIT_OVERWORLD, 8);
@@ -3009,12 +3014,12 @@ impl ZeldaState {
                 self.ppu_scroll_copy_view().special_exit_bg2_h_copy2(),
                 self.ppu_scroll_copy_view().special_exit_bg2_v_copy2(),
                 self.overworld_spexit_map16_src_off(),
-                self.world_state_view().spexit_camera_x_scroll_low(),
-                self.world_state_view().spexit_camera_y_scroll_low(),
-                self.world_state_view().spexit_room_bound_x_start(),
-                self.world_state_view().spexit_room_bound_x_end(),
-                self.world_state_view().spexit_room_bound_y_start(),
-                self.world_state_view().spexit_room_bound_y_end(),
+                self.world_camera_boundaries().spexit_camera_x_scroll_low(),
+                self.world_camera_boundaries().spexit_camera_y_scroll_low(),
+                self.world_camera_boundaries().spexit_room_bound_x_start(),
+                self.world_camera_boundaries().spexit_room_bound_x_end(),
+                self.world_camera_boundaries().spexit_room_bound_y_start(),
+                self.world_camera_boundaries().spexit_room_bound_y_end(),
             );
         }
         self.memorized_tile_view_mut().clear_count();
@@ -3189,9 +3194,10 @@ impl ZeldaState {
         let up_down = OVERWORLD_VERTICAL_SCROLL_TARGETS[area];
         self.world_state_view_mut()
             .set_up_down_scroll_target(up_down);
-        self.world_state_view_mut().set_up_down_scroll_target_end(
-            up_down.wrapping_add(OVERWORLD_VERTICAL_SCROLL_SPANS_BY_SIZE[big]),
-        );
+        self.world_camera_boundaries_mut()
+            .set_up_down_scroll_target_end(
+                up_down.wrapping_add(OVERWORLD_VERTICAL_SCROLL_SPANS_BY_SIZE[big]),
+            );
         let left_right = OVERWORLD_HORIZONTAL_SCROLL_TARGETS[area];
         self.world_state_view_mut()
             .set_left_right_scroll_target(left_right);
@@ -4294,10 +4300,10 @@ impl ZeldaState {
             let mut r4 = 0u16;
             while av != 0 {
                 if (link_y_velocity as i8).is_negative() {
-                    if y <= self.world_state_view().camera_y_coord_scroll_low() {
+                    if y <= self.world_camera_boundaries().camera_y_coord_scroll_low() {
                         r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(6, 0, vy, 0) as u16);
                     }
-                } else if y >= self.world_state_view().camera_y_coord_scroll_hi() {
+                } else if y >= self.world_camera_boundaries().camera_y_coord_scroll_hi() {
                     r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(6, 2, vy, 0) as u16);
                 }
                 av = av.wrapping_sub(1);
@@ -4348,10 +4354,10 @@ impl ZeldaState {
             let mut r4 = 0u16;
             while ax != 0 {
                 if (link_x_velocity as i8).is_negative() {
-                    if x <= self.world_state_view().camera_x_coord_scroll_low() {
+                    if x <= self.world_camera_boundaries().camera_x_coord_scroll_low() {
                         r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(0, 4, vx, 4) as u16);
                     }
-                } else if x >= self.world_state_view().camera_x_coord_scroll_hi() {
+                } else if x >= self.world_camera_boundaries().camera_x_coord_scroll_hi() {
                     r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(0, 6, vx, 4) as u16);
                 }
                 ax = ax.wrapping_sub(1);
@@ -4462,7 +4468,7 @@ impl ZeldaState {
                 let link_y = self.player_state_view().y().wrapping_add_signed(d);
                 self.player_state_view_mut().set_y(link_y);
             }
-            if rv != self.world_state_view().up_down_scroll_target(y) {
+            if rv != self.world_camera_boundaries().up_down_scroll_target(y) {
                 return rv as i32;
             }
             if y == 0 {
@@ -4476,7 +4482,8 @@ impl ZeldaState {
                 .wrapping_add(11);
             self.world_state_view_mut()
                 .set_camera_scroll_from_link_for_axis(false, camera_hi);
-            self.world_state_view_mut().clear_opposed_scroll_counters(0);
+            self.world_camera_boundaries_mut()
+                .clear_opposed_scroll_counters(0);
         } else {
             self.set_overworld_horizontal_scroll_delta_low(d as u8);
             rv = self.world_scroll().bg2_x().wrapping_add_signed(d);
@@ -4490,7 +4497,7 @@ impl ZeldaState {
                 let link_x = self.player_state_view().x().wrapping_add_signed(d);
                 self.player_state_view_mut().set_x(link_x);
             }
-            if rv != self.world_state_view().up_down_scroll_target(y) {
+            if rv != self.world_camera_boundaries().up_down_scroll_target(y) {
                 return rv as i32;
             }
             let link_x = self.player_state_view().x() & !7;
@@ -4500,7 +4507,8 @@ impl ZeldaState {
                 .wrapping_add(11);
             self.world_state_view_mut()
                 .set_camera_scroll_from_link_for_axis(true, camera_hi);
-            self.world_state_view_mut().clear_opposed_scroll_counters(2);
+            self.world_camera_boundaries_mut()
+                .clear_opposed_scroll_counters(2);
         }
 
         let area = ((self.world_state_view().current_area_of_player_word() >> 1) as i16)
