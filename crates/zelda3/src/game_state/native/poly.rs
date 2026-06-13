@@ -328,7 +328,6 @@ pub(crate) struct NativePolyRuntimeBridgeMut<'a> {
 
 impl<'a> NativePolyRuntimeBridgeMut<'a> {
     pub(crate) fn new(runtime: &'a mut PolyRuntimeState, ram: &'a mut [u8]) -> Self {
-        *runtime = PolyRuntimeState::load_from_ram(ram);
         Self { runtime, ram }
     }
 
@@ -661,7 +660,6 @@ pub(crate) struct NativePolyProjectedVerticesBridgeMut<'a> {
 
 impl<'a> NativePolyProjectedVerticesBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyProjectedVerticesState, ram: &'a mut [u8]) -> Self {
-        *state = PolyProjectedVerticesState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -732,7 +730,6 @@ pub(crate) struct NativePolyFaceCoordsBridgeMut<'a> {
 
 impl<'a> NativePolyFaceCoordsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyFaceCoordsState, ram: &'a mut [u8]) -> Self {
-        *state = PolyFaceCoordsState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -912,7 +909,6 @@ pub(crate) struct NativePolyRasterEdgeBridgeMut<'a> {
 
 impl<'a> NativePolyRasterEdgeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyRasterEdgeState, ram: &'a mut [u8]) -> Self {
-        *state = PolyRasterEdgeState::load_from_ram(ram);
         Self { state, ram }
     }
 
