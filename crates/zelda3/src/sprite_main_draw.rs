@@ -12337,7 +12337,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_g(value);
         }
 
-        if self.dungeon_state_view().room_index2() == 6 && self.sprite_slot_view(k).z() == 0 {
+        if self.dungeon_room_tracking().room_index2() == 6 && self.sprite_slot_view(k).z() == 0 {
             self.sprite_draw_water_ripple_with_oam_adjust(k);
         }
         self.sprite_draw_single_large(k);
@@ -12351,7 +12351,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_z(value);
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).z_velocity()) >> 2;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
-            if self.dungeon_state_view().room_index2() == 6
+            if self.dungeon_room_tracking().room_index2() == 6
                 && self.sprite_slot_view(k).subtype() == 0
             {
                 self.sprite_slot_view_mut(k).add_flags2(2);

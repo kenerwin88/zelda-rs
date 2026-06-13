@@ -415,7 +415,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_switch(&mut self, k: usize) {
-        let room = self.dungeon_state_view().room_index2();
+        let room = self.dungeon_room_tracking().room_index2();
         if room == 0xce || room == 4 || room == 0x3f {
             self.sprite_slot_view_mut(k).set_oam_flags(0x0d);
         }
@@ -3075,7 +3075,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_bari(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_z(6);
-        if self.dungeon_state_view().room_index2() == 206 {
+        if self.dungeon_room_tracking().room_index2() == 206 {
             self.sprite_slot_view_mut(k).decrement_c();
         }
         let delay_aux1 = (self.get_random_number() & 63).wrapping_add(128);
@@ -4604,7 +4604,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_eyegore(&mut self, k: usize) {
-        let room = self.dungeon_state_view().room_index2();
+        let room = self.dungeon_room_tracking().room_index2();
         if room == 12 || room == 27 || room == 75 || room == 107 {
             self.sprite_slot_view_mut(k).increment_b();
             if self.sprite_slot_view(k).sprite_type() == 0x83 {
@@ -6936,7 +6936,7 @@ mod tests {
         assert_eq!(ether.sprite_slot_view(k).ai_state(), 3);
 
         let mut eyegore = fresh_state();
-        eyegore.dungeon_state_view_mut().set_room_index2(75);
+        eyegore.dungeon_room_tracking_mut().set_room_index2(75);
         eyegore.sprite_slot_view_mut(k).set_sprite_type(0x83);
         eyegore.sprite_slot_view_mut(k).set_b(0xff);
         eyegore.sprite_slot_view_mut(k).set_deflection_bits(0xaa);
@@ -6945,7 +6945,7 @@ mod tests {
         assert_eq!(eyegore.sprite_slot_view(k).deflection_bits(), 0);
 
         let mut untouched = fresh_state();
-        untouched.dungeon_state_view_mut().set_room_index2(74);
+        untouched.dungeon_room_tracking_mut().set_room_index2(74);
         untouched.sprite_slot_view_mut(k).set_b(4);
         untouched.sprite_slot_view_mut(k).set_deflection_bits(0xaa);
         untouched.sprite_prep_eyegore(k);

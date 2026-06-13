@@ -16,6 +16,9 @@ use crate::game_state::constants::{
     STAIRCASE_LOWER_LEVEL_STATUS, STAIRCASE_MOVE_COUNTER, STAIRCASE_TILEMAP_POS_X2,
     WHICH_STAIRCASE_INDEX,
 };
+use crate::game_state::constants::{
+    DUNGEON_ROOM_HISTORY, DUNGEON_ROOM_INDEX2, DUNGEON_ROOM_INDEX_PREV,
+};
 use crate::game_state::DungeonStairList;
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -24,6 +27,7 @@ const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
+const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
@@ -58,6 +62,7 @@ pub(crate) struct DungeonState {
     pub(crate) stair_lists: DungeonStairListsState,
     pub(crate) stair_movement: DungeonStairMovementState,
     pub(crate) moving_floor: DungeonMovingFloorState,
+    pub(crate) room_tracking: DungeonRoomTrackingState,
 }
 
 impl DungeonState {
@@ -72,6 +77,7 @@ impl DungeonState {
             stair_lists: DungeonStairListsState::load_from_ram(ram),
             stair_movement: DungeonStairMovementState::load_from_ram(ram),
             moving_floor: DungeonMovingFloorState::load_from_ram(ram),
+            room_tracking: DungeonRoomTrackingState::load_from_ram(ram),
         }
     }
 
@@ -82,6 +88,92 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomTrackingState {
+    room_index2: u16,
+    previous_room_index: u16,
+    history: [u16; DUNGEON_ROOM_HISTORY_COUNT],
+}
+
+impl Default for DungeonRoomTrackingState {
+    fn default() -> Self {
+        Self {
+            room_index2: 0,
+            previous_room_index: 0,
+            history: [0xffff; DUNGEON_ROOM_HISTORY_COUNT],
+        }
+    }
+}
+
+impl DungeonRoomTrackingState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut history = [0xffff; DUNGEON_ROOM_HISTORY_COUNT];
+        for (index, entry) in history.iter_mut().enumerate() {
+            *entry = read_le_u16(ram, DUNGEON_ROOM_HISTORY + index * 2);
+        }
+
+        Self {
+            room_index2: read_le_u16(ram, DUNGEON_ROOM_INDEX2),
+            previous_room_index: read_le_u16(ram, DUNGEON_ROOM_INDEX_PREV),
+            history,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_ROOM_INDEX2, self.room_index2);
+        write_le_u16(ram, DUNGEON_ROOM_INDEX_PREV, self.previous_room_index);
+        for (index, entry) in self.history.iter().enumerate() {
+            write_le_u16(ram, DUNGEON_ROOM_HISTORY + index * 2, *entry);
+        }
+    }
+
+    pub(crate) fn room_index2(&self) -> u8 {
+        self.room_index2 as u8
+    }
+
+    pub(crate) fn room_index2_word(&self) -> u16 {
+        self.room_index2
+    }
+
+    pub(crate) fn previous_room_index(&self) -> usize {
+        usize::from(self.previous_room_index)
+    }
+
+    pub(crate) fn previous_room_index_word(&self) -> u16 {
+        self.previous_room_index
+    }
+
+    pub(crate) fn room_history_entry(&self, index: usize) -> u16 {
+        self.history.get(index).copied().unwrap_or(0xffff)
+    }
+
+    fn set_room_index2(&mut self, value: u8) {
+        self.room_index2 = (self.room_index2 & 0xff00) | u16::from(value);
+    }
+
+    fn set_room_index2_word(&mut self, value: u16) {
+        self.room_index2 = value;
+    }
+
+    fn set_room_index_prev(&mut self, value: u8) {
+        self.previous_room_index = (self.previous_room_index & 0xff00) | u16::from(value);
+    }
+
+    fn set_previous_room_index_word(&mut self, value: u16) {
+        self.previous_room_index = value;
+    }
+
+    fn set_room_history_entry(&mut self, index: usize, value: u16) {
+        if let Some(entry) = self.history.get_mut(index) {
+            *entry = value;
+        }
+    }
+
+    fn reset_room_history(&mut self) {
+        self.history.fill(0xffff);
     }
 }
 
@@ -1485,6 +1577,60 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
 
     pub(crate) fn increment_floor_move_flags(&mut self) {
         self.state.increment_floor_move_flags();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomTrackingBridgeMut<'a> {
+    state: &'a mut DungeonRoomTrackingState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomTrackingState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomTrackingState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomTrackingState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_room_index2(&mut self, value: u8) {
+        self.state.set_room_index2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_index2_word(&mut self, value: u16) {
+        self.state.set_room_index2_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_index_prev(&mut self, value: u8) {
+        self.state.set_room_index_prev(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_previous_room_index_word(&mut self, value: u16) {
+        self.state.set_previous_room_index_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_history_entry(&mut self, index: usize, value: u16) {
+        self.state.set_room_history_entry(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn reset_room_history(&mut self) {
+        self.state.reset_room_history();
         self.sync();
     }
 }

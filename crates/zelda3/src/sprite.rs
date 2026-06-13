@@ -570,7 +570,7 @@ impl ZeldaState {
         let value = sprite_init_value(SPRITE_INIT_FLAGS_TABLE, ty);
         self.sprite_slot_view_mut(k).set_flags(value);
         let value = if self.world_location_state().is_indoors() {
-            self.dungeon_state_view().room_index2_word() as u8
+            self.dungeon_room_tracking().room_index2_word() as u8
         } else {
             self.world_region().overworld_area() as u8
         };
@@ -1548,7 +1548,7 @@ impl ZeldaState {
         }
         self.sprite_workspace_view_mut().clear_where_in_room();
         self.overworld_sprite_loaded_view_mut().clear_all();
-        self.dungeon_state_view_mut().reset_room_history();
+        self.dungeon_room_tracking_mut().reset_room_history();
     }
 
     pub(super) fn sprite_reload_all_overworld(&mut self) {
@@ -1825,16 +1825,16 @@ impl ZeldaState {
         self.sprite_disable_all();
         self.garnish_state_view_mut().set_sprcoll_x_size(0xffff);
         self.garnish_state_view_mut().set_sprcoll_y_size(0xffff);
-        let room = self.dungeon_state_view().room_index2_word();
-        let seen = (0..4).any(|i| self.dungeon_state_view().room_history_entry(i) == room);
+        let room = self.dungeon_room_tracking().room_index2_word();
+        let seen = (0..4).any(|i| self.dungeon_room_tracking().room_history_entry(i) == room);
         if !seen {
-            let dropped = self.dungeon_state_view().room_history_entry(3);
+            let dropped = self.dungeon_room_tracking().room_history_entry(3);
             for i in (1..4).rev() {
-                let prev = self.dungeon_state_view().room_history_entry(i - 1);
-                self.dungeon_state_view_mut()
+                let prev = self.dungeon_room_tracking().room_history_entry(i - 1);
+                self.dungeon_room_tracking_mut()
                     .set_room_history_entry(i, prev);
             }
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tracking_mut()
                 .set_room_history_entry(0, room);
             if dropped != 0xffff {
                 self.set_sprite_where_in_room_mask(dropped, 0);
@@ -1850,7 +1850,7 @@ impl ZeldaState {
         let Some(offsets) = self.asset_raw(59).map(Vec::from) else {
             return;
         };
-        let room = self.dungeon_state_view().room_index2_word() as usize;
+        let room = self.dungeon_room_tracking().room_index2_word() as usize;
         let start = read_word_from_slice(&offsets, room * 2) as usize;
         if start >= sprites.len() {
             return;
@@ -1901,7 +1901,7 @@ impl ZeldaState {
         }
 
         if sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, sprite_type) & 1 == 0
-            && self.sprite_where_in_room_mask(self.dungeon_state_view().room_index2_word())
+            && self.sprite_where_in_room_mask(self.dungeon_room_tracking().room_index2_word())
                 & (1 << k)
                 != 0
         {
@@ -2883,7 +2883,7 @@ impl ZeldaState {
             return;
         }
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        let room_offset = if self.dungeon_state_view().room_index2() == 0x20 {
+        let room_offset = if self.dungeon_room_tracking().room_index2() == 0x20 {
             0x80
         } else {
             0
@@ -6346,7 +6346,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(ju).set_stunned(value);
         } else if ty == 0x0b {
             self.system_signals_view_mut().set_sound_effect_1(0x30);
-            if self.dungeon_state_view().room_index2() == 1 {
+            if self.dungeon_room_tracking().room_index2() == 1 {
                 let value = 1;
                 self.sprite_slot_view_mut(ju).set_subtype(value);
             }
@@ -8151,7 +8151,7 @@ impl ZeldaState {
         {
             return;
         }
-        let room = self.dungeon_state_view().room_index2_word();
+        let room = self.dungeon_room_tracking().room_index2_word();
         let bit = 1u16 << self.sprite_slot_view(k).n();
         let mask = self.sprite_where_in_room_mask(room) | bit;
         self.set_sprite_where_in_room_mask(room, mask);
@@ -8650,7 +8650,7 @@ mod tests {
     #[test]
     fn dungeon_load_single_sprite_preserves_c_tmp_counter_side_effect() {
         let mut s = fresh_state();
-        s.dungeon_state_view_mut().set_room_index2_word(0x004a);
+        s.dungeon_room_tracking_mut().set_room_index2_word(0x004a);
         s.sprite_workspace_view_mut().set_room_origin_y_high(0x08);
         s.sprite_workspace_view_mut().set_room_origin_x_high(0x04);
 
@@ -9528,7 +9528,7 @@ mod tests {
         let k = 8;
         s.set_indoor_flag(1);
         s.sprite_slot_view_mut(k).set_n(8);
-        s.dungeon_state_view_mut().set_room_index2_word(0x0123);
+        s.dungeon_room_tracking_mut().set_room_index2_word(0x0123);
 
         s.sprite_manually_set_death_flag_uw(k);
 
@@ -9537,7 +9537,7 @@ mod tests {
         let mut outdoors = fresh_state();
         outdoors.sprite_slot_view_mut(k).set_n(8);
         outdoors
-            .dungeon_state_view_mut()
+            .dungeon_room_tracking_mut()
             .set_room_index2_word(0x0123);
         outdoors.sprite_manually_set_death_flag_uw(k);
         assert_eq!(outdoors.sprite_workspace_view().where_in_room(0x0123), 0);
@@ -9547,7 +9547,7 @@ mod tests {
         ignored.sprite_slot_view_mut(k).set_deflection_bits(1);
         ignored.sprite_slot_view_mut(k).set_n(8);
         ignored
-            .dungeon_state_view_mut()
+            .dungeon_room_tracking_mut()
             .set_room_index2_word(0x0123);
         ignored.sprite_manually_set_death_flag_uw(k);
         assert_eq!(ignored.sprite_workspace_view().where_in_room(0x0123), 0);
@@ -9555,7 +9555,9 @@ mod tests {
         let mut signed = fresh_state();
         signed.set_indoor_flag(1);
         signed.sprite_slot_view_mut(k).set_n(0x80);
-        signed.dungeon_state_view_mut().set_room_index2_word(0x0123);
+        signed
+            .dungeon_room_tracking_mut()
+            .set_room_index2_word(0x0123);
         signed.sprite_manually_set_death_flag_uw(k);
         assert_eq!(signed.sprite_workspace_view().where_in_room(0x0123), 0);
     }

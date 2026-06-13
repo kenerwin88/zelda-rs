@@ -1173,7 +1173,7 @@ impl ZeldaState {
             | ((self.frame_state().frame_counter << 1) & 14);
         self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
         let graphics = LIGHTNING_GRAPHICS_BY_PHASE[j]
-            + if self.dungeon_state_view().room_index2() == 0x20 {
+            + if self.dungeon_room_tracking().room_index2() == 0x20 {
                 4
             } else {
                 0

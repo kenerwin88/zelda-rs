@@ -2172,7 +2172,8 @@ impl ZeldaState {
                     self.player_state_view_mut().set_speed_setting(0);
                     self.set_submodule(21);
                     let prev_room = self.world_location_state().dungeon_room_index();
-                    self.dungeon_state_view_mut().set_room_index_prev(prev_room);
+                    self.dungeon_room_tracking_mut()
+                        .set_room_index_prev(prev_room);
                     let room = self.dungeon_header_view().travel_destination(0);
                     self.set_dungeon_room_index(room);
                     self.handle_layer_of_destination();
@@ -5818,7 +5819,7 @@ impl ZeldaState {
             self.dungeon_stair_movement_mut().decrement_current_floor();
             if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
                 let dungeon_room_index = self.world_location_state().dungeon_room_index();
-                self.dungeon_state_view_mut()
+                self.dungeon_room_tracking_mut()
                     .set_room_index2(dungeon_room_index);
                 self.increment_dungeon_room_index_by(0x10);
             }

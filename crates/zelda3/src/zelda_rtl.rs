@@ -35,10 +35,10 @@ use crate::game_state::{
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonHeaderState,
-    DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState, DungeonSavegameState,
-    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
-    DungeonStairMovementState, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState, DungeonRoomTrackingState,
+    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
+    DungeonStairListsState, DungeonStairMovementState, DungeonStateView, DungeonStateViewMut,
+    DungeonTorchState, EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
     HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
@@ -56,10 +56,11 @@ use crate::game_state::{
     NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
     NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
-    NativeDungeonMovingFloorBridgeMut, NativeDungeonSavegameBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
-    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
-    NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
+    NativeDungeonMovingFloorBridgeMut, NativeDungeonRoomTrackingBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonSecretBridgeMut, NativeDungeonStairListsBridgeMut,
+    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
@@ -3264,6 +3265,17 @@ impl ZeldaState {
     pub(crate) fn dungeon_moving_floor_mut(&mut self) -> NativeDungeonMovingFloorBridgeMut<'_> {
         NativeDungeonMovingFloorBridgeMut::new(
             &mut self.game_state.dungeon.moving_floor,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_room_tracking(&self) -> DungeonRoomTrackingState {
+        DungeonRoomTrackingState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_room_tracking_mut(&mut self) -> NativeDungeonRoomTrackingBridgeMut<'_> {
+        NativeDungeonRoomTrackingBridgeMut::new(
+            &mut self.game_state.dungeon.room_tracking,
             &mut self.ram,
         )
     }
@@ -6542,7 +6554,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_y_button_action_timer(0);
             if self.world_location_state().is_indoors() {
                 let room = self.world_location_state().dungeon_room_index();
-                self.dungeon_state_view_mut().set_room_index_prev(room);
+                self.dungeon_room_tracking_mut().set_room_index_prev(room);
                 self.Dungeon_FlagRoomData_Quadrants();
                 if self.Dungeon_IsPitThatHurtsPlayer() {
                     self.dungeon_pit_do_damage();
@@ -6550,7 +6562,7 @@ impl ZeldaState {
                 }
             }
             let previous_room = self.world_location_state().dungeon_room_index();
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tracking_mut()
                 .set_room_index_prev(previous_room);
             let room = self.dungeon_header_view().travel_destination(0);
             self.set_dungeon_room_index(room);

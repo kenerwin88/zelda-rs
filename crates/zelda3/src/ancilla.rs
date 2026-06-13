@@ -7070,7 +7070,7 @@ impl ZeldaState {
                     a == 0
                 }
                 || {
-                    a = self.dungeon_state_view().room_index2().wrapping_sub(1);
+                    a = self.dungeon_room_tracking().room_index2().wrapping_sub(1);
                     a != 0
                 }
             {

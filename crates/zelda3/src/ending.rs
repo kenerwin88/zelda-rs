@@ -1453,7 +1453,7 @@ impl ZeldaState {
     fn init_ending_sprites_dungeon(&mut self, scene: usize) {
         let idx = ENDING_SCENE_SPRITE_RANGES[scene];
         let num = ENDING_SCENE_SPRITE_RANGES[scene + 1] - idx;
-        let room = self.dungeon_state_view().room_index2_word();
+        let room = self.dungeon_room_tracking().room_index2_word();
         self.sprite_workspace_view_mut()
             .set_room_origin_y_high(((room >> 3) as u8) & 0xfe);
         self.sprite_workspace_view_mut()
