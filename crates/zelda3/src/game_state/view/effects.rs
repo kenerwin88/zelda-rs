@@ -1,55 +1,5 @@
 use super::*;
 
-pub(crate) struct QuakeBoltView<'a> {
-    ram: &'a [u8],
-    slot: usize,
-}
-
-impl<'a> QuakeBoltView<'a> {
-    pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
-        Self { ram, slot }
-    }
-
-    pub(crate) fn timer(&self) -> u8 {
-        byte(self.ram, QUAKE_BOLT_TIMER + self.slot)
-    }
-
-    pub(crate) fn phase(&self) -> u8 {
-        byte(self.ram, QUAKE_BOLT_PHASE + self.slot)
-    }
-}
-
-pub(crate) struct QuakeBoltViewMut<'a> {
-    ram: &'a mut [u8],
-    slot: usize,
-}
-
-impl<'a> QuakeBoltViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
-        Self { ram, slot }
-    }
-
-    pub(crate) fn set_timer(&mut self, value: u8) {
-        self.ram[QUAKE_BOLT_TIMER + self.slot] = value;
-    }
-
-    pub(crate) fn tick_timer(&mut self) -> u8 {
-        let value = self.ram[QUAKE_BOLT_TIMER + self.slot].wrapping_sub(1);
-        self.ram[QUAKE_BOLT_TIMER + self.slot] = value;
-        value
-    }
-
-    pub(crate) fn set_phase(&mut self, value: u8) {
-        self.ram[QUAKE_BOLT_PHASE + self.slot] = value;
-    }
-
-    pub(crate) fn advance_phase(&mut self) -> u8 {
-        let value = self.ram[QUAKE_BOLT_PHASE + self.slot].wrapping_add(1);
-        self.ram[QUAKE_BOLT_PHASE + self.slot] = value;
-        value
-    }
-}
-
 pub(crate) struct BombosFireColumnView<'a> {
     ram: &'a [u8],
     slot: usize,

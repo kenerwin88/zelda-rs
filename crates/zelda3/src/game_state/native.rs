@@ -37,8 +37,9 @@ pub(crate) use effects::{
     BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
     EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeTowerSealBridgeMut,
-    QuakeSpellState, SkullWoodsFireState, TowerSealState,
+    NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeTowerSealBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireState,
+    TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -115,6 +116,8 @@ use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState, Pal
 use dungeon::DungeonEntranceBackupState;
 #[cfg(test)]
 use effects::DoorDebrisState;
+#[cfg(test)]
+use effects::QuakeBoltState;
 #[cfg(test)]
 use inventory::DungeonKeySlotsState;
 #[cfg(test)]
@@ -1714,6 +1717,27 @@ mod tests {
         assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_X), 0x4567);
         assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_Y), 0x89ab);
         assert_eq!(read_le_u16(&ram, QUAKE_SCREEN_SHAKE_Y), 9);
+    }
+
+    #[test]
+    fn native_quake_bolt_bridge_syncs_seeded_ram_and_dual_writes_slot_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_BOLT_TIMER + 2] = 7;
+        ram[QUAKE_BOLT_PHASE + 2] = 0xfe;
+
+        let mut bolts = QuakeBoltState::default();
+        {
+            let mut bridge = NativeQuakeBoltBridgeMut::new(&mut bolts, &mut ram, 2);
+            assert_eq!(bridge.tick_timer(), 6);
+            assert_eq!(bridge.advance_phase(), 0xff);
+            bridge.set_timer(1);
+            bridge.set_phase(0x10);
+        }
+
+        assert_eq!(bolts.slot(2).timer(), 1);
+        assert_eq!(bolts.slot(2).phase(), 0x10);
+        assert_eq!(ram[QUAKE_BOLT_TIMER + 2], 1);
+        assert_eq!(ram[QUAKE_BOLT_PHASE + 2], 0x10);
     }
 
     #[test]

@@ -4,22 +4,25 @@ use crate::game_state::constants::{
     BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X,
     BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
     DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
-    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP,
-    QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
-    SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
-    TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS, TOWER_SEAL_WAIT_COUNTDOWN,
+    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X,
+    QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X,
+    SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y,
+    SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS,
+    TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
 const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
 const BOMBOS_BLAST_SLOTS: usize = 16;
+const QUAKE_BOLT_SLOTS: usize = 5;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EffectState {
     pub(crate) door_debris: DoorDebrisState,
     pub(crate) angle_scratch: EffectAngleScratchState,
     pub(crate) quake_spell: QuakeSpellState,
+    pub(crate) quake_bolts: QuakeBoltState,
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
     pub(crate) skull_woods_fire: SkullWoodsFireState,
@@ -33,6 +36,7 @@ impl EffectState {
             door_debris: DoorDebrisState::load_from_ram(ram),
             angle_scratch: EffectAngleScratchState::load_from_ram(ram),
             quake_spell: QuakeSpellState::load_from_ram(ram),
+            quake_bolts: QuakeBoltState::load_from_ram(ram),
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
             skull_woods_fire: SkullWoodsFireState::load_from_ram(ram),
@@ -45,6 +49,7 @@ impl EffectState {
         self.door_debris.write_to_ram(ram);
         self.angle_scratch.write_to_ram(ram);
         self.quake_spell.write_to_ram(ram);
+        self.quake_bolts.write_to_ram(ram);
         self.bombos_spell.write_to_ram(ram);
         self.tower_seal.write_to_ram(ram);
         self.skull_woods_fire.write_to_ram(ram);
@@ -170,6 +175,127 @@ impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
     pub(crate) fn set_radial_radius(&mut self, value: u8) {
         self.state.set_radial_radius(value);
         self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct QuakeBoltState {
+    timers: [u8; QUAKE_BOLT_SLOTS],
+    phases: [u8; QUAKE_BOLT_SLOTS],
+}
+
+impl QuakeBoltState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..QUAKE_BOLT_SLOTS {
+            state.timers[slot] = ram.get(QUAKE_BOLT_TIMER + slot).copied().unwrap_or(0);
+            state.phases[slot] = ram.get(QUAKE_BOLT_PHASE + slot).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[QUAKE_BOLT_TIMER..QUAKE_BOLT_TIMER + QUAKE_BOLT_SLOTS].copy_from_slice(&self.timers);
+        ram[QUAKE_BOLT_PHASE..QUAKE_BOLT_PHASE + QUAKE_BOLT_SLOTS].copy_from_slice(&self.phases);
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> QuakeBoltSlotState {
+        QuakeBoltSlotState {
+            timer: self.timer(slot),
+            phase: self.phase(slot),
+        }
+    }
+
+    fn timer(&self, slot: usize) -> u8 {
+        self.timers.get(slot).copied().unwrap_or(0)
+    }
+
+    fn phase(&self, slot: usize) -> u8 {
+        self.phases.get(slot).copied().unwrap_or(0)
+    }
+
+    fn set_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_timer(&mut self, slot: usize) -> u8 {
+        let value = self.timer(slot).wrapping_sub(1);
+        self.set_timer(slot, value);
+        value
+    }
+
+    fn set_phase(&mut self, slot: usize, value: u8) {
+        if let Some(phase) = self.phases.get_mut(slot) {
+            *phase = value;
+        }
+    }
+
+    fn advance_phase(&mut self, slot: usize) -> u8 {
+        let value = self.phase(slot).wrapping_add(1);
+        self.set_phase(slot, value);
+        value
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct QuakeBoltSlotState {
+    timer: u8,
+    phase: u8,
+}
+
+impl QuakeBoltSlotState {
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
+    }
+
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+}
+
+pub(crate) struct NativeQuakeBoltBridgeMut<'a> {
+    state: &'a mut QuakeBoltState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeQuakeBoltBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut QuakeBoltState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = QuakeBoltState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, QuakeBoltState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.state.set_timer(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let value = self.state.tick_timer(self.slot);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.state.set_phase(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let value = self.state.advance_phase(self.slot);
+        self.sync();
+        value
     }
 }
 

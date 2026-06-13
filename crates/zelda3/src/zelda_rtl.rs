@@ -72,11 +72,12 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
     NativePolyRasterEdgeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
-    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut,
+    NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
+    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -87,8 +88,8 @@ use crate::game_state::{
     OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
     PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
     PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltView,
-    QuakeBoltViewMut, QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState,
+    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
     ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
     SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
@@ -3591,12 +3592,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn quake_bolt_view(&self, slot: usize) -> QuakeBoltView<'_> {
-        QuakeBoltView::new(&self.ram, slot)
+    pub(crate) fn quake_bolt_view(&self, slot: usize) -> QuakeBoltSlotState {
+        self.game_state.effects.quake_bolts.slot(slot)
     }
 
-    pub(crate) fn quake_bolt_view_mut(&mut self, slot: usize) -> QuakeBoltViewMut<'_> {
-        QuakeBoltViewMut::new(&mut self.ram, slot)
+    pub(crate) fn quake_bolt_view_mut(&mut self, slot: usize) -> NativeQuakeBoltBridgeMut<'_> {
+        NativeQuakeBoltBridgeMut::new(
+            &mut self.game_state.effects.quake_bolts,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn quake_spell_scratch_view(&self) -> &QuakeSpellState {
