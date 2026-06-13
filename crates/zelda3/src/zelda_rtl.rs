@@ -79,27 +79,28 @@ use crate::game_state::{
     NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
-    NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
-    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState,
-    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
-    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
-    SkullWoodsFireState, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
-    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
-    TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
-    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneState, WorldLocationState, WorldStateView,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
+    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTowerSealBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsState,
+    PolyProjectedVerticesState, PolyRasterEdgeState, PolyStateView, PolyStateViewMut,
+    PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState,
+    SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
+    SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaState,
+    SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView,
+    SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
+    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4139,20 +4140,20 @@ impl ZeldaState {
         SpriteSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn sprite_system_view(&self) -> SpriteSystemView<'_> {
-        SpriteSystemView::new(&self.ram)
+    pub(crate) fn sprite_system_view(&self) -> SpriteSystemState {
+        SpriteSystemState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_system_view_mut(&mut self) -> SpriteSystemViewMut<'_> {
-        SpriteSystemViewMut::new(&mut self.ram)
+    pub(crate) fn sprite_system_view_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
+        NativeSpriteSystemBridgeMut::new(&mut self.game_state.sprites.system, &mut self.ram)
     }
 
-    pub(crate) fn sprite_workspace_view(&self) -> SpriteWorkspaceView<'_> {
-        SpriteWorkspaceView::new(&self.ram)
+    pub(crate) fn sprite_workspace_view(&self) -> SpriteWorkspaceState {
+        SpriteWorkspaceState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_workspace_view_mut(&mut self) -> SpriteWorkspaceViewMut<'_> {
-        SpriteWorkspaceViewMut::new(&mut self.ram)
+    pub(crate) fn sprite_workspace_view_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
+        NativeSpriteWorkspaceBridgeMut::new(&mut self.game_state.sprites.workspace, &mut self.ram)
     }
 
     pub(crate) fn ancilla_slot_view(&self, slot: usize) -> AncillaSlotView<'_> {

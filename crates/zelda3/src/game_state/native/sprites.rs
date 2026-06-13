@@ -1,19 +1,27 @@
 use crate::game_state::constants::{
-    ACTIVE_OVERLORD_INDEX, ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER,
-    ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, CHAIN_CHOMP_HISTORY_X,
-    CHAIN_CHOMP_HISTORY_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y,
-    DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y,
-    ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
-    FOLLOWER_DROPPED, FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR,
-    FOLLOWER_JUMP_TIMER, FOLLOWER_KIKI_ANIM_COUNTER, FOLLOWER_PALETTE_SWAP_FLAG,
-    FOLLOWER_SAVED_FLOOR, FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y,
-    FOLLOWER_TAIL_WRITE_INDEX, GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH,
-    HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
-    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_BOULDER_TRAP_COUNT,
+    ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_SPAWNED_FLAG, ANCILLA_ALLOC_ROTATE,
+    ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_X_HI,
+    ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, AUX_TILE_THEME_INDEX, BLIND_HEAD_ANIM_COUNTER,
+    CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y,
+    DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
+    ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X,
+    ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, FOLLOWER_DROPPED,
+    FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR, FOLLOWER_JUMP_TIMER,
+    FOLLOWER_KIKI_ANIM_COUNTER, FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR,
+    FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX,
+    GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
+    MAIN_TILE_THEME_INDEX, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, MISC_SPRITES_GRAPHICS_INDEX, OVERWORLD_BOULDER_TRAP_COUNT,
     OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
     PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER,
     REPULSESPARK_X_LO, REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE,
-    SPRCOLL_Y_SIZE, TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG,
+    SPRCOLL_Y_SIZE, SPRITE_ALERT_FLAG, SPRITE_CHR_HALFSLOT_STATE, SPRITE_DRAW_PRIORITY_OVERRIDE,
+    SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT,
+    SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE,
+    SPRITE_LOAD_BLOCK_STATE, SPRITE_OAM_PREP_X, SPRITE_OAM_PREP_Y, SPRITE_PICKUP_SLOT_CACHE,
+    SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B, SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI,
+    SPRITE_SHARED_WORK_A, SPRITE_STATE, SPRITE_TILETYPE, SPRITE_WHERE_IN_ROOM, SPRITE_Y_LO,
+    SPR_RANGED_BASED_TOGGLER, TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG,
     TAGALONG_DATA_INDEX, TAGALONG_EVENT_FLAGS, TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS,
     TAGALONG_SHARED_STATE_A, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO,
     TAGALONG_Z, TIMER_TAGALONG_REACQUIRE, ZELDA_RESCUE_CUTSCENE_STATE,
@@ -26,9 +34,14 @@ const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ETHER_ANGLE_COUNT: usize = 8;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
+const SPRITE_GRAPHICS_SUBSET_COUNT: usize = 4;
+const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
+const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
+    pub(crate) system: SpriteSystemState,
+    pub(crate) workspace: SpriteWorkspaceState,
     pub(crate) maze_game_timer: MazeGameTimerState,
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
@@ -47,6 +60,8 @@ pub(crate) struct SpriteState {
 impl SpriteState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            system: SpriteSystemState::load_from_ram(ram),
+            workspace: SpriteWorkspaceState::load_from_ram(ram),
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
@@ -64,6 +79,8 @@ impl SpriteState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.system.write_to_ram(ram);
+        self.workspace.write_to_ram(ram);
         self.maze_game_timer.write_to_ram(ram);
         self.prize_drop_cycle.write_to_ram(ram);
         self.dual_layer_tile_cache.write_to_ram(ram);
@@ -77,6 +94,828 @@ impl SpriteState {
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
         self.garnish_runtime.write_to_ram(ram);
         self.follower_runtime.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteSystemState {
+    limit_instance: u8,
+    blind_head_anim_counter: u8,
+    chr_halfslot_state: u8,
+    alert_flag: u8,
+    graphics_index: u8,
+    saved_special_exit_graphics_index: u8,
+    saved_exit_graphics_index: u8,
+    alt_sprite_spawned_flag: u8,
+    cur_object_index: u8,
+    ancilla_alloc_rotate: u8,
+    alt_sprites_flag: u8,
+    ranged_based_toggler: u8,
+    main_tile_theme: u8,
+    aux_tile_theme: u8,
+    misc_sprites_graphics_index: u8,
+}
+
+impl SpriteSystemState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            limit_instance: ram.get(SPRITE_LIMIT_INSTANCE).copied().unwrap_or(0),
+            blind_head_anim_counter: ram.get(BLIND_HEAD_ANIM_COUNTER).copied().unwrap_or(0),
+            chr_halfslot_state: ram.get(SPRITE_CHR_HALFSLOT_STATE).copied().unwrap_or(0),
+            alert_flag: ram.get(SPRITE_ALERT_FLAG).copied().unwrap_or(0),
+            graphics_index: ram.get(SPRITE_GRAPHICS_INDEX).copied().unwrap_or(0),
+            saved_special_exit_graphics_index: ram
+                .get(SPRITE_GRAPHICS_INDEX_SPEXIT)
+                .copied()
+                .unwrap_or(0),
+            saved_exit_graphics_index: ram.get(SPRITE_GRAPHICS_INDEX_EXIT).copied().unwrap_or(0),
+            alt_sprite_spawned_flag: ram.get(ALT_SPRITE_SPAWNED_FLAG).copied().unwrap_or(0),
+            cur_object_index: ram.get(CUR_OBJECT_INDEX).copied().unwrap_or(0),
+            ancilla_alloc_rotate: ram.get(ANCILLA_ALLOC_ROTATE).copied().unwrap_or(0),
+            alt_sprites_flag: ram.get(ALT_SPRITES_FLAG).copied().unwrap_or(0),
+            ranged_based_toggler: ram.get(SPR_RANGED_BASED_TOGGLER).copied().unwrap_or(0),
+            main_tile_theme: ram.get(MAIN_TILE_THEME_INDEX).copied().unwrap_or(0),
+            aux_tile_theme: ram.get(AUX_TILE_THEME_INDEX).copied().unwrap_or(0),
+            misc_sprites_graphics_index: ram.get(MISC_SPRITES_GRAPHICS_INDEX).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[SPRITE_LIMIT_INSTANCE] = self.limit_instance;
+        ram[BLIND_HEAD_ANIM_COUNTER] = self.blind_head_anim_counter;
+        ram[SPRITE_CHR_HALFSLOT_STATE] = self.chr_halfslot_state;
+        ram[SPRITE_ALERT_FLAG] = self.alert_flag;
+        ram[SPRITE_GRAPHICS_INDEX] = self.graphics_index;
+        ram[SPRITE_GRAPHICS_INDEX_SPEXIT] = self.saved_special_exit_graphics_index;
+        ram[SPRITE_GRAPHICS_INDEX_EXIT] = self.saved_exit_graphics_index;
+        ram[ALT_SPRITE_SPAWNED_FLAG] = self.alt_sprite_spawned_flag;
+        ram[CUR_OBJECT_INDEX] = self.cur_object_index;
+        ram[ANCILLA_ALLOC_ROTATE] = self.ancilla_alloc_rotate;
+        ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
+        ram[SPR_RANGED_BASED_TOGGLER] = self.ranged_based_toggler;
+        ram[MAIN_TILE_THEME_INDEX] = self.main_tile_theme;
+        ram[AUX_TILE_THEME_INDEX] = self.aux_tile_theme;
+        ram[MISC_SPRITES_GRAPHICS_INDEX] = self.misc_sprites_graphics_index;
+    }
+
+    pub(crate) fn limit_instance(&self) -> u8 {
+        self.limit_instance
+    }
+
+    pub(crate) fn blind_head_anim_counter(&self) -> u8 {
+        self.blind_head_anim_counter
+    }
+
+    pub(crate) fn chr_halfslot_state(&self) -> u8 {
+        self.chr_halfslot_state
+    }
+
+    pub(crate) fn alert_flag(&self) -> u8 {
+        self.alert_flag
+    }
+
+    pub(crate) fn graphics_index(&self) -> u8 {
+        self.graphics_index
+    }
+
+    pub(crate) fn saved_special_exit_graphics_index(&self) -> u8 {
+        self.saved_special_exit_graphics_index
+    }
+
+    pub(crate) fn saved_exit_graphics_index(&self) -> u8 {
+        self.saved_exit_graphics_index
+    }
+
+    pub(crate) fn alt_sprite_spawned_flag(&self) -> u8 {
+        self.alt_sprite_spawned_flag
+    }
+
+    pub(crate) fn cur_object_index(&self) -> u8 {
+        self.cur_object_index
+    }
+
+    pub(crate) fn ancilla_alloc_rotate(&self) -> u8 {
+        self.ancilla_alloc_rotate
+    }
+
+    pub(crate) fn alt_sprites_flag(&self) -> u8 {
+        self.alt_sprites_flag
+    }
+
+    pub(crate) fn ranged_based_toggler(&self) -> u8 {
+        self.ranged_based_toggler
+    }
+
+    pub(crate) fn main_tile_theme(&self) -> u8 {
+        self.main_tile_theme
+    }
+
+    fn set_limit_instance(&mut self, value: u8) {
+        self.limit_instance = value;
+    }
+
+    fn set_blind_head_anim_counter(&mut self, value: u8) {
+        self.blind_head_anim_counter = value;
+    }
+
+    fn increment_blind_head_anim_counter(&mut self) {
+        self.blind_head_anim_counter = self.blind_head_anim_counter.wrapping_add(1);
+    }
+
+    fn increment_limit_instance(&mut self) -> u8 {
+        self.limit_instance = self.limit_instance.wrapping_add(1);
+        self.limit_instance
+    }
+
+    fn decrement_limit_instance(&mut self) -> u8 {
+        self.limit_instance = self.limit_instance.wrapping_sub(1);
+        self.limit_instance
+    }
+
+    fn set_chr_halfslot_state(&mut self, value: u8) {
+        self.chr_halfslot_state = value;
+    }
+
+    fn set_alert_flag(&mut self, value: u8) {
+        self.alert_flag = value;
+    }
+
+    fn decrement_alert_flag(&mut self) -> u8 {
+        self.alert_flag = self.alert_flag.wrapping_sub(1);
+        self.alert_flag
+    }
+
+    fn set_graphics_index(&mut self, value: u8) {
+        self.graphics_index = value;
+    }
+
+    fn save_special_exit_graphics_index(&mut self) {
+        self.saved_special_exit_graphics_index = self.graphics_index;
+    }
+
+    fn restore_special_exit_graphics_index(&mut self) {
+        self.graphics_index = self.saved_special_exit_graphics_index;
+    }
+
+    fn restore_exit_graphics_index(&mut self) {
+        self.graphics_index = self.saved_exit_graphics_index;
+    }
+
+    fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
+        self.alt_sprite_spawned_flag = value;
+    }
+
+    fn set_main_tile_theme(&mut self, value: u8) {
+        self.main_tile_theme = value;
+    }
+
+    fn set_aux_tile_theme(&mut self, value: u8) {
+        self.aux_tile_theme = value;
+    }
+
+    fn set_misc_sprites_graphics_index(&mut self, value: u8) {
+        self.misc_sprites_graphics_index = value;
+    }
+
+    fn set_cur_object_index(&mut self, value: u8) {
+        self.cur_object_index = value;
+    }
+
+    fn set_ancilla_alloc_rotate(&mut self, value: u8) {
+        self.ancilla_alloc_rotate = value;
+    }
+
+    fn decrement_ancilla_alloc_rotate(&mut self) -> u8 {
+        self.ancilla_alloc_rotate = self.ancilla_alloc_rotate.wrapping_sub(1);
+        self.ancilla_alloc_rotate
+    }
+
+    fn clear_ancilla_alloc_rotate(&mut self) {
+        self.ancilla_alloc_rotate = 0;
+    }
+
+    fn set_alt_sprites_flag(&mut self, value: u8) {
+        self.alt_sprites_flag = value;
+    }
+
+    fn clear_alt_sprites_flag(&mut self) {
+        self.alt_sprites_flag = 0;
+    }
+
+    fn increment_ranged_based_toggler(&mut self) {
+        self.ranged_based_toggler = self.ranged_based_toggler.wrapping_add(1);
+    }
+}
+
+pub(crate) struct NativeSpriteSystemBridgeMut<'a> {
+    state: &'a mut SpriteSystemState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSpriteSystemBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut SpriteSystemState, ram: &'a mut [u8]) -> Self {
+        *state = SpriteSystemState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, SpriteSystemState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_limit_instance(&mut self, value: u8) {
+        self.state.set_limit_instance(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_blind_head_anim_counter(&mut self, value: u8) {
+        self.state.set_blind_head_anim_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_blind_head_anim_counter(&mut self) {
+        self.state.increment_blind_head_anim_counter();
+        self.sync();
+    }
+
+    pub(crate) fn increment_limit_instance(&mut self) -> u8 {
+        let value = self.state.increment_limit_instance();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_limit_instance(&mut self) -> u8 {
+        let value = self.state.decrement_limit_instance();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_chr_halfslot_state(&mut self, value: u8) {
+        self.state.set_chr_halfslot_state(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_alert_flag(&mut self, value: u8) {
+        self.state.set_alert_flag(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_alert_flag(&mut self) -> u8 {
+        let value = self.state.decrement_alert_flag();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_graphics_index(&mut self, value: u8) {
+        self.state.set_graphics_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn save_special_exit_graphics_index(&mut self) {
+        self.state.save_special_exit_graphics_index();
+        self.sync();
+    }
+
+    pub(crate) fn restore_special_exit_graphics_index(&mut self) {
+        self.state.restore_special_exit_graphics_index();
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_graphics_index(&mut self) {
+        self.state.restore_exit_graphics_index();
+        self.sync();
+    }
+
+    pub(crate) fn fill_live_states(&mut self, value: u8) {
+        self.ram[SPRITE_STATE..SPRITE_STATE + SPRITE_SLOT_COUNT].fill(value);
+    }
+
+    pub(crate) fn clear_live_table_pages(&mut self) {
+        self.ram[SPRITE_Y_LO..SPRITE_Y_LO + 256 * 3].fill(0);
+    }
+
+    pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
+        self.state.set_alt_sprite_spawned_flag(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_main_tile_theme(&mut self, value: u8) {
+        self.state.set_main_tile_theme(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_aux_tile_theme(&mut self, value: u8) {
+        self.state.set_aux_tile_theme(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
+        self.state.set_misc_sprites_graphics_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_cur_object_index(&mut self, value: u8) {
+        self.state.set_cur_object_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_ancilla_alloc_rotate(&mut self, value: u8) {
+        self.state.set_ancilla_alloc_rotate(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_ancilla_alloc_rotate(&mut self) -> u8 {
+        let value = self.state.decrement_ancilla_alloc_rotate();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn clear_ancilla_alloc_rotate(&mut self) {
+        self.state.clear_ancilla_alloc_rotate();
+        self.sync();
+    }
+
+    pub(crate) fn set_alt_sprites_flag(&mut self, value: u8) {
+        self.state.set_alt_sprites_flag(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_alt_sprites_flag(&mut self) {
+        self.state.clear_alt_sprites_flag();
+        self.sync();
+    }
+
+    pub(crate) fn increment_ranged_based_toggler(&mut self) {
+        self.state.increment_ranged_based_toggler();
+        self.sync();
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteWorkspaceState {
+    room_origin_x_high: u8,
+    room_origin_y_high: u8,
+    pickup_slot_cache: u8,
+    shared_scratch_a: u8,
+    tile_type: u8,
+    reset_scratch_a: u8,
+    reset_scratch_b: u8,
+    graphics_subsets: [u8; SPRITE_GRAPHICS_SUBSET_COUNT],
+    draw_priority_override: u16,
+    current_sprite_x: u16,
+    current_sprite_y: u16,
+    low_scratch: [u8; SPRITE_ZERO_PAGE_WORK_COUNT],
+    where_in_room: Vec<u8>,
+}
+
+impl Default for SpriteWorkspaceState {
+    fn default() -> Self {
+        Self {
+            room_origin_x_high: 0,
+            room_origin_y_high: 0,
+            pickup_slot_cache: 0,
+            shared_scratch_a: 0,
+            tile_type: 0,
+            reset_scratch_a: 0,
+            reset_scratch_b: 0,
+            graphics_subsets: [0; SPRITE_GRAPHICS_SUBSET_COUNT],
+            draw_priority_override: 0,
+            current_sprite_x: 0,
+            current_sprite_y: 0,
+            low_scratch: [0; SPRITE_ZERO_PAGE_WORK_COUNT],
+            where_in_room: vec![0; SPRITE_WHERE_IN_ROOM_BYTES],
+        }
+    }
+}
+
+impl SpriteWorkspaceState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut graphics_subsets = [0; SPRITE_GRAPHICS_SUBSET_COUNT];
+        for (slot, value) in graphics_subsets.iter_mut().enumerate() {
+            *value = ram.get(SPRITE_GFX_SUBSET_0 + slot).copied().unwrap_or(0);
+        }
+
+        let mut low_scratch = [0; SPRITE_ZERO_PAGE_WORK_COUNT];
+        for (offset, value) in low_scratch.iter_mut().enumerate() {
+            *value = ram.get(offset).copied().unwrap_or(0);
+        }
+
+        Self {
+            room_origin_x_high: ram.get(SPRITE_ROOM_ORIGIN_X_HI).copied().unwrap_or(0),
+            room_origin_y_high: ram.get(SPRITE_ROOM_ORIGIN_Y_HI).copied().unwrap_or(0),
+            pickup_slot_cache: ram.get(SPRITE_PICKUP_SLOT_CACHE).copied().unwrap_or(0),
+            shared_scratch_a: ram.get(SPRITE_SHARED_WORK_A).copied().unwrap_or(0),
+            tile_type: ram.get(SPRITE_TILETYPE).copied().unwrap_or(0),
+            reset_scratch_a: ram.get(SPRITE_RESET_WORK_A).copied().unwrap_or(0),
+            reset_scratch_b: ram.get(SPRITE_RESET_WORK_B).copied().unwrap_or(0),
+            graphics_subsets,
+            draw_priority_override: read_le_u16(ram, SPRITE_DRAW_PRIORITY_OVERRIDE),
+            current_sprite_x: read_le_u16(ram, CUR_SPRITE_X),
+            current_sprite_y: read_le_u16(ram, CUR_SPRITE_Y),
+            low_scratch,
+            where_in_room: ram
+                [SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES]
+                .to_vec(),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[SPRITE_ROOM_ORIGIN_X_HI] = self.room_origin_x_high;
+        ram[SPRITE_ROOM_ORIGIN_Y_HI] = self.room_origin_y_high;
+        ram[SPRITE_PICKUP_SLOT_CACHE] = self.pickup_slot_cache;
+        ram[SPRITE_SHARED_WORK_A] = self.shared_scratch_a;
+        ram[SPRITE_TILETYPE] = self.tile_type;
+        ram[SPRITE_RESET_WORK_A] = self.reset_scratch_a;
+        ram[SPRITE_RESET_WORK_B] = self.reset_scratch_b;
+        ram[SPRITE_GFX_SUBSET_0..SPRITE_GFX_SUBSET_0 + SPRITE_GRAPHICS_SUBSET_COUNT]
+            .copy_from_slice(&self.graphics_subsets);
+        write_le_u16(
+            ram,
+            SPRITE_DRAW_PRIORITY_OVERRIDE,
+            self.draw_priority_override,
+        );
+        write_le_u16(ram, CUR_SPRITE_X, self.current_sprite_x);
+        write_le_u16(ram, CUR_SPRITE_Y, self.current_sprite_y);
+        ram[..SPRITE_ZERO_PAGE_WORK_COUNT].copy_from_slice(&self.low_scratch);
+        ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + self.where_in_room.len()]
+            .copy_from_slice(&self.where_in_room);
+    }
+
+    pub(crate) fn room_origin_x_high(&self) -> u8 {
+        self.room_origin_x_high
+    }
+
+    pub(crate) fn room_origin_y_high(&self) -> u8 {
+        self.room_origin_y_high
+    }
+
+    pub(crate) fn pickup_slot_cache(&self) -> u8 {
+        self.pickup_slot_cache
+    }
+
+    pub(crate) fn shared_scratch_a(&self) -> u8 {
+        self.shared_scratch_a
+    }
+
+    pub(crate) fn tile_type(&self) -> u8 {
+        self.tile_type
+    }
+
+    pub(crate) fn prep_shared_counter(&self) -> u8 {
+        self.reset_scratch_a
+    }
+
+    pub(crate) fn reset_scratch_a(&self) -> u8 {
+        self.reset_scratch_a
+    }
+
+    pub(crate) fn armos_knight_remaining_count(&self) -> u8 {
+        self.reset_scratch_a
+    }
+
+    pub(crate) fn reset_scratch_b(&self) -> u8 {
+        self.reset_scratch_b
+    }
+
+    pub(crate) fn graphics_subset(&self, slot: usize) -> u8 {
+        self.graphics_subsets.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn draw_priority_override(&self) -> u16 {
+        self.draw_priority_override
+    }
+
+    pub(crate) fn current_sprite_x(&self) -> u16 {
+        self.current_sprite_x
+    }
+
+    pub(crate) fn current_sprite_x_low(&self) -> u8 {
+        self.current_sprite_x as u8
+    }
+
+    pub(crate) fn current_sprite_y(&self) -> u16 {
+        self.current_sprite_y
+    }
+
+    pub(crate) fn current_sprite_y_low(&self) -> u8 {
+        self.current_sprite_y as u8
+    }
+
+    pub(crate) fn oam_prep_x(&self) -> u16 {
+        u16::from(self.low_scratch[SPRITE_OAM_PREP_X])
+            | (u16::from(self.low_scratch[SPRITE_OAM_PREP_X + 1]) << 8)
+    }
+
+    pub(crate) fn oam_prep_y(&self) -> u16 {
+        u16::from(self.low_scratch[SPRITE_OAM_PREP_Y])
+            | (u16::from(self.low_scratch[SPRITE_OAM_PREP_Y + 1]) << 8)
+    }
+
+    pub(crate) fn where_in_room(&self, room: usize) -> u16 {
+        let offset = room * 2;
+        let low = self.where_in_room.get(offset).copied().unwrap_or(0);
+        let high = self.where_in_room.get(offset + 1).copied().unwrap_or(0);
+        u16::from(low) | (u16::from(high) << 8)
+    }
+
+    fn set_room_origin_x_high(&mut self, value: u8) {
+        self.room_origin_x_high = value;
+    }
+
+    fn set_room_origin_y_high(&mut self, value: u8) {
+        self.room_origin_y_high = value;
+    }
+
+    fn set_pickup_slot_cache(&mut self, value: u8) {
+        self.pickup_slot_cache = value;
+    }
+
+    fn set_shared_scratch_a(&mut self, value: u8) {
+        self.shared_scratch_a = value;
+    }
+
+    fn set_tile_type(&mut self, value: u8) {
+        self.tile_type = value;
+    }
+
+    fn set_prep_shared_counter(&mut self, value: u8) {
+        self.reset_scratch_a = value;
+    }
+
+    fn increment_prep_shared_counter(&mut self) -> u8 {
+        self.reset_scratch_a = self.reset_scratch_a.wrapping_add(1);
+        self.reset_scratch_a
+    }
+
+    fn decrement_prep_shared_counter(&mut self) -> u8 {
+        self.reset_scratch_a = self.reset_scratch_a.wrapping_sub(1);
+        self.reset_scratch_a
+    }
+
+    fn set_reset_scratch_a(&mut self, value: u8) {
+        self.reset_scratch_a = value;
+    }
+
+    fn set_reset_scratch_b(&mut self, value: u8) {
+        self.reset_scratch_b = value;
+    }
+
+    fn set_graphics_subset(&mut self, slot: usize, value: u8) {
+        if let Some(subset) = self.graphics_subsets.get_mut(slot) {
+            *subset = value;
+        }
+    }
+
+    fn clear_where_in_room(&mut self) {
+        self.where_in_room.fill(0);
+    }
+
+    fn clear_draw_priority_override(&mut self) {
+        self.draw_priority_override = 0;
+    }
+
+    fn set_draw_priority_override_low(&mut self, value: u8) {
+        self.draw_priority_override = (self.draw_priority_override & 0xff00) | u16::from(value);
+    }
+
+    fn set_current_sprite_x(&mut self, value: u16) {
+        self.current_sprite_x = value;
+    }
+
+    fn set_current_sprite_x_low(&mut self, value: u8) {
+        self.current_sprite_x = (self.current_sprite_x & 0xff00) | u16::from(value);
+    }
+
+    fn add_current_sprite_x_low(&mut self, value: u8) {
+        self.set_current_sprite_x_low(self.current_sprite_x_low().wrapping_add(value));
+    }
+
+    fn set_current_sprite_y(&mut self, value: u16) {
+        self.current_sprite_y = value;
+    }
+
+    fn set_current_sprite_y_low(&mut self, value: u8) {
+        self.current_sprite_y = (self.current_sprite_y & 0xff00) | u16::from(value);
+    }
+
+    fn add_current_sprite_y_low(&mut self, value: u8) {
+        self.set_current_sprite_y_low(self.current_sprite_y_low().wrapping_add(value));
+    }
+
+    fn subtract_current_sprite_y_low(&mut self, value: u8) {
+        self.set_current_sprite_y_low(self.current_sprite_y_low().wrapping_sub(value));
+    }
+
+    fn set_current_sprite_position(&mut self, x: u16, y: u16) {
+        self.current_sprite_x = x;
+        self.current_sprite_y = y;
+    }
+
+    fn set_oam_prep_coords(&mut self, x: u16, y: u16) {
+        self.low_scratch[SPRITE_OAM_PREP_X] = x as u8;
+        self.low_scratch[SPRITE_OAM_PREP_X + 1] = (x >> 8) as u8;
+        self.low_scratch[SPRITE_OAM_PREP_Y] = y as u8;
+        self.low_scratch[SPRITE_OAM_PREP_Y + 1] = (y >> 8) as u8;
+    }
+
+    fn set_killed_sprite_load_block(&mut self, block: u16) {
+        self.low_scratch[SPRITE_LOAD_BLOCK_STATE] = block as u8;
+        let pointer = (block >> 3).wrapping_add(0xef80);
+        self.low_scratch[SPRITE_LOAD_BLOCK_STATE + 1] = pointer as u8;
+        self.low_scratch[SPRITE_LOAD_BLOCK_STATE + 2] = (pointer >> 8) as u8;
+    }
+
+    fn set_last_garnish_index(&mut self, index: i32) {
+        self.low_scratch[SPRITE_LAST_GARNISH_INDEX] = index as u8;
+    }
+
+    fn set_where_in_room(&mut self, room: usize, value: u16) {
+        let offset = room * 2;
+        if offset + 1 < self.where_in_room.len() {
+            self.where_in_room[offset] = value as u8;
+            self.where_in_room[offset + 1] = (value >> 8) as u8;
+        }
+    }
+}
+
+pub(crate) struct NativeSpriteWorkspaceBridgeMut<'a> {
+    state: &'a mut SpriteWorkspaceState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut SpriteWorkspaceState, ram: &'a mut [u8]) -> Self {
+        *state = SpriteWorkspaceState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, SpriteWorkspaceState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_room_origin_x_high(&mut self, value: u8) {
+        self.state.set_room_origin_x_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_origin_y_high(&mut self, value: u8) {
+        self.state.set_room_origin_y_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_pickup_slot_cache(&mut self, value: u8) {
+        self.state.set_pickup_slot_cache(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_shared_scratch_a(&mut self, value: u8) {
+        self.state.set_shared_scratch_a(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_marker_word(&mut self, slot: usize, value: u16) {
+        write_le_u16(
+            self.ram,
+            crate::game_state::constants::SPRITE_ROOM_MARKER_WORD + slot * 2,
+            value,
+        );
+    }
+
+    pub(crate) fn set_tile_type(&mut self, value: u8) {
+        self.state.set_tile_type(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_prep_shared_counter(&mut self, value: u8) {
+        self.state.set_prep_shared_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_prep_shared_counter(&mut self) -> u8 {
+        let value = self.state.increment_prep_shared_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_prep_shared_counter(&mut self) -> u8 {
+        let value = self.state.decrement_prep_shared_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_armos_knight_remaining_count(&mut self) -> u8 {
+        let value = self.state.decrement_prep_shared_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn clear_vitreous_eyeball_release_count(&mut self) {
+        self.state.set_prep_shared_counter(0);
+        self.sync();
+    }
+
+    pub(crate) fn set_reset_scratch_a(&mut self, value: u8) {
+        self.state.set_reset_scratch_a(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_agahnim_phase_scratch(&mut self) {
+        self.state.set_reset_scratch_a(0);
+        self.sync();
+    }
+
+    pub(crate) fn set_reset_scratch_b(&mut self, value: u8) {
+        self.state.set_reset_scratch_b(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_graphics_subset(&mut self, slot: usize, value: u8) {
+        self.state.set_graphics_subset(slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_where_in_room(&mut self) {
+        self.state.clear_where_in_room();
+        self.sync();
+    }
+
+    pub(crate) fn clear_draw_priority_override(&mut self) {
+        self.state.clear_draw_priority_override();
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_priority_override_low(&mut self, value: u8) {
+        self.state.set_draw_priority_override_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_sprite_x(&mut self, value: u16) {
+        self.state.set_current_sprite_x(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_sprite_x_low(&mut self, value: u8) {
+        self.state.set_current_sprite_x_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_current_sprite_x_low(&mut self, value: u8) {
+        self.state.add_current_sprite_x_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_sprite_y(&mut self, value: u16) {
+        self.state.set_current_sprite_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_sprite_y_low(&mut self, value: u8) {
+        self.state.set_current_sprite_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_current_sprite_y_low(&mut self, value: u8) {
+        self.state.add_current_sprite_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_current_sprite_y_low(&mut self, value: u8) {
+        self.state.subtract_current_sprite_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_sprite_position(&mut self, x: u16, y: u16) {
+        self.state.set_current_sprite_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_oam_prep_coords(&mut self, x: u16, y: u16) {
+        self.state.set_oam_prep_coords(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_killed_sprite_load_block(&mut self, block: u16) {
+        self.state.set_killed_sprite_load_block(block);
+        self.sync();
+    }
+
+    pub(crate) fn set_last_garnish_index(&mut self, index: i32) {
+        self.state.set_last_garnish_index(index);
+        self.sync();
+    }
+
+    pub(crate) fn set_where_in_room(&mut self, room: usize, value: u16) {
+        self.state.set_where_in_room(room, value);
+        self.sync();
     }
 }
 

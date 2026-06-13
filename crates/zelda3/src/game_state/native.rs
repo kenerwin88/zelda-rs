@@ -93,9 +93,10 @@ pub(crate) use sprites::{
     NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
-    NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
+    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteState, TagalongSlotView,
+    SpriteState, SpriteSystemState, SpriteWorkspaceState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
