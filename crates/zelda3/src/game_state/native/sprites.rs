@@ -1,7 +1,9 @@
 use crate::game_state::constants::{
-    ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_SPAWNED_FLAG, ANCILLA_ALLOC_ROTATE,
-    ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_X_HI,
-    ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, AUX_TILE_THEME_INDEX, BLIND_HEAD_ANIM_COUNTER,
+    ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG,
+    ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI,
+    ALT_SPRITE_Y_LO, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP,
+    ANCILLA_TIMER, ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, AUX_TILE_THEME_INDEX,
+    BLIND_HEAD_ANIM_COUNTER, CACHED_SPRITE_ALT_FIELDS, CACHED_SPRITE_LIVE_FIELDS,
     CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y,
     DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
     ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X,
@@ -37,6 +39,7 @@ const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
 const SPRITE_GRAPHICS_SUBSET_COUNT: usize = 4;
 const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
+const CACHED_SPRITE_SLOT_COUNT: usize = 0x1b;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -55,6 +58,7 @@ pub(crate) struct SpriteState {
     pub(crate) failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState,
     pub(crate) garnish_runtime: GarnishRuntimeState,
     pub(crate) follower_runtime: FollowerRuntimeState,
+    pub(crate) cached_sprites: CachedSpritesState,
 }
 
 impl SpriteState {
@@ -75,6 +79,7 @@ impl SpriteState {
             failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState::load_from_ram(ram),
             garnish_runtime: GarnishRuntimeState::load_from_ram(ram),
             follower_runtime: FollowerRuntimeState::load_from_ram(ram),
+            cached_sprites: CachedSpritesState::load_from_ram(ram),
         }
     }
 
@@ -94,6 +99,150 @@ impl SpriteState {
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
         self.garnish_runtime.write_to_ram(ram);
         self.follower_runtime.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct CachedSpriteSlotState {
+    state: u8,
+    type_byte: u8,
+    x_low: u8,
+    x_high: u8,
+    y_low: u8,
+    y_high: u8,
+    graphics: u8,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CachedSpritesState {
+    slots: [CachedSpriteSlotState; CACHED_SPRITE_SLOT_COUNT],
+}
+
+impl CachedSpritesState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..CACHED_SPRITE_SLOT_COUNT {
+            state.slots[slot] = CachedSpriteSlotState {
+                state: ram.get(ALT_SPRITE_STATE + slot).copied().unwrap_or(0),
+                type_byte: ram.get(ALT_SPRITE_TYPE + slot).copied().unwrap_or(0),
+                x_low: ram.get(ALT_SPRITE_X_LO + slot).copied().unwrap_or(0),
+                x_high: ram.get(ALT_SPRITE_X_HI + slot).copied().unwrap_or(0),
+                y_low: ram.get(ALT_SPRITE_Y_LO + slot).copied().unwrap_or(0),
+                y_high: ram.get(ALT_SPRITE_Y_HI + slot).copied().unwrap_or(0),
+                graphics: ram.get(ALT_SPRITE_GRAPHICS + slot).copied().unwrap_or(0),
+            };
+        }
+        state
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> CachedSpriteRead {
+        CachedSpriteRead {
+            slot: self.slots.get(slot).copied().unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CachedSpriteRead {
+    slot: CachedSpriteSlotState,
+}
+
+impl CachedSpriteRead {
+    pub(crate) fn state(&self) -> u8 {
+        self.slot.state
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.state() != 0
+    }
+
+    pub(crate) fn type_byte(&self) -> u8 {
+        self.slot.type_byte
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.slot.y_high
+    }
+}
+
+pub(crate) struct NativeCachedSpriteBridgeMut<'a> {
+    state: &'a mut CachedSpritesState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeCachedSpriteBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut CachedSpritesState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = CachedSpritesState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = CachedSpritesState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn clear_state(&mut self) {
+        self.ram[ALT_SPRITE_STATE + self.slot] = 0;
+        self.reload();
+    }
+
+    pub(crate) fn initialize_trinexx_component(&mut self) {
+        self.ram[ALT_SPRITE_TYPE + self.slot] = 0x40;
+        self.ram[ALT_SPRITE_X_HI + self.slot] = 0;
+        self.ram[ALT_SPRITE_Y_HI + self.slot] = 0;
+        self.reload();
+    }
+
+    pub(crate) fn set_type_byte(&mut self, value: u8) {
+        self.ram[ALT_SPRITE_TYPE + self.slot] = value;
+        self.reload();
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.ram[ALT_SPRITE_Y_HI + self.slot] = value;
+        self.reload();
+    }
+
+    pub(crate) fn cache_sprite_header(
+        &mut self,
+        sprite_type: u8,
+        x_low: u8,
+        x_high: u8,
+        y_low: u8,
+        y_high: u8,
+        graphics: u8,
+    ) {
+        self.ram[ALT_SPRITE_STATE + self.slot] = 0;
+        self.ram[ALT_SPRITE_TYPE + self.slot] = sprite_type;
+        self.ram[ALT_SPRITE_X_LO + self.slot] = x_low;
+        self.ram[ALT_SPRITE_X_HI + self.slot] = x_high;
+        self.ram[ALT_SPRITE_Y_LO + self.slot] = y_low;
+        self.ram[ALT_SPRITE_Y_HI + self.slot] = y_high;
+        self.ram[ALT_SPRITE_GRAPHICS + self.slot] = graphics;
+        self.reload();
+    }
+
+    pub(crate) fn cache_live_fields(&mut self) {
+        for i in 0..CACHED_SPRITE_LIVE_FIELDS.len() {
+            self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot] =
+                self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
+        }
+        self.reload();
+    }
+
+    pub(crate) fn load_cached_into_live(&mut self, backup: &mut [u8; 24]) {
+        for i in 0..CACHED_SPRITE_LIVE_FIELDS.len() {
+            backup[i] = self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
+                self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
+        }
+        self.reload();
+    }
+
+    pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {
+        for i in (0..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
+        }
     }
 }
 

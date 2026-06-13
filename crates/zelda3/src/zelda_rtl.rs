@@ -26,34 +26,33 @@ use crate::game_state::constants::{
     OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
 };
 use crate::game_state::{
-    loaded_room_data_word, AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut,
-    ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
-    AttractSceneState, Bg1MovementAccumulatorState, BirdTravelDestinationState,
-    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
-    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
-    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
-    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
-    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
-    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
-    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
-    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
-    HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState, IntroSwordState,
-    InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot, MazeGameTimerState,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
+    loaded_room_data_word, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
+    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractSceneState,
+    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
+    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastState,
+    BombosFireColumnState, BombosSpellState, CachedSpriteRead, ChainChompHistoryState,
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState,
+    DisplayState, DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState,
+    DungeonDoorState, DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState,
+    DungeonMapDisplayState, DungeonMovableBlockState, DungeonMovingFloorState,
+    DungeonObjectTrackingState, DungeonRoomDoorSetupState, DungeonRoomEffectsState,
+    DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState, DungeonRoomRuntimeState,
+    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
+    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
+    DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
+    EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
+    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
+    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
+    HistoryPositionState, HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState,
+    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    MazeGameTimerState, MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState,
+    MinigameState, MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
     NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
     NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
-    NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
@@ -4311,19 +4310,27 @@ impl ZeldaState {
         ArmosKnightHomeViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn alt_sprite_slot_view_mut(&mut self, slot: usize) -> AltSpriteSlotViewMut<'_> {
-        AltSpriteSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn alt_sprite_slot_mut(&mut self, slot: usize) -> NativeCachedSpriteBridgeMut<'_> {
+        NativeCachedSpriteBridgeMut::new(
+            &mut self.game_state.sprites.cached_sprites,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn cached_sprite_slot_view(&self, slot: usize) -> CachedSpriteSlotView<'_> {
-        CachedSpriteSlotView::new(&self.ram, slot)
+    pub(crate) fn cached_sprite_slot(&self, slot: usize) -> CachedSpriteRead {
+        self.game_state.sprites.cached_sprites.slot(slot)
     }
 
-    pub(crate) fn cached_sprite_slot_view_mut(
+    pub(crate) fn cached_sprite_slot_mut(
         &mut self,
         slot: usize,
-    ) -> CachedSpriteSlotViewMut<'_> {
-        CachedSpriteSlotViewMut::new(&mut self.ram, slot)
+    ) -> NativeCachedSpriteBridgeMut<'_> {
+        NativeCachedSpriteBridgeMut::new(
+            &mut self.game_state.sprites.cached_sprites,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn tagalong_slot(&self, slot: usize) -> TagalongSlotRead<'_> {

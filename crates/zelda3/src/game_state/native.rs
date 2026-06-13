@@ -110,12 +110,12 @@ pub(crate) use poly::{
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
 };
 pub(crate) use sprites::{
-    ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
-    EtherOrbitState, FollowerRuntimeState, GarnishRuntimeState, MazeGameTimerState,
-    NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
-    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
-    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
+    CachedSpriteRead, ChainChompHistoryState, DualLayerTileCacheState,
+    EnemyDamageSubclassTableState, EtherOrbitState, FollowerRuntimeState, GarnishRuntimeState,
+    MazeGameTimerState, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
@@ -2148,6 +2148,83 @@ mod tests {
         assert_eq!(ram[BEAMOS_LASER_HISTORY_Y_HI + 9], 0xaa);
         assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x5567);
         assert_eq!(effects.sprite_histories.beamos_laser_history(9).y(), 0xaaab);
+    }
+
+    #[test]
+    fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut state = SpriteState::load_from_ram(&ram);
+
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.cache_sprite_header(0xaa, 0x11, 0x22, 0x33, 0x44, 0x55);
+        }
+        let slot = state.cached_sprites.slot(3);
+        assert!(!slot.is_active());
+        assert_eq!(slot.type_byte(), 0xaa);
+        assert_eq!(slot.y_high(), 0x44);
+        assert_eq!(ram[ALT_SPRITE_TYPE + 3], 0xaa);
+        assert_eq!(ram[ALT_SPRITE_X_LO + 3], 0x11);
+        assert_eq!(ram[ALT_SPRITE_X_HI + 3], 0x22);
+        assert_eq!(ram[ALT_SPRITE_Y_LO + 3], 0x33);
+        assert_eq!(ram[ALT_SPRITE_Y_HI + 3], 0x44);
+        assert_eq!(ram[ALT_SPRITE_GRAPHICS + 3], 0x55);
+
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.initialize_trinexx_component();
+            bridge.set_type_byte(0x66);
+            bridge.set_y_high(0x77);
+        }
+        assert_eq!(state.cached_sprites.slot(3).type_byte(), 0x66);
+        assert_eq!(state.cached_sprites.slot(3).y_high(), 0x77);
+        assert_eq!(ram[ALT_SPRITE_X_HI + 3], 0);
+
+        for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+            ram[live + 3] = index as u8;
+        }
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.cache_live_fields();
+        }
+        for (index, alt) in CACHED_SPRITE_ALT_FIELDS.iter().copied().enumerate() {
+            assert_eq!(ram[alt + 3], index as u8);
+        }
+
+        for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+            ram[live + 3] = 0x80 | index as u8;
+        }
+        let mut backup = [0; 24];
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.load_cached_into_live(&mut backup);
+            bridge.clear_state();
+        }
+        for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+            assert_eq!(backup[index], 0x80 | index as u8);
+            assert_eq!(ram[live + 3], index as u8);
+        }
+        assert!(!state.cached_sprites.slot(3).is_active());
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.restore_live_from_backup(&backup);
+        }
+        for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+            assert_eq!(ram[live + 3], 0x80 | index as u8);
+        }
+
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 0x1a);
+            bridge.initialize_trinexx_component();
+        }
+        assert_eq!(state.cached_sprites.slot(0x1a).type_byte(), 0x40);
+        assert_eq!(ram[ALT_SPRITE_TYPE + 0x1a], 0x40);
     }
 
     #[test]

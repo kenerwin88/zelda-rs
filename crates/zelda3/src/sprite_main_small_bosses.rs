@@ -759,42 +759,39 @@ impl ZeldaState {
                 let mut target = usize::from(self.sprite_slot_view(k).direction()) * 9;
                 let mut f = k * 9;
                 for _ in (0..=8usize).rev() {
-                    let a = self.cached_sprite_slot_view(f).type_byte();
+                    let a = self.cached_sprite_slot(f).type_byte();
                     let wanted = TRINEXX_SIDE_HEAD_X_TARGETS[target];
                     if a != wanted {
-                        self.cached_sprite_slot_view_mut(f)
-                            .set_type_byte(a.wrapping_add(
-                                if (a.wrapping_sub(wanted) as i8).is_negative() {
-                                    1
-                                } else {
-                                    0xff
-                                },
-                            ));
+                        self.cached_sprite_slot_mut(f).set_type_byte(a.wrapping_add(
+                            if (a.wrapping_sub(wanted) as i8).is_negative() {
+                                1
+                            } else {
+                                0xff
+                            },
+                        ));
                         n = n.wrapping_add(1);
                     }
-                    let a = self.cached_sprite_slot_view(f).type_byte();
+                    let a = self.cached_sprite_slot(f).type_byte();
                     if a != wanted {
-                        self.cached_sprite_slot_view_mut(f)
-                            .set_type_byte(a.wrapping_add(
-                                if (a.wrapping_sub(wanted) as i8).is_negative() {
-                                    1
-                                } else {
-                                    0xff
-                                },
-                            ));
+                        self.cached_sprite_slot_mut(f).set_type_byte(a.wrapping_add(
+                            if (a.wrapping_sub(wanted) as i8).is_negative() {
+                                1
+                            } else {
+                                0xff
+                            },
+                        ));
                         n = n.wrapping_add(1);
                     }
-                    let b = self.cached_sprite_slot_view(f).y_high();
+                    let b = self.cached_sprite_slot(f).y_high();
                     let wanted_y = TRINEXX_SIDE_HEAD_Y_TARGETS[target];
                     if b != wanted_y {
-                        self.cached_sprite_slot_view_mut(f)
-                            .set_y_high(b.wrapping_add(
-                                if (b.wrapping_sub(wanted_y) as i8).is_negative() {
-                                    1
-                                } else {
-                                    0xff
-                                },
-                            ));
+                        self.cached_sprite_slot_mut(f).set_y_high(b.wrapping_add(
+                            if (b.wrapping_sub(wanted_y) as i8).is_negative() {
+                                1
+                            } else {
+                                0xff
+                            },
+                        ));
                         n = n.wrapping_add(1);
                     }
                     target += 1;
@@ -897,7 +894,7 @@ impl ZeldaState {
         let count = usize::from(self.sprite_slot_view(k).subtype2());
         for i in 0..count {
             let j = i + k * 9;
-            let cached_head = self.cached_sprite_slot_view(j);
+            let cached_head = self.cached_sprite_slot(j);
             let angle = if k != 2 {
                 0x100u16.wrapping_add((0u8).wrapping_sub(cached_head.type_byte()) as u16)
             } else {

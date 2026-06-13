@@ -4224,7 +4224,7 @@ impl ZeldaState {
         }
         self.trinexx_components_initialize(k);
         for i in (0..=15).rev() {
-            self.alt_sprite_slot_view_mut(i).clear_state();
+            self.alt_sprite_slot_mut(i).clear_state();
         }
     }
 
@@ -4257,8 +4257,7 @@ impl ZeldaState {
 
     fn trinexx_initialize_alt_sprites(&mut self, k: usize) {
         for j in (0..=0x1a).rev() {
-            self.alt_sprite_slot_view_mut(j)
-                .initialize_trinexx_component();
+            self.alt_sprite_slot_mut(j).initialize_trinexx_component();
         }
         self.sprite_slot_view_mut(k).set_subtype2(1);
         self.trinexx_cache_position(k);
@@ -4270,7 +4269,7 @@ impl ZeldaState {
         }
         self.helmasaur_king_initialize(k);
         for i in 0..16 {
-            self.alt_sprite_slot_view_mut(i).clear_state();
+            self.alt_sprite_slot_mut(i).clear_state();
         }
     }
 

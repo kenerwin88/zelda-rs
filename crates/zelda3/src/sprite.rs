@@ -2094,7 +2094,7 @@ impl ZeldaState {
         }
         for i in (0..16usize).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
-            if self.cached_sprite_slot_view(i).is_active() {
+            if self.cached_sprite_slot(i).is_active() {
                 self.uncache_and_execute_sprite(i);
             }
         }
@@ -2105,13 +2105,13 @@ impl ZeldaState {
     // }
     pub(super) fn uncache_and_execute_sprite(&mut self, k: usize) {
         let mut bak = [0u8; 24];
-        self.cached_sprite_slot_view_mut(k)
+        self.cached_sprite_slot_mut(k)
             .load_cached_into_live(&mut bak);
         self.sprite_execute_single(k);
         if self.sprite_slot_view(k).pause() != 0 {
-            self.cached_sprite_slot_view_mut(k).clear_state();
+            self.cached_sprite_slot_mut(k).clear_state();
         }
-        self.cached_sprite_slot_view_mut(k)
+        self.cached_sprite_slot_mut(k)
             .restore_live_from_backup(&bak);
     }
 
@@ -2132,7 +2132,7 @@ impl ZeldaState {
             let y_low = slot.y_low();
             let y_high = slot.y_high();
             let graphics = slot.graphics();
-            self.cached_sprite_slot_view_mut(k).cache_sprite_header(
+            self.cached_sprite_slot_mut(k).cache_sprite_header(
                 sprite_type,
                 x_low,
                 x_high,
@@ -2146,7 +2146,7 @@ impl ZeldaState {
             {
                 continue;
             }
-            self.cached_sprite_slot_view_mut(k).cache_live_fields();
+            self.cached_sprite_slot_mut(k).cache_live_fields();
         }
     }
 
