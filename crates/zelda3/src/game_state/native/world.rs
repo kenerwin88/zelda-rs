@@ -3066,7 +3066,6 @@ pub(crate) struct NativeOverworldMapUiBridgeMut<'a> {
 
 impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     pub(crate) fn new(map_ui: &'a mut OverworldMapUiState, ram: &'a mut [u8]) -> Self {
-        *map_ui = OverworldMapUiState::load_from_ram(ram);
         Self { map_ui, ram }
     }
 
@@ -3074,16 +3073,19 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
         debug_assert_eq!(*self.map_ui, OverworldMapUiState::load_from_ram(self.ram));
     }
 
+    fn sync(&mut self) {
+        self.map_ui.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_map_state(&mut self, value: u8) {
         self.map_ui.map_state = (self.map_ui.map_state & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_MAP_STATE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_map_state_word(&mut self, value: u16) {
         self.map_ui.map_state = value;
-        write_le_u16(self.ram, OVERWORLD_MAP_STATE, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_map_state(&mut self) {
@@ -3093,8 +3095,7 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
 
     pub(crate) fn set_map_flags(&mut self, value: u8) {
         self.map_ui.map_flags = value;
-        self.ram[OVERWORLD_MAP_FLAGS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn and_map_flags(&mut self, value: u8) {
@@ -3109,14 +3110,12 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
 
     pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
         self.map_ui.bird_travel_statuses.set_status(0, value);
-        self.ram[BIRDTRAVEL_STATUS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
         self.map_ui.bird_travel_statuses.set_status_word(value);
-        write_le_u16(self.ram, BIRDTRAVEL_STATUS, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
@@ -3136,14 +3135,12 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
 
     pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
         self.map_ui.bird_travel_statuses.clear_status(slot);
-        self.ram[BIRD_TRAVEL_STATUS + slot] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
         self.map_ui.bird_travel_statuses.increment_status(slot);
-        self.ram[BIRD_TRAVEL_STATUS + slot] = self.ram[BIRD_TRAVEL_STATUS + slot].wrapping_add(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3278,7 +3275,6 @@ pub(crate) struct NativeOverworldScreenSizeBridgeMut<'a> {
 
 impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
     pub(crate) fn new(screen_size: &'a mut OverworldScreenSizeState, ram: &'a mut [u8]) -> Self {
-        *screen_size = OverworldScreenSizeState::load_from_ram(ram);
         Self { screen_size, ram }
     }
 
@@ -3289,36 +3285,36 @@ impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.screen_size.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn clear_big_area_high(&mut self) {
         self.screen_size.big_area &= 0x00ff;
-        self.ram[OVERWORLD_AREA_IS_BIG + 1] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_big_area_low(&mut self, value: u8) {
         self.screen_size.big_area = (self.screen_size.big_area & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_AREA_IS_BIG] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn backup_big_area_low(&mut self) {
         self.screen_size.big_area_backup = self.screen_size.big_area as u8;
-        self.ram[OVERWORLD_AREA_IS_BIG_BACKUP] = self.screen_size.big_area_backup;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
         self.screen_size.right_bottom_scroll_bound =
             (self.screen_size.right_bottom_scroll_bound & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
         self.screen_size.right_bottom_scroll_bound =
             (self.screen_size.right_bottom_scroll_bound & 0x00ff) | (u16::from(value) << 8);
-        self.ram[OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND + 1] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3329,7 +3325,6 @@ pub(crate) struct NativeOverworldScrollDeltaBridgeMut<'a> {
 
 impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
     pub(crate) fn new(scroll_delta: &'a mut OverworldScrollDeltaState, ram: &'a mut [u8]) -> Self {
-        *scroll_delta = OverworldScrollDeltaState::load_from_ram(ram);
         Self { scroll_delta, ram }
     }
 
@@ -3340,34 +3335,34 @@ impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.scroll_delta.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_vertical_delta_low_byte(&mut self, value: u8) {
         self.scroll_delta.set_vertical_delta_low_byte(value);
-        self.ram[OVERWORLD_SCROLL_DELTA] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_horizontal_delta_low_byte(&mut self, value: u8) {
         self.scroll_delta.set_horizontal_delta_low_byte(value);
-        self.ram[OVERWORLD_SCROLL_DELTA + 1] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_vertical_delta_word(&mut self, value: u16) {
         self.scroll_delta.set_vertical_delta_word(value);
-        write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_horizontal_delta_word(&mut self, value: u16) {
         self.scroll_delta.set_horizontal_delta_word(value);
-        write_le_u16(self.ram, OVERWORLD_SCROLL_DELTA + 1, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_vertical_delta_low_byte(&mut self) {
         self.scroll_delta.clear_vertical_delta_low_byte();
-        self.ram[OVERWORLD_SCROLL_DELTA] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 

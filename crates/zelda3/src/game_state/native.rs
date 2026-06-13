@@ -3894,14 +3894,14 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_map_ui_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_map_ui_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_MAP_STATE, 0x0205);
         ram[OVERWORLD_MAP_FLAGS] = 0x81;
         write_le_u16(&mut ram, BIRDTRAVEL_STATUS, 0x0307);
         ram[BIRD_TRAVEL_STATUS + 15] = 0xfe;
 
-        let mut map_ui = OverworldMapUiState::default();
+        let mut map_ui = OverworldMapUiState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldMapUiBridgeMut::new(&mut map_ui, &mut ram);
             bridge.increment_map_state();
@@ -4200,13 +4200,13 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_screen_size_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_screen_size_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_AREA_IS_BIG, 0x0120);
         ram[OVERWORLD_AREA_IS_BIG_BACKUP] = 0x11;
         write_le_u16(&mut ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND, 0x02c0);
 
-        let mut screen_size = OverworldScreenSizeState::default();
+        let mut screen_size = OverworldScreenSizeState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldScreenSizeBridgeMut::new(&mut screen_size, &mut ram);
             bridge.backup_big_area_low();
@@ -4250,13 +4250,13 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_scroll_delta_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_scroll_delta_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[OVERWORLD_SCROLL_DELTA] = 0x11;
         ram[OVERWORLD_SCROLL_DELTA + 1] = 0x22;
         ram[OVERWORLD_SCROLL_DELTA + 2] = 0x33;
 
-        let mut scroll_delta = OverworldScrollDeltaState::default();
+        let mut scroll_delta = OverworldScrollDeltaState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldScrollDeltaBridgeMut::new(&mut scroll_delta, &mut ram);
             bridge.set_vertical_delta_low_byte(0x44);
