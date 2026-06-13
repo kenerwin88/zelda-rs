@@ -6275,7 +6275,7 @@ impl ZeldaState {
         let y_end = self.room_bounds_view().y_bound(2);
         let x_start = self.room_bounds_view().x_bound(0);
         let x_end = self.room_bounds_view().x_bound(2);
-        self.dungeon_state_view_mut()
+        self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         copy_le_u16(
             &mut self.ram,
@@ -6316,7 +6316,7 @@ impl ZeldaState {
         self.player_state_view_mut().cache_facing();
         self.player_state_view_mut().cache_lower_level_states();
         let doorway_state = self.player_state_view().doorway_state();
-        self.dungeon_state_view_mut()
+        self.world_transient_mut()
             .set_standing_in_doorway_cached(doorway_state);
         self.dungeon_stair_movement_mut().cache_current_floor();
     }

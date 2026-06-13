@@ -17,7 +17,7 @@ use crate::game_state::constants::{
     DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
     DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
     DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
-    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
+    DUNG_INDEX_X3, DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
     DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR, DUNG_LOAD_PTR_BANK,
     DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
     DUNG_NUM_BIGKEY_LOCKS_X2, DUNG_NUM_CHESTS_X2, DUNG_NUM_INROOM_UPNORTH_STAIRS,
@@ -26,20 +26,21 @@ use crate::game_state::constants::{
     DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_NUM_TOGGLE_FLOOR, DUNG_NUM_TOGGLE_PALACE,
     DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
     DUNG_QUADRANTS_VISITED, DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2,
-    DUNG_SAVEGAME_STATE_BITS, DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS, DUNG_WANT_LIGHTS_OUT,
-    DUNG_WANT_LIGHTS_OUT_COPY, DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS,
-    FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
-    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
-    MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
-    MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
-    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
-    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
-    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
-    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESET_XY_CHECK_FLAGS,
-    SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
-    WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
-    WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
-    WATER_SIDE_STEP_SWITCH,
+    DUNG_SAVEGAME_STATE_BITS, DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS,
+    DUNG_TRANSITION_LANDING_CLASS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
+    DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS, FLAG_SKIP_CALL_TAG_ROUTINES,
+    FLAG_WHICH_MUSIC_TYPE_DUNGEON, FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT,
+    HDR_DUNGEON_DARK_WITH_LANTERN, INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX,
+    MESSAGING_BUF_DUNGEON, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
+    MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
+    MOVING_WALL_TORCH_UPDATE_FLAG, MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE,
+    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS,
+    OVERWORLD_MAP_STATE, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
+    REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
+    RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS, SOMARIA_BLOCK_BG_CHECK_FLAG,
+    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_HDMA_WINDOW_X,
+    WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y, WATER_HDMA_WINDOW_Y_RADIUS,
+    WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET, WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -66,6 +67,7 @@ const DUNGEON_ROOM_TOGGLE_SLOT_COUNT: usize = 8;
 const DUNGEON_POT_REVEAL_ROOM_COUNT: usize = 0x140;
 const DUNGEON_ADJACENT_DOOR_COUNT: usize = 8;
 const DUNGEON_EXIT_DOOR_COUNT: usize = 4;
+const DUNGEON_MOVABLE_BLOCK_RECORD_COUNT: usize = 0x018c / 4;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
@@ -77,6 +79,10 @@ const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
     (DUNG_STAIRS_TABLE_1 - DUNG_INTER_STAIRCASES) / 2;
 const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_STAIRS_TABLE_2 - DUNG_STAIRS_TABLE_1) / 2;
 const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_TABLE_2) / 2;
+
+pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
+    read_le_u16(ram, offset + index * 2)
+}
 
 const DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL: usize = 0x0438;
 const DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL: usize = 0x043a;
@@ -127,6 +133,8 @@ pub(crate) struct DungeonState {
     pub(crate) room_effects: DungeonRoomEffectsState,
     pub(crate) room_parser: DungeonRoomParserState,
     pub(crate) door_setup: DungeonRoomDoorSetupState,
+    pub(crate) room_runtime: DungeonRoomRuntimeState,
+    pub(crate) movable_blocks: DungeonMovableBlockState,
 }
 
 impl DungeonState {
@@ -151,6 +159,8 @@ impl DungeonState {
             room_effects: DungeonRoomEffectsState::load_from_ram(ram),
             room_parser: DungeonRoomParserState::load_from_ram(ram),
             door_setup: DungeonRoomDoorSetupState::load_from_ram(ram),
+            room_runtime: DungeonRoomRuntimeState::load_from_ram(ram),
+            movable_blocks: DungeonMovableBlockState::load_from_ram(ram),
         }
     }
 
@@ -557,6 +567,14 @@ impl DungeonEnvironmentState {
 
     fn clear_movable_block_was_pushed(&mut self) {
         self.movable_block_was_pushed = 0;
+    }
+
+    fn toggle_movable_block_was_pushed(&mut self) {
+        self.movable_block_was_pushed ^= 1;
+    }
+
+    fn set_block_trap_related_tile(&mut self, value: u16) {
+        self.block_trap_related_tile = value;
     }
 }
 
@@ -1649,6 +1667,136 @@ impl DungeonStairMovementState {
 
     fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
         self.in_room_kind = value;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonMovableBlockState {
+    records: Vec<[u16; 2]>,
+}
+
+impl Default for DungeonMovableBlockState {
+    fn default() -> Self {
+        Self {
+            records: vec![[0; 2]; DUNGEON_MOVABLE_BLOCK_RECORD_COUNT],
+        }
+    }
+}
+
+impl DungeonMovableBlockState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut records = vec![[0; 2]; DUNGEON_MOVABLE_BLOCK_RECORD_COUNT];
+        for (index, record) in records.iter_mut().enumerate() {
+            let base = MOVABLE_BLOCK_DATAS + index * 4;
+            record[0] = read_le_u16(ram, base);
+            record[1] = read_le_u16(ram, base + 2);
+        }
+        Self { records }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, record) in self.records.iter().enumerate() {
+            let base = MOVABLE_BLOCK_DATAS + index * 4;
+            write_le_u16(ram, base, record[0]);
+            write_le_u16(ram, base + 2, record[1]);
+        }
+    }
+
+    pub(crate) fn movable_block_room_for_offset(&self, offset: usize) -> u16 {
+        self.records
+            .get(offset / 4)
+            .map(|record| record[0])
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn movable_block_tilemap_for_offset(&self, offset: usize) -> u16 {
+        self.records
+            .get(offset / 4)
+            .map(|record| record[1])
+            .unwrap_or(0)
+    }
+
+    fn set_movable_block_record(&mut self, index: usize, room: u16, tilemap: u16) {
+        if let Some(record) = self.records.get_mut(index) {
+            *record = [room, tilemap];
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomRuntimeState {
+    dungeon_music_type_flag: u8,
+    room_tag_skip_count: u8,
+    landing_class: u8,
+    room_index_x3: u16,
+    reserved_gfx_config_word: u16,
+}
+
+impl DungeonRoomRuntimeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            dungeon_music_type_flag: ram.get(FLAG_WHICH_MUSIC_TYPE_DUNGEON).copied().unwrap_or(0),
+            room_tag_skip_count: ram.get(FLAG_SKIP_CALL_TAG_ROUTINES).copied().unwrap_or(0),
+            landing_class: ram.get(DUNG_TRANSITION_LANDING_CLASS).copied().unwrap_or(0),
+            room_index_x3: read_le_u16(ram, DUNG_INDEX_X3),
+            reserved_gfx_config_word: read_le_u16(ram, RESERVED_GFX_CONFIG_WORD),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[FLAG_WHICH_MUSIC_TYPE_DUNGEON] = self.dungeon_music_type_flag;
+        ram[FLAG_SKIP_CALL_TAG_ROUTINES] = self.room_tag_skip_count;
+        ram[DUNG_TRANSITION_LANDING_CLASS] = self.landing_class;
+        write_le_u16(ram, DUNG_INDEX_X3, self.room_index_x3);
+        write_le_u16(ram, RESERVED_GFX_CONFIG_WORD, self.reserved_gfx_config_word);
+    }
+
+    pub(crate) fn dungeon_music_type_flag(&self) -> u8 {
+        self.dungeon_music_type_flag
+    }
+
+    pub(crate) fn landing_class(&self) -> u8 {
+        self.landing_class
+    }
+
+    pub(crate) fn landing_class_is_pit(&self) -> bool {
+        self.landing_class & 2 != 0
+    }
+
+    pub(crate) fn should_run_room_tags(&self) -> bool {
+        self.room_tag_skip_count == 0
+    }
+
+    fn clear_dungeon_music_type_flag(&mut self) {
+        self.dungeon_music_type_flag = 0;
+    }
+
+    fn set_dungeon_music_type_flag(&mut self, value: u8) {
+        self.dungeon_music_type_flag = value;
+    }
+
+    fn set_room_index_x3(&mut self, value: u16) {
+        self.room_index_x3 = value;
+    }
+
+    fn clear_reserved_gfx_config(&mut self) {
+        self.reserved_gfx_config_word = 0;
+    }
+
+    fn skip_room_tags_once(&mut self) {
+        self.room_tag_skip_count = self.room_tag_skip_count.wrapping_add(1);
+    }
+
+    fn clear_room_tag_skip(&mut self) {
+        self.room_tag_skip_count = 0;
+    }
+
+    fn set_landing_class(&mut self, value: u8) {
+        self.landing_class = value;
+    }
+
+    fn clear_landing_class(&mut self) {
+        self.landing_class = 0;
     }
 }
 
@@ -3141,6 +3289,10 @@ impl DungeonHeaderState {
         self.travel_destinations.get(index).copied().unwrap_or(0)
     }
 
+    fn copy_travel_destinations_from_header(&mut self, header: &[u8]) {
+        self.travel_destinations.copy_from_slice(&header[9..14]);
+    }
+
     pub(crate) fn hole_teleporter_plane(&self, index: usize) -> u8 {
         self.plane_scratch.get(index).copied().unwrap_or(0)
     }
@@ -4337,6 +4489,16 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
         self.state.clear_movable_block_was_pushed();
         self.sync();
     }
+
+    pub(crate) fn toggle_movable_block_was_pushed(&mut self) {
+        self.state.toggle_movable_block_was_pushed();
+        self.sync();
+    }
+
+    pub(crate) fn set_block_trap_related_tile(&mut self, value: u16) {
+        self.state.set_block_trap_related_tile(value);
+        self.sync();
+    }
 }
 
 pub(crate) struct NativeDungeonRoomTilemapBridgeMut<'a> {
@@ -4822,6 +4984,99 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
     }
 }
 
+pub(crate) struct NativeDungeonRoomRuntimeBridgeMut<'a> {
+    state: &'a mut DungeonRoomRuntimeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomRuntimeState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomRuntimeState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomRuntimeState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_dungeon_music_type_flag(&mut self) {
+        self.state.clear_dungeon_music_type_flag();
+        self.sync();
+    }
+
+    pub(crate) fn set_dungeon_music_type_flag(&mut self, value: u8) {
+        self.state.set_dungeon_music_type_flag(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_index_x3(&mut self, value: u16) {
+        self.state.set_room_index_x3(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_reserved_gfx_config(&mut self) {
+        self.state.clear_reserved_gfx_config();
+        self.sync();
+    }
+
+    pub(crate) fn skip_room_tags_once(&mut self) {
+        self.state.skip_room_tags_once();
+        self.sync();
+    }
+
+    pub(crate) fn clear_room_tag_skip(&mut self) {
+        self.state.clear_room_tag_skip();
+        self.sync();
+    }
+
+    pub(crate) fn set_landing_class(&mut self, value: u8) {
+        self.state.set_landing_class(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_landing_class(&mut self) {
+        self.state.clear_landing_class();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonMovableBlockBridgeMut<'a> {
+    state: &'a mut DungeonMovableBlockState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonMovableBlockState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonMovableBlockState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonMovableBlockState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_movable_block_record(&mut self, index: usize, room: u16, tilemap: u16) {
+        self.state.set_movable_block_record(index, room, tilemap);
+        self.sync();
+    }
+}
+
 pub(crate) struct NativeDungeonStairMovementBridgeMut<'a> {
     state: &'a mut DungeonStairMovementState,
     ram: &'a mut [u8],
@@ -5115,6 +5370,11 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
 
     pub(crate) fn set_header_tag(&mut self, index: usize, value: u8) {
         self.header.set_header_tag(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn copy_travel_destinations_from_header(&mut self, header: &[u8]) {
+        self.header.copy_travel_destinations_from_header(header);
         self.sync();
     }
 

@@ -1587,6 +1587,10 @@ pub(crate) struct WorldTransientState {
     pub(crate) savegame_master_sword_flags: u16,
     pub(crate) super_bomb_indicator_timer: u8,
     pub(crate) standing_in_doorway_cached: u8,
+    pub(crate) cached_room_bounds_y_start: u16,
+    pub(crate) cached_room_bounds_y_end: u16,
+    pub(crate) cached_room_bounds_x_start: u16,
+    pub(crate) cached_room_bounds_x_end: u16,
     pub(crate) overworld_peg_puzzle_progress: u16,
     pub(crate) overworld_hole_tilemap_position: u8,
     pub(crate) overworld_bomb_tile_sweep_x: u16,
@@ -1621,6 +1625,10 @@ impl Default for WorldTransientState {
             savegame_master_sword_flags: 0,
             super_bomb_indicator_timer: 0,
             standing_in_doorway_cached: 0,
+            cached_room_bounds_y_start: 0,
+            cached_room_bounds_y_end: 0,
+            cached_room_bounds_x_start: 0,
+            cached_room_bounds_x_end: 0,
             overworld_peg_puzzle_progress: 0,
             overworld_hole_tilemap_position: 0,
             overworld_bomb_tile_sweep_x: 0,
@@ -1661,6 +1669,10 @@ impl WorldTransientState {
             savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
             super_bomb_indicator_timer: ram_byte(ram, SUPER_BOMB_INDICATOR_TIMER),
             standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
+            cached_room_bounds_y_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_START),
+            cached_room_bounds_y_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END),
+            cached_room_bounds_x_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_START),
+            cached_room_bounds_x_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_END),
             overworld_peg_puzzle_progress: read_le_u16(ram, OVERWORLD_PEG_PUZZLE_PROGRESS),
             overworld_hole_tilemap_position: ram_byte(ram, OVERWORLD_HOLE_TILEMAP_POS),
             overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
@@ -1702,6 +1714,18 @@ impl WorldTransientState {
         );
         ram[SUPER_BOMB_INDICATOR_TIMER] = self.super_bomb_indicator_timer;
         ram[IS_STANDING_IN_DOORWAY_CACHED] = self.standing_in_doorway_cached;
+        write_le_u16(
+            ram,
+            CACHED_ROOM_BOUNDS_Y_START,
+            self.cached_room_bounds_y_start,
+        );
+        write_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END, self.cached_room_bounds_y_end);
+        write_le_u16(
+            ram,
+            CACHED_ROOM_BOUNDS_X_START,
+            self.cached_room_bounds_x_start,
+        );
+        write_le_u16(ram, CACHED_ROOM_BOUNDS_X_END, self.cached_room_bounds_x_end);
         write_le_u16(
             ram,
             OVERWORLD_PEG_PUZZLE_PROGRESS,
@@ -2514,6 +2538,30 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
         self.state.room_transitioning_flags = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_cached_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.state.cached_room_bounds_y_start = y_start;
+        self.state.cached_room_bounds_y_end = y_end;
+        self.state.cached_room_bounds_x_start = x_start;
+        self.state.cached_room_bounds_x_end = x_end;
+        self.sync();
+    }
+
+    pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
+        self.state.standing_in_doorway_cached = value;
+        self.sync();
+    }
+
+    pub(crate) fn cache_standing_in_doorway(&mut self) {
+        self.state.standing_in_doorway_cached = self.ram[IS_STANDING_IN_DOORWAY];
         self.sync();
     }
 

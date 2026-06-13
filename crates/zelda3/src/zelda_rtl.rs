@@ -26,32 +26,33 @@ use crate::game_state::constants::{
     OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
 };
 use crate::game_state::{
-    AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
-    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractSceneState,
-    BeamosLaserHistoryView, BeamosLaserHistoryViewMut, Bg1MovementAccumulatorState,
-    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
-    BlastWallFragmentSlotState, BlastWallState, BombosBlastView, BombosBlastViewMut,
-    BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState, CachedSpriteSlotView,
-    CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
+    loaded_room_data_word, AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut,
+    ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
+    AttractSceneState, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
+    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
+    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastView,
+    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
+    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
     DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState,
-    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomDoorSetupState,
-    DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState,
-    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
-    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
-    DungeonStairMovementState, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
+    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
+    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
+    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
+    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
+    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
+    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -60,10 +61,11 @@ use crate::game_state::{
     NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
     NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
-    NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
-    NativeDungeonRoomDoorSetupBridgeMut, NativeDungeonRoomEffectsBridgeMut,
-    NativeDungeonRoomItemBridgeMut, NativeDungeonRoomLoadBridgeMut,
-    NativeDungeonRoomParserBridgeMut, NativeDungeonRoomTilemapBridgeMut,
+    NativeDungeonMovableBlockBridgeMut, NativeDungeonMovingFloorBridgeMut,
+    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomDoorSetupBridgeMut,
+    NativeDungeonRoomEffectsBridgeMut, NativeDungeonRoomItemBridgeMut,
+    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomParserBridgeMut,
+    NativeDungeonRoomRuntimeBridgeMut, NativeDungeonRoomTilemapBridgeMut,
     NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
@@ -2695,6 +2697,14 @@ impl ZeldaState {
         NativeDisplayStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
+    pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u16) {
+        self.hud_state_view_mut().set_floor_changed_timer(value);
+    }
+
+    pub(crate) fn loaded_room_data_word(&self, offset: usize, index: usize) -> u16 {
+        loaded_room_data_word(&self.ram, offset, index)
+    }
+
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
         self.display_state_bridge_mut().set_screen_brightness(value);
     }
@@ -3379,6 +3389,28 @@ impl ZeldaState {
     pub(crate) fn dungeon_room_doors_mut(&mut self) -> NativeDungeonRoomDoorSetupBridgeMut<'_> {
         NativeDungeonRoomDoorSetupBridgeMut::new(
             &mut self.game_state.dungeon.door_setup,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_room_runtime(&self) -> DungeonRoomRuntimeState {
+        DungeonRoomRuntimeState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_room_runtime_mut(&mut self) -> NativeDungeonRoomRuntimeBridgeMut<'_> {
+        NativeDungeonRoomRuntimeBridgeMut::new(
+            &mut self.game_state.dungeon.room_runtime,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_movable_blocks(&self) -> DungeonMovableBlockState {
+        DungeonMovableBlockState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_movable_blocks_mut(&mut self) -> NativeDungeonMovableBlockBridgeMut<'_> {
+        NativeDungeonMovableBlockBridgeMut::new(
+            &mut self.game_state.dungeon.movable_blocks,
             &mut self.ram,
         )
     }
@@ -6790,7 +6822,7 @@ impl ZeldaState {
         let y_end = self.room_bounds_view().y_bound(2);
         let x_start = self.room_bounds_view().x_bound(0);
         let x_end = self.room_bounds_view().x_bound(2);
-        self.dungeon_state_view_mut()
+        self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         self.world_camera_boundaries_mut().cache_scroll_targets();
         self.ppu_scroll_copy_view_mut().cache_camera_scroll();
@@ -6798,7 +6830,7 @@ impl ZeldaState {
         self.player_state_view_mut().cache_current_quadrants();
         self.player_state_view_mut().cache_facing();
         self.player_state_view_mut().cache_lower_level_states();
-        self.dungeon_state_view_mut().cache_standing_in_doorway();
+        self.world_transient_mut().cache_standing_in_doorway();
         self.dungeon_stair_movement_mut().cache_current_floor();
     }
 
