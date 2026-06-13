@@ -91,9 +91,9 @@ pub(crate) use world::{
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16State, WeatherVaneState,
-    WorldLocationState, WorldState,
+    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OverworldConfigTableView, OverworldEventInfoState,
+    OverworldMap16State, RoomBoundsState, WeatherVaneState, WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -5396,5 +5396,39 @@ mod tests {
         assert!(loaded.is_loaded(32, 0b0000_0010));
         assert!(!loaded.is_loaded(32, 0b0010_0000));
         assert_eq!(ram[OVERWORLD_SPRITE_WAS_LOADED + 4], 0b1000_0010);
+    }
+
+    #[test]
+    fn native_room_bounds_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ROOM_BOUNDS, 0x0010);
+        write_le_u16(&mut ram, ROOM_BOUNDS + 2, 0x0020);
+        write_le_u16(&mut ram, ROOM_BOUNDS + 8, 0x0030);
+        write_le_u16(&mut ram, ROOM_BOUNDS + 10, 0x0040);
+        write_le_u16(&mut ram, SCRATCH_0, 0x0aaa);
+        write_le_u16(&mut ram, SCRATCH_1, 0x0bbb);
+
+        let mut bounds = RoomBoundsState::default();
+        {
+            let mut bridge = NativeRoomBoundsBridgeMut::new(&mut bounds, &mut ram);
+            bridge.add_y_bounds_a(0x0005);
+            bridge.add_x_bounds_b(0x0007);
+            bridge.copy_y_bound_from(1, SCRATCH_0);
+            bridge.copy_x_bound_from(0, SCRATCH_1);
+            bridge.set_packed_bounds(0x1000, 0x2000, 0x3000, 0x4000);
+        }
+
+        assert_eq!(bounds.packed_top(), 0x1000);
+        assert_eq!(bounds.packed_bottom(), 0x2000);
+        assert_eq!(bounds.packed_left(), 0x3000);
+        assert_eq!(bounds.packed_right(), 0x4000);
+        assert_eq!(bounds.x_bound(0), 0x0bbb);
+        assert_eq!(bounds.x_bound(1), 0x0047);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS), 0x1000);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 2), 0x2000);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 4), 0x3000);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 6), 0x4000);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 8), 0x0bbb);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 10), 0x0047);
     }
 }

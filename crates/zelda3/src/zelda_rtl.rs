@@ -72,10 +72,10 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
     NativeQuakeSpellBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
-    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -88,7 +88,7 @@ use crate::game_state::{
     PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
     PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
     PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellState, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressState,
+    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
     ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
     SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
@@ -3415,12 +3415,12 @@ impl ZeldaState {
         OverworldMap16DecodeViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn room_bounds_view(&self) -> RoomBoundsView<'_> {
-        RoomBoundsView::new(&self.ram)
+    pub(crate) fn room_bounds_view(&self) -> RoomBoundsState {
+        RoomBoundsState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn room_bounds_view_mut(&mut self) -> RoomBoundsViewMut<'_> {
-        RoomBoundsViewMut::new(&mut self.ram)
+    pub(crate) fn room_bounds_view_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
+        NativeRoomBoundsBridgeMut::new(&mut self.game_state.world.room_bounds, &mut self.ram)
     }
 
     pub(crate) fn vram_upload_buffer_word(&self, offset: usize) -> u16 {

@@ -8,6 +8,7 @@ const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
 const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
 const OVERWORLD_EVENT_INFO_SCREENS: usize = 160;
 const OVERWORLD_CONFIG_SCREENS: usize = 160;
+const ROOM_BOUND_COUNT: usize = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldLocationState {
@@ -786,9 +787,107 @@ impl OverworldState {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RoomBoundsState {
+    y_bounds: [u16; ROOM_BOUND_COUNT],
+    x_bounds: [u16; ROOM_BOUND_COUNT],
+}
+
+impl RoomBoundsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut y_bounds = [0; ROOM_BOUND_COUNT];
+        let mut x_bounds = [0; ROOM_BOUND_COUNT];
+        for index in 0..ROOM_BOUND_COUNT {
+            y_bounds[index] = read_le_u16(ram, ROOM_BOUNDS + index * 2);
+            x_bounds[index] = read_le_u16(ram, ROOM_BOUNDS + 8 + index * 2);
+        }
+        Self { y_bounds, x_bounds }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for index in 0..ROOM_BOUND_COUNT {
+            write_le_u16(ram, ROOM_BOUNDS + index * 2, self.y_bounds[index]);
+            write_le_u16(ram, ROOM_BOUNDS + 8 + index * 2, self.x_bounds[index]);
+        }
+    }
+
+    pub(crate) fn y_bound(&self, index: usize) -> u16 {
+        self.y_bounds.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn x_bound(&self, index: usize) -> u16 {
+        self.x_bounds.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn packed_bound(&self, index: usize) -> u16 {
+        self.y_bound(index)
+    }
+
+    pub(crate) fn packed_top(&self) -> u16 {
+        self.packed_bound(0)
+    }
+
+    pub(crate) fn packed_bottom(&self) -> u16 {
+        self.packed_bound(1)
+    }
+
+    pub(crate) fn packed_left(&self) -> u16 {
+        self.packed_bound(2)
+    }
+
+    pub(crate) fn packed_right(&self) -> u16 {
+        self.packed_bound(3)
+    }
+
+    pub(crate) fn set_y_bound(&mut self, index: usize, value: u16) {
+        if let Some(bound) = self.y_bounds.get_mut(index) {
+            *bound = value;
+        }
+    }
+
+    pub(crate) fn set_x_bound(&mut self, index: usize, value: u16) {
+        if let Some(bound) = self.x_bounds.get_mut(index) {
+            *bound = value;
+        }
+    }
+
+    pub(crate) fn set_packed_bound(&mut self, index: usize, value: u16) {
+        self.set_y_bound(index, value);
+    }
+
+    pub(crate) fn set_packed_bounds(&mut self, top: u16, bottom: u16, left: u16, right: u16) {
+        self.y_bounds = [top, bottom, left, right];
+    }
+
+    pub(crate) fn add_y_bounds_a(&mut self, value: u16) {
+        for index in [0, 2] {
+            self.y_bounds[index] = self.y_bounds[index].wrapping_add(value);
+        }
+    }
+
+    pub(crate) fn add_y_bounds_b(&mut self, value: u16) {
+        for index in [1, 3] {
+            self.y_bounds[index] = self.y_bounds[index].wrapping_add(value);
+        }
+    }
+
+    pub(crate) fn add_x_bounds_a(&mut self, value: u16) {
+        for index in [0, 2] {
+            self.x_bounds[index] = self.x_bounds[index].wrapping_add(value);
+        }
+    }
+
+    pub(crate) fn add_x_bounds_b(&mut self, value: u16) {
+        for index in [1, 3] {
+            self.x_bounds[index] = self.x_bounds[index].wrapping_add(value);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldState {
     pub(crate) location: WorldLocationState,
     pub(crate) overworld: OverworldState,
+    pub(crate) room_bounds: RoomBoundsState,
 }
 
 impl WorldState {
@@ -796,12 +895,100 @@ impl WorldState {
         Self {
             location: WorldLocationState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
+            room_bounds: RoomBoundsState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.location.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
+        self.room_bounds.write_to_ram(ram);
+    }
+}
+
+pub(crate) struct NativeRoomBoundsBridgeMut<'a> {
+    state: &'a mut RoomBoundsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeRoomBoundsBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut RoomBoundsState, ram: &'a mut [u8]) -> Self {
+        *state = RoomBoundsState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, RoomBoundsState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_y_bound(&mut self, index: usize, value: u16) {
+        self.state.set_y_bound(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_bound(&mut self, index: usize, value: u16) {
+        self.state.set_x_bound(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_packed_bound(&mut self, index: usize, value: u16) {
+        self.state.set_packed_bound(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_packed_bounds(&mut self, top: u16, bottom: u16, left: u16, right: u16) {
+        self.state.set_packed_bounds(top, bottom, left, right);
+        self.sync();
+    }
+
+    pub(crate) fn copy_y_bound_from(&mut self, index: usize, src: usize) {
+        self.state.set_y_bound(index, read_le_u16(self.ram, src));
+        self.sync();
+    }
+
+    pub(crate) fn copy_x_bound_from(&mut self, index: usize, src: usize) {
+        self.state.set_x_bound(index, read_le_u16(self.ram, src));
+        self.sync();
+    }
+
+    pub(crate) fn copy_packed_bound_from(&mut self, index: usize, src: usize) {
+        self.state
+            .set_packed_bound(index, read_le_u16(self.ram, src));
+        self.sync();
+    }
+
+    pub(crate) fn add_y_bounds_a(&mut self, value: u16) {
+        self.state.add_y_bounds_a(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_y_bounds_b(&mut self, value: u16) {
+        self.state.add_y_bounds_b(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_x_bounds_a(&mut self, value: u16) {
+        self.state.add_x_bounds_a(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_x_bounds_b(&mut self, value: u16) {
+        self.state.add_x_bounds_b(value);
+        self.sync();
+    }
+
+    pub(crate) fn copy_y_bounds_from(&mut self, src: usize, count: usize) {
+        self.sync();
+        for offset in 0..count {
+            self.ram[ROOM_BOUNDS + offset] = self.ram[src + offset];
+        }
+        *self.state = RoomBoundsState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 }
 
