@@ -70,10 +70,11 @@ use crate::game_state::{
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
     NativeOverworldSpritePresenceBridgeMut, NativeOverworldTransitionBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
-    NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
-    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
+    NativePolyRasterEdgeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
@@ -85,10 +86,9 @@ use crate::game_state::{
     OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
     OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
     PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
-    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
-    PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltView, QuakeBoltViewMut,
-    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
+    PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltView,
+    QuakeBoltViewMut, QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
     ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
     SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
@@ -3541,28 +3541,33 @@ impl ZeldaState {
         PolyStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn poly_projected_vertex_view(&self) -> PolyProjectedVertexView<'_> {
-        PolyProjectedVertexView::new(&self.ram)
+    pub(crate) fn poly_projected_vertex_view(&self) -> PolyProjectedVerticesState {
+        PolyProjectedVerticesState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_projected_vertex_view_mut(&mut self) -> PolyProjectedVertexViewMut<'_> {
-        PolyProjectedVertexViewMut::new(&mut self.ram)
+    pub(crate) fn poly_projected_vertex_view_mut(
+        &mut self,
+    ) -> NativePolyProjectedVerticesBridgeMut<'_> {
+        NativePolyProjectedVerticesBridgeMut::new(
+            &mut self.game_state.poly.projected_vertices,
+            &mut self.ram,
+        )
     }
 
-    pub(crate) fn poly_face_coords_view(&self) -> PolyFaceCoordsView<'_> {
-        PolyFaceCoordsView::new(&self.ram)
+    pub(crate) fn poly_face_coords_view(&self) -> PolyFaceCoordsState {
+        PolyFaceCoordsState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_face_coords_view_mut(&mut self) -> PolyFaceCoordsViewMut<'_> {
-        PolyFaceCoordsViewMut::new(&mut self.ram)
+    pub(crate) fn poly_face_coords_view_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
+        NativePolyFaceCoordsBridgeMut::new(&mut self.game_state.poly.face_coords, &mut self.ram)
     }
 
-    pub(crate) fn poly_raster_edge_view(&self) -> PolyRasterEdgeView<'_> {
-        PolyRasterEdgeView::new(&self.ram)
+    pub(crate) fn poly_raster_edge_view(&self) -> PolyRasterEdgeState {
+        PolyRasterEdgeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_raster_edge_view_mut(&mut self) -> PolyRasterEdgeViewMut<'_> {
-        PolyRasterEdgeViewMut::new(&mut self.ram)
+    pub(crate) fn poly_raster_edge_view_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
+        NativePolyRasterEdgeBridgeMut::new(&mut self.game_state.poly.raster_edge, &mut self.ram)
     }
 
     pub(crate) fn intro_actor_view(&self, slot: usize) -> IntroActorView<'_> {

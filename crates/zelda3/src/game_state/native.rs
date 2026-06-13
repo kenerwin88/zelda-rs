@@ -14,6 +14,7 @@ mod messaging;
 mod misc;
 mod oam;
 mod player;
+mod poly;
 mod sprites;
 mod world;
 
@@ -74,6 +75,11 @@ pub(crate) use player::{
     Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
     PushedBlockView, SpecialExitPositionView, SwimAccelerationView,
+};
+pub(crate) use poly::{
+    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
+    NativePolyRasterEdgeBridgeMut, PolyFaceCoordsState, PolyProjectedVerticesState,
+    PolyRasterEdgeState, PolyState,
 };
 pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
@@ -150,6 +156,7 @@ pub(crate) struct GameState {
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
     pub(crate) world: WorldState,
+    pub(crate) poly: PolyState,
     pub(crate) display: DisplayState,
     pub(crate) effects: EffectState,
     pub(crate) ending: EndingState,
@@ -177,6 +184,7 @@ impl GameState {
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
             world: WorldState::load_from_ram(ram),
+            poly: PolyState::load_from_ram(ram),
             display: DisplayState::load_from_ram(ram),
             effects: EffectState::load_from_ram(ram),
             ending: EndingState::load_from_ram(ram),
@@ -204,6 +212,7 @@ impl GameState {
         self.inventory.write_to_ram(ram);
         self.messaging.write_to_ram(ram);
         self.world.write_to_ram(ram);
+        self.poly.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.effects.write_to_ram(ram);
         self.ending.write_to_ram(ram);
@@ -5546,5 +5555,64 @@ mod tests {
         assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_Y), 0x1112);
         assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_X), 0x1314);
         assert_eq!(ram[FOLLOWER_PALETTE_SWAP_FLAG], 0x80);
+    }
+
+    #[test]
+    fn native_poly_structured_bridges_dual_write_projection_face_and_edge_state() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[POLY_PROJECTED_X + 3] = 0x11;
+        ram[POLY_PROJECTED_Y + 3] = 0x22;
+        ram[POLY_FACE_COORDS] = 0x04;
+        ram[POLY_FACE_COORDS + 5] = 0xaa;
+        ram[POLY_TOTAL_NUM_STEPS] = 0x02;
+        ram[POLY_X0_CUR] = 0x10;
+        ram[POLY_Y0_CUR] = 0x20;
+        ram[POLY_X1_CUR] = 0x30;
+        ram[POLY_Y1_CUR] = 0x40;
+
+        let mut projected = PolyProjectedVerticesState::default();
+        let mut face = PolyFaceCoordsState::default();
+        let mut edge = PolyRasterEdgeState::default();
+
+        {
+            let mut bridge = NativePolyProjectedVerticesBridgeMut::new(&mut projected, &mut ram);
+            bridge.set_position(3, 0x55, 0x66);
+        }
+        {
+            let mut bridge = NativePolyFaceCoordsBridgeMut::new(&mut face, &mut ram);
+            bridge.set_xy_coords_count(0x08);
+            bridge.set_coord(5, 0xbb);
+        }
+        {
+            let mut bridge = NativePolyRasterEdgeBridgeMut::new(&mut edge, &mut ram);
+            bridge.set_left_current(0x01, 0x02);
+            bridge.set_right_target(0x03, 0x04);
+            bridge.set_both_cur_vertex_idx(0x09);
+            assert_eq!(bridge.decrement_total_num_steps(), 1);
+            bridge.increment_y0_cur();
+        }
+
+        assert_eq!(projected.x(3), 0x55);
+        assert_eq!(projected.y(3), 0x66);
+        assert_eq!(face.xy_coords_count(), 0x08);
+        assert_eq!(face.coord(5), 0xbb);
+        assert_eq!(edge.x0_cur(), 0x01);
+        assert_eq!(edge.y0_cur(), 0x03);
+        assert_eq!(edge.x1_target(), 0x03);
+        assert_eq!(edge.y1_trigger(), 0x04);
+        assert_eq!(edge.cur_vertex_idx0(), 0x09);
+        assert_eq!(edge.cur_vertex_idx1(), 0x09);
+        assert_eq!(edge.total_num_steps(), 1);
+        assert_eq!(ram[POLY_PROJECTED_X + 3], 0x55);
+        assert_eq!(ram[POLY_PROJECTED_Y + 3], 0x66);
+        assert_eq!(ram[POLY_FACE_COORDS], 0x08);
+        assert_eq!(ram[POLY_FACE_COORDS + 5], 0xbb);
+        assert_eq!(ram[POLY_X0_CUR], 0x01);
+        assert_eq!(ram[POLY_Y0_CUR], 0x03);
+        assert_eq!(ram[POLY_X1_TARGET], 0x03);
+        assert_eq!(ram[POLY_Y1_TRIG], 0x04);
+        assert_eq!(ram[POLY_CUR_VERTEX_IDX0], 0x09);
+        assert_eq!(ram[POLY_CUR_VERTEX_IDX1], 0x09);
+        assert_eq!(ram[POLY_TOTAL_NUM_STEPS], 1);
     }
 }
