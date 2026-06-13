@@ -10079,7 +10079,7 @@ impl ZeldaState {
         match self.frame_state().subsubmodule {
             0 => {
                 self.PaletteFilter_RestoreBGSubstractiveStrict();
-                let c = self.palette_buffer_view().main_color(32);
+                let c = self.palette_buffer().main_color(32);
                 self.palette_buffer_mut().set_main_color(0, c);
                 if self.palette_filter().darkening_or_lightening_screen() != 0xff {
                     return;
@@ -11471,9 +11471,9 @@ impl ZeldaState {
             self.palette_buffer_mut().set_main_color(0x77, 0x001a);
             self.system_signals_mut().increment_cgram_update_flag();
         } else if j == 5 || j == 38 {
-            let p6d = self.palette_buffer_view().aux_color(0x6d);
-            let p6e = self.palette_buffer_view().aux_color(0x6e);
-            let p6f = self.palette_buffer_view().aux_color(0x6f);
+            let p6d = self.palette_buffer().aux_color(0x6d);
+            let p6e = self.palette_buffer().aux_color(0x6e);
+            let p6f = self.palette_buffer().aux_color(0x6f);
             self.palette_buffer_mut().set_main_color(0x6d, p6d);
             self.palette_buffer_mut().set_main_color(0x6e, p6e);
             self.palette_buffer_mut().set_main_color(0x6f, p6f);
@@ -11491,7 +11491,7 @@ impl ZeldaState {
             }
         }
         let (x, y) = if count == 0 { (0, 0) } else { (0x2940, 0x4e60) };
-        if self.palette_buffer_view().aux_color(0x7b) != x {
+        if self.palette_buffer().aux_color(0x7b) != x {
             self.palette_buffer_mut().set_main_color(0x7b, x);
             self.palette_buffer_mut().set_aux_color(0x7b, x);
             self.palette_buffer_mut().set_main_color(0x7c, y);

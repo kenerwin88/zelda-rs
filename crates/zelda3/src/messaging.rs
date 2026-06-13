@@ -774,7 +774,7 @@ impl ZeldaState {
             .set_mapbak_bg1_x_offset(palette_filter_countdown);
         self.ppu_scroll_copy_mut()
             .set_mapbak_bg1_y_offset(darkening_or_lightening_screen);
-        let palette = self.palette_buffer_view().aux_visible_slice().to_vec();
+        let palette = self.palette_buffer().aux_visible_slice().to_vec();
         self.ppu_scroll_copy_mut()
             .copy_mapbak_palette_from(&palette[..palette.len().min(256)]);
         self.palette_buffer_mut().clear_aux_visible_subpalettes();
@@ -807,7 +807,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_IrisWipe(&mut self) {
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = self.palette_buffer_view().main_color(32);
+        let bg = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, bg);
         let bak = self.frame_state().main_module;
         self.IrisSpotlight_ConfigureTable();
@@ -848,7 +848,7 @@ impl ZeldaState {
             return;
         }
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = self.palette_buffer_view().main_color(32);
+        let bg = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, bg);
         if self.palette_filter().darkening_or_lightening_screen() != 0xff {
             return;
@@ -1116,7 +1116,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_ResituateLink(&mut self) {
         self.PaletteFilter_RestoreBGAdditiveStrict();
-        let bg = self.palette_buffer_view().main_color(32);
+        let bg = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, bg);
         if self.palette_filter().countdown() != 32 {
             return;
@@ -1473,7 +1473,7 @@ impl ZeldaState {
         }
         self.EnableForceBlank();
         self.increment_overworld_map_state();
-        let aux = self.palette_buffer_view().aux_full_slice().to_vec();
+        let aux = self.palette_buffer().aux_full_slice().to_vec();
         self.palette_buffer_mut().copy_main_full_from(&aux);
         let cgwsel_cgadsub = self.ppu_scroll_copy().mapbak_cgwsel_word();
         self.palette_filter_mut()
@@ -2742,7 +2742,7 @@ impl ZeldaState {
         self.palette_filter_mut().set_fixed_color_blue(0x80);
         self.player_state_view_mut()
             .set_link_dma_graphics_index_word(0x0250);
-        let palette = self.palette_buffer_view().main_full_slice().to_vec();
+        let palette = self.palette_buffer().main_full_slice().to_vec();
         self.ppu_scroll_copy_mut()
             .copy_mapbak_palette_from(&palette);
         let bg1_x_offset = self.world_scroll().bg1_x_offset();

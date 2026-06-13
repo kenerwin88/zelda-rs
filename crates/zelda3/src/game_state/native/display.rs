@@ -879,44 +879,6 @@ fn write_palette_word(bank: &mut [u8], index: usize, value: u16) {
     }
 }
 
-pub(crate) struct PaletteBufferView<'a> {
-    state: &'a PaletteBufferState,
-}
-
-impl<'a> PaletteBufferView<'a> {
-    pub(crate) fn new(state: &'a PaletteBufferState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn main_color(&self, index: usize) -> u16 {
-        self.state.main_color(index)
-    }
-
-    pub(crate) fn aux_color(&self, index: usize) -> u16 {
-        self.state.aux_color(index)
-    }
-
-    pub(crate) fn aux_visible_slice(&self) -> &[u8] {
-        self.state.aux_visible_slice()
-    }
-
-    pub(crate) fn main_full_slice(&self) -> &[u8] {
-        self.state.main_full_slice()
-    }
-
-    pub(crate) fn aux_full_slice(&self) -> &[u8] {
-        self.state.aux_full_slice()
-    }
-
-    pub(crate) fn overworld_palette_backup(&self) -> &[u8] {
-        self.state.overworld_palette_backup()
-    }
-
-    pub(crate) fn overworld_aux_or_main_offset(&self) -> u16 {
-        self.state.overworld_aux_or_main_offset()
-    }
-}
-
 pub(crate) struct NativePaletteBufferBridgeMut<'a> {
     display: &'a mut DisplayState,
     ram: &'a mut [u8],

@@ -103,7 +103,7 @@ use crate::game_state::{
     NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
     OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
+    OverworldSpritePresenceState, PaletteBufferState, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
     PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
@@ -3477,8 +3477,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn palette_buffer_view(&self) -> PaletteBufferView<'_> {
-        PaletteBufferView::new(&self.game_state.display.palette_buffer)
+    pub(crate) fn palette_buffer(&self) -> &PaletteBufferState {
+        &self.game_state.display.palette_buffer
     }
 
     pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {

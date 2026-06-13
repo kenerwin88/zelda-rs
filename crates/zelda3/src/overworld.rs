@@ -4527,7 +4527,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Palette_AnimGetMasterSword2(&mut self) {
-        let aux = self.palette_buffer_view().aux_full_slice().to_vec();
+        let aux = self.palette_buffer().aux_full_slice().to_vec();
         self.palette_buffer_mut()
             .backup_overworld_palette_from(&aux);
         for i in 0..256 {
@@ -4571,10 +4571,7 @@ impl ZeldaState {
         {
             return;
         }
-        let mapbak = self
-            .palette_buffer_view()
-            .overworld_palette_backup()
-            .to_vec();
+        let mapbak = self.palette_buffer().overworld_palette_backup().to_vec();
         self.palette_buffer_mut().copy_aux_full_from(&mapbak);
         self.set_sub_screen_layers(0);
     }

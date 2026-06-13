@@ -74,7 +74,7 @@ impl ZeldaState {
 
         if self.system_signals().should_update_cgram() {
             for i in 0..0x100 {
-                self.ppu.cgram[i] = self.palette_buffer_view().main_color(i);
+                self.ppu.cgram[i] = self.palette_buffer().main_color(i);
             }
         }
 

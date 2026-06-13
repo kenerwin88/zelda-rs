@@ -581,8 +581,8 @@ impl ZeldaState {
         };
 
         for j in from..to {
-            let mut c = self.palette_buffer_view().main_color(j);
-            let a = self.palette_buffer_view().aux_color(j);
+            let mut c = self.palette_buffer().main_color(j);
+            let a = self.palette_buffer().aux_color(j);
             if PALETTE_FILTERING_BITS[load_ptr_offset + ((a & 0x001f) as usize) * 2] & mask == 0 {
                 c = c.wrapping_add(dt);
             }
@@ -630,8 +630,8 @@ impl ZeldaState {
         let mut i = from >> 1;
         let end = to >> 1;
         while i != end {
-            let c = self.palette_buffer_view().main_color(i);
-            let d = self.palette_buffer_view().aux_color(i);
+            let c = self.palette_buffer().main_color(i);
+            let d = self.palette_buffer().aux_color(i);
             let mut cx = c;
             if (c & 0x001f) != (d & 0x001f) {
                 cx = cx.wrapping_add(1);
@@ -649,12 +649,12 @@ impl ZeldaState {
 
     pub(super) fn filter_majorly_whiten_bg(&mut self) {
         for i in 32..128 {
-            let color = self.palette_buffer_view().aux_color(i);
+            let color = self.palette_buffer().aux_color(i);
             let white = self.filter_majorly_whiten_color(color);
             self.palette_buffer_mut().set_main_color(i, white);
         }
-        let color0 = if self.palette_buffer_view().aux_color(0) != 0 {
-            self.palette_buffer_view().main_color(32)
+        let color0 = if self.palette_buffer().aux_color(0) != 0 {
+            self.palette_buffer().main_color(32)
         } else {
             0
         };
@@ -676,16 +676,16 @@ impl ZeldaState {
 
     pub(super) fn palette_restore_bg_from_flash(&mut self) {
         for i in 32..128 {
-            let color = self.palette_buffer_view().aux_color(i);
+            let color = self.palette_buffer().aux_color(i);
             self.palette_buffer_mut().set_main_color(i, color);
         }
-        let color = self.palette_buffer_view().main_color(32);
+        let color = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, color);
         self.palette_restore_coldata();
     }
 
     pub(super) fn palette_restore_bg_and_hud(&mut self) {
-        let src = self.palette_buffer_view().aux_full_slice()[..0x100].to_vec();
+        let src = self.palette_buffer().aux_full_slice()[..0x100].to_vec();
         self.palette_buffer_mut()
             .copy_main_palette_bytes(&src, 0x100);
         self.system_signals_mut().increment_cgram_update_flag();
@@ -735,7 +735,7 @@ impl ZeldaState {
         self.palette_load_hud();
 
         for i in 0..8 {
-            let color = self.palette_buffer_view().aux_color(0xe8 + i);
+            let color = self.palette_buffer().aux_color(0xe8 + i);
             self.palette_buffer_mut().set_main_color(0xd8 + i, color);
         }
     }
@@ -955,7 +955,7 @@ impl ZeldaState {
 
     pub(super) fn palette_load_single(&mut self, src: u32, dst: usize, x_ents: usize) {
         let base_byte =
-            ((dst + self.palette_buffer_view().overworld_aux_or_main_offset() as usize) >> 1) * 2;
+            ((dst + self.palette_buffer().overworld_aux_or_main_offset() as usize) >> 1) * 2;
         let base_idx = base_byte >> 1;
         for i in 0..=x_ents {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
@@ -2164,7 +2164,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_RestoreSP5F(&mut self) {
         for i in 0..8 {
-            let color = self.palette_buffer_view().aux_color(208 + i);
+            let color = self.palette_buffer().aux_color(208 + i);
             self.palette_buffer_mut().set_main_color(208 + i, color);
         }
         self.set_sub_screen_layers(0);
@@ -2191,7 +2191,7 @@ impl ZeldaState {
         };
         if self.frame_state().subsubmodule == 0 {
             for i in 0..8 {
-                let color = self.palette_buffer_view().aux_color(t + i);
+                let color = self.palette_buffer().aux_color(t + i);
                 self.palette_buffer_mut().set_main_color(t + i, color);
             }
             self.palette_filter_mut().set_countdown_word(0);
@@ -2257,8 +2257,8 @@ impl ZeldaState {
         let mut i = from >> 1;
         let end = to >> 1;
         while i != end {
-            let c = self.palette_buffer_view().main_color(i);
-            let d = self.palette_buffer_view().aux_color(i);
+            let c = self.palette_buffer().main_color(i);
+            let d = self.palette_buffer().aux_color(i);
             let mut cx = c;
             if (c & 0x001f) != (d & 0x001f) {
                 cx = cx.wrapping_sub(1);
@@ -2278,7 +2278,7 @@ impl ZeldaState {
         for i in 0..256 {
             self.palette_buffer_mut().set_aux_color(i, 0x7fff);
         }
-        let color = self.palette_buffer_view().main_color(0);
+        let color = self.palette_buffer().main_color(0);
         self.palette_buffer_mut().set_main_color(32, color);
         self.palette_filter_mut().set_countdown_word(0);
         self.palette_filter_mut()
@@ -2318,7 +2318,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_StartBlindingWhite(&mut self) {
-        let color = self.palette_buffer_view().main_color(32);
+        let color = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, color);
         if self.palette_filter().darkening_or_lightening_screen() == 0 {
             self.palette_filter_mut().increment_countdown();
@@ -2354,13 +2354,13 @@ impl ZeldaState {
     pub(super) fn PaletteFilter_WhirlpoolBlue(&mut self) {
         if self.frame_state().frame_counter & 1 != 0 {
             for i in 0x20..0x100 {
-                let mut color = self.palette_buffer_view().main_color(i);
+                let mut color = self.palette_buffer().main_color(i);
                 if (color & 0x7c00) != 0x7c00 {
                     color = color.wrapping_add(0x400);
                 }
                 self.palette_buffer_mut().set_main_color(i, color);
             }
-            let color = self.palette_buffer_view().main_color(32);
+            let color = self.palette_buffer().main_color(32);
             self.palette_buffer_mut().set_main_color(0, color);
             if self.palette_filter().countdown() & 1 == 0 {
                 self.increment_mosaic_level_by(16);
@@ -2379,7 +2379,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_IsolateWhirlpoolBlue(&mut self) {
         for i in 0x20..0x100 {
-            let mut color = self.palette_buffer_view().main_color(i);
+            let mut color = self.palette_buffer().main_color(i);
             if color & 0x03e0 != 0 {
                 color = color.wrapping_sub(0x20);
             }
@@ -2388,7 +2388,7 @@ impl ZeldaState {
             }
             self.palette_buffer_mut().set_main_color(i, color);
         }
-        let color = self.palette_buffer_view().main_color(32);
+        let color = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, color);
         self.palette_filter_mut().increment_countdown();
         if self.palette_filter().countdown() == 31 {
@@ -2404,14 +2404,14 @@ impl ZeldaState {
     pub(super) fn PaletteFilter_WhirlpoolRestoreBlue(&mut self) {
         if self.frame_state().frame_counter & 1 != 0 {
             for i in 0x20..0x100 {
-                let aux = self.palette_buffer_view().aux_color(i) & 0x7c00;
-                let mut color = self.palette_buffer_view().main_color(i);
+                let aux = self.palette_buffer().aux_color(i) & 0x7c00;
+                let mut color = self.palette_buffer().main_color(i);
                 if color & 0x7c00 != aux {
                     color = color.wrapping_sub(0x400);
                 }
                 self.palette_buffer_mut().set_main_color(i, color);
             }
-            let color = self.palette_buffer_view().main_color(32);
+            let color = self.palette_buffer().main_color(32);
             self.palette_buffer_mut().set_main_color(0, color);
             if self.palette_filter().countdown() & 1 == 0 {
                 self.decrement_mosaic_level_by(16);
@@ -2430,8 +2430,8 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreRedGreen(&mut self) {
         for i in 0x20..0x100 {
-            let aux = self.palette_buffer_view().aux_color(i);
-            let mut color = self.palette_buffer_view().main_color(i);
+            let aux = self.palette_buffer().aux_color(i);
+            let mut color = self.palette_buffer().main_color(i);
             if color & 0x03e0 != aux & 0x03e0 {
                 color = color.wrapping_add(0x20);
             }
@@ -2440,7 +2440,7 @@ impl ZeldaState {
             }
             self.palette_buffer_mut().set_main_color(i, color);
         }
-        let color = self.palette_buffer_view().main_color(32);
+        let color = self.palette_buffer().main_color(32);
         self.palette_buffer_mut().set_main_color(0, color);
         self.palette_filter_mut().increment_countdown();
         if self.palette_filter().countdown() == 31 {
@@ -2473,7 +2473,7 @@ impl ZeldaState {
     pub(super) fn Trinexx_FlashShellPalette_Red(&mut self) {
         if self.trinexx_palette_state().red_shell_delay == 0 {
             for i in 0..7 {
-                let v = self.palette_buffer_view().main_color(0x41 + i);
+                let v = self.palette_buffer().main_color(0x41 + i);
                 let red = (v & 0x1f).wrapping_add(u16::from((v & 0x1f) != 0x1f));
                 self.palette_buffer_mut()
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
@@ -2493,8 +2493,8 @@ impl ZeldaState {
     pub(super) fn Trinexx_UnflashShellPalette_Red(&mut self) {
         if self.trinexx_palette_state().red_shell_delay == 0 {
             for i in 0..7 {
-                let u = self.palette_buffer_view().aux_color(0x41 + i);
-                let v = self.palette_buffer_view().main_color(0x41 + i);
+                let u = self.palette_buffer().aux_color(0x41 + i);
+                let v = self.palette_buffer().main_color(0x41 + i);
                 let red = (v & 0x1f).wrapping_sub(u16::from((v & 0x1f) != (u & 0x1f)));
                 self.palette_buffer_mut()
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
@@ -2514,7 +2514,7 @@ impl ZeldaState {
     pub(super) fn Trinexx_FlashShellPalette_Blue(&mut self) {
         if self.trinexx_palette_state().blue_shell_delay == 0 {
             for i in 0..7 {
-                let v = self.palette_buffer_view().main_color(0x41 + i);
+                let v = self.palette_buffer().main_color(0x41 + i);
                 let blue =
                     (v & 0x7c00).wrapping_add(if (v & 0x7c00) != 0x7c00 { 0x0400 } else { 0 });
                 self.palette_buffer_mut()
@@ -2535,8 +2535,8 @@ impl ZeldaState {
     pub(super) fn Trinexx_UnflashShellPalette_Blue(&mut self) {
         if self.trinexx_palette_state().blue_shell_delay == 0 {
             for i in 0..7 {
-                let u = self.palette_buffer_view().aux_color(0x41 + i);
-                let v = self.palette_buffer_view().main_color(0x41 + i);
+                let u = self.palette_buffer().aux_color(0x41 + i);
+                let v = self.palette_buffer().main_color(0x41 + i);
                 let blue = (v & 0x7c00).wrapping_sub(if (v & 0x7c00) != (u & 0x7c00) {
                     0x0400
                 } else {
@@ -2863,7 +2863,7 @@ impl ZeldaState {
         }
         for i in 0..8 {
             for base in [0x00, 0x08, 0x10, 0x18, 0xd8, 0xe8, 0xf0, 0xf8] {
-                let color = self.palette_buffer_view().aux_color(base + i);
+                let color = self.palette_buffer().aux_color(base + i);
                 self.palette_buffer_mut().set_main_color(base + i, color);
             }
         }
@@ -2948,8 +2948,8 @@ impl ZeldaState {
         self.follower_state_mut().set_palette_swap_flag(value as u8);
         for i in 0..8 {
             for (a_base, b_base) in [(0x80, 0xf0), (0x88, 0xf8), (0xb8, 0xd8)] {
-                let a = self.palette_buffer_view().aux_color(a_base + i);
-                let b = self.palette_buffer_view().aux_color(b_base + i);
+                let a = self.palette_buffer().aux_color(a_base + i);
+                let b = self.palette_buffer().aux_color(b_base + i);
                 self.palette_buffer_mut().set_aux_color(b_base + i, a);
                 self.palette_buffer_mut().set_main_color(b_base + i, a);
                 self.palette_buffer_mut().set_aux_color(a_base + i, b);
@@ -3047,7 +3047,7 @@ impl ZeldaState {
 
     pub(super) fn Palette_Load_DungeonMapSprite(&mut self) {
         if let Some(palette) = self.asset_raw(91).map(Vec::from) {
-            let aux_or_main = self.palette_buffer_view().overworld_aux_or_main_offset() as usize;
+            let aux_or_main = self.palette_buffer().overworld_aux_or_main_offset() as usize;
             for pal in 0..=2 {
                 for i in 0..=6 {
                     let color = read_word_from_slice(&palette, (pal * 7 + i) * 2);
@@ -3068,7 +3068,7 @@ impl ZeldaState {
 
     pub(super) fn Palette_Load_DungeonMapBG(&mut self) {
         if let Some(palette) = self.asset_raw(90).map(Vec::from) {
-            let aux_or_main = self.palette_buffer_view().overworld_aux_or_main_offset() as usize;
+            let aux_or_main = self.palette_buffer().overworld_aux_or_main_offset() as usize;
             for pal in 0..=5 {
                 for i in 0..=15 {
                     let color = read_word_from_slice(&palette, (pal * 16 + i) * 2);
@@ -3384,7 +3384,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_copy_palettes_to_cache(&mut self) {
-        let aux = self.palette_buffer_view().aux_full_slice().to_vec();
+        let aux = self.palette_buffer().aux_full_slice().to_vec();
         self.palette_buffer_mut().copy_main_full_from(&aux);
         self.system_signals_mut().increment_cgram_update_flag();
     }
@@ -3460,8 +3460,8 @@ impl ZeldaState {
                 (0xb8 + i, 0xd8 + i),
             ];
             for (low, high) in pairs {
-                let a = self.palette_buffer_view().aux_color(low);
-                let b = self.palette_buffer_view().aux_color(high);
+                let a = self.palette_buffer().aux_color(low);
+                let b = self.palette_buffer().aux_color(high);
                 self.palette_buffer_mut().set_main_color(high, a);
                 self.palette_buffer_mut().set_aux_color(high, a);
                 self.palette_buffer_mut().set_main_color(low, b);

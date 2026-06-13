@@ -25,7 +25,7 @@ pub(crate) use display::{
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
     NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    PaletteBufferView, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
+    PaletteBufferState, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
     TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
@@ -135,7 +135,7 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState, PaletteBufferState};
+use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState};
 #[cfg(test)]
 use dungeon::DungeonEntranceBackupState;
 #[cfg(test)]
