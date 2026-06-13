@@ -19,9 +19,9 @@ mod sprites;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, HudInventoryOrderState, HudStateView, LinkDmaSourceSlot,
-    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
-    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
+    DisplayState, GraphicsDecompressionScratch, HudInventoryOrderState, HudStateView,
+    LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
+    NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
     NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,

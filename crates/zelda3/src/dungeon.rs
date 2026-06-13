@@ -11091,7 +11091,7 @@ impl ZeldaState {
             .set_previous_room_index_word(0);
         self.dungeon_state_view_mut().clear_savegame_state_low();
         self.dungeon_state_view_mut().clear_savegame_state_high();
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .clear_agahnim_palette_settings(12);
 
         self.Dungeon_LoadEntrance();

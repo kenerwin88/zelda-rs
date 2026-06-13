@@ -1008,30 +1008,30 @@ impl ZeldaState {
         dst = self.load_item_animation_gfx_one(dst, 7, 1, false);
         dst = self.load_item_animation_gfx_one(dst, 3, 2, false);
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 95);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 95);
         dst = self.load_item_animation_gfx_one(dst, 4, 3, true);
         dst = self.load_item_animation_gfx_one(dst, 3, 4, true);
         dst = self.load_item_animation_gfx_one(dst, 1, 5, true);
         dst = self.load_item_animation_gfx_one(dst, 4, 6, false);
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 96);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 96);
         dst = self.load_item_animation_gfx_one(dst, 14, 7, true);
         dst = self.load_item_animation_gfx_one(dst, 7, 8, true);
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 95);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 95);
         self.load_item_animation_gfx_one(dst, 2, 9, true);
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 84);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 84);
 
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xa480, &tmp, 0, 0, 8);
         self.expand3_to_4_high_from_slice(0xa580, &tmp, 0x180, 0, 8);
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 96);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 96);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xb280, &tmp, 0, 0, 3);
         self.expand3_to_4_high_from_slice(0xb2e0, &tmp, 0x180, 0, 3);
 
@@ -1048,8 +1048,8 @@ impl ZeldaState {
         const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
         let Some(source) = (if from_temp {
             Some(
-                self.graphics_scratch_view_mut()
-                    .primary_decomp_buffer(0x600),
+                self.graphics_scratch_mut()
+                    .primary_decompression_buffer(0x600),
             )
         } else {
             self.asset_bytes(64, 0).map(Vec::from)
@@ -1064,22 +1064,22 @@ impl ZeldaState {
     }
 
     pub(super) fn load_item_gfx_auxiliary(&mut self) {
-        self.decomp_bg_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x0f);
+        self.decomp_bg_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x0f);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(PEG_TILE_GFX_BUFFER, &tmp, 0, 16);
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x58);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x58);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xb540, &tmp, 0, 32);
 
-        self.decomp_bg_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x05);
+        self.decomp_bg_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x05);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xbdc0, &tmp, 0x480, 2);
     }
 
@@ -1100,9 +1100,9 @@ impl ZeldaState {
             }
         }
 
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::secondary_decomp_buffer_offset(), yv);
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x65);
-        let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::secondary_buffer_offset(), yv);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x65);
+        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
         let offset = TAGALONG_WHICH.get(follower).copied().unwrap_or(0);
         self.do3_to_4_low_16bit_from_slice(0xb940, &tmp, offset, 0x20);
     }
@@ -1111,13 +1111,13 @@ impl ZeldaState {
         self.replay_trace_ram_watch("loadgfx-before-decompress-sword");
         const SWORD_TYPE_TO_GFX_OFFS: [usize; 5] = [0, 0, 0x120, 0x120, 0x120];
         self.decomp_spr_to_ram(
-            GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::secondary_buffer_offset(),
             0x5f,
         );
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x5e);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x5e);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         let sword = self.inventory_state_view().sword_type() as usize;
         let src = SWORD_TYPE_TO_GFX_OFFS.get(sword).copied().unwrap_or(0);
         self.expand3_to_4_high_from_slice(0x9000, &tmp, src, 0, 12);
@@ -1129,11 +1129,11 @@ impl ZeldaState {
         self.replay_trace_ram_watch("loadgfx-before-decompress-shield");
         const SHIELD_TYPE_TO_GFX_OFFS: [usize; 4] = [0x660, 0x660, 0x6f0, 0x900];
         self.decomp_spr_to_ram(
-            GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::secondary_buffer_offset(),
             0x5f,
         );
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x5e);
-        let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x5e);
+        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
         let shield = self.inventory_state_view().shield_type() as usize;
         let src = SHIELD_TYPE_TO_GFX_OFFS
             .get(shield)
@@ -1181,8 +1181,8 @@ impl ZeldaState {
         let Some(data) = self.decomp_spr_data(pack) else {
             return;
         };
-        self.graphics_scratch_view_mut()
-            .copy_to_primary_decomp_buffer(&data);
+        self.graphics_scratch_mut()
+            .copy_to_primary_decompression_buffer(&data);
         for i in 0..0x400 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
         }
@@ -1270,19 +1270,19 @@ impl ZeldaState {
             0x2000,
             main_tileset[0] as usize,
             7,
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
         );
         self.load_background_graphics(
             0x2400,
             main_tileset[1] as usize,
             6,
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
         );
         self.load_background_graphics(
             0x2800,
             main_tileset[2] as usize,
             5,
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
         );
         self.load_background_graphics(
             0x2c00,
@@ -1312,7 +1312,7 @@ impl ZeldaState {
             0x3c00,
             main_tileset[7] as usize,
             0,
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
         );
     }
 
@@ -1332,12 +1332,12 @@ impl ZeldaState {
             self.load_sprite_graphics(
                 0x4800,
                 94,
-                GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                GraphicsDecompressionScratch::primary_buffer_offset(),
             );
             self.load_sprite_graphics(
                 0x4c00,
                 95,
-                GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                GraphicsDecompressionScratch::primary_buffer_offset(),
             );
             return;
         }
@@ -1357,7 +1357,7 @@ impl ZeldaState {
         let Some(data) = self.decomp_spr_data(gfx_pack) else {
             return;
         };
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_decompressed_graphics_to(decomp_dst, &data);
         if matches!(gfx_pack, 0x52 | 0x53 | 0x5a | 0x5b | 0x5c | 0x5e | 0x5f) {
             self.do3_to_4_high_to_vram(dst, &data);
@@ -1376,7 +1376,7 @@ impl ZeldaState {
         let Some(data) = self.decomp_bg_data(gfx_pack) else {
             return;
         };
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_decompressed_graphics_to(decomp_dst, &data);
         let high = if self.world_state_view().main_tile_theme_index() >= 0x20 {
             matches!(slot, 7 | 2 | 3 | 4)
@@ -1391,19 +1391,19 @@ impl ZeldaState {
     }
 
     pub(super) fn decompress_animated_dungeon_tiles(&mut self, pack: usize) {
-        self.decomp_bg_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), pack);
+        self.decomp_bg_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), pack);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 48);
 
-        self.decomp_bg_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x5c);
+        self.decomp_bg_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x5c);
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xac80, &tmp, 0, 48);
 
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .rotate_animated_dungeon_tile_planes();
 
         self.set_animated_tile_vram_destination_address(0x3b00);
@@ -1416,7 +1416,7 @@ impl ZeldaState {
         let Some(data) = self.decomp_spr_data(gfx) else {
             return 0;
         };
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_decompressed_graphics_to(dst, &data)
     }
 
@@ -1424,7 +1424,7 @@ impl ZeldaState {
         let Some(data) = self.decomp_bg_data(gfx) else {
             return 0;
         };
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_decompressed_graphics_to(dst, &data)
     }
 
@@ -1458,13 +1458,8 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.graphics_scratch_view_mut().write_expanded_tile_row(
-                    dst,
-                    lo,
-                    hi,
-                    u,
-                    lo | hi | u,
-                );
+                self.graphics_scratch_mut()
+                    .write_expanded_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
             }
             dst += 16;
@@ -1488,13 +1483,8 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.graphics_scratch_view_mut().write_expanded_tile_row(
-                    dst,
-                    lo,
-                    hi,
-                    u,
-                    lo | hi | u,
-                );
+                self.graphics_scratch_mut()
+                    .write_expanded_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
             }
             dst += 16;
@@ -1512,7 +1502,7 @@ impl ZeldaState {
         for _ in 0..num {
             let src2 = src + 0x10;
             for i in 0..8 {
-                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                self.graphics_scratch_mut().write_expanded_tile_row(
                     dst,
                     data.get(src + i * 2).copied().unwrap_or(0),
                     data.get(src + i * 2 + 1).copied().unwrap_or(0),
@@ -1535,7 +1525,7 @@ impl ZeldaState {
                 let hi = data.get(src + 1).copied().unwrap_or(0);
                 self.ppu.vram[dst] = lo as u16 | ((hi as u16) << 8);
                 tmp[i] = lo | hi;
-                self.graphics_scratch_view_mut()
+                self.graphics_scratch_mut()
                     .set_dungeon_line_pointer_row0(i, tmp[i] as u16);
                 dst += 1;
                 src += 2;
@@ -1630,7 +1620,7 @@ impl ZeldaState {
                 let lo = sprite_data[i * 2];
                 let hi = sprite_data[i * 2 + 1];
                 let mask = sprite_data[16 + i];
-                self.graphics_scratch_view_mut().write_expanded_tile_row(
+                self.graphics_scratch_mut().write_expanded_tile_row(
                     dst,
                     lo,
                     hi,
@@ -1731,21 +1721,21 @@ impl ZeldaState {
 
     pub(super) fn DecompressAnimatedOverworldTiles(&mut self, a: u8) {
         self.decomp_bg_to_ram(
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
             a as usize,
         );
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 64);
 
         self.decomp_bg_to_ram(
-            GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+            GraphicsDecompressionScratch::primary_buffer_offset(),
             a.wrapping_add(1) as usize,
         );
         let tmp = self
-            .graphics_scratch_view_mut()
-            .primary_decomp_buffer(0x600);
+            .graphics_scratch_mut()
+            .primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
         self.set_animated_tile_vram_destination_address(0x3c00);
     }
@@ -1763,7 +1753,7 @@ impl ZeldaState {
             .get(a as usize)
             .copied()
             .unwrap_or(0);
-        let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
         self.expand3_to_4_high_from_slice(0xbd40, &tmp, src, 0, 2);
         self.expand3_to_4_high_from_slice(0xbd80, &tmp, src + 0x180, 0, 2);
     }
@@ -1777,8 +1767,8 @@ impl ZeldaState {
         } else {
             0x5b
         };
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::secondary_decomp_buffer_offset(), y);
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x5a);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::secondary_buffer_offset(), y);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x5a);
         self.WriteTo4BPPBuffer_at_7F4000(a);
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
     }
@@ -1796,8 +1786,7 @@ impl ZeldaState {
         let p = aux_tileset(self.world_state_view().aux_tile_theme_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
-                self.graphics_scratch_view_mut()
-                    .set_aux_bg_subset_pack(i, pack);
+                self.graphics_scratch_mut().set_aux_bg_subset_pack(i, pack);
                 assert_eq!(
                     self.decomp_bg_to_ram(0x6000 + 0x600 * i, pack as usize),
                     0x600
@@ -1850,7 +1839,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Attract_DecompressStoryGFX(&mut self) {
-        self.decomp_spr_to_ram(GraphicsScratchViewMut::primary_decomp_buffer_offset(), 0x67);
+        self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x67);
         self.decomp_spr_to_ram(0x14800, 0x68);
     }
 
@@ -1881,52 +1870,52 @@ impl ZeldaState {
             1 => {
                 self.AnimateMirrorWarp_DecompressNewTileSets();
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt] as usize,
                 );
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 1] as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_low_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
             2 => {
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 2] as usize,
                 );
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 3] as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
             3 => {
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     self.world_state_view().aux_bg_subset(1) as usize,
                 );
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.world_state_view().aux_bg_subset(2) as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             4 => {
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 4] as usize,
                 );
                 self.decomp_bg_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 5] as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             5 => {
@@ -1978,14 +1967,14 @@ impl ZeldaState {
             }
             12 => {
                 self.decomp_spr_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     self.sprite_workspace_view().graphics_subset(0) as usize,
                 );
                 self.decomp_spr_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.sprite_workspace_view().graphics_subset(1) as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 if matches!(
                     self.sprite_workspace_view().graphics_subset(0),
                     0x52 | 0x53 | 0x5a | 0x5b
@@ -1998,14 +1987,14 @@ impl ZeldaState {
             }
             13 => {
                 self.decomp_spr_to_ram(
-                    GraphicsScratchViewMut::primary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::primary_buffer_offset(),
                     self.sprite_workspace_view().graphics_subset(2) as usize,
                 );
                 self.decomp_spr_to_ram(
-                    GraphicsScratchViewMut::secondary_decomp_buffer_offset(),
+                    GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.sprite_workspace_view().graphics_subset(3) as usize,
                 );
-                let tmp = self.graphics_scratch_view_mut().combined_decomp_buffers();
+                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
                 self.handle_followers_after_mirroring();
             }
@@ -2080,8 +2069,8 @@ impl ZeldaState {
 
     pub(super) fn PrepTransAuxGfx(&mut self) {
         let tmp = self
-            .graphics_scratch_view_mut()
-            .staged_bg_and_sprite_decomp_buffers();
+            .graphics_scratch_mut()
+            .staged_bg_and_sprite_decompression_buffers();
         self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
         if self.world_state_view().aux_tile_theme_index() >= 32 {
             self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 0x80);
@@ -2100,7 +2089,9 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadNewSpriteGFXSet(&mut self) {
-        let tmp = self.graphics_scratch_view_mut().sprite_decomp_buffer_tail();
+        let tmp = self
+            .graphics_scratch_mut()
+            .sprite_decompression_buffer_tail();
         self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
         if matches!(
             self.sprite_workspace_view().graphics_subset(3),
@@ -2260,8 +2251,8 @@ impl ZeldaState {
     pub(super) fn AgahnimWarpShadowFilter(&mut self, k: usize) {
         const AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS: [usize; 3] = [0x160, 0x180, 0x1a0];
 
-        let pal_countdown = self.graphics_scratch_view_mut().agahnim_palette_word(k);
-        let darkening_screen = self.graphics_scratch_view_mut().agahnim_palette_word(k + 3);
+        let pal_countdown = self.graphics_scratch_mut().agahnim_palette_word(k);
+        let darkening_screen = self.graphics_scratch_mut().agahnim_palette_word(k + 3);
         self.palette_filter_view_mut()
             .set_countdown_word(pal_countdown);
         self.palette_filter_view_mut()
@@ -2286,9 +2277,9 @@ impl ZeldaState {
         let darkening_screen = self
             .palette_filter_view()
             .darkening_or_lightening_screen_word();
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .set_agahnim_palette_word(k, pal_countdown);
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .set_agahnim_palette_word(k + 3, darkening_screen);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
@@ -2768,7 +2759,7 @@ impl ZeldaState {
         let (xx, yy) = self.display_state().star_tile_restore_source_offsets();
         let src0 = 0xbdc0 + xx;
         let src1 = 0xbdc0 + yy;
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_message_rows(0, src0, src1, 32);
         self.set_pending_nmi_subroutine(0x18);
     }
@@ -2815,7 +2806,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_UpdatePegGFXBuffer(&mut self, x: usize, y: usize) {
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_peg_tile_graphics_to_message_buffer(x, y);
         self.set_pending_nmi_subroutine(23);
     }
@@ -2840,7 +2831,7 @@ impl ZeldaState {
                         if self.dungeon_state_view().bg2_properties() == 2 {
                             self.Palette_AssertTranslucencySwap();
                             if self.world_location_state().dungeon_room_index() == 13 {
-                                self.graphics_scratch_view_mut()
+                                self.graphics_scratch_mut()
                                     .clear_agahnim_palette_settings(6);
                                 self.Palette_LoadAgahnim();
                             }
@@ -3368,7 +3359,7 @@ impl ZeldaState {
 
         self.spotlight_hdma_view_mut()
             .clear_hdma_table_dynamic_range(224, 16);
-        self.graphics_scratch_view_mut()
+        self.graphics_scratch_mut()
             .copy_dynamic_hdma_table_to_reserved(224);
 
         let idx = (self.spotlight_hdma_view().window_state() >> 1) as usize;

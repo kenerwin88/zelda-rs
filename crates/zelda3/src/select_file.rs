@@ -129,15 +129,15 @@ impl ZeldaState {
         let data = self
             .decomp_spr_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
-        self.graphics_scratch_view_mut()
-            .copy_to_primary_decomp_buffer(&data);
+        self.graphics_scratch_mut()
+            .copy_to_primary_decompression_buffer(&data);
         self.do3_to_4_high_to_vram(0x5000, &data);
 
         let data = self
             .decomp_spr_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
-        self.graphics_scratch_view_mut()
-            .copy_to_primary_decomp_buffer(&data);
+        self.graphics_scratch_mut()
+            .copy_to_primary_decompression_buffer(&data);
         self.do3_to_4_high_to_vram(0x5400, &data);
 
         self.transfer_font_to_vram();
@@ -145,8 +145,8 @@ impl ZeldaState {
         let data = self
             .decomp_spr_data(0x6b)
             .expect("file select sprite sheet 0x6b must decompress");
-        self.graphics_scratch_view_mut()
-            .copy_to_primary_decomp_buffer(&data);
+        self.graphics_scratch_mut()
+            .copy_to_primary_decompression_buffer(&data);
         for i in 0..0x300 {
             self.ppu.vram[0x7800 + i] = read_word_from_slice(&data, i * 2);
         }
