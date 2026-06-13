@@ -569,13 +569,7 @@ pub(crate) struct NativeAttractSceneBridgeMut<'a> {
 
 impl<'a> NativeAttractSceneBridgeMut<'a> {
     pub(crate) fn new(attract_scene: &'a mut AttractSceneState, ram: &'a mut [u8]) -> Self {
-        *attract_scene = AttractSceneState::load_from_ram(ram);
         Self { attract_scene, ram }
-    }
-
-    fn sync_from_ram(&mut self) {
-        *self.attract_scene = AttractSceneState::load_from_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -585,15 +579,82 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
         );
     }
 
+    fn apply_byte(&mut self, offset: usize, value: u8) {
+        match offset {
+            ATTRACT_STATE => {
+                self.attract_scene.state_word =
+                    (self.attract_scene.state_word & 0xff00) | u16::from(value)
+            }
+            ATTRACT_SEQUENCE => {
+                self.attract_scene.sequence = value;
+                self.attract_scene.state_word =
+                    (self.attract_scene.state_word & 0x00ff) | (u16::from(value) << 8);
+            }
+            ATTRACT_SCENE_TIMER => self.attract_scene.scene_timer = value,
+            ATTRACT_SCENE_SUBSTEP => self.attract_scene.scene_substep = value,
+            ATTRACT_X_BASE => {
+                self.attract_scene.x_base = (self.attract_scene.x_base & 0xff00) | u16::from(value)
+            }
+            ATTRACT_X_BASE_HI => {}
+            ATTRACT_Y_BASE => {
+                self.attract_scene.y_base = value;
+                self.attract_scene.x_base =
+                    (self.attract_scene.x_base & 0x00ff) | (u16::from(value) << 8);
+            }
+            ATTRACT_OAM_IDX => self.attract_scene.oam_index = value,
+            ATTRACT_MAIDEN_WARP_STEP => self.attract_scene.maiden_warp_step = value,
+            INTRO_STEP_INDEX => self.attract_scene.intro_step_index = value,
+            INTRO_STEP_TIMER => self.attract_scene.intro_step_timer = value,
+            INTRO_FRAME_CTR => self.attract_scene.intro_frame_counter = value,
+            INTRO_DID_RUN_STEP => self.attract_scene.intro_did_run_step = value,
+            INTRO_TIMES_PAL_FLASH => self.attract_scene.intro_palette_flash_count = value,
+            ATTRACT_LEGEND_FLAG => self.attract_scene.legend_flag = value,
+            ATTRACT_NEXT_LEGEND_GFX => self.attract_scene.next_legend_gfx = value,
+            ATTRACT_THRONE_FADE_TIMER => self.attract_scene.throne_fade_timer = value,
+            ATTRACT_PRISON_ZELDA_Y_BASE => self.attract_scene.prison_zelda_y_base = value,
+            ATTRACT_ANIM_STEP_COUNTER => self.attract_scene.anim_step_counter = value,
+            ATTRACT_SOLDIER_ANIM_STEP => self.attract_scene.soldier_anim_step = value,
+            ATTRACT_PRISON_SOLDIER_X_LO => self.attract_scene.prison_soldier_x_lo = value,
+            ATTRACT_SCENE_FRAME_COUNTER => self.attract_scene.scene_frame_counter = value,
+            ATTRACT_SCENE_DONE_FLAG => self.attract_scene.scene_done_flag = value,
+            ATTRACT_FADE_IN_COMPLETE_FLAG => self.attract_scene.fade_in_complete_flag = value,
+            ATTRACT_FADE_IN_DONE_FLAG => self.attract_scene.fade_in_done_flag = value,
+            ATTRACT_SUBSTEP_DELAY_COUNTER => self.attract_scene.substep_delay_counter = value,
+            ATTRACT_MAIDEN_WARP_TIMER_A => self.attract_scene.maiden_warp_timer_a = value,
+            ATTRACT_MAIDEN_WARP_TIMER_B => self.attract_scene.maiden_warp_timer_b = value,
+            TIMER_FOR_MODE7_ZOOM => self.attract_scene.mode7_zoom_timer = value,
+            _ => {}
+        }
+    }
+
+    fn apply_word(&mut self, offset: usize, value: u16) {
+        match offset {
+            ATTRACT_STATE => {
+                self.attract_scene.state_word = value;
+                self.attract_scene.sequence = (value >> 8) as u8;
+            }
+            ATTRACT_X_BASE => {
+                self.attract_scene.x_base = value;
+                self.attract_scene.y_base = (value >> 8) as u8;
+            }
+            ATTRACT_STORY_TEXT_POINTER => self.attract_scene.story_text_pointer = value,
+            ATTRACT_BG2_VOFS_BACKUP => self.attract_scene.bg2_vofs_backup = value,
+            ATTRACT_LEGEND_CTR => self.attract_scene.legend_ctr = value,
+            _ => {}
+        }
+    }
+
     fn write_byte(&mut self, offset: usize, value: u8) -> u8 {
-        self.ram[offset] = value;
-        self.sync_from_ram();
+        self.apply_byte(offset, value);
+        self.attract_scene.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
         value
     }
 
     fn write_word(&mut self, offset: usize, value: u16) -> u16 {
-        write_le_u16(self.ram, offset, value);
-        self.sync_from_ram();
+        self.apply_word(offset, value);
+        self.attract_scene.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
         value
     }
 
@@ -707,7 +768,11 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
 
     pub(crate) fn clear_intro_step_state_block(&mut self) {
         self.ram[INTRO_STEP_INDEX..INTRO_STEP_INDEX + 7 * 16].fill(0);
-        self.sync_from_ram();
+        self.attract_scene.intro_step_index = 0;
+        self.attract_scene.intro_step_timer = 0;
+        self.attract_scene.intro_frame_counter = 0;
+        self.attract_scene.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_intro_step_index(&mut self) -> u8 {

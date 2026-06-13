@@ -1835,7 +1835,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn attract_scene(&self) -> AttractSceneState {
-        AttractSceneState::load_from_ram(&self.ram)
+        self.game_state.ending.attract_scene
     }
 
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {

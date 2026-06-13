@@ -3403,6 +3403,44 @@ mod tests {
     }
 
     #[test]
+    fn native_attract_scene_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, ATTRACT_STATE, 0x1203);
+        write_le_u16(&mut native_ram, ATTRACT_X_BASE, 0x5678);
+        native_ram[ATTRACT_SCENE_TIMER] = 9;
+        native_ram[INTRO_STEP_INDEX] = 4;
+        native_ram[INTRO_STEP_TIMER] = 5;
+        native_ram[INTRO_FRAME_CTR] = 6;
+        let mut attract = AttractSceneState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeAttractSceneBridgeMut::new(&mut attract, &mut ram);
+            assert_eq!(bridge.increment_state(), 4);
+            bridge.set_sequence(0x34);
+            bridge.set_y_base(0x9a);
+            assert_eq!(bridge.decrement_scene_timer(), 8);
+            assert_eq!(bridge.increment_intro_frame_counter(), 7);
+            bridge.clear_intro_step_state_block();
+        }
+
+        assert_eq!(attract.state_word(), 0x3404);
+        assert_eq!(attract.sequence(), 0x34);
+        assert_eq!(attract.x_base_word(), 0x9a78);
+        assert_eq!(attract.y_base(), 0x9a);
+        assert_eq!(attract.scene_timer(), 8);
+        assert_eq!(attract.intro_step_index(), 0);
+        assert_eq!(attract.intro_step_timer(), 0);
+        assert_eq!(attract.intro_frame_counter(), 0);
+        assert_eq!(read_le_u16(&ram, ATTRACT_STATE), 0x3404);
+        assert_eq!(read_le_u16(&ram, ATTRACT_X_BASE), 0x9a78);
+        assert_eq!(ram[ATTRACT_SCENE_TIMER], 8);
+        assert_eq!(ram[INTRO_STEP_INDEX], 0);
+        assert_eq!(ram[INTRO_STEP_TIMER], 0);
+        assert_eq!(ram[INTRO_FRAME_CTR], 0);
+    }
+
+    #[test]
     fn inventory_items_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[LINK_ITEM_BOW] = 7;
