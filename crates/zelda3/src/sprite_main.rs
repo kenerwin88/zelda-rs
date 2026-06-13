@@ -151,8 +151,8 @@ mod tests {
         s.oam_state_mut().set_current_pointer(OAM_BUF as u16);
         for i in 0..4 {
             let base = OAM_BUF + i * 4;
-            s.ram[base + 1] = 0xee;
-            s.ram[base + 2] = 0xee;
+            s.oam_state_mut().set_entry_y(base, 0xee);
+            s.oam_state_mut().set_entry_char(base, 0xee);
         }
         let k = 0;
         s.sprite_slot_mut(k).set_sprite_type(0x46);
