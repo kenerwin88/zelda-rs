@@ -3233,6 +3233,10 @@ impl ZeldaState {
         DungeonBg2AttributeState::load_from_ram(&self.ram)
     }
 
+    pub(crate) fn dungeon_tile_attribute(&self, tile: usize) -> u8 {
+        self.dungeon_bg2_attributes().attr_for_tile(&self.ram, tile)
+    }
+
     pub(crate) fn dungeon_bg2_attributes_mut(&mut self) -> NativeDungeonBg2AttributeBridgeMut<'_> {
         NativeDungeonBg2AttributeBridgeMut::new(
             &mut self.game_state.dungeon.bg2_attributes,

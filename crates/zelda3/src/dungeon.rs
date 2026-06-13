@@ -5793,7 +5793,7 @@ impl ZeldaState {
             self.tile_word(src, 2),
             self.tile_word(src, 3),
         ];
-        let attr = self.dungeon_state_view().attr_for_tile(tiles[3] as usize);
+        let attr = self.dungeon_tile_attribute(tiles[3] as usize);
         let tile_positions = [pos, pos + 64, pos + 1, pos + 65];
         if std::env::var_os("ZELDA3_TRACE_SPRITE_DMA").is_some() {
             let target = std::env::var("ZELDA3_TRACE_SPRITE_DMA_POS")
@@ -5853,7 +5853,7 @@ impl ZeldaState {
         self.dungeon_room_tilemaps_mut()
             .set_bg2_tile((pos + 64) as usize, tile);
 
-        let attr = u16::from(self.dungeon_state_view().attr_for_tile(tile as usize)) * 0x0101;
+        let attr = u16::from(self.dungeon_tile_attribute(tile as usize)) * 0x0101;
         self.dungeon_state_view_mut()
             .set_bg2_attr_word(pos as usize, attr);
         self.dungeon_state_view_mut()
@@ -5876,7 +5876,7 @@ impl ZeldaState {
         let index = (index >> 1) as usize;
         let pos = (self.dungeon_object_tracking().object_tilemap_pos(index) & 0x3fff) >> 1;
         let [ul, ll, ur, lr] = self.dungeon_state_view().replacement_tilemap_quad(index);
-        let attr = self.dungeon_state_view().attr_for_tile(lr as usize);
+        let attr = self.dungeon_tile_attribute(lr as usize);
         self.Dungeon_Store2x2(pos, ul, ll, ur, lr, attr);
     }
 
@@ -7936,7 +7936,7 @@ impl ZeldaState {
     }
 
     fn attribute_for_bg_tile(&self, tile: u16) -> u8 {
-        let mut attr = self.dungeon_state_view().attr_for_tile(tile as usize);
+        let mut attr = self.dungeon_tile_attribute(tile as usize);
         if (0x10..0x1c).contains(&attr) {
             attr |= (tile >> 14) as u8;
         }
@@ -8649,8 +8649,8 @@ impl ZeldaState {
             if self.dungeon_bg2_attributes().bg2_attr(i) & !1 == 0x66 {
                 self.dungeon_bg2_attributes_mut().xor_bg2_attr(i, 1);
             }
-            if self.dungeon_state_view().bg1_attr(i) & !1 == 0x66 {
-                self.dungeon_state_view_mut().xor_bg1_attr(i, 1);
+            if self.dungeon_bg2_attributes().bg1_attr(i) & !1 == 0x66 {
+                self.dungeon_bg2_attributes_mut().xor_bg1_attr(i, 1);
             }
         }
     }
@@ -8725,7 +8725,7 @@ impl ZeldaState {
         if j + 1 >= 0x1000 {
             return;
         }
-        self.dungeon_state_view_mut().set_bg1_attr_word(j, attr);
+        self.dungeon_bg2_attributes_mut().set_bg1_attr_word(j, attr);
     }
 
     fn Dungeon_LoadSingleDoorTileAttribute(&mut self) {
@@ -8737,7 +8737,7 @@ impl ZeldaState {
                 self.write_attr2(j + xy(0, 0), attr | 0x1010);
                 self.write_attr2(j + xy(0, 1), attr | 0x1010);
             } else {
-                let attr = self.dungeon_state_view().bg1_attr_word(j);
+                let attr = self.dungeon_bg2_attributes().bg1_attr_word(j);
                 self.write_attr1(j + xy(0, 0), attr | 0x1010);
                 self.write_attr1(j + xy(0, 1), attr | 0x1010);
             }
@@ -8752,7 +8752,7 @@ impl ZeldaState {
                 self.write_attr2(j + xy(0, 0), attr | 0x2020);
                 self.write_attr2(j + xy(0, 1), attr | 0x2020);
             } else {
-                let attr = self.dungeon_state_view().bg1_attr_word(j);
+                let attr = self.dungeon_bg2_attributes().bg1_attr_word(j);
                 self.write_attr1(j + xy(0, 0), attr | 0x2020);
                 self.write_attr1(j + xy(0, 1), attr | 0x2020);
             }
@@ -11092,8 +11092,9 @@ impl ZeldaState {
         self.set_dungeon_room(0);
         self.dungeon_room_tracking_mut()
             .set_previous_room_index_word(0);
-        self.dungeon_state_view_mut().clear_savegame_state_low();
-        self.dungeon_state_view_mut().clear_savegame_state_high();
+        self.dungeon_savegame_state_mut().clear_savegame_state_low();
+        self.dungeon_savegame_state_mut()
+            .clear_savegame_state_high();
         self.graphics_scratch_mut()
             .clear_agahnim_palette_settings(12);
 

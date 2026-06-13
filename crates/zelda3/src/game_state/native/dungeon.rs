@@ -1,6 +1,6 @@
 use crate::game_state::constants::{
-    AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, BLOCK_TRAP_CHECK_FLAG,
-    CHANGEABLE_DUNGEON_OBJECT_INDEX, COMPOSITE_OF_LAYOUT_AND_QUADRANT,
+    ATTRIBUTES_FOR_TILE_PLAYER, AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS,
+    BLOCK_TRAP_CHECK_FLAG, CHANGEABLE_DUNGEON_OBJECT_INDEX, COMPOSITE_OF_LAYOUT_AND_QUADRANT,
     DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
     DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
     DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
@@ -53,6 +53,7 @@ const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
 const DUNGEON_DRAW_LINE_POINTER_BYTES: usize = 33;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
+const DUNGEON_BG1_ATTR_BUFFER_OFFSET: usize = DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE;
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
     (DUNG_STAIRS_TABLE_1 - DUNG_INTER_STAIRCASES) / 2;
@@ -1905,6 +1906,23 @@ impl DungeonBg2AttributeState {
         u16::from(self.bg2_attr(offset)) | (u16::from(self.bg2_attr(offset + 1)) << 8)
     }
 
+    pub(crate) fn bg1_attr(&self, offset: usize) -> u8 {
+        self.attrs
+            .get(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn bg1_attr_word(&self, offset: usize) -> u16 {
+        u16::from(self.bg1_attr(offset)) | (u16::from(self.bg1_attr(offset + 1)) << 8)
+    }
+
+    pub(crate) fn attr_for_tile(&self, ram: &[u8], tile: usize) -> u8 {
+        ram.get(ATTRIBUTES_FOR_TILE_PLAYER + (tile & 0x03ff))
+            .copied()
+            .unwrap_or(0)
+    }
+
     pub(crate) fn bg2_attr_address(&self, offset: usize) -> usize {
         DUNGEON_BG2_ATTR_TABLE + offset
     }
@@ -1929,8 +1947,18 @@ impl DungeonBg2AttributeState {
         self.attrs[offset + 1] = (value >> 8) as u8;
     }
 
+    fn set_bg1_attr_word(&mut self, offset: usize, value: u16) {
+        let offset = DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset;
+        self.attrs[offset] = value as u8;
+        self.attrs[offset + 1] = (value >> 8) as u8;
+    }
+
     fn xor_bg2_attr(&mut self, offset: usize, value: u8) {
         self.attrs[offset] ^= value;
+    }
+
+    fn xor_bg1_attr(&mut self, offset: usize, value: u8) {
+        self.attrs[DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset] ^= value;
     }
 
     fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
@@ -1968,6 +1996,14 @@ impl DungeonSavegameState {
 
     fn clear_savegame_state_bits(&mut self) {
         self.state_bits = 0;
+    }
+
+    fn clear_savegame_state_high(&mut self) {
+        self.state_bits &= 0x00ff;
+    }
+
+    fn clear_savegame_state_low(&mut self) {
+        self.state_bits &= 0xff00;
     }
 
     fn or_savegame_state_bits(&mut self, mask: u16) -> u16 {
@@ -2599,6 +2635,16 @@ impl<'a> NativeDungeonSavegameBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn clear_savegame_state_high(&mut self) {
+        self.state.clear_savegame_state_high();
+        self.sync();
+    }
+
+    pub(crate) fn clear_savegame_state_low(&mut self) {
+        self.state.clear_savegame_state_low();
+        self.sync();
+    }
+
     pub(crate) fn or_savegame_state_bits(&mut self, mask: u16) -> u16 {
         let value = self.state.or_savegame_state_bits(mask);
         self.sync();
@@ -2639,8 +2685,18 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn set_bg1_attr_word(&mut self, offset: usize, value: u16) {
+        self.state.set_bg1_attr_word(offset, value);
+        self.sync();
+    }
+
     pub(crate) fn xor_bg2_attr(&mut self, offset: usize, value: u8) {
         self.state.xor_bg2_attr(offset, value);
+        self.sync();
+    }
+
+    pub(crate) fn xor_bg1_attr(&mut self, offset: usize, value: u8) {
+        self.state.xor_bg1_attr(offset, value);
         self.sync();
     }
 
