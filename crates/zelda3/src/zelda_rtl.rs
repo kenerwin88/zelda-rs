@@ -1574,10 +1574,10 @@ impl ZeldaState {
                 .unwrap_or_else(|| "-".to_string()),
             raw,
             out,
-            self.system_signals_view().ambient_sound_effect(),
-            self.system_signals_view().sound_effect_1(),
-            self.system_signals_view().sound_effect_2(),
-            self.system_signals_view().raw_sfx_pan_value(),
+            self.system_signals().ambient_sound_effect(),
+            self.system_signals().sound_effect_1(),
+            self.system_signals().sound_effect_2(),
+            self.system_signals().raw_sfx_pan_value(),
         );
     }
 
@@ -1733,11 +1733,11 @@ impl ZeldaState {
         NativeEnhancedFeaturesBridgeMut::new(&mut self.game_state.enhanced_features, &mut self.ram)
     }
 
-    pub(crate) fn system_signals_view(&self) -> &SystemSignalsState {
+    pub(crate) fn system_signals(&self) -> &SystemSignalsState {
         &self.game_state.system_signals
     }
 
-    pub(crate) fn system_signals_view_mut(&mut self) -> NativeSystemSignalsBridgeMut<'_> {
+    pub(crate) fn system_signals_mut(&mut self) -> NativeSystemSignalsBridgeMut<'_> {
         NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
@@ -1751,38 +1751,32 @@ impl ZeldaState {
 
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
         let sound_effect = self.link_calculate_sfx_pan() | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_1(sound_effect);
+        self.system_signals_mut().set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_link_pan(&mut self, effect: u8) {
         let sound_effect = self.link_calculate_sfx_pan() | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_2(sound_effect);
+        self.system_signals_mut().set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_1_with_ancilla_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.ancilla_calculate_sfx_pan(slot) | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_1(sound_effect);
+        self.system_signals_mut().set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_ancilla_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.ancilla_calculate_sfx_pan(slot) | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_2(sound_effect);
+        self.system_signals_mut().set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_1_with_sprite_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.sprite_calculate_sfx_pan(slot) | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_1(sound_effect);
+        self.system_signals_mut().set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_sprite_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.sprite_calculate_sfx_pan(slot) | effect;
-        self.system_signals_view_mut()
-            .set_sound_effect_2(sound_effect);
+        self.system_signals_mut().set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn special_exit_position_view(&self) -> SpecialExitPositionView<'_> {
@@ -5961,8 +5955,8 @@ impl ZeldaState {
         } else {
             Self::state_recorder_record(&mut state_recorder, inputs as u16);
             let apui00 = self.zelda_is_music_playing() as u8;
-            if apui00 != self.system_signals_view().apui00() {
-                self.system_signals_view_mut().set_apui00(apui00);
+            if apui00 != self.system_signals().apui00() {
+                self.system_signals_mut().set_apui00(apui00);
                 let apui00_offset = SystemSignalsState::apui00_offset();
                 self.emu_sync_memory_region(apui00_offset, 1);
                 Self::state_recorder_record_patch_byte(
@@ -5973,9 +5967,9 @@ impl ZeldaState {
                 );
             }
             if self.display_state().has_animated_tile_data_source() {
-                if self.system_signals_view().bugs_fixed() < BUGFIX_LATEST {
+                if self.system_signals().bugs_fixed() < BUGFIX_LATEST {
                     if !self.rom_startup_timing {
-                        self.system_signals_view_mut().set_bugs_fixed(BUGFIX_LATEST);
+                        self.system_signals_mut().set_bugs_fixed(BUGFIX_LATEST);
                         self.emu_sync_memory_region(RAM_BUGS_FIXED, 1);
                         Self::state_recorder_record_patch_byte(
                             &mut state_recorder,
@@ -6012,7 +6006,7 @@ impl ZeldaState {
             && matches!(frame.submodule, 3 | 4)
             && frame.frame_counter >= configured_poly_scheduler_frame_threshold();
         self.bsnes_hold_intro_step_this_frame = false;
-        let run_what = if self.system_signals_view().bugs_fixed() < BUGFIX_POLY_RENDERER
+        let run_what = if self.system_signals().bugs_fixed() < BUGFIX_POLY_RENDERER
             && !use_bsnes_poly_scheduler
         {
             if self.display_state().nmi_thread_uses_poly_stack() {
@@ -6391,7 +6385,7 @@ impl ZeldaState {
         }
 
         self.set_screen_brightness(0x80);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
     }
@@ -6792,8 +6786,8 @@ impl ZeldaState {
         self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
-        if self.system_signals_view().sound_effect_2() == 0 {
-            self.system_signals_view_mut().set_sound_effect_2(14);
+        if self.system_signals().sound_effect_2() == 0 {
+            self.system_signals_mut().set_sound_effect_2(14);
         }
         loc & 0x7fff
     }
@@ -8158,7 +8152,7 @@ mod tests {
         assert_eq!(state.ancilla_slot_view(4).work_byte_1(), 0);
         assert_eq!(state.ancilla_slot_view(4).work_byte_3(), 9);
         assert_eq!(state.ancilla_slot_view(4).work_byte_4(), 5);
-        assert_eq!(state.system_signals_view().sound_effect_2(), 0x4f);
+        assert_eq!(state.system_signals().sound_effect_2(), 0x4f);
     }
 
     #[test]
@@ -9056,7 +9050,7 @@ mod tests {
         state.link_splash_upon_landing();
 
         assert_eq!(state.player_state_view().handler_state(), 4);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 0x24);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 0x24);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
@@ -9230,7 +9224,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0x80);
         assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 1);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 6);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 37);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 37);
         assert_eq!(state.player_state_view().swim_direction_flags(), 8);
     }
 
@@ -9359,7 +9353,7 @@ mod tests {
         assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 4);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 21);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 21);
 
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
@@ -9396,7 +9390,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 1);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
         assert!(!state.link_check_magic_cost(1));
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 60);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
         assert_eq!(state.dialogue_message_index_view().value(), 123);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
 
@@ -9433,7 +9427,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 1);
         assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 8);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 20);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 20);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 20);
         assert_eq!(state.player_state_view().button_mask_b_y() & 0x40, 0);
 
         let mut state = ZeldaState::new();
@@ -9441,7 +9435,7 @@ mod tests {
         state.link_item_cape();
 
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 60);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
         assert_eq!(state.dialogue_message_index_view().value(), 123);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
     }
@@ -9485,7 +9479,7 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 21);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 21);
     }
 
     #[test]
@@ -9558,7 +9552,7 @@ mod tests {
         let mut book = ZeldaState::new();
         book.player_state_view_mut().set_filtered_joypad_h(0x40);
         book.link_item_book();
-        assert_eq!(book.system_signals_view().sound_effect_1() & 0x3f, 60);
+        assert_eq!(book.system_signals().sound_effect_1() & 0x3f, 60);
 
         let mut prayer = ZeldaState::new();
         prayer.player_state_view_mut().set_filtered_joypad_h(0x40);
@@ -9573,8 +9567,8 @@ mod tests {
         assert_eq!(prayer.player_state_view().y_button_action_timer(), 22);
         assert_eq!(prayer.player_state_view().state_bits(), 2);
         assert_eq!(link_test_byte(&prayer, LINK_DIRECTION), 0);
-        assert_eq!(prayer.system_signals_view().ambient_sound_effect(), 17);
-        assert_eq!(prayer.system_signals_view().music_control(), 242);
+        assert_eq!(prayer.system_signals().ambient_sound_effect(), 17);
+        assert_eq!(prayer.system_signals().music_control(), 242);
     }
 
     #[test]
@@ -9637,7 +9631,7 @@ mod tests {
         set_link_test_word(&mut flute, LINK_X_COORD, 0x200);
         flute.link_item_flute();
         assert_eq!(flute.ram[FLUTE_COUNTDOWN], 128);
-        assert_eq!(flute.system_signals_view().sound_effect_1(), 0);
+        assert_eq!(flute.system_signals().sound_effect_1(), 0);
         assert_eq!(flute.ram[SUBMODULE_INDEX], 45);
         assert_eq!(flute.ancilla_slot_view(4).ancilla_type(), 55);
 
@@ -9662,7 +9656,7 @@ mod tests {
         assert_eq!(link_test_byte(&ether, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&ether, LINK_DELAY_TIMER_SPIN_ATTACK), 5);
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 0);
-        assert_eq!(ether.system_signals_view().sound_effect_2() & 0x3f, 35);
+        assert_eq!(ether.system_signals().sound_effect_2() & 0x3f, 35);
 
         set_link_test_byte(&mut ether, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK] = 9;
@@ -9686,7 +9680,7 @@ mod tests {
         set_link_test_byte(&mut blocked, LINK_MAGIC_POWER, 64);
         blocked.link_item_bombos();
         assert_eq!(blocked.player_state_view().handler_state(), 0);
-        assert_eq!(blocked.system_signals_view().sound_effect_1() & 0x3f, 60);
+        assert_eq!(blocked.system_signals().sound_effect_1() & 0x3f, 60);
     }
 
     #[test]
@@ -9826,7 +9820,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
         assert_eq!(state.player_state_view().position_mode(), 16);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 50);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 50);
 
         state.player_state_view_mut().set_button_mask_b_y(0x40);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
@@ -10011,7 +10005,7 @@ mod tests {
         state.tile_detect_main_handler(0);
 
         assert_eq!(state.player_state_view().water_ripple_or_grass_state(), 1);
-        assert_eq!(state.system_signals_view().sound_effect_1() & 0x3f, 28);
+        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 28);
         assert_eq!(state.ram[RAW_SFX_PAN_VALUE], 28);
     }
 
@@ -10291,7 +10285,7 @@ mod tests {
         assert_eq!(state.display_state().core_update_disable_flag, 0x80);
         assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
         assert_eq!(state.display_state().pending_nmi_subroutine, 0);
-        assert_eq!(state.system_signals_view().sound_effect_2(), 0);
+        assert_eq!(state.system_signals().sound_effect_2(), 0);
         assert_eq!(state.ending_scratch_view().primary_word(), 0x1bfe);
         assert_eq!(state.ending_scratch_view().secondary_word(), 0x17fe);
         assert_eq!(
@@ -10408,7 +10402,7 @@ mod tests {
         assert_eq!(state.display_state().main_screen_layers, 0x15);
         assert_eq!(state.display_state().sub_screen_layers, 0);
         assert_eq!(state.world_location_state().indoor_flag, 0);
-        assert_eq!(state.system_signals_view().music_control(), 0xf1);
+        assert_eq!(state.system_signals().music_control(), 0xf1);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 1);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);
         assert_eq!(state.ram[RESTART_CHECK_FLAG], 1);

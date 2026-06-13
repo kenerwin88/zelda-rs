@@ -546,7 +546,7 @@ impl ZeldaState {
             let value = self.overlord_slot_view(k).x_low();
             self.garnish_slot_view_mut(j).set_x_low(value);
             let sfx = self.calculate_sfx_pan_arbitrary(self.garnish_slot_view(j).x_low()) | 0x1f;
-            self.system_signals_view_mut().set_sound_effect_1(sfx);
+            self.system_signals_mut().set_sound_effect_1(sfx);
             let y = self.overlord_get_y(k).wrapping_add(16);
             let value = y as u8;
             self.garnish_slot_view_mut(j).set_y_low(value);

@@ -245,7 +245,7 @@ impl ZeldaState {
         loop {
             self.sprite_slot_view_mut(k).increment_subtype2();
             if (self.sprite_slot_view(k).subtype2() & 15) == 0 {
-                self.system_signals_view_mut().set_sound_effect_1(0x21);
+                self.system_signals_mut().set_sound_effect_1(0x21);
             }
             n -= 1;
             if n == 0 {
@@ -469,7 +469,7 @@ impl ZeldaState {
                 if dir == self.sprite_slot_view(k).head_direction() {
                     self.sprite_slot_view_mut(k).set_anim_clock(2);
                     let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
-                    self.system_signals_view_mut().set_sound_effect_2(sfx);
+                    self.system_signals_mut().set_sound_effect_2(sfx);
                 }
             }
         }
@@ -527,7 +527,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_y_low(bak);
         if self.check_if_hit_boxes_overlap(&hb) {
             self.sprite_slot_view_mut(k).decrement_health();
-            self.system_signals_view_mut().set_sound_effect_2(0x21);
+            self.system_signals_mut().set_sound_effect_2(0x21);
             let pt = self.sprite_project_speed_towards_link(k, 0x30);
             let mut player = self.player_state_view_mut();
             player.set_actual_velocity_xy(pt.x, pt.y);
@@ -885,7 +885,7 @@ mod tests {
         s.helmasaur_king_handle_movement(k);
         assert_eq!(s.sprite_slot_view(k).subtype2(), 14u8.wrapping_add(3));
         // sound_effect_1 should have fired on the increment that produced 16.
-        assert_eq!(s.system_signals_view().sound_effect_1(), 0x21);
+        assert_eq!(s.system_signals().sound_effect_1(), 0x21);
     }
 
     #[test]
@@ -931,7 +931,7 @@ mod tests {
         s.sprite_slot_view_mut(k).set_z(7);
         s.helmasaur_fireball_quad_split(k);
         assert_eq!(s.sprite_slot_view(k).state(), 0);
-        assert_eq!(s.system_signals_view().sound_effect_2() & 0x3f, 0x36);
+        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x36);
         assert_eq!(s.temp_counter_view().value(), 0xff);
 
         let expected = [
@@ -963,7 +963,7 @@ mod tests {
         s.sprite_slot_view_mut(k).set_z(5);
         s.helmasaur_fireball_tri_split(k);
         assert_eq!(s.sprite_slot_view(k).state(), 0);
-        assert_eq!(s.system_signals_view().sound_effect_2() & 0x3f, 0x36);
+        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x36);
         assert_eq!(s.temp_counter_view().value(), 0xff);
         let delay_base = (s.sprite_workspace_view().shared_scratch_a() & 3) as usize;
         let delays = [32u8, 80, 128, 32, 80, 128];

@@ -460,7 +460,7 @@ impl ZeldaState {
         {
             self.sprite_slot_view_mut(k).set_delay_main(255);
             self.sprite_slot_view_mut(k).set_ai_state(255);
-            self.system_signals_view_mut().set_sound_effect_2(0x22);
+            self.system_signals_mut().set_sound_effect_2(0x22);
             return;
         }
         self.trinexx_wag_tail(k);
@@ -605,7 +605,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(3);
                     self.sprite_apply_speed_towards_link(k, 48);
                     self.sprite_slot_view_mut(k).set_delay_main(64);
-                    self.system_signals_view_mut().set_sound_effect_2(0x26);
+                    self.system_signals_mut().set_sound_effect_2(0x26);
                 }
             }
             3 => {
@@ -1133,7 +1133,7 @@ impl ZeldaState {
             let j = VITREOUS_MINION_ACTIVATION_SLOTS[(rand & 15) as usize] as usize;
             if self.sprite_slot_view(j).ai_state() == 0 {
                 self.sprite_slot_view_mut(j).set_ai_state(1);
-                self.system_signals_view_mut().set_sound_effect_1(0x15);
+                self.system_signals_mut().set_sound_effect_1(0x15);
             } else {
                 self.sprite_slot_view_mut(k).decrement_subtype2();
             }
@@ -1232,7 +1232,7 @@ impl ZeldaState {
                             self.sprite_slot_view_mut(k).set_ai_state(2);
                             self.sprite_slot_view_mut(k).set_delay_main(64);
                             self.sprite_slot_view_mut(k).set_ignore_projectile(0);
-                            self.system_signals_view_mut().set_sound_effect_1(0x35);
+                            self.system_signals_mut().set_sound_effect_1(0x35);
                             return;
                         }
                     }
@@ -1294,7 +1294,7 @@ impl ZeldaState {
         let j = self.sprite_spawn_dynamically(k, 0xbf, &mut info);
         if j >= 0 {
             let j = j as usize;
-            self.system_signals_view_mut().set_sound_effect_2(0x26);
+            self.system_signals_mut().set_sound_effect_2(0x26);
             self.sprite_set_spawned_coordinates(j, &info);
             let i = self.get_random_number() & 7;
             self.sprite_slot_view_mut(j).set_a(i);
@@ -2268,7 +2268,7 @@ mod tests {
         s.sprite_slot_view_mut(pick).set_ai_state(0);
         s.vitreous_set_minions_forth(k);
         assert_eq!(s.sprite_slot_view(pick).ai_state(), 1);
-        assert_eq!(s.system_signals_view().sound_effect_1(), 0x15);
+        assert_eq!(s.system_signals().sound_effect_1(), 0x15);
         // subtype2 was 63 → bumped to 64 → kept (not rolled back).
         assert_eq!(s.sprite_slot_view(k).subtype2(), 64);
     }
@@ -2313,7 +2313,7 @@ mod tests {
         assert_eq!(s.sprite_get_y(15), 0x0450);
         assert_eq!(s.sprite_slot_view(15).z(), (-32i8) as u8);
         assert_eq!(s.sprite_slot_view(15).c(), (-32i8) as u8);
-        assert_eq!(s.system_signals_view().sound_effect_1() & 0x3f, 0x20);
+        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x20);
     }
 
     #[test]
@@ -2324,7 +2324,7 @@ mod tests {
         s.sprite_set_y(k, 0x0240);
         s.sprite_slot_view_mut(k).set_z(6);
         s.ice_ball_split(k);
-        assert_eq!(s.system_signals_view().sound_effect_1() & 0x3f, 0x1f);
+        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x1f);
         assert_eq!(s.temp_counter_view().value(), 0xff);
 
         let first_x = s.sprite_slot_view(15).x_velocity();
@@ -2387,7 +2387,7 @@ mod tests {
         s.sidenexx_exhale_danger(k);
 
         assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 1);
-        assert_eq!(s.system_signals_view().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x19);
         for (slot, c) in [(15usize, (-2i8) as u8), (14, 1u8)] {
             assert_eq!(s.sprite_slot_view(slot).sprite_type(), 0xcd);
             assert_eq!(s.sprite_slot_view(slot).state(), 9);
@@ -2414,7 +2414,7 @@ mod tests {
         s.sidenexx_exhale_danger(k);
 
         assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 0);
-        assert_eq!(s.system_signals_view().sound_effect_1() & 0x3f, 0x2a);
+        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x2a);
         assert_eq!(s.sprite_slot_view(15).sprite_type(), 0xcc);
         assert_eq!(s.sprite_slot_view(15).state(), 9);
         assert_eq!(s.sprite_get_x(15), 0x0130);

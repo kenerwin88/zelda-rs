@@ -937,7 +937,7 @@ impl ZeldaState {
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x4);
                 let area_lo = self.world_region().overworld_area_low();
                 if self.save_progress_view().progress_indicator() == 2 && area_lo == 24 {
-                    self.system_signals_view_mut().set_music_control(12);
+                    self.system_signals_mut().set_music_control(12);
                 }
             }
         }
@@ -1566,7 +1566,7 @@ mod tests {
         state.ram[OVERWORLD_AREA_INDEX_GUARD] = 24;
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot_view(k).g(), 16);
-        assert_eq!(state.system_signals_view().music_control(), 12);
+        assert_eq!(state.system_signals().music_control(), 12);
     }
 
     #[test]
@@ -1575,10 +1575,10 @@ mod tests {
         let mut state = fresh_state();
         let k = 3;
         state.sprite_slot_view_mut(k).set_g(16);
-        state.system_signals_view_mut().set_music_control(7);
+        state.system_signals_mut().set_music_control(7);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot_view(k).g(), 16);
-        assert_eq!(state.system_signals_view().music_control(), 7);
+        assert_eq!(state.system_signals().music_control(), 7);
     }
 
     #[test]

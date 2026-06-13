@@ -30,34 +30,32 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
-        let music_control = self.system_signals_view().music_control();
+        let music_control = self.system_signals().music_control();
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
-            self.system_signals_view_mut()
+            self.system_signals_mut()
                 .set_last_music_control(music_control);
             self.zelda_play_msu_audio_track(music_control);
             if music_control < 0xf2 {
-                self.system_signals_view_mut()
+                self.system_signals_mut()
                     .set_current_music_control(music_control);
             }
-            self.system_signals_view_mut().set_music_control(0);
+            self.system_signals_mut().set_music_control(0);
         }
 
-        let ambient_sound_effect = self.system_signals_view().ambient_sound_effect();
+        let ambient_sound_effect = self.system_signals().ambient_sound_effect();
         if ambient_sound_effect != 0 {
-            self.system_signals_view_mut()
+            self.system_signals_mut()
                 .save_ambient_sound_effect_as_last();
             self.zelda_apu_write(0x2141, ambient_sound_effect);
-            self.system_signals_view_mut().clear_ambient_sound_effect();
-        } else if self.zelda_apu_read(0x2141)
-            == self.system_signals_view().last_ambient_sound_effect()
-        {
+            self.system_signals_mut().clear_ambient_sound_effect();
+        } else if self.zelda_apu_read(0x2141) == self.system_signals().last_ambient_sound_effect() {
             self.zelda_apu_write(0x2141, 0);
         }
 
-        self.zelda_apu_write(0x2142, self.system_signals_view().sound_effect_1());
-        self.zelda_apu_write(0x2143, self.system_signals_view().sound_effect_2());
-        self.system_signals_view_mut().clear_sound_effect_1();
-        self.system_signals_view_mut().clear_sound_effect_2();
+        self.zelda_apu_write(0x2142, self.system_signals().sound_effect_1());
+        self.zelda_apu_write(0x2143, self.system_signals().sound_effect_2());
+        self.system_signals_mut().clear_sound_effect_1();
+        self.system_signals_mut().clear_sound_effect_2();
     }
 
     pub(super) fn nmi_do_updates(&mut self) {
@@ -74,13 +72,13 @@ impl ZeldaState {
             }
         }
 
-        if self.system_signals_view().should_update_cgram() {
+        if self.system_signals().should_update_cgram() {
             for i in 0..0x100 {
                 self.ppu.cgram[i] = self.palette_buffer_view().main_color(i);
             }
         }
 
-        if self.system_signals_view().should_update_hud() {
+        if self.system_signals().should_update_hud() {
             let dst = self.display_state().message_dma_destination_address_usize();
             if dst + 165 <= self.ppu.vram.len() {
                 let hud_buf = self
@@ -93,8 +91,8 @@ impl ZeldaState {
             }
         }
 
-        self.system_signals_view_mut().clear_hud_update_flag();
-        self.system_signals_view_mut().clear_cgram_update_flag();
+        self.system_signals_mut().clear_hud_update_flag();
+        self.system_signals_mut().clear_cgram_update_flag();
         let oam_buf = self
             .display_state()
             .sprite_oam_shadow_buffer(&self.ram)

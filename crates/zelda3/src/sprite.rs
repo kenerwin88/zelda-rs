@@ -502,7 +502,7 @@ impl ZeldaState {
             }
             let value = 0;
             self.sprite_slot_view_mut(j).set_e(value);
-            self.system_signals_view_mut().set_sound_effect_2(0x30);
+            self.system_signals_mut().set_sound_effect_2(0x30);
             let value = 0x30;
             self.sprite_slot_view_mut(j).set_z_velocity(value);
             let value = 0x10;
@@ -3478,7 +3478,7 @@ impl ZeldaState {
         } else {
             self.sprite_slot_view(k).c()
         };
-        self.system_signals_view_mut().set_sound_effect_1(0);
+        self.system_signals_mut().set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, THROWN_SPRITE_IMPACT_SFX[a as usize]);
         self.sprite_schedule_for_breakage(k);
     }
@@ -3497,7 +3497,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_sprite_type(value);
         self.sprite_prep_load_properties_for_helpers(k);
         self.sprite_spawn_poof_garnish(k);
-        self.system_signals_view_mut().set_sound_effect_2(0);
+        self.system_signals_mut().set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
         let value = 0;
         self.sprite_slot_view_mut(k).set_hit_timer(value);
@@ -3956,7 +3956,7 @@ impl ZeldaState {
             && self.save_progress_view().progress_indicator() == 2
             && self.world_region().overworld_area_low() == 0x18
         {
-            self.system_signals_view_mut().set_music_control(7);
+            self.system_signals_mut().set_music_control(7);
         }
 
         let drop_item = self.sprite_slot_view(k).die_action();
@@ -4581,7 +4581,7 @@ impl ZeldaState {
                 && self.sprite_check_if_screen_is_clear()
             {
                 if self.sprite_slot_view(k).sprite_type() >= 0xd6 {
-                    self.system_signals_view_mut().set_music_control(0x13);
+                    self.system_signals_mut().set_music_control(0x13);
                 } else if self.sprite_slot_view(k).sprite_type() == 0x7a {
                     self.prepare_dungeon_exit_from_boss_fight();
                 } else {
@@ -6222,7 +6222,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_state(value);
         let value = 0x1f;
         self.sprite_slot_view_mut(k).set_delay_main(value);
-        self.system_signals_view_mut().set_sound_effect_1(0);
+        self.system_signals_mut().set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x20);
     }
 
@@ -6345,7 +6345,7 @@ impl ZeldaState {
             let value = 255;
             self.sprite_slot_view_mut(ju).set_stunned(value);
         } else if ty == 0x0b {
-            self.system_signals_view_mut().set_sound_effect_1(0x30);
+            self.system_signals_mut().set_sound_effect_1(0x30);
             if self.dungeon_room_tracking().room_index2() == 1 {
                 let value = 1;
                 self.sprite_slot_view_mut(ju).set_subtype(value);
@@ -6353,7 +6353,7 @@ impl ZeldaState {
             let value = 255;
             self.sprite_slot_view_mut(ju).set_stunned(value);
         } else if ty == 0x41 || ty == 0x42 {
-            self.system_signals_view_mut().set_sound_effect_2(4);
+            self.system_signals_mut().set_sound_effect_2(4);
             let value = 0;
             self.sprite_slot_view_mut(ju).set_incoming_damage(value);
             let value = 160;
@@ -6412,7 +6412,7 @@ impl ZeldaState {
         let floor = self.player_state_view().lower_level_state();
         self.garnish_state_view_mut()
             .set_repulsespark_floor_status(floor);
-        self.system_signals_view_mut().set_sound_effect_1(0);
+        self.system_signals_mut().set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, 5);
     }
 
@@ -6641,7 +6641,7 @@ impl ZeldaState {
     }
 
     fn sprite_mini_moldorm_recoil_out_common2(&mut self, k: usize) {
-        self.system_signals_view_mut().set_sound_effect_2(0);
+        self.system_signals_mut().set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x22);
     }
 
@@ -8266,7 +8266,7 @@ mod tests {
     fn sprite_func8_resets_sound_then_queues_panned_sfx2() {
         let mut s = fresh_state();
         let k = 4;
-        s.system_signals_view_mut().set_sound_effect_1(0xff);
+        s.system_signals_mut().set_sound_effect_1(0xff);
         s.sprite_slot_view_mut(k).set_state(9);
         s.sprite_slot_view_mut(k).set_delay_main(0);
         s.sprite_set_x(k, 0x0170);
@@ -8277,7 +8277,7 @@ mod tests {
 
         assert_eq!(s.sprite_slot_view(k).state(), 1);
         assert_eq!(s.sprite_slot_view(k).delay_main(), 0x1f);
-        assert_eq!(s.system_signals_view().sound_effect_1(), expected_sfx);
+        assert_eq!(s.system_signals().sound_effect_1(), expected_sfx);
     }
 
     #[test]
@@ -8294,7 +8294,7 @@ mod tests {
 
         s.sprite_func22(k);
 
-        assert_eq!(s.system_signals_view().sound_effect_1(), expected_sfx);
+        assert_eq!(s.system_signals().sound_effect_1(), expected_sfx);
         assert_eq!(s.sprite_slot_view(k).state(), 3);
         assert_eq!(s.sprite_slot_view(k).delay_main(), 15);
         assert_eq!(s.sprite_slot_view(k).ai_state(), 0);
@@ -8325,7 +8325,7 @@ mod tests {
         scenery.sprite_slot_view_mut(k).set_flags2(0x20);
         scenery.throwable_scenery_transmute_if_valid(k);
         assert_eq!(scenery.ram[REPULSESPARK_TIMER_SPRITE], 0);
-        assert_eq!(scenery.system_signals_view().sound_effect_1() & 0x3f, 0x1f);
+        assert_eq!(scenery.system_signals().sound_effect_1() & 0x3f, 0x1f);
         assert_eq!(scenery.sprite_slot_view(k).delay_main(), 31);
         assert_eq!(scenery.sprite_slot_view(k).state(), 6);
         assert_eq!(scenery.sprite_slot_view(k).flags2(), 0x24);
@@ -8358,7 +8358,7 @@ mod tests {
         s.sprite_slot_view_mut(k).set_sprite_type(0x12);
         s.sprite_slot_view_mut(k).set_subtype(0xaa);
         s.sprite_slot_view_mut(k).set_die_action(0xbb);
-        s.system_signals_view_mut().set_sound_effect_2(0xff);
+        s.system_signals_mut().set_sound_effect_2(0xff);
         s.sprite_slot_view_mut(k).set_hit_timer(0xcc);
         s.sprite_slot_view_mut(k).set_incoming_damage(0xdd);
         s.sprite_set_x(k, 0x0123);
@@ -8370,7 +8370,7 @@ mod tests {
         assert_eq!(s.sprite_slot_view(k).sprite_type(), 0xe3);
         assert_eq!(s.sprite_slot_view(k).subtype(), 0xaa);
         assert_eq!(s.sprite_slot_view(k).die_action(), 0xbb);
-        assert_eq!(s.system_signals_view().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x32);
         assert_eq!(s.sprite_slot_view(k).hit_timer(), 0);
         assert_eq!(s.sprite_slot_view(k).incoming_damage(), 0);
 
@@ -8819,10 +8819,10 @@ mod tests {
         let mut active = fresh_state();
         let k = 5;
         active.ram[REPULSESPARK_TIMER_SPRITE] = 3;
-        active.system_signals_view_mut().set_sound_effect_1(0);
+        active.system_signals_mut().set_sound_effect_1(0);
         active.sprite_place_weapon_tink(k);
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
-        assert_eq!(active.system_signals_view().sound_effect_1(), 0);
+        assert_eq!(active.system_signals().sound_effect_1(), 0);
 
         let mut s = fresh_state();
         s.sprite_set_x(k, 0x0050);
@@ -8833,7 +8833,7 @@ mod tests {
         assert_eq!(s.ram[REPULSESPARK_X_LO_SPRITE], 0x50);
         assert_eq!(s.ram[REPULSESPARK_Y_LO_SPRITE], 0x60);
         assert_eq!(s.ram[REPULSESPARK_FLOOR_STATUS_SPRITE], 1);
-        assert_eq!(s.system_signals_view().sound_effect_1(), 5);
+        assert_eq!(s.system_signals().sound_effect_1(), 5);
     }
 
     #[test]
@@ -8845,7 +8845,7 @@ mod tests {
         active.link_place_weapon_tink();
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
         assert_eq!(active.ram[REPULSESPARK_X_LO_SPRITE], 0);
-        assert_eq!(active.system_signals_view().sound_effect_1(), 0);
+        assert_eq!(active.system_signals().sound_effect_1(), 0);
 
         let mut s = fresh_state();
         s.player_state_view_mut().set_x(0x01f0);
@@ -8861,7 +8861,7 @@ mod tests {
         assert_eq!(s.ram[REPULSESPARK_Y_LO_SPRITE], 0x51);
         assert_eq!(s.ram[REPULSESPARK_FLOOR_STATUS_SPRITE], 2);
         assert_eq!(
-            s.system_signals_view().sound_effect_1(),
+            s.system_signals().sound_effect_1(),
             s.link_calculate_sfx_pan() | 5
         );
     }

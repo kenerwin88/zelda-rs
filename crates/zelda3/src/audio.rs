@@ -257,7 +257,7 @@ impl ZeldaState {
         if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
         } else {
-            track == self.system_signals_view().current_music_control()
+            track == self.system_signals().current_music_control()
         }
     }
 
@@ -267,9 +267,9 @@ impl ZeldaState {
         if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
         } else if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
-            track == self.system_signals_view().current_music_control()
+            track == self.system_signals().current_music_control()
         } else {
-            track == self.system_signals_view().last_music_control()
+            track == self.system_signals().last_music_control()
         }
     }
 
@@ -855,7 +855,7 @@ impl ZeldaState {
     }
 
     pub fn zelda_read_apui00(&self) -> u8 {
-        self.system_signals_view().apui00()
+        self.system_signals().apui00()
     }
 
     pub fn zelda_apu_read(&self, adr: u32) -> u8 {
@@ -978,7 +978,7 @@ impl ZeldaState {
         if self.audio.msu_player.enabled != 0 {
             self.audio.msu_player.volume = 0.0;
             let resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO);
-            let system_signals = self.system_signals_view();
+            let system_signals = self.system_signals();
             let current_music_control = system_signals.current_music_control();
             let last_music_control = system_signals.last_music_control();
             let track = if current_music_control == 0xf1 {
@@ -990,7 +990,7 @@ impl ZeldaState {
             if (0xf1..=0xf3).contains(&last_music_control) {
                 let i = (last_music_control - 0xf1) as usize;
                 let target = MSU_VOLUME_TRANSITION_TARGETS[i];
-                let msu_volume = self.system_signals_view().msu_volume();
+                let msu_volume = self.system_signals().msu_volume();
                 if target != msu_volume {
                     let f = self.audio.volume_transition_target_float[3] * (1.0 / 255.0);
                     self.audio.msu_player.volume = msu_volume as f32 * f;
@@ -1014,7 +1014,7 @@ impl ZeldaState {
             self.audio.spc_ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
         }
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
-        self.system_signals_view_mut().set_msu_volume(msu_volume);
+        self.system_signals_mut().set_msu_volume(msu_volume);
         Self::write_msu_resume_info(
             &mut self.ram,
             MSU_RESUME_INFO,

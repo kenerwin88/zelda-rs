@@ -122,7 +122,7 @@ impl ZeldaState {
         self.palette_load_hud();
         self.palette_load_link_armor_and_gloves();
         self.palette_buffer_view_mut().set_main_color(0x1d, 0x3800);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2_low(20);
         self.attract_build_backgrounds();
         self.messaging_state_view_mut().clear_module();
@@ -144,7 +144,7 @@ impl ZeldaState {
         self.palette_filter_view_mut()
             .set_color_window_selection(0x10);
         self.palette_filter_view_mut().set_color_math_control(0xa3);
-        self.system_signals_view_mut().set_music_control(6);
+        self.system_signals_mut().set_music_control(6);
         self.attract_scene_mut().increment_legend_flag();
     }
 
@@ -323,7 +323,7 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut().set_bg1_v_copy(0);
         self.ppu_scroll_copy_view_mut().set_bg2_h_copy(0);
         self.ppu_scroll_copy_view_mut().set_bg2_v_copy(0);
-        self.system_signals_view_mut().set_music_control(0xf1);
+        self.system_signals_mut().set_music_control(0xf1);
         self.attract_scene_mut().set_sequence(0);
         self.set_main_module(0);
         self.set_submodule(10);
@@ -632,7 +632,7 @@ impl ZeldaState {
             self.attract_scene_mut().increment_scene_frame_counter();
         }
         if self.attract_scene().intro_palette_flash_count() & 4 != 0 {
-            self.system_signals_view_mut().set_sound_effect_2(0x2b);
+            self.system_signals_mut().set_sound_effect_2(0x2b);
         }
 
         match self.attract_scene().scene_substep() {
@@ -746,7 +746,7 @@ impl ZeldaState {
         if self.attract_scene().maiden_warp_step() == 0
             && self.attract_scene().maiden_warp_timer_b() == 0x70
         {
-            self.system_signals_view_mut().set_sound_effect_2(0x27);
+            self.system_signals_mut().set_sound_effect_2(0x27);
         }
 
         if self.attract_scene().maiden_warp_step() == 15 {
@@ -754,7 +754,7 @@ impl ZeldaState {
         } else {
             if self.attract_scene().maiden_warp_step() == 6 {
                 self.attract_scene_mut().set_intro_palette_flash_count(0x90);
-                self.system_signals_view_mut().set_sound_effect_2(0x2b);
+                self.system_signals_mut().set_sound_effect_2(0x2b);
             }
             if self.attract_scene().maiden_warp_timer_b() != 0 {
                 self.attract_scene_mut().decrement_maiden_warp_timer_b();
@@ -823,7 +823,7 @@ impl ZeldaState {
 
         if self.attract_scene().maiden_warp_step() == 6 {
             self.attract_scene_mut().increment_fade_in_complete_flag();
-            self.system_signals_view_mut().set_sound_effect_1(51);
+            self.system_signals_mut().set_sound_effect_1(51);
         } else if self.attract_scene().maiden_warp_step() == 0x40 {
             self.attract_scene_mut().set_maiden_warp_step(224);
             self.attract_scene_mut().increment_scene_substep();
@@ -908,7 +908,7 @@ impl ZeldaState {
                 if self.attract_scene().soldier_anim_step() == 2 {
                     self.attract_scene_mut().set_soldier_anim_step(0xff);
                     if self.attract_vram_destination_high_is_clear() && step_ctr & 8 != 0 {
-                        self.system_signals_view_mut().set_sound_effect_2(4);
+                        self.system_signals_mut().set_sound_effect_2(4);
                     }
                 }
                 self.attract_scene_mut().increment_soldier_anim_step();

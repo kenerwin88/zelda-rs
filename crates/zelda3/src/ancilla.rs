@@ -2882,7 +2882,7 @@ impl ZeldaState {
                 quake.set_timer(2);
             }
             self.set_chr_halfslot_request(13);
-            self.system_signals_view_mut().set_sound_effect_1(0x35);
+            self.system_signals_mut().set_sound_effect_1(0x35);
             for i in 0..5 {
                 self.quake_bolt_view_mut(i).set_phase(0);
             }
@@ -3047,11 +3047,11 @@ impl ZeldaState {
     fn ether_spell_handle_radial_spin(&mut self, k: usize) {
         if self.ancilla_slot_view(k).step() == 4 {
             if self.frame_state().frame_counter & 7 == 0 {
-                self.system_signals_view_mut().set_sound_effect_2(0x2a);
+                self.system_signals_mut().set_sound_effect_2(0x2a);
             } else if self.frame_state().frame_counter & 7 == 4 {
-                self.system_signals_view_mut().set_sound_effect_2(0xaa);
+                self.system_signals_mut().set_sound_effect_2(0xaa);
             } else if self.frame_state().frame_counter & 7 == 7 {
-                self.system_signals_view_mut().set_sound_effect_2(0x6a);
+                self.system_signals_mut().set_sound_effect_2(0x6a);
             }
         } else {
             let radius = self.ether_orbit_view().radius();
@@ -3281,7 +3281,7 @@ impl ZeldaState {
                                 .wrapping_sub(self.world_scroll().bg2_x())
                                 .wrapping_add(8);
                             if t < 256 {
-                                self.system_signals_view_mut().set_sound_effect_1(
+                                self.system_signals_mut().set_sound_effect_1(
                                     BOMBOS_PANNED_SFX_BITS[(t >> 5) as usize] | 0x2a,
                                 );
                             }
@@ -3371,7 +3371,7 @@ impl ZeldaState {
                             y.wrapping_add(bg2vofs_copy2),
                         );
                         let bombos_x = self.bombos_spell_scratch_view().blast_x(uj);
-                        self.system_signals_view_mut().set_sound_effect_1(
+                        self.system_signals_mut().set_sound_effect_1(
                             0x0c | BOMBOS_PANNED_SFX_BITS[((bombos_x >> 5) & 7) as usize],
                         );
                     }
@@ -3465,7 +3465,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut()
             .select_overworld_aux_palette_offset();
         self.palette_load_sprite_environment_dungeon();
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
         self.player_state_view_mut().immobilize();
         let value = 0;
         self.ancilla_slot_view_mut(k).set_y_subpixel(value);
@@ -3558,7 +3558,7 @@ impl ZeldaState {
             self.blast_wall_fragment_view_mut(k).set_position(x, y);
             let x = x.wrapping_sub(self.world_scroll().bg2_x());
             if x < 256 {
-                self.system_signals_view_mut()
+                self.system_signals_mut()
                     .set_sound_effect_1(BOMBOS_PANNED_SFX_BITS[(x >> 5) as usize] | 0x0c);
             }
             j += 1;
@@ -3988,10 +3988,9 @@ impl ZeldaState {
         }
         let value = 128;
         self.ancilla_slot_view_mut(k).set_g(value);
-        self.system_signals_view_mut().set_sound_effect_1(0);
-        self.system_signals_view_mut().set_music_control(0xf2);
-        self.system_signals_view_mut()
-            .set_ambient_sound_effect(0x17);
+        self.system_signals_mut().set_sound_effect_1(0);
+        self.system_signals_mut().set_music_control(0xf2);
+        self.system_signals_mut().set_ambient_sound_effect(0x17);
 
         self.set_weather_vane_music_latch(0);
         self.set_weather_vane_countdown(0x0280);
@@ -4441,7 +4440,7 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_s_player(value);
             if self.sprite_slot_view(sprite).sprite_type() == 0x65 {
                 if self.sprite_slot_view(sprite).a() == 1 {
-                    self.system_signals_view_mut().set_sound_effect_2(0x2d);
+                    self.system_signals_mut().set_sound_effect_2(0x2d);
                     let value = 0x80;
                     self.sprite_slot_view_mut(sprite).set_delay_aux2(value);
                     self.sprite_slot_view_mut(0).set_delay_aux4(128);
@@ -4853,7 +4852,7 @@ impl ZeldaState {
                                 .set_entrance_opening_started();
                             let pan =
                                 (0x98u16.wrapping_sub(self.world_scroll().bg2_x()) as u8) >> 5;
-                            self.system_signals_view_mut()
+                            self.system_signals_mut()
                                 .set_sound_effect_1(BOMBOS_PANNED_SFX_BITS[pan as usize] | 0x0c);
                         }
                         if inner_y < 168 {
@@ -4862,14 +4861,14 @@ impl ZeldaState {
                         let inner_x = self.skull_woods_fire_scratch_view().inner_x();
                         self.skull_woods_fire_view_mut(i)
                             .set_position(inner_x, inner_y);
-                        if self.system_signals_view().sound_effect_1() == 0 {
+                        if self.system_signals().sound_effect_1() == 0 {
                             let pan = (self
                                 .skull_woods_fire_scratch_view()
                                 .inner_x()
                                 .wrapping_sub(self.world_scroll().bg2_x())
                                 as u8)
                                 >> 5;
-                            self.system_signals_view_mut()
+                            self.system_signals_mut()
                                 .set_sound_effect_1(BOMBOS_PANNED_SFX_BITS[pan as usize] | 0x2a);
                         }
                     }
@@ -5637,7 +5636,7 @@ impl ZeldaState {
         self.set_weather_vane_countdown(1);
         if self.weather_vane_music_latch() == 0 {
             self.set_weather_vane_music_latch(1);
-            self.system_signals_view_mut().set_music_control(0xf3);
+            self.system_signals_mut().set_music_control(0xf3);
         }
         if self.ancilla_slot_view_mut(k).tick_g() != 0 {
             return;
@@ -7253,8 +7252,8 @@ impl ZeldaState {
 
     fn ancilla22_item_receipt_label_a(&mut self, k: usize) {
         if self.ancilla_slot_view(k).item_to_link() == 1 && self.ancilla_slot_view(k).step() == 0 {
-            self.system_signals_view_mut().set_ambient_sound_effect(5);
-            self.system_signals_view_mut().set_music_control(2);
+            self.system_signals_mut().set_ambient_sound_effect(5);
+            self.system_signals_mut().set_music_control(2);
         }
         let handler_state = if self.player_state_view().is_in_deep_water() {
             4
@@ -7360,7 +7359,7 @@ impl ZeldaState {
         if msg != -1 {
             self.dialogue_message_index_view_mut().set_value(msg as u16);
             if msg == 0x70 {
-                self.system_signals_view_mut().set_ambient_sound_effect(9);
+                self.system_signals_mut().set_ambient_sound_effect(9);
             }
             self.main_show_text_message();
         }
@@ -7383,7 +7382,7 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_z(value);
             self.ancilla_add_occasional_sparkle(k);
             if self.zelda_read_apui00() == 0 {
-                self.system_signals_view_mut().set_music_control(0x1a);
+                self.system_signals_mut().set_music_control(0x1a);
                 self.item_receipt_transmute_to_rising_crystal(k);
                 return;
             }
@@ -7494,8 +7493,7 @@ impl ZeldaState {
             if self.world_transient().milestone_item_gfx_swap_countdown() != 0 {
                 if self.world_transient().milestone_item_gfx_swap_countdown() == 1 {
                     if self.ancilla_slot_view(k).item_to_link() == 0x20 {
-                        self.system_signals_view_mut()
-                            .set_ambient_sound_effect(0x0f);
+                        self.system_signals_mut().set_ambient_sound_effect(0x0f);
                         self.DecodeAnimatedSpriteTile_variable(0x28);
                     } else {
                         self.DecodeAnimatedSpriteTile_variable(0x23);
@@ -7514,7 +7512,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut()
                     .select_overworld_aux_palette_offset();
                 self.Palette_Load_SpriteEnvironment_Dungeon();
-                self.system_signals_view_mut().increment_cgram_update_flag();
+                self.system_signals_mut().increment_cgram_update_flag();
             }
         } else if self.ancilla_slot_view(k).g() != 0 {
             self.ancilla_slot_view_mut(k).subtract_g(1);
@@ -8163,7 +8161,7 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_alloc_init(&mut self, ty: u8, limit: u8) -> Option<usize> {
-        if self.system_signals_view().bugs_fixed() >= BUGFIX_POLY_RENDERER {
+        if self.system_signals().bugs_fixed() >= BUGFIX_POLY_RENDERER {
             self.tile_detect_position_view_mut()
                 .set_collision_bits(u16::from(limit.wrapping_add(1)));
         }
@@ -9484,7 +9482,7 @@ impl ZeldaState {
 
                 self.Overworld_DoMapUpdate32x32_B();
 
-                if self.system_signals_view().sound_effect_2() & 0x3f != 0x1b {
+                if self.system_signals().sound_effect_2() & 0x3f != 0x1b {
                     self.set_sound_effect_1_with_link_pan(0x22);
                 }
 
@@ -9556,8 +9554,8 @@ impl ZeldaState {
                 );
                 self.ancilla_set_y(k, 0x38u16.wrapping_add(bg2vofs));
                 self.ancilla_slot_view_mut(k).add_step(1);
-                self.system_signals_view_mut().set_ambient_sound_effect(5);
-                self.system_signals_view_mut().set_music_control(0xf1);
+                self.system_signals_mut().set_ambient_sound_effect(5);
+                self.system_signals_mut().set_music_control(0xf1);
                 self.dialogue_message_index_view_mut().set_value(0x013b);
                 self.main_show_text_message();
                 draw_ring = false;
@@ -9622,7 +9620,7 @@ impl ZeldaState {
                         self.palette_buffer_view_mut()
                             .select_overworld_aux_palette_offset();
                         self.Palette_Load_SpriteEnvironment_Dungeon();
-                        self.system_signals_view_mut().increment_cgram_update_flag();
+                        self.system_signals_mut().increment_cgram_update_flag();
                         let value = 0;
                         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
                         return;
@@ -10886,7 +10884,7 @@ impl ZeldaState {
         let value = new_type;
         self.sprite_slot_view_mut(k).set_sprite_type(value);
         self.sprite_prep_load_properties(k);
-        self.system_signals_view_mut().set_sound_effect_2(0);
+        self.system_signals_mut().set_sound_effect_2(0);
     }
 
     fn ancilla_check_sprite_collision(&mut self, k: usize) -> Option<usize> {
@@ -11137,8 +11135,8 @@ impl ZeldaState {
                 }
             }
             r10 = self.ancilla_slot_view(k).work_byte_23().wrapping_add(4);
-            if self.system_signals_view().sound_effect_1() & 0x3f == 0x0b
-                || self.system_signals_view().sound_effect_1() & 0x3f == 0x21
+            if self.system_signals().sound_effect_1() & 0x3f == 0x0b
+                || self.system_signals().sound_effect_1() & 0x3f == 0x21
             {
                 self.set_sound_effect_1_with_ancilla_pan(k, 0x28);
             }
@@ -11374,7 +11372,7 @@ impl ZeldaState {
                             .offset(arr[1] as i16, arr[0] as i16);
                         let x = x.wrapping_sub(self.world_scroll().bg2_x());
                         if x < 256 {
-                            self.system_signals_view_mut().set_sound_effect_1(
+                            self.system_signals_mut().set_sound_effect_1(
                                 BOMBOS_PANNED_SFX_BITS[(x >> 5) as usize] | 0x0c,
                             );
                         }
@@ -11526,23 +11524,23 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_sfx2_pan(&mut self, k: usize, sfx: u8) {
-        self.system_signals_view_mut().set_raw_sfx_pan_value(sfx);
+        self.system_signals_mut().set_raw_sfx_pan_value(sfx);
         let out = sfx | self.ancilla_calculate_sfx_pan(k);
-        self.system_signals_view_mut().set_sound_effect_1(out);
+        self.system_signals_mut().set_sound_effect_1(out);
         self.replay_trace_sfx("ancilla_sfx2_pan", Some(k), sfx, out);
     }
 
     pub(super) fn ancilla_sfx1_pan(&mut self, k: usize, sfx: u8) {
-        self.system_signals_view_mut().set_raw_sfx_pan_value(sfx);
+        self.system_signals_mut().set_raw_sfx_pan_value(sfx);
         let out = sfx | self.ancilla_calculate_sfx_pan(k);
-        self.system_signals_view_mut().set_ambient_sound_effect(out);
+        self.system_signals_mut().set_ambient_sound_effect(out);
         self.replay_trace_sfx("ancilla_sfx1_pan", Some(k), sfx, out);
     }
 
     pub(super) fn ancilla_sfx3_pan(&mut self, k: usize, sfx: u8) {
-        self.system_signals_view_mut().set_raw_sfx_pan_value(sfx);
+        self.system_signals_mut().set_raw_sfx_pan_value(sfx);
         let out = sfx | self.ancilla_calculate_sfx_pan(k);
-        self.system_signals_view_mut().set_sound_effect_2(out);
+        self.system_signals_mut().set_sound_effect_2(out);
         self.replay_trace_sfx("ancilla_sfx3_pan", Some(k), sfx, out);
     }
 

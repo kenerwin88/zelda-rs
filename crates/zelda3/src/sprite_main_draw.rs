@@ -811,7 +811,7 @@ impl ZeldaState {
                     self.link_cancel_dash();
                     let value = 127;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
-                    self.system_signals_view_mut().set_sound_effect_1(0x35);
+                    self.system_signals_mut().set_sound_effect_1(0x35);
                     let value = 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     for j in (0..16usize).rev() {
@@ -1140,7 +1140,7 @@ impl ZeldaState {
                     let value = 255;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.world_scroll_mut().set_bg1_x_offset(0);
-                    self.system_signals_view_mut().set_ambient_sound_effect(5);
+                    self.system_signals_mut().set_ambient_sound_effect(5);
                     let value = 48;
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
                     let value = 0;
@@ -1148,7 +1148,7 @@ impl ZeldaState {
                     self.catfish_spawn_plop(k);
                 } else if j < 0xc0 {
                     if j == 0xbf {
-                        self.system_signals_view_mut().set_ambient_sound_effect(7);
+                        self.system_signals_mut().set_ambient_sound_effect(7);
                     }
                     let offs = if j & 1 != 0 { (-1i16) as u16 } else { 1 };
                     self.world_scroll_mut().set_bg1_x_offset(offs);
@@ -2931,7 +2931,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(15).set_graphics(value);
                     self.sprite_slot_view_mut(15).add_z(1);
                     if self.sprite_slot_view(15).z() == 22 {
-                        self.system_signals_view_mut().set_sound_effect_2(0x27);
+                        self.system_signals_mut().set_sound_effect_2(0x27);
                         let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_ai_state(value);
                         let value = 255;
@@ -2952,7 +2952,7 @@ impl ZeldaState {
                 } else if delay == 120 {
                     self.attract_scene_mut().set_intro_palette_flash_count(120);
                 } else if delay < 128 && (delay & 3) == 0 {
-                    self.system_signals_view_mut().set_sound_effect_2(0x2b);
+                    self.system_signals_mut().set_sound_effect_2(0x2b);
                     if self.sprite_slot_view(k).subtype2() != 14 {
                         let value = self.sprite_slot_view(k).subtype2().wrapping_add(4);
                         self.sprite_slot_view_mut(k).set_subtype2(value);
@@ -2974,7 +2974,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_subtype2(value);
-                    self.system_signals_view_mut().set_sound_effect_1(0x33);
+                    self.system_signals_mut().set_sound_effect_1(0x33);
                 }
             }
             4 => {
@@ -2988,7 +2988,7 @@ impl ZeldaState {
             }
             5 => {
                 if self.sprite_slot_view(k).delay_main() == 1 {
-                    self.system_signals_view_mut().set_sound_effect_2(0x28);
+                    self.system_signals_mut().set_sound_effect_2(0x28);
                 }
                 let value = (-32i8) as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -3422,7 +3422,7 @@ impl ZeldaState {
                     let value = 32;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else if self.sprite_slot_view(k).delay_main() == 64 {
-                    self.system_signals_view_mut().set_sound_effect_2(0x28);
+                    self.system_signals_mut().set_sound_effect_2(0x28);
                     self.temp_counter_view_mut().set(1);
                     loop {
                         let mut info = SpriteSpawnInfo::default();
@@ -3457,7 +3457,7 @@ impl ZeldaState {
                 } else {
                     if self.sprite_slot_view(k).delay_main() == 1 {
                         self.sprite_spawn_phantom_ganon(k);
-                        self.system_signals_view_mut().set_music_control(0x1d);
+                        self.system_signals_mut().set_music_control(0x1d);
                     }
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_hit_timer(value);
@@ -5094,7 +5094,7 @@ impl ZeldaState {
                 .y_low()
                 .wrapping_sub(self.ancilla_slot_view(j).z());
             self.garnish_state_view_mut().set_repulsespark_y_lo(spark_y);
-            self.system_signals_view_mut().set_sound_effect_1(5);
+            self.system_signals_mut().set_sound_effect_1(5);
         }
     }
 
@@ -8332,8 +8332,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).g() < 8 {
             return;
         }
-        if self.system_signals_view().sound_effect_1() == 0 {
-            self.system_signals_view_mut().set_sound_effect_1(34);
+        if self.system_signals().sound_effect_1() == 0 {
+            self.system_signals_mut().set_sound_effect_1(34);
         }
         let value = 2;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
@@ -9126,7 +9126,7 @@ impl ZeldaState {
         if j != 0 {
             self.player_state_view_mut().clear_action_handler_timer();
             self.player_state_view_mut().set_position_mode(32);
-            self.system_signals_view_mut().set_sound_effect_1(0);
+            self.system_signals_mut().set_sound_effect_1(0);
             if !sign8(self.inventory_items().sword_type())
                 && self.inventory_items().sword_type() >= 2
             {
@@ -9176,7 +9176,7 @@ impl ZeldaState {
                 let value = j;
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 if j == 11 {
-                    self.system_signals_view_mut().set_sound_effect_2(0x1b);
+                    self.system_signals_mut().set_sound_effect_2(0x1b);
                     self.dungeon_environment_mut()
                         .set_water_puzzle_state_changed(1);
                 }
@@ -9258,11 +9258,11 @@ impl ZeldaState {
                     if self.sprite_slot_view(k).sprite_type() == 6 {
                         self.dungeon_room_effects_mut()
                             .set_activate_bomb_trap_overlord(1);
-                        self.system_signals_view_mut().set_sound_effect_1(0x3c);
+                        self.system_signals_mut().set_sound_effect_1(0x3c);
                     } else {
                         self.dungeon_environment_mut()
                             .set_water_puzzle_state_changed(1);
-                        self.system_signals_view_mut().set_sound_effect_2(0x1b);
+                        self.system_signals_mut().set_sound_effect_2(0x1b);
                     }
                 }
                 let value = DOWN_PULL_ANIMATION_DELAYS[usize::from(j - 2)];
@@ -9992,7 +9992,7 @@ impl ZeldaState {
         self.world_scroll_mut().set_bg1_y_offset(0);
         if self.sprite_slot_view(k).delay_aux3() != 0 {
             if self.sprite_slot_view(k).delay_aux3() == 1 {
-                self.system_signals_view_mut().set_ambient_sound_effect(5);
+                self.system_signals_mut().set_ambient_sound_effect(5);
             }
             let offs = if (self.sprite_slot_view(k).delay_aux3() & 1) != 0 {
                 1u16
@@ -16374,7 +16374,7 @@ impl ZeldaState {
         let dung_info = self.save_progress_view().dungeon_info_word(0x109) | 0x80;
         self.save_progress_view_mut()
             .set_dungeon_info_word(0x109, dung_info);
-        self.system_signals_view_mut().set_sound_effect_1(0);
+        self.system_signals_mut().set_sound_effect_1(0);
         self.hud_refresh_icon();
         self.sprite_show_message_unconditional(0x004b);
         self.sprite_sfx_queue_sfx1_with_pan(k, 0x0d);
@@ -17789,7 +17789,7 @@ impl ZeldaState {
             } else {
                 self.player_state_view_mut().clear_action_handler_timer();
                 self.player_state_view_mut().set_position_mode(32);
-                self.system_signals_view_mut().set_sound_effect_1(0);
+                self.system_signals_mut().set_sound_effect_1(0);
                 self.sprite_show_message_unconditional(0x00b7);
             }
         } else {
@@ -17808,7 +17808,7 @@ impl ZeldaState {
             } else {
                 self.player_state_view_mut().clear_action_handler_timer();
                 self.player_state_view_mut().set_position_mode(32);
-                self.system_signals_view_mut().set_sound_effect_1(0);
+                self.system_signals_mut().set_sound_effect_1(0);
                 self.player_state_view_mut().set_button_b_frames(1);
                 self.player_state_view_mut().set_spin_attack_delay_timer(0);
                 self.player_state_view_mut()
@@ -20267,7 +20267,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_ai_state(value);
             let value = 128;
             self.sprite_slot_view_mut(k).set_delay_main(value);
-            self.system_signals_view_mut().set_ambient_sound_effect(7);
+            self.system_signals_mut().set_ambient_sound_effect(7);
         }
 
         if dmg && self.player_state_view().incapacitated_timer() == 0 {
@@ -20327,8 +20327,8 @@ impl ZeldaState {
             },
         ];
         if self.sprite_slot_view(k).delay_main() == 1 {
-            self.system_signals_view_mut().set_sound_effect_2(0x1b);
-            self.system_signals_view_mut().set_ambient_sound_effect(5);
+            self.system_signals_mut().set_sound_effect_2(0x1b);
+            self.system_signals_mut().set_ambient_sound_effect(5);
         }
         let x_step = (self.sprite_slot_view(k).delay_main() >> 1) & 1;
         self.sprite_workspace_view_mut()
@@ -20425,7 +20425,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 let value = (-5i8) as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                self.system_signals_view_mut().set_sound_effect_2(27);
+                self.system_signals_mut().set_sound_effect_2(27);
                 let value = 2;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
@@ -20492,7 +20492,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 let value = (-5i8) as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                self.system_signals_view_mut().set_sound_effect_2(27);
+                self.system_signals_mut().set_sound_effect_2(27);
                 let value = 2;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
@@ -20588,7 +20588,7 @@ impl ZeldaState {
             1 => {
                 if self.sprite_slot_view(k).z() == 0 {
                     self.sprite_slot_view_mut(k).add_ai_state(1);
-                    self.system_signals_view_mut().set_sound_effect_2(0x1b);
+                    self.system_signals_mut().set_sound_effect_2(0x1b);
                     let value = (-4i8) as u8;
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = (-4i8) as u8;
@@ -22348,7 +22348,7 @@ impl ZeldaState {
             if t < 0 {
                 self.player_resources_view_mut().set_magic_power(0);
             } else {
-                self.system_signals_view_mut().set_sound_effect_2(0x1d);
+                self.system_signals_mut().set_sound_effect_2(0x1d);
                 self.player_resources_view_mut().set_magic_power(t as u8);
             }
         }
@@ -22517,7 +22517,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).add_subtype(1);
             let value = 48;
             self.sprite_slot_view_mut(k).set_delay_main(value);
-            self.system_signals_view_mut().set_sound_effect_1(21);
+            self.system_signals_mut().set_sound_effect_1(21);
             let value = 21;
             self.sprite_slot_view_mut(k).set_ignore_projectile(value);
             return;
@@ -22682,7 +22682,7 @@ impl ZeldaState {
         }
         if self.sprite_slot_view(k).f() == 0
             && (self.sprite_check_damage_from_link(k) & PLAYER_DAMAGE_CARRY_MASK_DRAW) != 0
-            && self.system_signals_view().sound_effect_1() == 0
+            && self.system_signals().sound_effect_1() == 0
         {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x0b);
         }
@@ -25286,8 +25286,7 @@ impl ZeldaState {
             1 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.lanmola_spawn_shrapnel(k);
-                    self.system_signals_view_mut()
-                        .set_ambient_sound_effect(0x13);
+                    self.system_signals_mut().set_ambient_sound_effect(0x13);
                     let value = RAND_B[usize::from(self.get_random_number() & 7)];
                     self.sprite_slot_view_mut(k).set_b(value);
                     let value = RAND_C[usize::from(self.get_random_number() & 7)];
@@ -26768,7 +26767,7 @@ impl ZeldaState {
         self.overworld_draw_map16_persist_for_draw(0x0e40, 0x0e20);
         self.overworld_event_info_view_mut()
             .set_event_bits(0x58, 0x20);
-        self.system_signals_view_mut().set_sound_effect_2(0x1b);
+        self.system_signals_mut().set_sound_effect_2(0x1b);
         self.set_bg_vram_load_mode(1);
     }
 
@@ -26785,11 +26784,11 @@ impl ZeldaState {
         self.overworld_draw_map16_persist_for_draw(0x04bc, 0x0e45);
         self.overworld_draw_map16_persist_for_draw(0x04be, 0x0e46);
         self.overworld_draw_map16_persist_for_draw(0x04c0, 0x0e47);
-        self.system_signals_view_mut()
+        self.system_signals_mut()
             .set_ambient_sound_effect_word(0x3515);
         self.overworld_event_info_view_mut()
             .set_event_bits(0x5b, 0x20);
-        self.system_signals_view_mut().set_sound_effect_2(3);
+        self.system_signals_mut().set_sound_effect_2(3);
         self.set_bg_vram_load_mode(1);
     }
 

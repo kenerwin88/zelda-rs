@@ -428,7 +428,7 @@ impl ZeldaState {
         self.load_gear_palette_from_asset(83, shield_index * 4, 0x1b8, 3);
 
         self.load_gear_palette_from_asset(81, armor as usize * 15, 0x1e2, 14);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_update_gloves_color(&mut self) {
@@ -438,7 +438,7 @@ impl ZeldaState {
             self.palette_buffer_view_mut().set_aux_color(0xfd, color);
             self.palette_buffer_view_mut().set_main_color(0xfd, color);
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_for_file_select(&mut self) {
@@ -559,7 +559,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown_word(0);
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(2);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_filter_history(&mut self) {
@@ -626,21 +626,21 @@ impl ZeldaState {
         } else {
             self.palette_filter_view_mut().set_countdown_word(countdown);
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_fade_intro_one_step(&mut self) {
         self.palette_filter_restore_additive(0x100, 0x1a0);
         self.palette_filter_restore_additive(0x0c0, 0x100);
         self.palette_filter_view_mut().decrement_countdown();
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_fade_intro2(&mut self) {
         self.palette_filter_restore_additive(0x40, 0xc0);
         self.palette_filter_restore_additive(0x40, 0xc0);
         self.palette_filter_view_mut().decrement_countdown();
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_filter_restore_additive(&mut self, from: usize, to: usize) {
@@ -705,7 +705,7 @@ impl ZeldaState {
         let src = self.palette_buffer_view().aux_full_slice()[..0x100].to_vec();
         self.palette_buffer_view_mut()
             .copy_main_palette_bytes(&src, 0x100);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
         self.palette_restore_coldata();
     }
 
@@ -827,7 +827,7 @@ impl ZeldaState {
             0
         };
         self.load_gear_palette_from_asset(82, sword_index * 3, 0x1b2, 2);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_shield(&mut self) {
@@ -838,7 +838,7 @@ impl ZeldaState {
             0
         };
         self.load_gear_palette_from_asset(83, shield_index * 4, 0x1b8, 3);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_sprite_main(&mut self) {
@@ -1574,7 +1574,7 @@ impl ZeldaState {
             } else {
                 self.Palette_Load_SpriteEnvironment_Dungeon();
             }
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
         }
 
         let mut tilebytes = 0x44;
@@ -2198,7 +2198,7 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown_word(0);
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(2);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreSP5F(&mut self) {
@@ -2209,7 +2209,7 @@ impl ZeldaState {
         }
         self.set_sub_screen_layers(0);
         self.palette_filter_view_mut().set_color_math_control(32);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_SP5F(&mut self) {
@@ -2237,7 +2237,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().set_countdown_word(0);
             self.palette_filter_view_mut()
                 .set_darkening_or_lightening_screen_word(0);
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
             self.set_subsubmodule(1);
             return;
         }
@@ -2284,7 +2284,7 @@ impl ZeldaState {
             .set_agahnim_palette_word(k, pal_countdown);
         self.graphics_scratch_mut()
             .set_agahnim_palette_word(k + 3, darkening_screen);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn Palette_FadeIntroOneStep(&mut self) {
@@ -2393,7 +2393,7 @@ impl ZeldaState {
                 self.set_hdma_enable_mask(0xc0);
             }
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_BlindingWhiteTriforce(&mut self) {
@@ -2424,7 +2424,7 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_IsolateWhirlpoolBlue(&mut self) {
@@ -2448,7 +2448,7 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreBlue(&mut self) {
@@ -2475,7 +2475,7 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreRedGreen(&mut self) {
@@ -2497,7 +2497,7 @@ impl ZeldaState {
             self.palette_filter_view_mut().set_countdown(0);
             self.increment_subsubmodule();
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreBGSubstractiveStrict(&mut self) {
@@ -2511,13 +2511,13 @@ impl ZeldaState {
                 .set_darkening_or_lightening_screen(0xff);
             self.clear_sub_screen_layers_word();
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreBGAdditiveStrict(&mut self) {
         self.palette_filter_restore_additive(0x40, 0x100);
         self.palette_filter_view_mut().increment_countdown();
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn Trinexx_FlashShellPalette_Red(&mut self) {
@@ -2528,7 +2528,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut()
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_red_shell_palette_step(0);
@@ -2549,7 +2549,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut()
                     .set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_red_shell_palette_step(0);
@@ -2570,7 +2570,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut()
                     .set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_blue_shell_palette_step(0);
@@ -2595,7 +2595,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut()
                     .set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
-            self.system_signals_view_mut().increment_cgram_update_flag();
+            self.system_signals_mut().increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_blue_shell_palette_step(0);
@@ -2923,7 +2923,7 @@ impl ZeldaState {
         }
         self.set_mosaic_copy(0xf7);
         self.set_mosaic_level(0xf7);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn Overworld_CopyPalettesToCache(&mut self) {
@@ -3011,7 +3011,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut().set_main_color(a_base + i, b);
             }
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn Palette_RevertTranslucencySwap(&mut self) {
@@ -3202,7 +3202,7 @@ impl ZeldaState {
             0x1c2,
             6,
         );
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn HandleScreenFlash(&mut self) {
@@ -3221,7 +3221,7 @@ impl ZeldaState {
         } else {
             self.palette_restore_bg_from_flash();
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn asset_bytes(&self, asset: usize, index: usize) -> Option<&[u8]> {
@@ -3246,14 +3246,14 @@ impl ZeldaState {
         } else {
             self.palette_restore_bg_from_flash();
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn apply_palette_filter_bounce(&mut self) {
         self.palette_filter_range(0, 1);
         self.palette_filter_range(0x20, 0xd8);
         self.palette_filter_range(0xe0, 0xf0);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
 
         let countdown = self.palette_filter_view().countdown_word();
         let target = self.display_state().mosaic_target_level as u16;
@@ -3384,12 +3384,11 @@ impl ZeldaState {
             if main_module == 7 || main_module == 16 {
                 if self.world_location_state().is_outdoors() {
                     let ambient = self.overworld_config_table_view().current_music() >> 4;
-                    self.system_signals_view_mut()
-                        .set_ambient_sound_effect(ambient);
+                    self.system_signals_mut().set_ambient_sound_effect(ambient);
                 }
-                if self.system_signals_view().queued_music_control() != 0xff {
-                    let music = self.system_signals_view().queued_music_control();
-                    self.system_signals_view_mut().set_music_control(music);
+                if self.system_signals().queued_music_control() != 0xff {
+                    let music = self.system_signals().queued_music_control();
+                    self.system_signals_mut().set_music_control(music);
                 }
             }
             let saved_module = self.frame_state().saved_module_for_menu;
@@ -3452,7 +3451,7 @@ impl ZeldaState {
     pub(super) fn overworld_copy_palettes_to_cache(&mut self) {
         let aux = self.palette_buffer_view().aux_full_slice().to_vec();
         self.palette_buffer_view_mut().copy_main_full_from(&aux);
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn enable_force_blank(&mut self) {
@@ -3534,7 +3533,7 @@ impl ZeldaState {
                 self.palette_buffer_view_mut().set_aux_color(low, b);
             }
         }
-        self.system_signals_view_mut().increment_cgram_update_flag();
+        self.system_signals_mut().increment_cgram_update_flag();
     }
 
     pub(super) fn palette_revert_translucency_swap(&mut self) {

@@ -494,7 +494,7 @@ impl ZeldaState {
         self.ganon_handle_animation_idle(k);
         self.sprite_slot_view_mut(k).set_delay_main(128);
         self.sprite_slot_view_mut(k).set_room(2);
-        self.system_signals_view_mut().set_music_control(0x1e);
+        self.system_signals_mut().set_music_control(0x1e);
     }
 
     pub(super) fn sprite_prep_mini_vitreous(&mut self, k: usize) {
@@ -969,7 +969,7 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).delay_aux3() == 1 {
-            self.system_signals_view_mut().set_sound_effect_1(0x3c);
+            self.system_signals_mut().set_sound_effect_1(0x3c);
         }
         self.sprite_slot_view_mut(k).increment_subtype2();
         self.sprite_move_x(k);
@@ -1181,9 +1181,9 @@ impl ZeldaState {
 
     pub(super) fn garnish_spawn_pyramid_debris(&mut self, x: i8, y: i8, xvel: i8, yvel: i8) {
         let k = self.garnish_alloc_force() as usize;
-        self.system_signals_view_mut().set_sound_effect_2(3);
-        self.system_signals_view_mut().set_sound_effect_1(31);
-        self.system_signals_view_mut().set_ambient_sound_effect(5);
+        self.system_signals_mut().set_sound_effect_2(3);
+        self.system_signals_mut().set_sound_effect_1(31);
+        self.system_signals_mut().set_ambient_sound_effect(5);
         let value = 19;
         self.garnish_slot_view_mut(k).set_garnish_type(value);
         self.garnish_state_view_mut().set_active_type(19);
@@ -1372,7 +1372,7 @@ impl ZeldaState {
         if j >= 0 {
             let j_usize = j as usize;
             self.sprite_set_spawned_coordinates(j_usize, &info);
-            self.system_signals_view_mut().set_sound_effect_1(0);
+            self.system_signals_mut().set_sound_effect_1(0);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
             self.sprite_slot_view_mut(j_usize).set_state(3);
             self.sprite_slot_view_mut(j_usize).set_delay_main(15);
@@ -1443,7 +1443,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j_usize).set_delay_main(47);
         self.sprite_slot_view_mut(j_usize).set_flags2(9);
         self.sprite_slot_view_mut(j_usize).set_ignore_projectile(9);
-        self.system_signals_view_mut().set_sound_effect_1(12);
+        self.system_signals_mut().set_sound_effect_1(12);
         j
     }
 
@@ -2281,7 +2281,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     self.sprite_show_message_unconditional(0x111);
                     self.Palette_Restore_BG_And_HUD();
-                    self.system_signals_view_mut().increment_cgram_update_flag();
+                    self.system_signals_mut().increment_cgram_update_flag();
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.player_resources_view_mut()
                         .set_magic_consumption_level(1);
@@ -2409,8 +2409,8 @@ impl ZeldaState {
                         let j = j as usize;
                         self.sprite_set_x(j, info.r0_x);
                         self.sprite_set_y(j, info.r2_y.wrapping_sub(80));
-                        self.system_signals_view_mut().set_music_control(0x1b);
-                        self.system_signals_view_mut().set_last_music_control(0);
+                        self.system_signals_mut().set_music_control(0x1b);
+                        self.system_signals_mut().set_last_music_control(0);
                         self.sprite_slot_view_mut(j).set_b(1);
                         self.Palette_AssertTranslucencySwap();
                         self.PaletteFilter_WishPonds();
@@ -2428,7 +2428,7 @@ impl ZeldaState {
                         self.Palette_RevertTranslucencySwap();
                         self.set_sub_screen_layers(0);
                         self.palette_filter_view_mut().set_color_math_control(0x20);
-                        self.system_signals_view_mut().increment_cgram_update_flag();
+                        self.system_signals_mut().increment_cgram_update_flag();
                         self.sprite_slot_view_mut(k).set_ai_state(5);
                     }
                 }
@@ -2494,7 +2494,7 @@ impl ZeldaState {
                 self.Palette_AssertTranslucencySwap();
                 self.set_sub_screen_layers(2);
                 self.palette_filter_view_mut().set_color_math_control(0x30);
-                self.system_signals_view_mut().increment_cgram_update_flag();
+                self.system_signals_mut().increment_cgram_update_flag();
                 self.sprite_slot_view_mut(k).set_ai_state(8);
             }
             8 => {
@@ -2628,8 +2628,8 @@ impl ZeldaState {
                     let j = j as usize;
                     self.sprite_set_x(j, info.r0_x);
                     self.sprite_set_y(j, info.r2_y.wrapping_sub(80));
-                    self.system_signals_view_mut().set_music_control(0x1b);
-                    self.system_signals_view_mut().set_last_music_control(0);
+                    self.system_signals_mut().set_music_control(0x1b);
+                    self.system_signals_mut().set_last_music_control(0);
                     self.sprite_slot_view_mut(j).set_b(1);
                     self.Palette_AssertTranslucencySwap();
                     self.PaletteFilter_WishPonds();
@@ -2646,7 +2646,7 @@ impl ZeldaState {
                         self.Palette_RevertTranslucencySwap();
                         self.set_sub_screen_layers(0);
                         self.palette_filter_view_mut().set_color_math_control(0x20);
-                        self.system_signals_view_mut().increment_cgram_update_flag();
+                        self.system_signals_mut().increment_cgram_update_flag();
                         self.sprite_slot_view_mut(k).set_ai_state(7);
                     }
                 }
@@ -2682,7 +2682,7 @@ impl ZeldaState {
                 self.Palette_AssertTranslucencySwap();
                 self.set_sub_screen_layers(2);
                 self.palette_filter_view_mut().set_color_math_control(0x30);
-                self.system_signals_view_mut().increment_cgram_update_flag();
+                self.system_signals_mut().increment_cgram_update_flag();
                 self.sprite_slot_view_mut(k).set_ai_state(10);
             }
             10 => {
@@ -3397,7 +3397,7 @@ impl ZeldaState {
                     self.lanmola_segment_motion_view_mut(1).set_z_offset(0);
                     self.sprite_slot_view_mut(k).set_delay_aux1(5);
                     self.sprite_initialize_secondary_item_minigame(1);
-                    self.system_signals_view_mut().set_music_control(14);
+                    self.system_signals_mut().set_music_control(14);
                 } else {
                     self.sprite_show_message_unconditional(0x189);
                     self.sprite_slot_view_mut(k).set_ai_state(0);
@@ -3427,7 +3427,7 @@ impl ZeldaState {
                 {
                     return;
                 }
-                self.system_signals_view_mut().set_music_control(9);
+                self.system_signals_mut().set_music_control(9);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 self.minigame_state_view_mut()
                     .clear_is_archer_or_shovel_game();
@@ -4828,7 +4828,7 @@ mod tests {
         assert_eq!(beam.sprite_slot_view(15).ignore_projectile(), 0x48);
         assert_eq!(beam.sprite_slot_view(15).delay_main(), 5);
         assert_eq!(beam.sprite_slot_view(15).flags5(), 32);
-        assert_eq!(beam.system_signals_view().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(beam.system_signals().sound_effect_2() & 0x3f, 0x19);
 
         let mut ganon_pos = fresh_state();
         ganon_pos.sprite_slot_view_mut(0).set_direction(1);
@@ -4865,7 +4865,7 @@ mod tests {
         assert_eq!(beamos.sprite_slot_view(15).delay_aux1(), 12);
         assert_eq!(beamos.sprite_slot_view(15).graphics(), 2);
         assert_eq!(beamos.sprite_system_view().limit_instance(), 3);
-        assert_eq!(beamos.system_signals_view().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(beamos.system_signals().sound_effect_2() & 0x3f, 0x19);
         let history = 2 * 32;
         assert_eq!(beamos.ram[BEAMOS_X_LO_PREP + history], 0x04);
         assert_eq!(beamos.ram[BEAMOS_X_HI + history], 0x01);
@@ -4991,7 +4991,7 @@ mod tests {
         ganon.sprite_prep_ganon(k);
         assert_eq!(ganon.sprite_slot_view(k).delay_main(), 128);
         assert_eq!(ganon.sprite_slot_view(k).room(), 2);
-        assert_eq!(ganon.system_signals_view().music_control(), 0x1e);
+        assert_eq!(ganon.system_signals().music_control(), 0x1e);
 
         let mut helmasaur = fresh_state();
         for i in 0..16 {
@@ -5784,7 +5784,7 @@ mod tests {
         assert_eq!(bully.sprite_slot_view(15).head_direction(), k as u8);
         assert_eq!(bully.sprite_slot_view(15).ignore_projectile(), 1);
         bully.ball_guy_play_bounce_noise(k);
-        assert_eq!(bully.system_signals_view().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(bully.system_signals().sound_effect_2() & 0x3f, 0x32);
 
         let mut garnish = fresh_state();
         garnish.garnish_slot_view_mut(29).set_garnish_type(1);
@@ -5815,9 +5815,9 @@ mod tests {
         let mut debris = fresh_state();
         debris.garnish_slot_view_mut(29).set_garnish_type(1);
         debris.garnish_spawn_pyramid_debris(-4, 5, -7, 9);
-        assert_eq!(debris.system_signals_view().sound_effect_2(), 3);
-        assert_eq!(debris.system_signals_view().sound_effect_1(), 31);
-        assert_eq!(debris.system_signals_view().ambient_sound_effect(), 5);
+        assert_eq!(debris.system_signals().sound_effect_2(), 3);
+        assert_eq!(debris.system_signals().sound_effect_1(), 31);
+        assert_eq!(debris.system_signals().ambient_sound_effect(), 5);
         assert_eq!(debris.garnish_slot_view(28).garnish_type(), 19);
         assert_eq!(debris.garnish_state_view().active_type(), 19);
         assert_eq!(debris.garnish_slot_view(28).x_low(), 228);
@@ -5957,7 +5957,7 @@ mod tests {
         assert_eq!(plop.sprite_slot_view(15).delay_main(), 15);
         assert_eq!(plop.sprite_slot_view(15).ai_state(), 0);
         assert_eq!(plop.sprite_slot_view(15).flags2(), 3);
-        assert_eq!(plop.system_signals_view().sound_effect_1() & 0x3f, 0x28);
+        assert_eq!(plop.system_signals().sound_effect_1() & 0x3f, 0x28);
 
         let mut medallion = fresh_state();
         medallion.sprite_slot_view_mut(k).set_state(9);
@@ -5970,10 +5970,7 @@ mod tests {
         assert_eq!(medallion.sprite_slot_view(15).x_velocity(), 24);
         assert_eq!(medallion.sprite_slot_view(15).z_velocity(), 48);
         assert_eq!(medallion.sprite_slot_view(15).a(), 17);
-        assert_eq!(
-            medallion.system_signals_view().sound_effect_1() & 0x3f,
-            0x20
-        );
+        assert_eq!(medallion.system_signals().sound_effect_1() & 0x3f, 0x20);
         assert_eq!(medallion.sprite_slot_view(15).flags2(), 0x83);
         assert_eq!(medallion.sprite_slot_view(15).flags3(), 0x58);
         assert_eq!(medallion.sprite_slot_view(15).oam_flags(), 8);
@@ -5996,17 +5993,12 @@ mod tests {
         small_splash.sprite_slot_view_mut(k).set_state(9);
         small_splash.sprite_set_x(k, 0x0060);
         small_splash.sprite_set_y(k, 0x0070);
-        small_splash
-            .system_signals_view_mut()
-            .set_sound_effect_1(0xff);
+        small_splash.system_signals_mut().set_sound_effect_1(0xff);
         assert_eq!(small_splash.sprite_spawn_small_splash(k), 14);
         assert_eq!(small_splash.sprite_slot_view(14).sprite_type(), 0xec);
         assert_eq!(small_splash.sprite_get_x(14), 0x0060);
         assert_eq!(small_splash.sprite_get_y(14), 0x0070);
-        assert_eq!(
-            small_splash.system_signals_view().sound_effect_1() & 0x3f,
-            0x28
-        );
+        assert_eq!(small_splash.system_signals().sound_effect_1() & 0x3f, 0x28);
         assert_eq!(small_splash.sprite_slot_view(14).state(), 3);
         assert_eq!(small_splash.sprite_slot_view(14).delay_main(), 15);
         assert_eq!(small_splash.sprite_slot_view(14).ai_state(), 0);
@@ -6035,7 +6027,7 @@ mod tests {
         assert_eq!(blast.sprite_slot_view(15).c(), 3);
         assert_eq!(blast.sprite_slot_view(15).flags2(), 3);
         assert_eq!(blast.sprite_slot_view(15).oam_flags(), 4);
-        assert_eq!(blast.system_signals_view().sound_effect_1() & 0x3f, 0x15);
+        assert_eq!(blast.system_signals().sound_effect_1() & 0x3f, 0x15);
 
         let mut bomb = fresh_state();
         bomb.sprite_slot_view_mut(k).set_state(9);
@@ -6066,7 +6058,7 @@ mod tests {
         assert_eq!(poof.sprite_slot_view(15).delay_main(), 47);
         assert_eq!(poof.sprite_slot_view(15).flags2(), 9);
         assert_eq!(poof.sprite_slot_view(15).ignore_projectile(), 9);
-        assert_eq!(poof.system_signals_view().sound_effect_1(), 12);
+        assert_eq!(poof.system_signals().sound_effect_1(), 12);
 
         let mut fireball = fresh_state();
         fireball.sprite_slot_view_mut(k).set_state(9);
@@ -6090,7 +6082,7 @@ mod tests {
         assert_eq!(fireball.sprite_slot_view(13).delay_aux1(), 16);
         assert_eq!(fireball.sprite_slot_view(13).flags5(), 0);
         assert_eq!(fireball.sprite_slot_view(13).deflection_bits(), 0x48);
-        assert_eq!(fireball.system_signals_view().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(fireball.system_signals().sound_effect_2() & 0x3f, 0x19);
 
         let mut phlegm = fresh_state();
         phlegm.sprite_slot_view_mut(k).set_state(9);
@@ -6114,7 +6106,7 @@ mod tests {
         assert_eq!(phlegm.sprite_slot_view(15).ignore_projectile(), 20);
         assert_eq!(phlegm.sprite_slot_view(15).bump_damage(), 37);
         assert_eq!(phlegm.sprite_slot_view(15).flags5(), 0x20);
-        assert_eq!(phlegm.system_signals_view().sound_effect_2() & 0x3f, 5);
+        assert_eq!(phlegm.system_signals().sound_effect_2() & 0x3f, 5);
 
         let mut leaves = fresh_state();
         leaves.sprite_slot_view_mut(k).set_state(9);
@@ -6156,7 +6148,7 @@ mod tests {
         assert_eq!(octorok.sprite_get_y(15), 0x0204);
         assert_eq!(octorok.sprite_slot_view(15).x_velocity(), 44);
         assert_eq!(octorok.sprite_slot_view(15).y_velocity(), 0);
-        assert_eq!(octorok.system_signals_view().sound_effect_1() & 0x3f, 7);
+        assert_eq!(octorok.system_signals().sound_effect_1() & 0x3f, 7);
 
         let mut moblin = fresh_state();
         moblin.sprite_slot_view_mut(k).set_state(9);
@@ -6226,10 +6218,7 @@ mod tests {
         blue_balls.sprite_set_x(k, 0x0120);
         blue_balls.sprite_set_y(k, 0x0340);
         blue_balls.create_six_blue_balls(k);
-        assert_eq!(
-            blue_balls.system_signals_view().sound_effect_2() & 0x3f,
-            0x36
-        );
+        assert_eq!(blue_balls.system_signals().sound_effect_2() & 0x3f, 0x36);
         assert_eq!(blue_balls.temp_counter_view().value(), 0);
         assert_eq!(blue_balls.sprite_slot_view(15).sprite_type(), 0x55);
         assert_eq!(blue_balls.sprite_get_x(15), 0x0124);
@@ -6251,10 +6240,7 @@ mod tests {
         octoballoon.sprite_set_x(k, 0x0110);
         octoballoon.sprite_set_y(k, 0x0220);
         octoballoon.octoballoon_form_babby(k);
-        assert_eq!(
-            octoballoon.system_signals_view().sound_effect_1() & 0x3f,
-            0x0c
-        );
+        assert_eq!(octoballoon.system_signals().sound_effect_1() & 0x3f, 0x0c);
         assert_eq!(octoballoon.sprite_slot_view(15).sprite_type(), 0x10);
         assert_eq!(octoballoon.sprite_get_x(15), 0x0110);
         assert_eq!(octoballoon.sprite_get_y(15), 0x0220);
@@ -6271,7 +6257,7 @@ mod tests {
         bully.sprite_set_x(k, 0x0440);
         bully.sprite_set_y(k, 0x0550);
         bully.ball_guy_play_bounce_noise(k);
-        assert_eq!(bully.system_signals_view().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(bully.system_signals().sound_effect_2() & 0x3f, 0x32);
         bully.spawn_bully(k);
         assert_eq!(bully.sprite_slot_view(15).sprite_type(), 0xb9);
         assert_eq!(bully.sprite_get_x(15), 0x0440);
@@ -6521,7 +6507,7 @@ mod tests {
         logic.inventory_items_mut().set_bottle(2, 2);
         assert!(logic.potion_cauldron_check_bottles());
         logic.potion_cauldron_go_beep(k);
-        assert_eq!(logic.system_signals_view().sound_effect_1() & 0x3f, 0x3c);
+        assert_eq!(logic.system_signals().sound_effect_1() & 0x3f, 0x3c);
 
         logic.player_resources_view_mut().set_rupees_goal(19);
         assert!(!logic.dark_world_hint_npc_handle_payment());
@@ -6605,7 +6591,7 @@ mod tests {
         cd.sprite_set_y(k, 0x0044);
         cd.sprite_cd_spawn_garnish(k);
         assert_eq!(cd.sprite_slot_view(k).subtype2(), 8);
-        assert_eq!(cd.system_signals_view().sound_effect_2() & 0x3f, 0x14);
+        assert_eq!(cd.system_signals().sound_effect_2() & 0x3f, 0x14);
         assert_eq!(cd.garnish_slot_view(28).garnish_type(), 0x0c);
         assert_eq!(cd.garnish_state_view().active_type(), 0x0c);
         assert_eq!(cd.garnish_slot_view(28).sprite(), k as u8);

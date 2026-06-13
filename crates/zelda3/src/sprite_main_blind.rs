@@ -1639,7 +1639,7 @@ impl ZeldaState {
             [0, 0, 4, 8, 8, 8, 4, 0, 0, 0, -4, -8, -8, -8, -4, 0];
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
             let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
-            self.system_signals_view_mut().set_sound_effect_2(sfx);
+            self.system_signals_mut().set_sound_effect_2(sfx);
             self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
             let i = self.sprite_slot_view(k).head_direction();
             let i_idx = i as usize;

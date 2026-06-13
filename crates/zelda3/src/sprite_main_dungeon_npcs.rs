@@ -705,7 +705,7 @@ impl ZeldaState {
                     self.sprite_show_message_unconditional(0x1c);
                     self.sprite_slot_view_mut(k).set_x_velocity(0);
                     self.sprite_slot_view_mut(k).set_y_velocity(0);
-                    self.system_signals_view_mut().set_music_control(25);
+                    self.system_signals_mut().set_music_control(25);
                 }
                 let graphics = self.frame_state().frame_counter >> 3 & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
@@ -730,7 +730,7 @@ impl ZeldaState {
                 self.Dungeon_FlagRoomData_Quadrants();
                 self.sprite_become_follower(k);
                 self.sprite_slot_view_mut(k).set_state(0);
-                self.system_signals_view_mut().set_music_control(16);
+                self.system_signals_mut().set_music_control(16);
             }
             _ => {}
         }
@@ -862,7 +862,7 @@ impl ZeldaState {
             }
             2 => {
                 self.sprite_show_message_unconditional(0x0d);
-                self.system_signals_view_mut().set_music_control(3);
+                self.system_signals_mut().set_music_control(3);
                 self.sprite_slot_view_mut(k).set_graphics(1);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }

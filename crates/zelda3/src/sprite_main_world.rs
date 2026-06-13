@@ -684,7 +684,7 @@ impl ZeldaState {
                 {
                     return;
                 }
-                self.system_signals_view_mut().set_music_control(10);
+                self.system_signals_mut().set_music_control(10);
                 self.player_state_view_mut()
                     .set_sprite_damage_disable_timer(1);
                 self.master_sword_spawn_pendant_prop(k, 9);
@@ -1138,7 +1138,7 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot_view(k).c() == 0 && self.sprite_slot_view(k).b() == 0 {
-            self.system_signals_view_mut().set_ambient_sound_effect(11);
+            self.system_signals_mut().set_ambient_sound_effect(11);
             self.sprite_slot_view_mut(k).set_b(11);
         }
         let graphics = (self.frame_state().frame_counter >> 5) & 1;
@@ -1169,7 +1169,7 @@ impl ZeldaState {
                         .set_darkening_or_lightening_screen(0);
                     self.palette_assert_translucency_swap();
                     self.sprite_slot_view_mut(k).set_ai_state(2);
-                    self.system_signals_view_mut().set_ambient_sound_effect(128);
+                    self.system_signals_mut().set_ambient_sound_effect(128);
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x33);
                 }
             }
@@ -1249,9 +1249,9 @@ impl ZeldaState {
                     && (self.player_state_view().joypad1h_last() & 0x40) != 0
                 {
                     self.sprite_slot_view_mut(k).set_ai_state(4);
-                    self.system_signals_view_mut().set_music_control(0xf2);
-                    self.system_signals_view_mut().set_sound_effect_1(0);
-                    self.system_signals_view_mut().set_ambient_sound_effect(23);
+                    self.system_signals_mut().set_music_control(0xf2);
+                    self.system_signals_mut().set_sound_effect_1(0);
+                    self.system_signals_mut().set_ambient_sound_effect(23);
                     self.player_state_view_mut().increment_immobilized_flag();
                 }
             }
@@ -1268,7 +1268,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k)
                             .set_delay_main(FLUTE_AARDVARK_FRAME_DELAYS[idx] as u8);
                     } else {
-                        self.system_signals_view_mut().set_music_control(0xf3);
+                        self.system_signals_mut().set_music_control(0xf3);
                         self.sprite_slot_view_mut(k).set_ai_state(5);
                         self.player_state_view_mut().clear_immobilized();
                     }
@@ -1760,9 +1760,9 @@ mod tests {
         s.sprite_flute_kid_stumpy(k);
 
         assert_eq!(s.sprite_slot_view(k).ai_state(), 4);
-        assert_eq!(s.system_signals_view().music_control(), 0xf2);
-        assert_eq!(s.system_signals_view().sound_effect_1(), 0);
-        assert_eq!(s.system_signals_view().ambient_sound_effect(), 23);
+        assert_eq!(s.system_signals().music_control(), 0xf2);
+        assert_eq!(s.system_signals().sound_effect_1(), 0);
+        assert_eq!(s.system_signals().ambient_sound_effect(), 23);
         assert_eq!(s.player_state_view().immobilized_flag(), 1);
     }
 

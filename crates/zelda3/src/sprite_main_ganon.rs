@@ -570,7 +570,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_delay_main(128);
                 } else if self.sprite_slot_view(k).delay_main() == 32 {
-                    self.system_signals_view_mut().set_music_control(0x1f);
+                    self.system_signals_mut().set_music_control(0x1f);
                 } else if self.sprite_slot_view(k).delay_main() == 64 {
                     self.dialogue_message_index_view_mut().set_value(0x16f);
                     self.sprite_show_message_minimal_c();
@@ -862,7 +862,7 @@ impl ZeldaState {
                 self.world_scroll_mut().set_bg1_y_offset(0);
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     if self.sprite_slot_view(k).delay_main() == 1 {
-                        self.system_signals_view_mut().set_ambient_sound_effect(5);
+                        self.system_signals_mut().set_ambient_sound_effect(5);
                         self.ganon_select_warp_location(k, 13);
                         self.player_state_view_mut().clear_immobilized();
                         self.ganon_spawn_falling_tiles_overlord(k);
@@ -889,7 +889,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_z_velocity(0);
                         self.sprite_slot_view_mut(k).set_z(0);
                         self.sprite_slot_view_mut(k).set_delay_main(96);
-                        self.system_signals_view_mut().set_ambient_sound_effect(7);
+                        self.system_signals_mut().set_ambient_sound_effect(7);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                     }
                     let graphics = GFX16[(self.sprite_slot_view(k).direction() & 1) as usize];

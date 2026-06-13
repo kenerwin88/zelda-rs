@@ -200,7 +200,7 @@ impl ZeldaState {
     }
 
     fn kill_aghanim_init(&mut self) {
-        self.system_signals_view_mut().set_music_control(8);
+        self.system_signals_mut().set_music_control(8);
         self.set_edge_transition_direction_bits(8);
         self.InitializeMirrorHDMA();
         self.set_overworld_map_state(0);
@@ -265,7 +265,7 @@ impl ZeldaState {
         self.decrement_subsubmodule();
         if self.frame_state().subsubmodule == 0 {
             self.increment_submodule();
-            self.system_signals_view_mut().set_ambient_sound_effect(9);
+            self.system_signals_mut().set_ambient_sound_effect(9);
         }
     }
 
@@ -273,11 +273,11 @@ impl ZeldaState {
         self.RenderText();
         if self.frame_state().submodule == 0 {
             self.set_overworld_map_state(0);
-            self.system_signals_view_mut().set_ambient_sound_effect(5);
+            self.system_signals_mut().set_ambient_sound_effect(5);
             if !self.inventory_items().has_moon_pearl() {
                 self.dialogue_message_index_view_mut().set_value(0x36);
                 self.main_show_text_message();
-                self.system_signals_view_mut().set_ambient_sound_effect(0);
+                self.system_signals_mut().set_ambient_sound_effect(0);
                 self.set_main_module(21);
                 self.set_submodule(8);
             } else {
@@ -314,7 +314,7 @@ impl ZeldaState {
         } else {
             4
         };
-        self.system_signals_view_mut().set_music_control(music);
+        self.system_signals_mut().set_music_control(music);
         self.save_progress_view_mut().set_map_icons_indicator(6);
     }
 
@@ -347,7 +347,7 @@ impl ZeldaState {
         let x = tilemap_pos & 0x3fff;
         self.room_draw_adjust_torch_lighting_change(x, 0x0eca, x);
         let sfx = 42 | self.calculate_sfx_pan_arbitrary(((x & 0x7f) * 2) as u8);
-        self.system_signals_view_mut().set_sound_effect_1(sfx);
+        self.system_signals_mut().set_sound_effect_1(sfx);
         self.request_nmi_copy_packets();
 
         if self.dungeon_torch_state().wants_lights_out() != 0 {
@@ -480,15 +480,15 @@ impl ZeldaState {
             self.hud_search_for_equipped_item();
             self.hud_rebuild();
             self.hud_update_equipped_item();
-            self.system_signals_view_mut().clear_game_over_check_flag();
+            self.system_signals_mut().clear_game_over_check_flag();
             self.set_dungeon_room(32);
             self.set_main_module(8);
             self.set_submodule(0);
             self.set_subsubmodule(0);
-            self.system_signals_view_mut().clear_restart_check_flag();
+            self.system_signals_mut().clear_restart_check_flag();
         } else if self.display_state().mosaic_level != 0
-            || (self.system_signals_view().game_over_check_flag() != 0
-                && self.system_signals_view().restart_check_flag() == 0)
+            || (self.system_signals().game_over_check_flag() != 0
+                && self.system_signals().restart_check_flag() == 0)
             || self.save_progress_view().progress_indicator() < 2
             || self.save_progress_view().which_starting_point() == 5
         {
@@ -595,7 +595,7 @@ impl ZeldaState {
             self.Dungeon_ResetTorchBackgroundAndPlayerInner();
             self.player_state_view_mut().set_facing(2);
             self.player_state_view_mut().set_last_direction(2 << 1);
-            self.system_signals_view_mut().increment_hud_update_flag();
+            self.system_signals_mut().increment_hud_update_flag();
             self.increment_submodule();
             self.set_subsubmodule(16);
             self.player_state_view_mut().increment_immobilized_flag();
@@ -623,7 +623,7 @@ impl ZeldaState {
             return;
         }
         if self.inventory_items().sword_type().wrapping_add(1) & 0xfe != 0 {
-            self.system_signals_view_mut().set_sound_effect_1(0x2c);
+            self.system_signals_mut().set_sound_effect_1(0x2c);
         }
         self.player_state_view_mut().force_hold_sword_up();
         self.set_subsubmodule(32);
@@ -799,7 +799,7 @@ impl ZeldaState {
                 }
                 self.ancilla_add_cape_poof(0x23, 4);
                 let sfx = 0x15 | self.link_calculate_sfx_pan();
-                self.system_signals_view_mut().set_sound_effect_1(sfx);
+                self.system_signals_mut().set_sound_effect_1(sfx);
             }
         } else if item == 0x29 {
             if self.inventory_items().mushroom() != 2 {
@@ -823,7 +823,7 @@ impl ZeldaState {
             self.inventory_items_mut()
                 .increment_item_memory_value_mod4(value_addr);
             let sfx = 0x2d | self.link_calculate_sfx_pan();
-            self.system_signals_view_mut().set_sound_effect_2(sfx);
+            self.system_signals_mut().set_sound_effect_2(sfx);
         } else if item == 1 {
             self.Overworld_SetSongList();
         } else {
@@ -881,13 +881,13 @@ impl ZeldaState {
         } else {
             if self.ancilla_slot_view(k).step() == 0 && item == 1 {
                 let sfx = self.link_calculate_sfx_pan() | 0x2c;
-                self.system_signals_view_mut().set_sound_effect_1(sfx);
+                self.system_signals_mut().set_sound_effect_1(sfx);
             } else if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
                 let music = self.link_calculate_sfx_pan() | 0x13;
-                self.system_signals_view_mut().set_music_control(music);
+                self.system_signals_mut().set_music_control(music);
             } else if item != 0x3e && item != 0x17 {
                 let sfx = self.link_calculate_sfx_pan() | 0x0f;
-                self.system_signals_view_mut().set_sound_effect_2(sfx);
+                self.system_signals_mut().set_sound_effect_2(sfx);
             }
             let method = if self.player_state_view().item_receipt_method() == 3 {
                 0
@@ -963,7 +963,7 @@ impl ZeldaState {
         self.SaveDungeonKeys_misc();
         self.Dungeon_FlagRoomData_Quadrants();
         self.sprite_reset_all();
-        self.system_signals_view_mut().clear_restart_check_flag();
+        self.system_signals_mut().clear_restart_check_flag();
         self.set_main_module(17);
         self.set_submodule(0);
         self.clear_bg_vram_load_mode();
@@ -971,10 +971,10 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_sfx_queue_sfx1_with_pan(&mut self, k: usize, a: u8) {
-        if self.system_signals_view().ambient_sound_effect_is_clear() {
+        if self.system_signals().ambient_sound_effect_is_clear() {
             let x = self.sprite_slot_view(k).x();
             let sfx = a | Self::calculate_sfx_pan_with_scroll(x, self.world_scroll().bg2_x());
-            self.system_signals_view_mut().set_ambient_sound_effect(sfx);
+            self.system_signals_mut().set_ambient_sound_effect(sfx);
         }
     }
 
@@ -1042,7 +1042,7 @@ impl ZeldaState {
     }
 
     pub(super) fn play_sfx_set_pan(&mut self, a: u8) -> u8 {
-        self.system_signals_view_mut().set_raw_sfx_pan_value(a);
+        self.system_signals_mut().set_raw_sfx_pan_value(a);
         let out = a | self.link_calculate_sfx_pan();
         self.replay_trace_sfx("play_sfx_set_pan", None, a, out);
         out
@@ -1050,13 +1050,13 @@ impl ZeldaState {
 
     pub(super) fn ancilla_sfx2_near(&mut self, a: u8) -> u8 {
         let panned = self.play_sfx_set_pan(a);
-        self.system_signals_view_mut().set_sound_effect_1(panned);
+        self.system_signals_mut().set_sound_effect_1(panned);
         panned
     }
 
     pub(super) fn ancilla_sfx3_near(&mut self, a: u8) {
         let panned = self.play_sfx_set_pan(a);
-        self.system_signals_view_mut().set_sound_effect_2(panned);
+        self.system_signals_mut().set_sound_effect_2(panned);
     }
 
     pub(super) fn calculate_sfx_pan_arbitrary(&self, a: u8) -> u8 {
@@ -1070,16 +1070,16 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_sfx_queue_sfx2_with_pan(&mut self, k: usize, a: u8) {
-        if !self.system_signals_view().has_sound_effect_1() {
+        if !self.system_signals().has_sound_effect_1() {
             let sfx = a | self.sprite_calculate_sfx_pan(k);
-            self.system_signals_view_mut().set_sound_effect_1(sfx);
+            self.system_signals_mut().set_sound_effect_1(sfx);
         }
     }
 
     pub(super) fn sprite_sfx_queue_sfx3_with_pan(&mut self, k: usize, a: u8) {
-        if !self.system_signals_view().has_sound_effect_2() {
+        if !self.system_signals().has_sound_effect_2() {
             let sfx = a | self.sprite_calculate_sfx_pan(k);
-            self.system_signals_view_mut().set_sound_effect_2(sfx);
+            self.system_signals_mut().set_sound_effect_2(sfx);
         }
     }
 

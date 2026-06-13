@@ -755,7 +755,7 @@ impl ZeldaState {
         }
         self.sprite_slot_view_mut(k).set_delay_main(15);
         self.sprite_slot_view_mut(k).set_oam_flags(4);
-        if !self.system_signals_view().has_sound_effect_1() {
+        if !self.system_signals().has_sound_effect_1() {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x1e);
             self.sprite_slot_view_mut(k).set_graphics(3);
         }
@@ -903,7 +903,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() < 2 {
             self.kholdstare_spawn_puff_cloud_garnish(k);
             if (self.frame_state().frame_counter & 7) == 0 {
-                self.system_signals_view_mut().set_sound_effect_1(2);
+                self.system_signals_mut().set_sound_effect_1(2);
             }
         }
         if self.sprite_return_if_recoiling(k) {
@@ -1135,7 +1135,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).increment_subtype2();
             let j = self.sprite_slot_view(k).subtype2();
             if (j & 7) == 0 {
-                self.system_signals_view_mut().set_sound_effect_2(48);
+                self.system_signals_mut().set_sound_effect_2(48);
             }
             self.sprite_set_x(
                 k,
@@ -1247,7 +1247,7 @@ impl ZeldaState {
                     && self.sprite_slot_view(k).delay_main() < 46
                 {
                     let sfx = self.link_calculate_sfx_pan() | 0x26;
-                    self.system_signals_view_mut().set_sound_effect_1(sfx);
+                    self.system_signals_mut().set_sound_effect_1(sfx);
                     let loot = (self.get_random_number() & 3) + 1;
                     self.sprite_slot_view_mut(k).set_g(loot);
                     self.sprite_slot_view_mut(k).set_e(loot);
@@ -4789,7 +4789,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).and_flags3(!0x40);
             } else {
                 if self.sprite_slot_view(k).delay_main() == 64 {
-                    self.system_signals_view_mut().set_sound_effect_1(0x35);
+                    self.system_signals_mut().set_sound_effect_1(0x35);
                 } else if self.sprite_slot_view(k).delay_main() < 64 {
                     let j = (((self.sprite_slot_view(k).delay_main() >> 1) ^ k as u8) & 1) as usize;
                     self.sprite_slot_view_mut(k)

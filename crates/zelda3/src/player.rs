@@ -548,8 +548,8 @@ impl ZeldaState {
             self.link_reset_swimming_state();
             self.ancilla_add_dash_tremor(29, 1);
             self.prepare_apply_rumble_to_sprites();
-            if self.system_signals_view().sound_effect_2() & 0x3f != 27
-                && self.system_signals_view().sound_effect_2() & 0x3f != 50
+            if self.system_signals().sound_effect_2() & 0x3f != 27
+                && self.system_signals().sound_effect_2() & 0x3f != 50
             {
                 self.ancilla_sfx3_near(3);
             }
@@ -2873,7 +2873,7 @@ impl ZeldaState {
             && self.run_ledge_hop_timer()
         {
             self.ancilla_sfx2_near(0x20);
-            let handler_state = if self.system_signals_view().sound_effect_1() & 7 == 0 {
+            let handler_state = if self.system_signals().sound_effect_1() & 7 == 0 {
                 16
             } else {
                 15
@@ -3541,7 +3541,7 @@ impl ZeldaState {
             let screen = u16::from(self.world_location_state().overworld_screen_index()) as usize;
             self.overworld_event_info_view_mut()
                 .set_event_bits(screen, 0x20);
-            self.system_signals_view_mut().set_sound_effect_2(27);
+            self.system_signals_mut().set_sound_effect_2(27);
             self.dungeon_doors_mut().set_door_open_counter(80);
         }
         let x = x.wrapping_add((BIG_ROCK_QUADRANT_X_OFFSETS[quadrant] * 2) as u16);
@@ -3598,9 +3598,9 @@ impl ZeldaState {
                 self.adjust_secret_for_powder_for_smash();
                 return 0;
             }
-            self.system_signals_view_mut().set_sound_effect_2(0x1b);
+            self.system_signals_mut().set_sound_effect_2(0x1b);
         } else if data == 0x82 && self.enhanced_features_view().has(4096) {
-            self.system_signals_view_mut().set_sound_effect_2(0x1b);
+            self.system_signals_mut().set_sound_effect_2(0x1b);
         }
 
         const TILE_BELOW: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
@@ -4391,7 +4391,7 @@ impl ZeldaState {
         if self.player_state_view().action_handler_timer() == 1 {
             self.tile_detect_main_handler(3);
             self.ancilla_add_hit_stars(22, 0);
-            if self.system_signals_view().sound_effect_1() == 0 {
+            if self.system_signals().sound_effect_1() == 0 {
                 self.ancilla_sfx2_near(16);
                 self.spawn_hammer_water_splash();
             }
@@ -5090,8 +5090,8 @@ impl ZeldaState {
         self.player_state_view_mut().set_direction_lock_bits(1);
         self.player_state_view_mut().clear_animation_step();
         self.player_state_view_mut().clear_direction_flags(0x0f);
-        self.system_signals_view_mut().set_ambient_sound_effect(17);
-        self.system_signals_view_mut().set_music_control(242);
+        self.system_signals_mut().set_ambient_sound_effect(17);
+        self.system_signals_mut().set_music_control(242);
     }
 
     pub(super) fn link_item_lamp(&mut self) {
@@ -5592,7 +5592,7 @@ impl ZeldaState {
                 return;
             }
             self.Mirror_SaveRoomData();
-            if self.system_signals_view().sound_effect_1() != 60 {
+            if self.system_signals().sound_effect_1() != 60 {
                 self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(0);
                 self.dungeon_object_tracking_mut()
@@ -6872,7 +6872,7 @@ impl ZeldaState {
             self.ancilla_sfx2_near(0x24);
         }
         self.player_tile_detect_nearby();
-        if self.system_signals_view().sound_effect_1() & 0x3f != 0x24 {
+        if self.system_signals().sound_effect_1() & 0x3f != 0x24 {
             self.ancilla_sfx2_near(0x21);
         }
 
@@ -8032,7 +8032,7 @@ impl ZeldaState {
                                 self.ancilla_sfx2_near(26);
                             }
                             if self.tile_detect_position_view().shallow_water_low() & 1 != 0
-                                && self.system_signals_view().sound_effect_1() != 36
+                                && self.system_signals().sound_effect_1() != 36
                             {
                                 self.ancilla_sfx2_near(28);
                             }
