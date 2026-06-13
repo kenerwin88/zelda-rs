@@ -183,6 +183,26 @@ impl BossHomePositionsState {
                 .unwrap_or_default(),
         }
     }
+
+    fn write_armos_knight_home_position_to_ram(&self, ram: &mut [u8], slot: usize) {
+        if let Some(position) = self.armos_knight_home_positions.get(slot).copied() {
+            ram[OVERLORD_X_HI + slot] = position.x_low;
+            ram[OVERLORD_Y_HI + slot] = position.x_high;
+            ram[OVERLORD_GEN2 + slot] = position.y_low;
+            ram[OVERLORD_FLOOR + slot] = position.y_high;
+        }
+    }
+
+    fn set_armos_knight_home_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(position) = self.armos_knight_home_positions.get_mut(slot) {
+            *position = BossHomePosition {
+                x_low: x as u8,
+                x_high: (x >> 8) as u8,
+                y_low: y as u8,
+                y_high: (y >> 8) as u8,
+            };
+        }
+    }
 }
 
 pub(crate) fn arrghus_puff_home_position_from_ram(
@@ -254,16 +274,17 @@ impl<'a> NativeArmosKnightHomePositionBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = BossHomePositionsState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
     pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.ram[OVERLORD_X_HI + self.slot] = x as u8;
-        self.ram[OVERLORD_Y_HI + self.slot] = (x >> 8) as u8;
-        self.ram[OVERLORD_GEN2 + self.slot] = y as u8;
-        self.ram[OVERLORD_FLOOR + self.slot] = (y >> 8) as u8;
-        *self.state = BossHomePositionsState::load_from_ram(self.ram);
+        self.state.set_armos_knight_home_position(self.slot, x, y);
+        self.state
+            .write_armos_knight_home_position_to_ram(self.ram, self.slot);
+        debug_assert_eq!(
+            self.state.armos_knight_home_position(self.slot),
+            BossHomePositionsState::load_from_ram(self.ram).armos_knight_home_position(self.slot),
+        );
     }
 }
 
@@ -305,6 +326,73 @@ impl CachedSpritesState {
             slot: self.slots.get(slot).copied().unwrap_or_default(),
         }
     }
+
+    fn slot_mut(&mut self, slot: usize) -> Option<&mut CachedSpriteSlotState> {
+        self.slots.get_mut(slot)
+    }
+
+    fn clear_state(&mut self, slot: usize) {
+        if let Some(cached) = self.slot_mut(slot) {
+            cached.state = 0;
+        }
+    }
+
+    fn initialize_trinexx_component(&mut self, slot: usize) {
+        if let Some(cached) = self.slot_mut(slot) {
+            cached.type_byte = 0x40;
+            cached.x_high = 0;
+            cached.y_high = 0;
+        }
+    }
+
+    fn set_type_byte(&mut self, slot: usize, value: u8) {
+        if let Some(cached) = self.slot_mut(slot) {
+            cached.type_byte = value;
+        }
+    }
+
+    fn set_y_high(&mut self, slot: usize, value: u8) {
+        if let Some(cached) = self.slot_mut(slot) {
+            cached.y_high = value;
+        }
+    }
+
+    fn cache_sprite_header(
+        &mut self,
+        slot: usize,
+        sprite_type: u8,
+        x_low: u8,
+        x_high: u8,
+        y_low: u8,
+        y_high: u8,
+        graphics: u8,
+    ) {
+        if let Some(cached) = self.slot_mut(slot) {
+            *cached = CachedSpriteSlotState {
+                state: 0,
+                type_byte: sprite_type,
+                x_low,
+                x_high,
+                y_low,
+                y_high,
+                graphics,
+            };
+        }
+    }
+
+    fn sync_slot_from_ram(&mut self, ram: &[u8], slot: usize) {
+        if let Some(cached) = self.slot_mut(slot) {
+            *cached = CachedSpriteSlotState {
+                state: ram.get(ALT_SPRITE_STATE + slot).copied().unwrap_or(0),
+                type_byte: ram.get(ALT_SPRITE_TYPE + slot).copied().unwrap_or(0),
+                x_low: ram.get(ALT_SPRITE_X_LO + slot).copied().unwrap_or(0),
+                x_high: ram.get(ALT_SPRITE_X_HI + slot).copied().unwrap_or(0),
+                y_low: ram.get(ALT_SPRITE_Y_LO + slot).copied().unwrap_or(0),
+                y_high: ram.get(ALT_SPRITE_Y_HI + slot).copied().unwrap_or(0),
+                graphics: ram.get(ALT_SPRITE_GRAPHICS + slot).copied().unwrap_or(0),
+            };
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -338,34 +426,41 @@ pub(crate) struct NativeCachedSpriteBridgeMut<'a> {
 
 impl<'a> NativeCachedSpriteBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut CachedSpritesState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = CachedSpritesState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = CachedSpritesState::load_from_ram(self.ram);
+    fn sync_slot_from_ram(&mut self) {
+        self.state.sync_slot_from_ram(self.ram, self.slot);
+        self.debug_assert_slot_matches_ram();
+    }
+
+    fn debug_assert_slot_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.slot(self.slot),
+            CachedSpritesState::load_from_ram(self.ram).slot(self.slot),
+        );
     }
 
     pub(crate) fn clear_state(&mut self) {
+        self.state.clear_state(self.slot);
         self.ram[ALT_SPRITE_STATE + self.slot] = 0;
-        self.reload();
     }
 
     pub(crate) fn initialize_trinexx_component(&mut self) {
+        self.state.initialize_trinexx_component(self.slot);
         self.ram[ALT_SPRITE_TYPE + self.slot] = 0x40;
         self.ram[ALT_SPRITE_X_HI + self.slot] = 0;
         self.ram[ALT_SPRITE_Y_HI + self.slot] = 0;
-        self.reload();
     }
 
     pub(crate) fn set_type_byte(&mut self, value: u8) {
+        self.state.set_type_byte(self.slot, value);
         self.ram[ALT_SPRITE_TYPE + self.slot] = value;
-        self.reload();
     }
 
     pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.state.set_y_high(self.slot, value);
         self.ram[ALT_SPRITE_Y_HI + self.slot] = value;
-        self.reload();
     }
 
     pub(crate) fn cache_sprite_header(
@@ -377,6 +472,15 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         y_high: u8,
         graphics: u8,
     ) {
+        self.state.cache_sprite_header(
+            self.slot,
+            sprite_type,
+            x_low,
+            x_high,
+            y_low,
+            y_high,
+            graphics,
+        );
         self.ram[ALT_SPRITE_STATE + self.slot] = 0;
         self.ram[ALT_SPRITE_TYPE + self.slot] = sprite_type;
         self.ram[ALT_SPRITE_X_LO + self.slot] = x_low;
@@ -384,7 +488,6 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         self.ram[ALT_SPRITE_Y_LO + self.slot] = y_low;
         self.ram[ALT_SPRITE_Y_HI + self.slot] = y_high;
         self.ram[ALT_SPRITE_GRAPHICS + self.slot] = graphics;
-        self.reload();
     }
 
     pub(crate) fn cache_live_fields(&mut self) {
@@ -392,7 +495,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
             self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot] =
                 self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
         }
-        self.reload();
+        self.sync_slot_from_ram();
     }
 
     pub(crate) fn load_cached_into_live(&mut self, backup: &mut [u8; 24]) {
@@ -401,7 +504,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
                 self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
         }
-        self.reload();
+        self.sync_slot_from_ram();
     }
 
     pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {

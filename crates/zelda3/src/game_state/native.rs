@@ -2881,6 +2881,39 @@ mod tests {
     }
 
     #[test]
+    fn native_cached_sprite_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[ALT_SPRITE_STATE + 3] = 1;
+        native_ram[ALT_SPRITE_TYPE + 3] = 0x12;
+        native_ram[ALT_SPRITE_X_LO + 3] = 0x34;
+        native_ram[ALT_SPRITE_X_HI + 3] = 0x56;
+        native_ram[ALT_SPRITE_Y_LO + 3] = 0x78;
+        native_ram[ALT_SPRITE_Y_HI + 3] = 0x9a;
+        native_ram[ALT_SPRITE_GRAPHICS + 3] = 0xbc;
+        let mut state = SpriteState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge =
+                NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+            bridge.set_type_byte(0x66);
+            bridge.set_y_high(0x77);
+        }
+
+        let slot = state.cached_sprites.slot(3);
+        assert!(slot.is_active());
+        assert_eq!(slot.type_byte(), 0x66);
+        assert_eq!(slot.y_high(), 0x77);
+        assert_eq!(ram[ALT_SPRITE_STATE + 3], 0xff);
+        assert_eq!(ram[ALT_SPRITE_TYPE + 3], 0x66);
+        assert_eq!(ram[ALT_SPRITE_X_LO + 3], 0xff);
+        assert_eq!(ram[ALT_SPRITE_X_HI + 3], 0xff);
+        assert_eq!(ram[ALT_SPRITE_Y_LO + 3], 0xff);
+        assert_eq!(ram[ALT_SPRITE_Y_HI + 3], 0x77);
+        assert_eq!(ram[ALT_SPRITE_GRAPHICS + 3], 0xff);
+    }
+
+    #[test]
     fn native_boss_home_positions_load_and_update_overlord_scratch() {
         let mut ram = vec![0; WRAM_SIZE];
         let puff_slot = 5;
@@ -2908,6 +2941,46 @@ mod tests {
         let armos_home = state.boss_home_positions.armos_knight_home_position(3);
         assert_eq!(armos_home.x(), 0x9abc);
         assert_eq!(armos_home.y(), 0xdef0);
+        assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
+        assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
+        assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
+        assert_eq!(ram[OVERLORD_FLOOR + 3], 0xde);
+    }
+
+    #[test]
+    fn native_boss_home_positions_project_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        let puff_slot = 5;
+        let puff_overlord_slot = puff_slot + 7;
+        native_ram[OVERLORD_X_LO + puff_overlord_slot] = 0x34;
+        native_ram[OVERLORD_Y_LO + puff_overlord_slot] = 0x12;
+        native_ram[OVERLORD_GEN1 + puff_overlord_slot] = 0x78;
+        native_ram[OVERLORD_GEN3 + puff_overlord_slot] = 0x56;
+        native_ram[OVERLORD_X_HI + 3] = 0xaa;
+        native_ram[OVERLORD_Y_HI + 3] = 0xbb;
+        native_ram[OVERLORD_GEN2 + 3] = 0xcc;
+        native_ram[OVERLORD_FLOOR + 3] = 0xdd;
+        let mut state = SpriteState::load_from_ram(&native_ram);
+
+        {
+            let mut home = NativeArmosKnightHomePositionBridgeMut::new(
+                &mut state.boss_home_positions,
+                &mut ram,
+                3,
+            );
+            home.set_position(0x9abc, 0xdef0);
+        }
+
+        let puff_home = state
+            .boss_home_positions
+            .arrghus_puff_home_position(puff_slot);
+        let armos_home = state.boss_home_positions.armos_knight_home_position(3);
+        assert_eq!(puff_home.x(), 0x1234);
+        assert_eq!(puff_home.y(), 0x5678);
+        assert_eq!(armos_home.x(), 0x9abc);
+        assert_eq!(armos_home.y(), 0xdef0);
+        assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0xff);
         assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
         assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
         assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
