@@ -34,12 +34,15 @@ pub(crate) use dungeon::{
     NativeDungeonScratchWordBridgeMut,
 };
 pub(crate) use effects::{
+    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
     BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
-    EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
-    NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeTowerSealBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireState,
-    TowerSealState,
+    EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
+    NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    NativeTowerSealBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
+    SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
     EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
@@ -116,6 +119,8 @@ use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState, Pal
 use dungeon::DungeonEntranceBackupState;
 #[cfg(test)]
 use effects::DoorDebrisState;
+#[cfg(test)]
+use effects::EntranceEffectState;
 #[cfg(test)]
 use effects::QuakeBoltState;
 #[cfg(test)]
@@ -1942,15 +1947,16 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, SKULL_WOODS_FIRE_INNER_Y, 0x0100);
 
-        let mut fire = SkullWoodsFireState::default();
+        let mut effects = EntranceEffectState::default();
         {
-            let mut bridge = NativeSkullWoodsFireBridgeMut::new(&mut fire, &mut ram);
+            let mut bridge = NativeSkullWoodsFireBridgeMut::new(&mut effects, &mut ram);
             bridge.set_entrance_opening_started();
             bridge.set_inner_position(0x0098, 0x0100);
             bridge.set_outer_position(0x0098, 0x0100);
             assert_eq!(bridge.retreat_inner_y(8), 0x00f8);
         }
 
+        let fire = effects.skull_woods_fire();
         assert!(fire.has_started_entrance_opening());
         assert_eq!(fire.inner_x(), 0x0098);
         assert_eq!(fire.inner_y(), 0x00f8);
@@ -1994,20 +2000,52 @@ mod tests {
         write_le_u16(&mut ram, BLAST_WALL_CENTER_X, 0x0100);
         write_le_u16(&mut ram, BLAST_WALL_CENTER_Y, 0x0200);
 
-        let mut wall = BlastWallState::default();
+        let mut effects = EntranceEffectState::default();
         {
-            let mut bridge = NativeBlastWallBridgeMut::new(&mut wall, &mut ram);
+            let mut bridge = NativeBlastWallBridgeMut::new(&mut effects, &mut ram);
             bridge.clear_entry_state();
             bridge.clear_secondary_state();
             assert_eq!(bridge.offset_center(2, -3), (0x0102, 0x01fd));
         }
 
+        let wall = effects.blast_wall();
         assert_eq!(wall.center_x(), 0x0102);
         assert_eq!(wall.center_y(), 0x01fd);
         assert_eq!(ram[BLAST_WALL_ENTRY_STATE], 0);
         assert_eq!(ram[BLAST_WALL_SECONDARY_STATE], 0);
         assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_X), 0x0102);
         assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_Y), 0x01fd);
+    }
+
+    #[test]
+    fn entrance_effect_bank_syncs_shared_blast_wall_and_skull_woods_slots() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BLAST_WALL_EXPLOSION_PHASE] = 2;
+        ram[BLAST_WALL_EXPLOSION_TIMER] = 3;
+        write_le_u16(&mut ram, BLAST_WALL_FRAGMENT_X + 4, 0x0100);
+        write_le_u16(&mut ram, BLAST_WALL_FRAGMENT_Y + 4, 0x0200);
+        ram[BLAST_WALL_FIREBALL_TIMER + 7] = 9;
+
+        let effects = EntranceEffectState::load_from_ram(&ram);
+        assert_eq!(effects.blast_wall_explosion_slot(0).phase(), 2);
+        assert_eq!(effects.blast_wall_explosion_slot(0).timer(), 3);
+        assert_eq!(effects.blast_wall_fragment_slot(2).x(), 0x0100);
+        assert_eq!(effects.skull_woods_fire_slot(2).y(), 0x0200);
+        assert_eq!(effects.blast_wall_fireball_slot(7).timer(), 9);
+
+        let mut effects = EntranceEffectState::default();
+        NativeSkullWoodsFireSlotBridgeMut::new(&mut effects, &mut ram, 2).set_phase(0xff);
+        NativeSkullWoodsFireSlotBridgeMut::new(&mut effects, &mut ram, 2).set_timer(5);
+        NativeSkullWoodsFireSlotBridgeMut::new(&mut effects, &mut ram, 2)
+            .set_position(0x0300, 0x0400);
+        NativeBlastWallFireballBridgeMut::new(&mut effects, &mut ram, 7).set_timer(8);
+
+        assert!(effects.skull_woods_fire_slot(2).is_finished());
+        assert_eq!(ram[SKULL_WOODS_FIRE_PHASE + 2], 0xff);
+        assert_eq!(ram[SKULL_WOODS_FIRE_TIMER + 2], 5);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_X + 4), 0x0300);
+        assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_Y + 4), 0x0400);
+        assert_eq!(ram[BLAST_WALL_FIREBALL_TIMER + 7], 8);
     }
 
     #[test]

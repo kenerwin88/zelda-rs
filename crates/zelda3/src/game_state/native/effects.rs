@@ -1,14 +1,15 @@
 use crate::game_state::constants::{
     BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION, BLAST_WALL_ENTRY_STATE,
-    BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED,
-    BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X,
-    BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
-    DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
-    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X,
-    QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X,
-    SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y,
-    SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_RING_RADIUS,
-    TOWER_SEAL_WAIT_COUNTDOWN,
+    BLAST_WALL_EXPLOSION_PHASE, BLAST_WALL_EXPLOSION_TIMER, BLAST_WALL_FIREBALL_TIMER,
+    BLAST_WALL_FRAGMENT_X, BLAST_WALL_FRAGMENT_Y, BLAST_WALL_SECONDARY_STATE,
+    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_X, BOMBOS_BLAST_Y,
+    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
+    DIGGING_GAME_PRIZE_ATTEMPTS, DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X,
+    DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER,
+    QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y,
+    SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X,
+    SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y,
+    TOWER_SEAL_RING_RADIUS, TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -16,6 +17,9 @@ const DOOR_DEBRIS_BANK_LEN: usize = 10;
 const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
 const BOMBOS_BLAST_SLOTS: usize = 16;
 const QUAKE_BOLT_SLOTS: usize = 5;
+const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
+const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
+const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EffectState {
@@ -25,8 +29,7 @@ pub(crate) struct EffectState {
     pub(crate) quake_bolts: QuakeBoltState,
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
-    pub(crate) skull_woods_fire: SkullWoodsFireState,
-    pub(crate) blast_wall: BlastWallState,
+    pub(crate) entrance_effects: EntranceEffectState,
     pub(crate) digging_game_prize: DiggingGamePrizeState,
 }
 
@@ -39,8 +42,7 @@ impl EffectState {
             quake_bolts: QuakeBoltState::load_from_ram(ram),
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
-            skull_woods_fire: SkullWoodsFireState::load_from_ram(ram),
-            blast_wall: BlastWallState::load_from_ram(ram),
+            entrance_effects: EntranceEffectState::load_from_ram(ram),
             digging_game_prize: DiggingGamePrizeState::load_from_ram(ram),
         }
     }
@@ -52,8 +54,7 @@ impl EffectState {
         self.quake_bolts.write_to_ram(ram);
         self.bombos_spell.write_to_ram(ram);
         self.tower_seal.write_to_ram(ram);
-        self.skull_woods_fire.write_to_ram(ram);
-        self.blast_wall.write_to_ram(ram);
+        self.entrance_effects.write_to_ram(ram);
         self.digging_game_prize.write_to_ram(ram);
     }
 }
@@ -701,6 +702,228 @@ impl<'a> NativeTowerSealBridgeMut<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EntranceEffectState {
+    phases: [u8; ENTRANCE_EFFECT_PHASE_SLOTS],
+    timers: [u8; ENTRANCE_EFFECT_PHASE_SLOTS],
+    state: u8,
+    secondary_state: u8,
+    center_y: u16,
+    center_x: u16,
+    direction: u8,
+    y_positions: [u16; ENTRANCE_EFFECT_POSITION_SLOTS],
+    x_positions: [u16; ENTRANCE_EFFECT_POSITION_SLOTS],
+    fireball_timers: [u8; BLAST_WALL_FIREBALL_SLOTS],
+}
+
+impl EntranceEffectState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self {
+            state: ram.get(BLAST_WALL_ENTRY_STATE).copied().unwrap_or(0),
+            secondary_state: ram.get(BLAST_WALL_SECONDARY_STATE).copied().unwrap_or(0),
+            center_y: read_le_u16(ram, BLAST_WALL_CENTER_Y),
+            center_x: read_le_u16(ram, BLAST_WALL_CENTER_X),
+            direction: ram.get(BLAST_WALL_DIRECTION).copied().unwrap_or(0),
+            ..Self::default()
+        };
+        for slot in 0..ENTRANCE_EFFECT_PHASE_SLOTS {
+            state.phases[slot] = ram
+                .get(BLAST_WALL_EXPLOSION_PHASE + slot)
+                .copied()
+                .unwrap_or(0);
+            state.timers[slot] = ram
+                .get(BLAST_WALL_EXPLOSION_TIMER + slot)
+                .copied()
+                .unwrap_or(0);
+            state.y_positions[slot] = read_le_u16(ram, BLAST_WALL_FRAGMENT_Y + slot * 2);
+            state.x_positions[slot] = read_le_u16(ram, BLAST_WALL_FRAGMENT_X + slot * 2);
+        }
+        for slot in 0..BLAST_WALL_FIREBALL_SLOTS {
+            state.fireball_timers[slot] = ram
+                .get(BLAST_WALL_FIREBALL_TIMER + slot)
+                .copied()
+                .unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for slot in 0..ENTRANCE_EFFECT_PHASE_SLOTS {
+            ram[BLAST_WALL_EXPLOSION_PHASE + slot] = self.phases[slot];
+            ram[BLAST_WALL_EXPLOSION_TIMER + slot] = self.timers[slot];
+            write_le_u16(
+                ram,
+                BLAST_WALL_FRAGMENT_Y + slot * 2,
+                self.y_positions[slot],
+            );
+            write_le_u16(
+                ram,
+                BLAST_WALL_FRAGMENT_X + slot * 2,
+                self.x_positions[slot],
+            );
+        }
+        ram[BLAST_WALL_ENTRY_STATE] = self.state;
+        ram[BLAST_WALL_SECONDARY_STATE] = self.secondary_state;
+        write_le_u16(ram, BLAST_WALL_CENTER_Y, self.center_y);
+        write_le_u16(ram, BLAST_WALL_CENTER_X, self.center_x);
+        ram[BLAST_WALL_DIRECTION] = self.direction;
+        for slot in 0..BLAST_WALL_FIREBALL_SLOTS {
+            ram[BLAST_WALL_FIREBALL_TIMER + slot] = self.fireball_timers[slot];
+        }
+    }
+
+    pub(crate) fn skull_woods_fire(&self) -> SkullWoodsFireState {
+        SkullWoodsFireState {
+            entrance_opening_started: self.state,
+            inner_x: self.center_x,
+            inner_y: self.center_y,
+            outer_x: self.x_positions[3],
+            outer_y: self.y_positions[3],
+        }
+    }
+
+    pub(crate) fn blast_wall(&self) -> BlastWallState {
+        BlastWallState {
+            entry_state: self.state,
+            secondary_state: self.secondary_state,
+            direction: self.direction,
+            center_x: self.center_x,
+            center_y: self.center_y,
+        }
+    }
+
+    pub(crate) fn skull_woods_fire_slot(&self, slot: usize) -> SkullWoodsFireSlotState {
+        SkullWoodsFireSlotState {
+            phase: self.phases.get(slot).copied().unwrap_or(0),
+            x: self.x_positions.get(slot).copied().unwrap_or(0),
+            y: self.y_positions.get(slot).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn blast_wall_explosion_slot(&self, slot: usize) -> BlastWallExplosionSlotState {
+        BlastWallExplosionSlotState {
+            phase: self.phases.get(slot).copied().unwrap_or(0),
+            timer: self.timers.get(slot).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn blast_wall_fragment_slot(&self, slot: usize) -> BlastWallFragmentSlotState {
+        BlastWallFragmentSlotState {
+            x: self.x_positions.get(slot).copied().unwrap_or(0),
+            y: self.y_positions.get(slot).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn blast_wall_fireball_slot(&self, slot: usize) -> BlastWallFireballSlotState {
+        BlastWallFireballSlotState {
+            timer: self.fireball_timers.get(slot).copied().unwrap_or(0),
+        }
+    }
+
+    fn set_phase(&mut self, slot: usize, value: u8) {
+        if let Some(phase) = self.phases.get_mut(slot) {
+            *phase = value;
+        }
+    }
+
+    fn advance_phase(&mut self, slot: usize) -> u8 {
+        let phase = self.phases.get(slot).copied().unwrap_or(0).wrapping_add(1);
+        self.set_phase(slot, phase);
+        phase
+    }
+
+    fn set_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_timer(&mut self, slot: usize) -> u8 {
+        let timer = self.timers.get(slot).copied().unwrap_or(0).wrapping_sub(1);
+        self.set_timer(slot, timer);
+        timer
+    }
+
+    fn set_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(position) = self.x_positions.get_mut(slot) {
+            *position = x;
+        }
+        if let Some(position) = self.y_positions.get_mut(slot) {
+            *position = y;
+        }
+    }
+
+    fn offset_position(&mut self, slot: usize, x_delta: i16, y_delta: i16) -> (u16, u16) {
+        let x = self
+            .x_positions
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(x_delta as u16);
+        let y = self
+            .y_positions
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(y_delta as u16);
+        self.set_position(slot, x, y);
+        (x, y)
+    }
+
+    fn set_fireball_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.fireball_timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_fireball_timer(&mut self, slot: usize) -> u8 {
+        let timer = self
+            .fireball_timers
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_fireball_timer(slot, timer);
+        timer
+    }
+
+    fn clear_entrance_opening_started(&mut self) {
+        self.state = 0;
+    }
+
+    fn set_entrance_opening_started(&mut self) {
+        self.state = 1;
+    }
+
+    fn set_inner_position(&mut self, x: u16, y: u16) {
+        self.center_x = x;
+        self.center_y = y;
+    }
+
+    fn set_outer_position(&mut self, x: u16, y: u16) {
+        self.set_position(3, x, y);
+    }
+
+    fn retreat_inner_y(&mut self, value: u16) -> u16 {
+        self.center_y = self.center_y.wrapping_sub(value);
+        self.center_y
+    }
+
+    fn clear_entry_state(&mut self) {
+        self.state = 0;
+    }
+
+    fn clear_secondary_state(&mut self) {
+        self.secondary_state = 0;
+    }
+
+    fn offset_center(&mut self, x_delta: i8, y_delta: i8) -> (u16, u16) {
+        self.center_y = self.center_y.wrapping_add(y_delta as i16 as u16);
+        self.center_x = self.center_x.wrapping_add(x_delta as i16 as u16);
+        (self.center_x, self.center_y)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SkullWoodsFireState {
     entrance_opening_started: u8,
     inner_x: u16,
@@ -764,14 +987,39 @@ impl SkullWoodsFireState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SkullWoodsFireSlotState {
+    phase: u8,
+    x: u16,
+    y: u16,
+}
+
+impl SkullWoodsFireSlotState {
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        (self.phase() as i8).is_negative()
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
+    }
+}
+
 pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
-    state: &'a mut SkullWoodsFireState,
+    state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SkullWoodsFireState, ram: &'a mut [u8]) -> Self {
-        *state = SkullWoodsFireState::load_from_ram(ram);
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -781,7 +1029,7 @@ impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, SkullWoodsFireState::load_from_ram(self.ram));
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
     }
 
     pub(crate) fn clear_entrance_opening_started(&mut self) {
@@ -808,6 +1056,55 @@ impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
         let y = self.state.retreat_inner_y(value);
         self.sync();
         y
+    }
+}
+
+pub(crate) struct NativeSkullWoodsFireSlotBridgeMut<'a> {
+    state: &'a mut EntranceEffectState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeSkullWoodsFireSlotBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.state.set_phase(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let phase = self.state.advance_phase(self.slot);
+        self.sync();
+        phase
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.state.set_timer(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let timer = self.state.tick_timer(self.slot);
+        self.sync();
+        timer
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_position(self.slot, x, y);
+        self.sync();
     }
 }
 
@@ -866,14 +1163,57 @@ impl BlastWallState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlastWallExplosionSlotState {
+    phase: u8,
+    timer: u8,
+}
+
+impl BlastWallExplosionSlotState {
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlastWallFragmentSlotState {
+    x: u16,
+    y: u16,
+}
+
+impl BlastWallFragmentSlotState {
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlastWallFireballSlotState {
+    timer: u8,
+}
+
+impl BlastWallFireballSlotState {
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
+    }
+}
+
 pub(crate) struct NativeBlastWallBridgeMut<'a> {
-    state: &'a mut BlastWallState,
+    state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeBlastWallBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut BlastWallState, ram: &'a mut [u8]) -> Self {
-        *state = BlastWallState::load_from_ram(ram);
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -883,7 +1223,7 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, BlastWallState::load_from_ram(self.ram));
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
     }
 
     pub(crate) fn clear_entry_state(&mut self) {
@@ -900,6 +1240,116 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
         let center = self.state.offset_center(x_delta, y_delta);
         self.sync();
         center
+    }
+}
+
+pub(crate) struct NativeBlastWallExplosionBridgeMut<'a> {
+    state: &'a mut EntranceEffectState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBlastWallExplosionBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.state.set_phase(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let phase = self.state.advance_phase(self.slot);
+        self.sync();
+        phase
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.state.set_timer(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let timer = self.state.tick_timer(self.slot);
+        self.sync();
+        timer
+    }
+}
+
+pub(crate) struct NativeBlastWallFragmentBridgeMut<'a> {
+    state: &'a mut EntranceEffectState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBlastWallFragmentBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_position(self.slot, x, y);
+        self.sync();
+    }
+
+    pub(crate) fn offset(&mut self, x_delta: i16, y_delta: i16) -> (u16, u16) {
+        let position = self.state.offset_position(self.slot, x_delta, y_delta);
+        self.sync();
+        position
+    }
+}
+
+pub(crate) struct NativeBlastWallFireballBridgeMut<'a> {
+    state: &'a mut EntranceEffectState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBlastWallFireballBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = EntranceEffectState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.state.set_fireball_timer(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let timer = self.state.tick_fireball_timer(self.slot);
+        self.sync();
+        timer
     }
 }
 

@@ -29,9 +29,8 @@ use crate::game_state::{
     AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
     ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractStateView,
     AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
-    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionView,
-    BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
-    BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
+    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
+    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastView,
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
@@ -48,7 +47,8 @@ use crate::game_state::{
     MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
     MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
@@ -76,8 +76,8 @@ use crate::game_state::{
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut,
     NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
     NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -90,17 +90,16 @@ use crate::game_state::{
     PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
     PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState,
     QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
-    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
-    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
+    SkullWoodsFireState, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView,
+    SpriteWorkspaceViewMut, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
+    TileDetectPositionView, TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
+    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
+    WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3669,64 +3668,95 @@ impl ZeldaState {
         NativeTowerSealBridgeMut::new(&mut self.game_state.effects.tower_seal, &mut self.ram)
     }
 
-    pub(crate) fn blast_wall_explosion_view(&self, slot: usize) -> BlastWallExplosionView<'_> {
-        BlastWallExplosionView::new(&self.ram, slot)
+    pub(crate) fn blast_wall_explosion_view(&self, slot: usize) -> BlastWallExplosionSlotState {
+        self.game_state
+            .effects
+            .entrance_effects
+            .blast_wall_explosion_slot(slot)
     }
 
     pub(crate) fn blast_wall_explosion_view_mut(
         &mut self,
         slot: usize,
-    ) -> BlastWallExplosionViewMut<'_> {
-        BlastWallExplosionViewMut::new(&mut self.ram, slot)
+    ) -> NativeBlastWallExplosionBridgeMut<'_> {
+        NativeBlastWallExplosionBridgeMut::new(
+            &mut self.game_state.effects.entrance_effects,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn blast_wall_fragment_view(&self, slot: usize) -> BlastWallFragmentView<'_> {
-        BlastWallFragmentView::new(&self.ram, slot)
+    pub(crate) fn blast_wall_fragment_view(&self, slot: usize) -> BlastWallFragmentSlotState {
+        self.game_state
+            .effects
+            .entrance_effects
+            .blast_wall_fragment_slot(slot)
     }
 
     pub(crate) fn blast_wall_fragment_view_mut(
         &mut self,
         slot: usize,
-    ) -> BlastWallFragmentViewMut<'_> {
-        BlastWallFragmentViewMut::new(&mut self.ram, slot)
+    ) -> NativeBlastWallFragmentBridgeMut<'_> {
+        NativeBlastWallFragmentBridgeMut::new(
+            &mut self.game_state.effects.entrance_effects,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn blast_wall_fireball_view(&self, slot: usize) -> BlastWallFireballView<'_> {
-        BlastWallFireballView::new(&self.ram, slot)
+    pub(crate) fn blast_wall_fireball_view(&self, slot: usize) -> BlastWallFireballSlotState {
+        self.game_state
+            .effects
+            .entrance_effects
+            .blast_wall_fireball_slot(slot)
     }
 
     pub(crate) fn blast_wall_fireball_view_mut(
         &mut self,
         slot: usize,
-    ) -> BlastWallFireballViewMut<'_> {
-        BlastWallFireballViewMut::new(&mut self.ram, slot)
+    ) -> NativeBlastWallFireballBridgeMut<'_> {
+        NativeBlastWallFireballBridgeMut::new(
+            &mut self.game_state.effects.entrance_effects,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn blast_wall_scratch_view(&self) -> &BlastWallState {
-        &self.game_state.effects.blast_wall
+    pub(crate) fn blast_wall_scratch_view(&self) -> BlastWallState {
+        self.game_state.effects.entrance_effects.blast_wall()
     }
 
     pub(crate) fn blast_wall_scratch_view_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
-        NativeBlastWallBridgeMut::new(&mut self.game_state.effects.blast_wall, &mut self.ram)
+        NativeBlastWallBridgeMut::new(&mut self.game_state.effects.entrance_effects, &mut self.ram)
     }
 
-    pub(crate) fn skull_woods_fire_view(&self, slot: usize) -> SkullWoodsFireView<'_> {
-        SkullWoodsFireView::new(&self.ram, slot)
+    pub(crate) fn skull_woods_fire_view(&self, slot: usize) -> SkullWoodsFireSlotState {
+        self.game_state
+            .effects
+            .entrance_effects
+            .skull_woods_fire_slot(slot)
     }
 
-    pub(crate) fn skull_woods_fire_view_mut(&mut self, slot: usize) -> SkullWoodsFireViewMut<'_> {
-        SkullWoodsFireViewMut::new(&mut self.ram, slot)
+    pub(crate) fn skull_woods_fire_view_mut(
+        &mut self,
+        slot: usize,
+    ) -> NativeSkullWoodsFireSlotBridgeMut<'_> {
+        NativeSkullWoodsFireSlotBridgeMut::new(
+            &mut self.game_state.effects.entrance_effects,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn skull_woods_fire_scratch_view(&self) -> &SkullWoodsFireState {
-        &self.game_state.effects.skull_woods_fire
+    pub(crate) fn skull_woods_fire_scratch_view(&self) -> SkullWoodsFireState {
+        self.game_state.effects.entrance_effects.skull_woods_fire()
     }
 
     pub(crate) fn skull_woods_fire_scratch_view_mut(
         &mut self,
     ) -> NativeSkullWoodsFireBridgeMut<'_> {
         NativeSkullWoodsFireBridgeMut::new(
-            &mut self.game_state.effects.skull_woods_fire,
+            &mut self.game_state.effects.entrance_effects,
             &mut self.ram,
         )
     }
