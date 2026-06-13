@@ -44,7 +44,7 @@ use crate::game_state::{
     EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateRead,
     IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
@@ -101,7 +101,7 @@ use crate::game_state::{
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
     NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldConfigTableRead, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, PaletteBufferState, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
@@ -3462,8 +3462,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn overworld_config_table_view(&self) -> OverworldConfigTableView<'_> {
-        OverworldConfigTableView::new(
+    pub(crate) fn overworld_config_table(&self) -> OverworldConfigTableRead<'_> {
+        OverworldConfigTableRead::new(
             &self.game_state.world.overworld.config_table,
             usize::from(self.game_state.world.location.overworld_screen_index()),
         )
@@ -3492,8 +3492,8 @@ impl ZeldaState {
         NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn hud_state_view(&self) -> HudStateView<'_> {
-        HudStateView::new(
+    pub(crate) fn hud_state(&self) -> HudStateRead<'_> {
+        HudStateRead::new(
             &self.game_state.display.hud_runtime,
             &self.game_state.display.hud_tilemap,
         )

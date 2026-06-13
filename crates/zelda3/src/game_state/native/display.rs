@@ -439,12 +439,12 @@ impl HudTilemapState {
     }
 }
 
-pub(crate) struct HudStateView<'a> {
+pub(crate) struct HudStateRead<'a> {
     runtime: &'a HudRuntimeState,
     tilemap: &'a HudTilemapState,
 }
 
-impl<'a> HudStateView<'a> {
+impl<'a> HudStateRead<'a> {
     pub(crate) fn new(runtime: &'a HudRuntimeState, tilemap: &'a HudTilemapState) -> Self {
         Self { runtime, tilemap }
     }

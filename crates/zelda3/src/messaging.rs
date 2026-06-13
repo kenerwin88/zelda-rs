@@ -1096,7 +1096,7 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOver_Restore0D(&mut self) {
-        if !self.hud_state_view().is_doing_heart_animation() {
+        if !self.hud_state().is_doing_heart_animation() {
             self.set_chr_halfslot_request(1);
             self.Graphics_LoadChrHalfSlot();
             let fixed_color = self.display_state().overworld_fixed_color_adjustment;
@@ -1256,7 +1256,7 @@ impl ZeldaState {
         self.Overworld_LoadOverlays2();
         self.decrement_submodule();
         self.system_signals_mut().set_sound_effect_2(16);
-        let m = self.overworld_config_table_view().current_music();
+        let m = self.overworld_config_table().current_music();
         self.system_signals_mut().set_ambient_sound_effect(m >> 4);
         let track = m & 0x0f;
         let music = if self.zelda_is_playing_music_track(track) {
@@ -1515,7 +1515,7 @@ impl ZeldaState {
         self.clear_vram_upload_cursor();
         let hdma_enable_mask = self.ppu_scroll_copy().mapbak_hdmaen();
         self.set_hdma_enable_mask(hdma_enable_mask);
-        let music = self.overworld_config_table_view().current_music();
+        let music = self.overworld_config_table().current_music();
         self.system_signals_mut()
             .set_ambient_sound_effect(music >> 4);
         self.system_signals_mut().set_sound_effect_2(0x10);

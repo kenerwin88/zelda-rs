@@ -3318,7 +3318,7 @@ impl ZeldaState {
             let main_module = self.frame_state().main_module;
             if main_module == 7 || main_module == 16 {
                 if self.world_location_state().is_outdoors() {
-                    let ambient = self.overworld_config_table_view().current_music() >> 4;
+                    let ambient = self.overworld_config_table().current_music() >> 4;
                     self.system_signals_mut().set_ambient_sound_effect(ambient);
                 }
                 if self.system_signals().queued_music_control() != 0xff {

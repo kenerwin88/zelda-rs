@@ -19,7 +19,7 @@ mod sprites;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, GraphicsDecompressionScratch, HudInventoryOrderState, HudStateView,
+    DisplayState, GraphicsDecompressionScratch, HudInventoryOrderState, HudStateRead,
     LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
     NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
@@ -124,7 +124,7 @@ pub(crate) use world::{
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
     NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
     NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
-    NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableView,
+    NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableRead,
     OverworldEventInfoState, OverworldMap16Decode, OverworldMap16SourcePage, OverworldMap16State,
     RoomBoundsState, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
     WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldState, WorldTransientState,

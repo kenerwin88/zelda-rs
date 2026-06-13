@@ -9922,7 +9922,7 @@ impl ZeldaState {
 
         if (self.player_resources().current_health() == self.player_resources().health_capacity()
             || self.player_resources().current_health() == 0x38)
-            && !self.hud_state_view().is_doing_heart_animation()
+            && !self.hud_state().is_doing_heart_animation()
         {
             if self.player_state_view().is_in_deep_water() {
                 self.player_state_view_mut().set_swim_direction_flags(4);

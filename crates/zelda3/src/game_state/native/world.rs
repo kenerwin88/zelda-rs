@@ -930,12 +930,12 @@ impl Default for OverworldConfigTableState {
     }
 }
 
-pub(crate) struct OverworldConfigTableView<'a> {
+pub(crate) struct OverworldConfigTableRead<'a> {
     config_table: &'a OverworldConfigTableState,
     current_screen: usize,
 }
 
-impl<'a> OverworldConfigTableView<'a> {
+impl<'a> OverworldConfigTableRead<'a> {
     pub(crate) fn new(config_table: &'a OverworldConfigTableState, current_screen: usize) -> Self {
         Self {
             config_table,

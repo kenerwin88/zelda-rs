@@ -3406,7 +3406,7 @@ impl ZeldaState {
                 self.hud_state_mut().set_super_bomb_indicator_timer(30);
             }
             4 => {
-                if (self.hud_state_view().super_bomb_indicator_timer() as i8) > 0
+                if (self.hud_state().super_bomb_indicator_timer() as i8) > 0
                     || self.player_state_view().position_mode_has(1)
                 {
                     return;

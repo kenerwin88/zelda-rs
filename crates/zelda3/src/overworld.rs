@@ -412,8 +412,7 @@ impl ZeldaState {
         self.OverworldLoadScreensPaletteSet();
         self.Overworld_LoadPalettes(
             self.GetOverworldBgPalette(sc),
-            self.overworld_config_table_view()
-                .sprite_palette(sc as usize),
+            self.overworld_config_table().sprite_palette(sc as usize),
         );
         self.Palette_SetOwBgColor();
         if self.frame_state().main_module == 8 {
@@ -869,7 +868,7 @@ impl ZeldaState {
         self.set_main_screen_layers(0x16);
         self.set_sub_screen_layers(1);
         let ambient_sound_effect = self
-            .overworld_config_table_view()
+            .overworld_config_table()
             .music(self.world_location_state().overworld_screen_index() as usize)
             >> 4;
         self.system_signals_mut()
@@ -2323,7 +2322,7 @@ impl ZeldaState {
         self.set_hdma_enable_mask(0x80);
 
         let screen = self.world_location_state().overworld_screen_index() as usize;
-        let music = self.overworld_config_table_view().music(screen);
+        let music = self.overworld_config_table().music(screen);
         self.system_signals_mut().set_music_control(music & 0x0f);
         self.system_signals_mut()
             .set_ambient_sound_effect(music >> 4);
@@ -2416,7 +2415,7 @@ impl ZeldaState {
         let sc = self.world_location_state().overworld_screen_index() as usize;
         self.Overworld_LoadPalettes(
             self.GetOverworldBgPalette(sc as u8),
-            self.overworld_config_table_view().sprite_palette(sc),
+            self.overworld_config_table().sprite_palette(sc),
         );
         self.Palette_SpecialOw();
         self.Overworld_SetFixedColAndScroll();
@@ -2506,7 +2505,7 @@ impl ZeldaState {
                 let sc = self.world_location_state().overworld_screen_index() as usize;
                 self.Overworld_LoadPalettes(
                     self.GetOverworldBgPalette(sc as u8),
-                    self.overworld_config_table_view().sprite_palette(sc),
+                    self.overworld_config_table().sprite_palette(sc),
                 );
                 self.Palette_SetOwBgColor();
                 self.Overworld_SetFixedColAndScroll();
@@ -2531,7 +2530,7 @@ impl ZeldaState {
                 self.ReloadPreviouslyLoadedSheets();
                 self.set_hdma_enable_mask(0x80);
                 let music = self
-                    .overworld_config_table_view()
+                    .overworld_config_table()
                     .music(self.world_location_state().overworld_screen_index() as usize);
                 self.system_signals_mut()
                     .set_ambient_sound_effect(music >> 4);
@@ -2837,7 +2836,7 @@ impl ZeldaState {
         self.OverworldLoadScreensPaletteSet();
         let sc = self.world_location_state().overworld_screen_index() as usize;
         let bg = self.GetOverworldBgPalette(sc as u8);
-        let spr = self.overworld_config_table_view().sprite_palette(sc);
+        let spr = self.overworld_config_table().sprite_palette(sc);
         self.Overworld_LoadPalettes(bg, spr);
         self.Palette_SetOwBgColor();
         self.Overworld_LoadPalettesInner();
@@ -3050,7 +3049,7 @@ impl ZeldaState {
         let sc = self.world_location_state().overworld_screen_index() as usize;
         self.Overworld_LoadPalettes(
             self.GetOverworldBgPalette(sc as u8),
-            self.overworld_config_table_view().sprite_palette(sc),
+            self.overworld_config_table().sprite_palette(sc),
         );
         self.Palette_SpecialOw();
         self.player_state_view_mut().set_quadrants(0, 2);
@@ -3091,7 +3090,7 @@ impl ZeldaState {
     pub(super) fn Overworld_LoadGFXAndScreenSize(&mut self) {
         let i = self.world_location_state().overworld_screen_index() as usize;
         self.reset_incremental_vram_upload_counter();
-        let graphics_index = self.overworld_config_table_view().sprite_graphics(i);
+        let graphics_index = self.overworld_config_table().sprite_graphics(i);
         self.sprite_system_mut().set_graphics_index(graphics_index);
         let aux_tile_theme_index = self.asset_u8(108, i);
         self.world_palette_theme_mut()
@@ -4178,7 +4177,7 @@ impl ZeldaState {
         self.world_region_mut().set_overworld_area_index(new_area);
         if self.save_progress().dark_world_state() == 0 || self.inventory_items().moon_pearl() != 0
         {
-            let music = self.overworld_config_table_view().music(new_area as usize);
+            let music = self.overworld_config_table().music(new_area as usize);
             if music & 0xf0 == 0 {
                 self.system_signals_mut().set_ambient_sound_effect(5);
             }
@@ -4210,7 +4209,7 @@ impl ZeldaState {
             let sc = self.world_location_state().overworld_screen_index() as usize;
             self.Overworld_LoadPalettes(
                 self.GetOverworldBgPalette(sc as u8),
-                self.overworld_config_table_view().sprite_palette(sc),
+                self.overworld_config_table().sprite_palette(sc),
             );
             self.Overworld_CopyPalettesToCache();
         }
@@ -4485,7 +4484,7 @@ impl ZeldaState {
             self.set_submodule(0);
             self.set_subsubmodule(0);
             let m = self
-                .overworld_config_table_view()
+                .overworld_config_table()
                 .music(self.world_location_state().overworld_screen_index() as usize);
             self.system_signals_mut().set_ambient_sound_effect(m >> 4);
             if self.system_signals().current_music_control() == 0xf1 {
@@ -4794,7 +4793,7 @@ impl ZeldaState {
             0 => {
                 let sc = self.world_location_state().overworld_screen_index() as usize;
                 let bg = self.GetOverworldBgPalette(sc as u8);
-                let spr = self.overworld_config_table_view().sprite_palette(sc);
+                let spr = self.overworld_config_table().sprite_palette(sc);
                 self.Overworld_LoadPalettes(bg, spr);
                 self.OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic();
             }
@@ -4808,7 +4807,7 @@ impl ZeldaState {
                     && self.world_location_state().overworld_screen_index() != 0x2a
                 {
                     let m = self
-                        .overworld_config_table_view()
+                        .overworld_config_table()
                         .music(self.world_location_state().overworld_screen_index() as usize);
                     self.system_signals_mut()
                         .set_ambient_sound_effect(if m >> 4 != 0 { m >> 4 } else { 5 });
@@ -4857,7 +4856,7 @@ impl ZeldaState {
             0 => {
                 if self.world_location_state().overworld_screen_index() != 0x80 {
                     let music = self
-                        .overworld_config_table_view()
+                        .overworld_config_table()
                         .music(self.world_location_state().overworld_screen_index() as usize);
                     if !self.zelda_is_playing_music_track(music & 0x0f) {
                         self.system_signals_mut().set_music_control(0xf1);

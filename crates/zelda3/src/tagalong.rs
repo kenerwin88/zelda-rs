@@ -1244,7 +1244,7 @@ impl ZeldaState {
         } else {
             if self.follower_state().indicator() == 13
                 && self.world_location_state().indoor_flag == 0
-                && self.hud_state_view().super_bomb_indicator_timer() == 0
+                && self.hud_state().super_bomb_indicator_timer() == 0
             {
                 if self.AncillaAdd_SuperBombExplosion(0x3a, 0).is_some() {
                     self.follower_state_mut().set_dropped(0);
@@ -1616,9 +1616,9 @@ impl ZeldaState {
                 .enhanced_features()
                 .has(FEATURES0_MISC_BUG_FIXES_TAGALONG)
             {
-                self.hud_state_view().super_bomb_indicator_timer() <= 1
+                self.hud_state().super_bomb_indicator_timer() <= 1
             } else {
-                self.hud_state_view().super_bomb_indicator_timer() == 1
+                self.hud_state().super_bomb_indicator_timer() == 1
             };
             if colorful {
                 pal = self.frame_state().frame_counter & 7;
