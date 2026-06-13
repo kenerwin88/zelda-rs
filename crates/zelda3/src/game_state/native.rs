@@ -2095,7 +2095,7 @@ mod tests {
         ram[EFFECT_ANGLE_WORK + 4] = 2;
         ram[EFFECT_ANGLE_WORK + 8] = 9;
 
-        let mut angles = EffectAngleScratchState::default();
+        let mut angles = EffectAngleScratchState::load_from_ram(&ram);
         {
             let mut bridge = NativeEffectAngleScratchBridgeMut::new(&mut angles, &mut ram);
             bridge.set_angle(0, 12);
@@ -2113,6 +2113,26 @@ mod tests {
         assert_eq!(ram[EFFECT_ANGLE_WORK + 1], 2);
         assert_eq!(ram[EFFECT_ANGLE_WORK + 4], 12);
         assert_eq!(ram[EFFECT_ANGLE_WORK + 8], 20);
+    }
+
+    #[test]
+    fn native_effect_angle_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[EFFECT_ANGLE_WORK + 1] = 60;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[EFFECT_ANGLE_WORK + 1] = 3;
+        native_ram[EFFECT_ANGLE_WORK + 8] = 9;
+        let mut angles = EffectAngleScratchState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeEffectAngleScratchBridgeMut::new(&mut angles, &mut ram);
+            assert_eq!(bridge.add_angle_mod64(1, 2), 5);
+        }
+
+        assert_eq!(angles.angle(1), 5);
+        assert_eq!(angles.radial_radius(), 9);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 1], 5);
+        assert_eq!(ram[EFFECT_ANGLE_WORK + 8], 9);
     }
 
     #[test]
@@ -2143,7 +2163,7 @@ mod tests {
         ram[QUAKE_PENDING_STEP] = 1;
         write_le_u16(&mut ram, QUAKE_SCREEN_SHAKE_Y, 5);
 
-        let mut quake = QuakeSpellState::default();
+        let mut quake = QuakeSpellState::load_from_ram(&ram);
         {
             let mut bridge = NativeQuakeSpellBridgeMut::new(&mut quake, &mut ram);
             bridge.set_active_bolt_limit(2);
@@ -2166,12 +2186,40 @@ mod tests {
     }
 
     #[test]
+    fn native_quake_spell_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_ACTIVE_BOLT_LIMIT] = 9;
+        write_le_u16(&mut ram, QUAKE_ORIGIN_X, 0xffff);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_PENDING_STEP] = 8;
+        native_ram[QUAKE_ACTIVE_BOLT_LIMIT] = 2;
+        native_ram[QUAKE_PENDING_STEP] = 3;
+        write_le_u16(&mut native_ram, QUAKE_ORIGIN_X, 0x1234);
+        write_le_u16(&mut native_ram, QUAKE_ORIGIN_Y, 0x5678);
+        write_le_u16(&mut native_ram, QUAKE_SCREEN_SHAKE_Y, 0x0004);
+        let mut quake = QuakeSpellState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeQuakeSpellBridgeMut::new(&mut quake, &mut ram);
+            assert_eq!(bridge.invert_screen_shake_y(), 4);
+        }
+
+        assert_eq!(quake.active_bolt_limit(), 2);
+        assert_eq!(quake.pending_step(), 3);
+        assert_eq!(quake.origin_x(), 0x1234);
+        assert_eq!(ram[QUAKE_ACTIVE_BOLT_LIMIT], 2);
+        assert_eq!(ram[QUAKE_PENDING_STEP], 3);
+        assert_eq!(read_le_u16(&ram, QUAKE_ORIGIN_X), 0x1234);
+        assert_eq!(read_le_u16(&ram, QUAKE_SCREEN_SHAKE_Y), 0xfffc);
+    }
+
+    #[test]
     fn native_quake_bolt_bridge_syncs_seeded_ram_and_dual_writes_slot_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[QUAKE_BOLT_TIMER + 2] = 7;
         ram[QUAKE_BOLT_PHASE + 2] = 0xfe;
 
-        let mut bolts = QuakeBoltState::default();
+        let mut bolts = QuakeBoltState::load_from_ram(&ram);
         {
             let mut bridge = NativeQuakeBoltBridgeMut::new(&mut bolts, &mut ram, 2);
             assert_eq!(bridge.tick_timer(), 6);
@@ -2184,6 +2232,28 @@ mod tests {
         assert_eq!(bolts.slot(2).phase(), 0x10);
         assert_eq!(ram[QUAKE_BOLT_TIMER + 2], 1);
         assert_eq!(ram[QUAKE_BOLT_PHASE + 2], 0x10);
+    }
+
+    #[test]
+    fn native_quake_bolt_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[QUAKE_BOLT_TIMER + 2] = 0xff;
+        ram[QUAKE_BOLT_PHASE + 2] = 0xff;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[QUAKE_BOLT_TIMER + 2] = 7;
+        native_ram[QUAKE_BOLT_PHASE + 2] = 1;
+        let mut bolts = QuakeBoltState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeQuakeBoltBridgeMut::new(&mut bolts, &mut ram, 2);
+            assert_eq!(bridge.tick_timer(), 6);
+            assert_eq!(bridge.advance_phase(), 2);
+        }
+
+        assert_eq!(bolts.slot(2).timer(), 6);
+        assert_eq!(bolts.slot(2).phase(), 2);
+        assert_eq!(ram[QUAKE_BOLT_TIMER + 2], 6);
+        assert_eq!(ram[QUAKE_BOLT_PHASE + 2], 2);
     }
 
     #[test]

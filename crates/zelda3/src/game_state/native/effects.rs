@@ -162,7 +162,6 @@ pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
 
 impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EffectAngleScratchState, ram: &'a mut [u8]) -> Self {
-        *state = EffectAngleScratchState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -296,7 +295,6 @@ pub(crate) struct NativeQuakeBoltBridgeMut<'a> {
 
 impl<'a> NativeQuakeBoltBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeBoltState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = QuakeBoltState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -411,7 +409,6 @@ pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
 
 impl<'a> NativeQuakeSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeSpellState, ram: &'a mut [u8]) -> Self {
-        *state = QuakeSpellState::load_from_ram(ram);
         Self { state, ram }
     }
 
