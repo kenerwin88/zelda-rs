@@ -1688,29 +1688,29 @@ mod tests {
     }
 
     #[test]
-    fn native_maze_game_timer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, MAZE_GAME_TIMER_LO, 0xffff);
-        write_le_u16(&mut ram, MAZE_GAME_TIMER_HI, 0xffff);
-        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0xffff);
-        write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0xffff);
+    fn native_maze_game_timer_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, MAZE_GAME_TIMER_LO, 0x0007);
+        write_le_u16(&mut native_ram, MAZE_GAME_TIMER_HI, 0x0009);
+        write_le_u16(&mut native_ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0x0011);
+        write_le_u16(&mut native_ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0x0013);
+        let mut timer = MazeGameTimerState::load_from_ram(&native_ram);
 
-        let mut timer = MazeGameTimerState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeMazeGameTimerBridgeMut::new(&mut timer, &mut ram);
-            bridge.clear_elapsed();
-            assert_eq!(bridge.increment_elapsed_low(), 1);
-            assert_eq!(bridge.increment_elapsed_high(), 1);
+            assert_eq!(bridge.increment_elapsed_low(), 8);
+            assert_eq!(bridge.increment_elapsed_high(), 10);
             bridge.capture_snapshot();
         }
 
-        assert_eq!(timer.elapsed_low(), 1);
-        assert_eq!(timer.elapsed_high(), 1);
-        assert_eq!(timer.snapshot_low(), 1);
-        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_LO), 1);
-        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_HI), 1);
-        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_LO), 1);
-        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_HI), 1);
+        assert_eq!(timer.elapsed_low(), 8);
+        assert_eq!(timer.elapsed_high(), 10);
+        assert_eq!(timer.snapshot_low(), 8);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_LO), 8);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_HI), 10);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_LO), 8);
+        assert_eq!(read_le_u16(&ram, MAZE_GAME_TIMER_SNAPSHOT_HI), 10);
     }
 
     #[test]
@@ -1732,11 +1732,12 @@ mod tests {
     }
 
     #[test]
-    fn native_prize_drop_cycle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[PRIZE_DROP_CYCLE + 3] = 7;
+    fn native_prize_drop_cycle_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[PRIZE_DROP_CYCLE + 3] = 7;
+        let mut cycle = PrizeDropCycleState::load_from_ram(&native_ram);
 
-        let mut cycle = PrizeDropCycleState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativePrizeDropCycleBridgeMut::new(&mut cycle, &mut ram);
             assert_eq!(bridge.take_next_index(3), 7);
@@ -1767,11 +1768,12 @@ mod tests {
     }
 
     #[test]
-    fn native_dual_layer_tile_cache_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[DUAL_LAYER_TILE_CACHE + 4] = 0x1c;
+    fn native_dual_layer_tile_cache_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[DUAL_LAYER_TILE_CACHE + 4] = 0x1c;
+        let mut cache = DualLayerTileCacheState::load_from_ram(&native_ram);
 
-        let mut cache = DualLayerTileCacheState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeDualLayerTileCacheBridgeMut::new(&mut cache, &mut ram);
             bridge.set_tile_type(4, 0x2a);
@@ -8311,9 +8313,28 @@ mod tests {
     }
 
     #[test]
-    fn native_failed_spin_sparkle_spawn_bridge_dual_writes_spawn_record() {
-        let mut ram = vec![0; WRAM_SIZE];
-        let mut spawn = FailedSpinSparkleSpawnState::default();
+    fn native_failed_spin_sparkle_spawn_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[ANCILLA_STEP - 1] = 0x05;
+        native_ram[ANCILLA_TIMER - 1] = 0x06;
+        native_ram[ANCILLA_AUX_TIMER - 1] = 0x08;
+        native_ram[ANCILLA_X_LO - 1] = 0xcd;
+        native_ram[ANCILLA_X_HI - 1] = 0xab;
+        native_ram[ANCILLA_Y_LO - 1] = 0x34;
+        native_ram[ANCILLA_Y_HI - 1] = 0x12;
+        let mut spawn = FailedSpinSparkleSpawnState::load_from_ram(&native_ram);
+
+        let mut ram = vec![0xff; WRAM_SIZE];
+        {
+            let _bridge = NativeFailedSpinSparkleSpawnBridgeMut::new(&mut spawn, &mut ram);
+        }
+
+        assert_eq!(spawn.step(), 0x05);
+        assert_eq!(spawn.timer(), 0x06);
+        assert_eq!(spawn.aux_timer(), 0x08);
+        assert_eq!(spawn.x(), 0xabcd);
+        assert_eq!(spawn.y(), 0x1234);
+
         {
             let mut bridge = NativeFailedSpinSparkleSpawnBridgeMut::new(&mut spawn, &mut ram);
             bridge.write_failed_spin_sparkle(0x07, 0x1234, 0x5678);

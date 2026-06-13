@@ -2186,7 +2186,6 @@ pub(crate) struct NativeFailedSpinSparkleSpawnBridgeMut<'a> {
 
 impl<'a> NativeFailedSpinSparkleSpawnBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut FailedSpinSparkleSpawnState, ram: &'a mut [u8]) -> Self {
-        *state = FailedSpinSparkleSpawnState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3136,7 +3135,6 @@ pub(crate) struct NativeDualLayerTileCacheBridgeMut<'a> {
 
 impl<'a> NativeDualLayerTileCacheBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DualLayerTileCacheState, ram: &'a mut [u8]) -> Self {
-        *state = DualLayerTileCacheState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3192,7 +3190,6 @@ pub(crate) struct NativePrizeDropCycleBridgeMut<'a> {
 
 impl<'a> NativePrizeDropCycleBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PrizeDropCycleState, ram: &'a mut [u8]) -> Self {
-        *state = PrizeDropCycleState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3261,7 +3258,6 @@ pub(crate) struct NativeMazeGameTimerBridgeMut<'a> {
 
 impl<'a> NativeMazeGameTimerBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut MazeGameTimerState, ram: &'a mut [u8]) -> Self {
-        *state = MazeGameTimerState::load_from_ram(ram);
         Self { state, ram }
     }
 
