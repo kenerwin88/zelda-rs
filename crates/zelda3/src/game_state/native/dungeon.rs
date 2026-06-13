@@ -2425,6 +2425,10 @@ impl DungeonSavegameState {
         self.state_bits &= 0xff00;
     }
 
+    fn set_savegame_state_high_bits(&mut self, mask: u8) {
+        self.state_bits |= u16::from(mask) << 8;
+    }
+
     fn or_savegame_state_bits(&mut self, mask: u16) -> u16 {
         self.state_bits |= mask;
         self.state_bits
@@ -2443,6 +2447,7 @@ pub(crate) struct DungeonTorchState {
     torches_start_index: u16,
     torch_index: u16,
     object_data_positions: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
+    torch_data_words: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
 }
 
 impl DungeonTorchState {
@@ -2457,6 +2462,11 @@ impl DungeonTorchState {
             *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
         }
 
+        let mut torch_data_words = [0; DUNGEON_TORCH_OBJECT_POS_COUNT];
+        for (index, word) in torch_data_words.iter_mut().enumerate() {
+            *word = read_le_u16(ram, DUNGEON_TORCH_DATA + index * 2);
+        }
+
         Self {
             timers,
             attr: ram.get(DUNGEON_TORCH_ATTR).copied().unwrap_or(0),
@@ -2468,6 +2478,7 @@ impl DungeonTorchState {
             torches_start_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES_START),
             torch_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES),
             object_data_positions,
+            torch_data_words,
         }
     }
 
@@ -2483,6 +2494,9 @@ impl DungeonTorchState {
         write_le_u16(ram, DUNG_INDEX_OF_TORCHES, self.torch_index);
         for (index, position) in self.object_data_positions.iter().enumerate() {
             write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
+        }
+        for (index, word) in self.torch_data_words.iter().enumerate() {
+            write_le_u16(ram, DUNGEON_TORCH_DATA + index * 2, *word);
         }
     }
 
@@ -2532,6 +2546,10 @@ impl DungeonTorchState {
 
     pub(crate) fn torch_index(&self) -> u16 {
         self.torch_index
+    }
+
+    pub(crate) fn torch_data_word(&self, index: usize) -> u16 {
+        self.torch_data_words.get(index).copied().unwrap_or(0)
     }
 
     pub(crate) fn torch_object_data_pos(&self, index: usize) -> u16 {
@@ -2607,6 +2625,12 @@ impl DungeonTorchState {
 
     fn set_torch_index(&mut self, value: u16) {
         self.torch_index = value;
+    }
+
+    fn set_torch_data_word(&mut self, index: usize, value: u16) {
+        if let Some(word) = self.torch_data_words.get_mut(index) {
+            *word = value;
+        }
     }
 
     fn set_attr(&mut self, value: u8) {
@@ -3061,6 +3085,11 @@ impl<'a> NativeDungeonSavegameBridgeMut<'a> {
 
     pub(crate) fn clear_savegame_state_low(&mut self) {
         self.state.clear_savegame_state_low();
+        self.sync();
+    }
+
+    pub(crate) fn set_savegame_state_high_bits(&mut self, mask: u8) {
+        self.state.set_savegame_state_high_bits(mask);
         self.sync();
     }
 
@@ -4470,7 +4499,9 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     }
 
     pub(crate) fn set_torch_data_word(&mut self, index: usize, value: u16) {
+        self.torch.set_torch_data_word(index, value);
         write_le_u16(self.ram, DUNGEON_TORCH_DATA + index * 2, value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_attr(&mut self, value: u8) {

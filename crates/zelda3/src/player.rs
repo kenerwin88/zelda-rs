@@ -3349,7 +3349,7 @@ impl ZeldaState {
         self.write_vram_upload_absolute_word(dst + 8, 0x0100);
         self.write_vram_upload_absolute_word(dst + 12, 0xffff);
         self.advance_vram_upload_cursor_by(24);
-        self.dungeon_state_view_mut()
+        self.dungeon_savegame_state_mut()
             .set_savegame_state_high_bits(0x10);
         self.set_bg_vram_load_mode(1);
     }

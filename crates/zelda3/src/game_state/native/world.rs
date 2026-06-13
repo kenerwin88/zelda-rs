@@ -1768,6 +1768,10 @@ impl WorldTransientState {
         self.standing_in_doorway_cached
     }
 
+    pub(crate) fn room_transitioning_flags(&self) -> u8 {
+        self.room_transitioning_flags
+    }
+
     pub(crate) fn overworld_peg_puzzle_progress(&self) -> u16 {
         self.overworld_peg_puzzle_progress
     }

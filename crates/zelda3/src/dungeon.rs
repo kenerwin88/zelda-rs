@@ -1222,13 +1222,13 @@ impl ZeldaState {
         self.dungeon_torch_mut().set_torch_index(misc_objs);
         let mut i = 0usize;
         loop {
-            if self.dungeon_state_view().torch_data_word(i) == room {
+            if self.dungeon_torch_state().torch_data_word(i) == room {
                 i += 2;
                 loop {
-                    let t = self.dungeon_state_view().torch_data_word(i);
+                    let t = self.dungeon_torch_state().torch_data_word(i);
                     i += 2;
                     self.DrawObjects_LightableTorch(t, (i - 2) as u16);
-                    if self.dungeon_state_view().torch_data_word(i) == 0xffff {
+                    if self.dungeon_torch_state().torch_data_word(i) == 0xffff {
                         break;
                     }
                 }
@@ -1236,7 +1236,7 @@ impl ZeldaState {
             }
             i += 2;
             loop {
-                let t = self.dungeon_state_view().torch_data_word(i);
+                let t = self.dungeon_torch_state().torch_data_word(i);
                 i += 2;
                 if t == 0xffff {
                     break;
@@ -5577,8 +5577,7 @@ impl ZeldaState {
             }
             self.finish_super_tile_transition_room_side_effects();
         }
-        self.dungeon_state_view_mut()
-            .clear_room_transitioning_flags();
+        self.world_transient_mut().set_room_transitioning_flags(0);
         self.update_quadrant_fullsize_y_after_transition();
     }
 
@@ -5624,8 +5623,7 @@ impl ZeldaState {
             }
             self.finish_super_tile_transition_room_side_effects();
         }
-        self.dungeon_state_view_mut()
-            .clear_room_transitioning_flags();
+        self.world_transient_mut().set_room_transitioning_flags(0);
         self.update_quadrant_fullsize_y_after_transition();
     }
 
@@ -5665,8 +5663,7 @@ impl ZeldaState {
             self.decrement_dungeon_room_index_by(0x10);
             self.finish_super_tile_transition_room_side_effects();
         }
-        self.dungeon_state_view_mut()
-            .clear_room_transitioning_flags();
+        self.world_transient_mut().set_room_transitioning_flags(0);
         self.update_quadrant_fullsize_x_after_transition();
     }
 
@@ -5699,18 +5696,17 @@ impl ZeldaState {
             self.increment_dungeon_room_index_by(0x10);
             self.finish_super_tile_transition_room_side_effects();
         }
-        self.dungeon_state_view_mut()
-            .clear_room_transitioning_flags();
+        self.world_transient_mut().set_room_transitioning_flags(0);
         self.update_quadrant_fullsize_x_after_transition();
     }
 
     fn finish_super_tile_transition_room_side_effects(&mut self) {
         self.set_submodule(2);
-        if self.dungeon_state_view().room_transitioning_flags() & 1 != 0 {
+        if self.world_transient().room_transitioning_flags() & 1 != 0 {
             self.player_state_view_mut().toggle_lower_level_state();
             self.player_state_view_mut().mirror_lower_level_state();
         }
-        if self.dungeon_state_view().room_transitioning_flags() & 2 != 0 {
+        if self.world_transient().room_transitioning_flags() & 2 != 0 {
             self.save_progress_view_mut().xor_palace_index_x2(2);
         }
     }
