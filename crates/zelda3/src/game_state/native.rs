@@ -55,8 +55,9 @@ pub(crate) use effects::{
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
     NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut, NativeQuakeBoltBridgeMut,
     NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeTowerSealBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
-    SkullWoodsFireState, TowerSealState,
+    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
+    QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
 };
 pub(crate) use ending::{
     AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
@@ -1928,6 +1929,44 @@ mod tests {
         assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_X), 0x1234);
         assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_Y), 0x5678);
         assert_eq!(ram[TOWER_SEAL_WAIT_COUNTDOWN], 240);
+    }
+
+    #[test]
+    fn native_tower_seal_slot_bridges_sync_transient_orbits_and_sparkles() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0x3f;
+        ram[TOWER_SEAL_SPARKLE_TIMER + 5] = 1;
+
+        let mut tower = TowerSealState::default();
+        {
+            let mut orbit = NativeTowerSealOrbitBridgeMut::new(&mut tower, &mut ram, 2);
+            assert_eq!(orbit.advance_angle_mod64(), 0);
+            orbit.set_base_sparkle_position(0x1234, 0x5678);
+        }
+        {
+            let mut sparkle = NativeTowerSealSparkleBridgeMut::new(&mut tower, &mut ram, 5);
+            sparkle.set_phase(1);
+            assert_eq!(sparkle.tick_timer(), 0);
+            assert_eq!(sparkle.advance_phase(), 2);
+            sparkle.set_position(0x9abc, 0xdef0);
+            assert_eq!(sparkle.base_sparkle_position(2), (0x1234, 0x5678));
+        }
+
+        assert_eq!(tower.orbit(2).angle(), 0);
+        assert_eq!(tower.sparkle(5).phase(), 2);
+        assert_eq!(tower.sparkle(5).x(), 0x9abc);
+        assert_eq!(tower.sparkle(5).y(), 0xdef0);
+        assert_eq!(ram[TOWER_SEAL_ORBIT_ANGLE + 2], 0);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_X_LO + 2], 0x34);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_X_HI + 2], 0x12);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_Y_LO + 2], 0x78);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_Y_HI + 2], 0x56);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_PHASE + 5], 2);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_TIMER + 5], 0);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_X_LO + 5], 0xbc);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_X_HI + 5], 0x9a);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_Y_LO + 5], 0xf0);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_Y_HI + 5], 0xde);
     }
 
     #[test]

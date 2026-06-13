@@ -8,8 +8,12 @@ use crate::game_state::constants::{
     DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER,
     QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y,
     SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X,
-    SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y,
-    TOWER_SEAL_RING_RADIUS, TOWER_SEAL_WAIT_COUNTDOWN,
+    SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_BASE_SPARKLE_X_HI,
+    TOWER_SEAL_BASE_SPARKLE_X_LO, TOWER_SEAL_BASE_SPARKLE_Y_HI, TOWER_SEAL_BASE_SPARKLE_Y_LO,
+    TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE, TOWER_SEAL_RING_RADIUS,
+    TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER, TOWER_SEAL_SPARKLE_X_HI,
+    TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI, TOWER_SEAL_SPARKLE_Y_LO,
+    TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -17,6 +21,8 @@ const DOOR_DEBRIS_BANK_LEN: usize = 10;
 const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
 const BOMBOS_BLAST_SLOTS: usize = 16;
 const QUAKE_BOLT_SLOTS: usize = 5;
+const TOWER_SEAL_ORBIT_SLOTS: usize = 8;
+const TOWER_SEAL_SPARKLE_SLOTS: usize = 24;
 const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
 const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
 const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
@@ -609,16 +615,54 @@ pub(crate) struct TowerSealState {
     center_x: u16,
     center_y: u16,
     wait_countdown: u8,
+    orbit_angles: [u8; TOWER_SEAL_ORBIT_SLOTS],
+    base_sparkle_x: [u16; TOWER_SEAL_ORBIT_SLOTS],
+    base_sparkle_y: [u16; TOWER_SEAL_ORBIT_SLOTS],
+    sparkle_phases: [u8; TOWER_SEAL_SPARKLE_SLOTS],
+    sparkle_timers: [u8; TOWER_SEAL_SPARKLE_SLOTS],
+    sparkle_x: [u16; TOWER_SEAL_SPARKLE_SLOTS],
+    sparkle_y: [u16; TOWER_SEAL_SPARKLE_SLOTS],
 }
 
 impl TowerSealState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        Self {
+        let mut state = Self {
             ring_radius: ram.get(TOWER_SEAL_RING_RADIUS).copied().unwrap_or(0),
             center_x: read_le_u16(ram, TOWER_SEAL_CENTER_X),
             center_y: read_le_u16(ram, TOWER_SEAL_CENTER_Y),
             wait_countdown: ram.get(TOWER_SEAL_WAIT_COUNTDOWN).copied().unwrap_or(0),
+            ..Self::default()
+        };
+        for slot in 0..TOWER_SEAL_ORBIT_SLOTS {
+            state.orbit_angles[slot] = ram.get(TOWER_SEAL_ORBIT_ANGLE + slot).copied().unwrap_or(0);
+            state.base_sparkle_x[slot] = read_split_u16(
+                ram,
+                TOWER_SEAL_BASE_SPARKLE_X_LO,
+                TOWER_SEAL_BASE_SPARKLE_X_HI,
+                slot,
+            );
+            state.base_sparkle_y[slot] = read_split_u16(
+                ram,
+                TOWER_SEAL_BASE_SPARKLE_Y_LO,
+                TOWER_SEAL_BASE_SPARKLE_Y_HI,
+                slot,
+            );
         }
+        for slot in 0..TOWER_SEAL_SPARKLE_SLOTS {
+            state.sparkle_phases[slot] = ram
+                .get(TOWER_SEAL_SPARKLE_PHASE + slot)
+                .copied()
+                .unwrap_or(0);
+            state.sparkle_timers[slot] = ram
+                .get(TOWER_SEAL_SPARKLE_TIMER + slot)
+                .copied()
+                .unwrap_or(0);
+            state.sparkle_x[slot] =
+                read_split_u16(ram, TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_X_HI, slot);
+            state.sparkle_y[slot] =
+                read_split_u16(ram, TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_SPARKLE_Y_HI, slot);
+        }
+        state
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
@@ -626,6 +670,44 @@ impl TowerSealState {
         write_le_u16(ram, TOWER_SEAL_CENTER_X, self.center_x);
         write_le_u16(ram, TOWER_SEAL_CENTER_Y, self.center_y);
         ram[TOWER_SEAL_WAIT_COUNTDOWN] = self.wait_countdown;
+    }
+
+    fn write_transient_slots_to_ram(&self, ram: &mut [u8]) {
+        for slot in 0..TOWER_SEAL_ORBIT_SLOTS {
+            ram[TOWER_SEAL_ORBIT_ANGLE + slot] = self.orbit_angles[slot];
+            write_split_u16(
+                ram,
+                TOWER_SEAL_BASE_SPARKLE_X_LO,
+                TOWER_SEAL_BASE_SPARKLE_X_HI,
+                slot,
+                self.base_sparkle_x[slot],
+            );
+            write_split_u16(
+                ram,
+                TOWER_SEAL_BASE_SPARKLE_Y_LO,
+                TOWER_SEAL_BASE_SPARKLE_Y_HI,
+                slot,
+                self.base_sparkle_y[slot],
+            );
+        }
+        for slot in 0..TOWER_SEAL_SPARKLE_SLOTS {
+            ram[TOWER_SEAL_SPARKLE_PHASE + slot] = self.sparkle_phases[slot];
+            ram[TOWER_SEAL_SPARKLE_TIMER + slot] = self.sparkle_timers[slot];
+            write_split_u16(
+                ram,
+                TOWER_SEAL_SPARKLE_X_LO,
+                TOWER_SEAL_SPARKLE_X_HI,
+                slot,
+                self.sparkle_x[slot],
+            );
+            write_split_u16(
+                ram,
+                TOWER_SEAL_SPARKLE_Y_LO,
+                TOWER_SEAL_SPARKLE_Y_HI,
+                slot,
+                self.sparkle_y[slot],
+            );
+        }
     }
 
     pub(crate) fn ring_radius(&self) -> u8 {
@@ -638,6 +720,20 @@ impl TowerSealState {
 
     pub(crate) fn center_y(&self) -> u16 {
         self.center_y
+    }
+
+    pub(crate) fn orbit(&self, slot: usize) -> TowerSealOrbitState {
+        TowerSealOrbitState {
+            angle: self.orbit_angle(slot),
+        }
+    }
+
+    pub(crate) fn sparkle(&self, slot: usize) -> TowerSealSparkleState {
+        TowerSealSparkleState {
+            phase: self.sparkle_phase(slot),
+            x: self.sparkle_x.get(slot).copied().unwrap_or(0),
+            y: self.sparkle_y.get(slot).copied().unwrap_or(0),
+        }
     }
 
     pub(crate) fn set_ring_radius(&mut self, value: u8) {
@@ -656,6 +752,116 @@ impl TowerSealState {
 
     pub(crate) fn set_wait_countdown(&mut self, value: u8) {
         self.wait_countdown = value;
+    }
+
+    fn orbit_angle(&self, slot: usize) -> u8 {
+        self.orbit_angles.get(slot).copied().unwrap_or(0)
+    }
+
+    fn set_orbit_angle(&mut self, slot: usize, value: u8) {
+        if let Some(angle) = self.orbit_angles.get_mut(slot) {
+            *angle = value;
+        }
+    }
+
+    fn advance_orbit_angle_mod64(&mut self, slot: usize) -> u8 {
+        let angle = self.orbit_angle(slot).wrapping_add(1) & 0x3f;
+        self.set_orbit_angle(slot, angle);
+        angle
+    }
+
+    fn set_base_sparkle_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(base_x) = self.base_sparkle_x.get_mut(slot) {
+            *base_x = x;
+        }
+        if let Some(base_y) = self.base_sparkle_y.get_mut(slot) {
+            *base_y = y;
+        }
+    }
+
+    fn base_sparkle_position(&self, base: usize) -> (u16, u16) {
+        (
+            self.base_sparkle_x.get(base).copied().unwrap_or(0),
+            self.base_sparkle_y.get(base).copied().unwrap_or(0),
+        )
+    }
+
+    fn sparkle_phase(&self, slot: usize) -> u8 {
+        self.sparkle_phases.get(slot).copied().unwrap_or(0)
+    }
+
+    fn set_sparkle_phase(&mut self, slot: usize, value: u8) {
+        if let Some(phase) = self.sparkle_phases.get_mut(slot) {
+            *phase = value;
+        }
+    }
+
+    fn set_sparkle_timer(&mut self, slot: usize, value: u8) {
+        if let Some(timer) = self.sparkle_timers.get_mut(slot) {
+            *timer = value;
+        }
+    }
+
+    fn tick_sparkle_timer(&mut self, slot: usize) -> u8 {
+        let timer = self
+            .sparkle_timers
+            .get(slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_sparkle_timer(slot, timer);
+        timer
+    }
+
+    fn advance_sparkle_phase(&mut self, slot: usize) -> u8 {
+        let phase = self.sparkle_phase(slot).wrapping_add(1);
+        self.set_sparkle_phase(slot, phase);
+        phase
+    }
+
+    fn set_sparkle_position(&mut self, slot: usize, x: u16, y: u16) {
+        if let Some(sparkle_x) = self.sparkle_x.get_mut(slot) {
+            *sparkle_x = x;
+        }
+        if let Some(sparkle_y) = self.sparkle_y.get_mut(slot) {
+            *sparkle_y = y;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TowerSealOrbitState {
+    angle: u8,
+}
+
+impl TowerSealOrbitState {
+    pub(crate) fn angle(&self) -> u8 {
+        self.angle
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TowerSealSparkleState {
+    phase: u8,
+    x: u16,
+    y: u16,
+}
+
+impl TowerSealSparkleState {
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+
+    pub(crate) fn is_free(&self) -> bool {
+        self.phase == 0xff
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
     }
 }
 
@@ -698,6 +904,97 @@ impl<'a> NativeTowerSealBridgeMut<'a> {
     pub(crate) fn set_wait_countdown(&mut self, value: u8) {
         self.state.set_wait_countdown(value);
         self.sync();
+    }
+}
+
+pub(crate) struct NativeTowerSealOrbitBridgeMut<'a> {
+    state: &'a mut TowerSealState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeTowerSealOrbitBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = TowerSealState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_transient_slots_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, TowerSealState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_angle(&mut self, value: u8) {
+        self.state.set_orbit_angle(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_angle_mod64(&mut self) -> u8 {
+        let angle = self.state.advance_orbit_angle_mod64(self.slot);
+        self.sync();
+        angle
+    }
+
+    pub(crate) fn set_base_sparkle_position(&mut self, x: u16, y: u16) {
+        self.state.set_base_sparkle_position(self.slot, x, y);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeTowerSealSparkleBridgeMut<'a> {
+    state: &'a mut TowerSealState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeTowerSealSparkleBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = TowerSealState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_transient_slots_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, TowerSealState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.state.set_sparkle_phase(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.state.set_sparkle_timer(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let timer = self.state.tick_sparkle_timer(self.slot);
+        self.sync();
+        timer
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let phase = self.state.advance_sparkle_phase(self.slot);
+        self.sync();
+        phase
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_sparkle_position(self.slot, x, y);
+        self.sync();
+    }
+
+    pub(crate) fn base_sparkle_position(&self, base: usize) -> (u16, u16) {
+        self.state.base_sparkle_position(base)
     }
 }
 
@@ -1507,6 +1804,16 @@ fn word_from_bank(bank: [u8; DOOR_DEBRIS_BANK_LEN], slot: usize) -> u16 {
     let mut bytes = [0; DOOR_DEBRIS_BANK_LEN];
     bytes.copy_from_slice(&bank);
     read_le_u16(&bytes, slot * 2)
+}
+
+fn read_split_u16(ram: &[u8], low_base: usize, high_base: usize, slot: usize) -> u16 {
+    u16::from(ram.get(low_base + slot).copied().unwrap_or(0))
+        | (u16::from(ram.get(high_base + slot).copied().unwrap_or(0)) << 8)
+}
+
+fn write_split_u16(ram: &mut [u8], low_base: usize, high_base: usize, slot: usize, value: u16) {
+    ram[low_base + slot] = value as u8;
+    ram[high_base + slot] = (value >> 8) as u8;
 }
 
 pub(crate) struct NativeDoorDebrisBridgeMut<'a> {

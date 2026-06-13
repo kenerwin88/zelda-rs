@@ -3442,7 +3442,7 @@ impl ZeldaState {
         }
 
         for i in (0..=0x17).rev() {
-            self.tower_seal_sparkle_view_mut(i).set_phase(0xff);
+            self.tower_seal_sparkle_mut(i).set_phase(0xff);
         }
         self.DecodeAnimatedSpriteTile_variable(0x28);
         self.palette_buffer_mut().set_sp6r_indoors(4);
@@ -3460,12 +3460,12 @@ impl ZeldaState {
         self.tower_seal_scratch_mut().set_wait_countdown(240);
         self.tower_seal_scratch_mut().set_ring_radius(0);
 
-        self.tower_seal_orbit_view_mut(0).set_angle(0);
-        self.tower_seal_orbit_view_mut(1).set_angle(10);
-        self.tower_seal_orbit_view_mut(2).set_angle(22);
-        self.tower_seal_orbit_view_mut(3).set_angle(32);
-        self.tower_seal_orbit_view_mut(4).set_angle(42);
-        self.tower_seal_orbit_view_mut(5).set_angle(54);
+        self.tower_seal_orbit_mut(0).set_angle(0);
+        self.tower_seal_orbit_mut(1).set_angle(10);
+        self.tower_seal_orbit_mut(2).set_angle(22);
+        self.tower_seal_orbit_mut(3).set_angle(32);
+        self.tower_seal_orbit_mut(4).set_angle(42);
+        self.tower_seal_orbit_mut(5).set_angle(54);
 
         self.ancilla_set_xy(
             k,
@@ -9585,10 +9585,10 @@ impl ZeldaState {
                     && astep != 1
                     && self.frame_state().frame_counter & 1 == 0
                 {
-                    self.tower_seal_orbit_view_mut(j).advance_angle_mod64();
+                    self.tower_seal_orbit_mut(j).advance_angle_mod64();
                 }
                 let arp = self.ancilla_get_radial_projection(
-                    self.tower_seal_orbit_view(j).angle(),
+                    self.tower_seal_orbit(j).angle(),
                     self.tower_seal_scratch().ring_radius(),
                 );
                 let x = (if arp.r6 != 0 {
@@ -9606,7 +9606,7 @@ impl ZeldaState {
                     - 8
                     - i32::from(self.ppu_scroll_copy().bg2_v_copy());
 
-                self.tower_seal_orbit_view_mut(j)
+                self.tower_seal_orbit_mut(j)
                     .set_base_sparkle_position(x as u16, y as u16);
 
                 self.ancilla_draw_gt_cutscene_crystal(oam, x as u16, y as u16);
@@ -9615,8 +9615,7 @@ impl ZeldaState {
         }
 
         let (x, y) = self.ancilla_prep_adjusted_oam_coord(k);
-        self.tower_seal_orbit_view_mut(7)
-            .set_base_sparkle_position(x, y);
+        self.tower_seal_orbit_mut(7).set_base_sparkle_position(x, y);
 
         self.ancilla_draw_gt_cutscene_crystal(oam, x, y);
 
@@ -10134,17 +10133,15 @@ impl ZeldaState {
 
     fn gt_cutscene_activate_sparkle(&mut self) {
         for k in (0..=0x17).rev() {
-            if self.tower_seal_sparkle_view(k).is_free() {
-                self.tower_seal_sparkle_view_mut(k).set_phase(0);
-                self.tower_seal_sparkle_view_mut(k).set_timer(4);
+            if self.tower_seal_sparkle(k).is_free() {
+                self.tower_seal_sparkle_mut(k).set_phase(0);
+                self.tower_seal_sparkle_mut(k).set_timer(4);
                 let r = self.get_random_number();
                 let base = k & 7;
-                let (mut x, mut y) = self
-                    .tower_seal_sparkle_view_mut(k)
-                    .base_sparkle_position(base);
+                let (mut x, mut y) = self.tower_seal_sparkle_mut(k).base_sparkle_position(base);
                 x = x.wrapping_add((r >> 4) as u16);
                 y = y.wrapping_add((r & 0x0f) as u16);
-                self.tower_seal_sparkle_view_mut(k).set_position(x, y);
+                self.tower_seal_sparkle_mut(k).set_position(x, y);
                 return;
             }
         }
@@ -10155,23 +10152,23 @@ impl ZeldaState {
         const SWORD_CHARGE_SPARK_FLAGS: [u8; 3] = [4, 4, 0x84];
 
         for k in (0..=0x17).rev() {
-            if self.tower_seal_sparkle_view(k).is_free() {
+            if self.tower_seal_sparkle(k).is_free() {
                 continue;
             }
 
-            let timer = self.tower_seal_sparkle_view_mut(k).tick_timer();
+            let timer = self.tower_seal_sparkle_mut(k).tick_timer();
             if sign8(timer) {
-                self.tower_seal_sparkle_view_mut(k).set_timer(4);
-                let phase = self.tower_seal_sparkle_view_mut(k).advance_phase();
+                self.tower_seal_sparkle_mut(k).set_timer(4);
+                let phase = self.tower_seal_sparkle_mut(k).advance_phase();
                 if phase == 3 {
-                    self.tower_seal_sparkle_view_mut(k).set_phase(0xff);
+                    self.tower_seal_sparkle_mut(k).set_phase(0xff);
                     continue;
                 }
             }
 
-            let x = self.tower_seal_sparkle_view(k).x();
-            let y = self.tower_seal_sparkle_view(k).y();
-            let j = self.tower_seal_sparkle_view(k).phase() as usize;
+            let x = self.tower_seal_sparkle(k).x();
+            let y = self.tower_seal_sparkle(k).y();
+            let j = self.tower_seal_sparkle(k).phase() as usize;
             self.ancilla_set_oam(
                 oam,
                 x,

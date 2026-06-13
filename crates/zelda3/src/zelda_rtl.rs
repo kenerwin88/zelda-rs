@@ -96,8 +96,9 @@ use crate::game_state::{
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
-    NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
     NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
@@ -113,11 +114,11 @@ use crate::game_state::{
     SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSlotView, SpriteSlotViewMut,
     SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut,
     SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState,
-    TagalongSlotRead, TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut,
-    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
-    WeatherVaneState, WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState,
-    WorldRegionState, WorldScrollState, WorldTransientState,
+    TagalongSlotRead, TileDetectionState, TowerSealOrbitState, TowerSealSparkleState,
+    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldCameraBoundariesState,
+    WorldLocationState, WorldPaletteThemeState, WorldRegionState, WorldScrollState,
+    WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3873,23 +3874,34 @@ impl ZeldaState {
         NativeBombosSpellBridgeMut::new(&mut self.game_state.effects.bombos_spell, &mut self.ram)
     }
 
-    pub(crate) fn tower_seal_orbit_view(&self, slot: usize) -> TowerSealOrbitView<'_> {
-        TowerSealOrbitView::new(&self.ram, slot)
+    pub(crate) fn tower_seal_orbit(&self, slot: usize) -> TowerSealOrbitState {
+        self.game_state.effects.tower_seal.orbit(slot)
     }
 
-    pub(crate) fn tower_seal_orbit_view_mut(&mut self, slot: usize) -> TowerSealOrbitViewMut<'_> {
-        TowerSealOrbitViewMut::new(&mut self.ram, slot)
-    }
-
-    pub(crate) fn tower_seal_sparkle_view(&self, slot: usize) -> TowerSealSparkleView<'_> {
-        TowerSealSparkleView::new(&self.ram, slot)
-    }
-
-    pub(crate) fn tower_seal_sparkle_view_mut(
+    pub(crate) fn tower_seal_orbit_mut(
         &mut self,
         slot: usize,
-    ) -> TowerSealSparkleViewMut<'_> {
-        TowerSealSparkleViewMut::new(&mut self.ram, slot)
+    ) -> NativeTowerSealOrbitBridgeMut<'_> {
+        NativeTowerSealOrbitBridgeMut::new(
+            &mut self.game_state.effects.tower_seal,
+            &mut self.ram,
+            slot,
+        )
+    }
+
+    pub(crate) fn tower_seal_sparkle(&self, slot: usize) -> TowerSealSparkleState {
+        self.game_state.effects.tower_seal.sparkle(slot)
+    }
+
+    pub(crate) fn tower_seal_sparkle_mut(
+        &mut self,
+        slot: usize,
+    ) -> NativeTowerSealSparkleBridgeMut<'_> {
+        NativeTowerSealSparkleBridgeMut::new(
+            &mut self.game_state.effects.tower_seal,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn tower_seal_scratch(&self) -> &TowerSealState {
