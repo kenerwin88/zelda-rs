@@ -39,8 +39,8 @@ use crate::game_state::{
     DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState, DungeonSecretState,
     DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
     EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
-    EnhancedFeaturesState, EtherOrbitState, FollowerStateView, FollowerStateViewMut, FrameState,
-    GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsScratchViewMut,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsScratchViewMut,
     HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
     IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
     InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
@@ -57,13 +57,13 @@ use crate::game_state::{
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFrameStateBridgeMut,
-    NativeGarnishRuntimeBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroSceneBridgeMut,
+    NativeIntroSwordBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -4005,12 +4005,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn follower_state_view(&self) -> FollowerStateView<'_> {
-        FollowerStateView::new(&self.ram)
+    pub(crate) fn follower_state_view(&self) -> FollowerRuntimeState {
+        FollowerRuntimeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn follower_state_view_mut(&mut self) -> FollowerStateViewMut<'_> {
-        FollowerStateViewMut::new(&mut self.ram)
+    pub(crate) fn follower_state_view_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
+        NativeFollowerRuntimeBridgeMut::new(
+            &mut self.game_state.sprites.follower_runtime,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn chain_chomp_history_view(&self) -> &ChainChompHistoryState {

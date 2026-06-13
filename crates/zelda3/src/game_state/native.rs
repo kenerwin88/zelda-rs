@@ -77,10 +77,10 @@ pub(crate) use player::{
 };
 pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
-    GarnishRuntimeState, MazeGameTimerView, NativeChainChompHistoryBridgeMut,
+    FollowerRuntimeState, GarnishRuntimeState, MazeGameTimerView, NativeChainChompHistoryBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
-    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
@@ -5501,5 +5501,50 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SPRCOLL_Y_BASE), 0x1314);
         assert_eq!(ram[REPULSESPARK_ANIM_DELAY], 0xff);
         assert_eq!(ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH], 0);
+    }
+
+    #[test]
+    fn native_follower_runtime_bridge_preserves_overlapping_timer_tail_byte() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[FOLLOWER_INDICATOR] = 0x04;
+        ram[TAGALONG_DATA_INDEX] = 0x13;
+        ram[TAGALONG_HOOKSHOT_INTERLOCK] = 0x02;
+        ram[TIMER_TAGALONG_REACQUIRE] = 0x34;
+        ram[FOLLOWER_TAIL_WRITE_INDEX] = 0x12;
+        ram[TAGALONG_ANIM_FRAME_COUNTER] = 0x02;
+        write_le_u16(&mut ram, FOLLOWER_SAVED_Y, 0x5678);
+        write_le_u16(&mut ram, FOLLOWER_SAVED_X, 0x9abc);
+
+        let mut follower = FollowerRuntimeState::default();
+        {
+            let mut bridge = NativeFollowerRuntimeBridgeMut::new(&mut follower, &mut ram);
+            bridge.set_reacquire_timer(0xabcd);
+            bridge.increment_tail_write_index();
+            bridge.set_hookshot_release_tail_index_from_tail_write_index();
+            bridge.advance_data_index_wrapping_at_20();
+            bridge.increment_and_cycle_draw_anim_frame();
+            bridge.set_saved_y(0x1112);
+            bridge.set_saved_x(0x1314);
+            bridge.set_palette_swap_flag(0x80);
+        }
+
+        assert_eq!(follower.reacquire_timer_low(), 0xcd);
+        assert_eq!(follower.tail_write_index(), 0xac);
+        assert_eq!(follower.reacquire_timer(), 0xaccd);
+        assert_eq!(follower.hookshot_release_tail_index(), 0xac);
+        assert_eq!(follower.data_index(), 0);
+        assert_eq!(follower.draw_anim_frame(), 0);
+        assert_eq!(follower.saved_y(), 0x1112);
+        assert_eq!(follower.saved_x(), 0x1314);
+        assert_eq!(follower.palette_swap_flag(), 0x80);
+        assert_eq!(ram[TIMER_TAGALONG_REACQUIRE], 0xcd);
+        assert_eq!(ram[FOLLOWER_TAIL_WRITE_INDEX], 0xac);
+        assert_eq!(read_le_u16(&ram, TIMER_TAGALONG_REACQUIRE), 0xaccd);
+        assert_eq!(ram[FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX], 0xac);
+        assert_eq!(ram[TAGALONG_DATA_INDEX], 0);
+        assert_eq!(ram[TAGALONG_ANIM_FRAME_COUNTER], 0);
+        assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_Y), 0x1112);
+        assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_X), 0x1314);
+        assert_eq!(ram[FOLLOWER_PALETTE_SWAP_FLAG], 0x80);
     }
 }
