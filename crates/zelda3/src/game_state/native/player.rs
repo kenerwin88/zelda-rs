@@ -1,10 +1,10 @@
 use super::ram_byte;
 use crate::game_state::constants::{
-    LINK_X_COORD, LINK_X_COORD_SPEXIT, LINK_Y_COORD, LINK_Y_COORD_SPEXIT, PUSHEDBLOCKS_SUBPIXEL,
-    PUSHEDBLOCKS_TARGET, PUSHEDBLOCKS_X_HI, PUSHEDBLOCKS_X_LO, PUSHEDBLOCKS_Y_HI,
-    PUSHEDBLOCKS_Y_LO, PUSHEDBLOCK_FACING_PLAYER, PUSHED_BLOCK_ANIMATION_TIMER, PUSHED_BLOCK_MODE,
-    PUSH_BLOCK_DIRECTION, SWIM_ACCELERATION, SWIM_ACCELERATION_DIRECTION, SWIM_ACCELERATION_MODE,
-    SWIM_MAX_SPEED, SWIM_SPEED_ACTIVE_FLAG,
+    BG1_MOVE_CALC_BUFFER, LINK_X_COORD, LINK_X_COORD_SPEXIT, LINK_Y_COORD, LINK_Y_COORD_SPEXIT,
+    PUSHEDBLOCKS_SUBPIXEL, PUSHEDBLOCKS_TARGET, PUSHEDBLOCKS_X_HI, PUSHEDBLOCKS_X_LO,
+    PUSHEDBLOCKS_Y_HI, PUSHEDBLOCKS_Y_LO, PUSHEDBLOCK_FACING_PLAYER, PUSHED_BLOCK_ANIMATION_TIMER,
+    PUSHED_BLOCK_MODE, PUSH_BLOCK_DIRECTION, SWIM_ACCELERATION, SWIM_ACCELERATION_DIRECTION,
+    SWIM_ACCELERATION_MODE, SWIM_MAX_SPEED, SWIM_SPEED_ACTIVE_FLAG,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -69,6 +69,7 @@ pub(crate) struct PlayerState {
     pub(crate) special_exit_position: SpecialExitPositionState,
     pub(crate) swim_acceleration: SwimAccelerationState,
     pub(crate) pushed_block: PushedBlockState,
+    pub(crate) bg1_movement_accumulator: Bg1MovementAccumulatorState,
 }
 
 impl PlayerState {
@@ -77,6 +78,7 @@ impl PlayerState {
             special_exit_position: SpecialExitPositionState::load_from_ram(ram),
             swim_acceleration: SwimAccelerationState::load_from_ram(ram),
             pushed_block: PushedBlockState::load_from_ram(ram),
+            bg1_movement_accumulator: Bg1MovementAccumulatorState::load_from_ram(ram),
         }
     }
 
@@ -84,6 +86,54 @@ impl PlayerState {
         self.special_exit_position.write_to_ram(ram);
         self.swim_acceleration.write_to_ram(ram);
         self.pushed_block.write_to_ram(ram);
+        self.bg1_movement_accumulator.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Bg1MovementAccumulatorState {
+    y_subpixel: u8,
+    x_subpixel: u8,
+}
+
+impl Bg1MovementAccumulatorState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            y_subpixel: ram_byte(ram, BG1_MOVE_CALC_BUFFER),
+            x_subpixel: ram_byte(ram, BG1_MOVE_CALC_BUFFER + 1),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[BG1_MOVE_CALC_BUFFER] = self.y_subpixel;
+        ram[BG1_MOVE_CALC_BUFFER + 1] = self.x_subpixel;
+    }
+
+    pub(crate) fn x_subpixel(&self) -> u8 {
+        self.x_subpixel
+    }
+
+    pub(crate) fn y_subpixel(&self) -> u8 {
+        self.y_subpixel
+    }
+
+    pub(crate) fn set_buffer(&mut self, value: u16) {
+        self.y_subpixel = value as u8;
+        self.x_subpixel = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.y_subpixel = value;
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.x_subpixel = value;
+    }
+
+    pub(crate) fn advance_x_subpixel(&mut self, delta: u16) -> u16 {
+        let next = u16::from(self.x_subpixel).wrapping_add(delta);
+        self.set_x_subpixel(next as u8);
+        next
     }
 }
 
@@ -217,6 +267,51 @@ fn write_pushed_block_bank_word(bank: &mut [u8; PUSHED_BLOCK_BANK_LEN], slot: us
         if offset + 1 < bank.len() {
             write_le_u16(bank, offset, value);
         }
+    }
+}
+
+pub(crate) struct NativeBg1MovementAccumulatorBridgeMut<'a> {
+    state: &'a mut Bg1MovementAccumulatorState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut Bg1MovementAccumulatorState, ram: &'a mut [u8]) -> Self {
+        *state = Bg1MovementAccumulatorState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            Bg1MovementAccumulatorState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_buffer(&mut self, value: u16) {
+        self.state.set_buffer(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.state.set_y_subpixel(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.state.set_x_subpixel(value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_x_subpixel(&mut self, delta: u16) -> u16 {
+        let next = self.state.advance_x_subpixel(delta);
+        self.sync();
+        next
     }
 }
 

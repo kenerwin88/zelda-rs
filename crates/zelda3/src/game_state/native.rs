@@ -69,9 +69,9 @@ pub(crate) use misc::{
 };
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
 pub(crate) use player::{
-    NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSwimAccelerationBridgeMut, PlayerState, PushedBlockView, SpecialExitPositionView,
-    SwimAccelerationView,
+    Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut, PlayerState,
+    PushedBlockView, SpecialExitPositionView, SwimAccelerationView,
 };
 pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
@@ -5274,5 +5274,22 @@ mod tests {
         assert_eq!(read_le_u16(&ram, CAMERA_X_COORD_SCROLL_LOW_CACHED), 0x2002);
         assert_eq!(&scroll.mapbak_palette_slice()[..4], &[5, 6, 7, 4]);
         assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[5, 6, 7, 4]);
+    }
+
+    #[test]
+    fn native_bg1_movement_accumulator_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG1_MOVE_CALC_BUFFER, 0x1203);
+
+        let mut accumulator = Bg1MovementAccumulatorState::default();
+        {
+            let mut bridge = NativeBg1MovementAccumulatorBridgeMut::new(&mut accumulator, &mut ram);
+            bridge.set_y_subpixel(0x44);
+            assert_eq!(bridge.advance_x_subpixel(0xf1), 0x0103);
+        }
+
+        assert_eq!(accumulator.x_subpixel(), 0x03);
+        assert_eq!(accumulator.y_subpixel(), 0x44);
+        assert_eq!(read_le_u16(&ram, BG1_MOVE_CALC_BUFFER), 0x0344);
     }
 }

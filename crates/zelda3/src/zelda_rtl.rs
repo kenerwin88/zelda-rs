@@ -29,7 +29,7 @@ use crate::game_state::{
     AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, AncillaSpawnScratchViewMut,
     ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
     AttractStateView, AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
-    Bg1MoveCalcView, Bg1MoveCalcViewMut, BirdTravelDestinationState, BlastWallExplosionView,
+    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionView,
     BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
     BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
@@ -47,13 +47,13 @@ use crate::game_state::{
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
     MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
     MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
+    NativeChainChompHistoryBridgeMut, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
@@ -1789,12 +1789,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn bg1_move_calc_view(&self) -> Bg1MoveCalcView<'_> {
-        Bg1MoveCalcView::new(&self.ram)
+    pub(crate) fn bg1_move_calc_view(&self) -> Bg1MovementAccumulatorState {
+        Bg1MovementAccumulatorState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn bg1_move_calc_view_mut(&mut self) -> Bg1MoveCalcViewMut<'_> {
-        Bg1MoveCalcViewMut::new(&mut self.ram)
+    pub(crate) fn bg1_move_calc_view_mut(&mut self) -> NativeBg1MovementAccumulatorBridgeMut<'_> {
+        NativeBg1MovementAccumulatorBridgeMut::new(
+            &mut self.game_state.player.bg1_movement_accumulator,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn tile_detect_position_view(&self) -> TileDetectPositionView<'_> {

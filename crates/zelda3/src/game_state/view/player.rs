@@ -3269,52 +3269,6 @@ impl<'a> PlayerStateViewMut<'a> {
     }
 }
 
-pub(crate) struct Bg1MoveCalcView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> Bg1MoveCalcView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn x_subpixel(&self) -> u8 {
-        byte(self.ram, BG1_MOVE_CALC_BUFFER + 1)
-    }
-
-    pub(crate) fn y_subpixel(&self) -> u8 {
-        byte(self.ram, BG1_MOVE_CALC_BUFFER)
-    }
-}
-
-pub(crate) struct Bg1MoveCalcViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> Bg1MoveCalcViewMut<'a> {
-    pub(crate) fn set_buffer(&mut self, value: u16) {
-        write_le_u16(self.ram, BG1_MOVE_CALC_BUFFER, value);
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.ram[BG1_MOVE_CALC_BUFFER] = value;
-    }
-
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.ram[BG1_MOVE_CALC_BUFFER + 1] = value;
-    }
-
-    pub(crate) fn advance_x_subpixel(&mut self, delta: u16) -> u16 {
-        let next = u16::from(self.ram[BG1_MOVE_CALC_BUFFER + 1]).wrapping_add(delta);
-        self.set_x_subpixel(next as u8);
-        next
-    }
-}
-
 pub(crate) struct TileDetectPositionView<'a> {
     ram: &'a [u8],
 }
