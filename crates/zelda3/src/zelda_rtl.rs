@@ -88,11 +88,11 @@ use crate::game_state::{
     NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
     NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
     NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut,
-    NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
-    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
@@ -106,17 +106,18 @@ use crate::game_state::{
     OverworldSpritePresenceState, PaletteBufferState, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
-    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
-    SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
-    SkullWoodsFireSlotState, SkullWoodsFireState, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionState, SpotlightHdmaState, SpriteBattleState, SpriteDrawHitboxWorkState,
-    SpriteSlotView, SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState,
-    SystemSignalsState, TagalongSlotRead, TileDetectionState, TowerSealOrbitView,
-    TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
-    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
-    WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldTransientState,
+    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RawRamView, RawRamViewMut,
+    RoomBoundsState, SaveLoadTransferState, SaveProgressState, ScratchCounterState,
+    SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionState, SpotlightHdmaState,
+    SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut,
+    SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState,
+    TagalongSlotRead, TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut,
+    TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState,
+    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut,
+    WeatherVaneState, WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState,
+    WorldRegionState, WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1740,12 +1741,12 @@ impl ZeldaState {
         NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
-    pub(crate) fn native_ram_bridge_view(&self) -> NativeRamBridgeView<'_> {
-        NativeRamBridgeView::new(&self.ram)
+    pub(crate) fn raw_ram(&self) -> RawRamView<'_> {
+        RawRamView::new(&self.ram)
     }
 
-    pub(crate) fn native_ram_bridge_view_mut(&mut self) -> NativeRamBridgeViewMut<'_> {
-        NativeRamBridgeViewMut::new(&mut self.ram)
+    pub(crate) fn raw_ram_mut(&mut self) -> RawRamViewMut<'_> {
+        RawRamViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
@@ -4965,7 +4966,7 @@ impl ZeldaState {
     fn emu_sync_memory_region(&mut self, offset: usize, n: usize) {
         debug_assert!(offset < WRAM_SIZE);
         debug_assert!(offset + n <= WRAM_SIZE);
-        let bytes = self.native_ram_bridge_view().range(offset, n).to_vec();
+        let bytes = self.raw_ram().range(offset, n).to_vec();
         if let Some(emu_memory_ptr) = self.emu_memory_ptr.as_mut() {
             if emu_memory_ptr.len() < WRAM_SIZE {
                 emu_memory_ptr.resize(WRAM_SIZE, 0);
@@ -5627,8 +5628,7 @@ impl ZeldaState {
     fn load_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
         self.internal_save_load(func);
         let src = self.ram_bytes(SAVELOAD_HDMA_TABLE, 224 * 2);
-        self.native_ram_bridge_view_mut()
-            .copy_to(HDMA_TABLE_DYNAMIC, &src);
+        self.raw_ram_mut().copy_to(HDMA_TABLE_DYNAMIC, &src);
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
@@ -5638,8 +5638,7 @@ impl ZeldaState {
 
     fn save_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
         let src = self.ram_bytes(HDMA_TABLE_DYNAMIC, 224 * 2);
-        self.native_ram_bridge_view_mut()
-            .copy_to(SAVELOAD_HDMA_TABLE, &src);
+        self.raw_ram_mut().copy_to(SAVELOAD_HDMA_TABLE, &src);
         self.zelda_save_music_state_to_ram_locked();
         self.internal_save_load(func);
     }
@@ -5758,7 +5757,7 @@ impl ZeldaState {
                     replay_pos += 1;
                     while nb != 0 {
                         let offset = (addr & 0x1ffff) as usize;
-                        self.native_ram_bridge_view_mut()
+                        self.raw_ram_mut()
                             .set_byte_at(offset, sr.log.data[replay_pos]);
                         replay_pos += 1;
                         self.emu_sync_memory_region(offset, 1);
@@ -6021,7 +6020,7 @@ impl ZeldaState {
                     self.attract_scene().intro_did_run_step() != 0
                 } else {
                     let carry = Self::increment_crystal_countdown(
-                        self.native_ram_bridge_view_mut()
+                        self.raw_ram_mut()
                             .range_mut(RAM_CRYSTAL_ROTATE_COUNTER, 1)
                             .first_mut()
                             .expect("crystal rotate counter byte exists"),
@@ -6168,8 +6167,7 @@ impl ZeldaState {
         }
         mp.vals[mp.count as usize] = value;
         mp.count += 1;
-        self.native_ram_bridge_view_mut()
-            .set_byte_at(addr as usize, value);
+        self.raw_ram_mut().set_byte_at(addr as usize, value);
         self.emu_sync_memory_region(addr as usize, 1);
     }
 
@@ -6345,18 +6343,16 @@ impl ZeldaState {
         self.sound_load_intro_song_bank();
         self.startup_initialize_memory();
         self.set_animated_tile_data_source_address(0xa680);
-        self.native_ram_bridge_view_mut()
-            .set_word_at(DMA_SOURCE_ADDR_9, 0xb280);
-        self.native_ram_bridge_view_mut()
+        self.raw_ram_mut().set_word_at(DMA_SOURCE_ADDR_9, 0xb280);
+        self.raw_ram_mut()
             .set_word_at(DMA_SOURCE_ADDR_14, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
     }
 
     fn startup_initialize_memory(&mut self) {
-        self.native_ram_bridge_view_mut().fill(0, 0x2000, 0);
-        self.native_ram_bridge_view_mut()
-            .set_word_at(MAIN_PALETTE_BUFFER, 0);
+        self.raw_ram_mut().fill(0, 0x2000, 0);
+        self.raw_ram_mut().set_word_at(MAIN_PALETTE_BUFFER, 0);
         self.clear_selected_save_slot();
 
         for offset in [0x03e5, 0x08e5, 0x0de5] {
@@ -6791,12 +6787,12 @@ impl ZeldaState {
     }
 
     fn move_link_coord(&mut self, subpixel: usize, coord: usize, vel: u8) -> u16 {
-        self.native_ram_bridge_view_mut()
+        self.raw_ram_mut()
             .move_link_axis_by_velocity(subpixel, coord, vel)
     }
 
     fn move_link_coord_subpixel_delta(&mut self, subpixel: usize, coord: usize, delta: u16) -> u16 {
-        self.native_ram_bridge_view_mut()
+        self.raw_ram_mut()
             .move_link_axis_by_subpixel_delta(subpixel, coord, delta)
     }
 
@@ -6961,28 +6957,25 @@ impl ZeldaState {
     }
 
     fn decrement_word(&mut self, offset: usize) -> u16 {
-        let value = self
-            .native_ram_bridge_view()
-            .word_at(offset)
-            .wrapping_sub(1);
-        self.native_ram_bridge_view_mut().set_word_at(offset, value);
+        let value = self.raw_ram().word_at(offset).wrapping_sub(1);
+        self.raw_ram_mut().set_word_at(offset, value);
         value
     }
 
     fn ram_byte(&self, offset: usize) -> u8 {
-        self.native_ram_bridge_view().byte_at(offset)
+        self.raw_ram().byte_at(offset)
     }
 
     fn set_ram_byte(&mut self, offset: usize, value: u8) {
-        self.native_ram_bridge_view_mut().set_byte_at(offset, value);
+        self.raw_ram_mut().set_byte_at(offset, value);
     }
 
     fn copy_to_ram(&mut self, offset: usize, data: &[u8]) {
-        self.native_ram_bridge_view_mut().copy_to(offset, data);
+        self.raw_ram_mut().copy_to(offset, data);
     }
 
     fn fill_ram(&mut self, offset: usize, len: usize, value: u8) {
-        self.native_ram_bridge_view_mut().fill(offset, len, value);
+        self.raw_ram_mut().fill(offset, len, value);
     }
 
     fn has_player_layer_collision(&self, mask: u8) -> bool {
@@ -6996,27 +6989,27 @@ impl ZeldaState {
     }
 
     fn read_u8_ram(&self, offset: usize) -> u8 {
-        self.native_ram_bridge_view().byte_at(offset)
+        self.raw_ram().byte_at(offset)
     }
 
     fn write_u8_ram(&mut self, offset: usize, value: u8) {
-        self.native_ram_bridge_view_mut().set_byte_at(offset, value);
+        self.raw_ram_mut().set_byte_at(offset, value);
     }
 
     fn read_u16_ram(&self, offset: usize) -> u16 {
-        self.native_ram_bridge_view().word_at(offset)
+        self.raw_ram().word_at(offset)
     }
 
     fn write_u16_ram(&mut self, offset: usize, value: u16) {
-        self.native_ram_bridge_view_mut().set_word_at(offset, value);
+        self.raw_ram_mut().set_word_at(offset, value);
     }
 
     fn read_u32_ram(&self, offset: usize) -> u32 {
-        self.native_ram_bridge_view().long_at(offset)
+        self.raw_ram().long_at(offset)
     }
 
     fn write_u32_ram(&mut self, offset: usize, value: u32) {
-        self.native_ram_bridge_view_mut().set_long_at(offset, value);
+        self.raw_ram_mut().set_long_at(offset, value);
     }
 
     fn read_i16_ram(&self, offset: usize) -> i16 {
@@ -7644,11 +7637,11 @@ mod tests {
             ("tile_detect.rs", include_str!("tile_detect.rs")),
         ] {
             for needle in [
-                "self.native_ram_bridge_view().word_at(LINK_X_COORD)",
-                "self.native_ram_bridge_view().word_at(LINK_Y_COORD)",
-                "self.native_ram_bridge_view().word_at(LINK_Z_COORD)",
-                "self.native_ram_bridge_view().word_at(OVERWORLD_SCREEN_INDEX)",
-                "self.native_ram_bridge_view().word_at(DUNGEON_ROOM_INDEX)",
+                "self.raw_ram().word_at(LINK_X_COORD)",
+                "self.raw_ram().word_at(LINK_Y_COORD)",
+                "self.raw_ram().word_at(LINK_Z_COORD)",
+                "self.raw_ram().word_at(OVERWORLD_SCREEN_INDEX)",
+                "self.raw_ram().word_at(DUNGEON_ROOM_INDEX)",
             ] {
                 assert!(
                     !source.contains(needle),
@@ -7680,18 +7673,9 @@ mod tests {
             ("zelda_rtl.rs", include_str!("zelda_rtl.rs")),
         ] {
             for needle in [
-                concat!(
-                    "self.native_ram_bridge_view_mut().set_word_at(",
-                    "LINK_X_COORD,"
-                ),
-                concat!(
-                    "self.native_ram_bridge_view_mut().set_word_at(",
-                    "LINK_Y_COORD,"
-                ),
-                concat!(
-                    "self.native_ram_bridge_view_mut().set_word_at(",
-                    "LINK_Z_COORD,"
-                ),
+                concat!("self.raw_ram_mut().set_word_at(", "LINK_X_COORD,"),
+                concat!("self.raw_ram_mut().set_word_at(", "LINK_Y_COORD,"),
+                concat!("self.raw_ram_mut().set_word_at(", "LINK_Z_COORD,"),
             ] {
                 assert!(
                     !source.contains(needle),

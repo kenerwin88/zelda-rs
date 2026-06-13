@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) struct NativeRamBridgeView<'a> {
+pub(crate) struct RawRamView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> NativeRamBridgeView<'a> {
+impl<'a> RawRamView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -33,11 +33,11 @@ impl<'a> NativeRamBridgeView<'a> {
     }
 }
 
-pub(crate) struct NativeRamBridgeViewMut<'a> {
+pub(crate) struct RawRamViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> NativeRamBridgeViewMut<'a> {
+impl<'a> RawRamViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

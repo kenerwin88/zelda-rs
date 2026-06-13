@@ -891,7 +891,7 @@ impl ZeldaState {
         let r18 = self.ending_scratch().secondary_word();
         loop {
             for j in 0..15 {
-                self.native_ram_bridge_view_mut().set_word_at(
+                self.raw_ram_mut().set_word_at(
                     INTRO_CLEAR_BLOCK_BASE + i as usize + j * INTRO_CLEAR_BLOCK_STRIDE,
                     0,
                 );
