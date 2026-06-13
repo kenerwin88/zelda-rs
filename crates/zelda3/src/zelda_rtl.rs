@@ -45,7 +45,7 @@ use crate::game_state::{
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
     HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateRead,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
+    IntroActorRead, IntroSceneState, IntroSwordState, InventoryItemsState,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
     MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead,
@@ -73,8 +73,8 @@ use crate::game_state::{
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
     NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
+    NativeInventoryItemsBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
@@ -3802,12 +3802,16 @@ impl ZeldaState {
         NativePolyRasterEdgeBridgeMut::new(&mut self.game_state.poly.raster_edge, &mut self.ram)
     }
 
-    pub(crate) fn intro_actor_view(&self, slot: usize) -> IntroActorView<'_> {
-        IntroActorView::new(&self.ram, slot)
+    pub(crate) fn intro_actor(&self, slot: usize) -> IntroActorRead<'_> {
+        IntroActorRead::new(&self.game_state.ending.intro_actors, slot)
     }
 
-    pub(crate) fn intro_actor_view_mut(&mut self, slot: usize) -> IntroActorViewMut<'_> {
-        IntroActorViewMut::new(&mut self.ram, slot)
+    pub(crate) fn intro_actor_mut(&mut self, slot: usize) -> NativeIntroActorBridgeMut<'_> {
+        NativeIntroActorBridgeMut::new(
+            &mut self.game_state.ending.intro_actors,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn effect_angle_scratch(&self) -> &EffectAngleScratchState {
@@ -6839,11 +6843,11 @@ impl ZeldaState {
     }
 
     fn write_intro_x(&mut self, k: usize, value: i16) {
-        self.intro_actor_view_mut(k).set_x(value);
+        self.intro_actor_mut(k).set_x(value);
     }
 
     fn write_intro_y(&mut self, k: usize, value: i16) {
-        self.intro_actor_view_mut(k).set_y(value);
+        self.intro_actor_mut(k).set_y(value);
     }
 
     fn set_oam_plain(&mut self, index: usize, x: u8, y: u8, charnum: u8, flags: u8, big: u8) {

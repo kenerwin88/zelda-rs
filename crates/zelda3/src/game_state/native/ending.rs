@@ -1,6 +1,8 @@
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
+const INTRO_ACTOR_COUNT: usize = INTRO_SPRITE_SUBTYPE - INTRO_SPRITE_IS_INITED;
+
 fn read_byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)
 }
@@ -311,6 +313,174 @@ impl IntroSceneState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct IntroActorSlotState {
+    pub(crate) init_phase: u8,
+    pub(crate) subtype: u8,
+    pub(crate) state: u8,
+    pub(crate) x_subpixel: u8,
+    pub(crate) x_low: u8,
+    pub(crate) x_high: u8,
+    pub(crate) y_subpixel: u8,
+    pub(crate) y_low: u8,
+    pub(crate) y_high: u8,
+    pub(crate) x_velocity: u8,
+    pub(crate) y_velocity: u8,
+}
+
+impl IntroActorSlotState {
+    pub(crate) fn x(&self) -> u16 {
+        u16::from(self.x_low) | (u16::from(self.x_high) << 8)
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        u16::from(self.y_low) | (u16::from(self.y_high) << 8)
+    }
+
+    fn set_x(&mut self, value: i16) {
+        self.x_low = value as u8;
+        self.x_high = (value >> 8) as u8;
+    }
+
+    fn set_y(&mut self, value: i16) {
+        self.y_low = value as u8;
+        self.y_high = (value >> 8) as u8;
+    }
+
+    fn move_x(&mut self) {
+        move_axis24(
+            &mut self.x_subpixel,
+            &mut self.x_low,
+            &mut self.x_high,
+            self.x_velocity,
+        );
+    }
+
+    fn move_y(&mut self) {
+        move_axis24(
+            &mut self.y_subpixel,
+            &mut self.y_low,
+            &mut self.y_high,
+            self.y_velocity,
+        );
+    }
+}
+
+fn move_axis24(subpixel: &mut u8, low: &mut u8, high: &mut u8, velocity: u8) {
+    let pos = u32::from(*subpixel) | (u32::from(*low) << 8) | (u32::from(*high) << 16);
+    let delta = ((velocity as i8 as i32) << 4) as u32;
+    let moved = pos.wrapping_add(delta);
+    *subpixel = moved as u8;
+    *low = (moved >> 8) as u8;
+    *high = (moved >> 16) as u8;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct IntroActorState {
+    slots: [IntroActorSlotState; INTRO_ACTOR_COUNT],
+}
+
+impl Default for IntroActorState {
+    fn default() -> Self {
+        Self {
+            slots: [IntroActorSlotState::default(); INTRO_ACTOR_COUNT],
+        }
+    }
+}
+
+impl IntroActorState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..INTRO_ACTOR_COUNT {
+            state.slots[slot] = IntroActorSlotState {
+                init_phase: read_byte(ram, INTRO_SPRITE_IS_INITED + slot),
+                subtype: read_byte(ram, INTRO_SPRITE_SUBTYPE + slot),
+                state: read_byte(ram, INTRO_SPRITE_STATE + slot),
+                x_subpixel: read_byte(ram, INTRO_X_SUBPIXEL + slot),
+                x_low: read_byte(ram, INTRO_X_LO + slot),
+                x_high: read_byte(ram, INTRO_X_HI + slot),
+                y_subpixel: read_byte(ram, INTRO_Y_SUBPIXEL + slot),
+                y_low: read_byte(ram, INTRO_Y_LO + slot),
+                y_high: read_byte(ram, INTRO_Y_HI + slot),
+                x_velocity: read_byte(ram, INTRO_X_VEL + slot),
+                y_velocity: read_byte(ram, INTRO_Y_VEL + slot),
+            };
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (slot, actor) in self.slots.iter().copied().enumerate() {
+            ram[INTRO_SPRITE_IS_INITED + slot] = actor.init_phase;
+            ram[INTRO_SPRITE_SUBTYPE + slot] = actor.subtype;
+            ram[INTRO_SPRITE_STATE + slot] = actor.state;
+            ram[INTRO_X_SUBPIXEL + slot] = actor.x_subpixel;
+            ram[INTRO_X_LO + slot] = actor.x_low;
+            ram[INTRO_X_HI + slot] = actor.x_high;
+            ram[INTRO_Y_SUBPIXEL + slot] = actor.y_subpixel;
+            ram[INTRO_Y_LO + slot] = actor.y_low;
+            ram[INTRO_Y_HI + slot] = actor.y_high;
+            ram[INTRO_X_VEL + slot] = actor.x_velocity;
+            ram[INTRO_Y_VEL + slot] = actor.y_velocity;
+        }
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> IntroActorSlotState {
+        self.slots.get(slot).copied().unwrap_or_default()
+    }
+}
+
+pub(crate) struct IntroActorRead<'a> {
+    state: &'a IntroActorState,
+    slot: usize,
+}
+
+impl<'a> IntroActorRead<'a> {
+    pub(crate) fn new(state: &'a IntroActorState, slot: usize) -> Self {
+        Self { state, slot }
+    }
+
+    fn actor(&self) -> IntroActorSlotState {
+        self.state.slot(self.slot)
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.actor().x()
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.actor().y()
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.actor().x_low
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.actor().y_low
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.actor().x_velocity
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.actor().y_velocity
+    }
+
+    pub(crate) fn init_phase(&self) -> u8 {
+        self.actor().init_phase
+    }
+
+    pub(crate) fn subtype(&self) -> u8 {
+        self.actor().subtype
+    }
+
+    pub(crate) fn state(&self) -> u8 {
+        self.actor().state
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EndingCreditState {
     pub(crate) palace_death_count_digit_step: u16,
     pub(crate) death_count_digit_tile_base: u16,
@@ -370,6 +540,7 @@ impl EndingCreditState {
 pub(crate) struct EndingState {
     pub(crate) attract_scene: AttractSceneState,
     pub(crate) intro_scene: IntroSceneState,
+    pub(crate) intro_actors: IntroActorState,
     pub(crate) credits: EndingCreditState,
 }
 
@@ -378,6 +549,7 @@ impl EndingState {
         Self {
             attract_scene: AttractSceneState::load_from_ram(ram),
             intro_scene: IntroSceneState::load_from_ram(ram),
+            intro_actors: IntroActorState::load_from_ram(ram),
             credits: EndingCreditState::load_from_ram(ram),
         }
     }
@@ -385,6 +557,7 @@ impl EndingState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.attract_scene.write_to_ram(ram);
         self.intro_scene.write_to_ram(ram);
+        self.intro_actors.write_to_ram(ram);
         self.credits.write_to_ram(ram);
     }
 }
@@ -834,6 +1007,137 @@ impl<'a> NativeIntroSceneBridgeMut<'a> {
         self.intro_scene.decrement_triforce_countdown();
         write_le_u16(self.ram, TRIFORCE_CTR, self.intro_scene.triforce_countdown);
         self.debug_assert_matches_ram();
+    }
+}
+
+pub(crate) struct NativeIntroActorBridgeMut<'a> {
+    state: &'a mut IntroActorState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeIntroActorBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut IntroActorState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = IntroActorState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn actor_mut(&mut self) -> Option<&mut IntroActorSlotState> {
+        self.state.slots.get_mut(self.slot)
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, IntroActorState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_x(&mut self, value: i16) {
+        if let Some(actor) = self.actor_mut() {
+            actor.set_x(value);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_y(&mut self, value: i16) {
+        if let Some(actor) = self.actor_mut() {
+            actor.set_y(value);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.x_low = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.y_low = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.x_velocity = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.y_velocity = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn add_x_velocity(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.x_velocity = actor.x_velocity.wrapping_add(value);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn add_y_velocity(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.y_velocity = actor.y_velocity.wrapping_add(value);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_init_phase(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.init_phase = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn increment_init_phase(&mut self) {
+        if let Some(actor) = self.actor_mut() {
+            actor.init_phase = actor.init_phase.wrapping_add(1);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_subtype(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.subtype = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn set_state(&mut self, value: u8) {
+        if let Some(actor) = self.actor_mut() {
+            actor.state = value;
+            self.sync();
+        }
+    }
+
+    pub(crate) fn increment_state(&mut self) {
+        if let Some(actor) = self.actor_mut() {
+            actor.state = actor.state.wrapping_add(1);
+            self.sync();
+        }
+    }
+
+    pub(crate) fn move_x(&mut self) {
+        if let Some(actor) = self.actor_mut() {
+            actor.move_x();
+            self.sync();
+        }
+    }
+
+    pub(crate) fn move_y(&mut self) {
+        if let Some(actor) = self.actor_mut() {
+            actor.move_y();
+            self.sync();
+        }
     }
 }
 

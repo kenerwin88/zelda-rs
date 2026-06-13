@@ -59,8 +59,9 @@ pub(crate) use effects::{
     SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
-    AttractSceneState, EndingCreditState, EndingState, IntroSceneState,
-    NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut, NativeIntroSceneBridgeMut,
+    AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
+    NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut,
+    NativeIntroSceneBridgeMut,
 };
 pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,

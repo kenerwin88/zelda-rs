@@ -1039,8 +1039,8 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn animate_scene_sprite_add_objects_to_oam_buffer_with_offset(&mut self, k: usize, entries: &[IntroSpriteEnt], x_delta: i16, y_delta: i16) {
-        let x = self.intro_actor_view(k).x();
-        let y = self.intro_actor_view(k).y();
+        let x = self.intro_actor(k).x();
+        let y = self.intro_actor(k).y();
         let mut oam = self.allocate_intro_sprite_oam_entries(entries.len());
         for &(x_off, y_off, charnum, flags, ext) in entries {
             let obj_x = x.wrapping_add((x_off as i16).wrapping_add(x_delta) as u16);
@@ -1058,12 +1058,12 @@ impl ZeldaState {
         self.sprite_system_mut().set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
-        self.intro_actor_view_mut(0).set_init_phase(1);
-        self.intro_actor_view_mut(1).set_init_phase(1);
-        self.intro_actor_view_mut(2).set_init_phase(1);
-        self.intro_actor_view_mut(0).set_subtype(4);
-        self.intro_actor_view_mut(1).set_subtype(5);
-        self.intro_actor_view_mut(2).set_subtype(6);
+        self.intro_actor_mut(0).set_init_phase(1);
+        self.intro_actor_mut(1).set_init_phase(1);
+        self.intro_actor_mut(2).set_init_phase(1);
+        self.intro_actor_mut(0).set_subtype(4);
+        self.intro_actor_mut(1).set_subtype(5);
+        self.intro_actor_mut(2).set_subtype(6);
         self.set_screen_brightness(15);
         self.increment_submodule();
     }
@@ -1074,8 +1074,8 @@ impl ZeldaState {
         self.intro_init_gfx_helper();
         self.poly_runtime_mut().clear_config1();
         for k in 0..3 {
-            self.intro_actor_view_mut(k).set_init_phase(1);
-            self.intro_actor_view_mut(k).set_subtype(7);
+            self.intro_actor_mut(k).set_init_phase(1);
+            self.intro_actor_mut(k).set_subtype(7);
         }
         self.set_screen_brightness(15);
         self.increment_submodule();
@@ -1102,7 +1102,7 @@ impl ZeldaState {
                 }
                 if self.frame_state().subsubmodule >= 10 {
                     self.attract_scene_mut().increment_intro_step_index();
-                    self.intro_actor_view_mut(1).set_y_velocity(5);
+                    self.intro_actor_mut(1).set_y_velocity(5);
                 }
                 self.poly_runtime_mut().add_angle_b(2);
                 self.poly_runtime_mut().add_angle_a(1);
@@ -1110,7 +1110,7 @@ impl ZeldaState {
             1 => {
                 if self.frame_state().subsubmodule >= 10 {
                     self.attract_scene_mut().increment_intro_step_index();
-                    self.intro_actor_view_mut(1).set_y_velocity(5);
+                    self.intro_actor_mut(1).set_y_velocity(5);
                 }
                 self.poly_runtime_mut().add_angle_b(2);
                 self.poly_runtime_mut().add_angle_a(1);
@@ -1169,11 +1169,11 @@ impl ZeldaState {
         const LOCAL_Y_VELOCITIES: [i8; 3] = [4, -4, 4];
         self.write_intro_x(k, X[k]);
         self.write_intro_y(k, Y[k]);
-        self.intro_actor_view_mut(k)
+        self.intro_actor_mut(k)
             .set_x_velocity(LOCAL_X_VELOCITIES[k] as u8);
-        self.intro_actor_view_mut(k)
+        self.intro_actor_mut(k)
             .set_y_velocity(LOCAL_Y_VELOCITIES[k] as u8);
-        self.intro_actor_view_mut(k).increment_init_phase();
+        self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn intro_sprite_type_b_456(&mut self, k: usize) {
@@ -1187,15 +1187,15 @@ impl ZeldaState {
                 const XACC: [i8; 3] = [-1, 0, 1];
                 const YACC: [i8; 3] = [-1, -1, -1];
                 if self.attract_scene().intro_frame_counter() & 7 == 0 {
-                    self.intro_actor_view_mut(k).add_x_velocity(XACC[k] as u8);
+                    self.intro_actor_mut(k).add_x_velocity(XACC[k] as u8);
                 }
                 if self.attract_scene().intro_frame_counter() & 3 == 0 {
-                    self.intro_actor_view_mut(k).add_y_velocity(YACC[k] as u8);
+                    self.intro_actor_mut(k).add_y_velocity(YACC[k] as u8);
                 }
             }
             1 => {
-                self.intro_actor_view_mut(k).set_x_velocity(0);
-                self.intro_actor_view_mut(k).set_y_velocity(0);
+                self.intro_actor_mut(k).set_x_velocity(0);
+                self.intro_actor_mut(k).set_y_velocity(0);
             }
             2 => {
                 const XFINAL: [u8; 3] = [0x59, 0x5f, 0x67];
@@ -1203,18 +1203,18 @@ impl ZeldaState {
                 if self.attract_scene().intro_frame_counter() & 3 == 0 {
                     self.animate_triforce_room_triangle_handle_contracting(k);
                 }
-                if XFINAL[k] == self.intro_actor_view(k).x_low() {
-                    self.intro_actor_view_mut(k).set_x_velocity(0);
+                if XFINAL[k] == self.intro_actor(k).x_low() {
+                    self.intro_actor_mut(k).set_x_velocity(0);
                 }
-                if YFINAL[k] == self.intro_actor_view(k).y_low() {
-                    self.intro_actor_view_mut(k).set_y_velocity(0);
+                if YFINAL[k] == self.intro_actor(k).y_low() {
+                    self.intro_actor_mut(k).set_y_velocity(0);
                 }
             }
             3 | 4 => {
                 const YFINAL2: [u8; 3] = [0x72, 0x66, 0x72];
                 let ctr = self.intro_scene_state().triforce_countdown;
                 if ctr == 0 {
-                    self.intro_actor_view_mut(k).set_y_low(YFINAL2[k]);
+                    self.intro_actor_mut(k).set_y_low(YFINAL2[k]);
                 } else {
                     self.decrement_triforce_countdown();
                 }
@@ -1226,26 +1226,26 @@ impl ZeldaState {
     pub(super) fn animate_triforce_room_triangle_handle_contracting(&mut self, k: usize) {
         const XFINAL: [u8; 3] = [0x59, 0x5f, 0x67];
         const YFINAL: [u8; 3] = [0x74, 0x68, 0x74];
-        let xv = self.intro_actor_view(k).x_velocity().wrapping_add(
-            if self.intro_actor_view(k).x_low() <= XFINAL[k] {
+        let xv = self.intro_actor(k).x_velocity().wrapping_add(
+            if self.intro_actor(k).x_low() <= XFINAL[k] {
                 1
             } else {
                 0xff
             },
         );
-        self.intro_actor_view_mut(k).set_x_velocity(match xv {
+        self.intro_actor_mut(k).set_x_velocity(match xv {
             0x11 => 0x10,
             0xef => 0xf0,
             _ => xv,
         });
-        let yv = self.intro_actor_view(k).y_velocity().wrapping_add(
-            if self.intro_actor_view(k).y_low() <= YFINAL[k] {
+        let yv = self.intro_actor(k).y_velocity().wrapping_add(
+            if self.intro_actor(k).y_low() <= YFINAL[k] {
                 1
             } else {
                 0xff
             },
         );
-        self.intro_actor_view_mut(k).set_y_velocity(match yv {
+        self.intro_actor_mut(k).set_y_velocity(match yv {
             0x11 => 0x10,
             0xef => 0xf0,
             _ => yv,
@@ -1255,9 +1255,9 @@ impl ZeldaState {
     pub(super) fn initialize_scene_sprite_credits_triangle(&mut self, k: usize) {
         const X: [u8; 3] = [0x29, 0x5f, 0x97];
         const Y: [u8; 3] = [0x70, 0x20, 0x70];
-        self.intro_actor_view_mut(k).set_x(i16::from(X[k]));
-        self.intro_actor_view_mut(k).set_y(i16::from(Y[k]));
-        self.intro_actor_view_mut(k).increment_init_phase();
+        self.intro_actor_mut(k).set_x(i16::from(X[k]));
+        self.intro_actor_mut(k).set_y(i16::from(Y[k]));
+        self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn animate_scene_sprite_credits_triangle(&mut self, k: usize) {
@@ -1267,13 +1267,13 @@ impl ZeldaState {
         self.intro_copy_sprite_type4_to_oam(k);
         self.animate_scene_sprite_move_triangle(k);
         if self.frame_state().submodule != 36 {
-            self.intro_actor_view_mut(k).set_state(0);
+            self.intro_actor_mut(k).set_state(0);
             return;
         }
-        if self.intro_actor_view(k).state() != 80 {
-            self.intro_actor_view_mut(k).increment_state();
-            self.intro_actor_view_mut(k).add_x_velocity(XACC[k] as u8);
-            self.intro_actor_view_mut(k).add_y_velocity(YACC[k] as u8);
+        if self.intro_actor(k).state() != 80 {
+            self.intro_actor_mut(k).increment_state();
+            self.intro_actor_mut(k).add_x_velocity(XACC[k] as u8);
+            self.intro_actor_mut(k).add_y_velocity(YACC[k] as u8);
         }
     }
 
@@ -3053,14 +3053,14 @@ impl ZeldaState {
         self.sprite_system_mut().set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
-        self.intro_actor_view_mut(0).set_init_phase(1);
-        self.intro_actor_view_mut(1).set_init_phase(1);
-        self.intro_actor_view_mut(2).set_init_phase(1);
-        self.intro_actor_view_mut(0).set_subtype(0);
-        self.intro_actor_view_mut(1).set_subtype(0);
-        self.intro_actor_view_mut(2).set_subtype(0);
-        self.intro_actor_view_mut(4).set_init_phase(1);
-        self.intro_actor_view_mut(4).set_subtype(2);
+        self.intro_actor_mut(0).set_init_phase(1);
+        self.intro_actor_mut(1).set_init_phase(1);
+        self.intro_actor_mut(2).set_init_phase(1);
+        self.intro_actor_mut(0).set_subtype(0);
+        self.intro_actor_mut(1).set_subtype(0);
+        self.intro_actor_mut(2).set_subtype(0);
+        self.intro_actor_mut(4).set_init_phase(1);
+        self.intro_actor_mut(4).set_subtype(2);
         self.set_screen_brightness(15);
         self.increment_submodule();
     }
@@ -3184,8 +3184,8 @@ impl ZeldaState {
                 self.attract_scene_mut().decrement_intro_step_timer();
                 if self.attract_scene().intro_step_timer() == 0 {
                     self.attract_scene_mut().increment_intro_step_index();
-                    self.intro_actor_view_mut(5).set_init_phase(1);
-                    self.intro_actor_view_mut(5).set_subtype(3);
+                    self.intro_actor_mut(5).set_init_phase(1);
+                    self.intro_actor_mut(5).set_subtype(3);
                     self.set_main_screen_layers(0x10);
                     self.set_sub_screen_layers(5);
                     self.palette_filter_mut().set_color_window_selection(2);
@@ -3208,8 +3208,8 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_anim_one_obj(&mut self, k: usize) {
-        match self.intro_actor_view(k).init_phase() {
-            1 => match self.intro_actor_view(k).subtype() {
+        match self.intro_actor(k).init_phase() {
+            1 => match self.intro_actor(k).subtype() {
                 0 => self.intro_sprite_type_a_0(k),
                 1 => self.exit_0_cca90(k),
                 2 => self.initialize_scene_sprite_copyright(k),
@@ -3218,7 +3218,7 @@ impl ZeldaState {
                 7 => self.initialize_scene_sprite_credits_triangle(k),
                 _ => {}
             },
-            2 => match self.intro_actor_view(k).subtype() {
+            2 => match self.intro_actor(k).subtype() {
                 0 => self.intro_sprite_type_b_0(k),
                 1 => self.exit_0_cca90(k),
                 2 => self.animate_scene_sprite_copyright(k),
@@ -3238,17 +3238,17 @@ impl ZeldaState {
         const LOCAL_Y_VELOCITIES: [i8; 3] = [-1, 1, -1];
         self.write_intro_x(k, X[k]);
         self.write_intro_y(k, Y[k]);
-        self.intro_actor_view_mut(k)
+        self.intro_actor_mut(k)
             .set_x_velocity(LOCAL_X_VELOCITIES[k] as u8);
-        self.intro_actor_view_mut(k)
+        self.intro_actor_mut(k)
             .set_y_velocity(LOCAL_Y_VELOCITIES[k] as u8);
-        self.intro_actor_view_mut(k).increment_init_phase();
+        self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn initialize_scene_sprite_copyright(&mut self, k: usize) {
         self.write_intro_x(k, 76);
         self.write_intro_y(k, 184);
-        self.intro_actor_view_mut(k).increment_init_phase();
+        self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn intro_sprite_type_b_0(&mut self, k: usize) {
@@ -3258,22 +3258,22 @@ impl ZeldaState {
             if self.attract_scene().intro_frame_counter() & 31 == 0 {
                 const LOCAL_X_VELOCITIES: [i8; 3] = [1, 0, -1];
                 const LOCAL_Y_VELOCITIES: [i8; 3] = [-1, 1, -1];
-                self.intro_actor_view_mut(k)
+                self.intro_actor_mut(k)
                     .add_x_velocity(LOCAL_X_VELOCITIES[k] as u8);
-                self.intro_actor_view_mut(k)
+                self.intro_actor_mut(k)
                     .add_y_velocity(LOCAL_Y_VELOCITIES[k] as u8);
             }
             const X_LIMIT: [u8; 3] = [75, 95, 117];
             const Y_LIMIT: [u8; 3] = [88, 48, 88];
-            if self.intro_actor_view(k).x_low() == X_LIMIT[k] {
-                self.intro_actor_view_mut(k).set_x_velocity(0);
+            if self.intro_actor(k).x_low() == X_LIMIT[k] {
+                self.intro_actor_mut(k).set_x_velocity(0);
             }
-            if self.intro_actor_view(k).y_low() == Y_LIMIT[k] {
-                self.intro_actor_view_mut(k).set_y_velocity(0);
+            if self.intro_actor(k).y_low() == Y_LIMIT[k] {
+                self.intro_actor_mut(k).set_y_velocity(0);
             }
         } else {
-            self.intro_actor_view_mut(k).set_x_velocity(0);
-            self.intro_actor_view_mut(k).set_y_velocity(0);
+            self.intro_actor_mut(k).set_x_velocity(0);
+            self.intro_actor_mut(k).set_y_velocity(0);
         }
     }
 
@@ -3300,9 +3300,9 @@ impl ZeldaState {
         const X: [u8; 4] = [0xc2, 0x98, 0x6f, 0x34];
         const Y: [u8; 4] = [0x7c, 0x54, 0x7c, 0x57];
         let j = (self.attract_scene().intro_frame_counter() >> 5 & 3) as usize;
-        self.intro_actor_view_mut(k).set_x(i16::from(X[j]));
-        self.intro_actor_view_mut(k).set_y(i16::from(Y[j]));
-        self.intro_actor_view_mut(k).increment_init_phase();
+        self.intro_actor_mut(k).set_x(i16::from(X[j]));
+        self.intro_actor_mut(k).set_y(i16::from(Y[j]));
+        self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn animate_scene_sprite_sparkle(&mut self, k: usize) {
@@ -3316,7 +3316,7 @@ impl ZeldaState {
         const Y: [u8; 4] = [0x7c, 0x54, 0x7c, 0x57];
         const STATE: [u8; 8] = [0, 1, 2, 3, 2, 1, 0xff, 0xff];
 
-        let state = self.intro_actor_view(k).state();
+        let state = self.intro_actor(k).state();
         if state < 4 {
             self.animate_scene_sprite_add_objects_to_oam_buffer(
                 k,
@@ -3325,10 +3325,10 @@ impl ZeldaState {
         }
 
         let next_state = STATE[(self.attract_scene().intro_frame_counter() >> 2 & 7) as usize];
-        self.intro_actor_view_mut(k).set_state(next_state);
+        self.intro_actor_mut(k).set_state(next_state);
         let j = (self.attract_scene().intro_frame_counter() >> 5 & 3) as usize;
-        self.intro_actor_view_mut(k).set_x_low(X[j]);
-        self.intro_actor_view_mut(k).set_y_low(Y[j]);
+        self.intro_actor_mut(k).set_x_low(X[j]);
+        self.intro_actor_mut(k).set_y_low(Y[j]);
     }
 
     pub(super) fn animate_scene_sprite_draw_triangle(&mut self, k: usize) {
@@ -3372,11 +3372,11 @@ impl ZeldaState {
     }
 
     pub(super) fn animate_scene_sprite_move_triangle(&mut self, k: usize) {
-        if self.intro_actor_view(k).x_velocity() != 0 {
-            self.intro_actor_view_mut(k).move_x();
+        if self.intro_actor(k).x_velocity() != 0 {
+            self.intro_actor_mut(k).move_x();
         }
-        if self.intro_actor_view(k).y_velocity() != 0 {
-            self.intro_actor_view_mut(k).move_y();
+        if self.intro_actor(k).y_velocity() != 0 {
+            self.intro_actor_mut(k).move_y();
         }
     }
 
