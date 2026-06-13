@@ -7533,7 +7533,7 @@ mod tests {
         let mut state = ZeldaState::new();
         state.attract_scene_mut().set_intro_step_index(0);
         state.poly_runtime_mut().set_config1(10);
-        state.ram[SUBSUBMODULE_INDEX] = 8;
+        state.set_subsubmodule(8);
         state.poly_runtime_mut().set_angle_a(7);
         state.poly_runtime_mut().set_angle_b(11);
 
@@ -7567,7 +7567,7 @@ mod tests {
     #[test]
     fn credits_prep_resets_sprite_properties_before_scene_setup() {
         let mut state = ZeldaState::new();
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         let k = 15;
         for base in [
             SPRITE_PAUSE,
@@ -7607,7 +7607,7 @@ mod tests {
     #[test]
     fn credits_scene_fade_advances_scratch_when_fade_not_complete() {
         let mut state = ZeldaState::new();
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         state.set_screen_brightness(2);
         state.ending_scratch_mut().set_primary_word(0x0300);
 
@@ -7621,7 +7621,7 @@ mod tests {
     #[test]
     fn credits_scene_fade_holds_scratch_when_fade_completes() {
         let mut state = ZeldaState::new();
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         state.set_screen_brightness(1);
         state.ending_scratch_mut().set_primary_word(0x0300);
 
@@ -8719,7 +8719,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
         state.set_main_module(7);
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
         state.set_dungeon_room(0x0104);
@@ -8745,7 +8745,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 4);
         state.set_main_module(7);
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
         state.set_dungeon_room(0x0104);

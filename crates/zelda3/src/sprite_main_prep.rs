@@ -5637,8 +5637,8 @@ mod tests {
         let mut s = fresh_state();
         s.ram[TILE_INTERACTION_SHARED_FLAG] = 7;
         s.ram[MESSAGING_MODULE] = 9;
-        s.ram[SUBMODULE_INDEX] = 1;
-        s.ram[MAIN_MODULE_INDEX] = 3;
+        s.set_submodule(1);
+        s.set_main_module(3);
         s.clear_saved_module_for_menu();
         s.sprite_slot_mut(k).set_delay_main(88);
 

@@ -293,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn native_frame_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_frame_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[MAIN_MODULE] = 1;
         ram[SUBMODULE] = 2;
@@ -302,7 +302,7 @@ mod tests {
         ram[SAVED_MODULE_FOR_MENU] = 8;
         ram[MODAL_PAUSE_FLAG] = 1;
 
-        let mut frame = FrameState::default();
+        let mut frame = FrameState::load_from_ram(&ram);
         {
             let mut bridge = NativeFrameStateBridgeMut::new(&mut frame, &mut ram);
             bridge.increment_submodule();
@@ -327,6 +327,36 @@ mod tests {
         assert_eq!(ram[FRAME_COUNTER], 5);
         assert_eq!(ram[SAVED_MODULE_FOR_MENU], 3);
         assert_eq!(ram[MODAL_PAUSE_FLAG], 6);
+    }
+
+    #[test]
+    fn native_frame_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut frame = FrameState {
+            main_module: 7,
+            submodule: 2,
+            subsubmodule: 9,
+            frame_counter: 0x42,
+            saved_module_for_menu: 5,
+            modal_pause_flag: 1,
+        };
+        frame.write_to_ram(&mut ram);
+
+        ram[MAIN_MODULE] = 0xaa;
+        ram[FRAME_COUNTER] = 0xbb;
+
+        {
+            let mut bridge = NativeFrameStateBridgeMut::new(&mut frame, &mut ram);
+            bridge.set_submodule(3);
+        }
+
+        assert_eq!(frame.main_module, 7);
+        assert_eq!(frame.submodule, 3);
+        assert_eq!(frame.frame_counter, 0x42);
+        assert_eq!(FrameState::load_from_ram(&ram), frame);
+        assert_eq!(ram[MAIN_MODULE], 7);
+        assert_eq!(ram[SUBMODULE], 3);
+        assert_eq!(ram[FRAME_COUNTER], 0x42);
     }
 
     #[test]

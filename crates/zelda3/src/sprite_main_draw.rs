@@ -26787,7 +26787,7 @@ mod tests {
         // succeeds and the subtype/graphics side-effects are observable.
         s.oam_state_mut().set_current_pointer(0x800);
         s.oam_state_mut().set_current_extended_pointer(0xa20);
-        s.ram[SUBMODULE_INDEX] = 0;
+        s.set_submodule(0);
         s.clear_modal_pause_flag();
         s.sprite_slot_mut(k).set_subtype2(0x10); // odd-mask passes -> ++subtype2 = 0x11 fails (& 1 == 1).
         s.sprite_slot_mut(k).set_graphics(2);

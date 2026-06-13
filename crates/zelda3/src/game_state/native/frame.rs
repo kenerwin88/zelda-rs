@@ -1,6 +1,5 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
-use crate::types::write_le_u16;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FrameState {
@@ -396,8 +395,12 @@ pub(crate) struct NativeFrameStateBridgeMut<'a> {
 
 impl<'a> NativeFrameStateBridgeMut<'a> {
     pub(crate) fn new(frame: &'a mut FrameState, ram: &'a mut [u8]) -> Self {
-        *frame = FrameState::load_from_ram(ram);
         Self { frame, ram }
+    }
+
+    fn sync(&mut self) {
+        self.frame.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -406,27 +409,23 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
         self.frame.main_module = value;
-        self.ram[MAIN_MODULE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
         self.frame.main_module = value as u8;
         self.frame.submodule = (value >> 8) as u8;
-        write_le_u16(self.ram, MAIN_MODULE, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
         self.frame.submodule = value;
-        self.ram[SUBMODULE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
         self.frame.subsubmodule = value;
-        self.ram[SUBSUBMODULE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_submodule(&mut self) {
@@ -451,8 +450,7 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
 
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
         self.frame.frame_counter = value;
-        self.ram[FRAME_COUNTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
@@ -462,8 +460,7 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
         self.frame.saved_module_for_menu = value;
-        self.ram[SAVED_MODULE_FOR_MENU] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
@@ -484,8 +481,7 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
         self.frame.modal_pause_flag = value;
-        self.ram[MODAL_PAUSE_FLAG] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {

@@ -1629,7 +1629,7 @@ mod tests {
     #[test]
     fn master_sword_main_clears_state_when_event_bit_set() {
         let mut s = fresh_state();
-        s.ram[MAIN_MODULE_INDEX] = 9; // not 26
+        s.set_main_module(9); // not 26
         s.set_overworld_screen(0x02);
         s.overworld_event_info_mut().set_event_info(0x02, 0x40);
         s.sprite_slot_mut(4).set_state(9);

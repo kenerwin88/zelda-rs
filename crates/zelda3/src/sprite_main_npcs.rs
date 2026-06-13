@@ -1068,7 +1068,7 @@ mod tests {
 
     fn make_link_idle(state: &mut ZeldaState) {
         state.clear_modal_pause_flag();
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         state.player_state_mut().clear_auxiliary_state();
         state.player_state_mut().clear_item_hold_pose();
         state.player_state_mut().clear_state_bits();
@@ -1377,7 +1377,7 @@ mod tests {
         let k = 1;
         state.sprite_slot_mut(k).set_state(9);
         state.clear_modal_pause_flag();
-        state.ram[SUBMODULE_INDEX] = 0;
+        state.set_submodule(0);
         {
             let mut sprite = state.sprite_slot_mut(k);
             sprite.set_deflection_bits(0x80);
