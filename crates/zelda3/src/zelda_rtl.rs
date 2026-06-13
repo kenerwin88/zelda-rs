@@ -1875,8 +1875,8 @@ impl ZeldaState {
         NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
-    pub(crate) fn player_tile_attributes(&self) -> &PlayerTileAttributeTableState {
-        &self.game_state.player.tile_attributes
+    pub(crate) fn player_tile_attributes(&self) -> PlayerTileAttributeTableState {
+        PlayerTileAttributeTableState::load_from_ram(&self.ram)
     }
 
     pub(crate) fn inventory_items(&self) -> InventoryItemsState {
