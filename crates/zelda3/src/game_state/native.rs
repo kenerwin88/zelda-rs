@@ -3023,6 +3023,116 @@ mod tests {
     }
 
     #[test]
+    fn world_scroll_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG1_X_SCROLL, 0x0101);
+        write_le_u16(&mut ram, BG1_Y_SCROLL, 0x0202);
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0303);
+        write_le_u16(&mut ram, BG2_Y_SCROLL, 0x0404);
+        write_le_u16(&mut ram, BG1_X_OFFSET, 0x0505);
+        write_le_u16(&mut ram, BG1_Y_OFFSET, 0x0606);
+        write_le_u16(&mut ram, CAMERA_X, 0x0707);
+        write_le_u16(&mut ram, CAMERA_Y, 0x0808);
+        write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0x0909);
+        write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_Y, 0x0a0a);
+        write_le_u16(&mut ram, OVERWORLD_OFFSET_MASK_X, 0x0b0b);
+        write_le_u16(&mut ram, OVERWORLD_OFFSET_MASK_Y, 0x0c0c);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0d0d);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0e0e);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x0f0f);
+
+        let mut scroll = WorldScrollState::load_from_ram(&ram);
+        assert_eq!(scroll.bg1_x(), 0x0101);
+        assert_eq!(scroll.bg1_y(), 0x0202);
+        assert_eq!(scroll.bg2_x(), 0x0303);
+        assert_eq!(scroll.bg2_y(), 0x0404);
+        assert_eq!(scroll.bg1_x_offset(), 0x0505);
+        assert_eq!(scroll.bg1_y_offset(), 0x0606);
+        assert_eq!(scroll.camera_x(), 0x0707);
+        assert_eq!(scroll.camera_y(), 0x0808);
+        assert_eq!(scroll.overworld_offset_base_x(), 0x0909);
+        assert_eq!(scroll.overworld_offset_base_y(), 0x0a0a);
+        assert_eq!(scroll.overworld_offset_mask_x(), 0x0b0b);
+        assert_eq!(scroll.overworld_offset_mask_y(), 0x0c0c);
+        assert_eq!(scroll.scroll_x_start(), 0x0d0d);
+        assert_eq!(scroll.scroll_x_end(), 0x0e0e);
+        assert_eq!(scroll.scroll_y_end(), 0x0f0f);
+
+        scroll.bg1_x = 0x1111;
+        scroll.bg1_y = 0x2222;
+        scroll.bg2_x = 0x3333;
+        scroll.bg2_y = 0x4444;
+        scroll.bg1_x_offset = 0x5555;
+        scroll.bg1_y_offset = 0x6666;
+        scroll.camera_x = 0x7777;
+        scroll.camera_y = 0x8888;
+        scroll.overworld_offset_base_x = 0x9999;
+        scroll.overworld_offset_base_y = 0xaaaa;
+        scroll.overworld_offset_mask_x = 0xbbbb;
+        scroll.overworld_offset_mask_y = 0xcccc;
+        scroll.scroll_x_start = 0xdddd;
+        scroll.scroll_x_end = 0xeeee;
+        scroll.scroll_y_end = 0xffff;
+        scroll.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, BG1_X_SCROLL), 0x1111);
+        assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x2222);
+        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x3333);
+        assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x4444);
+        assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x5555);
+        assert_eq!(read_le_u16(&ram, BG1_Y_OFFSET), 0x6666);
+        assert_eq!(read_le_u16(&ram, CAMERA_X), 0x7777);
+        assert_eq!(read_le_u16(&ram, CAMERA_Y), 0x8888);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x9999);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_Y), 0xaaaa);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_X), 0xbbbb);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_Y), 0xcccc);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0xdddd);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0xeeee);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0xffff);
+    }
+
+    #[test]
+    fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut scroll = WorldScrollState {
+            bg1_x: 0x0101,
+            bg1_y: 0x0202,
+            bg2_x: 0x0303,
+            bg2_y: 0x0404,
+            bg1_x_offset: 0x0505,
+            bg1_y_offset: 0x0606,
+            camera_x: 0x0707,
+            camera_y: 0x0808,
+            overworld_offset_base_x: 0x0909,
+            overworld_offset_base_y: 0x0a0a,
+            overworld_offset_mask_x: 0x0b0b,
+            overworld_offset_mask_y: 0x0c0c,
+            scroll_x_start: 0x0d0d,
+            scroll_x_end: 0x0e0e,
+            scroll_y_end: 0x0f0f,
+        };
+        scroll.write_to_ram(&mut ram);
+
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0xaaaa);
+        write_le_u16(&mut ram, BG2_Y_SCROLL, 0xbbbb);
+        write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0xcccc);
+
+        {
+            let mut bridge = NativeWorldScrollBridgeMut::new(&mut scroll, &mut ram);
+            bridge.set_bg2_x(0x1234);
+        }
+
+        assert_eq!(scroll.bg2_x(), 0x1234);
+        assert_eq!(scroll.bg2_y(), 0x0404);
+        assert_eq!(scroll.overworld_offset_base_x(), 0x0909);
+        assert_eq!(WorldScrollState::load_from_ram(&ram), scroll);
+        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x1234);
+        assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x0404);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x0909);
+    }
+
+    #[test]
     fn game_state_loads_grouped_world_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, DUNGEON_ROOM, 0x0124);

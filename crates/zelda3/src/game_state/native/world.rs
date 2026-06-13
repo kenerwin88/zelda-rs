@@ -2075,7 +2075,6 @@ pub(crate) struct NativeWorldScrollBridgeMut<'a> {
 
 impl<'a> NativeWorldScrollBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut WorldScrollState, ram: &'a mut [u8]) -> Self {
-        *state = WorldScrollState::load_from_ram(ram);
         Self { state, ram }
     }
 

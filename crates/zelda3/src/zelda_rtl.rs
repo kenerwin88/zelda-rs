@@ -2020,7 +2020,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_scroll(&self) -> WorldScrollState {
-        WorldScrollState::load_from_ram(&self.ram)
+        self.game_state.world.scroll
     }
 
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
@@ -8241,10 +8241,10 @@ mod tests {
     #[test]
     fn overworld_tile_attribute_uses_map16_and_map8_assets() {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_BASE_Y, 0x20);
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_Y, 0x1f);
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_BASE_X, 3);
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_X, 0x3f);
+        state.world_scroll_mut().set_overworld_offset_base_y(0x20);
+        state.world_scroll_mut().set_overworld_offset_mask_y(0x1f);
+        state.world_scroll_mut().set_overworld_offset_base_x(3);
+        state.world_scroll_mut().set_overworld_offset_mask_x(0x3f);
         state.dungeon_room_tilemaps_mut().set_bg2_tile(32, 5);
 
         let mut data = vec![0; 0x100];
@@ -8931,8 +8931,8 @@ mod tests {
         set_link_test_byte(&mut state, LINK_IS_NEAR_MOVEABLE_STATUE, 1);
         set_link_test_byte(&mut state, LINK_ON_CONVEYOR_BELT, 1);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        write_le_u16(&mut state.ram, BG1_Y_OFFSET, 0x1234);
-        write_le_u16(&mut state.ram, BG1_X_OFFSET, 0x5678);
+        state.world_scroll_mut().set_bg1_y_offset(0x1234);
+        state.world_scroll_mut().set_bg1_x_offset(0x5678);
         state.ram[SAVEGAME_IS_DARKWORLD] = 1;
 
         state.link_initialize();
@@ -9969,8 +9969,8 @@ mod tests {
     fn item_tile_behavior_routes_overworld_attr_to_tile_execute() {
         let mut state = ZeldaState::new();
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_Y, 0x1f);
-        write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_X, 0x3f);
+        state.world_scroll_mut().set_overworld_offset_mask_y(0x1f);
+        state.world_scroll_mut().set_overworld_offset_mask_x(0x3f);
         state.dungeon_room_tilemaps_mut().set_bg2_tile(16, 7);
 
         let mut data = vec![0; 0x100];
