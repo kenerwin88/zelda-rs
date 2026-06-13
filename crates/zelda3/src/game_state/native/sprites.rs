@@ -1,13 +1,16 @@
 use crate::game_state::constants::{
-    ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_X_HI,
-    ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y,
-    DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
-    ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X,
-    ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
-    HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
-    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_SPRITE_PRESENCE,
-    OVERWORLD_SPRITE_WAS_LOADED, PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI,
-    TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
+    ACTIVE_OVERLORD_INDEX, ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER,
+    ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, CHAIN_CHOMP_HISTORY_X,
+    CHAIN_CHOMP_HISTORY_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y,
+    DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y,
+    ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
+    GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
+    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_BOULDER_TRAP_COUNT, OVERWORLD_BOULDER_TRAP_TIMER,
+    OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED, PRIZE_DROP_CYCLE,
+    REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER, REPULSESPARK_X_LO,
+    REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE, SPRCOLL_Y_SIZE,
+    TAGALONG_LAYERBITS, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -31,6 +34,7 @@ pub(crate) struct SpriteState {
     pub(crate) overworld_sprite_presence: OverworldSpritePresenceState,
     pub(crate) overworld_sprite_loaded: OverworldSpriteLoadedState,
     pub(crate) failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState,
+    pub(crate) garnish_runtime: GarnishRuntimeState,
 }
 
 impl SpriteState {
@@ -47,6 +51,7 @@ impl SpriteState {
             overworld_sprite_presence: OverworldSpritePresenceState::load_from_ram(ram),
             overworld_sprite_loaded: OverworldSpriteLoadedState::load_from_ram(ram),
             failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState::load_from_ram(ram),
+            garnish_runtime: GarnishRuntimeState::load_from_ram(ram),
         }
     }
 
@@ -62,6 +67,331 @@ impl SpriteState {
         self.overworld_sprite_presence.write_to_ram(ram);
         self.overworld_sprite_loaded.write_to_ram(ram);
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
+        self.garnish_runtime.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GarnishRuntimeState {
+    active_type: u8,
+    boulder_trap_count: u8,
+    boulder_trap_timer: u8,
+    sprite_collision_x_size: u16,
+    sprite_collision_y_size: u16,
+    sprite_collision_x_base: u16,
+    sprite_collision_y_base: u16,
+    active_overlord_index: u8,
+    haunted_grove_flute_event_latch: u8,
+    repulsespark_timer: u8,
+    repulsespark_anim_delay: u8,
+    repulsespark_floor_status: u8,
+    repulsespark_x_low: u8,
+    repulsespark_y_low: u8,
+}
+
+impl GarnishRuntimeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            active_type: ram.get(GARNISH_ACTIVE).copied().unwrap_or(0),
+            boulder_trap_count: ram.get(OVERWORLD_BOULDER_TRAP_COUNT).copied().unwrap_or(0),
+            boulder_trap_timer: ram.get(OVERWORLD_BOULDER_TRAP_TIMER).copied().unwrap_or(0),
+            sprite_collision_x_size: read_le_u16(ram, SPRCOLL_X_SIZE),
+            sprite_collision_y_size: read_le_u16(ram, SPRCOLL_Y_SIZE),
+            sprite_collision_x_base: read_le_u16(ram, SPRCOLL_X_BASE),
+            sprite_collision_y_base: read_le_u16(ram, SPRCOLL_Y_BASE),
+            active_overlord_index: ram.get(ACTIVE_OVERLORD_INDEX).copied().unwrap_or(0),
+            haunted_grove_flute_event_latch: ram
+                .get(HAUNTED_GROVE_FLUTE_EVENT_LATCH)
+                .copied()
+                .unwrap_or(0),
+            repulsespark_timer: ram.get(REPULSESPARK_TIMER).copied().unwrap_or(0),
+            repulsespark_anim_delay: ram.get(REPULSESPARK_ANIM_DELAY).copied().unwrap_or(0),
+            repulsespark_floor_status: ram.get(REPULSESPARK_FLOOR_STATUS).copied().unwrap_or(0),
+            repulsespark_x_low: ram.get(REPULSESPARK_X_LO).copied().unwrap_or(0),
+            repulsespark_y_low: ram.get(REPULSESPARK_Y_LO).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[GARNISH_ACTIVE] = self.active_type;
+        ram[OVERWORLD_BOULDER_TRAP_COUNT] = self.boulder_trap_count;
+        ram[OVERWORLD_BOULDER_TRAP_TIMER] = self.boulder_trap_timer;
+        write_le_u16(ram, SPRCOLL_X_SIZE, self.sprite_collision_x_size);
+        write_le_u16(ram, SPRCOLL_Y_SIZE, self.sprite_collision_y_size);
+        write_le_u16(ram, SPRCOLL_X_BASE, self.sprite_collision_x_base);
+        write_le_u16(ram, SPRCOLL_Y_BASE, self.sprite_collision_y_base);
+        ram[ACTIVE_OVERLORD_INDEX] = self.active_overlord_index;
+        ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = self.haunted_grove_flute_event_latch;
+        ram[REPULSESPARK_TIMER] = self.repulsespark_timer;
+        ram[REPULSESPARK_ANIM_DELAY] = self.repulsespark_anim_delay;
+        ram[REPULSESPARK_FLOOR_STATUS] = self.repulsespark_floor_status;
+        ram[REPULSESPARK_X_LO] = self.repulsespark_x_low;
+        ram[REPULSESPARK_Y_LO] = self.repulsespark_y_low;
+    }
+
+    pub(crate) fn active_type(&self) -> u8 {
+        self.active_type
+    }
+
+    pub(crate) fn boulder_trap_count(&self) -> u8 {
+        self.boulder_trap_count
+    }
+
+    pub(crate) fn boulder_trap_timer(&self) -> u8 {
+        self.boulder_trap_timer
+    }
+
+    pub(crate) fn sprcoll_y_hi(&self) -> u8 {
+        (self.sprite_collision_y_base >> 8) as u8
+    }
+
+    pub(crate) fn sprcoll_x_word(&self) -> u16 {
+        self.sprite_collision_x_base
+    }
+
+    pub(crate) fn sprcoll_y_word(&self) -> u16 {
+        self.sprite_collision_y_base
+    }
+
+    pub(crate) fn active_overlord_index(&self) -> u8 {
+        self.active_overlord_index
+    }
+
+    pub(crate) fn haunted_grove_flute_event_latch(&self) -> u8 {
+        self.haunted_grove_flute_event_latch
+    }
+
+    pub(crate) fn repulsespark_timer(&self) -> u8 {
+        self.repulsespark_timer
+    }
+
+    pub(crate) fn repulsespark_anim_delay(&self) -> u8 {
+        self.repulsespark_anim_delay
+    }
+
+    pub(crate) fn repulsespark_floor_status(&self) -> u8 {
+        self.repulsespark_floor_status
+    }
+
+    pub(crate) fn repulsespark_x_lo(&self) -> u8 {
+        self.repulsespark_x_low
+    }
+
+    pub(crate) fn repulsespark_y_lo(&self) -> u8 {
+        self.repulsespark_y_low
+    }
+
+    pub(crate) fn sprcoll_x_size(&self) -> u16 {
+        self.sprite_collision_x_size
+    }
+
+    pub(crate) fn sprcoll_y_size(&self) -> u16 {
+        self.sprite_collision_y_size
+    }
+
+    pub(crate) fn set_active_type(&mut self, value: u8) {
+        self.active_type = value;
+    }
+
+    pub(crate) fn clear_active_type(&mut self) {
+        self.active_type = 0;
+    }
+
+    pub(crate) fn increment_boulder_trap_timer(&mut self) -> u8 {
+        self.boulder_trap_timer = self.boulder_trap_timer.wrapping_add(1);
+        self.boulder_trap_timer
+    }
+
+    pub(crate) fn set_active_overlord_index(&mut self, value: u8) {
+        self.active_overlord_index = value;
+    }
+
+    pub(crate) fn increment_haunted_grove_flute_event_latch(&mut self) {
+        self.haunted_grove_flute_event_latch = self.haunted_grove_flute_event_latch.wrapping_add(1);
+    }
+
+    pub(crate) fn set_repulsespark_timer(&mut self, value: u8) {
+        self.repulsespark_timer = value;
+    }
+
+    pub(crate) fn clear_repulsespark_timer(&mut self) {
+        self.repulsespark_timer = 0;
+    }
+
+    pub(crate) fn decrement_repulsespark_timer(&mut self) {
+        self.repulsespark_timer = self.repulsespark_timer.wrapping_sub(1);
+    }
+
+    pub(crate) fn set_repulsespark_anim_delay(&mut self, value: u8) {
+        self.repulsespark_anim_delay = value;
+    }
+
+    pub(crate) fn decrement_repulsespark_anim_delay(&mut self) -> u8 {
+        self.repulsespark_anim_delay = self.repulsespark_anim_delay.wrapping_sub(1);
+        self.repulsespark_anim_delay
+    }
+
+    pub(crate) fn set_repulsespark_x_lo(&mut self, value: u8) {
+        self.repulsespark_x_low = value;
+    }
+
+    pub(crate) fn set_repulsespark_y_lo(&mut self, value: u8) {
+        self.repulsespark_y_low = value;
+    }
+
+    pub(crate) fn set_sprcoll_x_size(&mut self, value: u16) {
+        self.sprite_collision_x_size = value;
+    }
+
+    pub(crate) fn set_sprcoll_y_size(&mut self, value: u16) {
+        self.sprite_collision_y_size = value;
+    }
+
+    pub(crate) fn set_sprcoll_x_base(&mut self, value: u16) {
+        self.sprite_collision_x_base = value;
+    }
+
+    pub(crate) fn set_sprcoll_y_base(&mut self, value: u16) {
+        self.sprite_collision_y_base = value;
+    }
+
+    pub(crate) fn set_repulsespark_floor_status(&mut self, value: u8) {
+        self.repulsespark_floor_status = value;
+    }
+
+    pub(crate) fn clear_boulder_trap_count(&mut self) {
+        self.boulder_trap_count = 0;
+    }
+
+    pub(crate) fn increment_boulder_trap_count(&mut self) {
+        self.boulder_trap_count = self.boulder_trap_count.wrapping_add(1);
+    }
+
+    pub(crate) fn clear_haunted_grove_flute_event_latch(&mut self) {
+        self.haunted_grove_flute_event_latch = 0;
+    }
+}
+
+pub(crate) struct NativeGarnishRuntimeBridgeMut<'a> {
+    state: &'a mut GarnishRuntimeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut GarnishRuntimeState, ram: &'a mut [u8]) -> Self {
+        *state = GarnishRuntimeState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, GarnishRuntimeState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_active_type(&mut self, value: u8) {
+        self.state.set_active_type(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_active_type(&mut self) {
+        self.state.clear_active_type();
+        self.sync();
+    }
+
+    pub(crate) fn increment_boulder_trap_timer(&mut self) -> u8 {
+        let value = self.state.increment_boulder_trap_timer();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_active_overlord_index(&mut self, value: u8) {
+        self.state.set_active_overlord_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_haunted_grove_flute_event_latch(&mut self) {
+        self.state.increment_haunted_grove_flute_event_latch();
+        self.sync();
+    }
+
+    pub(crate) fn set_repulsespark_timer(&mut self, value: u8) {
+        self.state.set_repulsespark_timer(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_repulsespark_timer(&mut self) {
+        self.state.clear_repulsespark_timer();
+        self.sync();
+    }
+
+    pub(crate) fn decrement_repulsespark_timer(&mut self) {
+        self.state.decrement_repulsespark_timer();
+        self.sync();
+    }
+
+    pub(crate) fn set_repulsespark_anim_delay(&mut self, value: u8) {
+        self.state.set_repulsespark_anim_delay(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_repulsespark_anim_delay(&mut self) -> u8 {
+        let value = self.state.decrement_repulsespark_anim_delay();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_repulsespark_x_lo(&mut self, value: u8) {
+        self.state.set_repulsespark_x_lo(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_repulsespark_y_lo(&mut self, value: u8) {
+        self.state.set_repulsespark_y_lo(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprcoll_x_size(&mut self, value: u16) {
+        self.state.set_sprcoll_x_size(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprcoll_y_size(&mut self, value: u16) {
+        self.state.set_sprcoll_y_size(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprcoll_x_base(&mut self, value: u16) {
+        self.state.set_sprcoll_x_base(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprcoll_y_base(&mut self, value: u16) {
+        self.state.set_sprcoll_y_base(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_repulsespark_floor_status(&mut self, value: u8) {
+        self.state.set_repulsespark_floor_status(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_boulder_trap_count(&mut self) {
+        self.state.clear_boulder_trap_count();
+        self.sync();
+    }
+
+    pub(crate) fn increment_boulder_trap_count(&mut self) {
+        self.state.increment_boulder_trap_count();
+        self.sync();
+    }
+
+    pub(crate) fn clear_haunted_grove_flute_event_latch(&mut self) {
+        self.state.clear_haunted_grove_flute_event_latch();
+        self.sync();
     }
 }
 

@@ -77,9 +77,10 @@ pub(crate) use player::{
 };
 pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
-    MazeGameTimerView, NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
-    NativeFailedSpinSparkleSpawnBridgeMut, NativeMazeGameTimerBridgeMut,
+    GarnishRuntimeState, MazeGameTimerView, NativeChainChompHistoryBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
+    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
@@ -5455,5 +5456,50 @@ mod tests {
         assert_eq!(ram[ANCILLA_X_HI - 1], 0x12);
         assert_eq!(ram[ANCILLA_Y_LO - 1], 0x78);
         assert_eq!(ram[ANCILLA_Y_HI - 1], 0x56);
+    }
+
+    #[test]
+    fn native_garnish_runtime_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[GARNISH_ACTIVE] = 0x03;
+        ram[OVERWORLD_BOULDER_TRAP_COUNT] = 0xff;
+        ram[OVERWORLD_BOULDER_TRAP_TIMER] = 0x7f;
+        ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = 0x22;
+        ram[REPULSESPARK_ANIM_DELAY] = 0x00;
+        write_le_u16(&mut ram, SPRCOLL_X_BASE, 0x1234);
+        write_le_u16(&mut ram, SPRCOLL_Y_BASE, 0x5678);
+
+        let mut garnish = GarnishRuntimeState::default();
+        {
+            let mut bridge = NativeGarnishRuntimeBridgeMut::new(&mut garnish, &mut ram);
+            bridge.set_active_type(0x0a);
+            bridge.increment_boulder_trap_count();
+            assert_eq!(bridge.increment_boulder_trap_timer(), 0x80);
+            bridge.set_sprcoll_x_size(0x0102);
+            bridge.set_sprcoll_y_size(0x0304);
+            bridge.set_sprcoll_x_base(0x1112);
+            bridge.set_sprcoll_y_base(0x1314);
+            assert_eq!(bridge.decrement_repulsespark_anim_delay(), 0xff);
+            bridge.clear_haunted_grove_flute_event_latch();
+        }
+
+        assert_eq!(garnish.active_type(), 0x0a);
+        assert_eq!(garnish.boulder_trap_count(), 0x00);
+        assert_eq!(garnish.boulder_trap_timer(), 0x80);
+        assert_eq!(garnish.sprcoll_x_size(), 0x0102);
+        assert_eq!(garnish.sprcoll_y_size(), 0x0304);
+        assert_eq!(garnish.sprcoll_x_word(), 0x1112);
+        assert_eq!(garnish.sprcoll_y_word(), 0x1314);
+        assert_eq!(garnish.repulsespark_anim_delay(), 0xff);
+        assert_eq!(garnish.haunted_grove_flute_event_latch(), 0);
+        assert_eq!(ram[GARNISH_ACTIVE], 0x0a);
+        assert_eq!(ram[OVERWORLD_BOULDER_TRAP_COUNT], 0);
+        assert_eq!(ram[OVERWORLD_BOULDER_TRAP_TIMER], 0x80);
+        assert_eq!(read_le_u16(&ram, SPRCOLL_X_SIZE), 0x0102);
+        assert_eq!(read_le_u16(&ram, SPRCOLL_Y_SIZE), 0x0304);
+        assert_eq!(read_le_u16(&ram, SPRCOLL_X_BASE), 0x1112);
+        assert_eq!(read_le_u16(&ram, SPRCOLL_Y_BASE), 0x1314);
+        assert_eq!(ram[REPULSESPARK_ANIM_DELAY], 0xff);
+        assert_eq!(ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH], 0);
     }
 }
