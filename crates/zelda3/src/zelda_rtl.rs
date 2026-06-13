@@ -40,19 +40,18 @@ use crate::game_state::{
     DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
     DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
     DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonStateView,
-    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
-    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
-    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
-    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -3166,14 +3165,6 @@ impl ZeldaState {
 
     pub(crate) fn world_state_view_mut(&mut self) -> WorldStateViewMut<'_> {
         WorldStateViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn dungeon_state_view(&self) -> DungeonStateView<'_> {
-        DungeonStateView::new(&self.ram)
-    }
-
-    pub(crate) fn dungeon_state_view_mut(&mut self) -> DungeonStateViewMut<'_> {
-        DungeonStateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn save_progress_view(&self) -> SaveProgressState {

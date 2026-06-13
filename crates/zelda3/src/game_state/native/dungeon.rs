@@ -50,7 +50,6 @@ use crate::game_state::constants::{
 use crate::game_state::constants::{
     DUNGEON_ROOM_HISTORY, DUNGEON_ROOM_INDEX2, DUNGEON_ROOM_INDEX_PREV,
 };
-use crate::game_state::DungeonStairList;
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
@@ -82,6 +81,31 @@ const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_
 
 pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
     read_le_u16(ram, offset + index * 2)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DungeonStairList {
+    InterRoomUpNorth,
+    InterRoomSouthDown,
+    InRoomUpNorth,
+    InRoomSouthDown,
+    InterPseudoUpNorth,
+    InRoomUpNorthWater,
+    ActivatedWaterLadders,
+    WetStairs,
+    InRoomUpSouthWater,
+    Stairs1,
+    Stairs2,
+    WaterLadders,
+    WaterSideStepSwitch,
+    WallUpNorthSpiral,
+    WallDownNorthSpiral,
+    WallUpNorthSpiralBg1,
+    WallDownNorthSpiralBg1,
+    InterRoomUpNorthStraight,
+    InterRoomUpSouthStraight,
+    InterRoomDownNorthStraight,
+    InterRoomDownSouthStraight,
 }
 
 const DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL: usize = 0x0438;
