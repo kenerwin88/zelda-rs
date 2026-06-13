@@ -1,6 +1,6 @@
 use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
-    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
+    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
     DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA,
     DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
@@ -11,6 +11,7 @@ use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
 const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
+const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
@@ -301,12 +302,18 @@ impl DungeonEntranceBackupState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonHeaderState {
+    tags: [u8; DUNGEON_HEADER_TAG_COUNT],
     travel_destinations: [u8; DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT],
     plane_scratch: [u8; DUNGEON_HEADER_PLANE_SCRATCH_COUNT],
 }
 
 impl DungeonHeaderState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut tags = [0; DUNGEON_HEADER_TAG_COUNT];
+        for (index, tag) in tags.iter_mut().enumerate() {
+            *tag = ram.get(DUNGEON_HEADER_TAG + index).copied().unwrap_or(0);
+        }
+
         let mut travel_destinations = [0; DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT];
         for (index, destination) in travel_destinations.iter_mut().enumerate() {
             *destination = ram
@@ -324,18 +331,29 @@ impl DungeonHeaderState {
         }
 
         Self {
+            tags,
             travel_destinations,
             plane_scratch,
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DUNGEON_HEADER_TAG..DUNGEON_HEADER_TAG + DUNGEON_HEADER_TAG_COUNT]
+            .copy_from_slice(&self.tags);
         ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS
             ..DUNGEON_HEADER_TRAVEL_DESTINATIONS + DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT]
             .copy_from_slice(&self.travel_destinations);
         ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE
             ..DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + DUNGEON_HEADER_PLANE_SCRATCH_COUNT]
             .copy_from_slice(&self.plane_scratch);
+    }
+
+    pub(crate) fn header_tag(&self, index: usize) -> u8 {
+        self.tags.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn primary_header_tag(&self) -> u8 {
+        self.header_tag(0)
     }
 
     pub(crate) fn travel_destination(&self, index: usize) -> u8 {
@@ -359,6 +377,18 @@ impl DungeonHeaderState {
         self.plane_scratch[2] = (packed >> 4) & 3;
         self.plane_scratch[3] = (packed >> 6) & 3;
         self.plane_scratch[4] = extra & 3;
+    }
+
+    fn set_header_tag(&mut self, index: usize, value: u8) {
+        self.tags[index] = value;
+    }
+
+    fn clear_header_tag(&mut self, index: usize) {
+        self.set_header_tag(index, 0);
+    }
+
+    fn clear_header_tags(&mut self, count: usize) {
+        self.tags[..count].fill(0);
     }
 }
 
@@ -788,6 +818,21 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
 
     pub(crate) fn set_hole_teleporter_planes(&mut self, packed: u8, extra: u8) {
         self.header.set_hole_teleporter_planes(packed, extra);
+        self.sync();
+    }
+
+    pub(crate) fn set_header_tag(&mut self, index: usize, value: u8) {
+        self.header.set_header_tag(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_header_tag(&mut self, index: usize) {
+        self.header.clear_header_tag(index);
+        self.sync();
+    }
+
+    pub(crate) fn clear_header_tags(&mut self, count: usize) {
+        self.header.clear_header_tags(count);
         self.sync();
     }
 }

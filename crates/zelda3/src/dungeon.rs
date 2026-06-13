@@ -1174,7 +1174,7 @@ impl ZeldaState {
             .clear_somaria_block_switch_counter();
         self.dungeon_state_view_mut()
             .copy_header_collision_2_to_mirror();
-        let primary_header_tag = self.dungeon_state_view().primary_header_tag();
+        let primary_header_tag = self.dungeon_header_view().primary_header_tag();
         self.dungeon_state_view_mut()
             .set_header_collision_2_mirror_high(primary_header_tag);
         self.bg1_move_calc_view_mut().set_buffer(0x30);
@@ -1316,8 +1316,8 @@ impl ZeldaState {
             .set_graphics_index(header[3].wrapping_add(0x40));
         self.dungeon_state_view_mut()
             .set_header_collision_2(header[4]);
-        self.dungeon_state_view_mut().set_header_tag(0, header[5]);
-        self.dungeon_state_view_mut().set_header_tag(1, header[6]);
+        self.dungeon_header_view_mut().set_header_tag(0, header[5]);
+        self.dungeon_header_view_mut().set_header_tag(1, header[6]);
         self.dungeon_header_view_mut()
             .set_hole_teleporter_planes(header[7], header[8]);
         self.dungeon_state_view_mut()
@@ -2205,7 +2205,7 @@ impl ZeldaState {
                 self.dungeon_state_view_mut()
                     .set_water_window_position(hdma0, hdma1);
                 if self.dungeon_savegame_state().savegame_state_bits() & 0x0800 != 0 {
-                    self.dungeon_state_view_mut().clear_header_tag(1);
+                    self.dungeon_header_view_mut().clear_header_tag(1);
                     self.dungeon_state_view_mut().clear_bg2_properties();
                     self.dungeon_state_view_mut()
                         .promote_water_ladders_to_saved_stair_counters();
@@ -2242,7 +2242,7 @@ impl ZeldaState {
                 self.dungeon_state_view_mut()
                     .set_water_window_position(hdma0, hdma1);
                 if self.dungeon_savegame_state().savegame_state_bits() & 0x0800 != 0 {
-                    self.dungeon_state_view_mut().clear_header_tag(1);
+                    self.dungeon_header_view_mut().clear_header_tag(1);
                 } else {
                     self.dungeon_state_view_mut().clear_bg2_properties();
                     self.dungeon_state_view_mut()
@@ -2398,13 +2398,13 @@ impl ZeldaState {
         };
         match idx {
             0x00 => {
-                if self.dungeon_state_view().header_tag(1) == 27 {
+                if self.dungeon_header_view().header_tag(1) == 27 {
                     let room = self.world_location_state().dungeon_room as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 != 0 {
                         self.RoomDraw_WaterHoldingObject(5, 0x162c, dsto);
                         return;
                     }
-                } else if self.dungeon_state_view().header_tag(1) == 25
+                } else if self.dungeon_header_view().header_tag(1) == 25
                     && self.dungeon_savegame_state().savegame_state_bits() & 0x0800 != 0
                 {
                     self.RoomDraw_WaterHoldingObject(5, 0x162c, dsto);
@@ -2591,7 +2591,7 @@ impl ZeldaState {
             }
             0x32 => self.RoomDraw_1x3_rightwards(src, dsto, 4),
             0x33 => {
-                if self.dungeon_state_view().header_tag(1) == 27 {
+                if self.dungeon_header_view().header_tag(1) == 27 {
                     let room = self.world_location_state().dungeon_room as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0 {
                         self.dungeon_state_view_mut().clear_bg2_properties();
@@ -2807,7 +2807,7 @@ impl ZeldaState {
             }
             0x33 => {
                 let room = self.world_location_state().dungeon_room as usize;
-                if self.dungeon_state_view().header_tag(1) == 27
+                if self.dungeon_header_view().header_tag(1) == 27
                     && self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0
                 {
                     self.dungeon_state_view_mut().clear_bg2_properties();
@@ -2839,7 +2839,7 @@ impl ZeldaState {
             }
             0x35 => {
                 let room = self.world_location_state().dungeon_room as usize;
-                if self.dungeon_state_view().header_tag(1) == 27
+                if self.dungeon_header_view().header_tag(1) == 27
                     && self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0
                 {
                     let next = self
@@ -3266,11 +3266,11 @@ impl ZeldaState {
         }
 
         let slot = usize::from(
-            self.dungeon_state_view().primary_header_tag() != 0x20
-                && self.dungeon_state_view().primary_header_tag() != 0x25
-                && self.dungeon_state_view().primary_header_tag() != 0x28,
+            self.dungeon_header_view().primary_header_tag() != 0x20
+                && self.dungeon_header_view().primary_header_tag() != 0x25
+                && self.dungeon_header_view().primary_header_tag() != 0x28,
         );
-        self.dungeon_state_view_mut().clear_header_tag(slot);
+        self.dungeon_header_view_mut().clear_header_tag(slot);
         self.world_transient_mut()
             .force_vertical_fullsize_for_blast_wall();
         self.dungeon_state_view_mut().mark_blast_wall_y_open();
@@ -3851,8 +3851,8 @@ impl ZeldaState {
         self.bg1_move_calc_view_mut().set_buffer(0);
         self.dungeon_state_view_mut().clear_floor_move_flags();
 
-        let tag0 = self.dungeon_state_view().primary_header_tag();
-        let tag1 = self.dungeon_state_view().header_tag(1);
+        let tag0 = self.dungeon_header_view().primary_header_tag();
+        let tag1 = self.dungeon_header_view().header_tag(1);
         let i = if (0x1c..0x20).contains(&tag0) {
             Some(0usize)
         } else if (0x1c..0x20).contains(&tag1) {
@@ -3864,7 +3864,7 @@ impl ZeldaState {
         if let Some(i) = i {
             if self.dungeon_savegame_state().savegame_state_bits() & (0x1000 >> i) != 0 {
                 self.dungeon_state_view_mut().set_header_collision(0);
-                self.dungeon_state_view_mut().clear_header_tag(i);
+                self.dungeon_header_view_mut().clear_header_tag(i);
                 self.dungeon_state_view_mut().clear_bg2_properties();
                 return false;
             }
@@ -4478,13 +4478,13 @@ impl ZeldaState {
                 {
                     return;
                 }
-                self.dungeon_state_view_mut().clear_header_tag(slot);
+                self.dungeon_header_view_mut().clear_header_tag(slot);
             }
             self.RoomDraw_Rightwards2x2(0x149c, dsto);
         } else {
             self.dungeon_state_view_mut().clear_chest_location(index);
             if let Some(slot) = tag_slot {
-                self.dungeon_state_view_mut().clear_header_tag(slot);
+                self.dungeon_header_view_mut().clear_header_tag(slot);
             }
             self.RoomDraw_Rightwards2x2(0x14a4, dsto);
         }
@@ -4492,7 +4492,7 @@ impl ZeldaState {
 
     pub(super) fn chest_tag_gate_slot(&self) -> Option<usize> {
         for slot in 0..2 {
-            let tag = self.dungeon_state_view().header_tag(slot);
+            let tag = self.dungeon_header_view().header_tag(slot);
             if tag == 0x27 || tag == 0x3c || tag == 0x3e || (0x29..0x33).contains(&tag) {
                 return Some(slot);
             }
@@ -5091,7 +5091,7 @@ impl ZeldaState {
     }
 
     pub(super) fn WaterFlood_BuildOneQuadrantForVRAM(&mut self) {
-        assert_ne!(self.dungeon_state_view().primary_header_tag(), 25);
+        assert_ne!(self.dungeon_header_view().primary_header_tag(), 25);
         self.TileMapPrep_NotWaterOnTag();
     }
 
@@ -6369,7 +6369,7 @@ impl ZeldaState {
 
     pub(super) fn Dung_TagRoutine_0x22_0x3B(&mut self, k: usize, j: u8) {
         if self.dungeon_savegame_state().savegame_state_bits() & 0x0100 != 0 {
-            self.dungeon_state_view_mut().clear_header_tag(k);
+            self.dungeon_header_view_mut().clear_header_tag(k);
             self.dungeon_state_view_mut().set_overlay_to_load(j);
             self.dungeon_state_view_mut().set_load_ptr_offset(0);
             self.set_subsubmodule(0);
@@ -6498,7 +6498,7 @@ impl ZeldaState {
             return;
         }
 
-        self.dungeon_state_view_mut().clear_header_tag(k);
+        self.dungeon_header_view_mut().clear_header_tag(k);
         self.dungeon_state_view_mut().set_overlay_to_load(5);
         self.dungeon_state_view_mut().set_load_ptr_offset(0);
         self.set_subsubmodule(0);
@@ -6507,7 +6507,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_QuadrantTrigger(&mut self, k: usize) {
-        let tag = self.dungeon_state_view().header_tag(k);
+        let tag = self.dungeon_header_view().header_tag(k);
         if tag >= 0x0b {
             if tag >= 0x29 {
                 if self.sprite_check_if_screen_is_clear() {
@@ -6531,7 +6531,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_RoomTrigger(&mut self, k: usize) {
-        if self.dungeon_state_view().header_tag(k) == 10 {
+        if self.dungeon_header_view().header_tag(k) == 10 {
             if self.sprite_check_if_room_is_clear() {
                 self.Dung_TagRoutine_TrapdoorsUp();
             }
@@ -6543,7 +6543,7 @@ impl ZeldaState {
     pub(super) fn RoomTag_RekillableBoss(&mut self, k: usize) {
         if self.sprite_check_if_room_is_clear() {
             self.player_state_view_mut().clear_menu_block();
-            self.dungeon_state_view_mut().clear_header_tag(k);
+            self.dungeon_header_view_mut().clear_header_tag(k);
         }
     }
 
@@ -6570,7 +6570,7 @@ impl ZeldaState {
             self.dungeon_state_view_mut().clear_current_door_pos();
             self.dungeon_state_view_mut().clear_door_animation_step();
             self.set_submodule(5);
-            self.dungeon_state_view_mut().clear_header_tag(k);
+            self.dungeon_header_view_mut().clear_header_tag(k);
         }
     }
 
@@ -6608,7 +6608,7 @@ impl ZeldaState {
         const BLAST_WALL_MESSAGE_DIRECTION_BY_QUADRANT: [u8; 5] = [4, 6, 0, 0, 2];
         const BLAST_WALL_DOOR_TILEMAP_OFFSETS: [u16; 5] = [0, 0x0a, 0, 0, 0x0280];
 
-        self.dungeon_state_view_mut().clear_header_tag(k);
+        self.dungeon_header_view_mut().clear_header_tag(k);
 
         let mut door = 0usize;
         while self.dungeon_state_view().door_type_and_slot(door) & !1 != 0x30 {
@@ -6646,7 +6646,7 @@ impl ZeldaState {
             self.set_submodule(12);
             self.set_subsubmodule(0);
             self.dungeon_state_view_mut().set_floor_y_offset_low(1);
-            self.dungeon_state_view_mut().clear_header_tag(1);
+            self.dungeon_header_view_mut().clear_header_tag(1);
             let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
             self.dungeon_state_view_mut()
                 .set_savegame_state_bits(save_bits);
@@ -6671,7 +6671,7 @@ impl ZeldaState {
             .set_darkening_or_lightening_screen(0);
         self.set_mosaic_target_level(31);
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.dungeon_state_view_mut().clear_header_tag(1);
+        self.dungeon_header_view_mut().clear_header_tag(1);
         let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
         self.dungeon_state_view_mut()
             .set_savegame_state_bits(save_bits);
@@ -6696,7 +6696,7 @@ impl ZeldaState {
 
         self.set_submodule(13);
         self.set_subsubmodule(0);
-        self.dungeon_state_view_mut().clear_header_tag(1);
+        self.dungeon_header_view_mut().clear_header_tag(1);
         let save_bits = self.dungeon_savegame_state().savegame_state_bits() | 0x0800;
         self.dungeon_state_view_mut()
             .set_savegame_state_bits(save_bits);
@@ -6798,7 +6798,7 @@ impl ZeldaState {
                 return;
             }
         }
-        self.dungeon_state_view_mut().clear_header_tag(k);
+        self.dungeon_header_view_mut().clear_header_tag(k);
     }
 
     pub(super) fn RoomTag_Agahnim(&mut self, _k: usize) {
@@ -6806,7 +6806,7 @@ impl ZeldaState {
             && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 != 0
         {
             self.Palette_RevertTranslucencySwap();
-            self.dungeon_state_view_mut().clear_header_tag(0);
+            self.dungeon_header_view_mut().clear_header_tag(0);
             self.prepare_dungeon_exit_from_boss_fight();
         }
     }
@@ -6823,7 +6823,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_immobilized_flag(26);
             self.set_submodule(26);
             self.set_subsubmodule(0);
-            self.dungeon_state_view_mut().clear_header_tag(0);
+            self.dungeon_header_view_mut().clear_header_tag(0);
             self.player_state_view_mut().force_hold_sword_up();
             self.player_state_view_mut().set_button_mask_b_y(0);
             self.player_state_view_mut().clear_button_b_frames();
@@ -6925,7 +6925,7 @@ impl ZeldaState {
             && self.sprite_check_if_screen_is_clear()
         {
             self.system_signals_view_mut().set_sound_effect_2(0x1b);
-            self.dungeon_state_view_mut().clear_header_tag(k);
+            self.dungeon_header_view_mut().clear_header_tag(k);
         }
     }
 
@@ -6959,7 +6959,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_OperateChestReveal(&mut self, k: usize) {
-        self.dungeon_state_view_mut().clear_header_tag(k);
+        self.dungeon_header_view_mut().clear_header_tag(k);
         self.clear_vram_upload_cursor();
         self.dungeon_state_view_mut().clear_chest_reveal_cursor();
 
@@ -8428,7 +8428,7 @@ impl ZeldaState {
 
     fn hud_tags_suppress_big_key_locks(&self) -> bool {
         (0..2).any(|i| {
-            let tag = self.dungeon_state_view().header_tag(i);
+            let tag = self.dungeon_header_view().header_tag(i);
             tag == 0x27 || tag == 0x3c || tag == 0x3e || (0x29..0x33).contains(&tag)
         })
     }
@@ -8973,7 +8973,7 @@ impl ZeldaState {
         };
         self.world_scroll_mut().set_bg1_x_offset(x as u16);
         self.world_scroll_mut().set_bg1_y_offset((-x) as u16);
-        if self.dungeon_state_view().header_tag(k) == 0 {
+        if self.dungeon_header_view().header_tag(k) == 0 {
             self.world_scroll_mut().set_bg1_x_offset(0);
             self.world_scroll_mut().set_bg1_y_offset(0);
         }
@@ -9025,7 +9025,7 @@ impl ZeldaState {
     fn finish_moving_wall_tag(&mut self, k: usize) {
         self.system_signals_view_mut().set_sound_effect_2(0x1b);
         self.system_signals_view_mut().set_ambient_sound_effect(5);
-        self.dungeon_state_view_mut().clear_header_tag(k);
+        self.dungeon_header_view_mut().clear_header_tag(k);
         self.player_state_view_mut().clear_immobilized();
         self.clear_modal_pause_flag();
         self.world_scroll_mut().set_bg1_x_offset(0);
@@ -9061,7 +9061,7 @@ impl ZeldaState {
 
     pub(super) fn RoomTag_AdvanceGiganticWall(&mut self, k: usize) -> u8 {
         let mut i = self.dungeon_state_view().moving_wall_dot_pointer();
-        if self.dungeon_state_view().header_tag(k) < 0x20 {
+        if self.dungeon_header_view().header_tag(k) < 0x20 {
             self.dungeon_state_view_mut().set_header_collision(0);
             self.set_main_screen_layers(0x16);
             i = i.wrapping_add(8);
@@ -11800,7 +11800,7 @@ impl ZeldaState {
     }
 
     fn dungeon_run_tag_routine(&mut self, k: usize) {
-        match self.dungeon_state_view().header_tag(k) {
+        match self.dungeon_header_view().header_tag(k) {
             0x00 => self.Dung_TagRoutine_0x00(k),
             0x01 | 0x0b | 0x29 => self.RoomTag_NorthWestTrigger(k),
             0x02 | 0x0c | 0x2a => self.Dung_TagRoutine_0x2A(k),

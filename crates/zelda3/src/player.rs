@@ -8359,7 +8359,7 @@ impl ZeldaState {
 
         self.pushed_block_view_mut().init_slot(slot, x, y);
 
-        if self.dungeon_state_view().primary_header_tag() != 38
+        if self.dungeon_header_view().primary_header_tag() != 38
             && self.dungeon_state_view().replacement_tile_state(idx_word) == 0
         {
             if !self.push_block_attempt_to_push_the_block(0, x, y) {
