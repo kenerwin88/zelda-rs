@@ -272,7 +272,6 @@ pub(crate) struct NativeInventoryItemsBridgeMut<'a> {
 
 impl<'a> NativeInventoryItemsBridgeMut<'a> {
     pub(crate) fn new(items: &'a mut InventoryItemsState, ram: &'a mut [u8]) -> Self {
-        *items = InventoryItemsState::load_from_ram(ram);
         Self { items, ram }
     }
 
@@ -280,32 +279,57 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         debug_assert_eq!(*self.items, InventoryItemsState::load_from_ram(self.ram));
     }
 
+    fn absorb_item_memory_byte(&mut self, address: usize) {
+        if (LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT).contains(&address) {
+            self.items
+                .set_inventory_item(address - LINK_ITEM_BOW, self.ram[address]);
+        } else if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT).contains(&address) {
+            self.items
+                .set_bottle(address - LINK_BOTTLE_INFO, self.ram[address]);
+        } else {
+            match address {
+                HUD_CUR_ITEM => self.items.set_equipped_button_item(0, self.ram[address]),
+                HUD_CUR_ITEM_X => self.items.set_equipped_button_item(1, self.ram[address]),
+                HUD_CUR_ITEM_L => self.items.set_equipped_button_item(2, self.ram[address]),
+                HUD_CUR_ITEM_R => self.items.set_equipped_button_item(3, self.ram[address]),
+                _ => {}
+            }
+        }
+    }
+
+    fn absorb_item_memory_word(&mut self, address: usize) {
+        self.absorb_item_memory_byte(address);
+        self.absorb_item_memory_byte(address + 1);
+    }
+
     pub(crate) fn set_inventory_item(&mut self, index: usize, value: u8) {
         self.items.set_inventory_item(index, value);
-        if index < INVENTORY_ITEM_SLOT_COUNT {
-            self.ram[LINK_ITEM_BOW + index] = value;
-        }
+        self.items.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_item_memory_value(&mut self, item_memory_addr: usize, value: u8) {
         self.ram[item_memory_addr] = value;
+        self.absorb_item_memory_byte(item_memory_addr);
     }
 
     pub(crate) fn or_item_memory_value(&mut self, item_memory_addr: usize, value: u8) -> u8 {
         self.ram[item_memory_addr] |= value;
+        self.absorb_item_memory_byte(item_memory_addr);
         self.ram[item_memory_addr]
     }
 
     pub(crate) fn set_item_memory_value_if_empty(&mut self, item_memory_addr: usize, value: u8) {
         if self.ram[item_memory_addr] == 0 {
             self.ram[item_memory_addr] = value;
+            self.absorb_item_memory_byte(item_memory_addr);
         }
     }
 
     pub(crate) fn or_item_memory_word(&mut self, item_memory_addr: usize, value: u16) {
         let next = read_le_u16(self.ram, item_memory_addr) | value;
         write_le_u16(self.ram, item_memory_addr, next);
+        self.absorb_item_memory_word(item_memory_addr);
     }
 
     pub(crate) fn add_item_memory_value_capped(
@@ -315,10 +339,12 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         cap: u8,
     ) {
         self.ram[item_memory_addr] = self.ram[item_memory_addr].saturating_add(add).min(cap);
+        self.absorb_item_memory_byte(item_memory_addr);
     }
 
     pub(crate) fn increment_item_memory_value_mod4(&mut self, item_memory_addr: usize) {
         self.ram[item_memory_addr] = self.ram[item_memory_addr].wrapping_add(1) & 3;
+        self.absorb_item_memory_byte(item_memory_addr);
     }
 
     pub(crate) fn set_mushroom(&mut self, value: u8) {
@@ -363,20 +389,13 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
 
     pub(crate) fn set_bottle(&mut self, index: usize, value: u8) {
         self.items.set_bottle(index, value);
-        if index < BOTTLE_SLOT_COUNT {
-            self.ram[LINK_BOTTLE_INFO + index] = value;
-        }
+        self.items.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_equipped_button_item(&mut self, button_index: usize, value: u8) {
         self.items.set_equipped_button_item(button_index, value);
-        match button_index {
-            0 => self.ram[HUD_CUR_ITEM] = value,
-            1 => self.ram[HUD_CUR_ITEM_X] = value,
-            2 => self.ram[HUD_CUR_ITEM_L] = value,
-            _ => self.ram[HUD_CUR_ITEM_R] = value,
-        }
+        self.items.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 
@@ -558,7 +577,6 @@ pub(crate) struct NativeMirrorWarpBridgeMut<'a> {
 
 impl<'a> NativeMirrorWarpBridgeMut<'a> {
     pub(crate) fn new(mirror_warp: &'a mut MirrorWarpState, ram: &'a mut [u8]) -> Self {
-        *mirror_warp = MirrorWarpState::load_from_ram(ram);
         Self { mirror_warp, ram }
     }
 
@@ -939,13 +957,40 @@ pub(crate) struct NativeSaveProgressBridgeMut<'a> {
 
 impl<'a> NativeSaveProgressBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SaveProgressState, ram: &'a mut [u8]) -> Self {
-        *state = SaveProgressState::load_from_ram(ram);
         Self { state, ram }
     }
 
-    fn sync(&mut self) {
+    fn sync_all(&mut self) {
         self.state.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
+    }
+
+    fn sync_byte(&mut self, address: usize, value: u8) {
+        self.ram[address] = value;
+    }
+
+    fn sync_word(&mut self, address: usize, value: u16) {
+        write_le_u16(self.ram, address, value);
+    }
+
+    fn sync_hud_current_item_slot(&mut self, slot: usize) {
+        let address = match slot {
+            0 => HUD_CUR_ITEM,
+            1 => HUD_CUR_ITEM_X,
+            2 => HUD_CUR_ITEM_L,
+            _ => HUD_CUR_ITEM_R,
+        };
+        self.sync_byte(address, self.state.hud_current_item_slot(slot));
+    }
+
+    fn sync_dungeon_info_word(&mut self, room: usize) {
+        if room * 2 + 1 < SAVE_DUNGEON_INFO_LEN {
+            write_le_u16(
+                self.ram,
+                SAVE_DUNG_INFO + room * 2,
+                self.state.dungeon_info_word(room),
+            );
+        }
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -954,129 +999,143 @@ impl<'a> NativeSaveProgressBridgeMut<'a> {
 
     pub(crate) fn set_palace_index_x2(&mut self, value: u8) {
         self.state.set_palace_index_x2(value);
-        self.sync();
+        self.sync_byte(CUR_PALACE_INDEX_X2, self.state.palace_index_x2());
     }
 
     pub(crate) fn set_which_starting_point(&mut self, value: u8) {
         self.state.set_which_starting_point(value);
-        self.sync();
+        self.sync_byte(WHICH_STARTING_POINT, self.state.which_starting_point());
     }
 
     pub(crate) fn xor_palace_index_x2(&mut self, value: u8) {
         self.state.xor_palace_index_x2(value);
-        self.sync();
+        self.sync_byte(CUR_PALACE_INDEX_X2, self.state.palace_index_x2());
     }
 
     pub(crate) fn set_progress_indicator(&mut self, value: u8) {
         self.state.set_progress_indicator(value);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_INDICATOR, self.state.progress_indicator());
     }
 
     pub(crate) fn or_progress_flags(&mut self, value: u8) {
         self.state.or_progress_flags(value);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_FLAGS, self.state.progress_flags());
     }
 
     pub(crate) fn or_progress_indicator_3(&mut self, bits: u8) {
         self.state.or_progress_indicator_3(bits);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_INDICATOR_3, self.state.progress_indicator_3());
     }
 
     pub(crate) fn clear_progress_indicator_3_bits(&mut self, bits: u8) {
         self.state.clear_progress_indicator_3_bits(bits);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_INDICATOR_3, self.state.progress_indicator_3());
     }
 
     pub(crate) fn xor_progress_flags(&mut self, value: u8) {
         self.state.xor_progress_flags(value);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_FLAGS, self.state.progress_flags());
     }
 
     pub(crate) fn set_progress_flags(&mut self, value: u8) {
         self.state.set_progress_flags(value);
-        self.sync();
+        self.sync_byte(SRAM_PROGRESS_FLAGS, self.state.progress_flags());
     }
 
     pub(crate) fn set_map_icons_indicator(&mut self, value: u8) {
         self.state.set_map_icons_indicator(value);
-        self.sync();
+        self.sync_byte(
+            SAVEGAME_MAP_ICONS_INDICATOR,
+            self.state.map_icons_indicator(),
+        );
     }
 
     pub(crate) fn set_dark_world_state(&mut self, value: u8) {
         self.state.set_dark_world_state(value);
-        self.sync();
+        self.sync_byte(SAVEGAME_IS_DARKWORLD, self.state.dark_world_state());
     }
 
     pub(crate) fn xor_dark_world_state(&mut self, value: u8) {
         self.state.xor_dark_world_state(value);
-        self.sync();
+        self.sync_byte(SAVEGAME_IS_DARKWORLD, self.state.dark_world_state());
     }
 
     pub(crate) fn set_hud_current_item(&mut self, value: u8) {
         self.state.set_hud_current_item(value);
-        self.sync();
+        self.sync_hud_current_item_slot(0);
     }
 
     pub(crate) fn set_hud_current_item_slot(&mut self, slot: usize, value: u8) {
         self.state.set_hud_current_item_slot(slot, value);
-        self.sync();
+        self.sync_hud_current_item_slot(slot);
     }
 
     pub(crate) fn set_death_count_for_palace(&mut self, palace: usize, value: u16) {
         self.state.set_death_count_for_palace(palace, value);
-        self.sync();
+        if palace < DEATH_COUNT_PALACE_SLOTS {
+            self.sync_word(
+                DEATHS_PER_PALACE + palace * 2,
+                self.state.death_count_for_palace(palace),
+            );
+        }
     }
 
     pub(crate) fn increment_pending_death_save_counter(&mut self) -> u16 {
         let deaths = self.state.increment_pending_death_save_counter();
-        self.sync();
+        self.sync_word(PENDING_DEATH_SAVE_COUNTER, deaths);
         deaths
     }
 
     pub(crate) fn clear_pending_death_save_counter(&mut self) {
         self.state.clear_pending_death_save_counter();
-        self.sync();
+        self.sync_word(
+            PENDING_DEATH_SAVE_COUNTER,
+            self.state.pending_death_save_counter(),
+        );
     }
 
     pub(crate) fn set_total_death_save_counter(&mut self, value: u16) {
         self.state.set_total_death_save_counter(value);
-        self.sync();
+        self.sync_word(
+            TOTAL_DEATH_SAVE_COUNTER,
+            self.state.total_death_save_counter(),
+        );
     }
 
     pub(crate) fn clear_post_message_refresh_flag(&mut self) {
         self.state.clear_post_message_refresh_flag();
-        self.sync();
+        self.sync_byte(HUD_POST_MESSAGE_REFRESH_FLAG, 0);
     }
 
     pub(crate) fn request_post_message_refresh(&mut self) {
         self.state.request_post_message_refresh();
-        self.sync();
+        self.sync_byte(HUD_POST_MESSAGE_REFRESH_FLAG, 0x80);
     }
 
     pub(crate) fn clear_dungeon_info(&mut self) {
         self.state.clear_dungeon_info();
-        self.sync();
+        self.sync_all();
     }
 
     pub(crate) fn copy_dungeon_info_from(&mut self, source: &[u8]) {
         self.state.copy_dungeon_info_from(source);
-        self.sync();
+        self.sync_all();
     }
 
     pub(crate) fn set_dungeon_info_word(&mut self, room: usize, value: u16) {
         self.state.set_dungeon_info_word(room, value);
-        self.sync();
+        self.sync_dungeon_info_word(room);
     }
 
     pub(crate) fn or_dungeon_info_word(&mut self, room: usize, value: u16) -> u16 {
         let word = self.state.or_dungeon_info_word(room, value);
-        self.sync();
+        self.sync_dungeon_info_word(room);
         word
     }
 
     pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
         self.state.set_dungeon_info_checksum(value);
-        self.sync();
+        self.sync_dungeon_info_word(0x27f);
     }
 
     pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
@@ -1120,7 +1179,6 @@ pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
 
 impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonKeySlotsState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonKeySlotsState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1381,7 +1439,6 @@ pub(crate) struct NativePlayerResourcesBridgeMut<'a> {
 
 impl<'a> NativePlayerResourcesBridgeMut<'a> {
     pub(crate) fn new(resources: &'a mut PlayerResourcesState, ram: &'a mut [u8]) -> Self {
-        *resources = PlayerResourcesState::load_from_ram(ram);
         Self { resources, ram }
     }
 

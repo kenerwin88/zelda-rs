@@ -3403,6 +3403,95 @@ mod tests {
     }
 
     #[test]
+    fn inventory_items_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_ITEM_BOW] = 7;
+        ram[LINK_ITEM_BOW + 2] = 1;
+        ram[LINK_ITEM_MOON_PEARL] = 1;
+        ram[LINK_BOTTLE_INFO + 2] = 5;
+        ram[HUD_CUR_ITEM] = 7;
+        ram[HUD_CUR_ITEM_X] = 8;
+        ram[HUD_CUR_ITEM_L] = 9;
+        ram[HUD_CUR_ITEM_R] = 10;
+
+        let items = InventoryItemsState::load_from_ram(&ram);
+        assert_eq!(items.bow(), 7);
+        assert!(items.has_silver_arrows());
+        assert_eq!(items.hookshot(), 1);
+        assert!(items.has_moon_pearl());
+        assert_eq!(items.bottle(2), 5);
+        assert_eq!(items.equipped_button_item(0), 7);
+        assert_eq!(items.equipped_button_item(3), 10);
+        assert_eq!(items.equipped_button_item(4), 10);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        items.write_to_ram(&mut projected);
+        assert_eq!(InventoryItemsState::load_from_ram(&projected), items);
+    }
+
+    #[test]
+    fn native_inventory_items_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LINK_ITEM_MOON_PEARL] = 1;
+        ram[LINK_BOTTLE_INFO] = 2;
+        ram[LINK_BOTTLE_INFO + 2] = 2;
+        ram[HUD_CUR_ITEM_R] = 4;
+
+        let mut items = InventoryItemsState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
+            bridge.set_inventory_item(0, 3);
+            bridge.set_inventory_item(2, 1);
+            bridge.set_bottle(0, 5);
+            bridge.set_equipped_button_item(3, 7);
+            assert!(bridge.fill_first_empty_bottle_with(6));
+            assert!(bridge.replace_first_empty_bottle_with(8));
+        }
+
+        assert_eq!(items.bow(), 3);
+        assert_eq!(items.hookshot(), 1);
+        assert!(items.has_moon_pearl());
+        assert_eq!(items.bottle(0), 5);
+        assert_eq!(items.bottle(1), 6);
+        assert_eq!(items.bottle(2), 8);
+        assert_eq!(items.equipped_button_item(3), 7);
+        assert_eq!(ram[LINK_ITEM_BOW], 3);
+        assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
+        assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
+        assert_eq!(ram[LINK_BOTTLE_INFO], 5);
+        assert_eq!(ram[LINK_BOTTLE_INFO + 1], 6);
+        assert_eq!(ram[LINK_BOTTLE_INFO + 2], 8);
+        assert_eq!(ram[HUD_CUR_ITEM_R], 7);
+    }
+
+    #[test]
+    fn native_inventory_items_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[LINK_ITEM_MOON_PEARL] = 1;
+        native_ram[LINK_BOTTLE_INFO] = 2;
+        native_ram[HUD_CUR_ITEM] = 4;
+        let mut items = InventoryItemsState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
+            bridge.set_inventory_item(2, 1);
+            bridge.set_bottle(0, 5);
+            bridge.set_equipped_button_item(0, 7);
+        }
+
+        assert_eq!(items.hookshot(), 1);
+        assert!(items.has_moon_pearl());
+        assert_eq!(items.bottle(0), 5);
+        assert_eq!(items.equipped_button_item(0), 7);
+        assert_eq!(ram[LINK_ITEM_BOW], 0);
+        assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
+        assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
+        assert_eq!(ram[LINK_BOTTLE_INFO], 5);
+        assert_eq!(ram[HUD_CUR_ITEM], 7);
+    }
+
+    #[test]
     fn dungeon_key_slots_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[LINK_KEYS_EARNED_PER_DUNGEON] = 1;
@@ -3427,7 +3516,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[LINK_KEYS_EARNED_PER_DUNGEON + 2] = 3;
 
-        let mut slots = DungeonKeySlotsState::default();
+        let mut slots = DungeonKeySlotsState::load_from_ram(&ram);
         {
             let mut bridge = NativeDungeonKeySlotsBridgeMut::new(&mut slots, &mut ram);
             bridge.set_keys_earned(4, 7);
@@ -3439,6 +3528,26 @@ mod tests {
         assert_eq!(slots.keys_earned_slot(5), 9);
         assert_eq!(slots.keys_earned_slot(16), 0);
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 2], 7);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 5], 9);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 15], 0);
+    }
+
+    #[test]
+    fn native_dungeon_key_slots_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[LINK_KEYS_EARNED_PER_DUNGEON + 2] = 3;
+        native_ram[LINK_KEYS_EARNED_PER_DUNGEON + 5] = 6;
+        let mut slots = DungeonKeySlotsState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDungeonKeySlotsBridgeMut::new(&mut slots, &mut ram);
+            bridge.set_keys_earned_slot(5, 9);
+        }
+
+        assert_eq!(slots.keys_earned_slot(2), 3);
+        assert_eq!(slots.keys_earned_slot(5), 9);
+        assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 2], 3);
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 5], 9);
         assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 15], 0);
     }
@@ -3493,7 +3602,7 @@ mod tests {
         ram[MIRROR_WARP_LOAD_STEP_COUNTER] = 0xff;
         ram[MIRROR_WARP_ANIMATION_COUNTER] = 0;
 
-        let mut mirror = MirrorWarpState::default();
+        let mut mirror = MirrorWarpState::load_from_ram(&ram);
         {
             let mut bridge = NativeMirrorWarpBridgeMut::new(&mut mirror, &mut ram);
             bridge.initialize_hdma_wave_state();
@@ -3523,6 +3632,40 @@ mod tests {
         assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0066);
         assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 0);
         assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 1);
+    }
+
+    #[test]
+    fn native_mirror_warp_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, MIRROR_WARP_TARGET_INDEX, 2);
+        write_le_u16(&mut native_ram, MIRROR_WARP_WAVE_OFFSET, 0x0012);
+        write_le_u16(&mut native_ram, MIRROR_WARP_DISPLACEMENT, 0x0034);
+        write_le_u16(&mut native_ram, MIRROR_WARP_SUBPIXEL, 0x0056);
+        native_ram[MIRROR_WARP_LOAD_STEP_COUNTER] = 7;
+        native_ram[MIRROR_WARP_ANIMATION_COUNTER] = 8;
+        let mut mirror = MirrorWarpState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeMirrorWarpBridgeMut::new(&mut mirror, &mut ram);
+            bridge.toggle_target_index();
+            bridge.set_wave_offset(0x009a);
+            bridge.set_displacement(0x00bc);
+            assert_eq!(bridge.increment_load_step_counter(), 8);
+            assert_eq!(bridge.decrement_animation_counter(), 7);
+        }
+
+        assert_eq!(mirror.target_index(), 0);
+        assert_eq!(mirror.wave_offset(), 0x009a);
+        assert_eq!(mirror.displacement(), 0x00bc);
+        assert_eq!(mirror.subpixel(), 0x0056);
+        assert_eq!(mirror.animation_counter(), 7);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_INDEX), 0);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_WAVE_OFFSET), 0x009a);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_DISPLACEMENT), 0x00bc);
+        assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0056);
+        assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 8);
+        assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 7);
     }
 
     #[test]
@@ -3591,7 +3734,7 @@ mod tests {
         ram[HUD_CUR_ITEM] = 1;
         write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
 
-        let mut progress = SaveProgressState::default();
+        let mut progress = SaveProgressState::load_from_ram(&ram);
         {
             let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
             bridge.set_palace_index_x2(0xff);
@@ -3645,6 +3788,38 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
         assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 0x4fe), 0x1234);
         assert_eq!(ram[HUD_POST_MESSAGE_REFRESH_FLAG], 0);
+    }
+
+    #[test]
+    fn native_save_progress_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[CUR_PALACE_INDEX_X2] = 10;
+        native_ram[SRAM_PROGRESS_FLAGS] = 0x10;
+        native_ram[SRAM_PROGRESS_INDICATOR_3] = 0xff;
+        native_ram[HUD_CUR_ITEM] = 1;
+        write_le_u16(&mut native_ram, SAVE_DUNG_INFO + 2, 0x0001);
+        let mut progress = SaveProgressState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
+            bridge.xor_palace_index_x2(2);
+            bridge.or_progress_flags(0x20);
+            bridge.clear_progress_indicator_3_bits(0xf0);
+            bridge.set_hud_current_item(2);
+            assert_eq!(bridge.or_dungeon_info_word(1, 0x0100), 0x0101);
+        }
+
+        assert_eq!(progress.palace_index_x2(), 8);
+        assert_eq!(progress.progress_flags(), 0x30);
+        assert_eq!(progress.progress_indicator_3(), 0x0f);
+        assert_eq!(progress.hud_current_item(), 2);
+        assert_eq!(progress.dungeon_info_word(1), 0x0101);
+        assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
+        assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x30);
+        assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0x0f);
+        assert_eq!(ram[HUD_CUR_ITEM], 2);
+        assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
     }
 
     #[test]
@@ -3718,7 +3893,7 @@ mod tests {
         write_le_u16(&mut ram, LINK_RUPEES_GOAL, 10);
         ram[LINK_NUM_KEYS] = 0xff;
 
-        let mut resources = PlayerResourcesState::default();
+        let mut resources = PlayerResourcesState::load_from_ram(&ram);
         {
             let mut bridge = NativePlayerResourcesBridgeMut::new(&mut resources, &mut ram);
             bridge.set_bombs(4);
@@ -3750,6 +3925,43 @@ mod tests {
         assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
         assert_eq!(ram[LINK_HAS_CRYSTALS], 0x20);
         assert_eq!(ram[LINK_WHICH_PENDANTS], 0x07);
+    }
+
+    #[test]
+    fn native_player_resources_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[LINK_ITEM_BOMBS] = 1;
+        native_ram[LINK_NUM_ARROWS] = 2;
+        native_ram[LINK_HEARTS_FILLER] = 0xff;
+        native_ram[LINK_MAGIC_FILLER] = 0;
+        write_le_u16(&mut native_ram, LINK_RUPEES_GOAL, 10);
+        native_ram[LINK_NUM_KEYS] = 0xff;
+        let mut resources = PlayerResourcesState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativePlayerResourcesBridgeMut::new(&mut resources, &mut ram);
+            bridge.decrement_bombs();
+            bridge.increment_arrows_by(5);
+            bridge.increment_heart_filler_word_by(2);
+            bridge.add_rupees_goal(90);
+            bridge.increment_keys();
+            bridge.add_ability_flags(0x04);
+        }
+
+        assert_eq!(resources.bombs(), 0);
+        assert_eq!(resources.arrows(), 7);
+        assert_eq!(resources.heart_filler(), 1);
+        assert_eq!(resources.magic_filler(), 1);
+        assert_eq!(resources.rupees_goal(), 100);
+        assert_eq!(resources.keys(), 0);
+        assert_eq!(resources.ability_flags(), 0x04);
+        assert_eq!(ram[LINK_ITEM_BOMBS], 0);
+        assert_eq!(ram[LINK_NUM_ARROWS], 7);
+        assert_eq!(read_le_u16(&ram, LINK_HEARTS_FILLER), 0x0101);
+        assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 100);
+        assert_eq!(ram[LINK_NUM_KEYS], 0);
+        assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
     }
 
     #[test]
