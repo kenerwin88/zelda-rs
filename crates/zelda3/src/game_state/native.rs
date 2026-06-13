@@ -3959,13 +3959,8 @@ mod tests {
     }
 
     #[test]
-    fn native_weather_vane_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_weather_vane_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0x0000);
-        ram[WEATHERVANE_MUSIC_LATCH] = 0;
-        ram[WEATHERVANE_SOURCE_SLOT] = 2;
-        ram[WEATHERVANE_OAM_OFFSET] = 0xfe;
-
         let mut weather_vane = WeatherVaneState::default();
         {
             let mut bridge = NativeWeatherVaneBridgeMut::new(&mut weather_vane, &mut ram);
@@ -3990,6 +3985,39 @@ mod tests {
         assert_eq!(ram[WEATHERVANE_MUSIC_LATCH], 1);
         assert_eq!(ram[WEATHERVANE_SOURCE_SLOT], 5);
         assert_eq!(ram[WEATHERVANE_OAM_OFFSET], 4);
+    }
+
+    #[test]
+    fn native_weather_vane_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut weather_vane = WeatherVaneState {
+            countdown: 0x0102,
+            music_latch: 3,
+            source_slot: 4,
+            oam_offset: 5,
+        };
+        weather_vane.write_to_ram(&mut ram);
+
+        write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0xaaaa);
+        ram[WEATHERVANE_MUSIC_LATCH] = 0xbb;
+        ram[WEATHERVANE_SOURCE_SLOT] = 0xcc;
+        ram[WEATHERVANE_OAM_OFFSET] = 0xdd;
+
+        {
+            let mut bridge = NativeWeatherVaneBridgeMut::new(&mut weather_vane, &mut ram);
+            bridge.set_music_latch(7);
+        }
+
+        assert_eq!(
+            weather_vane,
+            WeatherVaneState {
+                countdown: 0x0102,
+                music_latch: 7,
+                source_slot: 4,
+                oam_offset: 5,
+            }
+        );
+        assert_eq!(WeatherVaneState::load_from_ram(&ram), weather_vane);
     }
 
     #[test]
@@ -4026,13 +4054,8 @@ mod tests {
     }
 
     #[test]
-    fn native_bird_travel_destination_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_bird_travel_destination_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
-        ram[BIRD_TRAVEL_X_LO + 15] = 0x34;
-        ram[BIRD_TRAVEL_X_HI + 15] = 0x12;
-        ram[BIRD_TRAVEL_Y_LO + 15] = 0x78;
-        ram[BIRD_TRAVEL_Y_HI + 15] = 0x56;
-
         let mut destinations = BirdTravelDestinationsState::default();
         {
             let mut bridge = NativeBirdTravelDestinationBridgeMut::new(&mut destinations, &mut ram);
@@ -4059,6 +4082,36 @@ mod tests {
     }
 
     #[test]
+    fn native_bird_travel_destination_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut destinations = BirdTravelDestinationsState::default();
+        destinations.set_destination(15, 0x1234, 0x5678);
+        destinations.write_to_ram(&mut ram);
+
+        ram[BIRD_TRAVEL_X_LO + 15] = 0xaa;
+        ram[BIRD_TRAVEL_X_HI + 15] = 0xbb;
+        ram[BIRD_TRAVEL_Y_LO + 15] = 0xcc;
+        ram[BIRD_TRAVEL_Y_HI + 15] = 0xdd;
+
+        {
+            let mut bridge = NativeBirdTravelDestinationBridgeMut::new(&mut destinations, &mut ram);
+            bridge.clear_destination(2);
+        }
+
+        assert_eq!(
+            destinations.destination(15),
+            BirdTravelDestinationState {
+                x: 0x1234,
+                y: 0x5678,
+            }
+        );
+        assert_eq!(
+            BirdTravelDestinationsState::load_from_ram(&ram),
+            destinations
+        );
+    }
+
+    #[test]
     fn overworld_map_zoom_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[MODE7_ZOOM_STEP_COUNTER] = 4;
@@ -4077,11 +4130,8 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_map_zoom_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_map_zoom_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
-        ram[MODE7_ZOOM_STEP_COUNTER] = 2;
-        ram[TIMER_FOR_MODE7_ZOOM] = 1;
-
         let mut zoom = OverworldMapZoomState::default();
         {
             let mut bridge = NativeOverworldMapZoomBridgeMut::new(&mut zoom, &mut ram);
@@ -4094,6 +4144,33 @@ mod tests {
         assert_eq!(zoom.timer, 12);
         assert_eq!(ram[MODE7_ZOOM_STEP_COUNTER], 4);
         assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 12);
+    }
+
+    #[test]
+    fn native_overworld_map_zoom_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut zoom = OverworldMapZoomState {
+            step_counter: 2,
+            timer: 8,
+        };
+        zoom.write_to_ram(&mut ram);
+
+        ram[MODE7_ZOOM_STEP_COUNTER] = 0xaa;
+        ram[TIMER_FOR_MODE7_ZOOM] = 0xbb;
+
+        {
+            let mut bridge = NativeOverworldMapZoomBridgeMut::new(&mut zoom, &mut ram);
+            bridge.decrement_timer();
+        }
+
+        assert_eq!(
+            zoom,
+            OverworldMapZoomState {
+                step_counter: 2,
+                timer: 7,
+            }
+        );
+        assert_eq!(OverworldMapZoomState::load_from_ram(&ram), zoom);
     }
 
     #[test]

@@ -3154,7 +3154,6 @@ pub(crate) struct NativeWeatherVaneBridgeMut<'a> {
 
 impl<'a> NativeWeatherVaneBridgeMut<'a> {
     pub(crate) fn new(weather_vane: &'a mut WeatherVaneState, ram: &'a mut [u8]) -> Self {
-        *weather_vane = WeatherVaneState::load_from_ram(ram);
         Self { weather_vane, ram }
     }
 
@@ -3165,41 +3164,40 @@ impl<'a> NativeWeatherVaneBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.weather_vane.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_countdown(&mut self, value: u16) {
         self.weather_vane.countdown = value;
-        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn tick_countdown(&mut self) -> u16 {
         let value = self.weather_vane.tick_countdown();
-        write_le_u16(self.ram, WEATHERVANE_COUNTDOWN, value);
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn set_music_latch(&mut self, value: u8) {
         self.weather_vane.music_latch = value;
-        self.ram[WEATHERVANE_MUSIC_LATCH] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_source_slot(&mut self, value: u8) {
         self.weather_vane.source_slot = value;
-        self.ram[WEATHERVANE_SOURCE_SLOT] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn reset_oam_offset(&mut self) {
         self.weather_vane.reset_oam_offset();
-        self.ram[WEATHERVANE_OAM_OFFSET] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn advance_oam_offset(&mut self, value: u8) {
         self.weather_vane.advance_oam_offset(value);
-        self.ram[WEATHERVANE_OAM_OFFSET] = self.ram[WEATHERVANE_OAM_OFFSET].wrapping_add(value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3213,7 +3211,6 @@ impl<'a> NativeBirdTravelDestinationBridgeMut<'a> {
         destinations: &'a mut BirdTravelDestinationsState,
         ram: &'a mut [u8],
     ) -> Self {
-        *destinations = BirdTravelDestinationsState::load_from_ram(ram);
         Self { destinations, ram }
     }
 
@@ -3224,13 +3221,14 @@ impl<'a> NativeBirdTravelDestinationBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.destinations.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_destination(&mut self, slot: usize, x: u16, y: u16) {
         self.destinations.set_destination(slot, x, y);
-        self.ram[BIRD_TRAVEL_X_LO + slot] = x as u8;
-        self.ram[BIRD_TRAVEL_X_HI + slot] = (x >> 8) as u8;
-        self.ram[BIRD_TRAVEL_Y_LO + slot] = y as u8;
-        self.ram[BIRD_TRAVEL_Y_HI + slot] = (y >> 8) as u8;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_destination(&mut self, slot: usize) {
@@ -3245,7 +3243,6 @@ pub(crate) struct NativeOverworldMapZoomBridgeMut<'a> {
 
 impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
     pub(crate) fn new(zoom: &'a mut OverworldMapZoomState, ram: &'a mut [u8]) -> Self {
-        *zoom = OverworldMapZoomState::load_from_ram(ram);
         Self { zoom, ram }
     }
 
@@ -3253,16 +3250,19 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
         debug_assert_eq!(*self.zoom, OverworldMapZoomState::load_from_ram(self.ram));
     }
 
+    fn sync(&mut self) {
+        self.zoom.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_step_counter(&mut self, value: u8) {
         self.zoom.step_counter = value;
-        self.ram[MODE7_ZOOM_STEP_COUNTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_timer(&mut self, value: u8) {
         self.zoom.timer = value;
-        self.ram[TIMER_FOR_MODE7_ZOOM] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_timer(&mut self) {
