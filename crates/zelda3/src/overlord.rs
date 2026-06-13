@@ -49,11 +49,13 @@ const ARMOS_SINE_LOOKUP_TABLE: [u16; 256] = [
 
 impl ZeldaState {
     pub(super) fn overlord_get_x(&self, k: usize) -> u16 {
-        self.overlord_slot(k).x_low() as u16 | ((self.overlord_slot(k).x_high() as u16) << 8)
+        self.game_state.sprites.overlord_slots.slot(k).x_low() as u16
+            | ((self.game_state.sprites.overlord_slots.slot(k).x_high() as u16) << 8)
     }
 
     pub(super) fn overlord_get_y(&self, k: usize) -> u16 {
-        self.overlord_slot(k).y_low() as u16 | ((self.overlord_slot(k).y_high() as u16) << 8)
+        self.game_state.sprites.overlord_slots.slot(k).y_low() as u16
+            | ((self.game_state.sprites.overlord_slots.slot(k).y_high() as u16) << 8)
     }
 
     pub(super) fn overlord_stalfos_factory(&self, _k: usize) {
@@ -63,21 +65,37 @@ impl ZeldaState {
 
     pub(super) fn overlord_set_x(&mut self, k: usize, v: u16) {
         let value = v as u8;
-        self.overlord_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = (v >> 8) as u8;
-        self.overlord_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
     }
 
     pub(super) fn overlord_set_y(&mut self, k: usize, v: u16) {
         let value = v as u8;
-        self.overlord_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
         let value = (v >> 8) as u8;
-        self.overlord_slot_mut(k).set_y_high(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_high(value);
     }
 
     pub(super) fn overlord_spawn_boulder(&mut self) {
         if self.game_state.world.location.is_indoors()
-            || self.garnish_state().boulder_trap_count() == 0
+            || self.game_state.sprites.garnish_runtime.boulder_trap_count() == 0
             || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0
         {
             return;
@@ -86,18 +104,20 @@ impl ZeldaState {
         if timer & 63 != 0 {
             return;
         }
-        let camera_y_hi = (self.world_scroll().bg2_y() >> 8) as u8;
-        let coll_y_hi = self.garnish_state().sprcoll_y_hi();
+        let camera_y_hi = (self.game_state.world.scroll.bg2_y() >> 8) as u8;
+        let coll_y_hi = self.game_state.sprites.garnish_runtime.sprcoll_y_hi();
         if sign8(camera_y_hi.wrapping_sub(coll_y_hi).wrapping_sub(2)) {
             return;
         }
         if let Some((j, _info)) = self.Sprite_SpawnDynamically(0, 0xc2) {
             let x = self
-                .world_scroll()
+                .game_state
+                .world
+                .scroll
                 .bg2_x()
                 .wrapping_add((self.get_random_number() & 127) as u16)
                 .wrapping_add(64);
-            let y = self.world_scroll().bg2_y().wrapping_sub(0x30);
+            let y = self.game_state.world.scroll.bg2_y().wrapping_sub(0x30);
             self.Sprite_SetX(j, x);
             self.Sprite_SetY(j, y);
             let mut sprite = self.sprite_slot_mut(j);
@@ -117,14 +137,26 @@ impl ZeldaState {
             return;
         }
         for i in (0..=7).rev() {
-            if self.overlord_slot(i).overlord_type() != 0 {
+            if self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(i)
+                .overlord_type()
+                != 0
+            {
                 self.overlord_execute_single(i);
             }
         }
     }
 
     pub(super) fn overlord_execute_single(&mut self, k: usize) {
-        let j = self.overlord_slot(k).overlord_type();
+        let j = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type();
         self.overlord_check_if_active(k);
         match j {
             1 => self.overlord01_position_target(k),
@@ -151,84 +183,217 @@ impl ZeldaState {
 
     pub(super) fn overlord19_armos_coordinator_bounce(&mut self, k: usize) {
         const ARMOS_COORDINATOR_BACK_WALL_X: [u8; 6] = [49, 77, 105, 131, 159, 187];
-        if self.overlord_slot(k).gen2() != 0 {
-            let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-            self.overlord_slot_mut(k).set_gen2(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
         }
-        match self.overlord_slot(k).gen1() {
+        match self.game_state.sprites.overlord_slots.slot(k).gen1() {
             0 => {
                 if self.sprite_slot(0).a() != 0 {
                     let value = 120;
-                    self.overlord_slot_mut(k).set_x_low(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_x_low(value);
                     let value = 255;
-                    self.overlord_slot_mut(k).set_floor(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_floor(value);
                     let value = 64;
-                    self.overlord_slot_mut(2).set_x_low(value);
-                    self.overlord_slot_mut(0).set_x_low(192);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 2)
+                        .set_x_low(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 0)
+                        .set_x_low(192);
                     let value = 1;
-                    self.overlord_slot_mut(1).set_x_low(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 1)
+                        .set_x_low(value);
                     self.armos_coordinator_rotate_knights(k);
                 }
             }
             1 => {
                 if self.armos_coordinator_check_knights() {
-                    let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                    self.overlord_slot_mut(k).set_gen1(value);
+                    let value = self
+                        .game_state
+                        .sprites
+                        .overlord_slots
+                        .slot(k)
+                        .gen1()
+                        .wrapping_add(1);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen1(value);
                     let value = 0xff;
-                    self.overlord_slot_mut(k).set_gen2(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen2(value);
                 }
             }
             2 | 4 => self.armos_coordinator_rotate_knights(k),
             3 => {
-                let value = self.overlord_slot(2).x_low().wrapping_sub(1);
-                self.overlord_slot_mut(2).set_x_low(value);
-                if self.overlord_slot(2).x_low() == 32 {
-                    let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                    self.overlord_slot_mut(k).set_gen1(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(2)
+                    .x_low()
+                    .wrapping_sub(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 2)
+                    .set_x_low(value);
+                if self.game_state.sprites.overlord_slots.slot(2).x_low() == 32 {
+                    let value = self
+                        .game_state
+                        .sprites
+                        .overlord_slots
+                        .slot(k)
+                        .gen1()
+                        .wrapping_add(1);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen1(value);
                     let value = 64;
-                    self.overlord_slot_mut(k).set_gen2(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen2(value);
                 }
                 self.armos_coordinator_rotate(k);
             }
             5 => {
-                let value = self.overlord_slot(2).x_low().wrapping_add(1);
-                self.overlord_slot_mut(2).set_x_low(value);
-                if self.overlord_slot(2).x_low() == 64 {
-                    let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                    self.overlord_slot_mut(k).set_gen1(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(2)
+                    .x_low()
+                    .wrapping_add(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 2)
+                    .set_x_low(value);
+                if self.game_state.sprites.overlord_slots.slot(2).x_low() == 64 {
+                    let value = self
+                        .game_state
+                        .sprites
+                        .overlord_slots
+                        .slot(k)
+                        .gen1()
+                        .wrapping_add(1);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen1(value);
                     let value = 64;
-                    self.overlord_slot_mut(k).set_gen2(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, k)
+                        .set_gen2(value);
                 }
                 self.armos_coordinator_rotate(k);
             }
             6 => {
-                if self.overlord_slot(k).gen2() != 0 {
+                if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0 {
                     return;
                 }
                 self.armos_coordinator_disable_coercion(k);
                 for j in (0..=5).rev() {
                     let value = ARMOS_COORDINATOR_BACK_WALL_X[j];
-                    self.overlord_slot_mut(j).set_x_high(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, j)
+                        .set_x_high(value);
                     let value = 48;
-                    self.overlord_slot_mut(j).set_gen2(value);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, j)
+                        .set_gen2(value);
                 }
-                let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                self.overlord_slot_mut(k).set_gen1(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen1()
+                    .wrapping_add(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen1(value);
                 let value = 255;
-                self.overlord_slot_mut(k).set_gen2(value);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
             }
             7 => {
-                if self.overlord_slot(k).gen2() != 0 {
+                if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0 {
                     return;
                 }
                 for j in (0..=5).rev() {
-                    let value = self.overlord_slot(j).gen2().wrapping_add(1);
-                    self.overlord_slot_mut(j).set_gen2(value);
-                    if self.overlord_slot(j).gen2() == 192 {
+                    let value = self
+                        .game_state
+                        .sprites
+                        .overlord_slots
+                        .slot(j)
+                        .gen2()
+                        .wrapping_add(1);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, j)
+                        .set_gen2(value);
+                    if self.game_state.sprites.overlord_slots.slot(j).gen2() == 192 {
                         let value = 1;
-                        self.overlord_slot_mut(k).set_gen1(value);
-                        let value = 0u8.wrapping_sub(self.overlord_slot(k).floor());
-                        self.overlord_slot_mut(k).set_floor(value);
+                        self.game_state
+                            .sprites
+                            .overlord_slots
+                            .slot_mut(&mut self.ram, k)
+                            .set_gen1(value);
+                        let value = 0u8
+                            .wrapping_sub(self.game_state.sprites.overlord_slots.slot(k).floor());
+                        self.game_state
+                            .sprites
+                            .overlord_slots
+                            .slot_mut(&mut self.ram, k)
+                            .set_floor(value);
                         self.armos_coordinator_disable_coercion(k);
                         self.armos_coordinator_rotate(k);
                         return;
@@ -251,10 +416,14 @@ impl ZeldaState {
             return;
         }
         let value = 0;
-        self.overlord_slot_mut(k).set_overlord_type(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_overlord_type(value);
         self.temp_counter_mut().set(3);
         loop {
-            let i = self.temp_counter().value() as usize;
+            let i = self.game_state.scratch_counter.value() as usize;
             let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0xa7, 12) else {
                 return;
             };
@@ -270,7 +439,7 @@ impl ZeldaState {
                     .y()
                     .wrapping_add(RED_STALFOS_TRAP_Y[i] as i16 as u16),
             );
-            let floor = self.overlord_slot(k).floor();
+            let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_delay_main(RED_STALFOS_TRAP_DELAY[i]);
             sprite.set_floor(floor);
@@ -278,7 +447,7 @@ impl ZeldaState {
             sprite.set_flags2(3);
             sprite.set_direction(2);
             self.temp_counter_mut().decrement();
-            if sign8(self.temp_counter().value()) {
+            if sign8(self.game_state.scratch_counter.value()) {
                 break;
             }
         }
@@ -291,7 +460,11 @@ impl ZeldaState {
             && y.wrapping_sub(self.player_state().y()).wrapping_add(32) < 64
         {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
             self.dungeon_room_effects_mut()
                 .increment_trap_trigger_latch();
         }
@@ -299,14 +472,31 @@ impl ZeldaState {
 
     pub(super) fn overlord16_zoro_spawner(&mut self, k: usize) {
         const OVERLORD_ZORO_FACTORY_X: [i8; 8] = [-4, -2, 0, 2, 4, 6, 8, 12];
-        let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-        self.overlord_slot_mut(k).set_gen2(value);
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen2()
+            .wrapping_sub(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         let x = self.overlord_get_x(k).wrapping_add(8);
         let y = self.overlord_get_y(k).wrapping_add(8);
-        if self.get_tile_attribute_for_overlord(self.overlord_slot(k).floor(), x, y) != 0x82 {
+        if self.get_tile_attribute_for_overlord(
+            self.game_state.sprites.overlord_slots.slot(k).floor(),
+            x,
+            y,
+        ) != 0x82
+        {
             return;
         }
-        if self.overlord_slot(k).gen2() >= 0x18 || self.overlord_slot(k).gen2() & 3 != 0 {
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() >= 0x18
+            || self.game_state.sprites.overlord_slots.slot(k).gen2() & 3 != 0
+        {
             return;
         }
         if let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x9c, 12) {
@@ -317,7 +507,7 @@ impl ZeldaState {
                     .wrapping_add(random_x as i16 as u16)
                     .wrapping_add(8),
             );
-            let floor = self.overlord_slot(k).floor();
+            let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
             let subtype2 = self.get_random_number();
             let y = (info.r7_overlord_y & 0xff00) | info.r7_overlord_y.wrapping_add(8) & 0x00ff;
             let mut sprite = self.sprite_slot_mut(j);
@@ -339,15 +529,29 @@ impl ZeldaState {
         const OVERLORD_WIZZROBE_X: [i8; 4] = [48, -48, 0, 0];
         const OVERLORD_WIZZROBE_Y: [i8; 4] = [16, 16, 64, -32];
         const OVERLORD_WIZZROBE_DELAY: [u8; 4] = [0, 16, 32, 48];
-        if self.overlord_slot(k).gen2() != 128 {
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 128 {
             if self.game_state.frame.frame_counter & 1 != 0 {
-                let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-                self.overlord_slot_mut(k).set_gen2(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen2()
+                    .wrapping_sub(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
             }
             return;
         }
         let value = 127;
-        self.overlord_slot_mut(k).set_gen2(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         for i in (0..=3).rev() {
             if let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x9b, 12) {
                 self.Sprite_SetX(
@@ -362,7 +566,7 @@ impl ZeldaState {
                         .y()
                         .wrapping_add(OVERLORD_WIZZROBE_Y[i] as i16 as u16),
                 );
-                let floor = self.overlord_slot(k).floor();
+                let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
                 let mut sprite = self.sprite_slot_mut(j);
                 sprite.set_delay_main(OVERLORD_WIZZROBE_DELAY[i]);
                 sprite.set_floor(floor);
@@ -375,31 +579,63 @@ impl ZeldaState {
     pub(super) fn overlord14_tile_room(&mut self, k: usize) {
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if x & 0xff00 != 0 || y & 0xff00 != 0 {
             return;
         }
-        let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-        self.overlord_slot_mut(k).set_gen2(value);
-        if self.overlord_slot(k).gen2() != 0x80 {
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen2()
+            .wrapping_sub(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0x80 {
             return;
         }
         if self.tile_room_spawn_tile(k) < 0 {
             let value = 0x81;
-            self.overlord_slot_mut(k).set_gen2(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
             return;
         }
-        let value = self.overlord_slot(k).gen1().wrapping_add(1);
-        self.overlord_slot_mut(k).set_gen1(value);
-        if self.overlord_slot(k).gen1() != 22 {
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen1()
+            .wrapping_add(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen1() != 22 {
             let value = 0xe0;
-            self.overlord_slot_mut(k).set_gen2(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
         } else {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
         }
     }
 
@@ -415,11 +651,12 @@ impl ZeldaState {
         let Some((j, _info)) = self.Sprite_SpawnDynamically(k, 0x94) else {
             return -1;
         };
-        let i = self.overlord_slot(k).gen1() as usize;
-        let x = SPAWN_FLYING_TILE_X[i] as u16 | ((self.overlord_slot(k).x_high() as u16) << 8);
+        let i = self.game_state.sprites.overlord_slots.slot(k).gen1() as usize;
+        let x = SPAWN_FLYING_TILE_X[i] as u16
+            | ((self.game_state.sprites.overlord_slots.slot(k).x_high() as u16) << 8);
         let y = SPAWN_FLYING_TILE_Y[i].wrapping_sub(8) as u16
-            | ((self.overlord_slot(k).y_high() as u16) << 8);
-        let floor = self.overlord_slot(k).floor();
+            | ((self.game_state.sprites.overlord_slots.slot(k).y_high() as u16) << 8);
+        let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
         let mut sprite = self.sprite_slot_mut(j);
         sprite.set_e(1);
         sprite.set_x(x);
@@ -437,15 +674,35 @@ impl ZeldaState {
 
     pub(super) fn overlord10_pirogusu_spawner_left(&mut self, k: usize) {
         const OVERLORD_PIROGUSU_A: [u8; 4] = [2, 3, 0, 1];
-        let counter = self.overlord_slot(k).overlord_type().wrapping_sub(16);
+        let counter = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type()
+            .wrapping_sub(16);
         self.temp_counter_mut().set(counter);
-        if self.overlord_slot(k).gen2() != 128 {
-            let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-            self.overlord_slot_mut(k).set_gen2(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 128 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
             return;
         }
         let value = (self.get_random_number() & 31).wrapping_add(96);
-        self.overlord_slot_mut(k).set_gen2(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         let mut n = 0;
         for i in 0..16 {
             let sprite = self.sprite_slot(i);
@@ -459,8 +716,8 @@ impl ZeldaState {
         if let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x94, 12) {
             self.Sprite_SetX(j, info.r5_overlord_x);
             self.Sprite_SetY(j, info.r7_overlord_y);
-            let floor = self.overlord_slot(k).floor();
-            let direction = self.temp_counter().value();
+            let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
+            let direction = self.game_state.scratch_counter.value();
             let a = OVERLORD_PIROGUSU_A[direction as usize];
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_floor(floor);
@@ -480,34 +737,78 @@ impl ZeldaState {
         const CRUMBLE_TILE_PATH_OFFS: [u8; 7] = [0, 25, 66, 77, 87, 98, 108];
         const CRUMBLE_TILE_PATH_X: [i8; 4] = [16, -16, 0, 0];
         const CRUMBLE_TILE_PATH_Y: [i8; 4] = [0, 0, 16, -16];
-        if self.overlord_slot(k).gen2() != 0 {
-            if self.overlord_slot(k).gen3() != 0 {
-                let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-                self.overlord_slot_mut(k).set_gen2(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0 {
+            if self.game_state.sprites.overlord_slots.slot(k).gen3() != 0 {
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen2()
+                    .wrapping_sub(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
                 return;
             }
             let x = self
                 .overlord_get_x(k)
-                .wrapping_sub(self.world_scroll().bg2_x());
+                .wrapping_sub(self.game_state.world.scroll.bg2_x());
             let y = self
                 .overlord_get_y(k)
-                .wrapping_sub(self.world_scroll().bg2_y());
+                .wrapping_sub(self.game_state.world.scroll.bg2_y());
             if !(x & 0xff00 != 0 || y & 0xff00 != 0) {
-                let value = self.overlord_slot(k).gen3().wrapping_add(1);
-                self.overlord_slot_mut(k).set_gen3(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen3()
+                    .wrapping_add(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen3(value);
             }
             return;
         }
         let value = 16;
-        self.overlord_slot_mut(k).set_gen2(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         self.spawn_falling_tile(k);
-        let j = self.overlord_slot(k).overlord_type().wrapping_sub(10) as usize;
-        let i = self.overlord_slot(k).gen1() as usize;
-        let value = self.overlord_slot(k).gen1().wrapping_add(1);
-        self.overlord_slot_mut(k).set_gen1(value);
+        let j = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type()
+            .wrapping_sub(10) as usize;
+        let i = self.game_state.sprites.overlord_slots.slot(k).gen1() as usize;
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen1()
+            .wrapping_add(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
         if i == (CRUMBLE_TILE_PATH_OFFS[j + 1] - CRUMBLE_TILE_PATH_OFFS[j]) as usize {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
         }
         let t = CRUMBLE_TILE_PATH_DATA[CRUMBLE_TILE_PATH_OFFS[j] as usize + i];
         if t == 0xff {
@@ -530,34 +831,74 @@ impl ZeldaState {
     pub(super) fn spawn_falling_tile(&mut self, k: usize) {
         if let Some(j) = self.GarnishAlloc() {
             let value = 3;
-            self.garnish_slot_mut(j).set_garnish_type(value);
-            let value = self.overlord_slot(k).x_high();
-            self.garnish_slot_mut(j).set_x_high(value);
-            let value = self.overlord_slot(k).x_low();
-            self.garnish_slot_mut(j).set_x_low(value);
-            let sfx = self.calculate_sfx_pan_arbitrary(self.garnish_slot(j).x_low()) | 0x1f;
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_garnish_type(value);
+            let value = self.game_state.sprites.overlord_slots.slot(k).x_high();
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_x_high(value);
+            let value = self.game_state.sprites.overlord_slots.slot(k).x_low();
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_x_low(value);
+            let sfx = self
+                .calculate_sfx_pan_arbitrary(self.game_state.sprites.garnish_slots.slot(j).x_low())
+                | 0x1f;
             self.system_signals_mut().set_sound_effect_1(sfx);
             let y = self.overlord_get_y(k).wrapping_add(16);
             let value = y as u8;
-            self.garnish_slot_mut(j).set_y_low(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_y_low(value);
             let value = (y >> 8) as u8;
-            self.garnish_slot_mut(j).set_y_high(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_y_high(value);
             let value = 31;
-            self.garnish_slot_mut(j).set_countdown(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_countdown(value);
             self.garnish_state_mut().set_active_type(31);
         }
     }
 
     pub(super) fn overlord09_wallmaster_spawner(&mut self, k: usize) {
-        if self.overlord_slot(k).gen2() != 128 {
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 128 {
             if self.game_state.frame.frame_counter & 1 == 0 {
-                let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-                self.overlord_slot_mut(k).set_gen2(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen2()
+                    .wrapping_sub(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
             }
             return;
         }
         let value = 127;
-        self.overlord_slot_mut(k).set_gen2(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x90, 12) else {
             return;
         };
@@ -570,13 +911,27 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord08_blob_spawner(&mut self, k: usize) {
-        if self.overlord_slot(k).gen2() != 0 {
-            let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-            self.overlord_slot_mut(k).set_gen2(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() != 0 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
             return;
         }
         let value = 0xa0;
-        self.overlord_slot_mut(k).set_gen2(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(value);
         let mut n = 0;
         for i in 0..16 {
             let sprite = self.sprite_slot(i);
@@ -618,18 +973,36 @@ impl ZeldaState {
     pub(super) fn overlord07_moving_floor(&mut self, k: usize) {
         if self.sprite_slot(0).state() == 4 {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
             self.dungeon_moving_floor_mut().set_floor_move_flags(1);
             return;
         }
 
-        if self.overlord_slot(k).gen1() == 0 {
-            let value = self.overlord_slot(k).gen2().wrapping_add(1);
-            self.overlord_slot_mut(k).set_gen2(value);
-            if self.overlord_slot(k).gen2() == 32 {
+        if self.game_state.sprites.overlord_slots.slot(k).gen1() == 0 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_add(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
+            if self.game_state.sprites.overlord_slots.slot(k).gen2() == 32 {
                 let value = 0;
-                self.overlord_slot_mut(k).set_gen2(value);
-                let mask = if self.overlord_slot(k).x_low() != 0 {
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
+                let mask = if self.game_state.sprites.overlord_slots.slot(k).x_low() != 0 {
                     3
                 } else {
                     1
@@ -638,18 +1011,46 @@ impl ZeldaState {
                 self.dungeon_moving_floor_mut()
                     .set_floor_move_flags(u16::from(flags));
                 let value = (self.get_random_number() & 127).wrapping_add(128);
-                self.overlord_slot_mut(k).set_gen2(value);
-                let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                self.overlord_slot_mut(k).set_gen1(value);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen2(value);
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen1()
+                    .wrapping_add(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen1(value);
             } else {
                 self.dungeon_moving_floor_mut().set_floor_move_flags(1);
             }
         } else {
-            let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-            self.overlord_slot_mut(k).set_gen2(value);
-            if self.overlord_slot(k).gen2() == 0 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
+            if self.game_state.sprites.overlord_slots.slot(k).gen2() == 0 {
                 let value = 0;
-                self.overlord_slot_mut(k).set_gen1(value);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen1(value);
             }
         }
     }
@@ -662,32 +1063,56 @@ impl ZeldaState {
         const STALFOS_TRAP_TRIGGER: [u8; 8] = [255, 224, 192, 160, 128, 96, 64, 32];
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if x & 0xff00 != 0 || y & 0xff00 != 0 {
             return;
         }
-        if self.overlord_slot(k).gen1() == 0 {
-            if self.dungeon_room_effects().trap_trigger_latch() != 0 {
-                let value = self.overlord_slot(k).gen1().wrapping_add(1);
-                self.overlord_slot_mut(k).set_gen1(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen1() == 0 {
+            if self.game_state.dungeon.room_effects.trap_trigger_latch() != 0 {
+                let value = self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .gen1()
+                    .wrapping_add(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen1(value);
             }
             return;
         }
-        let old = self.overlord_slot(k).gen1();
-        let value = self.overlord_slot(k).gen1().wrapping_add(1);
-        self.overlord_slot_mut(k).set_gen1(value);
+        let old = self.game_state.sprites.overlord_slots.slot(k).gen1();
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen1()
+            .wrapping_add(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
         if old == STALFOS_TRAP_TRIGGER[k] {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
             let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x85, 12) else {
                 return;
             };
             self.Sprite_SetX(j, info.r5_overlord_x);
             self.Sprite_SetY(j, info.r7_overlord_y);
-            let floor = self.overlord_slot(k).floor();
+            let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_z(224);
             sprite.set_floor(floor);
@@ -699,16 +1124,29 @@ impl ZeldaState {
     pub(super) fn overlord06_bad_switch_snake(&mut self, k: usize) {
         const SNAKE_TRAP_SPAWN_TIMERS_BY_SLOT: [u8; 8] =
             [0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90];
-        let a = self.overlord_slot(k).gen1();
+        let a = self.game_state.sprites.overlord_slots.slot(k).gen1();
         if a == 0 {
-            if self.dungeon_room_effects().has_bomb_trap_activation() {
+            if self
+                .game_state
+                .dungeon
+                .room_effects
+                .has_bomb_trap_activation()
+            {
                 let value = 1;
-                self.overlord_slot_mut(k).set_gen1(value);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_gen1(value);
             }
             return;
         }
         let value = a.wrapping_add(1);
-        self.overlord_slot_mut(k).set_gen1(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
         if a != SNAKE_TRAP_SPAWN_TIMERS_BY_SLOT[k] {
             return;
         }
@@ -717,7 +1155,7 @@ impl ZeldaState {
         };
         self.Sprite_SetX(j, info.r5_overlord_x);
         self.Sprite_SetY(j, info.r7_overlord_y);
-        let floor = self.overlord_slot(k).floor();
+        let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
         {
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_z(192);
@@ -726,9 +1164,18 @@ impl ZeldaState {
             sprite.set_floor(floor);
         }
         self.sprite_sfx_queue_sfx2_with_pan(j, 0x20);
-        let sprite_type = self.overlord_slot(k).overlord_type();
+        let sprite_type = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type();
         let value = 0;
-        self.overlord_slot_mut(k).set_overlord_type(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_overlord_type(value);
         if sprite_type == 26 {
             self.sprite_slot_mut(j).set_sprite_type(74);
             self.Sprite_TransmuteToBomb(j);
@@ -747,10 +1194,10 @@ impl ZeldaState {
         ];
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if (x | y) & 0xff00 != 0 || self.game_state.frame.frame_counter & 0x0f != 0 {
             return;
         }
@@ -759,41 +1206,96 @@ impl ZeldaState {
         self.temp_counter_mut()
             .set(ALL_DIRECTION_METAL_BALL_FACTORY_IDX[j]);
         let value = ALL_DIRECTION_METAL_BALL_FACTORY_X[j];
-        self.overlord_slot_mut(k).set_x_low(value);
-        let value = self.sprite_workspace().room_origin_x_high();
-        self.overlord_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
+        let value = self.game_state.sprites.workspace.room_origin_x_high();
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
         let value = ALL_DIRECTION_METAL_BALL_FACTORY_Y[j];
-        self.overlord_slot_mut(k).set_y_low(value);
-        let value = self.sprite_workspace().room_origin_y_high().wrapping_add(1);
-        self.overlord_slot_mut(k).set_y_high(value);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
+        let value = self
+            .game_state
+            .sprites
+            .workspace
+            .room_origin_y_high()
+            .wrapping_add(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_high(value);
         self.overlord_spawn_cannon_ball(k, 0);
     }
 
     pub(super) fn overlord03_vertical_cannon(&mut self, k: usize) {
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         if x & 0xff00 != 0 {
             let value = 255;
-            self.overlord_slot_mut(k).set_gen2(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
             return;
         }
-        if self.game_state.frame.frame_counter & 1 == 0 && self.overlord_slot(k).gen2() != 0 {
-            let value = self.overlord_slot(k).gen2().wrapping_sub(1);
-            self.overlord_slot_mut(k).set_gen2(value);
+        if self.game_state.frame.frame_counter & 1 == 0
+            && self.game_state.sprites.overlord_slots.slot(k).gen2() != 0
+        {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen2()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
         }
         self.temp_counter_mut().set(2);
         self.sprite_workspace_mut().set_shared_scratch_a(0);
-        let value = self.overlord_slot(k).gen1().wrapping_sub(1);
-        self.overlord_slot_mut(k).set_gen1(value);
-        if !sign8(self.overlord_slot(k).gen1()) {
+        let value = self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .gen1()
+            .wrapping_sub(1);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
+        if !sign8(self.game_state.sprites.overlord_slots.slot(k).gen1()) {
             return;
         }
         let value = 56;
-        self.overlord_slot_mut(k).set_gen1(value);
-        let xd = if self.overlord_slot(k).gen2() == 0 {
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(value);
+        let xd = if self.game_state.sprites.overlord_slots.slot(k).gen2() == 0 {
             let value = 160;
-            self.overlord_slot_mut(k).set_gen2(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(value);
             self.sprite_workspace_mut().set_shared_scratch_a(160);
             8
         } else {
@@ -810,14 +1312,14 @@ impl ZeldaState {
         };
         self.Sprite_SetX(j, info.r5_overlord_x.wrapping_add(xd as i16 as u16));
         self.Sprite_SetY(j, info.r7_overlord_y.wrapping_sub(1));
-        let counter = self.temp_counter().value() as usize;
-        let floor = self.overlord_slot(k).floor();
+        let counter = self.game_state.scratch_counter.value() as usize;
+        let floor = self.game_state.sprites.overlord_slots.slot(k).floor();
         let mut sprite = self.sprite_slot_mut(j);
         sprite.set_x_velocity(OVERLORD_SPAWN_BALL_XVEL[counter] as u8);
         sprite.set_y_velocity(OVERLORD_SPAWN_BALL_YVEL[counter] as u8);
         sprite.set_floor(floor);
-        if self.sprite_workspace().shared_scratch_a() != 0 {
-            let scratch = self.sprite_workspace().shared_scratch_a();
+        if self.game_state.sprites.workspace.shared_scratch_a() != 0 {
+            let scratch = self.game_state.sprites.workspace.shared_scratch_a();
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_ai_state(scratch);
             sprite.add_y_low(8);
@@ -839,19 +1341,32 @@ impl ZeldaState {
         }
         let j = (self.game_state.frame.frame_counter & 1) as usize;
         let x = self
-            .world_scroll()
+            .game_state
+            .world
+            .scroll
             .bg2_x()
             .wrapping_add(OVERLORD_IN_RANGE_OFFS[j])
             .wrapping_sub(self.overlord_get_x(k));
         let y = self
-            .world_scroll()
+            .game_state
+            .world
+            .scroll
             .bg2_y()
             .wrapping_add(OVERLORD_IN_RANGE_OFFS[j])
             .wrapping_sub(self.overlord_get_y(k));
         if ((x >> 15) as usize) != j || ((y >> 15) as usize) != j {
             let value = 0;
-            self.overlord_slot_mut(k).set_overlord_type(value);
-            let blk = self.overlord_slot(k).sprite_block_pos();
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_overlord_type(value);
+            let blk = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .sprite_block_pos();
             if blk != 0xffff {
                 let loadedmask = 0x80 >> (blk & 7);
                 self.overworld_sprite_loaded_mut()
@@ -861,9 +1376,19 @@ impl ZeldaState {
     }
 
     pub(super) fn armos_coordinator_rotate_knights(&mut self, k: usize) {
-        if self.overlord_slot(k).gen2() == 0 {
-            let value = self.overlord_slot(k).gen1().wrapping_add(1);
-            self.overlord_slot_mut(k).set_gen1(value);
+        if self.game_state.sprites.overlord_slots.slot(k).gen2() == 0 {
+            let value = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .gen1()
+                .wrapping_add(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen1(value);
         }
         self.armos_coordinator_rotate(k);
     }
@@ -871,28 +1396,53 @@ impl ZeldaState {
     pub(super) fn armos_coordinator_rotate(&mut self, k: usize) {
         const ARMOS_KNIGHT_RING_ANGLE_OFFSETS: [u16; 6] = [0, 425, 340, 255, 170, 85];
         let angle = self
-            .overlord_slot(0)
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(0)
             .adjacent_x_low_word()
-            .wrapping_add(self.overlord_slot(k).floor() as i8 as i16 as u16);
-        self.overlord_slot_mut(0).set_adjacent_x_low_word(angle);
+            .wrapping_add(
+                self.game_state.sprites.overlord_slots.slot(k).floor() as i8 as i16 as u16,
+            );
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, 0)
+            .set_adjacent_x_low_word(angle);
 
         for (i, offset) in ARMOS_KNIGHT_RING_ANGLE_OFFSETS.iter().enumerate() {
             let t0 = angle.wrapping_add(*offset);
-            let size = self.overlord_slot(2).x_low();
+            let size = self.game_state.sprites.overlord_slots.slot(2).x_low();
             let tx = self
                 .overlord_get_x(k)
                 .wrapping_add(armos_sin(t0, size) as i16 as u16);
             let value = tx as u8;
-            self.overlord_slot_mut(i).set_x_high(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i)
+                .set_x_high(value);
             let value = (tx >> 8) as u8;
-            self.overlord_slot_mut(i).set_y_high(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i)
+                .set_y_high(value);
             let ty = self
                 .overlord_get_y(k)
                 .wrapping_add(armos_sin(t0.wrapping_add(0x80), size) as i16 as u16);
             let value = ty as u8;
-            self.overlord_slot_mut(i).set_gen2(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i)
+                .set_gen2(value);
             let value = (ty >> 8) as u8;
-            self.overlord_slot_mut(i).set_floor(value);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i)
+                .set_floor(value);
         }
         self.temp_counter_mut().set(6);
     }
@@ -949,7 +1499,9 @@ impl ZeldaState {
     }
 
     fn GarnishAlloc(&self) -> Option<usize> {
-        (0..30).rev().find(|&j| self.garnish_slot(j).is_empty())
+        (0..30)
+            .rev()
+            .find(|&j| self.game_state.sprites.garnish_slots.slot(j).is_empty())
     }
 
     fn Sprite_TransmuteToBomb(&mut self, k: usize) {
@@ -967,7 +1519,7 @@ impl ZeldaState {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_bg2_attributes().bg2_attr(t)
+            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
         } else {
             self.overworld_get_tile_attribute_at_location(x >> 3, y)
         };

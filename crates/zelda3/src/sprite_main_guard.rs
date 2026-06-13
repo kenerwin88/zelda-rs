@@ -122,8 +122,10 @@ impl ZeldaState {
         self.sprite_check_damage_from_link(k);
 
         let y_low = self.sprite_slot(k).y_low();
-        let message_counter = self.sprite_system().blind_head_anim_counter();
-        if self.world_region().overworld_area_low() == 0x1b && (y_low == 0x50 || y_low == 0x90) {
+        let message_counter = self.game_state.sprites.system.blind_head_anim_counter();
+        if self.game_state.world.region.overworld_area_low() == 0x1b
+            && (y_low == 0x50 || y_low == 0x90)
+        {
             self.sprite_tutorial_guard_show_message_on_contact(
                 k,
                 if y_low == 0x50 { 0xb2 } else { 0xb3 },
@@ -131,7 +133,7 @@ impl ZeldaState {
         } else if self
             .sprite_tutorial_guard_show_message_on_contact(k, u16::from(message_counter) + 0x0f)
         {
-            let counter = self.sprite_system().blind_head_anim_counter();
+            let counter = self.game_state.sprites.system.blind_head_anim_counter();
             let next = if counter != 6 {
                 counter.wrapping_add(1)
             } else {
@@ -171,7 +173,7 @@ impl ZeldaState {
                 let cond = (((self.game_state.frame.frame_counter ^ j as u8) & 7)
                     | self.sprite_slot(j).hit_timer())
                     == 0;
-                if j != self.sprite_system().cur_object_index() as usize
+                if j != self.game_state.sprites.system.cur_object_index() as usize
                     && self.sprite_slot(j).state() >= 9
                     && cond
                 {
@@ -290,29 +292,36 @@ impl ZeldaState {
         let parent = self.sprite_slot(k).c().wrapping_sub(1) as usize;
         let is_close = if self.sprite_slot(parent).sprite_type() == 0xce {
             let x = self
-                .sprite_workspace()
+                .game_state
+                .sprites
+                .workspace
                 .current_sprite_x()
                 .wrapping_sub(self.player_state().x())
                 .wrapping_add(16);
             let y = self
                 .player_state()
                 .y()
-                .wrapping_sub(self.sprite_workspace().current_sprite_y())
+                .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                 .wrapping_add(24);
             x < 32 && y < 32
         } else {
-            if (self.probe_check_tile_solidity(k) && self.sprite_workspace().tile_type() != 9)
+            if (self.probe_check_tile_solidity(k)
+                && self.game_state.sprites.workspace.tile_type() != 9)
                 || self.player_state().is_cape_active()
             {
                 self.sprite_slot_mut(k).clear();
                 return;
             }
             let x = self
-                .sprite_workspace()
+                .game_state
+                .sprites
+                .workspace
                 .current_sprite_x()
                 .wrapping_sub(self.player_state().x());
             let y = self
-                .sprite_workspace()
+                .game_state
+                .sprites
+                .workspace
                 .current_sprite_y()
                 .wrapping_sub(self.player_state().y());
             x < 16
@@ -344,8 +353,8 @@ impl ZeldaState {
     //   ...same tile probe as C, caching sprite_tiletype...
     // }
     pub(super) fn probe_check_tile_solidity(&mut self, k: usize) -> bool {
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let tiletype = if self.game_state.world.location.is_indoors() {
             let mut t = if self.sprite_slot(k).floor() >= 1 {
                 0x1000
@@ -354,15 +363,19 @@ impl ZeldaState {
             };
             t += ((cur_x & 0x01f8) >> 3) as usize;
             t += ((cur_y & 0x01f8) << 3) as usize;
-            self.dungeon_bg2_attributes().bg2_attr(t)
+            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
         } else {
-            let world = self.world_scroll();
+            let world = &self.game_state.world.scroll;
             let t = ((cur_x >> 3).wrapping_sub(world.overworld_offset_base_x())
                 & world.overworld_offset_mask_x())
                 | ((cur_y.wrapping_sub(world.overworld_offset_base_y())
                     & world.overworld_offset_mask_y())
                     << 3);
-            let map16 = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(t);
+            let map16 = self
+                .game_state
+                .dungeon
+                .room_tilemaps
+                .bg2_tile_by_byte_pos(t);
             self.asset_u8(164, map16 as usize)
         };
         self.sprite_workspace_mut().set_tile_type(tiletype);
@@ -550,7 +563,7 @@ impl ZeldaState {
         let sprite = self.sprite_slot(k);
         let j = ((sprite.direction() as usize) * 2) | (sprite.subtype2() as usize);
         let j = j & 7;
-        let oam_cur = self.oam_state().current_pointer_usize();
+        let oam_cur = self.game_state.oam.current_pointer_usize();
         let x = info
             .x
             .wrapping_add(BOMB_TROOPER_ARM_X_OFFSETS[j] as i16 as u16);
@@ -641,7 +654,7 @@ impl ZeldaState {
         }
         self.guard_parry_sword_attacks_for_guard(k);
         let dmg_link = self.sprite_check_damage_to_link_for_guard(k);
-        let alert = self.sprite_system().alert_flag() != 0;
+        let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot(k).ai_state() < 3 {
             self.sprite_slot_mut(k).set_ai_state(3);
             self.guard_set_timer_and_assert_tile_hit_box(k, 0x20);
@@ -930,8 +943,10 @@ impl ZeldaState {
             self.sprite_slot_mut(k).increment_g();
             if old == 15 {
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x4);
-                let area_lo = self.world_region().overworld_area_low();
-                if self.save_progress().progress_indicator() == 2 && area_lo == 24 {
+                let area_lo = self.game_state.world.region.overworld_area_low();
+                if self.game_state.inventory.save_progress.progress_indicator() == 2
+                    && area_lo == 24
+                {
                     self.system_signals_mut().set_music_control(12);
                 }
             }
@@ -995,7 +1010,7 @@ impl ZeldaState {
             projectile.set_z(0);
             projectile.set_a(a_val);
         }
-        if a_val != 0 && self.inventory_items().shield_type() == 0 {
+        if a_val != 0 && self.game_state.inventory.items.shield_type() == 0 {
             self.sprite_slot_mut(j).and_flags5(!0x20);
         }
     }
@@ -1241,7 +1256,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if (self.sprite_check_damage_to_and_from_link(k) || self.sprite_system().alert_flag() != 0)
+        if (self.sprite_check_damage_to_and_from_link(k)
+            || self.game_state.sprites.system.alert_flag() != 0)
             && self.sprite_slot(k).ai_state() < 3
         {
             let mut sprite = self.sprite_slot_mut(k);
@@ -1554,7 +1570,7 @@ mod tests {
         state.world_region_mut().set_overworld_area_index(24);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot(k).g(), 16);
-        assert_eq!(state.system_signals().music_control(), 12);
+        assert_eq!(state.game_state.system_signals.music_control(), 12);
     }
 
     #[test]
@@ -1566,7 +1582,7 @@ mod tests {
         state.system_signals_mut().set_music_control(7);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot(k).g(), 16);
-        assert_eq!(state.system_signals().music_control(), 7);
+        assert_eq!(state.game_state.system_signals.music_control(), 7);
     }
 
     #[test]

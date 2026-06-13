@@ -20,23 +20,16 @@ mod system;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, GraphicsDecompressionScratch, HudInventoryOrderState, HudStateRead,
-    LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
+    DisplayState, GraphicsDecompressionScratch, HudStateRead, LinkDmaSourceSlot,
+    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
     NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
     NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    PaletteBufferState, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
-    TrinexxPaletteState, WaterHdmaWindowState,
+    PpuScrollCopyState,
 };
 pub(crate) use dungeon::{
-    loaded_room_data_word, DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState,
-    DungeonHeaderState, DungeonMovableBlockState, DungeonMovingFloorState,
-    DungeonObjectTrackingState, DungeonRoomDoorSetupState, DungeonRoomEffectsState,
-    DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState, DungeonRoomRuntimeState,
-    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
-    DungeonScratchWordState, DungeonStairList, DungeonStairListsState, DungeonStairMovementState,
-    DungeonState, DungeonTorchState, NativeDungeonBg2AttributeBridgeMut,
+    loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
     NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
     NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonMovableBlockBridgeMut, NativeDungeonMovingFloorBridgeMut,
@@ -50,8 +43,7 @@ pub(crate) use dungeon::{
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BombosBlastState, BombosFireColumnState, BombosSpellState, DiggingGamePrizeState,
-    DoorDebrisState, EffectAngleScratchState, EffectState, HappinessPondRupeeSlotState,
+    BombosBlastState, BombosFireColumnState, EffectState, HappinessPondRupeeSlotState,
     HappinessPondRupeeSnapshot, HistoryPositionState, LanmolaSegmentMotionState,
     NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut,
     NativeBlastWallFireballBridgeMut, NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut,
@@ -62,32 +54,27 @@ pub(crate) use effects::{
     NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut, NativeTowerSealBridgeMut,
     NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
-    TowerSealOrbitState, TowerSealSparkleState, TowerSealState, WeatherVaneDebrisSlotState,
+    NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, SkullWoodsFireSlotState,
+    TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
 };
 #[cfg(test)]
 use effects::{BlastWallState, SkullWoodsFireState};
 pub(crate) use ending::{
-    AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
-    NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut,
-    NativeIntroSceneBridgeMut,
+    EndingState, IntroActorRead, NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut,
+    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use inventory::{
-    DungeonKeySlotsState, InventoryItemsState, InventoryState, MirrorWarpState,
-    NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut,
-    NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut, PlayerResourcesState,
+    InventoryState, NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut,
+    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
     SaveProgressState,
 };
 pub(crate) use messaging::{
-    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
-    MessagingRenderBufferState, MessagingRuntimeState, MessagingState, MultiselectChoiceRead,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SelectFileMenuState,
-    SharedMessageTimerState, VwfRenderState,
+    MessagingState, MultiselectChoiceRead, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
+    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -102,29 +89,24 @@ pub(crate) use player::{
     Bg1MovementAccumulatorState, FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut,
     NativeFollowerLinkBridgeMut, NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerSnapshotState,
-    PlayerState, PlayerTileAttributeTableState, PushedBlockState, SpecialExitPositionState,
-    SwimAccelerationState, TileDetectionState,
+    PlayerState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
-    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyFaceCoordsState,
-    PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
+    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyState,
 };
 pub(crate) use sprites::{
-    AncillaSlotSnapshot, BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState,
-    DualLayerTileCacheState, EnemyDamageSubclassTableState, EtherOrbitState, FollowerRuntimeState,
-    GarnishRuntimeState, MazeGameTimerState, NativeArmosKnightHomePositionBridgeMut,
-    NativeArrghusPuffHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
-    NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
-    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
-    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
+    AncillaSlotSnapshot, BossHomePositionRead, CachedSpriteRead,
+    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
+    NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
-    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
-    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, SpriteDrawHitboxWorkState, SpriteSlotSnapshot, SpriteState,
-    SpriteSystemState, SpriteWorkspaceState, TagalongSlotRead,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
+    SpriteSlotSnapshot, SpriteState, TagalongSlotRead,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, NativeSystemWorkAreaBridgeMut,
@@ -142,9 +124,7 @@ pub(crate) use world::{
     NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
     NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
     NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableRead,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16SourcePage, RoomBoundsState,
-    WeatherVaneState, WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState,
-    WorldRegionState, WorldScrollState, WorldState, WorldTransientState,
+    OverworldMap16Decode, OverworldMap16SourcePage, WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -153,22 +133,52 @@ use crate::game_state::constants::*;
 #[cfg(test)]
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
-use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState};
+use display::{
+    HudInventoryOrderState, HudRuntimeState, HudTilemapState, OverworldPaletteBackupState,
+    PaletteBufferState, PaletteFilterState, SpotlightHdmaState, TrinexxPaletteState,
+    WaterHdmaWindowState,
+};
 #[cfg(test)]
-use dungeon::DungeonEntranceBackupState;
+use dungeon::{
+    DungeonEntranceBackupState, DungeonHeaderState, DungeonRoomDoorSetupState,
+    DungeonScratchWordState,
+};
 #[cfg(test)]
-use effects::EntranceEffectState;
+use effects::{
+    BombosSpellState, DiggingGamePrizeState, DoorDebrisState, EffectAngleScratchState,
+    EntranceEffectState, QuakeBoltState, QuakeSpellState, TowerSealState,
+};
 #[cfg(test)]
-use effects::QuakeBoltState;
+use ending::{AttractSceneState, EndingCreditState, IntroSceneState};
 #[cfg(test)]
-use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
+use inventory::{DungeonKeySlotsState, InventoryItemsState, MirrorWarpState, PlayerResourcesState};
 #[cfg(test)]
-use sprites::{FailedSpinSparkleSpawnState, PrizeDropCycleState, TagalongTrailState};
+use messaging::{
+    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
+    DialoguePointerTableState, DialogueSourceOffsetState, MessagingRenderBufferState,
+    MessagingRuntimeState, MultiselectChoiceState, SelectFileMenuState, SharedMessageTimerState,
+    VwfRenderState,
+};
+#[cfg(test)]
+use player::{PushedBlockState, SpecialExitPositionState};
+#[cfg(test)]
+use poly::{
+    PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState,
+};
+#[cfg(test)]
+use sprites::{
+    ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
+    EtherOrbitState, FailedSpinSparkleSpawnState, MazeGameTimerState, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState,
+    TagalongTrailState,
+};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldConfigTableState, OverworldEntranceState,
-    OverworldExitState, OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
-    OverworldScrollDeltaState, OverworldTransitionState,
+    OverworldEventInfoState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
+    OverworldScreenSizeState, OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState,
+    WeatherVaneState, WorldCameraBoundariesState, WorldPaletteThemeState, WorldRegionState,
+    WorldScrollState, WorldTransientState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -262,6 +272,11 @@ impl GameState {
 mod tests {
     use super::*;
     use crate::game_state::constants::messaging as messaging_constants;
+    use crate::game_state::native::dungeon::DungeonDoorState;
+    use crate::game_state::native::player::{SwimAccelerationState, TileDetectionState};
+    use crate::game_state::native::sprites::{
+        FollowerRuntimeState, GarnishRuntimeState, SpriteSystemState,
+    };
     use crate::game_state::native::world::DOOR_ANIMATION_REPLACEMENT_TILE_INDEX;
     use snes::WRAM_SIZE;
 
@@ -394,6 +409,53 @@ mod tests {
         assert_eq!(ram[MAIN_MODULE], 7);
         assert_eq!(ram[SUBMODULE], 3);
         assert_eq!(ram[FRAME_COUNTER], 0x42);
+    }
+
+    #[test]
+    fn native_sprite_slot_bridge_projects_position_and_packed_n_word() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut sprite_slots = SpriteSlotsState::load_from_ram(&ram);
+
+        {
+            let mut bridge = sprite_slots.slot_mut(&mut ram, 3);
+            bridge.set_x(0x4567);
+            bridge.set_y(0x89ab);
+            bridge.set_n_word(0x1234);
+            bridge.set_x_velocity(0x10);
+            bridge.set_y_velocity(0xf0);
+            bridge.set_z(0x20);
+            bridge.set_z_velocity(0x10);
+            bridge.move_x();
+            bridge.move_y();
+            bridge.move_z();
+        }
+
+        let slot = sprite_slots.slot(3);
+        assert_eq!(slot.x(), 0x4568);
+        assert_eq!(slot.y(), 0x89aa);
+        assert_eq!(slot.z(), 0x21);
+        assert_eq!(slot.n_word(), 0x1234);
+        assert_eq!(ram[SPRITE_X_SUBPIXEL + 3], 0);
+        assert_eq!(ram[SPRITE_X_LO + 3], 0x68);
+        assert_eq!(ram[SPRITE_X_HI + 3], 0x45);
+        assert_eq!(ram[SPRITE_Y_SUBPIXEL + 3], 0);
+        assert_eq!(ram[SPRITE_Y_LO + 3], 0xaa);
+        assert_eq!(ram[SPRITE_Y_HI + 3], 0x89);
+        assert_eq!(ram[SPRITE_Z_SUBPIXEL + 3], 0);
+        assert_eq!(ram[SPRITE_Z + 3], 0x21);
+        assert_eq!(read_le_u16(&ram, SPRITE_N + 3 * 2), 0x1234);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        sprite_slots.write_to_ram(&mut projected);
+        assert_eq!(projected[SPRITE_X_SUBPIXEL + 3], 0);
+        assert_eq!(projected[SPRITE_X_LO + 3], 0x68);
+        assert_eq!(projected[SPRITE_X_HI + 3], 0x45);
+        assert_eq!(projected[SPRITE_Y_SUBPIXEL + 3], 0);
+        assert_eq!(projected[SPRITE_Y_LO + 3], 0xaa);
+        assert_eq!(projected[SPRITE_Y_HI + 3], 0x89);
+        assert_eq!(projected[SPRITE_Z_SUBPIXEL + 3], 0);
+        assert_eq!(projected[SPRITE_Z + 3], 0x21);
+        assert_eq!(read_le_u16(&projected, SPRITE_N + 3 * 2), 0x1234);
     }
 
     #[test]

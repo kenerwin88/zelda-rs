@@ -231,8 +231,8 @@ impl ZeldaState {
     }
 
     pub(super) fn check_palace_item_posession(&self) -> u8 {
-        let inventory = self.inventory_items();
-        match self.save_progress().palace_index_x2() >> 1 {
+        let inventory = &self.game_state.inventory.items;
+        match self.game_state.inventory.save_progress.palace_index_x2() >> 1 {
             2 => u8::from(inventory.bow() != 0),
             3 => u8::from(inventory.gloves() != 0),
             5 => u8::from(inventory.hookshot() != 0),
@@ -252,9 +252,9 @@ impl ZeldaState {
         if item == 0 {
             return -1;
         }
-        if self.hud_inventory_order_state().is_custom() {
+        if self.game_state.display.hud_inventory_order.is_custom() {
             for i in 0..HUD_ITEM_COUNT - 1 {
-                if self.hud_inventory_order_state().item(i) == item {
+                if self.game_state.display.hud_inventory_order.item(i) == item {
                     return i as i32;
                 }
             }
@@ -265,13 +265,13 @@ impl ZeldaState {
     }
 
     fn hud_goto_prev_item(&self, item: &mut u8, first_item_index: u8) {
-        if self.hud_inventory_order_state().is_custom() {
+        if self.game_state.display.hud_inventory_order.is_custom() {
             let pos = self.hud_get_item_position(*item);
             *item = if pos == 0 && first_item_index == 0 {
                 0
             } else {
                 let idx = ((if pos <= 0 { HUD_ITEM_COUNT as i32 } else { pos }) - 1) as usize;
-                self.hud_inventory_order_state().item(idx)
+                self.game_state.display.hud_inventory_order.item(idx)
             };
         } else {
             *item = if *item > first_item_index {
@@ -283,14 +283,14 @@ impl ZeldaState {
     }
 
     fn hud_goto_next_item(&self, item: &mut u8, first_item_index: u8) {
-        if self.hud_inventory_order_state().is_custom() {
+        if self.game_state.display.hud_inventory_order.is_custom() {
             let i = self.hud_get_item_position(*item);
             let idx = if i as usize >= HUD_ITEM_COUNT - 1 {
                 0
             } else {
                 i as usize + 1
             };
-            *item = self.hud_inventory_order_state().item(idx);
+            *item = self.game_state.display.hud_inventory_order.item(idx);
         } else {
             *item = if *item < HUD_ITEM_COUNT as u8 {
                 item.wrapping_add(1)
@@ -318,18 +318,18 @@ impl ZeldaState {
         self.hud_buffer_set(0xf4 / 2, 0x250f);
 
         let mut k = 0usize;
-        let j = if (self.dungeon_stair_movement().current_floor() as i8) >= 0 {
-            if self.dungeon_stair_movement().current_floor_word() == 0
+        let j = if (self.game_state.dungeon.stair_movement.current_floor() as i8) >= 0 {
+            if self.game_state.dungeon.stair_movement.current_floor_word() == 0
                 && self.game_state.world.location.dungeon_room() != 2
-                && self.save_progress().progress_indicator() < 2
+                && self.game_state.inventory.save_progress.progress_indicator() < 2
             {
                 self.system_signals_mut().set_ambient_sound_effect(3);
             }
-            self.dungeon_stair_movement().current_floor()
+            self.game_state.dungeon.stair_movement.current_floor()
         } else {
             self.system_signals_mut().set_ambient_sound_effect(5);
             k += 1;
-            self.dungeon_stair_movement().current_floor() ^ 0xff
+            self.game_state.dungeon.stair_movement.current_floor() ^ 0xff
         } as usize;
         self.hud_buffer_set(k + 0xf2 / 2, DUNGEON_FLOOR_INDICATOR_TOP_TILES[j]);
         self.hud_buffer_set(k + 0x132 / 2, DUNGEON_FLOOR_INDICATOR_BOTTOM_TILES[j]);
@@ -388,7 +388,11 @@ impl ZeldaState {
     }
 
     fn max_rupees(&self) -> u16 {
-        if self.enhanced_features().has(FEATURE_CARRY_MORE_RUPEES) {
+        if self
+            .game_state
+            .enhanced_features
+            .has(FEATURE_CARRY_MORE_RUPEES)
+        {
             9999
         } else {
             999
@@ -399,8 +403,8 @@ impl ZeldaState {
         if self.overworld_map_state() != 0 {
             return;
         }
-        if self.player_resources().magic_filler() != 0 {
-            if self.player_resources().magic_power() >= 128 {
+        if self.game_state.inventory.player_resources.magic_filler() != 0 {
+            if self.game_state.inventory.player_resources.magic_power() >= 128 {
                 let mut resources = self.player_resources_mut();
                 resources.set_magic_power(128);
                 resources.clear_magic_filler();
@@ -411,15 +415,15 @@ impl ZeldaState {
                     resources.increment_magic_power();
                 }
                 if self.game_state.frame.frame_counter & 3 == 0
-                    && !self.system_signals().has_sound_effect_1()
+                    && !self.game_state.system_signals.has_sound_effect_1()
                 {
                     self.system_signals_mut().set_sound_effect_1(45);
                 }
             }
         }
 
-        let mut a = self.player_resources().rupees_actual();
-        let goal = self.player_resources().rupees_goal();
+        let mut a = self.game_state.inventory.player_resources.rupees_actual();
+        let goal = self.game_state.inventory.player_resources.rupees_goal();
         if a != goal {
             if a >= goal {
                 a = a.wrapping_sub(1);
@@ -436,7 +440,7 @@ impl ZeldaState {
                 }
             }
             self.player_resources_mut().set_rupees_actual(a);
-            if !self.system_signals().has_sound_effect_1() {
+            if !self.game_state.system_signals.has_sound_effect_1() {
                 let delay = self.hud_state().rupee_sfx_sound_delay();
                 self.hud_state_mut()
                     .set_rupee_sfx_sound_delay(delay.wrapping_add(1));
@@ -450,22 +454,28 @@ impl ZeldaState {
             self.hud_state_mut().set_rupee_sfx_sound_delay(0);
         }
 
-        if self.player_resources().bomb_filler() != 0 {
+        if self.game_state.inventory.player_resources.bomb_filler() != 0 {
             self.player_resources_mut().decrement_bomb_filler();
-            let max =
-                MAX_BOMBS_BY_UPGRADE_LEVEL[self.player_resources().bomb_upgrade_level() as usize];
-            if self.player_resources().bombs() != max {
+            let max = MAX_BOMBS_BY_UPGRADE_LEVEL[self
+                .game_state
+                .inventory
+                .player_resources
+                .bomb_upgrade_level() as usize];
+            if self.game_state.inventory.player_resources.bombs() != max {
                 self.player_resources_mut().increment_bombs();
             }
         }
-        if self.player_resources().arrow_filler() != 0 {
+        if self.game_state.inventory.player_resources.arrow_filler() != 0 {
             self.player_resources_mut().decrement_arrow_filler();
-            let max =
-                MAX_ARROWS_BY_UPGRADE_LEVEL[self.player_resources().arrow_upgrade_level() as usize];
-            if self.player_resources().arrows() != max {
+            let max = MAX_ARROWS_BY_UPGRADE_LEVEL[self
+                .game_state
+                .inventory
+                .player_resources
+                .arrow_upgrade_level() as usize];
+            if self.game_state.inventory.player_resources.arrows() != max {
                 self.player_resources_mut().increment_arrows();
             }
-            let bow = self.inventory_items().bow();
+            let bow = self.game_state.inventory.items.bow();
             if bow != 0 && bow & 1 == 1 {
                 self.inventory_items_mut()
                     .set_inventory_item(0, bow.wrapping_add(1));
@@ -473,17 +483,25 @@ impl ZeldaState {
             }
         }
 
-        let cap_idx = (self.player_resources().health_capacity() >> 3) as usize;
+        let cap_idx = (self.game_state.inventory.player_resources.health_capacity() >> 3) as usize;
         if !self.player_state().is_immobilized()
-            && self.player_resources().heart_filler() == 0
-            && self.player_resources().current_health() < MAX_HEALTH_BY_CAPACITY_LEVEL[cap_idx]
+            && self.game_state.inventory.player_resources.heart_filler() == 0
+            && self.game_state.inventory.player_resources.current_health()
+                < MAX_HEALTH_BY_CAPACITY_LEVEL[cap_idx]
         {
-            if self.player_resources().low_health_beep_timer() != 0 {
+            if self
+                .game_state
+                .inventory
+                .player_resources
+                .low_health_beep_timer()
+                != 0
+            {
                 self.player_resources_mut()
                     .decrement_low_health_beep_timer();
-            } else if !self.system_signals().has_sound_effect_1() {
+            } else if !self.game_state.system_signals.has_sound_effect_1() {
                 if !self
-                    .enhanced_features()
+                    .game_state
+                    .enhanced_features
                     .has(FEATURE_DISABLE_LOW_HEALTH_BEEP)
                 {
                     self.system_signals_mut().set_sound_effect_1(43);
@@ -499,17 +517,18 @@ impl ZeldaState {
             self.system_signals_mut().increment_hud_update_flag();
             return;
         }
-        if self.player_resources().heart_filler() != 0 {
-            if self.player_resources().current_health() < self.player_resources().health_capacity()
+        if self.game_state.inventory.player_resources.heart_filler() != 0 {
+            if self.game_state.inventory.player_resources.current_health()
+                < self.game_state.inventory.player_resources.health_capacity()
             {
                 self.player_resources_mut().increment_current_health_by(8);
-                if self.player_resources().current_health()
-                    >= self.player_resources().health_capacity()
+                if self.game_state.inventory.player_resources.current_health()
+                    >= self.game_state.inventory.player_resources.health_capacity()
                 {
-                    let capacity = self.player_resources().health_capacity();
+                    let capacity = self.game_state.inventory.player_resources.health_capacity();
                     self.player_resources_mut().set_current_health(capacity);
                 }
-                if !self.system_signals().has_sound_effect_2() {
+                if !self.game_state.system_signals.has_sound_effect_2() {
                     self.system_signals_mut().set_sound_effect_2(13);
                 }
                 self.player_resources_mut().decrement_heart_filler_by(8);
@@ -525,7 +544,7 @@ impl ZeldaState {
                 self.system_signals_mut().increment_hud_update_flag();
                 return;
             }
-            let capacity = self.player_resources().health_capacity();
+            let capacity = self.game_state.inventory.player_resources.health_capacity();
             let mut resources = self.player_resources_mut();
             resources.set_current_health(capacity);
             resources.set_heart_filler(0);
@@ -569,7 +588,7 @@ impl ZeldaState {
     }
 
     fn hud_have_any_items(&self) -> bool {
-        (0..20).any(|i| self.inventory_items().inventory_item(i) != 0)
+        (0..20).any(|i| self.game_state.inventory.items.inventory_item(i) != 0)
     }
 
     pub(super) fn hud_init(&mut self) {
@@ -582,17 +601,23 @@ impl ZeldaState {
 
         if self.hud_have_any_items() {
             let mut first_bottle = 0usize;
-            while first_bottle < 4 && self.inventory_items().bottle(first_bottle) == 0 {
+            while first_bottle < 4 && self.game_state.inventory.items.bottle(first_bottle) == 0 {
                 first_bottle += 1;
             }
             if first_bottle == 4 {
                 self.player_resources_mut().set_equipped_bottle_index(0);
-            } else if self.player_resources().equipped_bottle_index() == 0 {
+            } else if self
+                .game_state
+                .inventory
+                .player_resources
+                .equipped_bottle_index()
+                == 0
+            {
                 self.player_resources_mut()
                     .set_equipped_bottle_index(first_bottle as u8 + 1);
             }
 
-            if self.save_progress().hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
+            if self.game_state.inventory.save_progress.hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
                 && !USE_NEW_STYLE_INVENTORY
             {
                 self.hud_state_mut().set_flashing_circle_timer(16);
@@ -607,7 +632,12 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_bring_menu_down(&mut self) {
-        let bg3 = self.ppu_scroll_copy().bg3_v_copy2().wrapping_sub(8);
+        let bg3 = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg3_v_copy2()
+            .wrapping_sub(8);
         self.ppu_scroll_copy_mut().set_bg3_v_copy2(bg3);
         if bg3 == 0xff18 {
             self.increment_overworld_map_state();
@@ -619,7 +649,7 @@ impl ZeldaState {
             self.set_pending_nmi_subroutine(1);
             self.set_nmi_load_target_page(0x22);
             self.hud_draw_selected_y_button_item();
-            let overworld_map_state = if self.save_progress().hud_current_item()
+            let overworld_map_state = if self.game_state.inventory.save_progress.hud_current_item()
                 == HUD_ITEM_BOTTLE_LEGACY
                 && !USE_NEW_STYLE_INVENTORY
             {
@@ -628,7 +658,7 @@ impl ZeldaState {
                 4
             };
             self.set_overworld_map_state(overworld_map_state);
-        } else if self.player_state().filtered_joypad_h() != 0 {
+        } else if self.game_state.player.follower_link.filtered_joypad_h() != 0 {
             self.set_overworld_map_state(5);
         }
     }
@@ -638,18 +668,24 @@ impl ZeldaState {
             return true;
         }
         if item == HUD_ITEM_FLUTE && USE_NEW_STYLE_INVENTORY {
-            return self.inventory_items().flute() >= 2;
+            return self.game_state.inventory.items.flute() >= 2;
         }
         if item == HUD_ITEM_SHOVEL && USE_NEW_STYLE_INVENTORY {
-            return self.inventory_items().flute() >= 1;
+            return self.game_state.inventory.items.flute() >= 1;
         }
         if item >= HUD_ITEM_BOTTLE_FIRST {
             return self
-                .inventory_items()
+                .game_state
+                .inventory
+                .items
                 .bottle((item - HUD_ITEM_BOTTLE_FIRST) as usize)
                 != 0;
         }
-        self.inventory_items().inventory_item((item - 1) as usize) != 0
+        self.game_state
+            .inventory
+            .items
+            .inventory_item((item - 1) as usize)
+            != 0
     }
 
     fn hud_equip_prev_item(&self, item: &mut u8, is_hud_cur_item: bool) {
@@ -700,12 +736,12 @@ impl ZeldaState {
     }
 
     pub(super) fn get_current_item_button_index(&self) -> usize {
-        if self.enhanced_features().has(FEATURE_SWITCH_LR) {
-            if self.player_state().joypad1l_last() & JOYPAD_LOW_X != 0 {
+        if self.game_state.enhanced_features.has(FEATURE_SWITCH_LR) {
+            if self.game_state.player.follower_link.joypad1l_last() & JOYPAD_LOW_X != 0 {
                 1
-            } else if self.player_state().joypad1l_last() & JOYPAD_LOW_L != 0 {
+            } else if self.game_state.player.follower_link.joypad1l_last() & JOYPAD_LOW_L != 0 {
                 2
-            } else if self.player_state().joypad1l_last() & JOYPAD_LOW_R != 0 {
+            } else if self.game_state.player.follower_link.joypad1l_last() & JOYPAD_LOW_R != 0 {
                 3
             } else {
                 0
@@ -718,18 +754,18 @@ impl ZeldaState {
     pub(super) fn hud_normal_menu(&mut self) {
         let tc = self.hud_state().flashing_circle_timer().wrapping_add(1);
         self.hud_state_mut().set_flashing_circle_timer(tc);
-        if self.player_state().joypad1h_last() == 0 {
+        if self.game_state.player.follower_link.joypad1h_last() == 0 {
             self.hud_state_mut().clear_prev_joypad_h();
         }
 
-        if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
+        if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.set_overworld_map_state(5);
             self.system_signals_mut().set_sound_effect_2(18);
             return;
         }
 
-        if self.player_state().joypad1h_last() & JOYPAD_HIGH_SELECT != 0
-            && self.save_progress().progress_indicator() != 0
+        if self.game_state.player.follower_link.joypad1h_last() & JOYPAD_HIGH_SELECT != 0
+            && self.game_state.inventory.save_progress.progress_indicator() != 0
         {
             self.ppu_scroll_copy_mut().set_bg3_v_copy2(0xfff8);
             self.hud_close_menu();
@@ -737,35 +773,51 @@ impl ZeldaState {
             return;
         }
 
-        if self.player_state().joypad1h_last() & JOYPAD_HIGH_Y != 0
-            && self.player_state().joypad1l_last() & JOYPAD_LOW_X == 0
-            && self.enhanced_features().has(FEATURE_SWITCH_LR)
+        if self.game_state.player.follower_link.joypad1h_last() & JOYPAD_HIGH_Y != 0
+            && self.game_state.player.follower_link.joypad1l_last() & JOYPAD_LOW_X == 0
+            && self.game_state.enhanced_features.has(FEATURE_SWITCH_LR)
         {
-            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_reorder_item(if USE_NEW_STYLE_INVENTORY { -6 } else { -5 });
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_DOWN
+                != 0
+            {
                 self.hud_reorder_item(if USE_NEW_STYLE_INVENTORY { 6 } else { 5 });
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_LEFT
+                != 0
+            {
                 self.hud_reorder_item(-1);
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_RIGHT
+                != 0
+            {
                 self.hud_reorder_item(1);
             }
         } else if self.hud_state().prev_joypad_h() == 0 {
             let btn_index = self.get_current_item_button_index();
-            let mut item = self.inventory_items().equipped_button_item(btn_index);
+            let mut item = self
+                .game_state
+                .inventory
+                .items
+                .equipped_button_item(btn_index);
             let old_item = item;
-            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_DOWN
+                != 0
+            {
                 self.hud_equip_item_below(&mut item);
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_LEFT
+                != 0
+            {
                 self.hud_equip_prev_item(&mut item, btn_index == 0);
-            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
+            } else if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_RIGHT
+                != 0
+            {
                 self.hud_equip_next_item(&mut item, btn_index == 0);
             }
             self.inventory_items_mut()
                 .set_equipped_button_item(btn_index, item);
-            let jh = self.player_state().filtered_joypad_h();
+            let jh = self.game_state.player.follower_link.filtered_joypad_h();
             self.hud_state_mut().set_prev_joypad_h(jh);
             if item != old_item {
                 self.hud_state_mut().set_flashing_circle_timer(16);
@@ -775,7 +827,7 @@ impl ZeldaState {
 
         self.hud_draw_y_button_items();
         self.hud_draw_selected_y_button_item();
-        if self.save_progress().hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
+        if self.game_state.inventory.save_progress.hud_current_item() == HUD_ITEM_BOTTLE_LEGACY
             && !USE_NEW_STYLE_INVENTORY
         {
             self.set_overworld_map_state(7);
@@ -799,18 +851,26 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_update_equipped_item(&mut self) {
-        if self.save_progress().hud_current_item() >= HUD_ITEM_BOTTLE_FIRST {
-            let bottle_index = self.save_progress().hud_current_item() - HUD_ITEM_BOTTLE_FIRST + 1;
+        if self.game_state.inventory.save_progress.hud_current_item() >= HUD_ITEM_BOTTLE_FIRST {
+            let bottle_index = self.game_state.inventory.save_progress.hud_current_item()
+                - HUD_ITEM_BOTTLE_FIRST
+                + 1;
             self.player_resources_mut()
                 .set_equipped_bottle_index(bottle_index);
         }
-        assert!(self.save_progress().hud_current_item() < 25);
-        let ciy = self.hud_lookup_inventory_item(self.save_progress().hud_current_item());
+        assert!(self.game_state.inventory.save_progress.hud_current_item() < 25);
+        let ciy = self
+            .hud_lookup_inventory_item(self.game_state.inventory.save_progress.hud_current_item());
         self.player_state_mut().set_current_item_y(ciy); // writes CURRENT_ITEM_Y (0x303)
     }
 
     pub(super) fn hud_close_menu(&mut self) {
-        let bg3 = self.ppu_scroll_copy().bg3_v_copy2().wrapping_add(8);
+        let bg3 = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg3_v_copy2()
+            .wrapping_add(8);
         self.ppu_scroll_copy_mut().set_bg3_v_copy2(bg3);
         if bg3 != 0 {
             return;
@@ -884,14 +944,15 @@ impl ZeldaState {
     pub(super) fn hud_bottle_menu(&mut self) {
         let tc = self.hud_state().flashing_circle_timer().wrapping_add(1);
         self.hud_state_mut().set_flashing_circle_timer(tc);
-        if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
+        if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.system_signals_mut().set_sound_effect_2(18);
             self.set_overworld_map_state(5);
-        } else if self.player_state().filtered_joypad_h() & (JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT)
+        } else if self.game_state.player.follower_link.filtered_joypad_h()
+            & (JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT)
             != 0
         {
-            let mut item = self.save_progress().hud_current_item();
-            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            let mut item = self.game_state.inventory.save_progress.hud_current_item();
+            if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
                 self.hud_equip_prev_item(&mut item, true);
             } else {
                 self.hud_equip_next_item(&mut item, true);
@@ -906,24 +967,29 @@ impl ZeldaState {
             return;
         }
         self.hud_draw_bottle_menu_update();
-        if self.player_state().filtered_joypad_h() & (JOYPAD_HIGH_DOWN | JOYPAD_HIGH_UP) != 0 {
+        if self.game_state.player.follower_link.filtered_joypad_h()
+            & (JOYPAD_HIGH_DOWN | JOYPAD_HIGH_UP)
+            != 0
+        {
             let old_val = self
-                .player_resources()
+                .game_state
+                .inventory
+                .player_resources
                 .equipped_bottle_index()
                 .wrapping_sub(1)
                 & 3;
             let mut val = old_val;
-            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 loop {
                     val = val.wrapping_sub(1) & 3;
-                    if self.inventory_items().bottle(val as usize) != 0 {
+                    if self.game_state.inventory.items.bottle(val as usize) != 0 {
                         break;
                     }
                 }
             } else {
                 loop {
                     val = val.wrapping_add(1) & 3;
-                    if self.inventory_items().bottle(val as usize) != 0 {
+                    if self.game_state.inventory.items.bottle(val as usize) != 0 {
                         break;
                     }
                 }
@@ -971,11 +1037,13 @@ impl ZeldaState {
             self.save_progress_mut().set_hud_current_item(0);
             self.save_progress_mut().clear_post_message_refresh_flag();
         } else {
-            if self.save_progress().hud_current_item() == 0 {
+            if self.game_state.inventory.save_progress.hud_current_item() == 0 {
                 self.save_progress_mut().set_hud_current_item(1);
             }
-            if !self.hud_do_we_have_this_item(self.save_progress().hud_current_item()) {
-                let mut item = self.save_progress().hud_current_item();
+            if !self.hud_do_we_have_this_item(
+                self.game_state.inventory.save_progress.hud_current_item(),
+            ) {
+                let mut item = self.game_state.inventory.save_progress.hud_current_item();
                 self.hud_equip_next_item(&mut item, true);
                 self.save_progress_mut().set_hud_current_item(item);
             }
@@ -988,17 +1056,34 @@ impl ZeldaState {
         }
         if i >= HUD_ITEM_BOTTLE_FIRST {
             return HUD_ITEM_BOTTLE_GRAPHICS[self
-                .inventory_items()
+                .game_state
+                .inventory
+                .items
                 .bottle((i - HUD_ITEM_BOTTLE_FIRST) as usize)
                 as usize];
         }
-        let mut item_val = self.inventory_items().inventory_item((i - 1) as usize) as usize;
+        let mut item_val = self
+            .game_state
+            .inventory
+            .items
+            .inventory_item((i - 1) as usize) as usize;
         if i == 4 {
             item_val = usize::from(item_val != 0);
         } else if i == HUD_ITEM_BOTTLE_LEGACY && !USE_NEW_STYLE_INVENTORY {
-            item_val = if self.player_resources().equipped_bottle_index() != 0 {
-                let bottle_index = self.player_resources().equipped_bottle_index() as usize - 1;
-                self.inventory_items().bottle(bottle_index) as usize
+            item_val = if self
+                .game_state
+                .inventory
+                .player_resources
+                .equipped_bottle_index()
+                != 0
+            {
+                let bottle_index = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .equipped_bottle_index() as usize
+                    - 1;
+                self.game_state.inventory.items.bottle(bottle_index) as usize
             } else {
                 0
             };
@@ -1026,7 +1111,7 @@ impl ZeldaState {
         self.menu_set(hudxy(x + 3, 5), 0x246f);
 
         for i in 0..HUD_ITEM_COUNT {
-            let j = self.hud_inventory_order_state().item(i);
+            let j = self.game_state.display.hud_inventory_order.item(i);
             let item = if j == 0 { i as u8 + 1 } else { j };
             let icon = self.hud_get_icon_for_item(item);
             self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[i], &icon);
@@ -1101,7 +1186,7 @@ impl ZeldaState {
         let x = if USE_NEW_STYLE_INVENTORY { 0 } else { 1 };
         self.hud_draw_box(0x1000, x, 21, 19, 29, 1);
 
-        let mut flags = self.player_resources().ability_flags();
+        let mut flags = self.game_state.inventory.player_resources.ability_flags();
         for i in 0..2 {
             for j in 0..3 {
                 if flags & 0x80 != 0 {
@@ -1122,32 +1207,32 @@ impl ZeldaState {
         self.hud_draw_item(
             0x1000,
             hudxy(8, 27),
-            &HUD_ITEM_GLOVES_GRAPHICS[self.inventory_items().gloves() as usize],
+            &HUD_ITEM_GLOVES_GRAPHICS[self.game_state.inventory.items.gloves() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(4, 27),
-            &HUD_ITEM_BOOTS_GRAPHICS[self.inventory_items().boots() as usize],
+            &HUD_ITEM_BOOTS_GRAPHICS[self.game_state.inventory.items.boots() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(12, 27),
-            &HUD_ITEM_FLIPPERS_GRAPHICS[self.inventory_items().flippers() as usize],
+            &HUD_ITEM_FLIPPERS_GRAPHICS[self.game_state.inventory.items.flippers() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(16, 27),
-            &HUD_ITEM_MOON_PEARL_GRAPHICS[self.inventory_items().moon_pearl() as usize],
+            &HUD_ITEM_MOON_PEARL_GRAPHICS[self.game_state.inventory.items.moon_pearl() as usize],
         );
-        if self.inventory_items().gloves() != 0 {
-            let src =
-                &HUD_GLOVES_TEXT_TILES[usize::from(self.inventory_items().gloves() != 1) * 10..];
+        if self.game_state.inventory.items.gloves() != 0 {
+            let src = &HUD_GLOVES_TEXT_TILES
+                [usize::from(self.game_state.inventory.items.gloves() != 1) * 10..];
             self.hud_draw_nx_n(0x1000, hudxy(4, 22), src, 5, 2);
         }
     }
 
     pub(super) fn hud_draw_progress_icons(&mut self) {
-        if self.save_progress().progress_indicator() < 3 {
+        if self.game_state.inventory.save_progress.progress_indicator() < 3 {
             self.hud_draw_progress_icons_pendants();
         } else {
             self.hud_draw_progress_icons_crystals();
@@ -1184,7 +1269,7 @@ impl ZeldaState {
             hudxy(21, 11)
         };
         self.hud_draw_nx_n(0x1000, dst, &BG, 10, 9);
-        let f = self.player_resources().pendant_flags();
+        let f = self.game_state.inventory.player_resources.pendant_flags();
         self.hud_draw_item(0x1000, dst + hudxy(4, 3), &P0[(f & 1) as usize]);
         self.hud_draw_item(0x1000, dst + hudxy(2, 6), &P1[((f >> 1) & 1) as usize]);
         self.hud_draw_item(0x1000, dst + hudxy(6, 6), &P2[((f >> 2) & 1) as usize]);
@@ -1208,7 +1293,7 @@ impl ZeldaState {
             hudxy(21, 11)
         };
         self.hud_draw_nx_n(0x1000, dst, &BG, 10, 9);
-        let f = self.player_resources().crystal_flags();
+        let f = self.game_state.inventory.player_resources.crystal_flags();
         for (bit, x, y) in [
             (1, 3, 3),
             (2, 5, 3),
@@ -1228,7 +1313,11 @@ impl ZeldaState {
     pub(super) fn hud_draw_selected_y_button_item(&mut self) {
         let dst_box = if USE_NEW_STYLE_INVENTORY { 1 } else { 0 };
         let btn_index = self.get_current_item_button_index();
-        let item = self.inventory_items().equipped_button_item(btn_index);
+        let item = self
+            .game_state
+            .inventory
+            .items
+            .equipped_button_item(btn_index);
         self.hud_draw_box(
             0x1000,
             21 + dst_box,
@@ -1253,26 +1342,38 @@ impl ZeldaState {
         }
         let text: &[u16] = if item == HUD_ITEM_BOTTLE_LEGACY
             && !USE_NEW_STYLE_INVENTORY
-            && self.player_resources().equipped_bottle_index() != 0
+            && self
+                .game_state
+                .inventory
+                .player_resources
+                .equipped_bottle_index()
+                != 0
         {
-            let bottle_index = self.player_resources().equipped_bottle_index() as usize - 1;
-            let idx = (self.inventory_items().bottle(bottle_index) as usize - 1) * 16;
+            let bottle_index = self
+                .game_state
+                .inventory
+                .player_resources
+                .equipped_bottle_index() as usize
+                - 1;
+            let idx = (self.game_state.inventory.items.bottle(bottle_index) as usize - 1) * 16;
             &HUD_BOTTLES_ITEM_TEXT[idx..idx + 16]
-        } else if item == 5 && self.inventory_items().mushroom() != 1 {
-            let idx = (self.inventory_items().mushroom() as usize - 2) * 16;
+        } else if item == 5 && self.game_state.inventory.items.mushroom() != 1 {
+            let idx = (self.game_state.inventory.items.mushroom() as usize - 2) * 16;
             &HUD_MUSHROOM_ITEM_TEXT[idx..idx + 16]
-        } else if item == 20 && self.inventory_items().mirror() != 1 {
-            let idx = (self.inventory_items().mirror() as usize - 2) * 16;
+        } else if item == 20 && self.game_state.inventory.items.mirror() != 1 {
+            let idx = (self.game_state.inventory.items.mirror() as usize - 2) * 16;
             &HUD_MIRROR_ITEM_TEXT[idx..idx + 16]
-        } else if item == 13 && self.inventory_items().flute() != 1 {
-            let idx = (self.inventory_items().flute() as usize - 2) * 16;
+        } else if item == 13 && self.game_state.inventory.items.flute() != 1 {
+            let idx = (self.game_state.inventory.items.flute() as usize - 2) * 16;
             &HUD_FLUTE_ITEM_TEXT[idx..idx + 16]
-        } else if item == 1 && self.inventory_items().bow() != 1 {
-            let idx = (self.inventory_items().bow() as usize - 2) * 16;
+        } else if item == 1 && self.game_state.inventory.items.bow() != 1 {
+            let idx = (self.game_state.inventory.items.bow() as usize - 2) * 16;
             &HUD_BOW_ITEM_TEXT[idx..idx + 16]
         } else if item >= HUD_ITEM_BOTTLE_FIRST && item <= HUD_ITEM_BOTTLE_LAST {
             let idx = (self
-                .inventory_items()
+                .game_state
+                .inventory
+                .items
                 .bottle((item - HUD_ITEM_BOTTLE_FIRST) as usize) as usize
                 - 1)
                 * 16;
@@ -1307,31 +1408,31 @@ impl ZeldaState {
             [0x24ad, 0x6484, 0x24ae, 0x6485],
             [0x24ad, 0x64ad, 0x24ae, 0x6485],
         ];
-        if self.save_progress().palace_index_x2() == 0xff {
+        if self.game_state.inventory.save_progress.palace_index_x2() == 0xff {
             for i in 0..8 {
                 self.menu_set(hudxy(22 + dst + i, 26), 0x24f5);
             }
             self.hud_draw_item(
                 0x1000,
                 hudxy(25 + dst, 27),
-                &HEART_PIECES[self.player_resources().heart_pieces() as usize],
+                &HEART_PIECES[self.game_state.inventory.player_resources.heart_pieces() as usize],
             );
         }
-        let sword = if self.inventory_items().sword_type() == 0xff {
+        let sword = if self.game_state.inventory.items.sword_type() == 0xff {
             0
         } else {
-            self.inventory_items().sword_type() as usize
+            self.game_state.inventory.items.sword_type() as usize
         };
         self.hud_draw_item(0x1000, hudxy(22 + dst, 23), &HUD_ITEM_SWORD_GRAPHICS[sword]);
         self.hud_draw_item(
             0x1000,
             hudxy(25 + dst, 23),
-            &HUD_ITEM_SHIELD_GRAPHICS[self.inventory_items().shield_type() as usize],
+            &HUD_ITEM_SHIELD_GRAPHICS[self.game_state.inventory.items.shield_type() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(28 + dst, 23),
-            &HUD_ITEM_ARMOR_GRAPHICS[self.inventory_items().armor() as usize],
+            &HUD_ITEM_ARMOR_GRAPHICS[self.game_state.inventory.items.armor() as usize],
         );
         const PALACE_ITEM: [ItemBoxGfx; 2] = [
             [0x28d6, 0x68d6, 0x28e6, 0x28e7],
@@ -1339,9 +1440,13 @@ impl ZeldaState {
         ];
         const DUNGEON_MAP: ItemBoxGfx = [0x28de, 0x28df, 0x28ee, 0x28ef];
         const DUNGEON_COMPASS: ItemBoxGfx = [0x24bf, 0x64bf, 0x2ccf, 0x6ccf];
-        let shift = self.save_progress().palace_index_x2() >> 1;
-        if self.save_progress().palace_index_x2() != 0xff
-            && self.player_resources().has_big_key_at_shift(shift)
+        let shift = self.game_state.inventory.save_progress.palace_index_x2() >> 1;
+        if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
+            && self
+                .game_state
+                .inventory
+                .player_resources
+                .has_big_key_at_shift(shift)
         {
             self.hud_draw_item(
                 0x1000,
@@ -1349,13 +1454,21 @@ impl ZeldaState {
                 &PALACE_ITEM[self.check_palace_item_posession() as usize],
             );
         }
-        if self.save_progress().palace_index_x2() != 0xff
-            && self.player_resources().has_dungeon_map_at_shift(shift)
+        if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
+            && self
+                .game_state
+                .inventory
+                .player_resources
+                .has_dungeon_map_at_shift(shift)
         {
             self.hud_draw_item(0x1000, hudxy(22 + dst, 27), &DUNGEON_MAP);
         }
-        if self.save_progress().palace_index_x2() != 0xff
-            && self.player_resources().has_compass_at_shift(shift)
+        if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
+            && self
+                .game_state
+                .inventory
+                .player_resources
+                .has_compass_at_shift(shift)
         {
             self.hud_draw_item(0x1000, hudxy(25 + dst, 27), &DUNGEON_COMPASS);
         }
@@ -1368,12 +1481,17 @@ impl ZeldaState {
             self.hud_draw_item(
                 0x1000,
                 hudxy(25 + dst, 13 + i * 4),
-                &HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_items().bottle(i) as usize],
+                &HUD_ITEM_BOTTLE_GRAPHICS[self.game_state.inventory.items.bottle(i) as usize],
             );
         }
-        let bottle_index =
-            (self.player_resources().equipped_bottle_index() as usize).wrapping_sub(1);
-        let p = HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_items().bottle(bottle_index) as usize];
+        let bottle_index = (self
+            .game_state
+            .inventory
+            .player_resources
+            .equipped_bottle_index() as usize)
+            .wrapping_sub(1);
+        let p =
+            HUD_ITEM_BOTTLE_GRAPHICS[self.game_state.inventory.items.bottle(bottle_index) as usize];
         self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[15], &p);
         if self.hud_state().flashing_circle_timer() & 0x10 != 0 {
             self.hud_draw_flashing_circle(0x1000, hudxy(25 + dst, 13 + bottle_index * 4) as i32, 7);
@@ -1381,8 +1499,10 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_health(&mut self) -> bool {
-        if self.player_resources().current_health() >= self.player_resources().health_capacity() {
-            let capacity = self.player_resources().health_capacity();
+        if self.game_state.inventory.player_resources.current_health()
+            >= self.game_state.inventory.player_resources.health_capacity()
+        {
+            let capacity = self.game_state.inventory.player_resources.health_capacity();
             let mut resources = self.player_resources_mut();
             resources.set_current_health(capacity);
             resources.set_heart_filler(0);
@@ -1398,9 +1518,11 @@ impl ZeldaState {
         if cd != 0 {
             return;
         }
-        let mut n = (((u16::from(self.player_resources().current_health() & !7)).wrapping_sub(1)
-            >> 3)
-            << 1) as usize;
+        let mut n =
+            (((u16::from(self.game_state.inventory.player_resources.current_health() & !7))
+                .wrapping_sub(1)
+                >> 3)
+                << 1) as usize;
         let mut p = hudxy(20, 1);
         if n >= 20 {
             n -= 20;
@@ -1420,7 +1542,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_magic_power(&mut self) -> bool {
-        if self.player_resources().magic_power() >= 0x80 {
+        if self.game_state.inventory.player_resources.magic_power() >= 0x80 {
             return true;
         }
         self.player_resources_mut().set_magic_filler(0x80);
@@ -1428,15 +1550,15 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_restore_torch_background(&mut self) {
-        if self.inventory_items().torch() == 0
-            || self.dungeon_torch_state().wants_lights_out() == 0
+        if self.game_state.inventory.items.torch() == 0
+            || self.game_state.dungeon.torch.wants_lights_out() == 0
             || self.hud_state().dungeon_dark_with_lantern()
-            || self.dungeon_torch_state().lit_torches() != 0
+            || self.game_state.dungeon.torch.lit_torches() != 0
         {
             return;
         }
         self.hud_state_mut().set_dungeon_dark_with_lantern();
-        if self.dungeon_room_load().bg2_properties() != 2 {
+        if self.game_state.dungeon.room_load.bg2_properties() != 2 {
             self.set_sub_screen_layers(1);
         }
     }
@@ -1477,22 +1599,37 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_handle_item_switch_inputs(&mut self) {
-        if !self.enhanced_features().has(FEATURE_SWITCH_LR) {
+        if !self.game_state.enhanced_features.has(FEATURE_SWITCH_LR) {
             return;
         }
-        let direction = if self.player_state().filtered_joypad_l() & JOYPAD_LOW_L != 0
-            && self.save_progress().hud_current_item_slot(2) == 0
+        let direction = if self.game_state.player.follower_link.filtered_joypad_l() & JOYPAD_LOW_L
+            != 0
+            && self
+                .game_state
+                .inventory
+                .save_progress
+                .hud_current_item_slot(2)
+                == 0
         {
-            self.save_progress().hud_current_item_slot(3) != 0
-        } else if self.player_state().filtered_joypad_l() & JOYPAD_LOW_R != 0
-            && self.save_progress().hud_current_item_slot(3) == 0
+            self.game_state
+                .inventory
+                .save_progress
+                .hud_current_item_slot(3)
+                != 0
+        } else if self.game_state.player.follower_link.filtered_joypad_l() & JOYPAD_LOW_R != 0
+            && self
+                .game_state
+                .inventory
+                .save_progress
+                .hud_current_item_slot(3)
+                == 0
         {
             true
         } else {
             return;
         };
 
-        let mut item = self.save_progress().hud_current_item();
+        let mut item = self.game_state.inventory.save_progress.hud_current_item();
         for _ in 0..HUD_ITEM_COUNT {
             if !direction {
                 self.hud_goto_prev_item(&mut item, 1);
@@ -1500,10 +1637,13 @@ impl ZeldaState {
                 self.hud_goto_next_item(&mut item, 1);
             }
             if self.hud_do_we_have_this_item(item)
-                && (!self.enhanced_features().has(FEATURE_SWITCH_LR_LIMIT)
+                && (!self
+                    .game_state
+                    .enhanced_features
+                    .has(FEATURE_SWITCH_LR_LIMIT)
                     || self.hud_get_item_position(item) <= 3)
             {
-                if item != self.save_progress().hud_current_item() {
+                if item != self.game_state.inventory.save_progress.hud_current_item() {
                     self.save_progress_mut().set_hud_current_item(item);
                     self.system_signals_mut().set_sound_effect_2(32);
                     self.hud_update_equipped_item();
@@ -1516,10 +1656,11 @@ impl ZeldaState {
     }
 
     fn hud_reorder_item(&mut self, direction: i32) {
-        if !self.hud_inventory_order_state().is_custom() {
+        if !self.game_state.display.hud_inventory_order.is_custom() {
             self.initialize_default_hud_inventory_order(24);
         }
-        let old_pos = self.hud_get_item_position(self.save_progress().hud_current_item());
+        let old_pos =
+            self.hud_get_item_position(self.game_state.inventory.save_progress.hud_current_item());
         let mut new_pos = old_pos + direction;
         if new_pos < 0 {
             new_pos += HUD_ITEM_COUNT as i32;
@@ -1532,8 +1673,9 @@ impl ZeldaState {
     }
 
     fn hud_update_item_box(&mut self) {
-        if self.save_progress().hud_current_item() != 0 {
-            let icon = self.hud_get_icon_for_item(self.save_progress().hud_current_item());
+        if self.game_state.inventory.save_progress.hud_current_item() != 0 {
+            let icon = self
+                .hud_get_icon_for_item(self.game_state.inventory.save_progress.hud_current_item());
             self.hud_draw_item(HUD_TILE_INDICES_BUFFER, hudxy(5, 1), &icon);
         }
     }
@@ -1544,24 +1686,30 @@ impl ZeldaState {
         self.hud_update_hearts_inner(
             hudxy(20, 1),
             &FULL,
-            self.player_resources().health_capacity() as i32,
+            self.game_state.inventory.player_resources.health_capacity() as i32,
         );
         self.hud_update_hearts_inner(
             hudxy(20, 1),
             &CURRENT,
-            (i32::from(self.player_resources().current_health()) + 3) & !3,
+            (i32::from(self.game_state.inventory.player_resources.current_health()) + 3) & !3,
         );
     }
 
     fn hud_update_magic(&mut self) {
         let dst = hudxy(2, 0);
-        if self.player_resources().magic_consumption_level() >= 1 {
+        if self
+            .game_state
+            .inventory
+            .player_resources
+            .magic_consumption_level()
+            >= 1
+        {
             self.hud_buffer_set(dst + hudxy(0, 0), 0x28f7);
             self.hud_buffer_set(dst + hudxy(1, 0), 0x2851);
             self.hud_buffer_set(dst + hudxy(2, 0), 0x28fa);
         }
         let src = MAGIC_METER_TILEMAP_BY_LEVEL
-            [(usize::from(self.player_resources().magic_power()) + 7) >> 3];
+            [(usize::from(self.game_state.inventory.player_resources.magic_power()) + 7) >> 3];
         for (y, tile) in src.iter().enumerate() {
             self.hud_buffer_set(dst + hudxy(1, y + 1), *tile);
         }
@@ -1573,7 +1721,8 @@ impl ZeldaState {
             0x2871, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f,
             0x207f, 0x207f, 0x207f, 0x207f,
         ];
-        let d = hud_int_to_decimal(self.player_resources().rupees_actual() as u32);
+        let d =
+            hud_int_to_decimal(self.game_state.inventory.player_resources.rupees_actual() as u32);
         let inv_offs = usize::from(d[0] == 0x90);
         let dst = hudxy(8, 0);
         for i in 0..12 {
@@ -1586,9 +1735,9 @@ impl ZeldaState {
                 HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
             );
         }
-        let bow = self.inventory_items().bow();
+        let bow = self.game_state.inventory.items.bow();
         if bow != 0 {
-            let has_arrows = self.player_resources().arrows() != 0;
+            let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
             if bow >= 3 {
                 self.hud_buffer_set(hudxy(15, 0), 0x2486);
                 self.hud_buffer_set(hudxy(16, 0), 0x2487);
@@ -1603,7 +1752,8 @@ impl ZeldaState {
         let base_tiles = [
             0x2400,
             if self
-                .enhanced_features()
+                .game_state
+                .enhanced_features
                 .has(FEATURE_SHOW_MAX_ITEMS_IN_YELLOW)
             {
                 0x3400
@@ -1611,8 +1761,9 @@ impl ZeldaState {
                 0x2400
             },
         ];
-        let base_tile =
-            base_tiles[usize::from(self.player_resources().rupees_actual() == self.max_rupees())];
+        let base_tile = base_tiles[usize::from(
+            self.game_state.inventory.player_resources.rupees_actual() == self.max_rupees(),
+        )];
         let digit_x = usize::from(inv_offs == 0);
         if inv_offs == 0 {
             self.hud_buffer_set(dst + hudxy(0, 1), base_tile | d[0] as u16);
@@ -1621,28 +1772,34 @@ impl ZeldaState {
         self.hud_buffer_set(dst + hudxy(digit_x + 1, 1), base_tile | d[2] as u16);
         self.hud_buffer_set(dst + hudxy(digit_x + 2, 1), base_tile | d[3] as u16);
 
-        let d = hud_int_to_decimal(self.player_resources().bombs() as u32);
+        let d = hud_int_to_decimal(self.game_state.inventory.player_resources.bombs() as u32);
         let base_tile = base_tiles[usize::from(
-            self.player_resources().bombs()
-                == MAX_BOMBS_BY_UPGRADE_LEVEL
-                    [self.player_resources().bomb_upgrade_level() as usize],
+            self.game_state.inventory.player_resources.bombs()
+                == MAX_BOMBS_BY_UPGRADE_LEVEL[self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .bomb_upgrade_level() as usize],
         )];
         self.hud_buffer_set(dst + hudxy(4, 1), base_tile | d[2] as u16);
         self.hud_buffer_set(dst + hudxy(5, 1), base_tile | d[3] as u16);
 
-        let d = hud_int_to_decimal(self.player_resources().arrows() as u32);
+        let d = hud_int_to_decimal(self.game_state.inventory.player_resources.arrows() as u32);
         let base_tile = base_tiles[usize::from(
-            self.player_resources().arrows()
-                == MAX_ARROWS_BY_UPGRADE_LEVEL
-                    [self.player_resources().arrow_upgrade_level() as usize],
+            self.game_state.inventory.player_resources.arrows()
+                == MAX_ARROWS_BY_UPGRADE_LEVEL[self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .arrow_upgrade_level() as usize],
         )];
         self.hud_buffer_set(dst + hudxy(7, 1), base_tile | d[2] as u16);
         self.hud_buffer_set(dst + hudxy(8, 1), base_tile | d[3] as u16);
 
         let mut d = [0u8; 4];
         d[3] = 0x7f;
-        if self.player_resources().keys() != 0xff {
-            d = hud_int_to_decimal(self.player_resources().keys() as u32);
+        if self.game_state.inventory.player_resources.keys() != 0xff {
+            d = hud_int_to_decimal(self.game_state.inventory.player_resources.keys() as u32);
         }
         let key = 0x2400 | d[3] as u16;
         self.hud_buffer_set(dst + hudxy(10, 1), key);

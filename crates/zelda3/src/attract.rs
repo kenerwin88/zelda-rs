@@ -64,13 +64,13 @@ pub(super) const SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
 
 impl ZeldaState {
     pub(super) fn module14_attract(&mut self) {
-        let mut state = self.attract_scene().state();
+        let mut state = self.game_state.ending.attract_scene.state();
         if self.game_state.display.screen_brightness != 0
             && self.game_state.display.screen_brightness != 128
             && state != 0
             && state != 2
             && state != 6
-            && self.player_state().filtered_joypad_h() & 0x90 != 0
+            && self.game_state.player.follower_link.filtered_joypad_h() & 0x90 != 0
         {
             self.attract_scene_mut().set_state(9);
             state = 9;
@@ -145,7 +145,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_load_new_scene(&mut self) {
-        match self.attract_scene().sequence() {
+        match self.game_state.ending.attract_scene.sequence() {
             0 => self.attract_scene_polka_dots(),
             1 => self.attract_scene_world_map(),
             2 => self.attract_scene_throne_room(),
@@ -188,8 +188,8 @@ impl ZeldaState {
             .set_misc_sprites_graphics_index(10);
         self.load_common_sprites();
 
-        let attract_bg2_vofs_backup = self.attract_scene().bg2_vofs_backup();
-        let attract_state = self.attract_scene().state_word();
+        let attract_bg2_vofs_backup = self.game_state.ending.attract_scene.bg2_vofs_backup();
+        let attract_state = self.game_state.ending.attract_scene.state_word();
         self.dungeon_load_and_draw_entrance_room(0x74);
         self.attract_scene_mut().set_state_word(attract_state);
         self.attract_scene_mut()
@@ -215,8 +215,8 @@ impl ZeldaState {
         self.palette_filter_mut().set_color_window_selection(0);
         self.palette_filter_mut().set_color_math_control(0);
 
-        let attract_bg2_vofs_backup = self.attract_scene().bg2_vofs_backup();
-        let attract_state = self.attract_scene().state_word();
+        let attract_bg2_vofs_backup = self.game_state.ending.attract_scene.bg2_vofs_backup();
+        let attract_state = self.game_state.ending.attract_scene.state_word();
         self.dungeon_load_and_draw_entrance_room(0x73);
         self.attract_scene_mut().set_state_word(attract_state);
         self.attract_scene_mut()
@@ -245,8 +245,8 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_prep_maiden_warp(&mut self) {
-        let attract_bg2_vofs_backup = self.attract_scene().bg2_vofs_backup();
-        let attract_state = self.attract_scene().state_word();
+        let attract_bg2_vofs_backup = self.game_state.ending.attract_scene.bg2_vofs_backup();
+        let attract_state = self.game_state.ending.attract_scene.state_word();
         self.dungeon_load_and_draw_entrance_room(0x75);
         self.attract_scene_mut().set_state_word(attract_state);
         self.attract_scene_mut()
@@ -346,10 +346,10 @@ impl ZeldaState {
         self.attract_scene_mut().increment_state();
         self.set_screen_brightness(0);
         self.ppu_scroll_copy_mut().set_bg3_v_copy2_low(0);
-        let bg2_hofs = self.ppu_scroll_copy().bg2_h_copy() & 0x01ff;
-        let bg2_vofs = self.ppu_scroll_copy().bg2_v_copy() & 0x01ff;
-        let bg2_hofs2 = self.world_scroll().bg2_x() & 0x01ff;
-        let bg2_vofs2 = self.world_scroll().bg2_y() & 0x01ff;
+        let bg2_hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy() & 0x01ff;
+        let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy() & 0x01ff;
+        let bg2_hofs2 = self.game_state.world.scroll.bg2_x() & 0x01ff;
+        let bg2_vofs2 = self.game_state.world.scroll.bg2_y() & 0x01ff;
         self.ppu_scroll_copy_mut().set_bg2_h_copy(bg2_hofs);
         self.ppu_scroll_copy_mut().set_bg2_v_copy(bg2_vofs);
         self.world_scroll_mut().set_bg2_x(bg2_hofs2);
@@ -374,7 +374,7 @@ impl ZeldaState {
             264, 264, 264, 263, 263, 262, 262, 262, 261, 261, 261, 260, 260, 260, 259, 259, 259,
             258, 258,
         ];
-        let zoom = self.attract_scene().mode7_zoom_timer() as u16;
+        let zoom = self.game_state.ending.attract_scene.mode7_zoom_timer() as u16;
         for (i, value) in MAP_MODE_ZOOMS1.iter().enumerate() {
             self.spotlight_hdma_mut()
                 .set_hdma_table_dynamic_entry(i, ((*value as u32 * zoom as u32) >> 8) as u16);
@@ -383,9 +383,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_in_sequence(&mut self) {
         if self.game_state.display.screen_brightness != 15 {
-            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.follower_link_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
-                self.player_state_mut().set_speed_setting(1);
+                self.follower_link_state_mut().set_speed_setting(1);
             }
         } else {
             self.attract_scene_mut().increment_state();
@@ -394,9 +394,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_out_sequence(&mut self) {
         if self.game_state.display.screen_brightness != 0 {
-            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.follower_link_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.decrement_screen_brightness();
-                self.player_state_mut().set_speed_setting(1);
+                self.follower_link_state_mut().set_speed_setting(1);
             }
         } else {
             self.enable_force_blank();
@@ -406,7 +406,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_enact_story(&mut self) {
-        match self.attract_scene().sequence() {
+        match self.game_state.ending.attract_scene.sequence() {
             0 => self.attract_dramatize_polka_dots(),
             1 => self.attract_dramatize_world_map(),
             2 => self.attract_throne_room(),
@@ -417,12 +417,12 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_world_map(&mut self) {
-        if self.attract_scene().mode7_zoom_timer() != 0 {
-            if self.attract_scene().mode7_zoom_timer() < 15 {
+        if self.game_state.ending.attract_scene.mode7_zoom_timer() != 0 {
+            if self.game_state.ending.attract_scene.mode7_zoom_timer() < 15 {
                 self.decrement_screen_brightness();
             }
             self.attract_scene_mut().decrement_scene_timer();
-            if self.attract_scene().scene_timer() == 0 {
+            if self.game_state.ending.attract_scene.scene_timer() == 0 {
                 self.attract_scene_mut().set_scene_timer(1);
                 self.attract_scene_mut().decrement_mode7_zoom_timer();
                 self.attract_control_map_zoom();
@@ -454,7 +454,7 @@ impl ZeldaState {
         const Y_BASE: [i16; 2] = [88, 32];
 
         self.attract_scene_mut().set_oam_index(0);
-        if self.attract_scene().fade_in_complete_flag() == 0 {
+        if self.game_state.ending.attract_scene.fade_in_complete_flag() == 0 {
             if self.game_state.display.screen_brightness != 15 {
                 self.increment_screen_brightness();
             } else {
@@ -462,11 +462,11 @@ impl ZeldaState {
             }
         }
 
-        if self.ppu_scroll_copy().bg2_v_copy() == 0 {
+        if self.game_state.display.ppu_scroll_copy.bg2_v_copy() == 0 {
             self.attract_show_timed_text_message();
-            if self.oam_state().priority_word() == 0 {
-                if self.attract_scene().throne_fade_timer() < 31
-                    && self.attract_scene().throne_fade_timer() & 1 == 0
+            if self.game_state.oam.priority_word() == 0 {
+                if self.game_state.ending.attract_scene.throne_fade_timer() < 31
+                    && self.game_state.ending.attract_scene.throne_fade_timer() & 1 == 0
                 {
                     self.decrement_screen_brightness();
                 }
@@ -478,13 +478,23 @@ impl ZeldaState {
                 }
             }
         } else {
-            let bg2 = self.ppu_scroll_copy().bg2_v_copy().wrapping_sub(1);
-            let bg1 = self.ppu_scroll_copy().bg1_v_copy().wrapping_sub(1);
+            let bg2 = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy()
+                .wrapping_sub(1);
+            let bg1 = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg1_v_copy()
+                .wrapping_sub(1);
             self.ppu_scroll_copy_mut().set_bg2_v_copy(bg2);
             self.ppu_scroll_copy_mut().set_bg1_v_copy(bg1);
         }
 
-        let bg2_vofs = self.ppu_scroll_copy().bg2_v_copy();
+        let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy();
         for i in (0..=1).rev() {
             let y = (Y_BASE[i] as u16).wrapping_sub(bg2_vofs);
             if (y.wrapping_add(32) as i16) >= 0 {
@@ -500,13 +510,13 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_show_timed_text_message(&mut self) {
-        let bg2_vofs2 = self.world_scroll().bg2_y();
+        let bg2_vofs2 = self.game_state.world.scroll.bg2_y();
         self.attract_scene_mut().set_bg2_vofs_backup(bg2_vofs2);
-        self.player_state_mut().set_joypad1l_last(0);
-        self.player_state_mut().set_filtered_joypad_l(0);
-        self.player_state_mut().set_filtered_joypad_h(0);
+        self.follower_link_state_mut().set_joypad1l_last(0);
+        self.follower_link_state_mut().set_filtered_joypad_l(0);
+        self.follower_link_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
-        let priority = self.oam_state().priority_word();
+        let priority = self.game_state.oam.priority_word();
         if priority != 0 {
             self.oam_state_mut()
                 .set_priority_word(priority.wrapping_sub(1));
@@ -521,12 +531,22 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_draw_sprite_set2_slice(&mut self, entries: &[AttractOamInfo]) {
-        let start = self.attract_scene().oam_index() as usize;
+        let start = self.game_state.ending.attract_scene.oam_index() as usize;
         self.attract_scene_mut()
             .advance_oam_index_by(entries.len() as u8);
         for (slot, &(x, y, charnum, flags, big)) in entries.iter().rev().enumerate() {
-            let obj_x = self.attract_scene().x_base().wrapping_add_signed(x);
-            let obj_y = self.attract_scene().y_base().wrapping_add_signed(y);
+            let obj_x = self
+                .game_state
+                .ending
+                .attract_scene
+                .x_base()
+                .wrapping_add_signed(x);
+            let obj_y = self
+                .game_state
+                .ending
+                .attract_scene
+                .y_base()
+                .wrapping_add_signed(y);
             self.set_oam_plain(64 + start + slot, obj_x, obj_y, charnum, flags, big);
         }
     }
@@ -612,7 +632,7 @@ impl ZeldaState {
             (16, 16, 0xa0, 0x7b, 2),
         ];
 
-        if self.attract_scene().scene_done_flag() != 0 {
+        if self.game_state.ending.attract_scene.scene_done_flag() != 0 {
             self.attract_scene_mut().increment_sequence();
             self.attract_scene_mut().subtract_state(2);
             return;
@@ -620,17 +640,24 @@ impl ZeldaState {
 
         self.attract_scene_mut().set_oam_index(0);
         self.handle_screen_flash();
-        if self.attract_scene().fade_in_done_flag() == 0 {
+        if self.game_state.ending.attract_scene.fade_in_done_flag() == 0 {
             self.attract_fade_in_step();
         }
-        if self.attract_scene().scene_frame_counter() != 0xff {
+        if self.game_state.ending.attract_scene.scene_frame_counter() != 0xff {
             self.attract_scene_mut().increment_scene_frame_counter();
         }
-        if self.attract_scene().intro_palette_flash_count() & 4 != 0 {
+        if self
+            .game_state
+            .ending
+            .attract_scene
+            .intro_palette_flash_count()
+            & 4
+            != 0
+        {
             self.system_signals_mut().set_sound_effect_2(0x2b);
         }
 
-        match self.attract_scene().scene_substep() {
+        match self.game_state.ending.attract_scene.scene_substep() {
             0 => self.attract_maiden_warp_case0(),
             1 => self.attract_maiden_warp_case1(),
             2 => self.attract_maiden_warp_case2(),
@@ -651,7 +678,7 @@ impl ZeldaState {
             );
         }
 
-        if self.attract_scene().scene_frame_counter() >= 0xa0 {
+        if self.game_state.ending.attract_scene.scene_frame_counter() >= 0xa0 {
             if self.attract_vram_destination_page_offset() != 0x60 {
                 let step = self.attract_scene_mut().decrement_anim_step_counter();
                 if step == 0 {
@@ -663,7 +690,7 @@ impl ZeldaState {
             }
         }
 
-        if self.attract_scene().fade_in_complete_flag() == 0 {
+        if self.game_state.ending.attract_scene.fade_in_complete_flag() == 0 {
             self.attract_scene_mut().set_x_base(116);
             let y_base = self.attract_vram_destination_page_offset();
             self.attract_scene_mut().set_y_base(y_base);
@@ -687,14 +714,14 @@ impl ZeldaState {
             self.attract_draw_sprite_set2_slice(&MAIDEN_WARP1[k * 2..k * 2 + 2]);
         }
 
-        let k = (self.attract_scene().scene_frame_counter() >> 5) as usize & 7;
+        let k = (self.game_state.ending.attract_scene.scene_frame_counter() >> 5) as usize & 7;
         self.attract_scene_mut().set_x_base(112);
         self.attract_scene_mut().set_y_base(70);
         self.attract_draw_sprite_set2_slice(&MAIDEN_WARP2[k * 6..k * 6 + 6]);
     }
 
     pub(super) fn attract_maiden_warp_case0(&mut self) {
-        if self.attract_scene().substep_delay_counter() != 0 {
+        if self.game_state.ending.attract_scene.substep_delay_counter() != 0 {
             self.attract_scene_mut().increment_scene_substep();
         }
     }
@@ -733,25 +760,25 @@ impl ZeldaState {
         const NUM: [usize; 8] = [2, 2, 2, 6, 6, 10, 10, 14];
 
         let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
-        let n = NUM[(self.attract_scene().maiden_warp_step() >> 1) as usize & 7];
+        let n = NUM[(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
         self.attract_draw_sprite_set2_slice(&OAMS[k * 14..k * 14 + n]);
 
-        if self.attract_scene().maiden_warp_step() == 0
-            && self.attract_scene().maiden_warp_timer_b() == 0x70
+        if self.game_state.ending.attract_scene.maiden_warp_step() == 0
+            && self.game_state.ending.attract_scene.maiden_warp_timer_b() == 0x70
         {
             self.system_signals_mut().set_sound_effect_2(0x27);
         }
 
-        if self.attract_scene().maiden_warp_step() == 15 {
+        if self.game_state.ending.attract_scene.maiden_warp_step() == 15 {
             self.attract_scene_mut().increment_scene_substep();
         } else {
-            if self.attract_scene().maiden_warp_step() == 6 {
+            if self.game_state.ending.attract_scene.maiden_warp_step() == 6 {
                 self.attract_scene_mut().set_intro_palette_flash_count(0x90);
                 self.system_signals_mut().set_sound_effect_2(0x2b);
             }
-            if self.attract_scene().maiden_warp_timer_b() != 0 {
+            if self.game_state.ending.attract_scene.maiden_warp_timer_b() != 0 {
                 self.attract_scene_mut().decrement_maiden_warp_timer_b();
             } else {
                 self.attract_scene_mut().increment_maiden_warp_step();
@@ -795,10 +822,10 @@ impl ZeldaState {
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
         let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
-        let n = NUM[(self.attract_scene().maiden_warp_step() >> 1) as usize & 7];
+        let n = NUM[(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
         self.attract_draw_sprite_set2_slice(&OAMS[k * 14 + (14 - n)..k * 14 + 14]);
 
-        if self.attract_scene().maiden_warp_step() == 0 {
+        if self.game_state.ending.attract_scene.maiden_warp_step() == 0 {
             let timer = self.attract_scene_mut().decrement_maiden_warp_timer_a();
             if timer == 0 {
                 self.attract_scene_mut().increment_scene_substep();
@@ -816,14 +843,14 @@ impl ZeldaState {
         ];
         const X_BASE: [u8; 2] = [0x78, 0x70];
 
-        if self.attract_scene().maiden_warp_step() == 6 {
+        if self.game_state.ending.attract_scene.maiden_warp_step() == 6 {
             self.attract_scene_mut().increment_fade_in_complete_flag();
             self.system_signals_mut().set_sound_effect_1(51);
-        } else if self.attract_scene().maiden_warp_step() == 0x40 {
+        } else if self.game_state.ending.attract_scene.maiden_warp_step() == 0x40 {
             self.attract_scene_mut().set_maiden_warp_step(224);
             self.attract_scene_mut().increment_scene_substep();
-        } else if self.attract_scene().maiden_warp_step() < 0x0f {
-            let k = (self.attract_scene().maiden_warp_step() >> 3) as usize & 1;
+        } else if self.game_state.ending.attract_scene.maiden_warp_step() < 0x0f {
+            let k = (self.game_state.ending.attract_scene.maiden_warp_step() >> 3) as usize & 1;
             self.attract_scene_mut().set_x_base(X_BASE[k]);
             self.attract_scene_mut().set_y_base(0x60);
             let n = if k != 0 { 2 } else { 1 };
@@ -834,14 +861,14 @@ impl ZeldaState {
 
     pub(super) fn attract_maiden_warp_case4(&mut self) {
         self.attract_show_timed_text_message();
-        if self.oam_state().priority_word() == 0 {
-            if self.attract_scene().maiden_warp_step() < 31
-                && self.attract_scene().maiden_warp_step() & 1 == 0
+        if self.game_state.oam.priority_word() == 0 {
+            if self.game_state.ending.attract_scene.maiden_warp_step() < 31
+                && self.game_state.ending.attract_scene.maiden_warp_step() & 1 == 0
             {
                 self.decrement_screen_brightness();
             }
             self.attract_scene_mut().decrement_maiden_warp_step();
-            if self.attract_scene().maiden_warp_step() == 0 {
+            if self.game_state.ending.attract_scene.maiden_warp_step() == 0 {
                 self.attract_scene_mut().increment_scene_done_flag();
             }
         }
@@ -856,14 +883,14 @@ impl ZeldaState {
         const SOLDIER_FLAGS: [u8; 2] = [9, 7];
 
         self.attract_scene_mut().set_oam_index(0);
-        if self.attract_scene().fade_in_done_flag() == 0 {
+        if self.game_state.ending.attract_scene.fade_in_done_flag() == 0 {
             self.attract_fade_in_step();
         }
 
         self.attract_scene_mut().set_x_base(56);
         self.attract_draw_zelda();
 
-        if self.attract_scene().scene_timer() >= 192 {
+        if self.game_state.ending.attract_scene.scene_timer() >= 192 {
             self.attract_scene_mut().set_y_base(112);
             let frame_ctr = self.attract_scene_mut().decrement_scene_frame_counter();
             let frame_ctr = if (frame_ctr as i8) < 0 {
@@ -887,11 +914,12 @@ impl ZeldaState {
                     .wrapping_add(0x100)
                     .wrapping_add(SOLDIER_X[k]) as u16;
                 self.attract_scene_mut().set_prison_soldier_x_lo(x as u8);
-                let soldier_anim = self.attract_scene().soldier_anim_step();
+                let soldier_anim = self.game_state.ending.attract_scene.soldier_anim_step();
                 self.sprite_simulate_soldier(
                     sprite,
                     x,
-                    (self.attract_scene().y_base() as u16).wrapping_add(SOLDIER_Y[k]),
+                    (self.game_state.ending.attract_scene.y_base() as u16)
+                        .wrapping_add(SOLDIER_Y[k]),
                     SOLDIER_DIR[k],
                     SOLDIER_FLAGS[k],
                     soldier_anim,
@@ -900,7 +928,7 @@ impl ZeldaState {
 
             let step_ctr = self.attract_scene_mut().increment_anim_step_counter();
             if step_ctr & 7 == 0 {
-                if self.attract_scene().soldier_anim_step() == 2 {
+                if self.game_state.ending.attract_scene.soldier_anim_step() == 2 {
                     self.attract_scene_mut().set_soldier_anim_step(0xff);
                     if self.attract_vram_destination_high_is_clear() && step_ctr & 8 != 0 {
                         self.system_signals_mut().set_sound_effect_2(4);
@@ -910,7 +938,7 @@ impl ZeldaState {
             }
         }
 
-        match self.attract_scene().scene_substep() {
+        match self.game_state.ending.attract_scene.scene_substep() {
             0 => self.attract_zelda_prison_case0(),
             1 => self.attract_zelda_prison_case1(),
             _ => {}
@@ -919,9 +947,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_in_step(&mut self) {
         if self.game_state.display.screen_brightness != 15 {
-            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.follower_link_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
-                self.player_state_mut().set_speed_setting(1);
+                self.follower_link_state_mut().set_speed_setting(1);
             }
         } else {
             self.attract_scene_mut().increment_fade_in_done_flag();
@@ -929,11 +957,11 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_draw_zelda(&mut self) {
-        let start = self.attract_scene().oam_index() as usize;
+        let start = self.game_state.ending.attract_scene.oam_index() as usize;
         self.set_oam_plain(
             64 + start,
             0x60,
-            self.attract_scene().x_base(),
+            self.game_state.ending.attract_scene.x_base(),
             0x28,
             0x29,
             2,
@@ -941,7 +969,11 @@ impl ZeldaState {
         self.set_oam_plain(
             65 + start,
             0x60,
-            self.attract_scene().x_base().wrapping_add(10),
+            self.game_state
+                .ending
+                .attract_scene
+                .x_base()
+                .wrapping_add(10),
             0x2a,
             0x29,
             2,
@@ -971,14 +1003,22 @@ impl ZeldaState {
         ep: &[u8],
         n: usize,
     ) {
-        let start = self.attract_scene().oam_index() as usize;
+        let start = self.game_state.ending.attract_scene.oam_index() as usize;
         self.attract_scene_mut()
             .advance_oam_index_by((n as u8).wrapping_add(1));
         for i in (0..=n).rev() {
             self.set_oam_plain(
                 64 + start + (n - i),
-                self.attract_scene().x_base().wrapping_add(xp[i]),
-                self.attract_scene().y_base().wrapping_add(yp[i]),
+                self.game_state
+                    .ending
+                    .attract_scene
+                    .x_base()
+                    .wrapping_add(xp[i]),
+                self.game_state
+                    .ending
+                    .attract_scene
+                    .y_base()
+                    .wrapping_add(yp[i]),
                 cp[i],
                 fp[i],
                 ep[i],
@@ -987,25 +1027,33 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_zelda_prison_draw_a(&mut self) {
-        let start = self.attract_scene().oam_index() as usize;
-        let ext = if self.attract_scene().x_base_high() != 0 {
+        let start = self.game_state.ending.attract_scene.oam_index() as usize;
+        let ext = if self.game_state.ending.attract_scene.x_base_high() != 0 {
             3
         } else {
             2
         };
-        let j = (self.attract_scene().anim_step_counter() >> 3) & 1;
+        let j = (self.game_state.ending.attract_scene.anim_step_counter() >> 3) & 1;
         self.set_oam_plain(
             64 + start,
-            self.attract_scene().x_base(),
-            self.attract_scene().y_base().wrapping_add(j),
+            self.game_state.ending.attract_scene.x_base(),
+            self.game_state
+                .ending
+                .attract_scene
+                .y_base()
+                .wrapping_add(j),
             6,
             0x3d,
             ext,
         );
         self.set_oam_plain(
             65 + start,
-            self.attract_scene().x_base(),
-            self.attract_scene().y_base().wrapping_add(10),
+            self.game_state.ending.attract_scene.x_base(),
+            self.game_state
+                .ending
+                .attract_scene
+                .y_base()
+                .wrapping_add(10),
             if j != 0 { 10 } else { 8 },
             0x3d,
             ext,
@@ -1022,14 +1070,14 @@ impl ZeldaState {
             (0, 16, 0xa4, 0x3b, 2),
             (16, 16, 0xa4, 0x7b, 2),
         ];
-        if self.attract_scene().prison_soldier_x_lo() == 0 {
+        if self.game_state.ending.attract_scene.prison_soldier_x_lo() == 0 {
             self.attract_scene_mut().increment_scene_substep();
         }
         if self.game_state.frame.frame_counter & 1 != 0 {
             self.decrement_attract_vram_destination_address();
         }
         self.attract_scene_mut().set_x_base(0x58);
-        let y_base = self.attract_scene().prison_zelda_y_base();
+        let y_base = self.game_state.ending.attract_scene.prison_zelda_y_base();
         self.attract_scene_mut().set_y_base(y_base);
         self.attract_draw_sprite_set2_slice(&OAMS0);
         self.attract_scene_mut().set_story_text_pointer(0xf8d9);
@@ -1068,9 +1116,9 @@ impl ZeldaState {
             (0, 16, 0xa0, 0x3b, 2),
             (16, 16, 0xa0, 0x7b, 2),
         ];
-        let Some(k) = (if self.attract_scene().scene_timer() < 0x80 {
+        let Some(k) = (if self.game_state.ending.attract_scene.scene_timer() < 0x80 {
             self.attract_show_timed_text_message();
-            if self.oam_state().priority_word() != 0 {
+            if self.game_state.oam.priority_word() != 0 {
                 Some(4)
             } else {
                 self.attract_zelda_prison_case1_step()
@@ -1085,28 +1133,30 @@ impl ZeldaState {
             self.decrement_attract_vram_destination_address();
         }
         self.attract_scene_mut().set_x_base(0x58);
-        let y_base = self.attract_scene().prison_zelda_y_base();
+        let y_base = self.game_state.ending.attract_scene.prison_zelda_y_base();
         self.attract_scene_mut().set_y_base(y_base);
         self.attract_draw_sprite_set2_slice(&OAMS1[k * 6..k * 6 + 6]);
     }
 
     fn attract_zelda_prison_case1_step(&mut self) -> Option<usize> {
-        if self.attract_scene().prison_zelda_y_base() != 0x6e {
+        if self.game_state.ending.attract_scene.prison_zelda_y_base() != 0x6e {
             self.attract_scene_mut().decrement_prison_zelda_y_base();
             return Some(0);
         }
 
-        if self.attract_scene().scene_timer() < 31 && self.attract_scene().scene_timer() & 1 == 0 {
+        if self.game_state.ending.attract_scene.scene_timer() < 31
+            && self.game_state.ending.attract_scene.scene_timer() & 1 == 0
+        {
             self.decrement_screen_brightness();
         }
         self.attract_scene_mut().decrement_scene_timer();
-        if self.attract_scene().scene_timer() == 0 {
+        if self.game_state.ending.attract_scene.scene_timer() == 0 {
             self.attract_scene_mut().increment_sequence();
             self.attract_scene_mut().subtract_state(2);
             return None;
         }
 
-        Some(match self.attract_scene().scene_timer() {
+        Some(match self.game_state.ending.attract_scene.scene_timer() {
             0xc0..=0xff => 0,
             0xb8..=0xbf => 1,
             0xb0..=0xb7 => 2,
@@ -1153,7 +1203,7 @@ impl ZeldaState {
             .sprite_slot(k)
             .y()
             .wrapping_add(y_offset as u16)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
@@ -1162,7 +1212,7 @@ impl ZeldaState {
     }
 
     fn set_guard_oam(&mut self, offset: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
-        let oam_cur = self.oam_state().current_pointer_usize();
+        let oam_cur = self.game_state.oam.current_pointer_usize();
         let index = (oam_cur - OAM_BUF) / 4 + offset;
         self.set_oam_helper0_index(index, x, y, charnum, flags, big);
     }
@@ -1175,15 +1225,15 @@ impl ZeldaState {
             self.ppu_scroll_copy_mut().subtract_bg2_h_copy_low(1);
         }
 
-        if self.attract_scene().legend_flag() != 0 {
+        if self.game_state.ending.attract_scene.legend_flag() != 0 {
             self.attract_build_next_image_tile_map();
             self.attract_scene_mut().clear_legend_flag();
             self.attract_scene_mut().advance_next_legend_gfx();
         }
 
-        self.player_state_mut().set_joypad1l_last(0);
-        self.player_state_mut().set_filtered_joypad_l(0);
-        self.player_state_mut().set_filtered_joypad_h(0);
+        self.follower_link_state_mut().set_joypad1l_last(0);
+        self.follower_link_state_mut().set_filtered_joypad_l(0);
+        self.follower_link_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
 
         let legend_ctr = self.attract_scene_mut().decrement_legend_ctr();
@@ -1196,7 +1246,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_build_next_image_tile_map(&mut self) {
-        let image = self.attract_scene().next_legend_image();
+        let image = self.game_state.ending.attract_scene.next_legend_image();
         let data = match image {
             0 => &ATTRACT_LEGEND_TILEMAP_BYTES_0[..],
             1 => &ATTRACT_LEGEND_TILEMAP_BYTES_1[..],

@@ -297,7 +297,10 @@ fn empty_sprite_hit_box() -> SpriteHitBox {
 
 impl ZeldaState {
     pub(super) fn sprite_where_in_room_mask(&self, room: u16) -> u16 {
-        self.sprite_workspace().where_in_room(usize::from(room))
+        self.game_state
+            .sprites
+            .workspace
+            .where_in_room(usize::from(room))
     }
 
     pub(super) fn set_sprite_where_in_room_mask(&mut self, room: u16, mask: u16) {
@@ -352,7 +355,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_spawn_immediately_smashed_terrain(&mut self, what: u8, x: u16, y: u16) {
         let bak1 = self.player_state().sprite_pickup_flag();
-        let bak2 = self.sprite_workspace().pickup_slot_cache();
+        let bak2 = self.game_state.sprites.workspace.pickup_slot_cache();
         let k = self.sprite_spawn_throwable_terrain_silently(what, x, y);
         if k >= 0 {
             self.throwable_scenery_transmute_to_debris(k as usize);
@@ -420,15 +423,15 @@ impl ZeldaState {
         let value = 0;
         self.sprite_slot_mut(k).set_graphics(value);
 
-        if self.dungeon_secret_scratch().is_available() {
-            if (self.dungeon_secret_scratch().pending_kind()
+        if self.game_state.dungeon_secret.is_available() {
+            if (self.game_state.dungeon_secret.pending_kind()
                 | self.game_state.world.location.indoor_flag())
                 == 0
                 && self.sprite_slot(k).c().wrapping_sub(2) < 2
             {
                 self.overworld_substitute_alternate_secret();
             }
-            if let Some(value) = self.dungeon_secret_scratch().graphics_kind() {
+            if let Some(value) = self.game_state.dungeon_secret.graphics_kind() {
                 self.sprite_slot_mut(k).set_graphics(value);
                 self.dungeon_secret_scratch_mut().clear_pending_kind();
             }
@@ -462,19 +465,19 @@ impl ZeldaState {
                 n += 1;
             }
         }
-        if n >= 4 || self.save_progress().progress_indicator() < 2 {
+        if n >= 4 || self.game_state.inventory.save_progress.progress_indicator() < 2 {
             return;
         }
 
-        let j = ((self.dungeon_secret_scratch().overworld_subst_counter() & 7)
-            + if self.world_region().is_in_dark_world() {
+        let j = ((self.game_state.dungeon_secret.overworld_subst_counter() & 7)
+            + if self.game_state.world.region.is_in_dark_world() {
                 8
             } else {
                 0
             }) as usize;
         self.dungeon_secret_scratch_mut()
             .increment_overworld_subst_counter();
-        let area = (self.world_region().overworld_area_low() & 0x3f) as usize;
+        let area = (self.game_state.world.region.overworld_area_low() & 0x3f) as usize;
         if SECRET_SUBSTITUTION_ITEMS[area] & SECRET_SUBSTITUTION_VERTICAL_OFFSETS[j] == 0 {
             self.dungeon_secret_scratch_mut()
                 .set_pending_kind(SECRET_SUBSTITUTION_HORIZONTAL_OFFSETS[j]);
@@ -486,7 +489,7 @@ impl ZeldaState {
             if self.sprite_slot(j).deflection_bits() & 2 == 0 || self.sprite_slot(j).e() == 0 {
                 continue;
             }
-            if self.sprite_system().chr_halfslot_state() != 0x0e {
+            if self.game_state.sprites.system.chr_halfslot_state() != 0x0e {
                 self.sprite_setup_hit_box(j, hb);
                 if !self.check_if_hit_boxes_overlap(hb) {
                     continue;
@@ -526,7 +529,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_nullify_hookshot_drag(&mut self) {
         for i in (0..5).rev() {
-            if self.ancilla_slot(i).ancilla_type() & 0x1f == 0
+            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() & 0x1f == 0
                 && self.player_state().has_hookshot_interlock()
             {
                 self.player_state_mut().clear_hookshot_interlock();
@@ -562,9 +565,9 @@ impl ZeldaState {
         let value = sprite_init_value(SPRITE_INIT_FLAGS_TABLE, ty);
         self.sprite_slot_mut(k).set_flags(value);
         let value = if self.game_state.world.location.is_indoors() {
-            self.dungeon_room_tracking().room_index2_word() as u8
+            self.game_state.dungeon.room_tracking.room_index2_word() as u8
         } else {
-            self.world_region().overworld_area() as u8
+            self.game_state.world.region.overworld_area() as u8
         };
         self.sprite_slot_mut(k).set_room(value);
 
@@ -610,8 +613,8 @@ impl ZeldaState {
     pub(super) fn sprite_fall_adjust_position(&mut self, k: usize) {
         self.sprite_add_xy(
             k,
-            self.dungeon_moving_floor().floor_x_velocity() as i16 as i32,
-            self.dungeon_moving_floor().floor_y_velocity() as i16 as i32,
+            self.game_state.dungeon.moving_floor.floor_x_velocity() as i16 as i32,
+            self.game_state.dungeon.moving_floor.floor_y_velocity() as i16 as i32,
         );
     }
 
@@ -898,12 +901,12 @@ impl ZeldaState {
         let player = self.player_state();
         player
             .x()
-            .wrapping_sub(self.sprite_workspace().current_sprite_x())
+            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
             .wrapping_add(11)
             < 23
             && player
                 .y()
-                .wrapping_sub(self.sprite_workspace().current_sprite_y())
+                .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                 .wrapping_add(self.sprite_slot(k).z() as u16)
                 .wrapping_add(16)
                 < 24
@@ -916,7 +919,7 @@ impl ZeldaState {
     //   Sprite_PlaceRupulseSpark_2(k);
     // }
     pub(super) fn sprite_place_weapon_tink(&mut self, k: usize) {
-        if self.garnish_state().repulsespark_timer() != 0 {
+        if self.game_state.sprites.garnish_runtime.repulsespark_timer() != 0 {
             return;
         }
         self.sprite_sfx_queue_sfx2_with_pan(k, 5);
@@ -936,10 +939,10 @@ impl ZeldaState {
     pub(super) fn sprite_place_rupulse_spark_2(&mut self, k: usize) {
         let x = self
             .sprite_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .sprite_get_y(k)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if x & !0xff != 0 || y & !0xff != 0 {
             return;
         }
@@ -965,7 +968,7 @@ impl ZeldaState {
     //   sound_effect_1 = Link_CalculateSfxPan() | 5;
     // }
     pub(super) fn link_place_weapon_tink(&mut self) {
-        if self.garnish_state().repulsespark_timer() != 0 {
+        if self.game_state.sprites.garnish_runtime.repulsespark_timer() != 0 {
             return;
         }
         self.garnish_state_mut().set_repulsespark_timer(5);
@@ -989,7 +992,8 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_apply_recoil_to_link(&mut self, k: usize, vel: u8) {
         let pt = self.sprite_project_speed_towards_link(k, vel);
-        self.player_state_mut().set_actual_velocity_xy(pt.x, pt.y);
+        self.follower_link_state_mut()
+            .set_actual_velocity_xy(pt.x, pt.y);
         {
             let mut player = self.player_state_mut();
             player.set_actual_z_velocity(vel >> 1);
@@ -1058,7 +1062,7 @@ impl ZeldaState {
         const SWORD_ACTION_INACTIVE_FRAMES: [u8; 13] = [1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1];
 
         let player = self.player_state();
-        if player.is_running() {
+        if self.game_state.player.follower_link.is_running() {
             let j = player.facing_index();
             let x = player
                 .x()
@@ -1133,18 +1137,30 @@ impl ZeldaState {
     //   hb->r6_spr_xsize = hb->r7_spr_ysize = (sprite_type[k] == 0x6a) ? 16 : 3;
     // }
     pub(super) fn sprite_do_hit_boxes_fast(&self, k: usize, hb: &mut SpriteHitBox) {
-        if self.hitbox_scratch_offset().hitbox_x_high_offset() == 0x80 {
+        if self
+            .game_state
+            .sprites
+            .draw_hitbox_work
+            .hitbox_x_high_offset()
+            == 0x80
+        {
             hb.r10_spr_xhi = 0x80;
             return;
         }
-        let x = self
-            .sprite_get_x(k)
-            .wrapping_add(self.hitbox_scratch_offset().hitbox_x_high_offset() as i8 as i16 as u16);
+        let x = self.sprite_get_x(k).wrapping_add(
+            self.game_state
+                .sprites
+                .draw_hitbox_work
+                .hitbox_x_high_offset() as i8 as i16 as u16,
+        );
         hb.r4_spr_xlo = x as u8;
         hb.r10_spr_xhi = (x >> 8) as u8;
-        let y = self
-            .sprite_get_y(k)
-            .wrapping_add(self.hitbox_scratch_offset().hitbox_y_low_offset() as i8 as i16 as u16);
+        let y = self.sprite_get_y(k).wrapping_add(
+            self.game_state
+                .sprites
+                .draw_hitbox_work
+                .hitbox_y_low_offset() as i8 as i16 as u16,
+        );
         hb.r5_spr_ylo = y as u8;
         hb.r11_spr_yhi = (y >> 8) as u8;
         let size = if self.sprite_slot(k).sprite_type() == 0x6a {
@@ -1173,28 +1189,29 @@ impl ZeldaState {
     //   } while (oam++, extp++, --n >= 0);
     // }
     pub(super) fn sprite_correct_oam_entries(&mut self, k: usize, n: i32, islarge: u8) {
-        let mut oam = self.oam_state().current_pointer_usize();
-        let mut extp = self.oam_state().current_extended_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
+        let mut extp = self.game_state.oam.current_extended_pointer_usize();
         let spr_x = self.sprite_get_x(k);
         let spr_y = self.sprite_get_y(k);
-        let scrollx = spr_x.wrapping_sub(self.world_scroll().bg2_x()) as u8;
-        let scrolly = spr_y.wrapping_sub(self.world_scroll().bg2_y()) as u8;
+        let scrollx = spr_x.wrapping_sub(self.game_state.world.scroll.bg2_x()) as u8;
+        let scrolly = spr_y.wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
         for _ in 0..=n {
             let x = spr_x.wrapping_add(
-                self.oam_state().entry_x(oam).wrapping_sub(scrollx) as i8 as i16 as u16
+                self.game_state.oam.entry_x(oam).wrapping_sub(scrollx) as i8 as i16 as u16,
             );
             let y = spr_y.wrapping_add(
-                self.oam_state().entry_y(oam).wrapping_sub(scrolly) as i8 as i16 as u16
+                self.game_state.oam.entry_y(oam).wrapping_sub(scrolly) as i8 as i16 as u16,
             );
             let ext = if sign8(islarge) {
-                self.oam_state().extended_byte_at(extp) & 2
+                self.game_state.oam.extended_byte_at(extp) & 2
             } else {
                 islarge
             };
-            let value = ext + u8::from(x.wrapping_sub(self.world_scroll().bg2_x()) >= 0x100);
+            let value =
+                ext + u8::from(x.wrapping_sub(self.game_state.world.scroll.bg2_x()) >= 0x100);
             self.oam_state_mut().set_extended_byte_at(extp, value);
             if y.wrapping_add(0x10)
-                .wrapping_sub(self.world_scroll().bg2_y())
+                .wrapping_sub(self.game_state.world.scroll.bg2_y())
                 >= 0x100
             {
                 self.oam_state_mut().hide_entry(oam);
@@ -1320,15 +1337,16 @@ impl ZeldaState {
     fn sprite_prep_oam_coord_or_double_ret_raw(&mut self, k: usize) -> (PrepOamCoordsRet, bool) {
         let value = 0;
         self.sprite_slot_mut(k).set_pause(value);
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
-        let x = cur_x.wrapping_sub(self.world_scroll().bg2_x());
-        let y = cur_y.wrapping_sub(self.world_scroll().bg2_y());
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
+        let x = cur_x.wrapping_sub(self.game_state.world.scroll.bg2_x());
+        let y = cur_y.wrapping_sub(self.game_state.world.scroll.bg2_y());
         let prep_y = y.wrapping_sub(self.sprite_slot(k).z() as u16);
         self.sprite_workspace_mut().set_oam_prep_coords(x, prep_y);
         let flags = self.sprite_slot(k).oam_flags() ^ self.sprite_slot(k).object_priority();
         let xt = if self
-            .enhanced_features()
+            .game_state
+            .enhanced_features
             .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
         {
             0x40
@@ -1344,8 +1362,8 @@ impl ZeldaState {
                 self.sprite_kill_self(k);
             }
         }
-        let ret_x = self.sprite_workspace().oam_prep_x();
-        let ret_y = self.sprite_workspace().oam_prep_y();
+        let ret_x = self.game_state.sprites.workspace.oam_prep_x();
+        let ret_y = self.game_state.sprites.workspace.oam_prep_y();
         let ret = PrepOamCoordsRet {
             x: ret_x,
             y: ret_y,
@@ -1379,7 +1397,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_initialize_slots(&mut self) {
-        let area = self.world_region().overworld_area_low();
+        let area = self.game_state.world.region.overworld_area_low();
         for k in (0..=15usize).rev() {
             let st = self.sprite_slot(k).state();
             let ty = self.sprite_slot(k).sprite_type();
@@ -1400,10 +1418,26 @@ impl ZeldaState {
             }
         }
         for k in (0..=7usize).rev() {
-            if self.overlord_slot(k).overlord_type() != 0
-                && self.overlord_slot(k).spawned_area() != area
+            if self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .overlord_type()
+                != 0
+                && self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .spawned_area()
+                    != area
             {
-                self.overlord_slot_mut(k).clear();
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, k)
+                    .clear();
             }
         }
     }
@@ -1436,7 +1470,12 @@ impl ZeldaState {
             j = 0;
         }
         let ju = j as usize;
-        let bird = self.bird_travel_destination(15);
+        let bird = self
+            .game_state
+            .world
+            .overworld
+            .bird_travel_destinations
+            .destination(15);
         let x = bird.x;
         let y = bird.y.wrapping_add(8);
         self.sprite_set_x(ju, x);
@@ -1470,7 +1509,11 @@ impl ZeldaState {
             }
         }
         for k in (0..10).rev() {
-            self.ancilla_slot_mut(k).clear();
+            self.game_state
+                .sprites
+                .ancilla_slots
+                .slot_mut(&mut self.ram, k)
+                .clear();
         }
 
         self.player_state_mut().clear_ancilla_pickup_flag();
@@ -1490,11 +1533,19 @@ impl ZeldaState {
         self.sprite_system_mut().set_chr_halfslot_state(0);
         self.minigame_state_mut().clear_is_archer_or_shovel_game();
         for k in (0..8).rev() {
-            self.overlord_slot_mut(k).clear();
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .clear();
         }
         for k in (0..30).rev() {
             let value = 0;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
         }
     }
 
@@ -1522,7 +1573,7 @@ impl ZeldaState {
         self.sprite_system_mut().set_chr_halfslot_state(0);
         self.sprite_system_mut().set_limit_instance(0);
         self.oam_state_mut().clear_sprite_sorting_setting();
-        if self.follower_state().indicator() != 13 {
+        if self.game_state.sprites.follower_runtime.indicator() != 13 {
             self.hud_state_mut().set_super_bomb_indicator_timer(0xfe);
         }
         self.sprite_workspace_mut().clear_where_in_room();
@@ -1542,8 +1593,8 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_load_sprites(&mut self) {
-        let area = self.world_region().overworld_area();
-        let area_lo = self.world_region().overworld_area_low() as usize;
+        let area = self.game_state.world.region.overworld_area();
+        let area_lo = self.game_state.world.region.overworld_area_low() as usize;
         self.garnish_state_mut().set_sprcoll_x_base((area & 7) << 9);
         self.garnish_state_mut()
             .set_sprcoll_y_base((((area & 0x3f) >> 2) & 0x0e) << 8);
@@ -1551,7 +1602,7 @@ impl ZeldaState {
         self.garnish_state_mut().set_sprcoll_x_size(size);
         self.garnish_state_mut().set_sprcoll_y_size(size);
 
-        let base = match self.save_progress().progress_indicator() {
+        let base = match self.game_state.inventory.save_progress.progress_indicator() {
             3 => 2,
             2 => 1,
             _ => 0,
@@ -1588,12 +1639,13 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_activate_all_proxima(&mut self) {
-        let bak0 = self.world_scroll().bg2_x();
+        let bak0 = self.game_state.world.scroll.bg2_x();
         let bak1 = self.overworld_horizontal_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0xff);
 
         let xt: u16 = if self
-            .enhanced_features()
+            .game_state
+            .enhanced_features
             .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
         {
             0x40
@@ -1603,7 +1655,7 @@ impl ZeldaState {
         self.world_scroll_mut().set_bg2_x(bak0.wrapping_sub(xt));
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_activate_when_proximal();
-            let bg = self.world_scroll().bg2_x().wrapping_add(16);
+            let bg = self.game_state.world.scroll.bg2_x().wrapping_add(16);
             self.world_scroll_mut().set_bg2_x(bg);
         }
         self.set_overworld_horizontal_scroll_delta_low(bak1);
@@ -1615,10 +1667,10 @@ impl ZeldaState {
             self.sprite_activate_when_proximal();
             self.sprite_activate_when_proximal_big();
         } else {
-            if self.sprite_system().ranged_based_toggler() & 1 == 0 {
+            if self.game_state.sprites.system.ranged_based_toggler() & 1 == 0 {
                 self.sprite_activate_when_proximal();
             }
-            if self.sprite_system().ranged_based_toggler() & 1 != 0 {
+            if self.game_state.sprites.system.ranged_based_toggler() & 1 != 0 {
                 self.sprite_activate_when_proximal_big();
             }
             self.sprite_system_mut().increment_ranged_based_toggler();
@@ -1630,21 +1682,22 @@ impl ZeldaState {
             return;
         }
         let xt: u16 = if self
-            .enhanced_features()
+            .game_state
+            .enhanced_features
             .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
         {
             0x40
         } else {
             0
         };
-        let x = self.world_scroll().bg2_x().wrapping_add(
+        let x = self.game_state.world.scroll.bg2_x().wrapping_add(
             if sign8(self.overworld_horizontal_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10).wrapping_sub(xt)
             } else {
                 0x110u16.wrapping_add(xt)
             },
         );
-        let mut y = self.world_scroll().bg2_y().wrapping_sub(0x30);
+        let mut y = self.game_state.world.scroll.bg2_y().wrapping_sub(0x30);
         for _ in (0..=21).rev() {
             self.sprite_overworld_proximity_motivated_load(x, y);
             y = y.wrapping_add(16);
@@ -1656,7 +1709,8 @@ impl ZeldaState {
             return;
         }
         let xt: u16 = if self
-            .enhanced_features()
+            .game_state
+            .enhanced_features
             .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
         {
             0x40
@@ -1664,11 +1718,13 @@ impl ZeldaState {
             0
         };
         let mut x = self
-            .world_scroll()
+            .game_state
+            .world
+            .scroll
             .bg2_x()
             .wrapping_sub(0x30)
             .wrapping_sub(xt);
-        let y = self.world_scroll().bg2_y().wrapping_add(
+        let y = self.game_state.world.scroll.bg2_y().wrapping_add(
             if sign8(self.overworld_vertical_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10)
             } else {
@@ -1682,12 +1738,12 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_overworld_proximity_motivated_load(&mut self, x: u16, y: u16) {
-        let sprcoll_x_base = self.garnish_state().sprcoll_x_word();
-        let sprcoll_y_base = self.garnish_state().sprcoll_y_word();
+        let sprcoll_x_base = self.game_state.sprites.garnish_runtime.sprcoll_x_word();
+        let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);
         let yt = y.wrapping_sub(sprcoll_y_base);
-        if xt >= self.garnish_state().sprcoll_x_size()
-            || yt >= self.garnish_state().sprcoll_y_size()
+        if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size()
+            || yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size()
         {
             return;
         }
@@ -1698,13 +1754,22 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_load_proxima_sprite_if_alive(&mut self, blk: u16) {
-        let sprite_to_spawn = self.overworld_sprite_presence().marker(blk as usize);
+        let sprite_to_spawn = self
+            .game_state
+            .sprites
+            .overworld_sprite_presence
+            .marker(blk as usize);
         if sprite_to_spawn == 0 {
             return;
         }
 
         let loadedmask = 0x80u8 >> (blk & 7);
-        if self.overworld_sprite_loaded().is_loaded(blk, loadedmask) {
+        if self
+            .game_state
+            .sprites
+            .overworld_sprite_loaded
+            .is_loaded(blk, loadedmask)
+        {
             return;
         }
 
@@ -1716,30 +1781,72 @@ impl ZeldaState {
             let k = k as usize;
             self.overworld_sprite_loaded_mut()
                 .set_loaded_mask(blk, loadedmask);
-            self.overlord_slot_mut(k).set_sprite_block_pos(blk);
-            self.overlord_slot_mut(k)
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_sprite_block_pos(blk);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
                 .set_overlord_type(sprite_to_spawn.wrapping_sub(0xf3));
             let x_low = ((blk << 4) & 0x00f0) as u8
-                + if self.overlord_slot(k).overlord_type() == 1 {
+                + if self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(k)
+                    .overlord_type()
+                    == 1
+                {
                     8
                 } else {
                     0
                 };
-            let x_high = (((blk >> 8) & 3) as u8)
-                .wrapping_add((self.garnish_state().sprcoll_x_word() >> 8) as u8);
-            self.overlord_slot_mut(k)
+            let x_high = (((blk >> 8) & 3) as u8).wrapping_add(
+                (self.game_state.sprites.garnish_runtime.sprcoll_x_word() >> 8) as u8,
+            );
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
                 .set_x(u16::from(x_low) | (u16::from(x_high) << 8));
             let y_low = (blk & 0x00f0) as u8;
-            let y_high = ((blk >> 10) as u8)
-                .wrapping_add((self.garnish_state().sprcoll_y_word() >> 8) as u8);
-            self.overlord_slot_mut(k)
+            let y_high = ((blk >> 10) as u8).wrapping_add(
+                (self.game_state.sprites.garnish_runtime.sprcoll_y_word() >> 8) as u8,
+            );
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
                 .set_y(u16::from(y_low) | (u16::from(y_high) << 8));
-            self.overlord_slot_mut(k).set_floor(0);
-            let area = self.world_region().overworld_area_low();
-            self.overlord_slot_mut(k).set_spawned_area(area);
-            self.overlord_slot_mut(k).set_gen2(0);
-            self.overlord_slot_mut(k).set_gen1(0);
-            self.overlord_slot_mut(k).set_gen3(0);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_floor(0);
+            let area = self.game_state.world.region.overworld_area_low();
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_spawned_area(area);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(0);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen1(0);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen3(0);
         } else {
             let k = self.overworld_alloc_sprite(sprite_to_spawn);
             if k < 0 {
@@ -1771,11 +1878,13 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_x_low(value);
             let value = (blk & 0x00f0) as u8;
             self.sprite_slot_mut(k).set_y_low(value);
-            let value = (((blk >> 8) & 3) as u8)
-                .wrapping_add((self.garnish_state().sprcoll_x_word() >> 8) as u8);
+            let value = (((blk >> 8) & 3) as u8).wrapping_add(
+                (self.game_state.sprites.garnish_runtime.sprcoll_x_word() >> 8) as u8,
+            );
             self.sprite_slot_mut(k).set_x_high(value);
-            let value = ((blk >> 10) as u8)
-                .wrapping_add((self.garnish_state().sprcoll_y_word() >> 8) as u8);
+            let value = ((blk >> 10) as u8).wrapping_add(
+                (self.game_state.sprites.garnish_runtime.sprcoll_y_word() >> 8) as u8,
+            );
             self.sprite_slot_mut(k).set_y_high(value);
             let value = 0;
             self.sprite_slot_mut(k).set_floor(value);
@@ -1798,12 +1907,17 @@ impl ZeldaState {
         self.sprite_disable_all();
         self.garnish_state_mut().set_sprcoll_x_size(0xffff);
         self.garnish_state_mut().set_sprcoll_y_size(0xffff);
-        let room = self.dungeon_room_tracking().room_index2_word();
-        let seen = (0..4).any(|i| self.dungeon_room_tracking().room_history_entry(i) == room);
+        let room = self.game_state.dungeon.room_tracking.room_index2_word();
+        let seen =
+            (0..4).any(|i| self.game_state.dungeon.room_tracking.room_history_entry(i) == room);
         if !seen {
-            let dropped = self.dungeon_room_tracking().room_history_entry(3);
+            let dropped = self.game_state.dungeon.room_tracking.room_history_entry(3);
             for i in (1..4).rev() {
-                let prev = self.dungeon_room_tracking().room_history_entry(i - 1);
+                let prev = self
+                    .game_state
+                    .dungeon
+                    .room_tracking
+                    .room_history_entry(i - 1);
                 self.dungeon_room_tracking_mut()
                     .set_room_history_entry(i, prev);
             }
@@ -1823,7 +1937,7 @@ impl ZeldaState {
         let Some(offsets) = self.asset_raw(59).map(Vec::from) else {
             return;
         };
-        let room = self.dungeon_room_tracking().room_index2_word() as usize;
+        let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
         let start = read_word_from_slice(&offsets, room * 2) as usize;
         if start >= sprites.len() {
             return;
@@ -1874,7 +1988,8 @@ impl ZeldaState {
         }
 
         if sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, sprite_type) & 1 == 0
-            && self.sprite_where_in_room_mask(self.dungeon_room_tracking().room_index2_word())
+            && self
+                .sprite_where_in_room_mask(self.game_state.dungeon.room_tracking.room_index2_word())
                 & (1 << k)
                 != 0
         {
@@ -1888,7 +2003,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_floor(value);
 
         let y_coord = (((y as u16) << 4) & 0x01ff)
-            + ((self.sprite_workspace().room_origin_y_high() as u16) << 8);
+            + ((self.game_state.sprites.workspace.room_origin_y_high() as u16) << 8);
         let value = y_coord as u8;
         self.sprite_slot_mut(k).set_y_low(value);
         let value = (y_coord >> 8) as u8;
@@ -1896,7 +2011,7 @@ impl ZeldaState {
 
         self.sprite_workspace_mut().set_shared_scratch_a(x);
         let x_coord = (((x as u16) << 4) & 0x01ff)
-            + ((self.sprite_workspace().room_origin_x_high() as u16) << 8);
+            + ((self.game_state.sprites.workspace.room_origin_x_high() as u16) << 8);
         let value = x_coord as u8;
         self.sprite_slot_mut(k).set_x_low(value);
         let value = (x_coord >> 8) as u8;
@@ -1904,9 +2019,9 @@ impl ZeldaState {
 
         let value = sprite_type;
         self.sprite_slot_mut(k).set_sprite_type(value);
-        let counter = (self.temp_counter().value() & 0x60) >> 2;
+        let counter = (self.game_state.scratch_counter.value() & 0x60) >> 2;
         self.temp_counter_mut().set(counter);
-        let value = self.temp_counter().value() | (x >> 5);
+        let value = self.game_state.scratch_counter.value() | (x >> 5);
         self.sprite_slot_mut(k).set_subtype(value);
         let value = k as u8;
         self.sprite_slot_mut(k).set_n(value);
@@ -1948,37 +2063,104 @@ impl ZeldaState {
         let y = src[0];
         let x = src[1];
         let type_ = src[2];
-        self.overlord_slot_mut(k).set_overlord_type(type_);
-        self.overlord_slot_mut(k).set_floor(y >> 7);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_overlord_type(type_);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_floor(y >> 7);
         let mut t = (((y as u16) << 4) & 0x01ff)
-            + ((self.sprite_workspace().room_origin_y_high() as u16) << 8);
-        self.overlord_slot_mut(k).set_y(t);
+            + ((self.game_state.sprites.workspace.room_origin_y_high() as u16) << 8);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y(t);
         t = (((x as u16) << 4) & 0x01ff)
-            + ((self.sprite_workspace().room_origin_x_high() as u16) << 8);
-        self.overlord_slot_mut(k).set_x(t);
-        let area = self.world_region().overworld_area_low();
-        self.overlord_slot_mut(k).set_spawned_area(area);
-        self.overlord_slot_mut(k).set_gen2(0);
-        self.overlord_slot_mut(k).set_gen1(0);
-        self.overlord_slot_mut(k).set_gen3(0);
-        if self.overlord_slot(k).overlord_type() == 10
-            || self.overlord_slot(k).overlord_type() == 11
+            + ((self.game_state.sprites.workspace.room_origin_x_high() as u16) << 8);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x(t);
+        let area = self.game_state.world.region.overworld_area_low();
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_spawned_area(area);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen2(0);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen1(0);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, k)
+            .set_gen3(0);
+        if self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type()
+            == 10
+            || self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(k)
+                .overlord_type()
+                == 11
         {
-            self.overlord_slot_mut(k).set_gen2(160);
-        } else if self.overlord_slot(k).overlord_type() == 3 {
-            self.overlord_slot_mut(k).set_gen2(255);
-            self.overlord_slot_mut(k).subtract_x_low(8);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(160);
+        } else if self
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(k)
+            .overlord_type()
+            == 3
+        {
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .set_gen2(255);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, k)
+                .subtract_x_low(8);
         }
     }
 
     pub(super) fn sprite_main(&mut self) {
         if self.game_state.world.location.is_outdoors() {
             for j in 0..5 {
-                self.ancilla_slot_mut(j).set_floor(0);
+                self.game_state
+                    .sprites
+                    .ancilla_slots
+                    .slot_mut(&mut self.ram, j)
+                    .set_floor(0);
             }
             self.sprite_proximity_activation();
         }
-        let dark_world = u8::from(self.save_progress().dark_world_state() != 0);
+        let dark_world = u8::from(self.game_state.inventory.save_progress.dark_world_state() != 0);
         self.world_region_mut()
             .set_dark_world_region_index(dark_world);
         if self.game_state.frame.submodule == 0 {
@@ -2003,7 +2185,7 @@ impl ZeldaState {
             player.set_pull_action_state(0);
             player.clear_prevent_movement();
         }
-        if self.sprite_system().alert_flag() != 0 {
+        if self.game_state.sprites.system.alert_flag() != 0 {
             self.sprite_system_mut().decrement_alert_flag();
         }
         self.ancilla_main();
@@ -2069,7 +2251,7 @@ impl ZeldaState {
         if self.game_state.world.location.is_outdoors()
             || self.game_state.frame.submodule == 0
             || self.game_state.frame.submodule == 14
-            || self.sprite_system().alt_sprites_flag() == 0
+            || self.game_state.sprites.system.alt_sprites_flag() == 0
         {
             self.sprite_system_mut().clear_alt_sprites_flag();
             return;
@@ -2166,7 +2348,7 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_current_sprite_y(y);
 
         let num = ((self.sprite_slot(k).flags2() & 0x1f).wrapping_add(1)).wrapping_mul(4);
-        if self.oam_state().has_sprite_sorting() {
+        if self.game_state.oam.has_sprite_sorting() {
             if self.sprite_slot(k).floor() != 0 {
                 self.oam_allocate_from_region_f(num);
             } else {
@@ -2242,10 +2424,10 @@ impl ZeldaState {
         ];
 
         let region = (y >> 1) as usize;
-        let mut pstart = self.oam_state().region_base_word(region);
+        let mut pstart = self.game_state.oam.region_base_word(region);
         let p = pstart.wrapping_add(num as u16);
         if p >= LIMITS[region] {
-            let alloc = self.oam_state().region_alloc_counter(region);
+            let alloc = self.game_state.oam.region_alloc_counter(region);
             let j = alloc & 7;
             self.oam_state_mut()
                 .set_region_alloc_counter(region, alloc.wrapping_add(1));
@@ -2293,11 +2475,11 @@ impl ZeldaState {
         let y = self
             .sprite_y(k)
             .wrapping_add(10)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
-        let oam = (self.oam_state().current_pointer_usize())
+        let oam = (self.game_state.oam.current_pointer_usize())
             + usize::from(self.sprite_slot(k).flags2() & 0x1f) * 4;
         let flags =
             (self.sprite_slot(k).oam_flags() ^ self.sprite_slot(k).object_priority()) & 0x30;
@@ -2320,7 +2502,15 @@ impl ZeldaState {
     // }
     pub(super) fn alloc_overlord(&self) -> i32 {
         let mut i = 7i32;
-        while i >= 0 && self.overlord_slot(i as usize).overlord_type() != 0 {
+        while i >= 0
+            && self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(i as usize)
+                .overlord_type()
+                != 0
+        {
             i -= 1;
         }
         i
@@ -2362,14 +2552,16 @@ impl ZeldaState {
     //   return garnish_x_lo[k] | garnish_x_hi[k] << 8;
     // }
     pub(super) fn garnish_get_x(&self, k: usize) -> u16 {
-        u16::from(self.garnish_slot(k).x_low()) | (u16::from(self.garnish_slot(k).x_high()) << 8)
+        u16::from(self.game_state.sprites.garnish_slots.slot(k).x_low())
+            | (u16::from(self.game_state.sprites.garnish_slots.slot(k).x_high()) << 8)
     }
 
     // uint16 Garnish_GetY(int k) {
     //   return garnish_y_lo[k] | garnish_y_hi[k] << 8;
     // }
     pub(super) fn garnish_get_y(&self, k: usize) -> u16 {
-        u16::from(self.garnish_slot(k).y_low()) | (u16::from(self.garnish_slot(k).y_high()) << 8)
+        u16::from(self.game_state.sprites.garnish_slots.slot(k).y_low())
+            | (u16::from(self.game_state.sprites.garnish_slots.slot(k).y_high()) << 8)
     }
 
     // bool Garnish_ReturnIfPrepFails(int k, Point16U *pt) {  // 86e75e
@@ -2386,13 +2578,17 @@ impl ZeldaState {
     pub(super) fn garnish_return_if_prep_fails(&mut self, k: usize, pt: &mut Point16U) -> bool {
         let x = self
             .garnish_get_x(k)
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .garnish_get_y(k)
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if x >= 256 || y >= 256 {
             let value = 0;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
             return true;
         }
         pt.x = x;
@@ -2429,13 +2625,13 @@ impl ZeldaState {
     pub(super) fn garnish_sparkle_common(&mut self, k: usize, shift: u8) {
         const GARNISH_SPARKLE_CHAR: [u8; 4] = [0x83, 0xc7, 0x80, 0xb7];
 
-        let t = usize::from(self.garnish_slot(k).countdown() >> shift);
+        let t = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> shift);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let oam = self.game_state.oam.current_pointer_usize();
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         let flags =
             (self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority()) & 0xf0 | 4;
         self.set_oam_plain_at_for_sprite(
@@ -2460,18 +2656,18 @@ impl ZeldaState {
     pub(super) fn garnish_dust_common(&mut self, k: usize, shift: u8) {
         const RUNNING_MAN_DUST_CHAR: [u8; 3] = [0xdf, 0xcf, 0xa9];
 
-        let counter = self.garnish_slot(k).countdown() >> shift;
+        let counter = self.game_state.sprites.garnish_slots.slot(k).countdown() >> shift;
         self.temp_counter_mut().set(counter);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
             pt.y as u8,
-            RUNNING_MAN_DUST_CHAR[usize::from(self.temp_counter().value())],
+            RUNNING_MAN_DUST_CHAR[usize::from(self.game_state.scratch_counter.value())],
             0x24,
             0,
         );
@@ -2511,12 +2707,13 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
             pt.y as u8,
-            LASER_BEAM_TRAIL_CHAR[usize::from(self.garnish_slot(k).oam_flags())],
+            LASER_BEAM_TRAIL_CHAR
+                [usize::from(self.game_state.sprites.garnish_slots.slot(k).oam_flags())],
             0x25,
             0,
         );
@@ -2534,8 +2731,8 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let oam = self.game_state.oam.current_pointer_usize();
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
@@ -2558,8 +2755,8 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let oam = self.game_state.oam.current_pointer_usize();
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
@@ -2576,16 +2773,22 @@ impl ZeldaState {
     //                sprite_oam_flags[j] | sprite_obj_prio[j], 2);
     // }
     pub(super) fn garnish02_mothula_beam_trail(&mut self, k: usize) {
-        let oam = self.oam_state().current_pointer_usize();
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let oam = self.game_state.oam.current_pointer_usize();
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
-            self.garnish_slot(k)
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot(k)
                 .x_low()
-                .wrapping_sub(self.world_scroll().bg2_x_low()),
-            self.garnish_slot(k)
+                .wrapping_sub(self.game_state.world.scroll.bg2_x_low()),
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot(k)
                 .y_low()
-                .wrapping_sub(self.world_scroll().bg2_y_low()),
+                .wrapping_sub(self.game_state.world.scroll.bg2_y_low()),
             0xaa,
             self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority(),
             2,
@@ -2616,8 +2819,8 @@ impl ZeldaState {
 
         let link_x = self.player_state().x();
         let link_y = self.player_state().y();
-        let bg_x = self.world_scroll().bg2_x();
-        let bg_y = self.world_scroll().bg2_y();
+        let bg_x = self.game_state.world.scroll.bg2_x();
+        let bg_y = self.game_state.world.scroll.bg2_y();
         if (link_x
             .wrapping_sub(bg_x)
             .wrapping_sub(x as u16)
@@ -2629,10 +2832,10 @@ impl ZeldaState {
                 .wrapping_add(22) as u8)
                 < 28
         {
-            self.player_state_mut().set_auxiliary_state(1);
+            self.follower_link_state_mut().set_auxiliary_state(1);
             self.player_state_mut().set_incapacitated_timer(16);
             self.player_state_mut().set_given_damage(16);
-            self.player_state_mut().xor_actual_velocity_xy(255);
+            self.follower_link_state_mut().xor_actual_velocity_xy(255);
         }
     }
 
@@ -2650,8 +2853,8 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let mut oam = self.oam_state().current_pointer_usize();
-        let g = usize::from((self.garnish_slot(k).countdown() >> 1) & 6);
+        let mut oam = self.game_state.oam.current_pointer_usize();
+        let g = usize::from((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 1) & 6);
         for i in (0..=1).rev() {
             let j = i + g;
             self.set_oam_plain_at_for_sprite(
@@ -2670,43 +2873,83 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn garnish13_pyramid_debris(&mut self, k: usize) {
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
 
-        let y = (i32::from(self.garnish_slot(k).y_low()) << 8)
-            + i32::from(self.garnish_slot(k).y_subpixel())
-            + ((self.garnish_slot(k).y_velocity() as i8 as i32) << 4);
+        let y = (i32::from(self.game_state.sprites.garnish_slots.slot(k).y_low()) << 8)
+            + i32::from(self.game_state.sprites.garnish_slots.slot(k).y_subpixel())
+            + ((self.game_state.sprites.garnish_slots.slot(k).y_velocity() as i8 as i32) << 4);
         let value = y as u8;
-        self.garnish_slot_mut(k).set_y_subpixel(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_subpixel(value);
         let value = (y >> 8) as u8;
-        self.garnish_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
 
-        let x = (i32::from(self.garnish_slot(k).x_low()) << 8)
-            + i32::from(self.garnish_slot(k).x_subpixel())
-            + ((self.garnish_slot(k).x_velocity() as i8 as i32) << 4);
+        let x = (i32::from(self.game_state.sprites.garnish_slots.slot(k).x_low()) << 8)
+            + i32::from(self.game_state.sprites.garnish_slots.slot(k).x_subpixel())
+            + ((self.game_state.sprites.garnish_slots.slot(k).x_velocity() as i8 as i32) << 4);
         let value = x as u8;
-        self.garnish_slot_mut(k).set_x_subpixel(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_subpixel(value);
         let value = (x >> 8) as u8;
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
 
-        let value = self.garnish_slot(k).y_velocity().wrapping_add(3);
-        self.garnish_slot_mut(k).set_y_velocity(value);
+        let value = self
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot(k)
+            .y_velocity()
+            .wrapping_add(3);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_velocity(value);
         let t = self
-            .garnish_slot(k)
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot(k)
             .x_low()
-            .wrapping_sub(self.world_scroll().bg2_x_low());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x_low());
         if t >= 248 {
             let value = 0;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
             return;
         }
         self.oam_state_mut().set_entry_x(oam, t);
         let t = self
-            .garnish_slot(k)
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot(k)
             .y_low()
-            .wrapping_sub(self.world_scroll().bg2_y_low());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y_low());
         if t >= 240 {
             let value = 0;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
             return;
         }
         self.oam_state_mut().set_entry_y(oam, t);
@@ -2730,7 +2973,7 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_plain_at_for_sprite(oam, pt.x as u8, pt.y as u8, 0xa4, 0x22, 0);
         self.set_oam_plain_at_for_sprite(
             oam + 4,
@@ -2753,18 +2996,24 @@ impl ZeldaState {
         const GANON_BAT_FLAME_CHAR: [u8; 7] = [0xac, 0xac, 0x66, 0x66, 0x8e, 0xa0, 0xa2];
         const GANON_BAT_FLAME_FLAGS: [u8; 7] = [1, 0x41, 1, 0x41, 0, 0, 0];
 
-        if self.garnish_slot(k).countdown() == 8 {
+        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 8 {
             let value = 0x11;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
         }
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j =
-            usize::from(GANON_BAT_FLAME_IDX[usize::from(self.garnish_slot(k).countdown() >> 3)]);
+        let j = usize::from(
+            GANON_BAT_FLAME_IDX
+                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
+        );
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
             GANON_BAT_FLAME_CHAR[j],
@@ -2785,12 +3034,13 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            GARNISH_CANNON_POOF_CHAR[usize::from(self.garnish_slot(k).countdown() >> 3)],
+            GARNISH_CANNON_POOF_CHAR
+                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
             GARNISH_CANNON_POOF_FLAGS[j] | 4,
             2,
         );
@@ -2807,7 +3057,7 @@ impl ZeldaState {
         ];
         const TRINEXX_ICE_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
 
-        if self.garnish_slot(k).countdown() == 0x50
+        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 0x50
             && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
             self.dungeon_update_tile_map_with_common_tile_for_garnish(
@@ -2821,11 +3071,14 @@ impl ZeldaState {
             return;
         }
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            TRINEXX_ICE_CHAR[usize::from(self.garnish_slot(k).countdown() >> 4)],
-            TRINEXX_ICE_FLAGS[usize::from((self.garnish_slot(k).countdown() >> 2) & 3)] | 0x35,
+            TRINEXX_ICE_CHAR
+                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 4)],
+            TRINEXX_ICE_FLAGS
+                [usize::from((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2) & 3)]
+                | 0x35,
             2,
         );
     }
@@ -2841,14 +3094,14 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.garnish_slot(k).sprite());
-        let room_offset = if self.dungeon_room_tracking().room_index2() == 0x20 {
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let room_offset = if self.game_state.dungeon.room_tracking.room_index2() == 0x20 {
             0x80
         } else {
             0
         };
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
             LIGHTNING_TRAIL_CHAR[j].wrapping_sub(room_offset),
@@ -2865,7 +3118,7 @@ impl ZeldaState {
         const CRUMBLE_TILE_FLAGS: [u8; 5] = [0x30, 0x31, 0x31, 0x31, 0x31];
         const CRUMBLE_TILE_EXT: [u8; 5] = [0, 2, 2, 2, 2];
 
-        let mut j = self.garnish_slot(k).countdown();
+        let mut j = self.game_state.sprites.garnish_slots.slot(k).countdown();
         if j == 0x1e {
             j = self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag;
             if j == 0 {
@@ -2880,14 +3133,14 @@ impl ZeldaState {
         let x = self
             .garnish_get_x(k)
             .wrapping_add(u16::from(CRUMBLE_TILE_XY[j]))
-            .wrapping_sub(self.world_scroll().bg2_x());
+            .wrapping_sub(self.game_state.world.scroll.bg2_x());
         let y = self
             .garnish_get_y(k)
             .wrapping_add(u16::from(CRUMBLE_TILE_XY[j]))
-            .wrapping_sub(self.world_scroll().bg2_y());
+            .wrapping_sub(self.game_state.world.scroll.bg2_y());
         if x < 256 && y < 256 {
             self.set_oam_plain_at_for_sprite(
-                self.oam_state().current_pointer_usize(),
+                self.game_state.oam.current_pointer_usize(),
                 x as u8,
                 y.wrapping_sub(16) as u8,
                 CRUMBLE_TILE_CHAR[j],
@@ -2906,9 +3159,9 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.garnish_slot(k).countdown() >> 3);
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3);
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
             BABUSU_FLASH_CHAR[j],
@@ -2926,10 +3179,10 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let i = usize::from(self.garnish_slot(k).countdown() >> 2);
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let i = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2);
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x.wrapping_add(GARNISH_NEBULE_XY[i] as i16 as u16) as u8,
             pt.y.wrapping_add(GARNISH_NEBULE_XY[i] as i16 as u16) as u8,
             GARNISH_NEBULE_CHAR[i],
@@ -2946,12 +3199,13 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            TRINEXX_LAVA_BUBBLE_CHAR[usize::from(self.garnish_slot(k).countdown() >> 3)],
+            TRINEXX_LAVA_BUBBLE_CHAR
+                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
             (self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority()) & 0xf0 | 0x0e,
             0,
         );
@@ -2965,12 +3219,19 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.garnish_slot(k).sprite());
+        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
         self.set_oam_plain_at_for_sprite(
-            self.oam_state().current_pointer_usize(),
+            self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            BLIND_LASER_TRAIL_CHAR[usize::from(self.garnish_slot(k).oam_flags().wrapping_sub(7))],
+            BLIND_LASER_TRAIL_CHAR[usize::from(
+                self.game_state
+                    .sprites
+                    .garnish_slots
+                    .slot(k)
+                    .oam_flags()
+                    .wrapping_sub(7),
+            )],
             self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority(),
             0,
         );
@@ -2987,7 +3248,7 @@ impl ZeldaState {
     pub(super) fn garnish_execute_upper_slots(&mut self) {
         self.handle_screen_flash();
 
-        if self.garnish_state().active_type() != 0 {
+        if self.game_state.sprites.garnish_runtime.active_type() != 0 {
             for i in (15..=29).rev() {
                 self.garnish_execute_single(i);
             }
@@ -3001,7 +3262,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn garnish_execute_lower_slots(&mut self) {
-        if self.garnish_state().active_type() != 0 {
+        if self.game_state.sprites.garnish_runtime.active_type() != 0 {
             for i in (0..=14).rev() {
                 self.garnish_execute_single(i);
             }
@@ -3017,26 +3278,40 @@ impl ZeldaState {
         ];
 
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        let type_ = self.garnish_slot(k).garnish_type();
+        let type_ = self.game_state.sprites.garnish_slots.slot(k).garnish_type();
         if type_ == 0 {
             return;
         }
         if (type_ == 5
             || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0)
-            && self.garnish_slot(k).countdown() != 0
+            && self.game_state.sprites.garnish_slots.slot(k).countdown() != 0
         {
-            let value = self.garnish_slot(k).countdown().wrapping_sub(1);
-            self.garnish_slot_mut(k).set_countdown(value);
-            if self.garnish_slot(k).countdown() == 0 {
+            let value = self
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(k)
+                .countdown()
+                .wrapping_sub(1);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_countdown(value);
+            if self.game_state.sprites.garnish_slots.slot(k).countdown() == 0 {
                 let value = 0;
-                self.garnish_slot_mut(k).set_garnish_type(value);
+                self.game_state
+                    .sprites
+                    .garnish_slots
+                    .slot_mut(&mut self.ram, k)
+                    .set_garnish_type(value);
                 return;
             }
         }
 
         let sprsize = GARNISH_OAM_MEM_SIZE[usize::from(type_)];
-        if self.oam_state().has_sprite_sorting() {
-            if self.garnish_slot(k).floor() != 0 {
+        if self.game_state.oam.has_sprite_sorting() {
+            if self.game_state.sprites.garnish_slots.slot(k).floor() != 0 {
                 self.oam_allocate_from_region_f(sprsize);
             } else {
                 self.oam_allocate_from_region_d(sprsize);
@@ -3149,7 +3424,9 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_hit_timer31(&mut self, k: usize) {
-        if self.sprite_slot(k).sprite_type() != 0x7a || self.world_region().is_in_dark_world() {
+        if self.sprite_slot(k).sprite_type() != 0x7a
+            || self.game_state.world.region.is_in_dark_world()
+        {
             return;
         }
         if self.sprite_slot(k).health() <= self.sprite_slot(k).incoming_damage() {
@@ -3205,7 +3482,7 @@ impl ZeldaState {
             return true;
         }
         for i in (0..=4usize).rev() {
-            if self.ancilla_slot(i).ancilla_type() == 0x27 {
+            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x27 {
                 return true;
             }
         }
@@ -3284,18 +3561,19 @@ impl ZeldaState {
         if transient && self.sprite_return_if_phasing_out(k) {
             return false;
         }
-        if !self.oam_state().has_sprite_sorting() && self.game_state.world.location.is_indoors() {
+        if !self.game_state.oam.has_sprite_sorting() && self.game_state.world.location.is_indoors()
+        {
             let value = 0x30;
             self.sprite_slot_mut(k).set_object_priority(value);
         }
-        if self.sprite_system().chr_halfslot_state() >= 3 {
+        if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
             return false;
         }
         if self.sprite_slot(k).delay_aux2() != 0 {
             self.oam_allocate_from_region_c(12);
         }
         if self.sprite_slot(k).e() != 0 {
-            if self.enhanced_features().has(4096) {
+            if self.game_state.enhanced_features.has(4096) {
                 let value = 0;
                 self.sprite_slot_mut(k).set_b(value);
             }
@@ -3345,7 +3623,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let base = ((a - 1) * 3).max(0) as usize;
         let n = if self.sprite_slot(k).head_direction() < 1 {
             2
@@ -3484,11 +3762,11 @@ impl ZeldaState {
         if self.sprite_slot(k).flags3() & 0x40 != 0 {
             return;
         }
-        let is_running = self.player_state().is_running();
+        let is_running = self.game_state.player.follower_link.is_running();
         let item_in_hand_has_sword_mask = self.player_state().item_in_hand_has(10);
         let value = u8::from(is_running);
         self.sprite_slot_mut(k).set_draw_work_byte_1(value);
-        let mut a = self.inventory_items().sword_type().wrapping_sub(1);
+        let mut a = self.game_state.inventory.items.sword_type().wrapping_sub(1);
         if !is_running {
             a |= if sign8(self.player_state().button_b_frames()) {
                 4
@@ -3526,10 +3804,14 @@ impl ZeldaState {
         if self.sprite_slot(k).flags3() & 0x40 != 0 || self.sprite_slot(k).sprite_type() >= 0xd8 {
             return;
         }
-        let damage_type = self.sprite_battle().damage_type_determiner() as usize;
+        let damage_type = self.game_state.sprite_battle.damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot(k).sprite_type() as usize * 16 + damage_type;
         let dmg = ENEMY_CONTACT_DAMAGE_BY_TYPE[damage_type * 8
-            | self.enemy_damage_subclass_table().entry(enemy_damage_index) as usize];
+            | self
+                .game_state
+                .sprites
+                .enemy_damage_subclasses
+                .entry(enemy_damage_index) as usize];
         self.sprite_give_damage(k, dmg, a);
     }
 
@@ -3549,7 +3831,7 @@ impl ZeldaState {
                 dmg,
                 r0_hit_timer,
                 self.sprite_slot(k).sprite_type(),
-                self.sprite_battle().damage_type_determiner(),
+                self.game_state.sprite_battle.damage_type_determiner(),
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 self.sprite_slot(k).f(),
@@ -3587,7 +3869,7 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_incoming_damage(value);
         }
         if dmg == 0 {
-            if self.sprite_battle().damage_type_determiner() != 10 {
+            if self.game_state.sprite_battle.damage_type_determiner() != 10 {
                 if self.sprite_slot(k).flags() & 4 != 0 {
                     self.sprite_set_damage_stun(k);
                     return;
@@ -3649,7 +3931,7 @@ impl ZeldaState {
                 self.sprite_slot(k).f(),
                 dmg,
                 r0_hit_timer,
-                self.sprite_battle().damage_type_determiner(),
+                self.game_state.sprite_battle.damage_type_determiner(),
                 self.sprite_slot(k).x_recoil(),
                 self.sprite_slot(k).y_recoil(),
             );
@@ -3658,7 +3940,7 @@ impl ZeldaState {
 
     fn sprite_set_damage_stun(&mut self, k: usize) {
         let ty = self.sprite_slot(k).sprite_type();
-        let value = if self.sprite_battle().damage_type_determiner() >= 13 {
+        let value = if self.game_state.sprite_battle.damage_type_determiner() >= 13 {
             0
         } else if ty == 9 {
             20
@@ -3781,11 +4063,11 @@ impl ZeldaState {
         let value = if j == 9 { 2 } else { 6 };
         self.sprite_slot_mut(j).set_a(value);
         self.sprite_set_y(j, info.r2_y.wrapping_add(3));
-        if self.temp_counter().value() == 0xce {
+        if self.game_state.scratch_counter.value() == 0xce {
             self.sprite_set_y(j, info.r2_y.wrapping_add(16));
             return;
         }
-        if self.temp_counter().value() == 0xcb {
+        if self.game_state.scratch_counter.value() == 0xcb {
             let player = self.player_state();
             let link_x_hi = (player.x() >> 8) as u8;
             let link_y_hi = (player.y() >> 8) as u8;
@@ -3847,8 +4129,12 @@ impl ZeldaState {
         if self.sprite_slot(k).sprite_type() != 0x40 && self.sprite_slot(k).delay_main() < 10 {
             return;
         }
-        let oam = self.oam_state().current_pointer().wrapping_add(16);
-        let ext = self.oam_state().current_extended_pointer().wrapping_add(4);
+        let oam = self.game_state.oam.current_pointer().wrapping_add(16);
+        let ext = self
+            .game_state
+            .oam
+            .current_extended_pointer()
+            .wrapping_add(4);
         self.oam_state_mut().set_current_pointer(oam);
         self.oam_state_mut().set_current_extended_pointer(ext);
         let bak = self.sprite_slot(k).flags2();
@@ -3894,8 +4180,8 @@ impl ZeldaState {
         }
 
         if type_ == 0x45
-            && self.save_progress().progress_indicator() == 2
-            && self.world_region().overworld_area_low() == 0x18
+            && self.game_state.inventory.save_progress.progress_indicator() == 2
+            && self.game_state.world.region.overworld_area_low() == 0x18
         {
             self.system_signals_mut().set_music_control(7);
         }
@@ -3920,10 +4206,10 @@ impl ZeldaState {
         let mut prize = self.sprite_slot(k).flags5() & 0x0f;
         if prize != 0 {
             prize = prize.wrapping_sub(1);
-            let luck = self.sprite_battle().item_drop_luck();
+            let luck = self.game_state.sprite_battle.item_drop_luck();
             if luck != 0 {
                 self.sprite_battle_mut().increment_luck_kill_counter();
-                if self.sprite_battle().luck_kill_counter() >= 10 {
+                if self.game_state.sprite_battle.luck_kill_counter() >= 10 {
                     self.sprite_battle_mut().set_item_drop_luck(0);
                 }
                 if luck == 1 {
@@ -4031,16 +4317,16 @@ impl ZeldaState {
             4, 0x44, 4, 0x44, 0x44, 4, 0xc4, 0x84, 4, 0x44, 0x84, 0xc4,
         ];
 
-        if self.dungeon_room_load().header_collision() == 4 {
+        if self.game_state.dungeon.room_load.header_collision() == 4 {
             let value = 0x30;
             self.sprite_slot_mut(k).set_object_priority(value);
         }
         let Some((_x, _y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let r12 = (self.sprite_slot(k).flags3() & 0x20) >> 3;
-        let scratch_position = self.draw_scratch_position();
+        let scratch_position = &self.game_state.sprites.draw_hitbox_work;
         let dungmap_x = scratch_position.x_low();
         let dungmap_y = scratch_position.y_low();
         let mut i = usize::from((self.sprite_slot(k).delay_main() & 0x1c) ^ 0x1c) + 3;
@@ -4102,8 +4388,12 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_oam_flags(value);
         let value = bak_graphics;
         self.sprite_slot_mut(k).set_graphics(value);
-        let next_oam = self.oam_state().current_pointer().wrapping_add(8);
-        let next_ext = self.oam_state().current_extended_pointer().wrapping_add(2);
+        let next_oam = self.game_state.oam.current_pointer().wrapping_add(8);
+        let next_ext = self
+            .game_state
+            .oam
+            .current_extended_pointer()
+            .wrapping_add(2);
         self.oam_state_mut().set_current_pointer(next_oam);
         self.oam_state_mut().set_current_extended_pointer(next_ext);
         if self.sprite_slot(k).delay_main() >= 0x10 {
@@ -4154,9 +4444,9 @@ impl ZeldaState {
         let Some((_x, _y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let mut j = usize::from(((self.sprite_slot(k).delay_main() >> 1) & !3) + 3).min(15);
-        let scratch_position = self.draw_scratch_position();
+        let scratch_position = &self.game_state.sprites.draw_hitbox_work;
         let base_x = scratch_position.x_low();
         let base_y = scratch_position.y_low();
         for _ in 0..4 {
@@ -4239,7 +4529,7 @@ impl ZeldaState {
             }
             self.sprite_slot_mut(k).xor_flags3(16);
             self.sprite_draw_single_large(k);
-            let oam = self.oam_state().current_pointer_usize();
+            let oam = self.game_state.oam.current_pointer_usize();
             let j = self.sprite_slot(k).delay_main();
             if j == 1 {
                 let value = 0;
@@ -4510,7 +4800,7 @@ impl ZeldaState {
         if self.sprite_slot(k).delay_main() == 32 {
             let value = 0;
             self.sprite_slot_mut(k).set_state(value);
-            self.player_state_mut().clear_immobilized();
+            self.follower_link_state_mut().clear_immobilized();
             if !self.player_state().near_pit_state_is(2) && self.sprite_check_if_screen_is_clear() {
                 if self.sprite_slot(k).sprite_type() >= 0xd6 {
                     self.system_signals_mut().set_music_control(0x13);
@@ -4644,7 +4934,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_check_tile_property(k, 0x68);
-        if self.sprite_workspace().tile_type() != 0x20 {
+        if self.game_state.sprites.workspace.tile_type() != 0x20 {
             let value = 0;
             self.sprite_slot_mut(k).set_y_recoil(value);
             let value = 0;
@@ -4675,7 +4965,7 @@ impl ZeldaState {
         const SPRITE_HELD_Z: [u8; 16] =
             [13, 14, 15, 16, 0, 10, 22, 16, 8, 11, 14, 16, 8, 11, 14, 16];
 
-        let value = self.world_region().overworld_area_low();
+        let value = self.game_state.world.region.overworld_area_low();
         self.sprite_slot_mut(k).set_room(value);
         if self.sprite_slot(k).draw_work_byte_3() != 3 {
             if self.sprite_slot(k).delay_main() == 0 {
@@ -4768,14 +5058,15 @@ impl ZeldaState {
                 };
             if t == 0 {
                 if self.sprite_slot(k).draw_work_byte_3() != 3
-                    || ((self.player_state().filtered_joypad_h()
-                        | self.player_state().filtered_joypad_l())
+                    || ((self.game_state.player.follower_link.filtered_joypad_h()
+                        | self.game_state.player.follower_link.filtered_joypad_l())
                         & 0x80)
                         == 0
                 {
                     return;
                 }
-                self.player_state_mut().clear_filtered_joypad_l_bits(0x80);
+                self.follower_link_state_mut()
+                    .clear_filtered_joypad_l_bits(0x80);
             }
         }
 
@@ -4879,7 +5170,7 @@ impl ZeldaState {
             != 0
         {
             self.sprite_slot_mut(k).or_flags3(0x10);
-            if self.sprite_workspace().tile_type() == 32 {
+            if self.game_state.sprites.workspace.tile_type() == 32 {
                 self.sprite_slot_mut(k).and_flags3(!0x10);
             }
         }
@@ -4902,8 +5193,8 @@ impl ZeldaState {
             }
 
             self.throwable_scenery_transmute_if_valid(k);
-            let mut tile = self.sprite_workspace().tile_type();
-            if self.sprite_workspace().tile_type() == 32 {
+            let mut tile = self.game_state.sprites.workspace.tile_type();
+            if self.game_state.sprites.workspace.tile_type() == 32 {
                 tile = self.sprite_slot(k).flags() >> 1;
                 if self.sprite_slot(k).flags() & 1 == 0 {
                     self.sprite_func8(k);
@@ -4972,7 +5263,7 @@ impl ZeldaState {
             eprintln!(
                 "R stunned-before fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.game_state.frame.frame_counter,
-                self.world_region().rng_seed(),
+                self.game_state.world.region.rng_seed(),
                 k,
                 self.sprite_slot(k).sprite_type(),
                 self.sprite_slot(k).state(),
@@ -4990,7 +5281,7 @@ impl ZeldaState {
             eprintln!(
                 "R stunned-after-active fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.game_state.frame.frame_counter,
-                self.world_region().rng_seed(),
+                self.game_state.world.region.rng_seed(),
                 k,
                 self.sprite_slot(k).sprite_type(),
                 self.sprite_slot(k).state(),
@@ -5088,16 +5379,16 @@ impl ZeldaState {
         }
         j = j.wrapping_sub(1);
         let j = usize::from(j);
-        if self.ancilla_slot(j).ancilla_type() == 0 {
+        if self.game_state.sprites.ancilla_slots.slot(j).ancilla_type() == 0 {
             self.sprite_handle_absorption_by_player(k);
         } else {
-            let value = self.ancilla_slot(j).x_low();
+            let value = self.game_state.sprites.ancilla_slots.slot(j).x_low();
             self.sprite_slot_mut(k).set_x_low(value);
-            let value = self.ancilla_slot(j).x_high();
+            let value = self.game_state.sprites.ancilla_slots.slot(j).x_high();
             self.sprite_slot_mut(k).set_x_high(value);
-            let value = self.ancilla_slot(j).y_low();
+            let value = self.game_state.sprites.ancilla_slots.slot(j).y_low();
             self.sprite_slot_mut(k).set_y_low(value);
-            let value = self.ancilla_slot(j).y_high();
+            let value = self.game_state.sprites.ancilla_slots.slot(j).y_high();
             self.sprite_slot_mut(k).set_y_high(value);
             let value = 0;
             self.sprite_slot_mut(k).set_z(value);
@@ -5137,7 +5428,9 @@ impl ZeldaState {
             0 => self.player_resources_mut().increment_heart_filler_by(8),
             1..=3 => {
                 let rupees = self
-                    .player_resources()
+                    .game_state
+                    .inventory
+                    .player_resources
                     .rupees_goal()
                     .wrapping_add(RUPEES_ABSORPTION[usize::from(t - 1)]);
                 self.player_resources_mut().set_rupees_goal(rupees);
@@ -5174,7 +5467,7 @@ impl ZeldaState {
             14 => {
                 let shield = self.sprite_slot(k).subtype();
                 self.inventory_items_mut().set_shield_type(shield);
-                if self.enhanced_features().has(4096) {
+                if self.game_state.enhanced_features.has(4096) {
                     self.Palette_Load_Shield();
                 }
             }
@@ -5186,7 +5479,8 @@ impl ZeldaState {
         let value = self.sprite_slot(k).subtype();
         self.sprite_slot_mut(k).set_n(value);
         let idx = usize::from(self.sprite_slot(k).die_action());
-        let bits = self.dungeon_savegame_state().savegame_state_bits() | absorb_big_key[idx];
+        let bits =
+            self.game_state.dungeon.savegame_state.savegame_state_bits() | absorb_big_key[idx];
         self.dungeon_savegame_state_mut()
             .set_savegame_state_bits(bits);
         self.sprite_manually_set_death_flag_uw(k);
@@ -5218,7 +5512,7 @@ impl ZeldaState {
                 k,
                 overlap,
                 self.sprite_slot(k).sprite_type(),
-                self.sprite_battle().damage_type_determiner(),
+                self.game_state.sprite_battle.damage_type_determiner(),
                 self.player_state().x(),
                 self.player_state().y(),
                 self.sprite_get_x(k),
@@ -5277,7 +5571,7 @@ impl ZeldaState {
                 self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
                 let value = 48;
                 self.sprite_slot_mut(k).set_delay_aux1(value);
-                let effect = if self.enhanced_features().has(4096) {
+                let effect = if self.game_state.enhanced_features.has(4096) {
                     0x32
                 } else {
                     0
@@ -5326,7 +5620,7 @@ impl ZeldaState {
     }
 
     fn sprite_check_damage_from_link_getting_out(&mut self, k: usize) -> u8 {
-        if self.sprite_battle().damaging_enemies_timer() == 0 {
+        if self.game_state.sprite_battle.damaging_enemies_timer() == 0 {
             self.sprite_apply_recoil_to_link(k, 4);
             self.player_state_mut().set_incapacitated_timer(16);
             self.sprite_battle_mut().set_damaging_enemies_timer(16);
@@ -5375,7 +5669,8 @@ impl ZeldaState {
             self.link_setup_hit_box(&mut hitbox);
             if (0xd8..=0xe6).contains(&self.sprite_slot(k).sprite_type())
                 && self
-                    .enhanced_features()
+                    .game_state
+                    .enhanced_features
                     .has(FEATURES0_COLLECT_ITEMS_WITH_SWORD_SPRITE)
             {
                 self.link_update_hit_box_with_sword(&mut hitbox);
@@ -5402,7 +5697,7 @@ impl ZeldaState {
                 self.sprite_slot(k).flags2(),
                 self.sprite_slot(k).flags4(),
                 self.sprite_slot(k).flags5(),
-                self.inventory_items().shield_type(),
+                self.game_state.inventory.items.shield_type(),
                 u8::from(self.player_state().is_bunny_mirror()),
                 self.player_state().state_bits(),
                 self.player_state().facing(),
@@ -5410,8 +5705,8 @@ impl ZeldaState {
                 self.player_state().auxiliary_state(),
                 self.player_state().x(),
                 self.player_state().y(),
-                self.sprite_workspace().current_sprite_x(),
-                self.sprite_workspace().current_sprite_y(),
+                self.game_state.sprites.workspace.current_sprite_x(),
+                self.game_state.sprites.workspace.current_sprite_y(),
                 self.sprite_slot(k).z(),
             );
         }
@@ -5424,7 +5719,7 @@ impl ZeldaState {
         if !self.player_state().is_bunny_mirror()
             && !self.player_state().is_lifting_or_carrying()
             && (self.sprite_slot(k).flags5() & 0x20) != 0
-            && self.inventory_items().shield_type() != 0
+            && self.game_state.inventory.items.shield_type() != 0
         {
             let value = 0;
             self.sprite_slot_mut(k).set_state(value);
@@ -5501,7 +5796,7 @@ impl ZeldaState {
                 self.player_state().sprite_damage_disable_timer(),
                 self.player_state().auxiliary_state(),
                 self.player_state().incapacitated_timer(),
-                self.player_resources().current_health(),
+                self.game_state.inventory.player_resources.current_health(),
             );
         }
         if overlap {
@@ -5632,8 +5927,8 @@ impl ZeldaState {
                 self.player_state().sprite_damage_disable_timer(),
                 self.player_state().auxiliary_state(),
                 self.player_state().incapacitated_timer(),
-                self.player_state().actual_x_velocity(),
-                self.player_state().actual_y_velocity(),
+                self.game_state.player.follower_link.actual_x_velocity(),
+                self.game_state.player.follower_link.actual_y_velocity(),
             );
         }
         if (self.player_state().blink_countdown()
@@ -5648,15 +5943,15 @@ impl ZeldaState {
         ];
         self.player_state_mut().set_incapacitated_timer(19);
         self.sprite_apply_recoil_to_link(k, 24);
-        self.player_state_mut().set_auxiliary_state(1);
+        self.follower_link_state_mut().set_auxiliary_state(1);
         let idx = 3 * usize::from(self.sprite_slot(k).bump_damage() & 0x0f)
-            + usize::from(self.inventory_items().armor());
+            + usize::from(self.game_state.inventory.items.armor());
         self.player_state_mut()
             .set_given_damage(PLAYER_DAMAGES[idx]);
         if self.sprite_slot(k).sprite_type() == 0x61 && self.sprite_slot(k).c() != 0 {
             let actual_x_velocity = self.sprite_slot(k).x_velocity().wrapping_mul(2);
             let actual_y_velocity = self.sprite_slot(k).y_velocity().wrapping_mul(2);
-            self.player_state_mut()
+            self.follower_link_state_mut()
                 .set_actual_velocity_xy(actual_x_velocity, actual_y_velocity);
         }
     }
@@ -5667,7 +5962,7 @@ impl ZeldaState {
     pub(super) fn sprite_attempt_zap_damage(&mut self, k: usize) {
         let ty = self.sprite_slot(k).sprite_type();
         let electric = (ty == 0x7a
-            || (ty == 0x0d && self.inventory_items().sword_type() < 4)
+            || (ty == 0x0d && self.game_state.inventory.items.sword_type() < 4)
             || ((ty == 0x24 || ty == 0x23) && self.sprite_slot(k).delay_main() != 0))
             && self.sprite_slot(k).state() == 9;
         if electric {
@@ -5764,26 +6059,42 @@ impl ZeldaState {
         let y;
         let in_bounds;
         if self.game_state.world.location.is_indoors() {
-            x = (self.sprite_workspace().current_sprite_x().wrapping_add(8) & 0x01ff)
+            x = (self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_x()
+                .wrapping_add(8)
+                & 0x01ff)
                 .wrapping_add(FUNC5_X[j] as i16 as u16)
                 .wrapping_sub(8);
-            y = (self.sprite_workspace().current_sprite_y().wrapping_add(8) & 0x01ff)
+            y = (self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_y()
+                .wrapping_add(8)
+                & 0x01ff)
                 .wrapping_add(FUNC5_Y[j] as i16 as u16)
                 .wrapping_sub(8);
             in_bounds = x < 0x0200 && y < 0x0200;
         } else {
             x = self
-                .sprite_workspace()
+                .game_state
+                .sprites
+                .workspace
                 .current_sprite_x()
                 .wrapping_add(FUNC5_X[j] as i16 as u16);
             y = self
-                .sprite_workspace()
+                .game_state
+                .sprites
+                .workspace
                 .current_sprite_y()
                 .wrapping_add(FUNC5_Y[j] as i16 as u16);
-            in_bounds = x.wrapping_sub(self.garnish_state().sprcoll_x_word())
-                < self.garnish_state().sprcoll_x_size()
-                && y.wrapping_sub(self.garnish_state().sprcoll_y_word())
-                    < self.garnish_state().sprcoll_y_size();
+            in_bounds = x.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_x_word())
+                < self.game_state.sprites.garnish_runtime.sprcoll_x_size()
+                && y.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_y_word())
+                    < self.game_state.sprites.garnish_runtime.sprcoll_y_size();
         }
         if !in_bounds {
             if trace_tile_matches {
@@ -5823,7 +6134,7 @@ impl ZeldaState {
                 y,
                 self.sprite_slot(k).floor(),
                 b,
-                self.sprite_workspace().tile_type(),
+                self.game_state.sprites.workspace.tile_type(),
                 self.sprite_slot(k).deflection_bits(),
                 self.sprite_slot(k).flags5(),
                 SPRITE_TILE_ATTR_SIMPLIFIED[usize::from(b)] as u8
@@ -5837,7 +6148,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_e(value);
                 }
             } else if a >= 1 {
-                return if (0x10..0x14).contains(&self.sprite_workspace().tile_type()) {
+                return if (0x10..0x14).contains(&self.game_state.sprites.workspace.tile_type()) {
                     self.entity_check_sloped_tile_collision(x, y)
                 } else {
                     true
@@ -5864,12 +6175,14 @@ impl ZeldaState {
         if SPRITE_TILE_ATTR_SIMPLIFIED[usize::from(b)] == 0 {
             return false;
         }
-        if (0x10..0x14).contains(&self.sprite_workspace().tile_type()) {
+        if (0x10..0x14).contains(&self.game_state.sprites.workspace.tile_type()) {
             return self.entity_check_sloped_tile_collision(x, y);
         }
-        if self.sprite_workspace().tile_type() == 0x44 {
+        if self.game_state.sprites.workspace.tile_type() == 0x44 {
             if self.sprite_slot(k).f() != 0 && !sign8(self.sprite_slot(k).incoming_damage()) {
-                if self.sprite_slot(k).sprite_type() == 0x88 && self.enhanced_features().has(4096) {
+                if self.sprite_slot(k).sprite_type() == 0x88
+                    && self.game_state.enhanced_features.has(4096)
+                {
                     if self.sprite_slot(k).hit_timer() == 0 {
                         self.ancilla_check_damage_to_sprite_preset(k, 6);
                     }
@@ -5883,7 +6196,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_f(value);
                 }
             }
-        } else if self.sprite_workspace().tile_type() == 0x20 {
+        } else if self.game_state.sprites.workspace.tile_type() == 0x20 {
             return self.sprite_slot(k).flags() & 1 == 0 || self.sprite_slot(k).f() == 0;
         }
         true
@@ -5942,7 +6255,12 @@ impl ZeldaState {
             2, 1, 0,
         ];
         let a = (y & 7) as u8;
-        let r6 = self.sprite_workspace().tile_type().wrapping_sub(0x10);
+        let r6 = self
+            .game_state
+            .sprites
+            .workspace
+            .tile_type()
+            .wrapping_sub(0x10);
         let b = SLOPED_TILE[usize::from(r6) * 8 + usize::from(x & 7)];
         if r6 < 2 {
             b >= a
@@ -5959,10 +6277,20 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot(k).flags3() & 0x20 != 0 {
-            let x = self.sprite_workspace().current_sprite_x().wrapping_sub(4);
+            let x = self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_x()
+                .wrapping_sub(4);
             self.sprite_workspace_mut().set_current_sprite_x(x);
             if self.sprite_slot(k).sprite_type() == 0xdf {
-                let y = self.sprite_workspace().current_sprite_y().wrapping_sub(7);
+                let y = self
+                    .game_state
+                    .sprites
+                    .workspace
+                    .current_sprite_y()
+                    .wrapping_sub(7);
                 self.sprite_workspace_mut().set_current_sprite_y(y);
             }
         }
@@ -5981,7 +6309,7 @@ impl ZeldaState {
             return;
         }
         for i in (0..=15usize).rev() {
-            if i != self.sprite_system().cur_object_index() as usize
+            if i != self.game_state.sprites.system.cur_object_index() as usize
                 && self.sprite_slot(k).sprite_type() != 0xd2
                 && self.sprite_slot(i).state() >= 9
                 && ((((i as u8) ^ self.game_state.frame.frame_counter) & 3)
@@ -6059,7 +6387,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_kill_friends(&mut self) {
-        let cur = self.sprite_system().cur_object_index() as usize;
+        let cur = self.game_state.sprites.system.cur_object_index() as usize;
         for j in (0..=15usize).rev() {
             if j == cur {
                 continue;
@@ -6155,7 +6483,7 @@ impl ZeldaState {
         ];
 
         if self.game_state.world.location.is_outdoors() {
-            let before_rng = self.world_region().rng_seed();
+            let before_rng = self.game_state.world.region.rng_seed();
             let roll = self.get_random_number();
             if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
@@ -6164,7 +6492,7 @@ impl ZeldaState {
                     k,
                     before_rng,
                     roll,
-                    self.dungeon_secret_scratch().pending_kind(),
+                    self.game_state.dungeon_secret.pending_kind(),
                     self.game_state.world.location.indoor_flag(),
                 );
             }
@@ -6172,8 +6500,8 @@ impl ZeldaState {
                 return;
             }
         }
-        let mut b = self.dungeon_secret_scratch().pending_kind();
-        if !self.dungeon_secret_scratch().has_pending_kind() {
+        let mut b = self.game_state.dungeon_secret.pending_kind();
+        if !self.game_state.dungeon_secret.has_pending_kind() {
             return;
         }
         if b == 4 {
@@ -6218,7 +6546,7 @@ impl ZeldaState {
             self.sprite_slot_mut(ju).set_stunned(value);
         } else if ty == 0x0b {
             self.system_signals_mut().set_sound_effect_1(0x30);
-            if self.dungeon_room_tracking().room_index2() == 1 {
+            if self.game_state.dungeon.room_tracking.room_index2() == 1 {
                 let value = 1;
                 self.sprite_slot_mut(ju).set_subtype(value);
             }
@@ -6271,15 +6599,21 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot(k).incoming_damage() != 0
-            || self.garnish_state().repulsespark_timer() != 0
+            || self.game_state.sprites.garnish_runtime.repulsespark_timer() != 0
         {
             return;
         }
         self.garnish_state_mut().set_repulsespark_timer(5);
-        let j = self.sprite_workspace().shared_scratch_a() as usize;
-        let x_low = self.ancilla_slot(j).x_low().wrapping_add(4);
+        let j = self.game_state.sprites.workspace.shared_scratch_a() as usize;
+        let x_low = self
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot(j)
+            .x_low()
+            .wrapping_add(4);
         self.garnish_state_mut().set_repulsespark_x_lo(x_low);
-        let y_low = self.ancilla_slot(j).y_low();
+        let y_low = self.game_state.sprites.ancilla_slots.slot(j).y_low();
         self.garnish_state_mut().set_repulsespark_y_lo(y_low);
         let floor = self.player_state().lower_level_state();
         self.garnish_state_mut()
@@ -6441,7 +6775,7 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_state(value);
             let value = 9;
             self.sprite_slot_mut(k).set_ignore_projectile(value);
-            if !self.world_region().is_in_dark_world() {
+            if !self.game_state.world.region.is_in_dark_world() {
                 let value = 10;
                 self.sprite_slot_mut(k).set_ai_state(value);
                 let value = 255;
@@ -6486,7 +6820,7 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_delay_main(value);
             let value = self.sprite_slot(k).flags2().wrapping_add(4);
             self.sprite_slot_mut(k).set_flags2(value);
-            if self.temp_counter().value() == 11 {
+            if self.game_state.scratch_counter.value() == 11 {
                 let value = 1;
                 self.sprite_slot_mut(k).set_flags5(value);
             }
@@ -6689,11 +7023,11 @@ impl ZeldaState {
             self.sprite_workspace_mut()
                 .set_draw_priority_override_low(priority);
         }
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let combined_flags = (u16::from(info_flags) << 8) | u16::from(info_r4);
         for entry in src {
             let mut d = entry.char_flags ^ combined_flags;
-            if self.sprite_workspace().draw_priority_override() >= 1 {
+            if self.game_state.sprites.workspace.draw_priority_override() >= 1 {
                 d = (d & !0x0e00) | 0x0400;
             }
             let x = info_x.wrapping_add(entry.x as i8 as i16 as u16);
@@ -6750,7 +7084,7 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_single_draw_char(k);
         self.oam_state_mut().set_entry_x(oam, info.x as u8);
         if info.y.wrapping_add(0x10) < 0x100 {
@@ -6782,12 +7116,12 @@ impl ZeldaState {
         {
             return;
         }
-        y = y.wrapping_sub(self.world_scroll().bg2_y());
+        y = y.wrapping_sub(self.game_state.world.scroll.bg2_y());
         info.y = y;
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize()
+        let oam = self.game_state.oam.current_pointer_usize()
             + usize::from(self.sprite_slot(k).flags2() & 0x1f) * 4;
         if self.sprite_slot(k).flags3() & 0x20 != 0 {
             self.set_oam_helper1_at(
@@ -6810,7 +7144,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         self.oam_state_mut().set_entry_x(oam, x as u8);
         if y.wrapping_add(0x10) < 0x100 {
             self.oam_state_mut().set_entry_y(oam, y as u8);
@@ -6834,7 +7168,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_single_draw_char(k);
         self.set_oam_helper0_at(oam, x, y, chr, flags, 0);
         self.set_oam_helper0_at(
@@ -6856,7 +7190,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_fall_draw(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
         const SPRITE_FALL_CHAR: [u8; 8] = [0x83, 0x83, 0x83, 0x80, 0x80, 0x80, 0xb7, 0xb7];
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         let idx = usize::from(self.sprite_slot(k).delay_main() >> 2);
         self.oam_state_mut().write_entry(
             oam,
@@ -6878,7 +7212,7 @@ impl ZeldaState {
         if (time & 0x18) == 0 {
             return;
         }
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..4).rev() {
             self.set_oam_helper0_at(
                 oam,
@@ -7010,7 +7344,7 @@ impl ZeldaState {
             return;
         };
         let q = usize::from(self.sprite_slot(k).graphics());
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let n = if q < 12 && (q & 3) == 0 { 3 } else { 0 };
         for n_cur in (0..=n).rev() {
             let i = q * 4 + n_cur;
@@ -7038,12 +7372,18 @@ impl ZeldaState {
         ];
         const FLAGS: [u8; 12] = [0, 0, 0, 0, 0x80, 0x40, 0, 0x80, 0x40, 0, 0, 0];
 
-        if self.garnish_slot(k).countdown() == 16 {
+        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 16 {
             let value = 0;
-            self.garnish_slot_mut(k).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, k)
+                .set_garnish_type(value);
         }
-        let mut oam = self.oam_state().current_pointer_usize();
-        let base = usize::from(((self.garnish_slot(k).countdown() & 0x0f) >> 2) * 3);
+        let mut oam = self.game_state.oam.current_pointer_usize();
+        let base = usize::from(
+            ((self.game_state.sprites.garnish_slots.slot(k).countdown() & 0x0f) >> 2) * 3,
+        );
         for i in (0..=2usize).rev() {
             let j = base + i;
             self.set_oam_helper1_at(
@@ -7088,28 +7428,29 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let r5 = self.garnish_slot(k).oam_flags();
-        if self.sprite_system().chr_halfslot_state() >= 3 {
+        let r5 = self.game_state.sprites.garnish_slots.slot(k).oam_flags();
+        if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
             return;
         }
-        if self.garnish_slot(k).sprite() == 3 {
+        if self.game_state.sprites.garnish_slots.slot(k).sprite() == 3 {
             self.scatter_debris_draw(k, pt);
             return;
         }
-        let garnish_sprite = self.garnish_slot(k).sprite();
+        let garnish_sprite = self.game_state.sprites.garnish_slots.slot(k).sprite();
         self.temp_counter_mut().set(garnish_sprite);
-        let mut base = ((self.garnish_slot(k).countdown() >> 2) ^ 7) << 2;
-        if self.temp_counter().value() == 4
-            || (self.temp_counter().value() == 2 && self.game_state.world.location.is_outdoors())
+        let mut base = ((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2) ^ 7) << 2;
+        if self.game_state.scratch_counter.value() == 4
+            || (self.game_state.scratch_counter.value() == 2
+                && self.game_state.world.location.is_outdoors())
         {
             base = base.wrapping_add(0x20);
         }
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..=3usize).rev() {
             let j = usize::from(base) + i;
-            let chr = if self.temp_counter().value() == 0 {
+            let chr = if self.game_state.scratch_counter.value() == 0 {
                 0x4e
-            } else if self.temp_counter().value() >= 0x80 {
+            } else if self.game_state.scratch_counter.value() >= 0x80 {
                 0xf2
             } else {
                 CHR[j]
@@ -7167,7 +7508,7 @@ impl ZeldaState {
         {
             return false;
         }
-        if self.player_state().is_running() {
+        if self.game_state.player.follower_link.is_running() {
             return false;
         }
         self.sprite_return_if_lifted_permissive(k)
@@ -7176,14 +7517,14 @@ impl ZeldaState {
     // bool Sprite_ReturnIfLiftedPermissive(int k) — sprite.c:2615
     pub(super) fn sprite_return_if_lifted_permissive(&mut self, k: usize) -> bool {
         const LIFTED_SPRITE_PLAYER_FACING_BY_DIRECTION: [u8; 4] = [4, 6, 0, 2];
-        if self.player_state().is_running() {
+        if self.game_state.player.follower_link.is_running() {
             return false;
         }
         if self
             .player_state()
             .sprite_pickup_flag_cached()
             .wrapping_sub(1)
-            != self.sprite_system().cur_object_index()
+            != self.game_state.sprites.system.cur_object_index()
         {
             let mut hb = SpriteHitBox {
                 r0_xlo: 0,
@@ -7208,7 +7549,7 @@ impl ZeldaState {
             }
             false
         } else {
-            self.player_state_mut().set_filtered_joypad_l(0);
+            self.follower_link_state_mut().set_filtered_joypad_l(0);
             let value = 0;
             self.sprite_slot_mut(k).set_e(value);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x1d);
@@ -7223,7 +7564,7 @@ impl ZeldaState {
             let value = 0;
             self.sprite_slot_mut(k).set_draw_i(value);
             let dir = self.sprite_direction_to_face_link(k, None) as usize;
-            self.player_state_mut()
+            self.follower_link_state_mut()
                 .set_facing(LIFTED_SPRITE_PLAYER_FACING_BY_DIRECTION[dir & 3]);
             true
         }
@@ -7364,8 +7705,8 @@ impl ZeldaState {
                 info.r0_x = self.sprite_get_x(k);
                 info.r2_y = self.sprite_get_y(k);
                 info.r4_z = self.sprite_slot(k).z();
-                info.r5_overlord_x = self.overlord_slot(k).x();
-                info.r7_overlord_y = self.overlord_slot(k).y();
+                info.r5_overlord_x = self.game_state.sprites.overlord_slots.slot(k).x();
+                info.r7_overlord_y = self.game_state.sprites.overlord_slots.slot(k).y();
                 self.sprite_prep_load_properties_for_helpers(ju);
                 if self.game_state.world.location.is_outdoors() {
                     self.sprite_slot_mut(ju).set_n_word(0xffff);
@@ -7469,7 +7810,7 @@ impl ZeldaState {
         let value = 0;
         self.sprite_slot_mut(k).set_wall_collision(value);
         let f4 = self.sprite_slot(k).flags4();
-        let dung_coll = self.dungeon_room_load().header_collision();
+        let dung_coll = self.game_state.dungeon.room_load.header_collision();
         // sign8: top bit set.
         if (f4 & 0x80) != 0 || dung_coll == 0 {
             self.sprite_check_tile_collision_single_layer(k);
@@ -7481,7 +7822,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_floor(value);
         self.sprite_check_tile_collision_single_layer(k);
         if dung_coll == 4 {
-            let value = self.sprite_workspace().shared_scratch_a();
+            let value = self.game_state.sprites.workspace.shared_scratch_a();
             self.sprite_slot_mut(k).set_floor(value);
             return;
         }
@@ -7490,7 +7831,7 @@ impl ZeldaState {
         self.sprite_check_tile_collision_single_layer(k);
         // byte_7FFABC[k] = sprite_tiletype — write-through to the
         // dual-layer cache so the next iteration sees the lower-layer tile.
-        let tt = self.sprite_workspace().tile_type();
+        let tt = self.game_state.sprites.workspace.tile_type();
         self.dual_layer_tile_cache_mut().set_tile_type(k, tt);
     }
 
@@ -7506,7 +7847,9 @@ impl ZeldaState {
             return;
         }
 
-        if sign8(self.sprite_slot(k).flags4()) || self.dungeon_room_load().header_collision() == 0 {
+        if sign8(self.sprite_slot(k).flags4())
+            || self.game_state.dungeon.room_load.header_collision() == 0
+        {
             if self.sprite_slot(k).y_velocity() != 0 {
                 self.sprite_check_for_tile_in_direction_vertical(
                     k,
@@ -7539,11 +7882,11 @@ impl ZeldaState {
         }
 
         self.sprite_check_tile_property(k, 0x68);
-        let value = self.sprite_workspace().tile_type();
+        let value = self.game_state.sprites.workspace.tile_type();
         self.sprite_slot_mut(k).set_draw_i(value);
-        match self.sprite_workspace().tile_type() {
+        match self.game_state.sprites.workspace.tile_type() {
             0x1c => {
-                if self.oam_state().has_sprite_sorting() && self.sprite_slot(k).state() == 11 {
+                if self.game_state.oam.has_sprite_sorting() && self.sprite_slot(k).state() == 11 {
                     let value = 1;
                     self.sprite_slot_mut(k).set_floor(value);
                 }
@@ -7569,16 +7912,15 @@ impl ZeldaState {
                 }
             }
             0x0c => {
-                if self.dual_layer_tile_cache().tile_type(k) == 0x1c {
+                if self.game_state.sprites.dual_layer_tile_cache.tile_type(k) == 0x1c {
                     self.sprite_fall_adjust_position(k);
                     self.sprite_slot_mut(k).or_wall_collision(0x20);
                 }
             }
-            0x68..=0x6b => {
-                self.sprite_apply_conveyor(k, i32::from(self.sprite_workspace().tile_type()))
-            }
+            0x68..=0x6b => self
+                .sprite_apply_conveyor(k, i32::from(self.game_state.sprites.workspace.tile_type())),
             8 => {
-                if self.dungeon_room_load().header_collision() == 4 {
+                if self.game_state.dungeon.room_load.header_collision() == 4 {
                     self.sprite_apply_conveyor(k, 0x6a);
                 }
             }
@@ -7605,7 +7947,7 @@ impl ZeldaState {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((*x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_bg2_attributes().bg2_attr(t)
+            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
         } else {
             *x >>= 3;
             self.overworld_get_tile_attribute_at_location(*x, y)
@@ -7645,7 +7987,7 @@ impl ZeldaState {
         self.dialogue_message_index_mut().set_value(msg);
         if !self.sprite_check_damage_to_link_same_layer_for_helpers(k)
             || self.sprite_check_if_link_is_busy_for_helpers()
-            || (self.player_state().filtered_joypad_l() & 0x80) == 0
+            || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
             || self.sprite_slot(k).delay_aux4() != 0
             || self.player_state().is_in_auxiliary_state(2)
         {
@@ -7655,7 +7997,7 @@ impl ZeldaState {
         if self.player_state().facing() != MESSAGE_FACING_BY_DIRECTION[(dir & 3) as usize] {
             return u16::from(self.sprite_slot(k).direction());
         }
-        let msg_index = self.dialogue_message_index().value();
+        let msg_index = self.game_state.messaging.dialogue_message_index.value();
         self.sprite_show_message_unconditional(msg_index);
         let value = 64;
         self.sprite_slot_mut(k).set_delay_aux4(value);
@@ -7676,7 +8018,7 @@ impl ZeldaState {
         {
             return u16::from(self.sprite_slot(k).direction());
         }
-        let msg_index = self.dialogue_message_index().value();
+        let msg_index = self.game_state.messaging.dialogue_message_index.value();
         self.sprite_show_message_unconditional(msg_index);
         u16::from(self.sprite_direction_to_face_link(k, None)) ^ 0x103
     }
@@ -7705,8 +8047,8 @@ impl ZeldaState {
             return false;
         }
         self.sprite_nullify_hookshot_drag();
-        self.player_state_mut().clear_running();
-        self.player_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().clear_running();
+        self.follower_link_state_mut().set_speed_setting(0);
         if !self.player_state().has_auxiliary_state() {
             self.sprite_show_message_minimal_c();
         }
@@ -7743,12 +8085,12 @@ impl ZeldaState {
         self.set_saved_module_for_menu(main_module);
         self.set_main_module(14);
         self.sprite_nullify_hookshot_drag();
-        self.player_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
         self.link_cancel_dash();
-        self.player_state_mut().clear_auxiliary_state();
+        self.follower_link_state_mut().clear_auxiliary_state();
         self.player_state_mut().set_incapacitated_timer(0);
         if self.player_state().handler_state() == PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL {
-            self.player_state_mut()
+            self.follower_link_state_mut()
                 .set_handler_state(PLAYER_HANDLER_STATE_GROUND_LOCAL);
         }
     }
@@ -7853,7 +8195,7 @@ impl ZeldaState {
             eprintln!(
                 "R garnish-spawn fc=0x{:02x} rng=0x{:02x} room=0x{:04x} k={} type=0x{:02x} state=0x{:02x} delay=0x{:02x} xarg=0x{:04x} yarg=0x{:04x} limit={} slot={} sx=0x{:04x} sy=0x{:04x} z=0x{:02x} r12=0x{:04x} r14=0x{:04x}",
                 self.game_state.frame.frame_counter,
-                self.world_region().rng_seed(),
+                self.game_state.world.region.rng_seed(),
                 self.game_state.world.location.dungeon_room(),
                 k,
                 self.sprite_slot(k).sprite_type(),
@@ -7866,14 +8208,18 @@ impl ZeldaState {
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 self.sprite_slot(k).z(),
-                self.tile_detect_position().slope_collision_bits(),
-                self.tile_detect_position().collision_bits(),
+                self.game_state.player.tile_detection.slope_collision_bits(),
+                self.game_state.player.tile_detection.collision_bits(),
             );
         }
         if j >= 0 {
             let j = j as usize;
             let value = 5;
-            self.garnish_slot_mut(j).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_garnish_type(value);
             self.garnish_state_mut().set_active_type(5);
             self.garnish_set_x(j, self.sprite_get_x(k).wrapping_add(x));
             self.garnish_set_y(
@@ -7884,11 +8230,23 @@ impl ZeldaState {
                     .wrapping_add(16),
             );
             let value = 31;
-            self.garnish_slot_mut(j).set_countdown(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_countdown(value);
             let value = k as u8;
-            self.garnish_slot_mut(j).set_sprite(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_sprite(value);
             let value = self.sprite_slot(k).floor();
-            self.garnish_slot_mut(j).set_floor(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j)
+                .set_floor(value);
         }
         self.sprite_workspace_mut().set_last_garnish_index(j);
         j
@@ -7915,7 +8273,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_halt_all_movement(&mut self) {
         self.sprite_nullify_hookshot_drag();
-        self.player_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
         self.link_cancel_dash();
     }
 
@@ -7953,10 +8311,10 @@ impl ZeldaState {
             if self.sprite_slot(i).state() != 0 && (self.sprite_slot(i).flags4() & 0x40) == 0 {
                 let x = self
                     .sprite_get_x(i)
-                    .wrapping_sub(self.world_scroll().bg2_x());
+                    .wrapping_sub(self.game_state.world.scroll.bg2_x());
                 let y = self
                     .sprite_get_y(i)
-                    .wrapping_sub(self.world_scroll().bg2_y());
+                    .wrapping_sub(self.game_state.world.scroll.bg2_y());
                 if x < 256 && y < 256 {
                     return false;
                 }
@@ -7990,8 +8348,20 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_check_if_overlords_clear(&self) -> bool {
         for i in (0..=7usize).rev() {
-            if self.overlord_slot(i).overlord_type() == 0x14
-                || self.overlord_slot(i).overlord_type() == 0x18
+            if self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(i)
+                .overlord_type()
+                == 0x14
+                || self
+                    .game_state
+                    .sprites
+                    .overlord_slots
+                    .slot(i)
+                    .overlord_type()
+                    == 0x18
             {
                 return false;
             }
@@ -8011,7 +8381,7 @@ impl ZeldaState {
         {
             return;
         }
-        let room = self.dungeon_room_tracking().room_index2_word();
+        let room = self.game_state.dungeon.room_tracking.room_index2_word();
         let bit = 1u16 << self.sprite_slot(k).n();
         let mask = self.sprite_where_in_room_mask(room) | bit;
         self.set_sprite_where_in_room_mask(room, mask);
@@ -8137,7 +8507,7 @@ mod tests {
 
         assert_eq!(s.sprite_slot(k).state(), 1);
         assert_eq!(s.sprite_slot(k).delay_main(), 0x1f);
-        assert_eq!(s.system_signals().sound_effect_1(), expected_sfx);
+        assert_eq!(s.game_state.system_signals.sound_effect_1(), expected_sfx);
     }
 
     #[test]
@@ -8154,7 +8524,7 @@ mod tests {
 
         s.sprite_func22(k);
 
-        assert_eq!(s.system_signals().sound_effect_1(), expected_sfx);
+        assert_eq!(s.game_state.system_signals.sound_effect_1(), expected_sfx);
         assert_eq!(s.sprite_slot(k).state(), 3);
         assert_eq!(s.sprite_slot(k).delay_main(), 15);
         assert_eq!(s.sprite_slot(k).ai_state(), 0);
@@ -8185,7 +8555,10 @@ mod tests {
         scenery.sprite_slot_mut(k).set_flags2(0x20);
         scenery.throwable_scenery_transmute_if_valid(k);
         assert_eq!(scenery.ram[REPULSESPARK_TIMER_SPRITE], 0);
-        assert_eq!(scenery.system_signals().sound_effect_1() & 0x3f, 0x1f);
+        assert_eq!(
+            scenery.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x1f
+        );
         assert_eq!(scenery.sprite_slot(k).delay_main(), 31);
         assert_eq!(scenery.sprite_slot(k).state(), 6);
         assert_eq!(scenery.sprite_slot(k).flags2(), 0x24);
@@ -8230,12 +8603,15 @@ mod tests {
         assert_eq!(s.sprite_slot(k).sprite_type(), 0xe3);
         assert_eq!(s.sprite_slot(k).subtype(), 0xaa);
         assert_eq!(s.sprite_slot(k).die_action(), 0xbb);
-        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(s.game_state.system_signals.sound_effect_2() & 0x3f, 0x32);
         assert_eq!(s.sprite_slot(k).hit_timer(), 0);
         assert_eq!(s.sprite_slot(k).incoming_damage(), 0);
 
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 10);
-        assert_eq!(s.garnish_slot(29).garnish_type(), 10);
+        assert_eq!(
+            s.game_state.sprites.garnish_slots.slot(29).garnish_type(),
+            10
+        );
         assert_eq!(s.ram[GARNISH_X_LO_SPRITE + 29], 0x23);
         assert_eq!(s.ram[GARNISH_X_HI_SPRITE + 29], 0x01);
         assert_eq!(s.ram[GARNISH_Y_LO_SPRITE + 29], 0x50);
@@ -8336,12 +8712,24 @@ mod tests {
         let mut s = fresh_state();
         assert_eq!(s.alloc_overlord(), 7);
 
-        s.overlord_slot_mut(7).set_overlord_type(1);
-        s.overlord_slot_mut(6).set_overlord_type(1);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 7)
+            .set_overlord_type(1);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 6)
+            .set_overlord_type(1);
         assert_eq!(s.alloc_overlord(), 5);
 
         for i in 0..8 {
-            s.overlord_slot_mut(i).set_overlord_type(1);
+            s.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut s.ram, i)
+                .set_overlord_type(1);
         }
         assert_eq!(s.alloc_overlord(), -1);
     }
@@ -8371,19 +8759,26 @@ mod tests {
     #[test]
     fn dungeon_load_single_overlord_allocates_and_initializes_coords() {
         let mut s = fresh_state();
-        s.overlord_slot_mut(7).set_overlord_type(1);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 7)
+            .set_overlord_type(1);
         s.sprite_workspace_mut().set_room_origin_y_high(0x20);
         s.sprite_workspace_mut().set_room_origin_x_high(0x10);
         s.world_region_mut().set_overworld_area_index_word(0x1234);
 
         s.dungeon_load_single_overlord(&[0x83, 0xe4, 10]);
 
-        assert_eq!(s.overlord_slot(6).overlord_type(), 10);
+        assert_eq!(
+            s.game_state.sprites.overlord_slots.slot(6).overlord_type(),
+            10
+        );
         assert_eq!(s.ram[OVERLORD_FLOOR_SPRITE + 6], 1);
-        assert_eq!(s.overlord_slot(6).y_low(), 0x30);
-        assert_eq!(s.overlord_slot(6).y_high(), 0x20);
-        assert_eq!(s.overlord_slot(6).x_low(), 0x40);
-        assert_eq!(s.overlord_slot(6).x_high(), 0x10);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(6).y_low(), 0x30);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(6).y_high(), 0x20);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(6).x_low(), 0x40);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(6).x_high(), 0x10);
         assert_eq!(s.ram[OVERLORD_SPAWNED_IN_AREA_SPRITE + 6], 0x34);
         assert_eq!(s.ram[OVERLORD_GEN1 + 6], 0);
         assert_eq!(s.ram[OVERLORD_GEN2 + 6], 160);
@@ -8392,9 +8787,16 @@ mod tests {
         let mut trap = fresh_state();
         trap.sprite_workspace_mut().set_room_origin_x_high(0x10);
         trap.dungeon_load_single_overlord(&[0x00, 0xe0, 3]);
-        assert_eq!(trap.overlord_slot(7).overlord_type(), 3);
+        assert_eq!(
+            trap.game_state
+                .sprites
+                .overlord_slots
+                .slot(7)
+                .overlord_type(),
+            3
+        );
         assert_eq!(trap.ram[OVERLORD_GEN2 + 7], 255);
-        assert_eq!(trap.overlord_slot(7).x_low(), 0xf8);
+        assert_eq!(trap.game_state.sprites.overlord_slots.slot(7).x_low(), 0xf8);
     }
 
     #[test]
@@ -8402,7 +8804,7 @@ mod tests {
         let mut s = fresh_state();
         s.world_region_mut().set_overworld_area_index(0x34);
         s.player_state_mut().set_picking_throw_state(7);
-        s.player_state_mut().set_state_bits(0x80);
+        s.follower_link_state_mut().set_state_bits(0x80);
 
         s.sprite_slot_mut(1).set_state(10);
         s.sprite_slot_mut(1).set_sprite_type(0x20);
@@ -8417,10 +8819,26 @@ mod tests {
         s.sprite_slot_mut(5).set_state(9);
         s.sprite_slot_mut(5).set_sprite_type(0x6c);
         s.sprite_slot_mut(5).set_room(0x12);
-        s.overlord_slot_mut(1).set_overlord_type(0x14);
-        s.ram[OVERLORD_SPAWNED_IN_AREA_SPRITE + 1] = 0x12;
-        s.overlord_slot_mut(2).set_overlord_type(0x14);
-        s.ram[OVERLORD_SPAWNED_IN_AREA_SPRITE + 2] = 0x34;
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 1)
+            .set_overlord_type(0x14);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 1)
+            .set_spawned_area(0x12);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_overlord_type(0x14);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_spawned_area(0x34);
 
         s.sprite_initialize_slots();
 
@@ -8431,8 +8849,14 @@ mod tests {
         assert_eq!(s.sprite_slot(3).state(), 0);
         assert_eq!(s.sprite_slot(4).state(), 9);
         assert_eq!(s.sprite_slot(5).state(), 9);
-        assert_eq!(s.overlord_slot(1).overlord_type(), 0);
-        assert_eq!(s.overlord_slot(2).overlord_type(), 0x14);
+        assert_eq!(
+            s.game_state.sprites.overlord_slots.slot(1).overlord_type(),
+            0
+        );
+        assert_eq!(
+            s.game_state.sprites.overlord_slots.slot(2).overlord_type(),
+            0x14
+        );
     }
 
     #[test]
@@ -8477,7 +8901,11 @@ mod tests {
         s.follower_state_mut().set_indicator(12);
         s.ram[SUPER_BOMB_INDICATOR_TIMER] = 0x55;
         s.sprite_slot_mut(3).set_state(9);
-        s.ancilla_slot_mut(2).set_ancilla_type(0x27);
+        s.game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_ancilla_type(0x27);
         s.sprite_workspace_mut().set_where_in_room(0x123, 0x55aa);
         s.ram[OVERWORLD_SPRITE_WAS_LOADED + 0x42] = 0xbb;
         write_le_u16(&mut s.ram, DUNGEON_ROOM_HISTORY + 2, 0x1234);
@@ -8485,18 +8913,21 @@ mod tests {
         s.sprite_reset_all_no_disable();
 
         assert_eq!(s.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH], 0);
-        assert_eq!(s.sprite_system().alert_flag(), 0);
+        assert_eq!(s.game_state.sprites.system.alert_flag(), 0);
         assert_eq!(s.ram[OVERWORLD_BOULDER_TRAP_COUNT], 0);
         assert_eq!(s.ram[MESSAGE_OR_SPRITE_STATE_CACHE], 0);
-        assert_eq!(s.sprite_system().chr_halfslot_state(), 0);
-        assert_eq!(s.sprite_system().limit_instance(), 0);
-        assert_eq!(s.oam_state().sprite_sorting_setting(), 0);
+        assert_eq!(s.game_state.sprites.system.chr_halfslot_state(), 0);
+        assert_eq!(s.game_state.sprites.system.limit_instance(), 0);
+        assert_eq!(s.game_state.oam.sprite_sorting_setting(), 0);
         assert_eq!(s.ram[SUPER_BOMB_INDICATOR_TIMER], 0xfe);
-        assert_eq!(s.sprite_workspace().where_in_room(0x123), 0);
+        assert_eq!(s.game_state.sprites.workspace.where_in_room(0x123), 0);
         assert_eq!(s.ram[OVERWORLD_SPRITE_WAS_LOADED + 0x42], 0);
         assert_eq!(read_le_u16(&s.ram, DUNGEON_ROOM_HISTORY + 2), 0xffff);
         assert_eq!(s.sprite_slot(3).state(), 9);
-        assert_eq!(s.ancilla_slot(2).ancilla_type(), 0x27);
+        assert_eq!(
+            s.game_state.sprites.ancilla_slots.slot(2).ancilla_type(),
+            0x27
+        );
 
         let mut follower = fresh_state();
         follower.follower_state_mut().set_indicator(13);
@@ -8517,8 +8948,8 @@ mod tests {
         assert_eq!(next, 3);
         assert_eq!(s.sprite_slot(3).state(), 8);
         assert_eq!(s.sprite_slot(3).floor(), 1);
-        assert_eq!(s.sprite_workspace().shared_scratch_a(), 0x60);
-        assert_eq!(s.temp_counter().value(), 0x08);
+        assert_eq!(s.game_state.sprites.workspace.shared_scratch_a(), 0x60);
+        assert_eq!(s.game_state.scratch_counter.value(), 0x08);
         assert_eq!(s.sprite_slot(3).subtype(), 0x0b);
     }
 
@@ -8526,10 +8957,16 @@ mod tests {
     fn garnish_get_x_and_y_read_16_bit_coords() {
         let mut s = fresh_state();
         let k = 7;
-        s.ram[GARNISH_X_LO_SPRITE + k] = 0x34;
-        s.ram[GARNISH_X_HI_SPRITE + k] = 0x12;
-        s.ram[GARNISH_Y_LO_SPRITE + k] = 0xcd;
-        s.ram[GARNISH_Y_HI_SPRITE + k] = 0xab;
+        s.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut s.ram, k)
+            .set_x(0x1234);
+        s.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut s.ram, k)
+            .set_y(0xabcd);
 
         assert_eq!(s.garnish_get_x(k), 0x1234);
         assert_eq!(s.garnish_get_y(k), 0xabcd);
@@ -8572,13 +9009,13 @@ mod tests {
         assert_eq!(s.sprite_get_tile_attribute(k, &mut x, y), 0x72);
 
         assert_eq!(x, 0x0128);
-        assert_eq!(s.sprite_workspace().tile_type(), 0x72);
+        assert_eq!(s.game_state.sprites.workspace.tile_type(), 0x72);
 
         let mut floor0_x = 0x0008;
         s.dungeon_bg2_attributes_mut().set_bg2_attr(1, 0x34);
         assert_eq!(s.GetTileAttribute(0, &mut floor0_x, 0), 0x34);
         assert_eq!(floor0_x, 0x0008);
-        assert_eq!(s.sprite_workspace().tile_type(), 0x34);
+        assert_eq!(s.game_state.sprites.workspace.tile_type(), 0x34);
 
         s.set_indoor_flag(0);
         let mut outdoor_x = 0x0128;
@@ -8586,7 +9023,7 @@ mod tests {
         let expected = s.overworld_get_tile_attribute_at_location(outdoor_x >> 3, outdoor_y);
         assert_eq!(s.GetTileAttribute(0, &mut outdoor_x, outdoor_y), expected);
         assert_eq!(outdoor_x, 0x0025);
-        assert_eq!(s.sprite_workspace().tile_type(), expected);
+        assert_eq!(s.game_state.sprites.workspace.tile_type(), expected);
     }
 
     #[test]
@@ -8605,7 +9042,8 @@ mod tests {
         assert_eq!(hb.r1_ylo, 0x01);
         assert_eq!(hb.r9_yhi, 0x35);
 
-        s.player_state_mut().set_sprite_damage_disable_timer(1);
+        s.follower_link_state_mut()
+            .set_sprite_damage_disable_timer(1);
         hb.r0_xlo = 0xaa;
         hb.r8_xhi = 0xbb;
         hb.r1_ylo = 0xcc;
@@ -8616,7 +9054,8 @@ mod tests {
         assert_eq!(hb.r1_ylo, 0xcc);
         assert_eq!(hb.r9_yhi, 0x80);
 
-        s.player_state_mut().clear_sprite_damage_disable_timer();
+        s.follower_link_state_mut()
+            .clear_sprite_damage_disable_timer();
         s.link_setup_hit_box_conditional(&mut hb);
         assert_eq!(hb.r0_xlo, 0x00);
         assert_eq!(hb.r8_xhi, 0x13);
@@ -8679,7 +9118,7 @@ mod tests {
         active.system_signals_mut().set_sound_effect_1(0);
         active.sprite_place_weapon_tink(k);
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
-        assert_eq!(active.system_signals().sound_effect_1(), 0);
+        assert_eq!(active.game_state.system_signals.sound_effect_1(), 0);
 
         let mut s = fresh_state();
         s.sprite_set_x(k, 0x0050);
@@ -8690,7 +9129,7 @@ mod tests {
         assert_eq!(s.ram[REPULSESPARK_X_LO_SPRITE], 0x50);
         assert_eq!(s.ram[REPULSESPARK_Y_LO_SPRITE], 0x60);
         assert_eq!(s.ram[REPULSESPARK_FLOOR_STATUS_SPRITE], 1);
-        assert_eq!(s.system_signals().sound_effect_1(), 5);
+        assert_eq!(s.game_state.system_signals.sound_effect_1(), 5);
     }
 
     #[test]
@@ -8702,7 +9141,7 @@ mod tests {
         active.link_place_weapon_tink();
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
         assert_eq!(active.ram[REPULSESPARK_X_LO_SPRITE], 0);
-        assert_eq!(active.system_signals().sound_effect_1(), 0);
+        assert_eq!(active.game_state.system_signals.sound_effect_1(), 0);
 
         let mut s = fresh_state();
         s.player_state_mut().set_x(0x01f0);
@@ -8718,7 +9157,7 @@ mod tests {
         assert_eq!(s.ram[REPULSESPARK_Y_LO_SPRITE], 0x51);
         assert_eq!(s.ram[REPULSESPARK_FLOOR_STATUS_SPRITE], 2);
         assert_eq!(
-            s.system_signals().sound_effect_1(),
+            s.game_state.system_signals.sound_effect_1(),
             s.link_calculate_sfx_pan() | 5
         );
     }
@@ -8732,13 +9171,19 @@ mod tests {
         s.player_state_mut().set_x(0x0140);
         s.player_state_mut().set_y(0x01d0);
         s.sprite_slot_mut(k).set_z(4);
-        s.player_state_mut().set_z(0x1234);
+        s.follower_link_state_mut().set_z(0x1234);
 
         let expected = s.sprite_project_speed_towards_link(k, 0x30);
         s.sprite_apply_recoil_to_link(k, 0x30);
 
-        assert_eq!(s.player_state().actual_x_velocity(), expected.x);
-        assert_eq!(s.player_state().actual_y_velocity(), expected.y);
+        assert_eq!(
+            s.game_state.player.follower_link.actual_x_velocity(),
+            expected.x
+        );
+        assert_eq!(
+            s.game_state.player.follower_link.actual_y_velocity(),
+            expected.y
+        );
         assert_eq!(s.player_state().actual_z_velocity(), 0x18);
         assert_eq!(s.player_state().recoil_z_velocity_for_dungeon_reset(), 0x18);
         assert_eq!(s.player_state().z(), 0);
@@ -8756,13 +9201,13 @@ mod tests {
 
         assert_eq!(s.sprite_direction_to_face_link(k, Some(&mut coords)), 0);
         assert_eq!(coords, PointU8 { x: 0x20, y: 0x0c });
-        assert_eq!(s.temp_counter().value(), 0x0c);
+        assert_eq!(s.game_state.scratch_counter.value(), 0x0c);
 
         s.player_state_mut().set_x(0x00f8);
         s.player_state_mut().set_y(0x0240);
         s.sprite_slot_mut(k).set_z(0);
         assert_eq!(s.sprite_direction_to_face_link(k, None), 2);
-        assert_eq!(s.temp_counter().value(), 0x48);
+        assert_eq!(s.game_state.scratch_counter.value(), 0x48);
     }
 
     #[test]
@@ -8896,7 +9341,10 @@ mod tests {
 
         assert_eq!(s.ram[0x0fa1], 0x48);
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 0);
-        assert_eq!(s.garnish_slot(28).garnish_type(), 0);
+        assert_eq!(
+            s.game_state.sprites.garnish_slots.slot(28).garnish_type(),
+            0
+        );
     }
 
     #[test]
@@ -8923,7 +9371,14 @@ mod tests {
         assert_eq!(ret.y, 0x2d);
         assert_eq!(ret.r4, 0);
         assert_eq!(ret.flags, 0x09);
-        assert_eq!(visible.draw_scratch_position().low_position_word(), 0x2d20);
+        assert_eq!(
+            visible
+                .game_state
+                .sprites
+                .draw_hitbox_work
+                .low_position_word(),
+            0x2d20
+        );
         assert_eq!(visible.sprite_slot(k).pause(), 0);
 
         let mut out = fresh_state();
@@ -8952,7 +9407,11 @@ mod tests {
     fn sprite_spawn_simple_sparkle_garnish_ex_initializes_allocated_slot() {
         let mut s = fresh_state();
         let k = 4;
-        s.garnish_slot_mut(29).set_garnish_type(1);
+        s.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut s.ram, 29)
+            .set_garnish_type(1);
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
         s.sprite_slot_mut(k).set_z(3);
@@ -8960,7 +9419,10 @@ mod tests {
 
         assert_eq!(s.sprite_garnish_spawn_sparkle(k, 0x12, 0x20), 28);
 
-        assert_eq!(s.garnish_slot(28).garnish_type(), 5);
+        assert_eq!(
+            s.game_state.sprites.garnish_slots.slot(28).garnish_type(),
+            5
+        );
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 5);
         assert_eq!(s.garnish_get_x(28), 0x0112);
         assert_eq!(s.garnish_get_y(28), 0x022d);
@@ -8971,7 +9433,11 @@ mod tests {
 
         let mut full = fresh_state();
         for slot in 0..15 {
-            full.garnish_slot_mut(slot).set_garnish_type(1);
+            full.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut full.ram, slot)
+                .set_garnish_type(1);
         }
         full.sprite_garnish_spawn_sparkle_limited(k, 0, 0);
         assert_eq!(full.ram[15], 0xff);
@@ -9139,14 +9605,14 @@ mod tests {
         s.player_state_mut()
             .set_sprite_pickup_flag_cached((k as u8).wrapping_add(1));
         s.sprite_slot_mut(k).set_state(9);
-        s.player_state_mut().set_filtered_joypad_l(0xff);
+        s.follower_link_state_mut().set_filtered_joypad_l(0xff);
         s.sprite_slot_mut(k).set_e(5);
         s.sprite_slot_mut(k).set_draw_work_byte_3(6);
         s.sprite_slot_mut(k).set_draw_i(7);
 
         s.sprite_check_if_lifted_permissive(k);
 
-        assert_eq!(s.player_state().filtered_joypad_l(), 0);
+        assert_eq!(s.game_state.player.follower_link.filtered_joypad_l(), 0);
         assert_eq!(s.sprite_slot(k).e(), 0);
         assert_eq!(s.sprite_slot(k).draw_work_byte_4(), 9);
         assert_eq!(s.sprite_slot(k).state(), 10);
@@ -9155,7 +9621,7 @@ mod tests {
         assert_eq!(s.sprite_slot(k).draw_i(), 0);
 
         let mut running = fresh_state();
-        running.player_state_mut().start_running();
+        running.follower_link_state_mut().start_running();
         running.sprite_slot_mut(k).set_state(9);
         running.sprite_check_if_lifted_permissive(k);
         assert_eq!(running.sprite_slot(k).state(), 9);
@@ -9172,10 +9638,13 @@ mod tests {
 
         s.sprite_hit_timer31(k);
 
-        assert_eq!(s.dialogue_message_index().value(), 0x0140);
-        assert_eq!(s.ram[SUBMODULE_INDEX], 2);
+        assert_eq!(
+            s.game_state.messaging.dialogue_message_index.value(),
+            0x0140
+        );
+        assert_eq!(s.game_state.frame.submodule, 2);
         assert_eq!(s.game_state.frame.saved_module_for_menu, 7);
-        assert_eq!(s.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(s.game_state.frame.main_module, 14);
 
         let mut dark = fresh_state();
         dark.sprite_slot_mut(k).set_sprite_type(0x7a);
@@ -9183,7 +9652,7 @@ mod tests {
         dark.sprite_slot_mut(k).set_incoming_damage(1);
         dark.world_region_mut().set_dark_world_region_index(1);
         dark.sprite_hit_timer31(k);
-        assert_eq!(dark.dialogue_message_index().value(), 0);
+        assert_eq!(dark.game_state.messaging.dialogue_message_index.value(), 0);
     }
 
     #[test]
@@ -9225,10 +9694,10 @@ mod tests {
         s.sprite_set_y(k, 0x0100);
 
         assert_eq!(s.sprite_direction_to_face_location(k, 0x0120, 0x0108), 0);
-        assert_eq!(s.temp_counter().value(), 0x08);
+        assert_eq!(s.game_state.scratch_counter.value(), 0x08);
 
         assert_eq!(s.sprite_direction_to_face_location(k, 0x0104, 0x00e0), 3);
-        assert_eq!(s.temp_counter().value(), 0x20);
+        assert_eq!(s.game_state.scratch_counter.value(), 0x20);
     }
 
     #[test]
@@ -9252,11 +9721,15 @@ mod tests {
     #[test]
     fn sprite_halt_all_movement_nullifies_hookshot_drag_and_speed() {
         let mut s = fresh_state();
-        s.ancilla_slot_mut(4).set_ancilla_type(0);
+        s.game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut s.ram, 4)
+            .set_ancilla_type(0);
         s.player_state_mut().set_hookshot_interlock(1);
         s.player_state_mut().set_position(0x1234, 0x5678);
         s.player_state_mut().set_previous_position(0x9abc, 0xdef0);
-        s.player_state_mut().set_speed_setting(7);
+        s.follower_link_state_mut().set_speed_setting(7);
 
         s.sprite_halt_all_movement();
 
@@ -9265,7 +9738,7 @@ mod tests {
         assert_eq!(s.player_state().safe_return_y_high(), 0x56);
         assert_eq!(s.player_state().x(), 0x9abc);
         assert_eq!(s.player_state().y(), 0xdef0);
-        assert_eq!(s.player_state().speed_setting(), 0);
+        assert_eq!(s.game_state.player.follower_link.speed_setting(), 0);
     }
 
     #[test]
@@ -9273,7 +9746,7 @@ mod tests {
         assert!(!fresh_state().sprite_check_if_link_is_busy());
 
         let mut aux = fresh_state();
-        aux.player_state_mut().set_auxiliary_state(1);
+        aux.follower_link_state_mut().set_auxiliary_state(1);
         assert!(aux.sprite_check_if_link_is_busy());
 
         let mut item_pose = fresh_state();
@@ -9281,11 +9754,16 @@ mod tests {
         assert!(item_pose.sprite_check_if_link_is_busy());
 
         let mut lifted = fresh_state();
-        lifted.player_state_mut().set_state_bits(0x80);
+        lifted.follower_link_state_mut().set_state_bits(0x80);
         assert!(lifted.sprite_check_if_link_is_busy());
 
         let mut hookshot = fresh_state();
-        hookshot.ancilla_slot_mut(4).set_ancilla_type(0x27);
+        hookshot
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut hookshot.ram, 4)
+            .set_ancilla_type(0x27);
         assert!(hookshot.sprite_check_if_link_is_busy());
     }
 
@@ -9308,13 +9786,25 @@ mod tests {
 
         assert!(s.sprite_check_if_overlords_clear());
 
-        s.overlord_slot_mut(3).set_overlord_type(0x14);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 3)
+            .set_overlord_type(0x14);
         assert!(!s.sprite_check_if_overlords_clear());
 
-        s.overlord_slot_mut(3).set_overlord_type(0x18);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 3)
+            .set_overlord_type(0x18);
         assert!(!s.sprite_check_if_overlords_clear());
 
-        s.overlord_slot_mut(3).set_overlord_type(0x13);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 3)
+            .set_overlord_type(0x13);
         assert!(s.sprite_check_if_overlords_clear());
     }
 
@@ -9333,7 +9823,11 @@ mod tests {
 
         s.sprite_slot_mut(k).set_state(0);
         s.sprite_slot_mut(k).set_flags4(0);
-        s.overlord_slot_mut(2).set_overlord_type(0x18);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_overlord_type(0x18);
         assert!(!s.sprite_check_if_room_is_clear());
     }
 
@@ -9358,7 +9852,11 @@ mod tests {
 
         s.sprite_slot_mut(k).set_state(0);
         s.sprite_slot_mut(k).set_flags4(0);
-        s.overlord_slot_mut(1).set_overlord_type(0x14);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 1)
+            .set_overlord_type(0x14);
         assert!(!s.sprite_check_if_screen_is_clear());
     }
 
@@ -9372,7 +9870,7 @@ mod tests {
 
         s.sprite_manually_set_death_flag_uw(k);
 
-        assert_eq!(s.sprite_workspace().where_in_room(0x0123), 0x0100);
+        assert_eq!(s.game_state.sprites.workspace.where_in_room(0x0123), 0x0100);
 
         let mut outdoors = fresh_state();
         outdoors.sprite_slot_mut(k).set_n(8);
@@ -9380,7 +9878,10 @@ mod tests {
             .dungeon_room_tracking_mut()
             .set_room_index2_word(0x0123);
         outdoors.sprite_manually_set_death_flag_uw(k);
-        assert_eq!(outdoors.sprite_workspace().where_in_room(0x0123), 0);
+        assert_eq!(
+            outdoors.game_state.sprites.workspace.where_in_room(0x0123),
+            0
+        );
 
         let mut ignored = fresh_state();
         ignored.set_indoor_flag(1);
@@ -9390,7 +9891,10 @@ mod tests {
             .dungeon_room_tracking_mut()
             .set_room_index2_word(0x0123);
         ignored.sprite_manually_set_death_flag_uw(k);
-        assert_eq!(ignored.sprite_workspace().where_in_room(0x0123), 0);
+        assert_eq!(
+            ignored.game_state.sprites.workspace.where_in_room(0x0123),
+            0
+        );
 
         let mut signed = fresh_state();
         signed.set_indoor_flag(1);
@@ -9399,7 +9903,7 @@ mod tests {
             .dungeon_room_tracking_mut()
             .set_room_index2_word(0x0123);
         signed.sprite_manually_set_death_flag_uw(k);
-        assert_eq!(signed.sprite_workspace().where_in_room(0x0123), 0);
+        assert_eq!(signed.game_state.sprites.workspace.where_in_room(0x0123), 0);
     }
 
     #[test]

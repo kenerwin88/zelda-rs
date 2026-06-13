@@ -451,7 +451,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.inventory_items().shield_type() != 0 {
+            if self.game_state.inventory.items.shield_type() != 0 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -497,7 +497,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.inventory_items().shield_type() >= 2 {
+            if self.game_state.inventory.items.shield_type() >= 2 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -557,7 +557,8 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.player_resources().current_health() == self.player_resources().health_capacity()
+            if self.game_state.inventory.player_resources.current_health()
+                == self.game_state.inventory.player_resources.health_capacity()
             {
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
@@ -595,8 +596,14 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.player_resources().arrow_upgrade_level() as usize;
-            if self.player_resources().arrows() == MAX_ARROWS_BY_UPGRADE_LEVEL[upg] {
+            let upg = self
+                .game_state
+                .inventory
+                .player_resources
+                .arrow_upgrade_level() as usize;
+            if self.game_state.inventory.player_resources.arrows()
+                == MAX_ARROWS_BY_UPGRADE_LEVEL[upg]
+            {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(30) {
@@ -634,8 +641,13 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.player_resources().bomb_upgrade_level() as usize;
-            if self.player_resources().bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg] {
+            let upg = self
+                .game_state
+                .inventory
+                .player_resources
+                .bomb_upgrade_level() as usize;
+            if self.game_state.inventory.player_resources.bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg]
+            {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(50) {
@@ -724,7 +736,7 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToLink_same_layer(k);
     // }
     pub(super) fn shop_item_check_for_a_press(&mut self, k: usize) -> bool {
-        if (self.player_state().filtered_joypad_l() & 0x80) == 0 {
+        if (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0 {
             return false;
         }
         self.sprite_check_damage_to_link_same_layer_for_hinox_shop(k)
@@ -741,7 +753,7 @@ impl ZeldaState {
     // a 16-bit unsigned compared against `int amt`; mirror that with u16
     // arithmetic so signedness matches.
     pub(super) fn shop_item_handle_cost(&mut self, amt: i32) -> bool {
-        let goal = self.player_resources().rupees_goal() as i32;
+        let goal = self.game_state.inventory.player_resources.rupees_goal() as i32;
         if amt > goal {
             return false;
         }
@@ -796,7 +808,7 @@ impl ZeldaState {
     // in sprite_main_npcs.rs is not registered in zelda_rtl.rs.
     fn sprite_find_empty_bottle_for_hinox_shop(&self) -> i32 {
         for i in 0..4 {
-            if self.inventory_items().bottle(i) == 2 {
+            if self.game_state.inventory.items.bottle(i) == 2 {
                 return i as i32;
             }
         }
@@ -874,7 +886,7 @@ mod tests {
         let mut s = fresh_state();
         s.player_resources_mut().set_rupees_goal(200);
         assert!(s.shop_item_handle_cost(150));
-        assert_eq!(s.player_resources().rupees_goal(), 50);
+        assert_eq!(s.game_state.inventory.player_resources.rupees_goal(), 50);
     }
 
     #[test]
@@ -883,7 +895,7 @@ mod tests {
         s.player_resources_mut().set_rupees_goal(50);
         assert!(!s.shop_item_handle_cost(150));
         assert_eq!(
-            s.player_resources().rupees_goal(),
+            s.game_state.inventory.player_resources.rupees_goal(),
             50,
             "rupees unchanged on failed cost"
         );
@@ -892,11 +904,11 @@ mod tests {
     #[test]
     fn shop_item_check_for_a_press_requires_a_button() {
         let mut s = fresh_state();
-        s.player_state_mut().set_filtered_joypad_l(0);
+        s.follower_link_state_mut().set_filtered_joypad_l(0);
         assert!(!s.shop_item_check_for_a_press(0));
         // With A pressed but no Link overlap, the canonical damage check still
         // returns false; just confirm the early-exit doesn't fire.
-        s.player_state_mut().set_filtered_joypad_l(0x80);
+        s.follower_link_state_mut().set_filtered_joypad_l(0x80);
         let _ = s.shop_item_check_for_a_press(0);
     }
 

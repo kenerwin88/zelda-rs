@@ -413,7 +413,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_switch(&mut self, k: usize) {
-        let room = self.dungeon_room_tracking().room_index2();
+        let room = self.game_state.dungeon.room_tracking.room_index2();
         if room == 0xce || room == 4 || room == 0x3f {
             self.sprite_slot_mut(k).set_oam_flags(0x0d);
         }
@@ -426,7 +426,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_rat(&mut self, k: usize) {
         const BUMP_DAMAGE: [u8; 2] = [0, 5];
         const HEALTH: [u8; 2] = [2, 8];
-        let j = self.world_region().dark_world_region_index() as usize;
+        let j = self.game_state.world.region.dark_world_region_index() as usize;
         self.sprite_slot_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_mut(k).set_health(HEALTH[j]);
     }
@@ -435,7 +435,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [0x80, 0x85];
         const HEALTH: [u8; 2] = [1, 4];
         const FLAGS5: [u8; 2] = [0, 7];
-        let j = self.world_region().dark_world_region_index() as usize;
+        let j = self.game_state.world.region.dark_world_region_index() as usize;
         self.sprite_slot_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_mut(k).set_flags5(FLAGS5[j]);
@@ -445,7 +445,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [1, 5];
         const HEALTH: [u8; 2] = [4, 8];
         const FLAGS5: [u8; 2] = [1, 7];
-        let j = self.world_region().dark_world_region_index() as usize;
+        let j = self.game_state.world.region.dark_world_region_index() as usize;
         self.sprite_slot_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_mut(k).set_flags5(FLAGS5[j]);
@@ -499,7 +499,15 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_agahnims_barrier(&mut self, k: usize) {
         let screen = self.game_state.world.location.overworld_screen_index() as usize;
-        if self.overworld_event_info().event_info(screen) & 0x40 != 0 {
+        if self
+            .game_state
+            .world
+            .overworld
+            .event_info
+            .event_info(screen)
+            & 0x40
+            != 0
+        {
             self.sprite_slot_mut(k).set_graphics(4);
         }
         self.sprite_prep_move_down_8px_right8px(k);
@@ -514,7 +522,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_cutscene_agahnim(&mut self, k: usize) {
-        if self.dungeon_savegame_state().savegame_state_bits() & 0x4000 != 0 {
+        if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x4000 != 0 {
             self.sprite_slot_mut(k).set_state(0);
         } else {
             self.cutscene_agahnim_spawn_zelda_on_altar(k);
@@ -551,7 +559,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [0x81, 0x88];
         const HEALTH: [u8; 2] = [4, 8];
         const FLAGS5: [u8; 2] = [6, 2];
-        let j = self.world_region().dark_world_region_index() as usize;
+        let j = self.game_state.world.region.dark_world_region_index() as usize;
         self.sprite_slot_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_mut(k).set_flags5(FLAGS5[j]);
@@ -573,9 +581,16 @@ impl ZeldaState {
     pub(super) fn sprite_prep_do_nothing_c(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_blind_maiden(&mut self, k: usize) {
-        if self.save_progress().dungeon_info_word(0xac) & 0x0800 == 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .dungeon_info_word(0xac)
+            & 0x0800
+            == 0
+        {
             self.sprite_slot_mut(k).increment_ignore_projectile();
-            if self.follower_state().indicator() != 6 {
+            if self.game_state.sprites.follower_runtime.indicator() != 6 {
                 self.follower_state_mut().set_indicator(6);
                 self.follower_state_mut().set_dropped(0);
                 self.follower_state_mut().set_appearance_none_flag(0);
@@ -637,12 +652,12 @@ impl ZeldaState {
             self.sprite_slot_mut(i).set_subtype2(subtype2);
         }
         self.sprite_slot_mut(k).increment_ignore_projectile();
-        let arrows = self.player_resources().arrows();
+        let arrows = self.game_state.inventory.player_resources.arrows();
         self.sprite_slot_mut(k).set_subtype(arrows);
     }
 
     pub(super) fn sprite_prep_mushroom(&mut self, k: usize) {
-        if self.inventory_items().mushroom() >= 2 {
+        if self.game_state.inventory.items.mushroom() >= 2 {
             self.sprite_slot_mut(k).set_state(0);
         } else {
             self.sprite_slot_mut(k).set_graphics(0);
@@ -660,12 +675,19 @@ impl ZeldaState {
     }
 
     pub(super) fn magic_shop_assistant_spawn_powder(&mut self, k: usize) {
-        if !self.world_region().flag_overworld_area_changed()
-            || self.inventory_items().mushroom() == 2
+        if !self.game_state.world.region.flag_overworld_area_changed()
+            || self.game_state.inventory.items.mushroom() == 2
         {
             return;
         }
-        if self.save_progress().dungeon_info_word(0x109) & 0x80 != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .dungeon_info_word(0x109)
+            & 0x80
+            != 0
+        {
             self.magic_shop_assistant_spawn_item(k, 1, -16, 0);
         }
     }
@@ -725,8 +747,14 @@ impl ZeldaState {
             self.sprite_slot_mut(j).set_ignore_projectile(1);
         }
 
-        if self.player_resources().crystal_flags() & 5 == 5
-            && self.save_progress().progress_indicator_3() & 32 != 0
+        if self.game_state.inventory.player_resources.crystal_flags() & 5 == 5
+            && self
+                .game_state
+                .inventory
+                .save_progress
+                .progress_indicator_3()
+                & 32
+                != 0
         {
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0xb5, &mut info);
@@ -792,7 +820,7 @@ impl ZeldaState {
     }
 
     pub(super) fn archery_game_host(&mut self, k: usize) {
-        if self.archery_game().arrows_left() == 0 {
+        if self.game_state.archery_game.arrows_left() == 0 {
             self.archery_game_mut().increment_out_of_arrows();
         }
         self.archery_game_guy_draw(k);
@@ -802,7 +830,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_flags4(0);
         if self.sprite_check_damage_to_link_same_layer(k) {
             self.sprite_nullify_hookshot_drag();
-            self.player_state_mut().set_speed_setting(0);
+            self.follower_link_state_mut().set_speed_setting(0);
             self.link_cancel_dash();
         }
         if self.sprite_slot(k).delay_main() != 0 {
@@ -825,7 +853,7 @@ impl ZeldaState {
             0 => {
                 self.sprite_slot_mut(k).set_flags4(10);
                 if self.sprite_check_damage_to_link_same_layer(k)
-                    && self.player_state().filtered_joypad_l() & 0x80 != 0
+                    && self.game_state.player.follower_link.filtered_joypad_l() & 0x80 != 0
                 {
                     self.sprite_slot_mut(k).set_ai_state(1);
                     self.archery_game_guy_show_msg(k, 0x85);
@@ -833,7 +861,7 @@ impl ZeldaState {
             }
             1 | 3 => {
                 if self.multiselect_choice().value() == 0
-                    && self.player_resources().rupees_goal() >= 20
+                    && self.game_state.inventory.player_resources.rupees_goal() >= 20
                 {
                     self.sprite_slot_mut(k).set_head_direction(0);
                     self.archery_game_mut().clear_hit_counter();
@@ -868,7 +896,7 @@ impl ZeldaState {
             self.archery_game_mut().set_arrows_left(5);
             self.sprite_initialize_secondary_item_minigame(2);
             self.sprite_slot_mut(k).set_delay_aux1(39);
-            let rupees = self.player_resources().rupees_goal();
+            let rupees = self.game_state.inventory.player_resources.rupees_goal();
             self.player_resources_mut()
                 .set_rupees_goal(rupees.wrapping_sub(20));
             self.sprite_slot_mut(k).increment_head_direction();
@@ -881,10 +909,10 @@ impl ZeldaState {
         let count = if self.sprite_slot(k).delay_aux1() != 0 {
             NUM_SPR[(self.sprite_slot(k).delay_aux1() >> 3) as usize]
         } else {
-            self.archery_game().arrows_left()
+            self.game_state.archery_game.arrows_left()
         };
         let mut i = (count as i32) * 2 + 7;
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         while i >= 0 {
             let idx = i as usize;
             self.set_oam_plain_at_for_prep(
@@ -905,8 +933,9 @@ impl ZeldaState {
             i -= 1;
         }
 
-        let ancillas_active = (0..=4).any(|i| self.ancilla_slot(i).is_active());
-        if self.archery_game().arrows_left()
+        let ancillas_active =
+            (0..=4).any(|i| self.game_state.sprites.ancilla_slots.slot(i).is_active());
+        if self.game_state.archery_game.arrows_left()
             | self.sprite_slot(k).delay_aux4()
             | u8::from(ancillas_active)
             != 0
@@ -915,7 +944,7 @@ impl ZeldaState {
         }
         self.sprite_slot_mut(k).set_flags4(0x0a);
         if self.sprite_check_damage_to_link_same_layer(k)
-            && self.player_state().filtered_joypad_l() & 0x80 != 0
+            && self.game_state.player.follower_link.filtered_joypad_l() & 0x80 != 0
         {
             self.archery_game_guy_show_msg(k, 0x88);
             self.sprite_slot_mut(k).set_ai_state(3);
@@ -942,7 +971,12 @@ impl ZeldaState {
                 if self.sprite_slot(k).delay_aux2() == 96 && self.game_state.frame.submodule == 0 {
                     self.sprite_slot_mut(0).set_delay_main(112);
                     let prize = CASH_PRIZE[self.sprite_slot(k).b().wrapping_sub(1) as usize] as u16;
-                    let rupees = self.player_resources().rupees_goal().wrapping_add(prize);
+                    let rupees = self
+                        .game_state
+                        .inventory
+                        .player_resources
+                        .rupees_goal()
+                        .wrapping_add(prize);
                     self.player_resources_mut().set_rupees_goal(rupees);
                 }
                 self.sprite_slot_mut(k).or_flags2(5);
@@ -1021,65 +1055,87 @@ impl ZeldaState {
     pub(super) fn garnish_alloc_force(&mut self) -> i32 {
         (0..30)
             .rev()
-            .find(|&k| self.garnish_slot(k).is_empty())
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
             .unwrap_or(0) as i32
     }
 
     pub(super) fn garnish_alloc(&mut self) -> i32 {
         (0..30)
             .rev()
-            .find(|&k| self.garnish_slot(k).is_empty())
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
             .map_or(-1, |k| k as i32)
     }
 
     pub(super) fn garnish_alloc_low(&mut self) -> i32 {
         (0..15)
             .rev()
-            .find(|&k| self.garnish_slot(k).is_empty())
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
             .map_or(-1, |k| k as i32)
     }
 
     pub(super) fn garnish_alloc_limit(&mut self, k: usize) -> i32 {
         (0..=k)
             .rev()
-            .find(|&k| self.garnish_slot(k).is_empty())
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
             .map_or(-1, |k| k as i32)
     }
 
     pub(super) fn garnish_alloc_overwrite_old_low(&mut self) -> i32 {
-        if let Some(k) = (0..15).rev().find(|&k| self.garnish_slot(k).is_empty()) {
+        if let Some(k) = (0..15)
+            .rev()
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
+        {
             return k as i32;
         }
         self.sprite_workspace_mut().decrement_prep_shared_counter();
-        if sign8(self.sprite_workspace().prep_shared_counter()) {
+        if sign8(self.game_state.sprites.workspace.prep_shared_counter()) {
             self.sprite_workspace_mut().set_prep_shared_counter(14);
         }
-        self.sprite_workspace().prep_shared_counter() as i32
+        self.game_state.sprites.workspace.prep_shared_counter() as i32
     }
 
     pub(super) fn garnish_alloc_overwrite_old(&mut self) -> i32 {
-        if let Some(k) = (0..30).rev().find(|&k| self.garnish_slot(k).is_empty()) {
+        if let Some(k) = (0..30)
+            .rev()
+            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
+        {
             return k as i32;
         }
         self.sprite_workspace_mut().decrement_prep_shared_counter();
-        if sign8(self.sprite_workspace().prep_shared_counter()) {
+        if sign8(self.game_state.sprites.workspace.prep_shared_counter()) {
             self.sprite_workspace_mut().set_prep_shared_counter(29);
         }
-        self.sprite_workspace().prep_shared_counter() as i32
+        self.game_state.sprites.workspace.prep_shared_counter() as i32
     }
 
     pub(super) fn garnish_set_x(&mut self, k: usize, x: u16) {
         let value = x as u8;
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = (x >> 8) as u8;
-        self.garnish_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
     }
 
     pub(super) fn garnish_set_y(&mut self, k: usize, y: u16) {
         let value = y as u8;
-        self.garnish_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
         let value = (y >> 8) as u8;
-        self.garnish_slot_mut(k).set_y_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_high(value);
     }
 
     // void Sprite_SpawnSparkleGarnish(int k) {  // 858008
@@ -1090,7 +1146,11 @@ impl ZeldaState {
         }
         let j = self.garnish_alloc_force() as usize;
         let value = 0x12;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(0x12);
         let x = self
             .sprite_get_x(k)
@@ -1101,9 +1161,17 @@ impl ZeldaState {
         self.garnish_set_x(j, x);
         self.garnish_set_y(j, y);
         let value = k as u8;
-        self.garnish_slot_mut(j).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_sprite(value);
         let value = 15;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
     }
 
     // void Sprite_SpawnDummyDeathAnimation(int k) {  // 89ae7e
@@ -1164,18 +1232,42 @@ impl ZeldaState {
         self.system_signals_mut().set_sound_effect_1(31);
         self.system_signals_mut().set_ambient_sound_effect(5);
         let value = 19;
-        self.garnish_slot_mut(k).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(19);
         let value = 232u8.wrapping_add_signed(x);
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = 96u8.wrapping_add_signed(y);
-        self.garnish_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
         let value = xvel as u8;
-        self.garnish_slot_mut(k).set_x_velocity(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_velocity(value);
         let value = yvel as u8;
-        self.garnish_slot_mut(k).set_y_velocity(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_velocity(value);
         let value = (self.get_random_number() & 31).wrapping_add(48);
-        self.garnish_slot_mut(k).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_countdown(value);
     }
 
     pub(super) fn kholdstare_spawn_puff_cloud_garnish(&mut self, k: usize) {
@@ -1189,22 +1281,38 @@ impl ZeldaState {
         }
         let j = j as usize;
         let value = 7;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(7);
         let value = 31;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
         let x = self
-            .sprite_workspace()
+            .game_state
+            .sprites
+            .workspace
             .current_sprite_x()
             .wrapping_add_signed(i16::from(XY[(self.get_random_number() & 7) as usize]));
         let y = self
-            .sprite_workspace()
+            .game_state
+            .sprites
+            .workspace
             .current_sprite_y()
             .wrapping_add_signed(i16::from(XY[(self.get_random_number() & 7) as usize]) + 16);
         self.garnish_set_x(j, x);
         self.garnish_set_y(j, y);
         let value = 0;
-        self.garnish_slot_mut(j).set_floor(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_floor(value);
     }
 
     pub(super) fn garnish_flame_trail(&mut self, k: usize, is_low: bool) -> i32 {
@@ -1215,14 +1323,26 @@ impl ZeldaState {
         };
         let j_usize = j as usize;
         let value = 0x10;
-        self.garnish_slot_mut(j_usize).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j_usize)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(0x10);
         let value = k as u8;
-        self.garnish_slot_mut(j_usize).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j_usize)
+            .set_sprite(value);
         self.garnish_set_x(j_usize, self.sprite_get_x(k));
         self.garnish_set_y(j_usize, self.sprite_get_y(k).wrapping_add(16));
         let value = 127;
-        self.garnish_slot_mut(j_usize).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j_usize)
+            .set_countdown(value);
         j
     }
 
@@ -1248,7 +1368,11 @@ impl ZeldaState {
         } else {
             0x4f
         };
-        self.garnish_slot_mut(j).set_countdown(countdown);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(countdown);
     }
 
     pub(super) fn fireball_spawn_trail_garnish(&mut self, k: usize) {
@@ -1257,16 +1381,33 @@ impl ZeldaState {
         }
         let j = self.garnish_alloc() as usize;
         let value = 8;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(8);
         let value = 11;
-        self.garnish_slot_mut(j).set_countdown(value);
-        let x = self.sprite_workspace().current_sprite_x();
-        let y = self.sprite_workspace().current_sprite_y().wrapping_add(16);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
+        let x = self.game_state.sprites.workspace.current_sprite_x();
+        let y = self
+            .game_state
+            .sprites
+            .workspace
+            .current_sprite_y()
+            .wrapping_add(16);
         self.garnish_set_x(j, x);
         self.garnish_set_y(j, y);
         let value = k as u8;
-        self.garnish_slot_mut(j).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_sprite(value);
     }
 
     pub(super) fn firesnake_spawn_fireball(&mut self, j: usize) {
@@ -1281,19 +1422,43 @@ impl ZeldaState {
 
         let k = k as usize;
         let value = 1;
-        self.garnish_slot_mut(k).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(1);
         let value = self.sprite_slot(j).x_low();
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = self.sprite_slot(j).x_high();
-        self.garnish_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
         self.garnish_set_y(k, self.sprite_get_y(j).wrapping_add(16));
         let value = 32;
-        self.garnish_slot_mut(k).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_countdown(value);
         let value = j as u8;
-        self.garnish_slot_mut(k).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_sprite(value);
         let value = self.sprite_slot(j).floor();
-        self.garnish_slot_mut(k).set_floor(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_floor(value);
     }
 
     pub(super) fn catfish_spawn_plop(&mut self, k: usize) {
@@ -1477,7 +1642,7 @@ impl ZeldaState {
             self.sprite_slot_mut(j_usize).set_flags4(0x14);
             self.sprite_slot_mut(j_usize).set_ignore_projectile(20);
             self.sprite_slot_mut(j_usize).set_bump_damage(37);
-            if self.inventory_items().shield_type() >= 3 {
+            if self.game_state.inventory.items.shield_type() >= 3 {
                 self.sprite_slot_mut(j_usize).set_flags5(0x20);
             }
         }
@@ -1505,21 +1670,49 @@ impl ZeldaState {
     pub(super) fn sprite_spawn_poof_garnish(&mut self, j: usize) {
         let k = self.garnish_alloc_force() as usize;
         let value = 10;
-        self.garnish_slot_mut(k).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(10);
         let value = self.sprite_slot(j).x_low();
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = self.sprite_slot(j).x_high();
-        self.garnish_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
         let y = self.sprite_get_y(j).wrapping_add(16);
         let value = y as u8;
-        self.garnish_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
         let value = (y >> 8) as u8;
-        self.garnish_slot_mut(k).set_y_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_high(value);
         let value = self.sprite_slot(j).floor();
-        self.garnish_slot_mut(k).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_sprite(value);
         let value = 15;
-        self.garnish_slot_mut(k).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_countdown(value);
     }
 
     pub(super) fn octorok_fire_loogie(&mut self, k: usize) {
@@ -1581,8 +1774,8 @@ impl ZeldaState {
             0x35 => 1,
             _ => 2,
         };
-        let x_base = self.garnish_state().sprcoll_x_word() & 0xff00;
-        let y_base = self.garnish_state().sprcoll_y_word() & 0xff00;
+        let x_base = self.game_state.sprites.garnish_runtime.sprcoll_x_word() & 0xff00;
+        let y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word() & 0xff00;
         self.sprite_set_x(j, X[i].wrapping_add(x_base));
         self.sprite_set_y(j, Y[i].wrapping_add(y_base));
         self.sprite_slot_mut(j).set_floor(0);
@@ -1594,9 +1787,13 @@ impl ZeldaState {
 
     pub(super) fn ancilla_terminate_sparkle_objects(&mut self) {
         for i in (0..=4).rev() {
-            let t = self.ancilla_slot(i).ancilla_type();
+            let t = self.game_state.sprites.ancilla_slots.slot(i).ancilla_type();
             if matches!(t, 0x2a | 0x2b | 0x30 | 0x31 | 0x18 | 0x19 | 0x0c) {
-                self.ancilla_slot_mut(i).clear();
+                self.game_state
+                    .sprites
+                    .ancilla_slots
+                    .slot_mut(&mut self.ram, i)
+                    .clear();
             }
         }
     }
@@ -1644,7 +1841,7 @@ impl ZeldaState {
             let j = self.sprite_spawn_dynamically(k, 0x55, &mut info);
             if j >= 0 {
                 let j = j as usize;
-                let i = self.temp_counter().value() as usize;
+                let i = self.game_state.scratch_counter.value() as usize;
                 self.sprite_set_x(j, info.r0_x.wrapping_add(4));
                 self.sprite_set_y(j, info.r2_y.wrapping_add(4));
                 self.sprite_slot_mut(j).masked_or_flags3(!1, 0x40);
@@ -1660,7 +1857,7 @@ impl ZeldaState {
             }
 
             self.temp_counter_mut().decrement();
-            if sign8(self.temp_counter().value()) {
+            if sign8(self.game_state.scratch_counter.value()) {
                 break;
             }
         }
@@ -1689,7 +1886,7 @@ impl ZeldaState {
             let j = self.sprite_spawn_dynamically(k, 0xc2, &mut info);
             if j >= 0 {
                 let j = j as usize;
-                let i = self.temp_counter().value() as usize;
+                let i = self.game_state.scratch_counter.value() as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
                 self.sprite_slot_mut(j)
                     .set_x_low((info.r0_x as u8).wrapping_add(4));
@@ -1709,7 +1906,7 @@ impl ZeldaState {
             }
 
             self.temp_counter_mut().decrement();
-            if sign8(self.temp_counter().value()) {
+            if sign8(self.game_state.scratch_counter.value()) {
                 break;
             }
         }
@@ -1740,7 +1937,7 @@ impl ZeldaState {
         if self.sprite_slot(k).delay_aux4() != 0 {
             return;
         }
-        let msg = if self.inventory_items().moon_pearl() & 1 != 0 {
+        let msg = if self.game_state.inventory.items.moon_pearl() & 1 != 0 {
             0x15c
         } else {
             0x15b
@@ -1759,7 +1956,7 @@ impl ZeldaState {
         if self.sprite_slot(k).delay_aux4() != 0 {
             return;
         }
-        let msg = if self.inventory_items().moon_pearl() & 1 != 0 {
+        let msg = if self.game_state.inventory.items.moon_pearl() & 1 != 0 {
             0x15e
         } else {
             0x15d
@@ -1776,10 +1973,10 @@ impl ZeldaState {
         const LOCAL_Y_VELOCITIES: [i8; 4] = [16, 24, 24, 16];
         const TYPE: [u8; 3] = [0xd9, 0xda, 0xdb];
 
-        if self.sprite_battle().sprites_killed() != 0 {
-            let shared_scratch_a = if self.sprite_battle().sprites_killed() < 4 {
+        if self.game_state.sprite_battle.sprites_killed() != 0 {
+            let shared_scratch_a = if self.game_state.sprite_battle.sprites_killed() < 4 {
                 0
-            } else if self.sprite_battle().times_hurt_by_sprites() != 0 {
+            } else if self.game_state.sprite_battle.times_hurt_by_sprites() != 0 {
                 1
             } else {
                 2
@@ -1789,14 +1986,14 @@ impl ZeldaState {
             self.temp_counter_mut().set(3);
             loop {
                 let mut info = SpriteSpawnInfo::default();
-                let what = TYPE[self.sprite_workspace().shared_scratch_a() as usize];
+                let what = TYPE[self.game_state.sprites.workspace.shared_scratch_a() as usize];
                 let j = self.sprite_spawn_dynamically(k, what, &mut info);
                 if j < 0 {
                     break;
                 }
 
                 let j = j as usize;
-                let i = self.temp_counter().value() as usize;
+                let i = self.game_state.scratch_counter.value() as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
                 self.sprite_slot_mut(j)
                     .set_x_velocity(LOCAL_X_VELOCITIES[i] as u8);
@@ -1809,7 +2006,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(j).set_z_velocity(32);
 
                 self.temp_counter_mut().decrement();
-                if sign8(self.temp_counter().value()) {
+                if sign8(self.game_state.scratch_counter.value()) {
                     break;
                 }
             }
@@ -1862,7 +2059,11 @@ impl ZeldaState {
         if j >= 0 {
             let j_usize = j as usize;
             let value = 11;
-            self.garnish_slot_mut(j_usize).set_garnish_type(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j_usize)
+                .set_garnish_type(value);
             self.garnish_state_mut().set_active_type(11);
             self.garnish_set_x(j_usize, self.sprite_get_x(k).wrapping_add(u16::from(x)));
             self.garnish_set_y(
@@ -1872,41 +2073,85 @@ impl ZeldaState {
                     .wrapping_add(16),
             );
             let value = 15;
-            self.garnish_slot_mut(j_usize).set_countdown(value);
+            self.game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut self.ram, j_usize)
+                .set_countdown(value);
         }
     }
 
     pub(super) fn lightning_spawn_garnish(&mut self, k: usize) {
         let j = self.garnish_alloc_overwrite_old() as usize;
         let value = 9;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(9);
         let value = self.sprite_slot(k).a();
-        self.garnish_slot_mut(j).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_sprite(value);
         let value = self.sprite_slot(k).x_low();
-        self.garnish_slot_mut(j).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_x_low(value);
         let value = self.sprite_slot(k).x_high();
-        self.garnish_slot_mut(j).set_x_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_x_high(value);
         self.garnish_set_y(j, self.sprite_get_y(k).wrapping_add(16));
         let value = 32;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
     }
 
     pub(super) fn laser_beam_build_up_garnish(&mut self, k: usize) {
         let j = self.garnish_alloc_overwrite_old() as usize;
         let value = 4;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(4);
         self.garnish_set_x(j, self.sprite_get_x(k));
         self.garnish_set_y(j, self.sprite_get_y(k).wrapping_add(16));
         let value = 16;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
         let value = self.sprite_slot(k).graphics();
-        self.garnish_slot_mut(j).set_oam_flags(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_oam_flags(value);
         let value = k as u8;
-        self.garnish_slot_mut(j).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_sprite(value);
         let value = self.sprite_slot(k).floor();
-        self.garnish_slot_mut(j).set_floor(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_floor(value);
     }
 
     pub(super) fn laser_eye_fire_beam(&mut self, k: usize) {
@@ -1930,7 +2175,7 @@ impl ZeldaState {
             self.sprite_slot_mut(j).set_deflection_bits(0x48);
             self.sprite_slot_mut(j).set_ignore_projectile(0x48);
             self.sprite_slot_mut(j).set_delay_main(5);
-            if self.inventory_items().shield_type() == 3 {
+            if self.game_state.inventory.items.shield_type() == 3 {
                 self.sprite_slot_mut(j).set_flags5(32);
             }
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
@@ -1950,14 +2195,20 @@ impl ZeldaState {
     }
 
     pub(super) fn sasha_idle(&mut self, k: usize) {
-        let inventory = self.inventory_items();
-        let resources = self.player_resources();
+        let inventory = &self.game_state.inventory.items;
+        let resources = &self.game_state.inventory.player_resources;
         if resources.pendant_flags() & 4 == 0 {
             if self.sprite_show_solicited_message(k, 0x32) & 0x100 != 0 {
                 self.sprite_slot_mut(k).set_ai_state(1);
             }
         } else if !inventory.has_boots() {
-            let m = if self.save_progress().map_icons_indicator() >= 3 {
+            let m = if self
+                .game_state
+                .inventory
+                .save_progress
+                .map_icons_indicator()
+                >= 3
+            {
                 0x38
             } else {
                 0x39
@@ -1999,12 +2250,13 @@ impl ZeldaState {
         self.sprite_slot_mut(j).set_subtype2(1);
         self.old_man_enable_cutscene();
         self.follower_state_mut().set_indicator(0);
-        self.player_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
     }
 
     pub(super) fn old_man_enable_cutscene(&mut self) {
-        self.player_state_mut().immobilize();
-        self.player_state_mut().set_sprite_damage_disable_timer(1);
+        self.follower_link_state_mut().immobilize();
+        self.follower_link_state_mut()
+            .set_sprite_damage_disable_timer(1);
     }
 
     pub(super) fn sprite_ad_old_man(&mut self, k: usize) {
@@ -2063,8 +2315,12 @@ impl ZeldaState {
                     2 => {
                         self.sprite_slot_mut(k).set_head_direction(0);
                         self.sprite_slot_mut(k).set_direction(0);
-                        let j = self.garnish_state().active_overlord_index() as usize;
-                        let overlord = self.overlord_slot(j);
+                        let j = self
+                            .game_state
+                            .sprites
+                            .garnish_runtime
+                            .active_overlord_index() as usize;
+                        let overlord = self.game_state.sprites.overlord_slots.slot(j);
                         let x = overlord.x();
                         let y = overlord.y();
                         if y >= self.sprite_get_y(k) {
@@ -2083,8 +2339,9 @@ impl ZeldaState {
                     }
                     3 => {
                         self.sprite_slot_mut(k).set_state(0);
-                        self.player_state_mut().clear_immobilized();
-                        self.player_state_mut().clear_sprite_damage_disable_timer();
+                        self.follower_link_state_mut().clear_immobilized();
+                        self.follower_link_state_mut()
+                            .clear_sprite_damage_disable_timer();
                     }
                     _ => {}
                 }
@@ -2095,10 +2352,10 @@ impl ZeldaState {
                     self.player_resources_mut().set_heart_filler(160);
                     self.sprite_slot_mut(k).set_ai_state(0);
                 }
-                let j = if self.save_progress().progress_indicator() >= 3 {
+                let j = if self.game_state.inventory.save_progress.progress_indicator() >= 3 {
                     2
                 } else {
-                    self.inventory_items().moon_pearl() as usize
+                    self.game_state.inventory.items.moon_pearl() as usize
                 };
                 if self.sprite_show_solicited_message(k, OLD_MOUNTAIN_MAN_MSGS[j]) & 0x100 != 0 {
                     self.sprite_slot_mut(k).increment_ai_state();
@@ -2125,7 +2382,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_y_velocity(1);
                 if self.sprite_check_tile_collision(k) == 0 {
                     self.sprite_slot_mut(k).increment_ai_state();
-                    if self.follower_state().indicator() != 0 {
+                    if self.game_state.sprites.follower_runtime.indicator() != 0 {
                         self.sprite_slot_mut(k).set_ai_state(5);
                     }
                 }
@@ -2143,7 +2400,7 @@ impl ZeldaState {
                 if self.sprite_check_if_link_is_busy() {
                     return;
                 }
-                let j = if self.follower_state().dropped() != 0 {
+                let j = if self.game_state.sprites.follower_runtime.dropped() != 0 {
                     self.sprite_show_solicited_message(k, 0x109)
                 } else {
                     self.sprite_show_message_on_contact(k, 0x109)
@@ -2154,7 +2411,7 @@ impl ZeldaState {
             }
             3 => {
                 if self.multiselect_choice().value() == 0 {
-                    if self.follower_state().dropped() != 0 {
+                    if self.game_state.sprites.follower_runtime.dropped() != 0 {
                         self.sprite_show_message_unconditional(0x10c);
                         self.sprite_slot_mut(k).set_ai_state(2);
                     } else {
@@ -2196,18 +2453,23 @@ impl ZeldaState {
 
         match self.sprite_slot(k).ai_state() {
             0 => {
-                if self.player_resources().magic_consumption_level() >= 2
+                if self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .magic_consumption_level()
+                    >= 2
                     || !self.sprite_check_damage_to_link_same_layer(k)
                 {
                     return;
                 }
                 for i in (0..=4).rev() {
-                    if self.ancilla_slot(i).ancilla_type() == 0x1a {
+                    if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x1a {
                         self.sprite_spawn_superficial_bomb_blast(k);
                         self.sprite_sfx_queue_sfx1_with_pan(k, 0x0d);
                         self.sprite_slot_mut(k).increment_ai_state();
                         self.sprite_slot_mut(k).set_a(20);
-                        self.player_state_mut().immobilize();
+                        self.follower_link_state_mut().immobilize();
                         self.sprite_slot_mut(k).or_oam_flags(32);
                         return;
                     }
@@ -2264,7 +2526,7 @@ impl ZeldaState {
             4 => {
                 self.sprite_spawn_dummy_death_animation(k);
                 self.sprite_slot_mut(k).set_state(0);
-                self.player_state_mut().clear_immobilized();
+                self.follower_link_state_mut().clear_immobilized();
             }
             _ => {}
         }
@@ -2327,14 +2589,14 @@ impl ZeldaState {
     pub(super) fn sprite_wish_pond3(&mut self, k: usize) {
         match self.sprite_slot(k).ai_state() {
             0 => {
-                self.player_state_mut().clear_immobilized();
+                self.follower_link_state_mut().clear_immobilized();
                 if self.sprite_slot(k).delay_main() != 0 || self.sprite_check_if_link_is_busy() {
                     return;
                 }
                 if self.sprite_show_message_on_contact(k, 0x14a) & 0x100 != 0 {
                     self.sprite_slot_mut(k).set_ai_state(1);
                     self.link_reset_properties_a();
-                    self.player_state_mut().set_facing(0);
+                    self.follower_link_state_mut().set_facing(0);
                     self.sprite_slot_mut(k).set_head_direction(0);
                 }
             }
@@ -2342,7 +2604,7 @@ impl ZeldaState {
                 if self.multiselect_choice().value() == 0 {
                     self.sprite_show_message_unconditional(0x8a);
                     self.sprite_slot_mut(k).set_ai_state(2);
-                    self.player_state_mut().immobilize();
+                    self.follower_link_state_mut().immobilize();
                 } else {
                     self.sprite_show_message_unconditional(0x14b);
                     self.sprite_slot_mut(k).set_ai_state(0);
@@ -2353,7 +2615,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_ai_state(3);
                 let j = self.multiselect_choice().value() as usize;
                 self.sprite_slot_mut(k).set_c(j as u8);
-                let item = self.inventory_items().inventory_item(j);
+                let item = self.game_state.inventory.items.inventory_item(j);
                 let value = 0;
                 if j == 3 {
                     self.player_resources_mut().set_bombs(value);
@@ -2393,7 +2655,7 @@ impl ZeldaState {
             4 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
-                    if self.palette_filter().countdown() == 0 {
+                    if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_show_message_unconditional(0x8b);
                         self.Palette_RevertTranslucencySwap();
                         self.set_sub_screen_layers(0);
@@ -2413,7 +2675,7 @@ impl ZeldaState {
             }
             6 => {
                 self.sprite_slot_mut(k).set_ai_state(7);
-                if self.save_progress().dark_world_state() == 0 {
+                if self.game_state.inventory.save_progress.dark_world_state() == 0 {
                     match self.sprite_slot(k).graphics() {
                         12 => {
                             self.sprite_slot_mut(k).set_graphics(42);
@@ -2470,10 +2732,10 @@ impl ZeldaState {
             8 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
-                    if self.palette_filter().countdown() == 30 {
+                    if self.game_state.display.palette_filter.countdown() == 30 {
                         let j = self.sprite_slot(k).e() as usize;
                         self.sprite_slot_mut(j).set_state(0);
-                    } else if self.palette_filter().countdown() == 0 {
+                    } else if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_slot_mut(k).set_ai_state(9);
                     }
                 }
@@ -2519,7 +2781,7 @@ impl ZeldaState {
         const COST_HEX: [u8; 4] = [5, 0x20, 0x25, 0x50];
         match self.sprite_slot(k).ai_state() {
             0 => {
-                self.player_state_mut().clear_immobilized();
+                self.follower_link_state_mut().clear_immobilized();
                 if self.sprite_slot(k).delay_main() != 0 || self.sprite_check_if_link_is_busy() {
                     return;
                 }
@@ -2527,19 +2789,24 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_ai_state(1);
                     self.link_reset_properties_a();
                     self.ancilla_terminate_sparkle_objects();
-                    self.player_state_mut().set_facing(0);
+                    self.follower_link_state_mut().set_facing(0);
                 }
             }
             1 => {
                 if self.multiselect_choice().value() == 0 {
-                    let i = u8::from(self.player_resources().has_bomb_or_arrow_upgrade());
+                    let i = u8::from(
+                        self.game_state
+                            .inventory
+                            .player_resources
+                            .has_bomb_or_arrow_upgrade(),
+                    );
                     self.sprite_slot_mut(k).set_graphics(i * 2);
                     let cost_index = (i * 2) as usize;
                     self.dialogue_number_mut()
                         .set_packed_digits(COST_HEX[cost_index], COST_HEX[cost_index + 1]);
                     self.sprite_show_message_unconditional(0x14e);
                     self.sprite_slot_mut(k).set_ai_state(2);
-                    self.player_state_mut().immobilize();
+                    self.follower_link_state_mut().immobilize();
                 } else {
                     self.happiness_pond_show_later(k);
                 }
@@ -2551,7 +2818,9 @@ impl ZeldaState {
                     .wrapping_add(self.multiselect_choice().value());
                 self.dialogue_number_mut()
                     .set_high_pair(COST_HEX[i as usize]);
-                if self.player_resources().rupees_goal() < COST[i as usize] as u16 {
+                if self.game_state.inventory.player_resources.rupees_goal()
+                    < COST[i as usize] as u16
+                {
                     self.happiness_pond_show_later(k);
                 } else {
                     self.sprite_slot_mut(k).set_direction(COST[i as usize]);
@@ -2562,7 +2831,12 @@ impl ZeldaState {
             3 => {
                 self.sprite_slot_mut(k).set_delay_main(80);
                 let i = self.sprite_slot(k).direction();
-                let rupees = self.player_resources().rupees_goal().wrapping_sub(i as u16);
+                let rupees = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .rupees_goal()
+                    .wrapping_sub(i as u16);
                 self.player_resources_mut().set_rupees_goal(rupees);
                 let pond = self.player_resources_mut().add_rupees_to_pond(i);
                 self.add_happiness_pond_rupees(self.sprite_slot(k).head_direction());
@@ -2571,7 +2845,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_ai_state(5);
                     return;
                 }
-                let pond = self.player_resources().rupees_in_pond();
+                let pond = self.game_state.inventory.player_resources.rupees_in_pond();
                 self.dialogue_number_mut()
                     .set_low_pair((pond / 10) * 16 + (pond % 10));
                 self.sprite_slot_mut(k).set_ai_state(4);
@@ -2606,7 +2880,7 @@ impl ZeldaState {
             6 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
-                    if self.palette_filter().countdown() == 0 {
+                    if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_show_message_unconditional(0x95);
                         self.Palette_RevertTranslucencySwap();
                         self.set_sub_screen_layers(0);
@@ -2626,7 +2900,11 @@ impl ZeldaState {
             }
             8 => {
                 const MAX_BOMBS_HEX: [u8; 8] = [0x10, 0x15, 0x20, 0x25, 0x30, 0x35, 0x40, 0x50];
-                let i = self.player_resources().next_bomb_upgrade_level();
+                let i = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .next_bomb_upgrade_level();
                 if i != 8 {
                     let filler = MAX_BOMBS_HEX[i as usize];
                     {
@@ -2637,7 +2915,12 @@ impl ZeldaState {
                     self.dialogue_number_mut().set_low_pair(filler);
                     self.sprite_show_message_unconditional(0x96);
                 } else {
-                    let rupees = self.player_resources().rupees_goal().wrapping_add(100);
+                    let rupees = self
+                        .game_state
+                        .inventory
+                        .player_resources
+                        .rupees_goal()
+                        .wrapping_add(100);
                     self.player_resources_mut().set_rupees_goal(rupees);
                     self.sprite_show_message_unconditional(0x98);
                 }
@@ -2653,10 +2936,10 @@ impl ZeldaState {
             10 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
                     self.PaletteFilter_SP5F();
-                    if self.palette_filter().countdown() == 30 {
+                    if self.game_state.display.palette_filter.countdown() == 30 {
                         let j = self.sprite_slot(k).e() as usize;
                         self.sprite_slot_mut(j).set_state(0);
-                    } else if self.palette_filter().countdown() == 0 {
+                    } else if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_slot_mut(k).set_ai_state(11);
                     }
                 }
@@ -2670,7 +2953,11 @@ impl ZeldaState {
             12 => {
                 const ARROW_UPGRADE_REFILL_AMOUNTS: [u8; 8] =
                     [0x30, 0x35, 0x40, 0x45, 0x50, 0x55, 0x60, 0x70];
-                let i = self.player_resources().next_arrow_upgrade_level();
+                let i = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .next_arrow_upgrade_level();
                 if i != 8 {
                     let filler = ARROW_UPGRADE_REFILL_AMOUNTS[i as usize];
                     {
@@ -2681,7 +2968,12 @@ impl ZeldaState {
                     self.dialogue_number_mut().set_low_pair(filler);
                     self.sprite_show_message_unconditional(0x97);
                 } else {
-                    let rupees = self.player_resources().rupees_goal().wrapping_add(100);
+                    let rupees = self
+                        .game_state
+                        .inventory
+                        .player_resources
+                        .rupees_goal()
+                        .wrapping_add(100);
                     self.player_resources_mut().set_rupees_goal(rupees);
                     self.sprite_show_message_unconditional(0x98);
                 }
@@ -2844,7 +3136,7 @@ impl ZeldaState {
     }
 
     pub(super) fn beamos_fire_laser(&mut self, k: usize) {
-        if self.sprite_system().limit_instance() >= 4 {
+        if self.game_state.sprites.system.limit_instance() >= 4 {
             return;
         }
 
@@ -2858,13 +3150,15 @@ impl ZeldaState {
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
         self.sprite_set_x(
             j,
-            info.r0_x
-                .wrapping_add_signed(i16::from(self.draw_scratch_position().x_low() as i8)),
+            info.r0_x.wrapping_add_signed(i16::from(
+                self.game_state.sprites.draw_hitbox_work.x_low() as i8,
+            )),
         );
         self.sprite_set_y(
             j,
-            info.r2_y
-                .wrapping_add_signed(i16::from(self.draw_scratch_position().y_low() as i8)),
+            info.r2_y.wrapping_add_signed(i16::from(
+                self.game_state.sprites.draw_hitbox_work.y_low() as i8,
+            )),
         );
         self.sprite_apply_speed_towards_link(j, 0x20);
         self.sprite_slot_mut(j).set_flags2(0x3f);
@@ -2874,7 +3168,7 @@ impl ZeldaState {
         self.sprite_slot_mut(j).set_oam_flags(3);
         self.sprite_slot_mut(j).set_bump_damage(4);
         self.sprite_slot_mut(j).set_delay_aux1(12);
-        let t = self.sprite_system().limit_instance() as usize;
+        let t = self.game_state.sprites.system.limit_instance() as usize;
         self.sprite_slot_mut(j).set_graphics(t as u8);
         self.sprite_system_mut().increment_limit_instance();
 
@@ -2897,15 +3191,15 @@ impl ZeldaState {
     }
 
     pub(super) fn potion_cauldron_check_bottles(&mut self) -> bool {
-        (self.inventory_items().bottle(0)
-            | self.inventory_items().bottle(1)
-            | self.inventory_items().bottle(2)
-            | self.inventory_items().bottle(3))
+        (self.game_state.inventory.items.bottle(0)
+            | self.game_state.inventory.items.bottle(1)
+            | self.game_state.inventory.items.bottle(2)
+            | self.game_state.inventory.items.bottle(3))
             >= 2
     }
 
     pub(super) fn dark_world_hint_npc_handle_payment(&mut self) -> bool {
-        let rupees_goal = self.player_resources().rupees_goal();
+        let rupees_goal = self.game_state.inventory.player_resources.rupees_goal();
         if rupees_goal < 20 {
             return false;
         }
@@ -2920,7 +3214,7 @@ impl ZeldaState {
     }
 
     pub(super) fn fairy_check_if_touchable(&mut self, k: usize) {
-        let msg = self.dialogue_message_index().value();
+        let msg = self.game_state.messaging.dialogue_message_index.value();
         if self.game_state.frame.submodule == 2 && (msg == 0xc9 || msg == 0xca) {
             self.sprite_slot_mut(k).set_delay_aux4(40);
         }
@@ -2943,8 +3237,8 @@ impl ZeldaState {
         const Y: [u16; 2] = [19, 20];
         const W: [u16; 2] = [98, 106];
         const H: [u16; 2] = [37, 40];
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let link_x = self.player_state().x();
         let link_y = self.player_state().y();
         cur_x.wrapping_sub(link_x).wrapping_add(X[j]) < W[j]
@@ -2954,19 +3248,43 @@ impl ZeldaState {
     pub(super) fn blind_laser_spawn_trail_garnish(&mut self, j: usize) {
         let k = self.garnish_alloc_overwrite_old() as usize;
         let value = 15;
-        self.garnish_slot_mut(k).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(15);
         let value = self.sprite_slot(j).graphics();
-        self.garnish_slot_mut(k).set_oam_flags(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_oam_flags(value);
         let value = j as u8;
-        self.garnish_slot_mut(k).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_sprite(value);
         let value = self.sprite_slot(j).x_low();
-        self.garnish_slot_mut(k).set_x_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_low(value);
         let value = self.sprite_slot(j).x_high();
-        self.garnish_slot_mut(k).set_x_high(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_x_high(value);
         self.garnish_set_y(k, self.sprite_get_y(j).wrapping_add(16));
         let value = 10;
-        self.garnish_slot_mut(k).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_countdown(value);
     }
 
     pub(super) fn running_boy_spawn_dust_garnish(&mut self, k: usize) {
@@ -2976,12 +3294,20 @@ impl ZeldaState {
         }
         let j = self.garnish_alloc_force() as usize;
         let value = 20;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(20);
         self.garnish_set_x(j, self.sprite_get_x(k).wrapping_add(4));
         self.garnish_set_y(j, self.sprite_get_y(k).wrapping_add(28));
         let value = 10;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
     }
 
     pub(super) fn sprite_cd_spawn_garnish(&mut self, k: usize) {
@@ -2992,14 +3318,26 @@ impl ZeldaState {
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x14);
         let j = self.garnish_alloc_overwrite_old() as usize;
         let value = 0x0c;
-        self.garnish_slot_mut(j).set_garnish_type(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_garnish_type(value);
         self.garnish_state_mut().set_active_type(0x0c);
         let value = k as u8;
-        self.garnish_slot_mut(j).set_sprite(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_sprite(value);
         self.garnish_set_x(j, self.sprite_get_x(k));
         self.garnish_set_y(j, self.sprite_get_y(k).wrapping_add(16));
         let value = 127;
-        self.garnish_slot_mut(j).set_countdown(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, j)
+            .set_countdown(value);
     }
 
     pub(super) fn dark_world_hint_npc_restore_health(&mut self, k: usize) {
@@ -3009,10 +3347,14 @@ impl ZeldaState {
 
     pub(super) fn pipe_validate_entry(&mut self) -> bool {
         for k in (0..=4).rev() {
-            if self.ancilla_slot(k).ancilla_type() == 0x31 {
+            if self.game_state.sprites.ancilla_slots.slot(k).ancilla_type() == 0x31 {
                 self.player_state_mut().clear_position_mode();
                 self.player_state_mut().clear_direction_lock();
-                self.ancilla_slot_mut(k).clear();
+                self.game_state
+                    .sprites
+                    .ancilla_slots
+                    .slot_mut(&mut self.ram, k)
+                    .clear();
                 break;
             }
         }
@@ -3039,7 +3381,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_bari(&mut self, k: usize) {
         self.sprite_slot_mut(k).set_z(6);
-        if self.dungeon_room_tracking().room_index2() == 206 {
+        if self.game_state.dungeon.room_tracking.room_index2() == 206 {
             self.sprite_slot_mut(k).decrement_c();
         }
         let delay_aux1 = (self.get_random_number() & 63).wrapping_add(128);
@@ -3126,9 +3468,21 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_purple_chest(&mut self, k: usize) {
-        if self.follower_state().indicator() != 12
-            && self.save_progress().progress_indicator_3() & 16 == 0
-            && self.save_progress().progress_indicator_3() & 32 != 0
+        if self.game_state.sprites.follower_runtime.indicator() != 12
+            && self
+                .game_state
+                .inventory
+                .save_progress
+                .progress_indicator_3()
+                & 16
+                == 0
+            && self
+                .game_state
+                .inventory
+                .save_progress
+                .progress_indicator_3()
+                & 32
+                != 0
         {
             self.sprite_slot_mut(k).increment_ignore_projectile();
         } else {
@@ -3138,9 +3492,15 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_smithy(&mut self, k: usize) {
         self.sprite_slot_mut(k).increment_ignore_projectile();
-        if self.save_progress().dark_world_state() & 64 != 0 {
-            if self.save_progress().progress_indicator_3() & 32 != 0
-                || self.follower_state().indicator() != 0
+        if self.game_state.inventory.save_progress.dark_world_state() & 64 != 0 {
+            if self
+                .game_state
+                .inventory
+                .save_progress
+                .progress_indicator_3()
+                & 32
+                != 0
+                || self.game_state.sprites.follower_runtime.indicator() != 0
             {
                 self.sprite_slot_mut(k).set_state(0);
             } else {
@@ -3152,7 +3512,14 @@ impl ZeldaState {
         self.sprite_prep_smithy_spawn_dumb_barrier_sprite(k);
         self.sprite_slot_mut(k).add_x_low(2);
         self.sprite_slot_mut(k).subtract_y_low(3);
-        if self.save_progress().progress_indicator_3() & 32 == 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .progress_indicator_3()
+            & 32
+            == 0
+        {
             return;
         }
 
@@ -3162,7 +3529,14 @@ impl ZeldaState {
         self.sprite_slot_mut(j).set_e(k as u8);
         self.sprite_slot_mut(k).set_e(j as u8);
 
-        if self.save_progress().progress_indicator_3() & 0x80 != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .progress_indicator_3()
+            & 0x80
+            != 0
+        {
             self.sprite_slot_mut(k).set_ai_state(5);
             self.sprite_slot_mut(j).set_ai_state(5);
         }
@@ -3209,7 +3583,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_haunted_grove_ostritch(&mut self, k: usize) {
-        if self.inventory_items().flute() >= 2 {
+        if self.game_state.inventory.items.flute() >= 2 {
             self.sprite_slot_mut(k).set_state(0);
         }
         self.sprite_slot_mut(k).increment_ignore_projectile();
@@ -3229,16 +3603,18 @@ impl ZeldaState {
 
         self.sprite_slot_mut(k).set_floor(2);
         if self.game_state.world.location.dungeon_room() == 0x0107 {
-            if self.inventory_items().book() != 0 {
+            if self.game_state.inventory.items.book() != 0 {
                 self.sprite_slot_mut(k).set_state(0);
             } else {
                 self.DecodeAnimatedSpriteTile_variable(0x0e);
             }
         } else {
-            let j = self.sprite_battle().item_drop_counter();
+            let j = self.game_state.sprite_battle.item_drop_counter();
             self.sprite_battle_mut().increment_item_drop_counter();
             self.sprite_slot_mut(k).set_die_action(j);
-            if self.dungeon_savegame_state().savegame_state_bits() & DASH_ITEM_MASK[j as usize] != 0
+            if self.game_state.dungeon.savegame_state.savegame_state_bits()
+                & DASH_ITEM_MASK[j as usize]
+                != 0
             {
                 self.sprite_slot_mut(k).set_state(0);
             }
@@ -3337,7 +3713,7 @@ impl ZeldaState {
                 if self.sprite_slot(k).y_low().wrapping_add(7) < self.player_state().y() as u8
                     && self.sprite_direction_to_face_link(k, None) == 2
                 {
-                    if self.follower_state().indicator() == 0 {
+                    if self.game_state.sprites.follower_runtime.indicator() == 0 {
                         if self.sprite_show_solicited_message(k, 0x187) & 0x100 != 0 {
                             self.sprite_slot_mut(k).increment_ai_state();
                         }
@@ -3347,7 +3723,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                let rupees = self.player_resources().rupees_goal();
+                let rupees = self.game_state.inventory.player_resources.rupees_goal();
                 if self.multiselect_choice().value() == 0 && rupees >= 80 {
                     self.player_resources_mut()
                         .set_rupees_goal(rupees.wrapping_sub(80));
@@ -3418,11 +3794,20 @@ impl ZeldaState {
         self.minigame_state_mut().set_is_archer_or_shovel_game(what);
         self.link_reset_properties_c();
         for k in (0..=4).rev() {
-            match self.ancilla_slot(k).ancilla_type() {
-                0x30 | 0x31 => self.ancilla_slot_mut(k).clear(),
+            match self.game_state.sprites.ancilla_slots.slot(k).ancilla_type() {
+                0x30 | 0x31 => self
+                    .game_state
+                    .sprites
+                    .ancilla_slots
+                    .slot_mut(&mut self.ram, k)
+                    .clear(),
                 5 => {
                     self.minigame_state_mut().clear_flag_boomerang_in_place();
-                    self.ancilla_slot_mut(k).clear();
+                    self.game_state
+                        .sprites
+                        .ancilla_slots
+                        .slot_mut(&mut self.ram, k)
+                        .clear();
                 }
                 _ => {}
             }
@@ -3430,7 +3815,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_thieves_town_grate(&mut self, k: usize) {
-        if self.overworld_event_info().event_info(0x58) & 0x20 != 0 {
+        if self.game_state.world.overworld.event_info.event_info(0x58) & 0x20 != 0 {
             self.sprite_slot_mut(k).set_state(0);
         }
         self.sprite_slot_mut(k).increment_ignore_projectile();
@@ -3509,9 +3894,13 @@ impl ZeldaState {
 
     pub(super) fn shop_keeper_rapid_terminate_receive_item(&mut self) {
         for i in (0..=4).rev() {
-            if self.ancilla_slot(i).ancilla_type() == 0x22 {
+            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x22 {
                 let value = 1;
-                self.ancilla_slot_mut(i).set_aux_timer(value);
+                self.game_state
+                    .sprites
+                    .ancilla_slots
+                    .slot_mut(&mut self.ram, i)
+                    .set_aux_timer(value);
             }
         }
     }
@@ -3572,27 +3961,42 @@ impl ZeldaState {
     pub(super) fn sprite_prep_kiki(&mut self, k: usize) {
         self.sprite_slot_mut(k).increment_ignore_projectile();
         let screen = self.game_state.world.location.overworld_screen_index() as usize;
-        if self.overworld_event_info().event_info(screen) & 0x20 != 0 {
+        if self
+            .game_state
+            .world
+            .overworld
+            .event_info
+            .event_info(screen)
+            & 0x20
+            != 0
+        {
             self.sprite_slot_mut(k).set_state(0);
         }
     }
 
     pub(super) fn sprite_prep_locksmith(&mut self, k: usize) {
         self.sprite_slot_mut(k).increment_ignore_projectile();
-        if self.follower_state().indicator() == 9 {
+        if self.game_state.sprites.follower_runtime.indicator() == 9 {
             self.sprite_slot_mut(k).set_state(0);
             return;
         }
-        if self.follower_state().indicator() == 12 {
+        if self.game_state.sprites.follower_runtime.indicator() == 12 {
             self.sprite_slot_mut(k).set_ai_state(2);
         }
-        if self.save_progress().progress_indicator_3() & 0x10 != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .progress_indicator_3()
+            & 0x10
+            != 0
+        {
             self.sprite_slot_mut(k).set_ai_state(4);
         }
     }
 
     pub(super) fn sprite_prep_sick_kid(&mut self, k: usize) {
-        if self.inventory_items().bug_net() != 0 {
+        if self.game_state.inventory.items.bug_net() != 0 {
             self.sprite_slot_mut(k).set_ai_state(3);
         }
         self.sprite_slot_mut(k).increment_ignore_projectile();
@@ -3614,8 +4018,8 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_chainchomp_bounce(&mut self, k: usize) {
         let mut i = k * 8;
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         for _ in (0..=5).rev() {
             self.chain_chomp_history_mut().set_x(i, cur_x);
             self.chain_chomp_history_mut().set_y(i, cur_y);
@@ -3637,8 +4041,18 @@ impl ZeldaState {
         let x = u16::from(self.sprite_slot(k).a()) | (u16::from(self.sprite_slot(k).b()) << 8);
         let y = u16::from(self.sprite_slot(k).c()) | (u16::from(self.sprite_slot(k).g()) << 8);
         let mut pos = k * 8;
-        let x2 = self.chain_chomp_history().x(pos).wrapping_sub(x);
-        let y2 = self.chain_chomp_history().y(pos).wrapping_sub(y);
+        let x2 = self
+            .game_state
+            .sprites
+            .chain_chomp_history
+            .x(pos)
+            .wrapping_sub(x);
+        let y2 = self
+            .game_state
+            .sprites
+            .chain_chomp_history
+            .y(pos)
+            .wrapping_sub(y);
         pos += 1;
 
         for _ in (0..=5).rev() {
@@ -3646,7 +4060,7 @@ impl ZeldaState {
             let x3 = x.wrapping_add_signed(chain_chomp_one_mult_prep(x2 as u8, mul) as i16);
             let y3 = y.wrapping_add_signed(chain_chomp_one_mult_prep(y2 as u8, mul) as i16);
 
-            let old_x = self.chain_chomp_history().x(pos);
+            let old_x = self.game_state.sprites.chain_chomp_history.x(pos);
             let dx = old_x.wrapping_sub(x3);
             if dx != 0 {
                 let new_x = if sign16(dx) {
@@ -3657,7 +4071,7 @@ impl ZeldaState {
                 self.chain_chomp_history_mut().set_x(pos, new_x);
             }
 
-            let old_y = self.chain_chomp_history().y(pos);
+            let old_y = self.game_state.sprites.chain_chomp_history.y(pos);
             let dy = old_y.wrapping_sub(y3);
             if dy != 0 {
                 let new_y = if sign16(dy) {
@@ -3674,14 +4088,14 @@ impl ZeldaState {
 
     pub(super) fn chain_chomp_handle_leash(&mut self, k: usize) {
         let mut pos = k * 8;
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         self.chain_chomp_history_mut().set_x(pos, cur_x);
         self.chain_chomp_history_mut().set_y(pos, cur_y);
 
         for _ in 0..6 {
-            let x = self.chain_chomp_history().x(pos);
-            let next_x = self.chain_chomp_history().x(pos + 1);
+            let x = self.game_state.sprites.chain_chomp_history.x(pos);
+            let next_x = self.game_state.sprites.chain_chomp_history.x(pos + 1);
             let dx = x.wrapping_sub(next_x);
             if !sign16(dx.wrapping_sub(8)) {
                 self.chain_chomp_history_mut()
@@ -3691,8 +4105,8 @@ impl ZeldaState {
                     .set_x(pos + 1, x.wrapping_add(8));
             }
 
-            let y = self.chain_chomp_history().y(pos);
-            let next_y = self.chain_chomp_history().y(pos + 1);
+            let y = self.game_state.sprites.chain_chomp_history.y(pos);
+            let next_y = self.game_state.sprites.chain_chomp_history.y(pos + 1);
             let dy = y.wrapping_sub(next_y);
             if !sign16(dy.wrapping_sub(8)) {
                 self.chain_chomp_history_mut()
@@ -3744,7 +4158,14 @@ impl ZeldaState {
             }
         }
         self.sprite_prep_hobo_spawn_fire(k);
-        if self.save_progress().progress_indicator_3() & 1 != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .progress_indicator_3()
+            & 1
+            != 0
+        {
             self.sprite_slot_mut(0).set_ai_state(3);
         }
         self.sprite_slot_mut(0).set_ignore_projectile(1);
@@ -3903,7 +4324,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_b(0);
         self.temp_counter_mut().set(2);
         loop {
-            let i = self.temp_counter().value() as usize;
+            let i = self.game_state.scratch_counter.value() as usize;
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0x82, &mut info);
             if j >= 0 {
@@ -3918,14 +4339,14 @@ impl ZeldaState {
                 self.sprite_slot_mut(j).set_b(B[i]);
             }
             self.temp_counter_mut().decrement();
-            if sign8(self.temp_counter().value()) {
+            if sign8(self.game_state.scratch_counter.value()) {
                 break;
             }
         }
     }
 
     pub(super) fn sprite_prep_king_zora(&mut self, k: usize) {
-        if self.inventory_items().flippers() != 0 {
+        if self.game_state.inventory.items.flippers() != 0 {
             self.sprite_slot_mut(k).set_state(0);
         } else {
             self.sprite_slot_mut(k).increment_ignore_projectile();
@@ -3937,7 +4358,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_octorok(&mut self, k: usize) {
         const BUMP_DAMAGE: [u8; 2] = [3, 5];
         const HEALTH: [u8; 2] = [2, 4];
-        let j = self.world_region().dark_world_region_index() as usize;
+        let j = self.game_state.world.region.dark_world_region_index() as usize;
         self.sprite_slot_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         let delay_main = self.get_random_number() & 127;
@@ -4004,7 +4425,11 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_swamola_initialize_segments(&mut self, k: usize) {
         const BUGGY_SWAMOLA_LOOKUP: [usize; 6] = [0x1c, 0xa9, 0x03, 0x9d, 0x90, 0x0d];
-        let mut j = if self.enhanced_features().has(FEATURE_MISC_BUG_FIXES_PREP) {
+        let mut j = if self
+            .game_state
+            .enhanced_features
+            .has(FEATURE_MISC_BUG_FIXES_PREP)
+        {
             k * 32
         } else {
             BUGGY_SWAMOLA_LOOKUP[k]
@@ -4019,11 +4444,19 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_flute_kid(&mut self, k: usize) {
         self.sprite_slot_mut(k).increment_ignore_projectile();
-        let subtype2 = (self.save_progress().dark_world_state() >> 6) & 1;
+        let subtype2 = (self.game_state.inventory.save_progress.dark_world_state() >> 6) & 1;
         self.sprite_slot_mut(k).set_subtype2(subtype2);
-        let flute = self.inventory_items().flute();
+        let flute = self.game_state.inventory.items.flute();
         if self.sprite_slot(k).subtype2() != 0 {
-            if self.save_progress().progress_indicator_3() & 8 != 0 || flute > 2 {
+            if self
+                .game_state
+                .inventory
+                .save_progress
+                .progress_indicator_3()
+                & 8
+                != 0
+                || flute > 2
+            {
                 self.sprite_slot_mut(k).set_graphics(3);
                 self.sprite_slot_mut(k).set_ai_state(5);
             } else if flute == 2 {
@@ -4079,7 +4512,11 @@ impl ZeldaState {
                 .set_z_offset(0xff);
         }
         let value = 7;
-        self.garnish_slot_mut(k).set_y_low(value);
+        self.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut self.ram, k)
+            .set_y_low(value);
     }
 
     pub(super) fn sprite_prep_bumper(&mut self, k: usize) {
@@ -4137,7 +4574,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_desert_statue(&mut self, k: usize) {
-        let limit_instance = self.sprite_system().limit_instance();
+        let limit_instance = self.game_state.sprites.system.limit_instance();
         self.sprite_slot_mut(k).set_a(limit_instance);
         self.sprite_system_mut().increment_limit_instance();
         self.sprite_prep_move_down_8px_right8px(k);
@@ -4159,8 +4596,12 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_crystal_switch(&mut self, k: usize) {
         const CRYSTAL_SWITCH_PAL: [u8; 2] = [2, 4];
-        let oam_flags = CRYSTAL_SWITCH_PAL
-            [(self.dungeon_environment().orange_blue_barrier_state() & 1) as usize];
+        let oam_flags = CRYSTAL_SWITCH_PAL[(self
+            .game_state
+            .dungeon
+            .environment
+            .orange_blue_barrier_state()
+            & 1) as usize];
         self.sprite_slot_mut(k).or_oam_flags(oam_flags);
     }
 
@@ -4189,7 +4630,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_graphics(0);
         self.sprite_slot_mut(k).set_direction(3);
         self.sprite_prep_move_down_8px_right8px(k);
-        let oam_flags = OAM_FLAGS[self.world_region().dark_world_region_index() as usize];
+        let oam_flags = OAM_FLAGS[self.game_state.world.region.dark_world_region_index() as usize];
         self.sprite_slot_mut(k).set_oam_flags(oam_flags);
     }
 
@@ -4209,12 +4650,36 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).add_x_low(8);
                 self.sprite_slot_mut(k).add_y_low(16);
                 self.trinexx_cache_position(k);
-                self.overlord_slot_mut(2).set_x_low(0);
-                self.overlord_slot_mut(3).set_x_low(0);
-                self.overlord_slot_mut(5).set_x_low(0);
-                self.overlord_slot_mut(7).set_x_low(0);
-                self.overlord_slot_mut(0).set_x_high(0);
-                self.overlord_slot_mut(6).set_x_low(255);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 2)
+                    .set_x_low(0);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 3)
+                    .set_x_low(0);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 5)
+                    .set_x_low(0);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 7)
+                    .set_x_low(0);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 0)
+                    .set_x_high(0);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 6)
+                    .set_x_low(255);
                 self.trinexx_restore_xy(k);
             }
             0xcc => {
@@ -4263,10 +4728,10 @@ impl ZeldaState {
     pub(super) fn sprite_prep_shield_pickup(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_nice_bee(&mut self, k: usize) {
-        let or_bottle = self.inventory_items().bottle(0)
-            | self.inventory_items().bottle(1)
-            | self.inventory_items().bottle(2)
-            | self.inventory_items().bottle(3);
+        let or_bottle = self.game_state.inventory.items.bottle(0)
+            | self.game_state.inventory.items.bottle(1)
+            | self.game_state.inventory.items.bottle(2)
+            | self.game_state.inventory.items.bottle(3);
         if or_bottle & 8 != 0 {
             self.sprite_slot_mut(k).set_state(0);
         }
@@ -4313,8 +4778,16 @@ impl ZeldaState {
         let subtype2 = self.get_random_number();
         self.sprite_slot_mut(k).set_subtype2(subtype2);
         if k == 13 {
-            self.overlord_slot_mut(2).set_x_low(0);
-            self.overlord_slot_mut(3).set_x_low(0);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, 2)
+                .set_x_low(0);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, 3)
+                .set_x_low(0);
             self.arrghus_handle_puffs(0);
         }
         let puff_home = self.arrghus_puff_home_position(k);
@@ -4344,10 +4817,17 @@ impl ZeldaState {
         ];
 
         let base = self
-            .overlord_slot(0)
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot(0)
             .x()
-            .wrapping_add(self.overlord_slot(4).x_low() as u16);
-        self.overlord_slot_mut(0).set_x(base);
+            .wrapping_add(self.game_state.sprites.overlord_slots.slot(4).x_low() as u16);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, 0)
+            .set_x(base);
 
         if self.game_state.frame.frame_counter & 3 == 0 {
             self.sprite_slot_mut(k).increment_a();
@@ -4367,7 +4847,10 @@ impl ZeldaState {
         for i in 0..13 {
             let r0 = base.wrapping_add(PUFF_ORBIT_BASE_ANGLES[i]) ^ PUFF_ORBIT_ANGLE_XOR_MASKS[i];
             let r14 = self
-                .overlord_slot(2)
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(2)
                 .x_low()
                 .wrapping_add(PUFF_ORBIT_PHASE_OFFSETS[i]);
             let sin_arg = r14
@@ -4400,15 +4883,23 @@ impl ZeldaState {
     pub(super) fn heart_upgrade_check_if_already_obtained(&mut self, k: usize) {
         if self.game_state.world.location.is_outdoors() {
             let screen = self.game_state.world.location.overworld_screen_index() as usize;
-            if (screen == 0x3b && self.overworld_event_info().event_info(0x3b) & 0x20 == 0)
-                || self.overworld_event_info().event_info(screen) & 0x40 != 0
+            if (screen == 0x3b
+                && self.game_state.world.overworld.event_info.event_info(0x3b) & 0x20 == 0)
+                || self
+                    .game_state
+                    .world
+                    .overworld
+                    .event_info
+                    .event_info(screen)
+                    & 0x40
+                    != 0
             {
                 self.sprite_slot_mut(k).set_state(0);
             }
         } else {
             let j = self.sprite_slot(k).x_high() & 1;
             let mask = if j != 0 { 0x2000 } else { 0x4000 };
-            if self.dungeon_savegame_state().savegame_state_bits() & mask != 0 {
+            if self.game_state.dungeon.savegame_state.savegame_state_bits() & mask != 0 {
                 self.sprite_slot_mut(k).set_state(0);
             }
         }
@@ -4424,7 +4915,7 @@ impl ZeldaState {
             } else {
                 0x4000
             };
-            let bits = self.dungeon_savegame_state().savegame_state_bits() | mask;
+            let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | mask;
             self.dungeon_savegame_state_mut()
                 .set_savegame_state_bits(bits);
         }
@@ -4440,13 +4931,13 @@ impl ZeldaState {
 
     pub(super) fn sprite_prep_small_key(&mut self, k: usize) {
         self.sprite_slot_mut(k).set_subtype(255);
-        let j = self.sprite_battle().item_drop_counter();
+        let j = self.game_state.sprite_battle.item_drop_counter();
         self.sprite_battle_mut().increment_item_drop_counter();
         self.sprite_slot_mut(k).set_die_action(j);
     }
 
     pub(super) fn sprite_prep_key_set_item_drop(&mut self, k: usize) {
-        let die_action = self.sprite_battle().item_drop_counter();
+        let die_action = self.game_state.sprite_battle.item_drop_counter();
         self.sprite_slot_mut(k).set_die_action(die_action);
         self.sprite_battle_mut().increment_item_drop_counter();
     }
@@ -4475,8 +4966,8 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_subtype2(2);
             return;
         }
-        if self.follower_state().indicator() == 0 {
-            if self.inventory_items().mirror() == 2 {
+        if self.game_state.sprites.follower_runtime.indicator() == 0 {
+            if self.game_state.inventory.items.mirror() == 2 {
                 self.sprite_slot_mut(k).set_state(0);
             }
             self.follower_state_mut().set_indicator(4);
@@ -4501,7 +4992,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_zelda_bounce(&mut self, k: usize) {
-        if self.inventory_items().sword_type() >= 2 {
+        if self.game_state.inventory.items.sword_type() >= 2 {
             self.sprite_slot_mut(k).set_state(0);
             return;
         }
@@ -4510,14 +5001,14 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_direction(dir);
         self.sprite_slot_mut(k).set_head_direction(dir);
 
-        let follower = self.follower_state().indicator();
+        let follower = self.game_state.sprites.follower_runtime.indicator();
         self.follower_state_mut().set_indicator(1);
         self.load_follower_graphics();
         self.follower_state_mut().set_indicator(follower);
 
         if self.game_state.world.location.dungeon_room_index() == 0x12 {
             self.sprite_slot_mut(k).set_subtype2(2);
-            if self.save_progress().progress_flags() & 4 == 0 {
+            if self.game_state.inventory.save_progress.progress_flags() & 4 == 0 {
                 self.sprite_slot_mut(k).set_state(0);
             } else {
                 let x = self.sprite_get_x(k).wrapping_add(6);
@@ -4528,8 +5019,8 @@ impl ZeldaState {
             }
         } else {
             self.sprite_slot_mut(k).set_subtype2(0);
-            if self.follower_state().indicator() == 1
-                || self.save_progress().progress_flags() & 4 != 0
+            if self.game_state.sprites.follower_runtime.indicator() == 1
+                || self.game_state.inventory.save_progress.progress_flags() & 4 != 0
             {
                 self.sprite_slot_mut(k).set_state(0);
             }
@@ -4540,18 +5031,18 @@ impl ZeldaState {
         self.sprite_slot_mut(k).increment_ignore_projectile();
         if self.game_state.world.location.overworld_screen_index() != 3 {
             self.sprite_slot_mut(k).add_x_low(8);
-            if self.inventory_items().bombos() != 0 {
+            if self.game_state.inventory.items.bombos() != 0 {
                 self.sprite_slot_mut(k).set_graphics(4);
                 self.sprite_slot_mut(k).set_ai_state(3);
             }
-        } else if self.inventory_items().ether() != 0 {
+        } else if self.game_state.inventory.items.ether() != 0 {
             self.sprite_slot_mut(k).set_graphics(4);
             self.sprite_slot_mut(k).set_ai_state(3);
         }
     }
 
     pub(super) fn sprite_prep_eyegore(&mut self, k: usize) {
-        let room = self.dungeon_room_tracking().room_index2();
+        let room = self.game_state.dungeon.room_tracking.room_index2();
         if room == 12 || room == 27 || room == 75 || room == 107 {
             self.sprite_slot_mut(k).increment_b();
             if self.sprite_slot(k).sprite_type() == 0x83 {
@@ -4561,7 +5052,7 @@ impl ZeldaState {
     }
 
     fn sprite_return_if_boss_finished(&mut self, k: usize) -> bool {
-        if self.dungeon_savegame_state().savegame_state_bits() & 0x8000 != 0 {
+        if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 != 0 {
             self.sprite_slot_mut(k).set_state(0);
             return true;
         }
@@ -4773,7 +5264,7 @@ mod tests {
         assert_eq!(beam.sprite_slot(15).ignore_projectile(), 0x48);
         assert_eq!(beam.sprite_slot(15).delay_main(), 5);
         assert_eq!(beam.sprite_slot(15).flags5(), 32);
-        assert_eq!(beam.system_signals().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(beam.game_state.system_signals.sound_effect_2() & 0x3f, 0x19);
 
         let mut ganon_pos = fresh_state();
         ganon_pos.sprite_slot_mut(0).set_direction(1);
@@ -4808,8 +5299,11 @@ mod tests {
         assert_eq!(beamos.sprite_slot(15).bump_damage(), 4);
         assert_eq!(beamos.sprite_slot(15).delay_aux1(), 12);
         assert_eq!(beamos.sprite_slot(15).graphics(), 2);
-        assert_eq!(beamos.sprite_system().limit_instance(), 3);
-        assert_eq!(beamos.system_signals().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(beamos.game_state.sprites.system.limit_instance(), 3);
+        assert_eq!(
+            beamos.game_state.system_signals.sound_effect_2() & 0x3f,
+            0x19
+        );
         let history = 2 * 32;
         assert_eq!(beamos.ram[BEAMOS_X_LO_PREP + history], 0x04);
         assert_eq!(beamos.ram[BEAMOS_X_HI + history], 0x01);
@@ -4820,7 +5314,7 @@ mod tests {
         let mut beamos_limited = fresh_state();
         beamos_limited.sprite_system_mut().set_limit_instance(4);
         beamos_limited.beamos_fire_laser(k);
-        assert_eq!(beamos_limited.sprite_system().limit_instance(), 4);
+        assert_eq!(beamos_limited.game_state.sprites.system.limit_instance(), 4);
         assert_eq!(beamos_limited.sprite_slot(15).sprite_type(), 0);
     }
 
@@ -4852,12 +5346,12 @@ mod tests {
         s.sprite_system_mut().set_limit_instance(5);
         s.sprite_prep_desert_statue(k);
         assert_eq!(s.sprite_slot(k).a(), 5);
-        assert_eq!(s.sprite_system().limit_instance(), 6);
+        assert_eq!(s.game_state.sprites.system.limit_instance(), 6);
         assert_eq!(s.sprite_slot(k).direction(), 3); // after +8, x is now 0x37.
 
         s.sprite_prep_armos_knight(k);
         assert_eq!(s.sprite_slot(k).delay_main(), 255);
-        assert_eq!(s.sprite_workspace().prep_shared_counter(), 1);
+        assert_eq!(s.game_state.sprites.workspace.prep_shared_counter(), 1);
 
         s.sprite_slot_mut(k).set_x_low(0x10);
         s.sprite_slot_mut(k).set_x_high(1);
@@ -4933,7 +5427,7 @@ mod tests {
         ganon.sprite_prep_ganon(k);
         assert_eq!(ganon.sprite_slot(k).delay_main(), 128);
         assert_eq!(ganon.sprite_slot(k).room(), 2);
-        assert_eq!(ganon.system_signals().music_control(), 0x1e);
+        assert_eq!(ganon.game_state.system_signals.music_control(), 0x1e);
 
         let mut helmasaur = fresh_state();
         for i in 0..16 {
@@ -4952,9 +5446,24 @@ mod tests {
         trinexx_body.sprite_slot_mut(k).set_x_high(1);
         trinexx_body.sprite_slot_mut(k).set_y_low(0x30);
         trinexx_body.sprite_slot_mut(k).set_y_high(2);
-        trinexx_body.ram[OVERLORD_Y_HI_PREP] = 0x0c;
-        trinexx_body.ram[OVERLORD_GEN2_PREP] = 0x97;
-        trinexx_body.ram[OVERLORD_FLOOR_PREP] = 0x01;
+        trinexx_body
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut trinexx_body.ram, 0)
+            .set_y_high(0x0c);
+        trinexx_body
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut trinexx_body.ram, 0)
+            .set_gen2(0x97);
+        trinexx_body
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut trinexx_body.ram, 0)
+            .set_floor(0x01);
         trinexx_body.ram[ALT_SPRITE_STATE_PREP + 3] = 0xaa;
         trinexx_body.sprite_prep_trinexx(k);
         assert_eq!(trinexx_body.sprite_slot(k).a(), 0x28);
@@ -4963,8 +5472,24 @@ mod tests {
         assert_eq!(trinexx_body.sprite_slot(k).g(), 2);
         assert_eq!(trinexx_body.sprite_get_x(k), 0x0128);
         assert_eq!(trinexx_body.sprite_get_y(k), 0x024c);
-        assert_eq!(trinexx_body.overlord_slot(2).x_low(), 0);
-        assert_eq!(trinexx_body.overlord_slot(6).x_low(), 255);
+        assert_eq!(
+            trinexx_body
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(2)
+                .x_low(),
+            0
+        );
+        assert_eq!(
+            trinexx_body
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(6)
+                .x_low(),
+            255
+        );
         assert_eq!(trinexx_body.ram[OVERLORD_X_HI_PREP], 0);
         assert_eq!(trinexx_body.ram[OVERLORD_Y_HI_PREP], 0x0c);
         assert_eq!(trinexx_body.ram[OVERLORD_GEN2_PREP], 0x97);
@@ -5187,14 +5712,14 @@ mod tests {
         assert_eq!(lanmolas.sprite_slot(k).z(), 0xff);
         assert_eq!(lanmolas.ram[BEAMOS_X_HI + k * 0x40], 0xff);
         assert_eq!(lanmolas.ram[BEAMOS_X_HI + k * 0x40 + 63], 0xff);
-        assert_eq!(lanmolas.garnish_slot(k).y_low(), 7);
+        assert_eq!(lanmolas.game_state.sprites.garnish_slots.slot(k).y_low(), 7);
 
         let mut shrapnel = fresh_state();
         shrapnel.sprite_slot_mut(k).set_state(9);
         shrapnel.sprite_set_x(k, 0x0120);
         shrapnel.sprite_set_y(k, 0x0340);
         shrapnel.lanmola_spawn_shrapnel(k);
-        assert_eq!(shrapnel.temp_counter().value(), 0xff);
+        assert_eq!(shrapnel.game_state.scratch_counter.value(), 0xff);
         assert_eq!(shrapnel.sprite_slot(15).sprite_type(), 0xc2);
         assert_eq!(shrapnel.sprite_get_x(15), 0x0124);
         assert_eq!(shrapnel.sprite_get_y(15), 0x0344);
@@ -5387,7 +5912,15 @@ mod tests {
             .overworld_event_info_mut()
             .set_event_info(0x22, 0x10);
         overworld.heart_upgrade_set_obtained_flag(k);
-        assert_eq!(overworld.overworld_event_info().event_info(0x22), 0x50);
+        assert_eq!(
+            overworld
+                .game_state
+                .world
+                .overworld
+                .event_info
+                .event_info(0x22),
+            0x50
+        );
 
         let mut lumberjack = fresh_state();
         lumberjack.sprite_slot_mut(k).set_state(9);
@@ -5412,7 +5945,11 @@ mod tests {
             .set_savegame_state_bits(0x0001);
         dungeon.heart_upgrade_set_obtained_flag(k);
         assert_eq!(
-            dungeon.dungeon_savegame_state().savegame_state_bits(),
+            dungeon
+                .game_state
+                .dungeon
+                .savegame_state
+                .savegame_state_bits(),
             0x4001
         );
 
@@ -5422,7 +5959,11 @@ mod tests {
             .set_savegame_state_bits(0x0002);
         dungeon.heart_upgrade_set_obtained_flag(k);
         assert_eq!(
-            dungeon.dungeon_savegame_state().savegame_state_bits(),
+            dungeon
+                .game_state
+                .dungeon
+                .savegame_state
+                .savegame_state_bits(),
             0x2002
         );
 
@@ -5479,9 +6020,16 @@ mod tests {
         maiden.follower_state_mut().set_appearance_none_flag(7);
         maiden.sprite_prep_blind_maiden(k);
         assert_eq!(maiden.sprite_slot(k).ignore_projectile(), 1);
-        assert_eq!(maiden.follower_state().indicator(), 0);
-        assert_eq!(maiden.follower_state().dropped(), 0);
-        assert_eq!(maiden.follower_state().appearance_none_flag(), 0);
+        assert_eq!(maiden.game_state.sprites.follower_runtime.indicator(), 0);
+        assert_eq!(maiden.game_state.sprites.follower_runtime.dropped(), 0);
+        assert_eq!(
+            maiden
+                .game_state
+                .sprites
+                .follower_runtime
+                .appearance_none_flag(),
+            0
+        );
         assert_eq!(maiden.sprite_slot(k).state(), 9);
 
         let mut maiden_finished = fresh_state();
@@ -5503,14 +6051,28 @@ mod tests {
         old_man_mirror.sprite_slot_mut(k).set_state(9);
         old_man_mirror.sprite_prep_old_man_bounce(k);
         assert_eq!(old_man_mirror.sprite_slot(k).state(), 0);
-        assert_eq!(old_man_mirror.follower_state().indicator(), 0);
+        assert_eq!(
+            old_man_mirror
+                .game_state
+                .sprites
+                .follower_runtime
+                .indicator(),
+            0
+        );
 
         let mut old_man_followed = fresh_state();
         old_man_followed.follower_state_mut().set_indicator(1);
         old_man_followed.sprite_slot_mut(k).set_state(9);
         old_man_followed.sprite_prep_old_man_bounce(k);
         assert_eq!(old_man_followed.sprite_slot(k).state(), 0);
-        assert_eq!(old_man_followed.follower_state().indicator(), 1);
+        assert_eq!(
+            old_man_followed
+                .game_state
+                .sprites
+                .follower_runtime
+                .indicator(),
+            1
+        );
     }
 
     #[test]
@@ -5536,7 +6098,7 @@ mod tests {
         assert_eq!(cell.sprite_slot(k).ignore_projectile(), 1);
         assert_eq!(cell.sprite_slot(k).direction(), 3);
         assert_eq!(cell.sprite_slot(k).head_direction(), 3);
-        assert_eq!(cell.follower_state().indicator(), 7);
+        assert_eq!(cell.game_state.sprites.follower_runtime.indicator(), 7);
         assert_eq!(cell.sprite_slot(k).subtype2(), 2);
         assert_eq!(cell.sprite_get_x(k), 0x0106);
         assert_eq!(cell.sprite_get_y(k), 0x020f);
@@ -5652,12 +6214,12 @@ mod tests {
 
         s.archery_game_guy_show_msg(k, 0x86);
 
-        assert_eq!(s.dialogue_message_index().value(), 0x86);
+        assert_eq!(s.game_state.messaging.dialogue_message_index.value(), 0x86);
         assert_eq!(s.ram[TILE_INTERACTION_SHARED_FLAG], 0);
         assert_eq!(s.ram[MESSAGING_MODULE], 0);
-        assert_eq!(s.ram[SUBMODULE_INDEX], 2);
+        assert_eq!(s.game_state.frame.submodule, 2);
         assert_eq!(s.game_state.frame.saved_module_for_menu, 3);
-        assert_eq!(s.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(s.game_state.frame.main_module, 14);
         assert_eq!(s.sprite_slot(k).delay_main(), 0);
     }
 
@@ -5722,18 +6284,36 @@ mod tests {
         assert_eq!(bully.sprite_slot(15).head_direction(), k as u8);
         assert_eq!(bully.sprite_slot(15).ignore_projectile(), 1);
         bully.ball_guy_play_bounce_noise(k);
-        assert_eq!(bully.system_signals().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(
+            bully.game_state.system_signals.sound_effect_2() & 0x3f,
+            0x32
+        );
 
         let mut garnish = fresh_state();
-        garnish.garnish_slot_mut(29).set_garnish_type(1);
-        garnish.garnish_slot_mut(14).set_garnish_type(1);
+        garnish
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut garnish.ram, 29)
+            .set_garnish_type(1);
+        garnish
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut garnish.ram, 14)
+            .set_garnish_type(1);
         assert_eq!(garnish.garnish_alloc_force(), 28);
         assert_eq!(garnish.garnish_alloc(), 28);
         assert_eq!(garnish.garnish_alloc_low(), 13);
         assert_eq!(garnish.garnish_alloc_limit(12), 12);
 
         for slot in 0..30 {
-            garnish.garnish_slot_mut(slot).set_garnish_type(1);
+            garnish
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot_mut(&mut garnish.ram, slot)
+                .set_garnish_type(1);
         }
         assert_eq!(garnish.garnish_alloc_force(), 0);
         assert_eq!(garnish.garnish_alloc(), -1);
@@ -5745,63 +6325,183 @@ mod tests {
         let mut coords = fresh_state();
         coords.garnish_set_x(3, 0x1234);
         coords.garnish_set_y(3, 0xabcd);
-        assert_eq!(coords.garnish_slot(3).x_low(), 0x34);
-        assert_eq!(coords.garnish_slot(3).x_high(), 0x12);
-        assert_eq!(coords.garnish_slot(3).y_low(), 0xcd);
-        assert_eq!(coords.garnish_slot(3).y_high(), 0xab);
+        assert_eq!(
+            coords.game_state.sprites.garnish_slots.slot(3).x_low(),
+            0x34
+        );
+        assert_eq!(
+            coords.game_state.sprites.garnish_slots.slot(3).x_high(),
+            0x12
+        );
+        assert_eq!(
+            coords.game_state.sprites.garnish_slots.slot(3).y_low(),
+            0xcd
+        );
+        assert_eq!(
+            coords.game_state.sprites.garnish_slots.slot(3).y_high(),
+            0xab
+        );
 
         let mut debris = fresh_state();
-        debris.garnish_slot_mut(29).set_garnish_type(1);
+        debris
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut debris.ram, 29)
+            .set_garnish_type(1);
         debris.garnish_spawn_pyramid_debris(-4, 5, -7, 9);
-        assert_eq!(debris.system_signals().sound_effect_2(), 3);
-        assert_eq!(debris.system_signals().sound_effect_1(), 31);
-        assert_eq!(debris.system_signals().ambient_sound_effect(), 5);
-        assert_eq!(debris.garnish_slot(28).garnish_type(), 19);
-        assert_eq!(debris.garnish_state().active_type(), 19);
-        assert_eq!(debris.garnish_slot(28).x_low(), 228);
-        assert_eq!(debris.garnish_slot(28).y_low(), 101);
-        assert_eq!(debris.garnish_slot(28).x_velocity(), (-7i8) as u8);
-        assert_eq!(debris.garnish_slot(28).y_velocity(), 9);
-        assert_eq!(debris.garnish_slot(28).countdown(), 72);
+        assert_eq!(debris.game_state.system_signals.sound_effect_2(), 3);
+        assert_eq!(debris.game_state.system_signals.sound_effect_1(), 31);
+        assert_eq!(debris.game_state.system_signals.ambient_sound_effect(), 5);
+        assert_eq!(
+            debris
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            19
+        );
+        assert_eq!(debris.game_state.sprites.garnish_runtime.active_type(), 19);
+        assert_eq!(
+            debris.game_state.sprites.garnish_slots.slot(28).x_low(),
+            228
+        );
+        assert_eq!(
+            debris.game_state.sprites.garnish_slots.slot(28).y_low(),
+            101
+        );
+        assert_eq!(
+            debris
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .x_velocity(),
+            (-7i8) as u8
+        );
+        assert_eq!(
+            debris
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .y_velocity(),
+            9
+        );
+        assert_eq!(
+            debris.game_state.sprites.garnish_slots.slot(28).countdown(),
+            72
+        );
 
         let mut puff = fresh_state();
         let puff_owner = 6;
         puff.set_frame_counter(2);
-        puff.garnish_slot_mut(14).set_garnish_type(1);
+        puff.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut puff.ram, 14)
+            .set_garnish_type(1);
         puff.sprite_workspace_mut().set_current_sprite_x(0x0200);
         puff.sprite_workspace_mut().set_current_sprite_y(0x0300);
         puff.kholdstare_spawn_puff_cloud_garnish(puff_owner);
-        assert_eq!(puff.garnish_slot(13).garnish_type(), 7);
-        assert_eq!(puff.garnish_state().active_type(), 7);
-        assert_eq!(puff.garnish_slot(13).countdown(), 31);
-        assert_eq!(puff.garnish_slot(13).x_low(), 0xfa);
-        assert_eq!(puff.garnish_slot(13).x_high(), 0x01);
-        assert_eq!(puff.garnish_slot(13).y_low(), 0x12);
-        assert_eq!(puff.garnish_slot(13).y_high(), 0x03);
-        assert_eq!(puff.garnish_slot(13).floor(), 0);
+        assert_eq!(
+            puff.game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .garnish_type(),
+            7
+        );
+        assert_eq!(puff.game_state.sprites.garnish_runtime.active_type(), 7);
+        assert_eq!(
+            puff.game_state.sprites.garnish_slots.slot(13).countdown(),
+            31
+        );
+        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).x_low(), 0xfa);
+        assert_eq!(
+            puff.game_state.sprites.garnish_slots.slot(13).x_high(),
+            0x01
+        );
+        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).y_low(), 0x12);
+        assert_eq!(
+            puff.game_state.sprites.garnish_slots.slot(13).y_high(),
+            0x03
+        );
+        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).floor(), 0);
 
         let mut flame = fresh_state();
-        flame.garnish_slot_mut(29).set_garnish_type(1);
+        flame
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut flame.ram, 29)
+            .set_garnish_type(1);
         flame.sprite_set_x(k, 0x0456);
         flame.sprite_set_y(k, 0x0789);
         assert_eq!(flame.garnish_flame_trail(k, false), 28);
-        assert_eq!(flame.garnish_slot(28).garnish_type(), 0x10);
-        assert_eq!(flame.garnish_state().active_type(), 0x10);
-        assert_eq!(flame.garnish_slot(28).sprite(), k as u8);
-        assert_eq!(flame.garnish_slot(28).x_low(), 0x56);
-        assert_eq!(flame.garnish_slot(28).x_high(), 0x04);
-        assert_eq!(flame.garnish_slot(28).y_low(), 0x99);
-        assert_eq!(flame.garnish_slot(28).y_high(), 0x07);
-        assert_eq!(flame.garnish_slot(28).countdown(), 127);
+        assert_eq!(
+            flame
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            0x10
+        );
+        assert_eq!(flame.game_state.sprites.garnish_runtime.active_type(), 0x10);
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).sprite(),
+            k as u8
+        );
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).x_low(),
+            0x56
+        );
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).x_high(),
+            0x04
+        );
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).y_low(),
+            0x99
+        );
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).y_high(),
+            0x07
+        );
+        assert_eq!(
+            flame.game_state.sprites.garnish_slots.slot(28).countdown(),
+            127
+        );
 
         let mut low_flame = fresh_state();
-        low_flame.garnish_slot_mut(14).set_garnish_type(1);
+        low_flame
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut low_flame.ram, 14)
+            .set_garnish_type(1);
         low_flame.sprite_set_x(k, 0x0012);
         low_flame.sprite_set_y(k, 0x00f8);
         assert_eq!(low_flame.garnish_flame_trail(k, true), 13);
-        assert_eq!(low_flame.garnish_slot(13).garnish_type(), 0x10);
-        assert_eq!(low_flame.garnish_slot(13).y_low(), 0x08);
-        assert_eq!(low_flame.garnish_slot(13).y_high(), 0x01);
+        assert_eq!(
+            low_flame
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .garnish_type(),
+            0x10
+        );
+        assert_eq!(
+            low_flame.game_state.sprites.garnish_slots.slot(13).y_low(),
+            0x08
+        );
+        assert_eq!(
+            low_flame.game_state.sprites.garnish_slots.slot(13).y_high(),
+            0x01
+        );
 
         let mut fire_bat = fresh_state();
         fire_bat.sprite_slot_mut(k).set_subtype2(3);
@@ -5810,7 +6510,12 @@ mod tests {
         assert_eq!(fire_bat.sprite_slot(k).graphics(), 5);
 
         let mut moving_fire_bat = fresh_state();
-        moving_fire_bat.garnish_slot_mut(14).set_garnish_type(1);
+        moving_fire_bat
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut moving_fire_bat.ram, 14)
+            .set_garnish_type(1);
         moving_fire_bat.sprite_slot_mut(k).set_subtype2(7);
         moving_fire_bat.sprite_slot_mut(k).set_anim_clock(5);
         moving_fire_bat.sprite_set_x(k, 0x0124);
@@ -5818,62 +6523,224 @@ mod tests {
         moving_fire_bat.fire_bat_move(k);
         assert_eq!(moving_fire_bat.sprite_slot(k).subtype2(), 8);
         assert_eq!(moving_fire_bat.sprite_slot(k).graphics(), 6);
-        assert_eq!(moving_fire_bat.garnish_slot(13).garnish_type(), 0x10);
-        assert_eq!(moving_fire_bat.garnish_state().active_type(), 0x10);
-        assert_eq!(moving_fire_bat.garnish_slot(13).sprite(), k as u8);
-        assert_eq!(moving_fire_bat.garnish_slot(13).x_low(), 0x24);
-        assert_eq!(moving_fire_bat.garnish_slot(13).x_high(), 0x01);
-        assert_eq!(moving_fire_bat.garnish_slot(13).y_low(), 0x50);
-        assert_eq!(moving_fire_bat.garnish_slot(13).y_high(), 0x03);
-        assert_eq!(moving_fire_bat.garnish_slot(13).countdown(), 0x2f);
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .garnish_type(),
+            0x10
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_runtime
+                .active_type(),
+            0x10
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .sprite(),
+            k as u8
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .x_low(),
+            0x24
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .x_high(),
+            0x01
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .y_low(),
+            0x50
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .y_high(),
+            0x03
+        );
+        assert_eq!(
+            moving_fire_bat
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .countdown(),
+            0x2f
+        );
 
         let mut skipped_fire_bat = fresh_state();
         skipped_fire_bat.sprite_slot_mut(k).set_subtype2(0);
         skipped_fire_bat.fire_bat_move(k);
         assert_eq!(skipped_fire_bat.sprite_slot(k).subtype2(), 1);
-        assert_eq!(skipped_fire_bat.garnish_state().active_type(), 0);
+        assert_eq!(
+            skipped_fire_bat
+                .game_state
+                .sprites
+                .garnish_runtime
+                .active_type(),
+            0
+        );
 
         let mut fireball = fresh_state();
         fireball.set_frame_counter(0);
-        fireball.garnish_slot_mut(29).set_garnish_type(1);
+        fireball
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut fireball.ram, 29)
+            .set_garnish_type(1);
         fireball.sprite_workspace_mut().set_current_sprite_x(0x0123);
         fireball.sprite_workspace_mut().set_current_sprite_y(0x02f5);
         fireball.fireball_spawn_trail_garnish(k);
-        assert_eq!(fireball.garnish_slot(28).garnish_type(), 8);
-        assert_eq!(fireball.garnish_state().active_type(), 8);
-        assert_eq!(fireball.garnish_slot(28).countdown(), 11);
-        assert_eq!(fireball.garnish_slot(28).x_low(), 0x23);
-        assert_eq!(fireball.garnish_slot(28).x_high(), 0x01);
-        assert_eq!(fireball.garnish_slot(28).y_low(), 0x05);
-        assert_eq!(fireball.garnish_slot(28).y_high(), 0x03);
-        assert_eq!(fireball.garnish_slot(28).sprite(), k as u8);
+        assert_eq!(
+            fireball
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            8
+        );
+        assert_eq!(fireball.game_state.sprites.garnish_runtime.active_type(), 8);
+        assert_eq!(
+            fireball
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .countdown(),
+            11
+        );
+        assert_eq!(
+            fireball.game_state.sprites.garnish_slots.slot(28).x_low(),
+            0x23
+        );
+        assert_eq!(
+            fireball.game_state.sprites.garnish_slots.slot(28).x_high(),
+            0x01
+        );
+        assert_eq!(
+            fireball.game_state.sprites.garnish_slots.slot(28).y_low(),
+            0x05
+        );
+        assert_eq!(
+            fireball.game_state.sprites.garnish_slots.slot(28).y_high(),
+            0x03
+        );
+        assert_eq!(
+            fireball.game_state.sprites.garnish_slots.slot(28).sprite(),
+            k as u8
+        );
 
         let mut skipped_fireball = fresh_state();
         skipped_fireball.set_frame_counter(1);
         skipped_fireball.fireball_spawn_trail_garnish(k);
-        assert_eq!(skipped_fireball.garnish_state().active_type(), 0);
+        assert_eq!(
+            skipped_fireball
+                .game_state
+                .sprites
+                .garnish_runtime
+                .active_type(),
+            0
+        );
 
         let mut firesnake = fresh_state();
         firesnake.set_frame_counter(k as u8);
-        firesnake.garnish_slot_mut(29).set_garnish_type(1);
+        firesnake
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut firesnake.ram, 29)
+            .set_garnish_type(1);
         firesnake.sprite_set_x(k, 0x0167);
         firesnake.sprite_set_y(k, 0x02f0);
         firesnake.sprite_slot_mut(k).set_floor(2);
         firesnake.firesnake_spawn_fireball(k);
-        assert_eq!(firesnake.garnish_slot(28).garnish_type(), 1);
-        assert_eq!(firesnake.garnish_state().active_type(), 1);
-        assert_eq!(firesnake.garnish_slot(28).x_low(), 0x67);
-        assert_eq!(firesnake.garnish_slot(28).x_high(), 0x01);
-        assert_eq!(firesnake.garnish_slot(28).y_low(), 0x00);
-        assert_eq!(firesnake.garnish_slot(28).y_high(), 0x03);
-        assert_eq!(firesnake.garnish_slot(28).countdown(), 32);
-        assert_eq!(firesnake.garnish_slot(28).sprite(), k as u8);
-        assert_eq!(firesnake.garnish_slot(28).floor(), 2);
+        assert_eq!(
+            firesnake
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            1
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_runtime.active_type(),
+            1
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).x_low(),
+            0x67
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).x_high(),
+            0x01
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).y_low(),
+            0x00
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).y_high(),
+            0x03
+        );
+        assert_eq!(
+            firesnake
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .countdown(),
+            32
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).sprite(),
+            k as u8
+        );
+        assert_eq!(
+            firesnake.game_state.sprites.garnish_slots.slot(28).floor(),
+            2
+        );
 
         let mut skipped_firesnake = fresh_state();
         skipped_firesnake.set_frame_counter((k as u8) ^ 1);
         skipped_firesnake.firesnake_spawn_fireball(k);
-        assert_eq!(skipped_firesnake.garnish_state().active_type(), 0);
+        assert_eq!(
+            skipped_firesnake
+                .game_state
+                .sprites
+                .garnish_runtime
+                .active_type(),
+            0
+        );
 
         let mut plop = fresh_state();
         plop.sprite_slot_mut(k).set_state(9);
@@ -5887,7 +6754,7 @@ mod tests {
         assert_eq!(plop.sprite_slot(15).delay_main(), 15);
         assert_eq!(plop.sprite_slot(15).ai_state(), 0);
         assert_eq!(plop.sprite_slot(15).flags2(), 3);
-        assert_eq!(plop.system_signals().sound_effect_1() & 0x3f, 0x28);
+        assert_eq!(plop.game_state.system_signals.sound_effect_1() & 0x3f, 0x28);
 
         let mut medallion = fresh_state();
         medallion.sprite_slot_mut(k).set_state(9);
@@ -5900,7 +6767,10 @@ mod tests {
         assert_eq!(medallion.sprite_slot(15).x_velocity(), 24);
         assert_eq!(medallion.sprite_slot(15).z_velocity(), 48);
         assert_eq!(medallion.sprite_slot(15).a(), 17);
-        assert_eq!(medallion.system_signals().sound_effect_1() & 0x3f, 0x20);
+        assert_eq!(
+            medallion.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x20
+        );
         assert_eq!(medallion.sprite_slot(15).flags2(), 0x83);
         assert_eq!(medallion.sprite_slot(15).flags3(), 0x58);
         assert_eq!(medallion.sprite_slot(15).oam_flags(), 8);
@@ -5928,7 +6798,10 @@ mod tests {
         assert_eq!(small_splash.sprite_slot(14).sprite_type(), 0xec);
         assert_eq!(small_splash.sprite_get_x(14), 0x0060);
         assert_eq!(small_splash.sprite_get_y(14), 0x0070);
-        assert_eq!(small_splash.system_signals().sound_effect_1() & 0x3f, 0x28);
+        assert_eq!(
+            small_splash.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x28
+        );
         assert_eq!(small_splash.sprite_slot(14).state(), 3);
         assert_eq!(small_splash.sprite_slot(14).delay_main(), 15);
         assert_eq!(small_splash.sprite_slot(14).ai_state(), 0);
@@ -5957,7 +6830,10 @@ mod tests {
         assert_eq!(blast.sprite_slot(15).c(), 3);
         assert_eq!(blast.sprite_slot(15).flags2(), 3);
         assert_eq!(blast.sprite_slot(15).oam_flags(), 4);
-        assert_eq!(blast.system_signals().sound_effect_1() & 0x3f, 0x15);
+        assert_eq!(
+            blast.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x15
+        );
 
         let mut bomb = fresh_state();
         bomb.sprite_slot_mut(k).set_state(9);
@@ -5988,7 +6864,7 @@ mod tests {
         assert_eq!(poof.sprite_slot(15).delay_main(), 47);
         assert_eq!(poof.sprite_slot(15).flags2(), 9);
         assert_eq!(poof.sprite_slot(15).ignore_projectile(), 9);
-        assert_eq!(poof.system_signals().sound_effect_1(), 12);
+        assert_eq!(poof.game_state.system_signals.sound_effect_1(), 12);
 
         let mut fireball = fresh_state();
         fireball.sprite_slot_mut(k).set_state(9);
@@ -6012,7 +6888,10 @@ mod tests {
         assert_eq!(fireball.sprite_slot(13).delay_aux1(), 16);
         assert_eq!(fireball.sprite_slot(13).flags5(), 0);
         assert_eq!(fireball.sprite_slot(13).deflection_bits(), 0x48);
-        assert_eq!(fireball.system_signals().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(
+            fireball.game_state.system_signals.sound_effect_2() & 0x3f,
+            0x19
+        );
 
         let mut phlegm = fresh_state();
         phlegm.sprite_slot_mut(k).set_state(9);
@@ -6036,7 +6915,7 @@ mod tests {
         assert_eq!(phlegm.sprite_slot(15).ignore_projectile(), 20);
         assert_eq!(phlegm.sprite_slot(15).bump_damage(), 37);
         assert_eq!(phlegm.sprite_slot(15).flags5(), 0x20);
-        assert_eq!(phlegm.system_signals().sound_effect_2() & 0x3f, 5);
+        assert_eq!(phlegm.game_state.system_signals.sound_effect_2() & 0x3f, 5);
 
         let mut leaves = fresh_state();
         leaves.sprite_slot_mut(k).set_state(9);
@@ -6058,14 +6937,77 @@ mod tests {
         garnish_poof.sprite_set_y(k, 0x0456);
         garnish_poof.sprite_slot_mut(k).set_floor(2);
         garnish_poof.sprite_spawn_poof_garnish(k);
-        assert_eq!(garnish_poof.garnish_slot(29).garnish_type(), 10);
-        assert_eq!(garnish_poof.garnish_state().active_type(), 10);
-        assert_eq!(garnish_poof.garnish_slot(29).x_low(), 0x34);
-        assert_eq!(garnish_poof.garnish_slot(29).x_high(), 0x02);
-        assert_eq!(garnish_poof.garnish_slot(29).y_low(), 0x66);
-        assert_eq!(garnish_poof.garnish_slot(29).y_high(), 0x04);
-        assert_eq!(garnish_poof.garnish_slot(29).sprite(), 2);
-        assert_eq!(garnish_poof.garnish_slot(29).countdown(), 15);
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .garnish_type(),
+            10
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_runtime
+                .active_type(),
+            10
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .x_low(),
+            0x34
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .x_high(),
+            0x02
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .y_low(),
+            0x66
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .y_high(),
+            0x04
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .sprite(),
+            2
+        );
+        assert_eq!(
+            garnish_poof
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(29)
+                .countdown(),
+            15
+        );
 
         let mut octorok = fresh_state();
         octorok.sprite_slot_mut(k).set_state(9);
@@ -6078,7 +7020,7 @@ mod tests {
         assert_eq!(octorok.sprite_get_y(15), 0x0204);
         assert_eq!(octorok.sprite_slot(15).x_velocity(), 44);
         assert_eq!(octorok.sprite_slot(15).y_velocity(), 0);
-        assert_eq!(octorok.system_signals().sound_effect_1() & 0x3f, 7);
+        assert_eq!(octorok.game_state.system_signals.sound_effect_1() & 0x3f, 7);
 
         let mut moblin = fresh_state();
         moblin.sprite_slot_mut(k).set_state(9);
@@ -6112,14 +7054,59 @@ mod tests {
 
         let mut sparkle = fresh_state();
         for (idx, ty) in [0x2a, 0x21, 0x30, 0x19, 0x0c].into_iter().enumerate() {
-            sparkle.ancilla_slot_mut(idx).set_ancilla_type(ty);
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot_mut(&mut sparkle.ram, idx)
+                .set_ancilla_type(ty);
         }
         sparkle.ancilla_terminate_sparkle_objects();
-        assert_eq!(sparkle.ancilla_slot(0).ancilla_type(), 0);
-        assert_eq!(sparkle.ancilla_slot(1).ancilla_type(), 0x21);
-        assert_eq!(sparkle.ancilla_slot(2).ancilla_type(), 0);
-        assert_eq!(sparkle.ancilla_slot(3).ancilla_type(), 0);
-        assert_eq!(sparkle.ancilla_slot(4).ancilla_type(), 0);
+        assert_eq!(
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(0)
+                .ancilla_type(),
+            0
+        );
+        assert_eq!(
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(1)
+                .ancilla_type(),
+            0x21
+        );
+        assert_eq!(
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(2)
+                .ancilla_type(),
+            0
+        );
+        assert_eq!(
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(3)
+                .ancilla_type(),
+            0
+        );
+        assert_eq!(
+            sparkle
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0
+        );
 
         let mut kodongo = fresh_state();
         kodongo.sprite_slot_mut(k).set_direction(2);
@@ -6145,8 +7132,11 @@ mod tests {
         blue_balls.sprite_set_x(k, 0x0120);
         blue_balls.sprite_set_y(k, 0x0340);
         blue_balls.create_six_blue_balls(k);
-        assert_eq!(blue_balls.system_signals().sound_effect_2() & 0x3f, 0x36);
-        assert_eq!(blue_balls.temp_counter().value(), 0);
+        assert_eq!(
+            blue_balls.game_state.system_signals.sound_effect_2() & 0x3f,
+            0x36
+        );
+        assert_eq!(blue_balls.game_state.scratch_counter.value(), 0);
         assert_eq!(blue_balls.sprite_slot(15).sprite_type(), 0x55);
         assert_eq!(blue_balls.sprite_get_x(15), 0x0124);
         assert_eq!(blue_balls.sprite_get_y(15), 0x0344);
@@ -6167,7 +7157,10 @@ mod tests {
         octoballoon.sprite_set_x(k, 0x0110);
         octoballoon.sprite_set_y(k, 0x0220);
         octoballoon.octoballoon_form_babby(k);
-        assert_eq!(octoballoon.system_signals().sound_effect_1() & 0x3f, 0x0c);
+        assert_eq!(
+            octoballoon.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x0c
+        );
         assert_eq!(octoballoon.sprite_slot(15).sprite_type(), 0x10);
         assert_eq!(octoballoon.sprite_get_x(15), 0x0110);
         assert_eq!(octoballoon.sprite_get_y(15), 0x0220);
@@ -6184,7 +7177,10 @@ mod tests {
         bully.sprite_set_x(k, 0x0440);
         bully.sprite_set_y(k, 0x0550);
         bully.ball_guy_play_bounce_noise(k);
-        assert_eq!(bully.system_signals().sound_effect_2() & 0x3f, 0x32);
+        assert_eq!(
+            bully.game_state.system_signals.sound_effect_2() & 0x3f,
+            0x32
+        );
         bully.spawn_bully(k);
         assert_eq!(bully.sprite_slot(15).sprite_type(), 0xb9);
         assert_eq!(bully.sprite_get_x(15), 0x0440);
@@ -6200,8 +7196,8 @@ mod tests {
         rupees.sprite_battle_mut().set_sprites_killed(4);
         rupees.sprite_battle_mut().set_times_hurt_by_sprites(0);
         rupees.rupee_pull_spawn_prize(k);
-        assert_eq!(rupees.sprite_workspace().shared_scratch_a(), 2);
-        assert_eq!(rupees.temp_counter().value(), 0xff);
+        assert_eq!(rupees.game_state.sprites.workspace.shared_scratch_a(), 2);
+        assert_eq!(rupees.game_state.scratch_counter.value(), 0xff);
         assert_eq!(rupees.ram[NUM_SPRITES_KILLED_PREP], 0);
         assert_eq!(rupees.ram[NUMBER_OF_TIMES_HURT_BY_SPRITES], 0);
         assert_eq!(rupees.sprite_slot(15).sprite_type(), 0xdb);
@@ -6235,51 +7231,89 @@ mod tests {
         pink_msg.sprite_slot_mut(k).set_x_velocity(0x12);
         pink_msg.sprite_slot_mut(k).set_y_velocity(0x34);
         pink_msg.pink_ball_handle_message(k);
-        assert_eq!(pink_msg.dialogue_message_index().value(), 0x15b);
+        assert_eq!(
+            pink_msg.game_state.messaging.dialogue_message_index.value(),
+            0x15b
+        );
         assert_eq!(pink_msg.sprite_slot(k).x_velocity(), 0xed);
         assert_eq!(pink_msg.sprite_slot(k).y_velocity(), 0xcb);
         assert_eq!(pink_msg.sprite_slot(k).delay_aux4(), 64);
         pink_msg.sprite_slot_mut(k).set_delay_aux4(0);
         pink_msg.inventory_items_mut().set_moon_pearl(1);
         pink_msg.pink_ball_handle_message(k);
-        assert_eq!(pink_msg.dialogue_message_index().value(), 0x15c);
+        assert_eq!(
+            pink_msg.game_state.messaging.dialogue_message_index.value(),
+            0x15c
+        );
 
         let mut bully_msg = fresh_state();
         bully_msg.sprite_slot_mut(k).set_direction(2);
         bully_msg.sprite_slot_mut(k).set_x_velocity(0x12);
         bully_msg.sprite_slot_mut(k).set_y_velocity(0x34);
         bully_msg.bully_handle_message(k);
-        assert_eq!(bully_msg.dialogue_message_index().value(), 0x15d);
+        assert_eq!(
+            bully_msg
+                .game_state
+                .messaging
+                .dialogue_message_index
+                .value(),
+            0x15d
+        );
         assert_eq!(bully_msg.sprite_slot(k).x_velocity(), 0xed);
         assert_eq!(bully_msg.sprite_slot(k).y_velocity(), 0xcb);
         assert_eq!(bully_msg.sprite_slot(k).delay_aux4(), 64);
         bully_msg.sprite_slot_mut(k).set_delay_aux4(0);
         bully_msg.inventory_items_mut().set_moon_pearl(1);
         bully_msg.bully_handle_message(k);
-        assert_eq!(bully_msg.dialogue_message_index().value(), 0x15e);
+        assert_eq!(
+            bully_msg
+                .game_state
+                .messaging
+                .dialogue_message_index
+                .value(),
+            0x15e
+        );
 
         let mut sasha = fresh_state();
         sasha.sprite_slot_mut(k).set_state(9);
         sasha.set_frame_counter(0x20);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x32);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x32
+        );
         assert_eq!(sasha.sprite_slot(k).graphics(), 1);
         sasha.player_resources_mut().set_pendant_flags(4);
         sasha.save_progress_mut().set_map_icons_indicator(3);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x38);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x38
+        );
         sasha.inventory_items_mut().set_boots(1);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x37);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x37
+        );
         sasha.inventory_items_mut().set_ice_rod(1);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x34);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x34
+        );
         sasha.player_resources_mut().set_pendant_flags(7);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x30);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x30
+        );
         sasha.inventory_items_mut().set_sword_type(2);
         sasha.sasha_idle(k);
-        assert_eq!(sasha.dialogue_message_index().value(), 0x31);
+        assert_eq!(
+            sasha.game_state.messaging.dialogue_message_index.value(),
+            0x31
+        );
 
         let mut old_man = fresh_state();
         let t = 2;
@@ -6287,7 +7321,7 @@ mod tests {
         old_man.tagalong_slot_mut(t).set_position(0x0420, 0x0340);
         old_man.player_state_mut().mark_lower_level();
         old_man.follower_state_mut().set_indicator(6);
-        old_man.player_state_mut().set_speed_setting(9);
+        old_man.follower_link_state_mut().set_speed_setting(9);
         old_man.old_man_revert_to_sprite(t);
         assert_eq!(old_man.sprite_slot(15).sprite_type(), 0xad);
         assert_eq!(old_man.sprite_slot(15).direction(), 2);
@@ -6299,8 +7333,8 @@ mod tests {
         assert_eq!(old_man.sprite_slot(15).subtype2(), 1);
         assert_eq!(old_man.player_state().immobilized_flag(), 1);
         assert_eq!(old_man.player_state().sprite_damage_disable_timer(), 1);
-        assert_eq!(old_man.follower_state().indicator(), 0);
-        assert_eq!(old_man.player_state().speed_setting(), 0);
+        assert_eq!(old_man.game_state.sprites.follower_runtime.indicator(), 0);
+        assert_eq!(old_man.game_state.player.follower_link.speed_setting(), 0);
 
         let mut apple = fresh_state();
         apple.sprite_slot_mut(k).set_state(9);
@@ -6377,50 +7411,159 @@ mod tests {
 
         let mut pirogusu = fresh_state();
         pirogusu.set_frame_counter(k as u8);
-        pirogusu.garnish_slot_mut(14).set_garnish_type(1);
+        pirogusu
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut pirogusu.ram, 14)
+            .set_garnish_type(1);
         pirogusu.sprite_set_x(k, 0x0110);
         pirogusu.sprite_set_y(k, 0x0220);
         pirogusu.pirogusu_spawn_splash(k);
-        assert_eq!(pirogusu.garnish_slot(13).garnish_type(), 11);
-        assert_eq!(pirogusu.garnish_state().active_type(), 11);
-        assert_eq!(pirogusu.garnish_slot(13).x_low(), 0x15);
-        assert_eq!(pirogusu.garnish_slot(13).x_high(), 0x01);
-        assert_eq!(pirogusu.garnish_slot(13).y_low(), 0x34);
-        assert_eq!(pirogusu.garnish_slot(13).y_high(), 0x02);
-        assert_eq!(pirogusu.garnish_slot(13).countdown(), 15);
+        assert_eq!(
+            pirogusu
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .garnish_type(),
+            11
+        );
+        assert_eq!(
+            pirogusu.game_state.sprites.garnish_runtime.active_type(),
+            11
+        );
+        assert_eq!(
+            pirogusu.game_state.sprites.garnish_slots.slot(13).x_low(),
+            0x15
+        );
+        assert_eq!(
+            pirogusu.game_state.sprites.garnish_slots.slot(13).x_high(),
+            0x01
+        );
+        assert_eq!(
+            pirogusu.game_state.sprites.garnish_slots.slot(13).y_low(),
+            0x34
+        );
+        assert_eq!(
+            pirogusu.game_state.sprites.garnish_slots.slot(13).y_high(),
+            0x02
+        );
+        assert_eq!(
+            pirogusu
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(13)
+                .countdown(),
+            15
+        );
 
         let mut lightning = fresh_state();
-        lightning.garnish_slot_mut(29).set_garnish_type(1);
+        lightning
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut lightning.ram, 29)
+            .set_garnish_type(1);
         lightning.sprite_set_x(k, 0x0123);
         lightning.sprite_set_y(k, 0x02f4);
         lightning.sprite_slot_mut(k).set_a(7);
         lightning.lightning_spawn_garnish(k);
-        assert_eq!(lightning.garnish_slot(28).garnish_type(), 9);
-        assert_eq!(lightning.garnish_state().active_type(), 9);
-        assert_eq!(lightning.garnish_slot(28).sprite(), 7);
-        assert_eq!(lightning.garnish_slot(28).x_low(), 0x23);
-        assert_eq!(lightning.garnish_slot(28).x_high(), 0x01);
-        assert_eq!(lightning.garnish_slot(28).y_low(), 0x04);
-        assert_eq!(lightning.garnish_slot(28).y_high(), 0x03);
-        assert_eq!(lightning.garnish_slot(28).countdown(), 32);
+        assert_eq!(
+            lightning
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            9
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_runtime.active_type(),
+            9
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_slots.slot(28).sprite(),
+            7
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_slots.slot(28).x_low(),
+            0x23
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_slots.slot(28).x_high(),
+            0x01
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_slots.slot(28).y_low(),
+            0x04
+        );
+        assert_eq!(
+            lightning.game_state.sprites.garnish_slots.slot(28).y_high(),
+            0x03
+        );
+        assert_eq!(
+            lightning
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .countdown(),
+            32
+        );
 
         let mut laser = fresh_state();
-        laser.garnish_slot_mut(29).set_garnish_type(1);
+        laser
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut laser.ram, 29)
+            .set_garnish_type(1);
         laser.sprite_set_x(k, 0x0034);
         laser.sprite_set_y(k, 0x00f0);
         laser.sprite_slot_mut(k).set_graphics(5);
         laser.sprite_slot_mut(k).set_floor(2);
         laser.laser_beam_build_up_garnish(k);
-        assert_eq!(laser.garnish_slot(28).garnish_type(), 4);
-        assert_eq!(laser.garnish_state().active_type(), 4);
-        assert_eq!(laser.garnish_slot(28).x_low(), 0x34);
-        assert_eq!(laser.garnish_slot(28).x_high(), 0x00);
-        assert_eq!(laser.garnish_slot(28).y_low(), 0x00);
-        assert_eq!(laser.garnish_slot(28).y_high(), 0x01);
-        assert_eq!(laser.garnish_slot(28).countdown(), 16);
-        assert_eq!(laser.garnish_slot(28).oam_flags(), 5);
-        assert_eq!(laser.garnish_slot(28).sprite(), k as u8);
-        assert_eq!(laser.garnish_slot(28).floor(), 2);
+        assert_eq!(
+            laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            4
+        );
+        assert_eq!(laser.game_state.sprites.garnish_runtime.active_type(), 4);
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).x_low(),
+            0x34
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).x_high(),
+            0x00
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).y_low(),
+            0x00
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).y_high(),
+            0x01
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).countdown(),
+            16
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).oam_flags(),
+            5
+        );
+        assert_eq!(
+            laser.game_state.sprites.garnish_slots.slot(28).sprite(),
+            k as u8
+        );
+        assert_eq!(laser.game_state.sprites.garnish_slots.slot(28).floor(), 2);
 
         let mut logic = fresh_state();
         assert!(!logic.octoballoon_find());
@@ -6432,17 +7575,26 @@ mod tests {
         logic.inventory_items_mut().set_bottle(2, 2);
         assert!(logic.potion_cauldron_check_bottles());
         logic.potion_cauldron_go_beep(k);
-        assert_eq!(logic.system_signals().sound_effect_1() & 0x3f, 0x3c);
+        assert_eq!(
+            logic.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x3c
+        );
 
         logic.player_resources_mut().set_rupees_goal(19);
         assert!(!logic.dark_world_hint_npc_handle_payment());
-        assert_eq!(logic.player_resources().rupees_goal(), 19);
+        assert_eq!(
+            logic.game_state.inventory.player_resources.rupees_goal(),
+            19
+        );
         logic.player_resources_mut().set_rupees_goal(20);
         assert!(logic.dark_world_hint_npc_handle_payment());
-        assert_eq!(logic.player_resources().rupees_goal(), 0);
+        assert_eq!(logic.game_state.inventory.player_resources.rupees_goal(), 0);
         logic.sprite_slot_mut(k).set_ai_state(0);
         logic.dark_world_hint_npc_idle(k);
-        assert_eq!(logic.dialogue_message_index().value(), 0xfe);
+        assert_eq!(
+            logic.game_state.messaging.dialogue_message_index.value(),
+            0xfe
+        );
         assert_eq!(logic.sprite_slot(k).ai_state(), 0);
 
         logic.set_submodule(2);
@@ -6474,74 +7626,228 @@ mod tests {
         assert!(!lumberjack.lumberjack_check_proximity(k, 0));
 
         let mut blind_laser = fresh_state();
-        blind_laser.garnish_slot_mut(29).set_garnish_type(1);
+        blind_laser
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut blind_laser.ram, 29)
+            .set_garnish_type(1);
         blind_laser.sprite_set_x(k, 0x0456);
         blind_laser.sprite_set_y(k, 0x0789);
         blind_laser.sprite_slot_mut(k).set_graphics(6);
         blind_laser.blind_laser_spawn_trail_garnish(k);
-        assert_eq!(blind_laser.garnish_slot(28).garnish_type(), 15);
-        assert_eq!(blind_laser.garnish_state().active_type(), 15);
-        assert_eq!(blind_laser.garnish_slot(28).oam_flags(), 6);
-        assert_eq!(blind_laser.garnish_slot(28).sprite(), k as u8);
-        assert_eq!(blind_laser.garnish_slot(28).x_low(), 0x56);
-        assert_eq!(blind_laser.garnish_slot(28).x_high(), 0x04);
-        assert_eq!(blind_laser.garnish_slot(28).y_low(), 0x99);
-        assert_eq!(blind_laser.garnish_slot(28).y_high(), 0x07);
-        assert_eq!(blind_laser.garnish_slot(28).countdown(), 10);
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            15
+        );
+        assert_eq!(
+            blind_laser.game_state.sprites.garnish_runtime.active_type(),
+            15
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .oam_flags(),
+            6
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .sprite(),
+            k as u8
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .x_low(),
+            0x56
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .x_high(),
+            0x04
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .y_low(),
+            0x99
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .y_high(),
+            0x07
+        );
+        assert_eq!(
+            blind_laser
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .countdown(),
+            10
+        );
 
         let mut runner_dust = fresh_state();
         runner_dust.sprite_slot_mut(k).set_die_action(14);
         runner_dust.running_boy_spawn_dust_garnish(k);
-        assert_eq!(runner_dust.garnish_state().active_type(), 0);
+        assert_eq!(
+            runner_dust.game_state.sprites.garnish_runtime.active_type(),
+            0
+        );
         runner_dust.sprite_slot_mut(k).set_die_action(15);
         runner_dust.sprite_set_x(k, 0x0100);
         runner_dust.sprite_set_y(k, 0x0200);
-        runner_dust.garnish_slot_mut(29).set_garnish_type(1);
+        runner_dust
+            .game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut runner_dust.ram, 29)
+            .set_garnish_type(1);
         runner_dust.running_boy_spawn_dust_garnish(k);
-        assert_eq!(runner_dust.garnish_slot(28).garnish_type(), 20);
-        assert_eq!(runner_dust.garnish_state().active_type(), 20);
-        assert_eq!(runner_dust.garnish_slot(28).x_low(), 0x04);
-        assert_eq!(runner_dust.garnish_slot(28).x_high(), 0x01);
-        assert_eq!(runner_dust.garnish_slot(28).y_low(), 0x1c);
-        assert_eq!(runner_dust.garnish_slot(28).y_high(), 0x02);
-        assert_eq!(runner_dust.garnish_slot(28).countdown(), 10);
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .garnish_type(),
+            20
+        );
+        assert_eq!(
+            runner_dust.game_state.sprites.garnish_runtime.active_type(),
+            20
+        );
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .x_low(),
+            0x04
+        );
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .x_high(),
+            0x01
+        );
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .y_low(),
+            0x1c
+        );
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .y_high(),
+            0x02
+        );
+        assert_eq!(
+            runner_dust
+                .game_state
+                .sprites
+                .garnish_slots
+                .slot(28)
+                .countdown(),
+            10
+        );
 
         let mut cd = fresh_state();
         cd.sprite_slot_mut(k).set_subtype2(6);
         cd.sprite_cd_spawn_garnish(k);
-        assert_eq!(cd.garnish_state().active_type(), 0);
+        assert_eq!(cd.game_state.sprites.garnish_runtime.active_type(), 0);
         cd.sprite_slot_mut(k).set_subtype2(7);
-        cd.garnish_slot_mut(29).set_garnish_type(1);
+        cd.game_state
+            .sprites
+            .garnish_slots
+            .slot_mut(&mut cd.ram, 29)
+            .set_garnish_type(1);
         cd.sprite_set_x(k, 0x0033);
         cd.sprite_set_y(k, 0x0044);
         cd.sprite_cd_spawn_garnish(k);
         assert_eq!(cd.sprite_slot(k).subtype2(), 8);
-        assert_eq!(cd.system_signals().sound_effect_2() & 0x3f, 0x14);
-        assert_eq!(cd.garnish_slot(28).garnish_type(), 0x0c);
-        assert_eq!(cd.garnish_state().active_type(), 0x0c);
-        assert_eq!(cd.garnish_slot(28).sprite(), k as u8);
-        assert_eq!(cd.garnish_slot(28).x_low(), 0x33);
-        assert_eq!(cd.garnish_slot(28).y_low(), 0x54);
-        assert_eq!(cd.garnish_slot(28).countdown(), 127);
+        assert_eq!(cd.game_state.system_signals.sound_effect_2() & 0x3f, 0x14);
+        assert_eq!(
+            cd.game_state.sprites.garnish_slots.slot(28).garnish_type(),
+            0x0c
+        );
+        assert_eq!(cd.game_state.sprites.garnish_runtime.active_type(), 0x0c);
+        assert_eq!(
+            cd.game_state.sprites.garnish_slots.slot(28).sprite(),
+            k as u8
+        );
+        assert_eq!(cd.game_state.sprites.garnish_slots.slot(28).x_low(), 0x33);
+        assert_eq!(cd.game_state.sprites.garnish_slots.slot(28).y_low(), 0x54);
+        assert_eq!(
+            cd.game_state.sprites.garnish_slots.slot(28).countdown(),
+            127
+        );
 
         let mut hint = fresh_state();
         hint.sprite_slot_mut(k).set_ai_state(2);
         hint.dark_world_hint_npc_restore_health(k);
-        assert_eq!(hint.player_resources().heart_filler(), 0xa0);
+        assert_eq!(
+            hint.game_state.inventory.player_resources.heart_filler(),
+            0xa0
+        );
         assert_eq!(hint.sprite_slot(k).ai_state(), 0);
 
         let mut pipe = fresh_state();
         pipe.player_state_mut().set_position_mode(7);
         pipe.player_state_mut().set_direction_lock(9);
-        pipe.ancilla_slot_mut(3).set_ancilla_type(0x31);
+        pipe.game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut pipe.ram, 3)
+            .set_ancilla_type(0x31);
         assert!(!pipe.pipe_validate_entry());
         assert_eq!(pipe.player_state().position_mode(), 0);
         assert_eq!(pipe.player_state().direction_lock(), 0);
-        assert_eq!(pipe.ancilla_slot(3).ancilla_type(), 0);
-        pipe.player_state_mut().set_state_bits(0x80);
+        assert_eq!(
+            pipe.game_state.sprites.ancilla_slots.slot(3).ancilla_type(),
+            0
+        );
+        pipe.follower_link_state_mut().set_state_bits(0x80);
         assert!(pipe.pipe_validate_entry());
-        pipe.player_state_mut().clear_state_bits();
-        pipe.player_state_mut().set_auxiliary_state(2);
+        pipe.follower_link_state_mut().clear_state_bits();
+        pipe.follower_link_state_mut().set_auxiliary_state(2);
         assert!(pipe.pipe_validate_entry());
 
         let mut hobo_smoke = fresh_state();
@@ -6670,9 +7976,24 @@ mod tests {
         assert_eq!(minigame.ram[MINIGAME_CREDITS_PREP], 0xff);
 
         let mut terminate = fresh_state();
-        terminate.ancilla_slot_mut(0).set_ancilla_type(0x22);
-        terminate.ancilla_slot_mut(1).set_ancilla_type(0x21);
-        terminate.ancilla_slot_mut(4).set_ancilla_type(0x22);
+        terminate
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut terminate.ram, 0)
+            .set_ancilla_type(0x22);
+        terminate
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut terminate.ram, 1)
+            .set_ancilla_type(0x21);
+        terminate
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut terminate.ram, 4)
+            .set_ancilla_type(0x22);
         terminate.ram[ANCILLA_AUX_TIMER] = 9;
         terminate.ram[ANCILLA_AUX_TIMER + 1] = 9;
         terminate.ram[ANCILLA_AUX_TIMER + 4] = 9;
@@ -6708,7 +8029,7 @@ mod tests {
         assert_eq!(circle.sprite_slot(k).x_velocity(), 0);
         assert_eq!(circle.sprite_slot(k).a(), 0);
         assert_eq!(circle.sprite_slot(k).b(), 0);
-        assert_eq!(circle.temp_counter().value(), 0xff);
+        assert_eq!(circle.game_state.scratch_counter.value(), 0xff);
 
         for (slot, x, y, xv, yv, a, b) in [
             (
@@ -6759,21 +8080,46 @@ mod tests {
         let k = 13;
         puffs.sprite_set_x(0, 0x0100);
         puffs.sprite_set_y(0, 0x0200);
-        puffs.overlord_slot_mut(0).set_x_low(0);
-        puffs.overlord_slot_mut(1).set_x_low(0);
-        puffs.overlord_slot_mut(2).set_x_low(0xaa);
-        puffs.overlord_slot_mut(3).set_x_low(0xbb);
-        puffs.overlord_slot_mut(4).set_x_low(0);
+        puffs
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut puffs.ram, 0)
+            .set_x_low(0);
+        puffs
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut puffs.ram, 1)
+            .set_x_low(0);
+        puffs
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut puffs.ram, 2)
+            .set_x_low(0xaa);
+        puffs
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut puffs.ram, 3)
+            .set_x_low(0xbb);
+        puffs
+            .game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut puffs.ram, 4)
+            .set_x_low(0);
         puffs
             .arrghus_puff_home_position_mut(k)
             .set_position(0x0756, 0x0978);
         puffs.set_frame_counter(0);
         puffs.sprite_prep_arrghi(k);
-        assert_eq!(puffs.overlord_slot(2).x_low(), 0);
-        assert_eq!(puffs.overlord_slot(3).x_low(), 0);
+        assert_eq!(puffs.game_state.sprites.overlord_slots.slot(2).x_low(), 0);
+        assert_eq!(puffs.game_state.sprites.overlord_slots.slot(3).x_low(), 0);
         assert_eq!(puffs.sprite_slot(0).a(), 1);
         assert_eq!(puffs.sprite_slot(0).b(), 1);
-        assert_eq!(puffs.temp_counter().value(), 13);
+        assert_eq!(puffs.game_state.scratch_counter.value(), 13);
         assert_eq!(puffs.ram[OVERLORD_X_HI_PREP], 0);
         assert_eq!(puffs.ram[OVERLORD_Y_HI_PREP], 1);
         assert_eq!(puffs.ram[OVERLORD_GEN2_PREP], 3);

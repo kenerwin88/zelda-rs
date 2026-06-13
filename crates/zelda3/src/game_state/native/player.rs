@@ -155,6 +155,10 @@ impl PlayerState {
         self.tile_detection.write_to_ram(ram);
         self.tile_attributes.write_to_ram(ram);
     }
+
+    pub(crate) fn sync_follower_link_from_ram(&mut self, ram: &[u8]) {
+        self.follower_link = FollowerLinkState::load_from_ram(ram);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -220,15 +224,25 @@ pub(crate) struct FollowerLinkState {
     z: u16,
     x_velocity: u8,
     y_velocity: u8,
+    actual_x_velocity: u8,
+    actual_y_velocity: u8,
+    z_velocity: u8,
     floor: u8,
     facing: u8,
     speed_setting: u8,
+    speed_modifier: u8,
     handler_state: u8,
     immobilized: u8,
     action_state_bits: u8,
     auxiliary_state: u8,
     running: u8,
     button_mask_b_y: u8,
+    filtered_joypad_h: u8,
+    filtered_joypad_l: u8,
+    joypad1h_last: u8,
+    joypad1l_last: u8,
+    joypad1h_last2: u8,
+    joypad1l_last2: u8,
     pull_action_state: u8,
     item_in_hand: u8,
     position_mode: u8,
@@ -246,15 +260,25 @@ impl FollowerLinkState {
             z: read_le_u16(ram, LINK_Z_COORD),
             x_velocity: ram_byte(ram, LINK_X_VELOCITY),
             y_velocity: ram_byte(ram, LINK_Y_VELOCITY),
+            actual_x_velocity: ram_byte(ram, LINK_ACTUAL_X_VELOCITY),
+            actual_y_velocity: ram_byte(ram, LINK_ACTUAL_Y_VELOCITY),
+            z_velocity: ram_byte(ram, LINK_Z_VELOCITY),
             floor: ram_byte(ram, LINK_IS_ON_LOWER_LEVEL),
             facing: ram_byte(ram, LINK_FACING),
             speed_setting: ram_byte(ram, LINK_SPEED_SETTING),
+            speed_modifier: ram_byte(ram, LINK_SPEED_MODIFIER),
             handler_state: ram_byte(ram, LINK_HANDLER_STATE),
             immobilized: ram_byte(ram, FLAG_IS_LINK_IMMOBILIZED),
             action_state_bits: ram_byte(ram, LINK_STATE_BITS),
             auxiliary_state: ram_byte(ram, LINK_AUXILIARY_STATE),
             running: ram_byte(ram, LINK_IS_RUNNING),
             button_mask_b_y: ram_byte(ram, BUTTON_MASK_B_Y),
+            filtered_joypad_h: ram_byte(ram, FILTERED_JOYPAD_H),
+            filtered_joypad_l: ram_byte(ram, FILTERED_JOYPAD_L),
+            joypad1h_last: ram_byte(ram, JOYPAD1H_LAST),
+            joypad1l_last: ram_byte(ram, JOYPAD1L_LAST),
+            joypad1h_last2: ram_byte(ram, JOYPAD1H_LAST2),
+            joypad1l_last2: ram_byte(ram, JOYPAD1L_LAST2),
             pull_action_state: ram_byte(ram, LINK_PULL_ACTION_STATE),
             item_in_hand: ram_byte(ram, LINK_ITEM_IN_HAND),
             position_mode: ram_byte(ram, LINK_POSITION_MODE),
@@ -271,15 +295,25 @@ impl FollowerLinkState {
         write_le_u16(ram, LINK_Z_COORD, self.z);
         ram[LINK_X_VELOCITY] = self.x_velocity;
         ram[LINK_Y_VELOCITY] = self.y_velocity;
+        ram[LINK_ACTUAL_X_VELOCITY] = self.actual_x_velocity;
+        ram[LINK_ACTUAL_Y_VELOCITY] = self.actual_y_velocity;
+        ram[LINK_Z_VELOCITY] = self.z_velocity;
         ram[LINK_IS_ON_LOWER_LEVEL] = self.floor;
         ram[LINK_FACING] = self.facing;
         ram[LINK_SPEED_SETTING] = self.speed_setting;
+        ram[LINK_SPEED_MODIFIER] = self.speed_modifier;
         ram[LINK_HANDLER_STATE] = self.handler_state;
         ram[FLAG_IS_LINK_IMMOBILIZED] = self.immobilized;
         ram[LINK_STATE_BITS] = self.action_state_bits;
         ram[LINK_AUXILIARY_STATE] = self.auxiliary_state;
         ram[LINK_IS_RUNNING] = self.running;
         ram[BUTTON_MASK_B_Y] = self.button_mask_b_y;
+        ram[FILTERED_JOYPAD_H] = self.filtered_joypad_h;
+        ram[FILTERED_JOYPAD_L] = self.filtered_joypad_l;
+        ram[JOYPAD1H_LAST] = self.joypad1h_last;
+        ram[JOYPAD1L_LAST] = self.joypad1l_last;
+        ram[JOYPAD1H_LAST2] = self.joypad1h_last2;
+        ram[JOYPAD1L_LAST2] = self.joypad1l_last2;
         ram[LINK_PULL_ACTION_STATE] = self.pull_action_state;
         ram[LINK_ITEM_IN_HAND] = self.item_in_hand;
         ram[LINK_POSITION_MODE] = self.position_mode;
@@ -319,6 +353,38 @@ impl FollowerLinkState {
         (self.x_velocity | self.y_velocity) != 0
     }
 
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.x_velocity
+    }
+
+    pub(crate) fn x_velocity_signed(&self) -> i8 {
+        self.x_velocity as i8
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.y_velocity
+    }
+
+    pub(crate) fn y_velocity_signed(&self) -> i8 {
+        self.y_velocity as i8
+    }
+
+    pub(crate) fn actual_x_velocity(&self) -> u8 {
+        self.actual_x_velocity
+    }
+
+    pub(crate) fn actual_x_velocity_signed(&self) -> i8 {
+        self.actual_x_velocity as i8
+    }
+
+    pub(crate) fn actual_y_velocity(&self) -> u8 {
+        self.actual_y_velocity
+    }
+
+    pub(crate) fn actual_y_velocity_signed(&self) -> i8 {
+        self.actual_y_velocity as i8
+    }
+
     pub(crate) fn floor(&self) -> u8 {
         self.floor
     }
@@ -335,12 +401,28 @@ impl FollowerLinkState {
         FOLLOWER_LAYER_BITS_BY_FLOOR[floor as usize]
     }
 
+    pub(crate) fn facing(&self) -> u8 {
+        self.facing
+    }
+
+    pub(crate) fn facing_index(&self) -> usize {
+        usize::from(self.facing >> 1)
+    }
+
     pub(crate) fn facing_layer_bits(&self) -> u8 {
         self.facing >> 1
     }
 
     pub(crate) fn speed_setting(&self) -> u8 {
         self.speed_setting
+    }
+
+    pub(crate) fn speed_modifier(&self) -> u8 {
+        self.speed_modifier
+    }
+
+    pub(crate) fn handler_state(&self) -> u8 {
+        self.handler_state
     }
 
     pub(crate) fn is_ground_swim_or_dash_start(&self) -> bool {
@@ -395,6 +477,38 @@ impl FollowerLinkState {
         self.running != 0
     }
 
+    pub(crate) fn running_state(&self) -> u8 {
+        self.running
+    }
+
+    pub(crate) fn button_mask_b_y(&self) -> u8 {
+        self.button_mask_b_y
+    }
+
+    pub(crate) fn filtered_joypad_h(&self) -> u8 {
+        self.filtered_joypad_h
+    }
+
+    pub(crate) fn filtered_joypad_l(&self) -> u8 {
+        self.filtered_joypad_l
+    }
+
+    pub(crate) fn joypad1h_last(&self) -> u8 {
+        self.joypad1h_last
+    }
+
+    pub(crate) fn joypad1l_last(&self) -> u8 {
+        self.joypad1l_last
+    }
+
+    pub(crate) fn joypad1h_last2(&self) -> u8 {
+        self.joypad1h_last2
+    }
+
+    pub(crate) fn joypad1l_last2(&self) -> u8 {
+        self.joypad1l_last2
+    }
+
     pub(crate) fn can_open_follower_message(&self) -> bool {
         let blocked = (self.button_mask_b_y & 0x80)
             | self.pull_action_state
@@ -427,6 +541,163 @@ impl FollowerLinkState {
         self.speed_setting = value;
     }
 
+    fn decrement_speed_setting(&mut self) -> u8 {
+        self.speed_setting = self.speed_setting.wrapping_sub(1);
+        self.speed_setting
+    }
+
+    fn clear_speed_modifier(&mut self) {
+        self.speed_modifier = 0;
+    }
+
+    fn set_speed_modifier(&mut self, value: u8) {
+        self.speed_modifier = value;
+    }
+
+    fn arm_stair_speed_modifier(&mut self) {
+        self.speed_setting = 2;
+        self.speed_modifier = 1;
+    }
+
+    fn resolve_dash_speed_setting(&mut self) {
+        if self.speed_setting == 2 {
+            self.speed_setting = if self.running != 0 { 16 } else { 0 };
+        }
+    }
+
+    fn promote_pending_speed_modifier(&mut self) {
+        if self.speed_modifier == 1 {
+            self.speed_modifier = 2;
+        }
+    }
+
+    fn increase_near_pit_speed_modifier(&mut self) {
+        self.speed_modifier = if self.speed_modifier < 48 {
+            self.speed_modifier.wrapping_add(8)
+        } else {
+            32
+        };
+    }
+
+    fn advance_dash_deceleration(&mut self) {
+        self.speed_modifier = self.speed_modifier.wrapping_add(1);
+    }
+
+    fn set_handler_state(&mut self, value: u8) {
+        self.handler_state = value;
+    }
+
+    fn clear_handler_state(&mut self) {
+        self.handler_state = 0;
+    }
+
+    fn set_facing(&mut self, value: u8) {
+        self.facing = value;
+    }
+
+    fn set_y_low(&mut self, value: u8) {
+        self.y = (self.y & 0xff00) | u16::from(value);
+    }
+
+    fn set_x_velocity(&mut self, value: u8) {
+        self.x_velocity = value;
+    }
+
+    fn set_y_velocity(&mut self, value: u8) {
+        self.y_velocity = value;
+    }
+
+    fn set_movement_velocity_from_delta(&mut self, x_delta: u16, y_delta: u16) {
+        self.x_velocity = x_delta as u8;
+        self.y_velocity = y_delta as u8;
+    }
+
+    fn subtract_axis_velocity_delta(&mut self, horizontal: bool, delta: u8) {
+        if horizontal {
+            self.x_velocity = self.x_velocity.wrapping_sub(delta);
+        } else {
+            self.y_velocity = self.y_velocity.wrapping_sub(delta);
+        }
+    }
+
+    fn add_movement_velocity_delta(&mut self, x_delta: u16, y_delta: u16) {
+        self.x_velocity = self.x_velocity.wrapping_add(x_delta as u8);
+        self.y_velocity = self.y_velocity.wrapping_add(y_delta as u8);
+    }
+
+    fn add_y_velocity_delta(&mut self, y_delta: u8) {
+        self.y_velocity = self.y_velocity.wrapping_add(y_delta);
+    }
+
+    fn clear_movement_velocity(&mut self) {
+        self.x_velocity = 0;
+        self.y_velocity = 0;
+    }
+
+    fn set_actual_x_velocity(&mut self, value: u8) {
+        self.actual_x_velocity = value;
+    }
+
+    fn set_actual_y_velocity(&mut self, value: u8) {
+        self.actual_y_velocity = value;
+    }
+
+    fn clear_actual_x_velocity(&mut self) {
+        self.actual_x_velocity = 0;
+    }
+
+    fn clear_actual_y_velocity(&mut self) {
+        self.actual_y_velocity = 0;
+    }
+
+    fn set_actual_velocity_xy(&mut self, x: u8, y: u8) {
+        self.actual_x_velocity = x;
+        self.actual_y_velocity = y;
+    }
+
+    fn clear_actual_velocity_xy(&mut self) {
+        self.set_actual_velocity_xy(0, 0);
+    }
+
+    fn invert_actual_velocity_xy(&mut self) {
+        self.actual_x_velocity = (-(self.actual_x_velocity as i8)) as u8;
+        self.actual_y_velocity = (-(self.actual_y_velocity as i8)) as u8;
+    }
+
+    fn xor_actual_velocity_xy(&mut self, mask: u8) {
+        self.actual_x_velocity ^= mask;
+        self.actual_y_velocity ^= mask;
+    }
+
+    fn set_actual_velocity_from_direction(&mut self, direction: u8, velocity: u8) {
+        self.actual_x_velocity = if direction & 0x03 != 0 {
+            if direction & 0x02 != 0 {
+                0u8.wrapping_sub(velocity)
+            } else {
+                velocity
+            }
+        } else {
+            0
+        };
+        self.actual_y_velocity = if direction & 0x0c != 0 {
+            if direction & 0x08 != 0 {
+                0u8.wrapping_sub(velocity)
+            } else {
+                velocity
+            }
+        } else {
+            0
+        };
+    }
+
+    fn set_z(&mut self, value: u16) {
+        self.z = value;
+    }
+
+    fn set_actual_z_velocity(&mut self, value: u8) {
+        self.z_velocity = value;
+    }
+
     fn set_ground_state(&mut self) {
         self.handler_state = PLAYER_HANDLER_STATE_GROUND;
     }
@@ -435,12 +706,97 @@ impl FollowerLinkState {
         self.running = 0;
     }
 
+    fn start_running(&mut self) {
+        self.running = 1;
+    }
+
+    fn set_running_state(&mut self, value: u8) {
+        self.running = value;
+    }
+
+    fn cancel_dash_state(&mut self) {
+        self.speed_setting = 0;
+        self.running = 0;
+    }
+
     fn immobilize(&mut self) {
         self.immobilized = 1;
     }
 
+    fn clear_immobilized(&mut self) {
+        self.immobilized = 0;
+    }
+
+    fn set_button_mask_b_y(&mut self, value: u8) {
+        self.button_mask_b_y = value;
+    }
+
+    fn add_button_mask_b_y_bits(&mut self, bits: u8) {
+        self.button_mask_b_y |= bits;
+    }
+
+    fn set_pull_action_state(&mut self, value: u8) {
+        self.pull_action_state = value;
+    }
+
+    fn clear_button_mask_b_y_bits(&mut self, mask: u8) {
+        self.button_mask_b_y &= !mask;
+    }
+
+    fn set_filtered_joypad_h(&mut self, value: u8) {
+        self.filtered_joypad_h = value;
+    }
+
+    fn set_filtered_joypad_l(&mut self, value: u8) {
+        self.filtered_joypad_l = value;
+    }
+
+    fn clear_filtered_joypad_l_bits(&mut self, bits: u8) {
+        self.filtered_joypad_l &= !bits;
+    }
+
+    fn set_joypad1h_last(&mut self, value: u8) {
+        self.joypad1h_last = value;
+    }
+
+    fn set_joypad1l_last(&mut self, value: u8) {
+        self.joypad1l_last = value;
+    }
+
+    fn set_joypad1h_last2(&mut self, value: u8) {
+        self.joypad1h_last2 = value;
+    }
+
+    fn set_joypad1l_last2(&mut self, value: u8) {
+        self.joypad1l_last2 = value;
+    }
+
     fn enable_cutscene_immunity(&mut self) {
         self.sprite_damage_disabled = 1;
+    }
+
+    fn set_sprite_damage_disable_timer(&mut self, value: u8) {
+        self.sprite_damage_disabled = value;
+    }
+
+    fn clear_sprite_damage_disable_timer(&mut self) {
+        self.sprite_damage_disabled = 0;
+    }
+
+    fn set_auxiliary_state(&mut self, value: u8) {
+        self.auxiliary_state = value;
+    }
+
+    fn clear_auxiliary_state(&mut self) {
+        self.auxiliary_state = 0;
+    }
+
+    fn set_state_bits(&mut self, value: u8) {
+        self.action_state_bits = value;
+    }
+
+    fn clear_state_bits(&mut self) {
+        self.action_state_bits = 0;
     }
 }
 
@@ -470,6 +826,271 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    pub(crate) fn decrement_speed_setting(&mut self) -> u8 {
+        let value = self.state.decrement_speed_setting();
+        self.ram[LINK_SPEED_SETTING] = value;
+        self.debug_assert_matches_ram();
+        value
+    }
+
+    pub(crate) fn clear_speed_modifier(&mut self) {
+        self.state.clear_speed_modifier();
+        self.ram[LINK_SPEED_MODIFIER] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_speed_modifier(&mut self, value: u8) {
+        self.state.set_speed_modifier(value);
+        self.ram[LINK_SPEED_MODIFIER] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn arm_stair_speed_modifier(&mut self) {
+        self.state.arm_stair_speed_modifier();
+        self.ram[LINK_SPEED_SETTING] = 2;
+        self.ram[LINK_SPEED_MODIFIER] = 1;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn resolve_dash_speed_setting(&mut self) {
+        self.state.resolve_dash_speed_setting();
+        self.ram[LINK_SPEED_SETTING] = self.state.speed_setting();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn promote_pending_speed_modifier(&mut self) {
+        self.state.promote_pending_speed_modifier();
+        self.ram[LINK_SPEED_MODIFIER] = self.state.speed_modifier();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increase_near_pit_speed_modifier(&mut self) {
+        self.state.increase_near_pit_speed_modifier();
+        self.ram[LINK_SPEED_MODIFIER] = self.state.speed_modifier();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn advance_dash_deceleration(&mut self) {
+        self.state.advance_dash_deceleration();
+        self.ram[LINK_SPEED_MODIFIER] = self.state.speed_modifier();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_handler_state(&mut self, value: u8) {
+        self.state.set_handler_state(value);
+        self.ram[LINK_HANDLER_STATE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_handler_state(&mut self) {
+        self.state.clear_handler_state();
+        self.ram[LINK_HANDLER_STATE] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_facing(&mut self, value: u8) {
+        self.state.set_facing(value);
+        self.ram[LINK_FACING] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.state.set_y_low(value);
+        self.ram[LINK_Y_COORD] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.state.set_x_velocity(value);
+        self.ram[LINK_X_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.state.set_y_velocity(value);
+        self.ram[LINK_Y_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_movement_velocity_from_delta(&mut self, x_delta: u16, y_delta: u16) {
+        self.state
+            .set_movement_velocity_from_delta(x_delta, y_delta);
+        self.ram[LINK_X_VELOCITY] = x_delta as u8;
+        self.ram[LINK_Y_VELOCITY] = y_delta as u8;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn subtract_axis_velocity_delta(&mut self, horizontal: bool, delta: u8) {
+        self.state.subtract_axis_velocity_delta(horizontal, delta);
+        if horizontal {
+            self.ram[LINK_X_VELOCITY] = self.state.x_velocity();
+        } else {
+            self.ram[LINK_Y_VELOCITY] = self.state.y_velocity();
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn add_movement_velocity_delta(&mut self, x_delta: u16, y_delta: u16) {
+        self.state.add_movement_velocity_delta(x_delta, y_delta);
+        self.ram[LINK_X_VELOCITY] = self.state.x_velocity();
+        self.ram[LINK_Y_VELOCITY] = self.state.y_velocity();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn add_y_velocity_delta(&mut self, y_delta: u8) {
+        self.state.add_y_velocity_delta(y_delta);
+        self.ram[LINK_Y_VELOCITY] = self.state.y_velocity();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_movement_velocity(&mut self) {
+        self.state.clear_movement_velocity();
+        self.ram[LINK_X_VELOCITY] = 0;
+        self.ram[LINK_Y_VELOCITY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_movement_velocity_and_direction(&mut self) {
+        self.clear_movement_velocity();
+        self.ram[LINK_DIRECTION] = 0;
+    }
+
+    pub(crate) fn set_y_velocity_from_safe_return_delta_unless_ledge_hopping(&mut self) {
+        if self.ram[LINK_HANDLER_STATE] != 11 {
+            let value = (self.state.y() as u8).wrapping_sub(self.ram[LINK_Y_COORD_SAFE_RETURN_LO]);
+            self.state.set_y_velocity(value);
+            self.ram[LINK_Y_VELOCITY] = value;
+            self.debug_assert_matches_ram();
+        }
+    }
+
+    pub(crate) fn set_x_velocity_from_safe_return_delta(&mut self) {
+        let value = (self.state.x() as u8).wrapping_sub(self.ram[LINK_X_COORD_SAFE_RETURN_LO]);
+        self.state.set_x_velocity(value);
+        self.ram[LINK_X_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn update_vertical_direction_from_movement_velocity(&mut self) {
+        if self.state.y_velocity() != 0 {
+            self.ram[LINK_DIRECTION] = (self.ram[LINK_DIRECTION] & 3)
+                | if self.state.y_velocity_signed().is_negative() {
+                    8
+                } else {
+                    4
+                };
+        }
+    }
+
+    pub(crate) fn update_horizontal_direction_from_movement_velocity(&mut self) {
+        if self.state.x_velocity() != 0 {
+            self.ram[LINK_DIRECTION] = (self.ram[LINK_DIRECTION] & 0x0c)
+                | if self.state.x_velocity_signed().is_negative() {
+                    2
+                } else {
+                    1
+                };
+        }
+    }
+
+    pub(crate) fn refresh_direction_from_safe_return_delta(&mut self) {
+        self.set_y_velocity_from_safe_return_delta_unless_ledge_hopping();
+        self.update_vertical_direction_from_movement_velocity();
+        self.set_x_velocity_from_safe_return_delta();
+        self.update_horizontal_direction_from_movement_velocity();
+    }
+
+    pub(crate) fn set_actual_x_velocity(&mut self, value: u8) {
+        self.state.set_actual_x_velocity(value);
+        self.ram[LINK_ACTUAL_X_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_actual_y_velocity(&mut self, value: u8) {
+        self.state.set_actual_y_velocity(value);
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_actual_x_velocity(&mut self) {
+        self.state.clear_actual_x_velocity();
+        self.ram[LINK_ACTUAL_X_VELOCITY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_actual_y_velocity(&mut self) {
+        self.state.clear_actual_y_velocity();
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_actual_velocity_xy(&mut self, x: u8, y: u8) {
+        self.state.set_actual_velocity_xy(x, y);
+        self.ram[LINK_ACTUAL_X_VELOCITY] = x;
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = y;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_actual_velocity_xy(&mut self) {
+        self.state.clear_actual_velocity_xy();
+        self.ram[LINK_ACTUAL_X_VELOCITY] = 0;
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn invert_actual_velocity_xy(&mut self) {
+        self.state.invert_actual_velocity_xy();
+        self.ram[LINK_ACTUAL_X_VELOCITY] = self.state.actual_x_velocity();
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = self.state.actual_y_velocity();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn xor_actual_velocity_xy(&mut self, mask: u8) {
+        self.state.xor_actual_velocity_xy(mask);
+        self.ram[LINK_ACTUAL_X_VELOCITY] = self.state.actual_x_velocity();
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = self.state.actual_y_velocity();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn derive_direction_from_actual_velocity(&mut self) {
+        self.ram[LINK_DIRECTION] = 0;
+        if self.state.actual_y_velocity() != 0 {
+            self.ram[LINK_DIRECTION] |= if self.state.actual_y_velocity_signed().is_negative() {
+                8
+            } else {
+                4
+            };
+        }
+        if self.state.actual_x_velocity() != 0 {
+            self.ram[LINK_DIRECTION] |= if self.state.actual_x_velocity_signed().is_negative() {
+                2
+            } else {
+                1
+            };
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_actual_velocity_from_direction(&mut self, direction: u8, velocity: u8) {
+        self.state
+            .set_actual_velocity_from_direction(direction, velocity);
+        self.ram[LINK_ACTUAL_X_VELOCITY] = self.state.actual_x_velocity();
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = self.state.actual_y_velocity();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_z(&mut self, value: u16) {
+        self.state.set_z(value);
+        write_le_u16(self.ram, LINK_Z_COORD, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_actual_z_velocity(&mut self, value: u8) {
+        self.state.set_actual_z_velocity(value);
+        self.ram[LINK_Z_VELOCITY] = value;
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_ground_state(&mut self) {
         self.state.set_ground_state();
         self.ram[LINK_HANDLER_STATE] = PLAYER_HANDLER_STATE_GROUND;
@@ -482,15 +1103,144 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    pub(crate) fn start_running(&mut self) {
+        self.state.start_running();
+        self.ram[LINK_IS_RUNNING] = 1;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_running_state(&mut self, value: u8) {
+        self.state.set_running_state(value);
+        self.ram[LINK_IS_RUNNING] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn cancel_dash_state(&mut self) {
+        self.state.cancel_dash_state();
+        self.ram[LINK_COUNTDOWN_FOR_DASH] = 0;
+        self.ram[LINK_SPEED_SETTING] = 0;
+        self.ram[LINK_IS_RUNNING] = 0;
+        self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn immobilize(&mut self) {
         self.state.immobilize();
         self.ram[FLAG_IS_LINK_IMMOBILIZED] = 1;
         self.debug_assert_matches_ram();
     }
 
+    pub(crate) fn clear_immobilized(&mut self) {
+        self.state.clear_immobilized();
+        self.ram[FLAG_IS_LINK_IMMOBILIZED] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_button_mask_b_y(&mut self, value: u8) {
+        self.state.set_button_mask_b_y(value);
+        self.ram[BUTTON_MASK_B_Y] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn add_button_mask_b_y_bits(&mut self, bits: u8) {
+        self.state.add_button_mask_b_y_bits(bits);
+        self.ram[BUTTON_MASK_B_Y] |= bits;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_pull_action_state(&mut self, value: u8) {
+        self.state.set_pull_action_state(value);
+        self.ram[LINK_PULL_ACTION_STATE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_button_mask_b_y_bits(&mut self, mask: u8) {
+        self.state.clear_button_mask_b_y_bits(mask);
+        self.ram[BUTTON_MASK_B_Y] &= !mask;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_filtered_joypad_h(&mut self, value: u8) {
+        self.state.set_filtered_joypad_h(value);
+        self.ram[FILTERED_JOYPAD_H] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_filtered_joypad_l(&mut self, value: u8) {
+        self.state.set_filtered_joypad_l(value);
+        self.ram[FILTERED_JOYPAD_L] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_filtered_joypad_l_bits(&mut self, bits: u8) {
+        self.state.clear_filtered_joypad_l_bits(bits);
+        self.ram[FILTERED_JOYPAD_L] &= !bits;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_joypad1h_last(&mut self, value: u8) {
+        self.state.set_joypad1h_last(value);
+        self.ram[JOYPAD1H_LAST] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_joypad1l_last(&mut self, value: u8) {
+        self.state.set_joypad1l_last(value);
+        self.ram[JOYPAD1L_LAST] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_joypad1h_last2(&mut self, value: u8) {
+        self.state.set_joypad1h_last2(value);
+        self.ram[JOYPAD1H_LAST2] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_joypad1l_last2(&mut self, value: u8) {
+        self.state.set_joypad1l_last2(value);
+        self.ram[JOYPAD1L_LAST2] = value;
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn enable_cutscene_immunity(&mut self) {
         self.state.enable_cutscene_immunity();
         self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 1;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_sprite_damage_disable_timer(&mut self, value: u8) {
+        self.state.set_sprite_damage_disable_timer(value);
+        self.ram[LINK_DISABLE_SPRITE_DAMAGE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_sprite_damage_disable_timer(&mut self) {
+        self.state.clear_sprite_damage_disable_timer();
+        self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_auxiliary_state(&mut self, value: u8) {
+        self.state.set_auxiliary_state(value);
+        self.ram[LINK_AUXILIARY_STATE] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_auxiliary_state(&mut self) {
+        self.state.clear_auxiliary_state();
+        self.ram[LINK_AUXILIARY_STATE] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_state_bits(&mut self, value: u8) {
+        self.state.set_state_bits(value);
+        self.ram[LINK_STATE_BITS] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_state_bits(&mut self) {
+        self.state.clear_state_bits();
+        self.ram[LINK_STATE_BITS] = 0;
         self.debug_assert_matches_ram();
     }
 }

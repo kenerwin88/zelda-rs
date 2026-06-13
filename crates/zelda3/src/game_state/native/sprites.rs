@@ -2,9 +2,15 @@ use super::ram_byte;
 use crate::game_state::constants::{
     ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG,
     ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI,
-    ALT_SPRITE_Y_LO, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_DIRECTION,
-    ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_TYPE, ANCILLA_X_HI, ANCILLA_X_LO,
-    ANCILLA_X_VELOCITY, ANCILLA_Y_HI, ANCILLA_Y_LO, ANCILLA_Y_VELOCITY, BLIND_HEAD_ANIM_COUNTER,
+    ALT_SPRITE_Y_LO, ANCILLA_A, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_B,
+    ANCILLA_DIRECTION, ANCILLA_FLOOR, ANCILLA_FLOOR2, ANCILLA_G, ANCILLA_H, ANCILLA_ITEM_TO_LINK,
+    ANCILLA_K, ANCILLA_L, ANCILLA_NUMSPR, ANCILLA_OAM_IDX, ANCILLA_OBJPRIO, ANCILLA_R,
+    ANCILLA_STEP, ANCILLA_S_PLAYER, ANCILLA_TILE_ATTRIBUTE, ANCILLA_TIMER, ANCILLA_TYPE,
+    ANCILLA_T_PLAYER, ANCILLA_U, ANCILLA_WORK_BYTE_1, ANCILLA_WORK_BYTE_22, ANCILLA_WORK_BYTE_23,
+    ANCILLA_WORK_BYTE_24, ANCILLA_WORK_BYTE_25, ANCILLA_WORK_BYTE_26, ANCILLA_WORK_BYTE_3,
+    ANCILLA_WORK_BYTE_4, ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_X_SUBPIXEL, ANCILLA_X_VELOCITY,
+    ANCILLA_Y_HI, ANCILLA_Y_LO, ANCILLA_Y_SUBPIXEL, ANCILLA_Y_VELOCITY, ANCILLA_Z,
+    ANCILLA_Z_SUBPIXEL_PLAYER, ANCILLA_Z_VELOCITY, BLIND_HEAD_ANIM_COUNTER,
     CACHED_SPRITE_ALT_FIELDS, CACHED_SPRITE_LIVE_FIELDS, CHAIN_CHOMP_HISTORY_X,
     CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y, DRAW_WORK_FLAGS_HI,
     DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA,
@@ -13,29 +19,45 @@ use crate::game_state::constants::{
     FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR, FOLLOWER_JUMP_TIMER,
     FOLLOWER_KIKI_ANIM_COUNTER, FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR,
     FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX,
-    GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
-    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN1, OVERLORD_GEN2, OVERLORD_GEN3,
+    GARNISH_ACTIVE, GARNISH_COUNTDOWN, GARNISH_FLOOR, GARNISH_OAM_FLAGS, GARNISH_SPRITE,
+    GARNISH_TYPE, GARNISH_X_HI, GARNISH_X_LO, GARNISH_X_SUBPIXEL, GARNISH_X_VELOCITY, GARNISH_Y_HI,
+    GARNISH_Y_LO, GARNISH_Y_SUBPIXEL, GARNISH_Y_VELOCITY, HAUNTED_GROVE_FLUTE_EVENT_LATCH,
+    HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
+    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN1,
+    OVERLORD_GEN2, OVERLORD_GEN3, OVERLORD_OFFSET_SPRITE_POS, OVERLORD_SPAWNED_AREA, OVERLORD_TYPE,
     OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO, OVERWORLD_BOULDER_TRAP_COUNT,
     OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
     PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER,
     REPULSESPARK_X_LO, REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE,
-    SPRCOLL_Y_SIZE, SPRITE_AI_STATE, SPRITE_ALERT_FLAG, SPRITE_CHR_HALFSLOT_STATE,
-    SPRITE_DELAY_MAIN, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS_INDEX,
-    SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_HEALTH, SPRITE_HIT_TIMER,
-    SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE, SPRITE_LOAD_BLOCK_STATE, SPRITE_OAM_PREP_X,
-    SPRITE_OAM_PREP_Y, SPRITE_PICKUP_SLOT_CACHE, SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B,
-    SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI, SPRITE_SHARED_WORK_A, SPRITE_STATE,
-    SPRITE_TILETYPE, SPRITE_TYPE, SPRITE_WHERE_IN_ROOM, SPRITE_X_HI, SPRITE_X_LO,
-    SPRITE_X_VELOCITY, SPRITE_Y_HI, SPRITE_Y_LO, SPRITE_Y_VELOCITY, SPR_RANGED_BASED_TOGGLER,
-    TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG, TAGALONG_DATA_INDEX,
-    TAGALONG_EVENT_FLAGS, TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS, TAGALONG_SHARED_STATE_A,
-    TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
-    TIMER_TAGALONG_REACQUIRE, ZELDA_RESCUE_CUTSCENE_STATE,
+    SPRCOLL_Y_SIZE, SPRITE_A, SPRITE_AI_STATE, SPRITE_ALERT_FLAG, SPRITE_ANIM_CLOCK, SPRITE_B,
+    SPRITE_BUMP_DAMAGE, SPRITE_C, SPRITE_CHR_HALFSLOT_STATE, SPRITE_D, SPRITE_DEFL_BITS,
+    SPRITE_DELAY_AUX1, SPRITE_DELAY_AUX2, SPRITE_DELAY_AUX3, SPRITE_DELAY_AUX4, SPRITE_DELAY_MAIN,
+    SPRITE_DIE_ACTION, SPRITE_DRAW_I, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_DRAW_WORK_BYTE_1,
+    SPRITE_DRAW_WORK_BYTE_2, SPRITE_DRAW_WORK_BYTE_3, SPRITE_DRAW_WORK_BYTE_4,
+    SPRITE_DRAW_WORK_BYTE_5, SPRITE_E, SPRITE_F, SPRITE_FLAGS, SPRITE_FLAGS2, SPRITE_FLAGS3,
+    SPRITE_FLAGS4, SPRITE_FLAGS5, SPRITE_FLOOR, SPRITE_G, SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS,
+    SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT,
+    SPRITE_HEAD_DIR, SPRITE_HEALTH, SPRITE_HIT_TIMER, SPRITE_IGNORE_PROJECTILE,
+    SPRITE_INCOMING_DAMAGE, SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE,
+    SPRITE_LOAD_BLOCK_STATE, SPRITE_N, SPRITE_OAM_FLAGS, SPRITE_OAM_PREP_X, SPRITE_OAM_PREP_Y,
+    SPRITE_OBJ_PRIO, SPRITE_PAUSE, SPRITE_PICKUP_SLOT_CACHE, SPRITE_RESET_WORK_A,
+    SPRITE_RESET_WORK_B, SPRITE_ROOM, SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI,
+    SPRITE_SHARED_WORK_A, SPRITE_STATE, SPRITE_STUNNED, SPRITE_SUBTYPE, SPRITE_SUBTYPE2,
+    SPRITE_TILETYPE, SPRITE_TYPE, SPRITE_WALL_COLLISION, SPRITE_WHERE_IN_ROOM, SPRITE_X_HI,
+    SPRITE_X_LO, SPRITE_X_RECOIL, SPRITE_X_SUBPIXEL, SPRITE_X_VELOCITY, SPRITE_Y_HI, SPRITE_Y_LO,
+    SPRITE_Y_RECOIL, SPRITE_Y_SUBPIXEL, SPRITE_Y_VELOCITY, SPRITE_Z, SPRITE_Z_SUBPIXEL,
+    SPRITE_Z_VELOCITY, SPR_RANGED_BASED_TOGGLER, TAGALONG_ANIM_FRAME_COUNTER,
+    TAGALONG_APPEARANCE_NONE_FLAG, TAGALONG_DATA_INDEX, TAGALONG_EVENT_FLAGS,
+    TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS, TAGALONG_SHARED_STATE_A, TAGALONG_X_HI,
+    TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z, TIMER_TAGALONG_REACQUIRE,
+    ZELDA_RESCUE_CUTSCENE_STATE,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
+const ANCILLA_SLOT_COUNT: usize = 10;
+const OVERLORD_SLOT_COUNT: usize = 16;
+const GARNISH_SLOT_COUNT: usize = 30;
 const TAGALONG_SLOT_COUNT: usize = 20;
 const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ETHER_ANGLE_COUNT: usize = 8;
@@ -125,6 +147,10 @@ impl AncillaSlotSnapshot {
 pub(crate) struct SpriteState {
     pub(crate) system: SpriteSystemState,
     pub(crate) workspace: SpriteWorkspaceState,
+    pub(crate) sprite_slots: SpriteSlotsState,
+    pub(crate) ancilla_slots: AncillaSlotsState,
+    pub(crate) overlord_slots: OverlordSlotsState,
+    pub(crate) garnish_slots: GarnishSlotsState,
     pub(crate) maze_game_timer: MazeGameTimerState,
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
@@ -147,6 +173,10 @@ impl SpriteState {
         Self {
             system: SpriteSystemState::load_from_ram(ram),
             workspace: SpriteWorkspaceState::load_from_ram(ram),
+            sprite_slots: SpriteSlotsState::load_from_ram(ram),
+            ancilla_slots: AncillaSlotsState::load_from_ram(ram),
+            overlord_slots: OverlordSlotsState::load_from_ram(ram),
+            garnish_slots: GarnishSlotsState::load_from_ram(ram),
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
@@ -168,6 +198,10 @@ impl SpriteState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.system.write_to_ram(ram);
         self.workspace.write_to_ram(ram);
+        self.sprite_slots.write_to_ram(ram);
+        self.ancilla_slots.write_to_ram(ram);
+        self.overlord_slots.write_to_ram(ram);
+        self.garnish_slots.write_to_ram(ram);
         self.maze_game_timer.write_to_ram(ram);
         self.prize_drop_cycle.write_to_ram(ram);
         self.dual_layer_tile_cache.write_to_ram(ram);
@@ -181,6 +215,3220 @@ impl SpriteState {
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
         self.garnish_runtime.write_to_ram(ram);
         self.follower_runtime.write_to_ram(ram);
+    }
+}
+
+const SPRITE_SLOTS_FIELD_RANGES: &[(usize, usize)] = &[
+    (SPRITE_STUNNED, SPRITE_SLOT_COUNT),
+    (SPRITE_FLAGS, SPRITE_SLOT_COUNT),
+    (SPRITE_OBJ_PRIO, SPRITE_SLOT_COUNT),
+    (SPRITE_IGNORE_PROJECTILE, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_WORK_BYTE_2, SPRITE_SLOT_COUNT),
+    (SPRITE_N, SPRITE_SLOT_COUNT * 2),
+    (SPRITE_FLAGS5, SPRITE_SLOT_COUNT),
+    (SPRITE_ROOM, SPRITE_SLOT_COUNT),
+    (SPRITE_DEFL_BITS, SPRITE_SLOT_COUNT),
+    (SPRITE_DIE_ACTION, SPRITE_SLOT_COUNT),
+    (SPRITE_BUMP_DAMAGE, SPRITE_SLOT_COUNT),
+    (SPRITE_INCOMING_DAMAGE, SPRITE_SLOT_COUNT),
+    (SPRITE_Y_LO, SPRITE_SLOT_COUNT),
+    (SPRITE_X_LO, SPRITE_SLOT_COUNT),
+    (SPRITE_Y_HI, SPRITE_SLOT_COUNT),
+    (SPRITE_X_HI, SPRITE_SLOT_COUNT),
+    (SPRITE_Y_VELOCITY, SPRITE_SLOT_COUNT),
+    (SPRITE_X_VELOCITY, SPRITE_SLOT_COUNT),
+    (SPRITE_Y_SUBPIXEL, SPRITE_SLOT_COUNT),
+    (SPRITE_X_SUBPIXEL, SPRITE_SLOT_COUNT),
+    (SPRITE_AI_STATE, SPRITE_SLOT_COUNT),
+    (SPRITE_A, SPRITE_SLOT_COUNT),
+    (SPRITE_B, SPRITE_SLOT_COUNT),
+    (SPRITE_C, SPRITE_SLOT_COUNT),
+    (SPRITE_GRAPHICS, SPRITE_SLOT_COUNT),
+    (SPRITE_STATE, SPRITE_SLOT_COUNT),
+    (SPRITE_D, SPRITE_SLOT_COUNT),
+    (SPRITE_DELAY_MAIN, SPRITE_SLOT_COUNT),
+    (SPRITE_DELAY_AUX1, SPRITE_SLOT_COUNT),
+    (SPRITE_DELAY_AUX2, SPRITE_SLOT_COUNT),
+    (SPRITE_TYPE, SPRITE_SLOT_COUNT),
+    (SPRITE_SUBTYPE, SPRITE_SLOT_COUNT),
+    (SPRITE_FLAGS2, SPRITE_SLOT_COUNT),
+    (SPRITE_HEALTH, SPRITE_SLOT_COUNT),
+    (SPRITE_FLAGS3, SPRITE_SLOT_COUNT),
+    (SPRITE_WALL_COLLISION, SPRITE_SLOT_COUNT),
+    (SPRITE_SUBTYPE2, SPRITE_SLOT_COUNT),
+    (SPRITE_E, SPRITE_SLOT_COUNT),
+    (SPRITE_F, SPRITE_SLOT_COUNT),
+    (SPRITE_HEAD_DIR, SPRITE_SLOT_COUNT),
+    (SPRITE_ANIM_CLOCK, SPRITE_SLOT_COUNT),
+    (SPRITE_G, SPRITE_SLOT_COUNT),
+    (SPRITE_DELAY_AUX3, SPRITE_SLOT_COUNT),
+    (SPRITE_HIT_TIMER, SPRITE_SLOT_COUNT),
+    (SPRITE_PAUSE, SPRITE_SLOT_COUNT),
+    (SPRITE_DELAY_AUX4, SPRITE_SLOT_COUNT),
+    (SPRITE_FLOOR, SPRITE_SLOT_COUNT),
+    (SPRITE_Y_RECOIL, SPRITE_SLOT_COUNT),
+    (SPRITE_X_RECOIL, SPRITE_SLOT_COUNT),
+    (SPRITE_OAM_FLAGS, SPRITE_SLOT_COUNT),
+    (SPRITE_FLAGS4, SPRITE_SLOT_COUNT),
+    (SPRITE_Z, SPRITE_SLOT_COUNT),
+    (SPRITE_Z_VELOCITY, SPRITE_SLOT_COUNT),
+    (SPRITE_Z_SUBPIXEL, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_I, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_WORK_BYTE_3, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_WORK_BYTE_4, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_WORK_BYTE_5, SPRITE_SLOT_COUNT),
+    (SPRITE_DRAW_WORK_BYTE_1, SPRITE_SLOT_COUNT),
+];
+const SPRITE_SLOTS_WORK_BASE: usize = SPRITE_STUNNED;
+const SPRITE_SLOTS_WORK_END: usize = SPRITE_DRAW_WORK_BYTE_1 + SPRITE_SLOT_COUNT;
+const SPRITE_SLOTS_WORK_LEN: usize = SPRITE_SLOTS_WORK_END - SPRITE_SLOTS_WORK_BASE;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteSlotsState {
+    work: Vec<u8>,
+}
+
+impl Default for SpriteSlotsState {
+    fn default() -> Self {
+        Self {
+            work: vec![0; SPRITE_SLOTS_WORK_LEN],
+        }
+    }
+}
+
+impl SpriteSlotsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for offset in Self::field_offsets() {
+            let index = Self::work_index(offset);
+            state.work[index] = ram.get(offset).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for offset in Self::field_offsets() {
+            ram[offset] = self.byte_at(offset);
+        }
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> NativeSpriteSlotView<'_> {
+        NativeSpriteSlotView { state: self, slot }
+    }
+
+    pub(crate) fn slot_mut<'a>(
+        &'a mut self,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> NativeSpriteSlotBridgeMut<'a> {
+        NativeSpriteSlotBridgeMut {
+            state: self,
+            ram,
+            slot,
+        }
+    }
+
+    fn field_offsets() -> impl Iterator<Item = usize> {
+        SPRITE_SLOTS_FIELD_RANGES
+            .iter()
+            .copied()
+            .flat_map(|(base, width)| (0..width).map(move |offset| base + offset))
+    }
+
+    fn work_index(offset: usize) -> usize {
+        offset - SPRITE_SLOTS_WORK_BASE
+    }
+
+    fn byte_at(&self, offset: usize) -> u8 {
+        self.work
+            .get(Self::work_index(offset))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn set_byte_at(&mut self, offset: usize, value: u8) {
+        self.work[Self::work_index(offset)] = value;
+    }
+
+    fn byte(&self, slot: usize, base: usize) -> u8 {
+        self.byte_at(base + slot)
+    }
+
+    fn set_byte(&mut self, slot: usize, base: usize, value: u8) {
+        self.set_byte_at(base + slot, value);
+    }
+
+    fn word_at(&self, offset: usize) -> u16 {
+        u16::from(self.byte_at(offset)) | (u16::from(self.byte_at(offset + 1)) << 8)
+    }
+
+    fn set_word_at(&mut self, offset: usize, value: u16) {
+        self.set_byte_at(offset, value as u8);
+        self.set_byte_at(offset + 1, (value >> 8) as u8);
+    }
+
+    fn packed_position(&self, slot: usize, low_offset: usize, high_offset: usize) -> u16 {
+        u16::from(self.byte(slot, low_offset)) | (u16::from(self.byte(slot, high_offset)) << 8)
+    }
+
+    fn set_position(&mut self, slot: usize, low_offset: usize, high_offset: usize, value: u16) {
+        self.set_byte(slot, low_offset, value as u8);
+        self.set_byte(slot, high_offset, (value >> 8) as u8);
+    }
+
+    fn move_axis24(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        low_offset: usize,
+        high_offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos = u32::from(self.byte(slot, subpixel_offset))
+            | (u32::from(self.byte(slot, low_offset)) << 8)
+            | (u32::from(self.byte(slot, high_offset)) << 16);
+        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u32;
+        let moved = pos.wrapping_add(delta);
+        self.set_byte(slot, subpixel_offset, moved as u8);
+        self.set_byte(slot, low_offset, (moved >> 8) as u8);
+        self.set_byte(slot, high_offset, (moved >> 16) as u8);
+    }
+
+    fn move_axis16(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos =
+            (u16::from(self.byte(slot, offset)) << 8) | u16::from(self.byte(slot, subpixel_offset));
+        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u16;
+        let moved = pos.wrapping_add(delta);
+        self.set_byte(slot, subpixel_offset, moved as u8);
+        self.set_byte(slot, offset, (moved >> 8) as u8);
+    }
+}
+
+pub(crate) struct NativeSpriteSlotView<'a> {
+    state: &'a SpriteSlotsState,
+    slot: usize,
+}
+
+impl<'a> NativeSpriteSlotView<'a> {
+    pub(crate) fn slot(&self) -> u8 {
+        self.slot as u8
+    }
+
+    pub(crate) fn sprite_type(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_TYPE)
+    }
+
+    pub(crate) fn state(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_STATE)
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.sprite_type() != 0 || self.state() != 0
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.state
+            .packed_position(self.slot, SPRITE_X_LO, SPRITE_X_HI)
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_LO)
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_HI)
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.state
+            .packed_position(self.slot, SPRITE_Y_LO, SPRITE_Y_HI)
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_LO)
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_HI)
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_VELOCITY)
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_VELOCITY)
+    }
+
+    pub(crate) fn z_velocity(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Z_VELOCITY)
+    }
+
+    pub(crate) fn x_recoil(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_RECOIL)
+    }
+
+    pub(crate) fn y_recoil(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_RECOIL)
+    }
+
+    pub(crate) fn x_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_SUBPIXEL)
+    }
+
+    pub(crate) fn y_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_SUBPIXEL)
+    }
+
+    pub(crate) fn z(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Z)
+    }
+
+    pub(crate) fn z_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Z_SUBPIXEL)
+    }
+
+    pub(crate) fn ai_state(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_AI_STATE)
+    }
+
+    pub(crate) fn a(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_A)
+    }
+
+    pub(crate) fn c(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_C)
+    }
+
+    pub(crate) fn b(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_B)
+    }
+
+    pub(crate) fn e(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_E)
+    }
+
+    pub(crate) fn f(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_F)
+    }
+
+    pub(crate) fn g(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_G)
+    }
+
+    pub(crate) fn graphics(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_GRAPHICS)
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_D)
+    }
+
+    pub(crate) fn subtype(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_SUBTYPE)
+    }
+
+    pub(crate) fn delay_main(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DELAY_MAIN)
+    }
+
+    pub(crate) fn delay_aux1(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DELAY_AUX1)
+    }
+
+    pub(crate) fn delay_aux4(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DELAY_AUX4)
+    }
+
+    pub(crate) fn delay_aux2(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DELAY_AUX2)
+    }
+
+    pub(crate) fn flags2(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLAGS2)
+    }
+
+    pub(crate) fn flags(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLAGS)
+    }
+
+    pub(crate) fn flags3(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLAGS3)
+    }
+
+    pub(crate) fn wall_collision(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_WALL_COLLISION)
+    }
+
+    pub(crate) fn anim_clock(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_ANIM_CLOCK)
+    }
+
+    pub(crate) fn delay_aux3(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DELAY_AUX3)
+    }
+
+    pub(crate) fn flags4(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLAGS4)
+    }
+
+    pub(crate) fn flags5(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLAGS5)
+    }
+
+    pub(crate) fn health(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_HEALTH)
+    }
+
+    pub(crate) fn hit_timer(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_HIT_TIMER)
+    }
+
+    pub(crate) fn pause(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_PAUSE)
+    }
+
+    pub(crate) fn stunned(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_STUNNED)
+    }
+
+    pub(crate) fn ignore_projectile(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_IGNORE_PROJECTILE)
+    }
+
+    pub(crate) fn draw_work_byte_2(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_2)
+    }
+
+    pub(crate) fn n(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_N)
+    }
+
+    pub(crate) fn n_word(&self) -> u16 {
+        self.state.word_at(SPRITE_N + self.slot * 2)
+    }
+
+    pub(crate) fn deflection_bits(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DEFL_BITS)
+    }
+
+    pub(crate) fn bump_damage(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_BUMP_DAMAGE)
+    }
+
+    pub(crate) fn incoming_damage(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_INCOMING_DAMAGE)
+    }
+
+    pub(crate) fn floor(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_FLOOR)
+    }
+
+    pub(crate) fn room(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_ROOM)
+    }
+
+    pub(crate) fn die_action(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DIE_ACTION)
+    }
+
+    pub(crate) fn draw_i(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_I)
+    }
+
+    pub(crate) fn draw_work_byte_3(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_3)
+    }
+
+    pub(crate) fn draw_work_byte_4(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_4)
+    }
+
+    pub(crate) fn draw_work_byte_5(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_5)
+    }
+
+    pub(crate) fn draw_work_byte_1(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_1)
+    }
+
+    pub(crate) fn head_direction(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_HEAD_DIR)
+    }
+
+    pub(crate) fn oam_flags(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_OAM_FLAGS)
+    }
+
+    pub(crate) fn object_priority(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_OBJ_PRIO)
+    }
+
+    pub(crate) fn subtype2(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_SUBTYPE2)
+    }
+}
+
+pub(crate) struct NativeSpriteSlotBridgeMut<'a> {
+    state: &'a mut SpriteSlotsState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeSpriteSlotBridgeMut<'a> {
+    fn sync(&mut self) {
+        for (base, width) in SPRITE_SLOTS_FIELD_RANGES.iter().copied() {
+            let offset = base + self.slot;
+            if self.slot < width {
+                self.ram[offset] = self.state.byte_at(offset);
+            }
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        for (base, width) in SPRITE_SLOTS_FIELD_RANGES.iter().copied() {
+            let offset = base + self.slot;
+            if self.slot < width {
+                debug_assert_eq!(self.state.byte_at(offset), self.ram[offset]);
+            }
+        }
+    }
+
+    fn set_byte(&mut self, base: usize, value: u8) {
+        self.state.set_byte(self.slot, base, value);
+        self.sync();
+    }
+
+    fn set_position(&mut self, low_offset: usize, high_offset: usize, value: u16) {
+        self.state
+            .set_position(self.slot, low_offset, high_offset, value);
+        self.sync();
+    }
+
+    fn set_word_at(&mut self, offset: usize, value: u16) {
+        self.state.set_word_at(offset, value);
+        self.ram[offset] = self.state.byte_at(offset);
+        self.ram[offset + 1] = self.state.byte_at(offset + 1);
+        debug_assert_eq!(self.state.byte_at(offset), self.ram[offset]);
+        debug_assert_eq!(self.state.byte_at(offset + 1), self.ram[offset + 1]);
+    }
+
+    fn move_axis24(
+        &mut self,
+        subpixel_offset: usize,
+        low_offset: usize,
+        high_offset: usize,
+        velocity_offset: usize,
+    ) {
+        self.state.move_axis24(
+            self.slot,
+            subpixel_offset,
+            low_offset,
+            high_offset,
+            velocity_offset,
+        );
+        self.sync();
+    }
+
+    fn move_axis16(&mut self, subpixel_offset: usize, offset: usize, velocity_offset: usize) {
+        self.state
+            .move_axis16(self.slot, subpixel_offset, offset, velocity_offset);
+        self.sync();
+    }
+
+    fn add_byte(&mut self, base: usize, value: u8) -> u8 {
+        let next = self.state.byte(self.slot, base).wrapping_add(value);
+        self.set_byte(base, next);
+        next
+    }
+
+    fn subtract_byte(&mut self, base: usize, value: u8) -> u8 {
+        let next = self.state.byte(self.slot, base).wrapping_sub(value);
+        self.set_byte(base, next);
+        next
+    }
+
+    fn xor_byte(&mut self, base: usize, value: u8) {
+        let next = self.state.byte(self.slot, base) ^ value;
+        self.set_byte(base, next);
+    }
+
+    fn and_byte(&mut self, base: usize, value: u8) {
+        let next = self.state.byte(self.slot, base) & value;
+        self.set_byte(base, next);
+    }
+
+    fn or_byte(&mut self, base: usize, value: u8) {
+        let next = self.state.byte(self.slot, base) | value;
+        self.set_byte(base, next);
+    }
+
+    pub(crate) fn set_sprite_type(&mut self, value: u8) {
+        self.set_byte(SPRITE_TYPE, value);
+    }
+
+    pub(crate) fn set_state(&mut self, value: u8) {
+        self.set_byte(SPRITE_STATE, value);
+    }
+
+    pub(crate) fn increment_state(&mut self) {
+        self.add_byte(SPRITE_STATE, 1);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.set_state(0);
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.set_byte(SPRITE_X_VELOCITY, value);
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.set_byte(SPRITE_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn set_z_velocity(&mut self, value: u8) {
+        self.set_byte(SPRITE_Z_VELOCITY, value);
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_X_VELOCITY)
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.state.byte(self.slot, SPRITE_Y_VELOCITY)
+    }
+
+    pub(crate) fn add_x_velocity(&mut self, value: u8) {
+        self.add_byte(SPRITE_X_VELOCITY, value);
+    }
+
+    pub(crate) fn add_y_velocity(&mut self, value: u8) {
+        self.add_byte(SPRITE_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn subtract_x_velocity(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_X_VELOCITY, value);
+    }
+
+    pub(crate) fn subtract_y_velocity(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn xor_x_velocity(&mut self, value: u8) {
+        self.xor_byte(SPRITE_X_VELOCITY, value);
+    }
+
+    pub(crate) fn xor_y_velocity(&mut self, value: u8) {
+        self.xor_byte(SPRITE_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn set_ai_state(&mut self, value: u8) {
+        self.set_byte(SPRITE_AI_STATE, value);
+    }
+
+    pub(crate) fn increment_ai_state(&mut self) {
+        self.add_byte(SPRITE_AI_STATE, 1);
+    }
+
+    pub(crate) fn decrement_ai_state(&mut self) {
+        self.subtract_byte(SPRITE_AI_STATE, 1);
+    }
+
+    pub(crate) fn add_ai_state(&mut self, value: u8) {
+        self.add_byte(SPRITE_AI_STATE, value);
+    }
+
+    pub(crate) fn subtract_ai_state(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_AI_STATE, value);
+    }
+
+    pub(crate) fn set_delay_main(&mut self, value: u8) {
+        self.set_byte(SPRITE_DELAY_MAIN, value);
+    }
+
+    pub(crate) fn increment_delay_main(&mut self) {
+        self.add_byte(SPRITE_DELAY_MAIN, 1);
+    }
+
+    pub(crate) fn add_delay_main(&mut self, value: u8) {
+        self.add_byte(SPRITE_DELAY_MAIN, value);
+    }
+
+    pub(crate) fn subtract_delay_main(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_DELAY_MAIN, value);
+    }
+
+    pub(crate) fn set_graphics(&mut self, value: u8) {
+        self.set_byte(SPRITE_GRAPHICS, value);
+    }
+
+    pub(crate) fn increment_graphics(&mut self) {
+        self.add_byte(SPRITE_GRAPHICS, 1);
+    }
+
+    pub(crate) fn add_graphics(&mut self, value: u8) {
+        self.add_byte(SPRITE_GRAPHICS, value);
+    }
+
+    pub(crate) fn decrement_graphics(&mut self) {
+        self.subtract_byte(SPRITE_GRAPHICS, 1);
+    }
+
+    pub(crate) fn xor_graphics(&mut self, value: u8) {
+        self.xor_byte(SPRITE_GRAPHICS, value);
+    }
+
+    pub(crate) fn set_direction(&mut self, value: u8) {
+        self.set_byte(SPRITE_D, value);
+    }
+
+    pub(crate) fn add_direction(&mut self, value: u8) {
+        self.add_byte(SPRITE_D, value);
+    }
+
+    pub(crate) fn and_direction(&mut self, value: u8) {
+        self.and_byte(SPRITE_D, value);
+    }
+
+    pub(crate) fn increment_direction(&mut self) {
+        self.add_byte(SPRITE_D, 1);
+    }
+
+    pub(crate) fn xor_direction(&mut self, value: u8) {
+        self.xor_byte(SPRITE_D, value);
+    }
+
+    pub(crate) fn set_oam_flags(&mut self, value: u8) {
+        self.set_byte(SPRITE_OAM_FLAGS, value);
+    }
+
+    pub(crate) fn and_oam_flags(&mut self, value: u8) {
+        self.and_byte(SPRITE_OAM_FLAGS, value);
+    }
+
+    pub(crate) fn xor_oam_flags(&mut self, value: u8) {
+        self.xor_byte(SPRITE_OAM_FLAGS, value);
+    }
+
+    pub(crate) fn or_oam_flags(&mut self, value: u8) {
+        self.or_byte(SPRITE_OAM_FLAGS, value);
+    }
+
+    pub(crate) fn set_a(&mut self, value: u8) {
+        self.set_byte(SPRITE_A, value);
+    }
+
+    pub(crate) fn increment_a(&mut self) {
+        self.add_byte(SPRITE_A, 1);
+    }
+
+    pub(crate) fn add_a(&mut self, value: u8) {
+        self.add_byte(SPRITE_A, value);
+    }
+
+    pub(crate) fn decrement_a(&mut self) {
+        self.subtract_byte(SPRITE_A, 1);
+    }
+
+    pub(crate) fn subtract_a(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_A, value);
+    }
+
+    pub(crate) fn xor_a(&mut self, value: u8) {
+        self.xor_byte(SPRITE_A, value);
+    }
+
+    pub(crate) fn set_head_direction(&mut self, value: u8) {
+        self.set_byte(SPRITE_HEAD_DIR, value);
+    }
+
+    pub(crate) fn increment_head_direction(&mut self) {
+        self.add_byte(SPRITE_HEAD_DIR, 1);
+    }
+
+    pub(crate) fn add_head_direction(&mut self, value: u8) {
+        self.add_byte(SPRITE_HEAD_DIR, value);
+    }
+
+    pub(crate) fn decrement_head_direction(&mut self) {
+        self.subtract_byte(SPRITE_HEAD_DIR, 1);
+    }
+
+    pub(crate) fn increment_head_direction_mod16(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_HEAD_DIR).wrapping_add(1) & 15;
+        self.set_byte(SPRITE_HEAD_DIR, next);
+    }
+
+    pub(crate) fn set_z(&mut self, value: u8) {
+        self.set_byte(SPRITE_Z, value);
+    }
+
+    pub(crate) fn set_ignore_projectile(&mut self, value: u8) {
+        self.set_byte(SPRITE_IGNORE_PROJECTILE, value);
+    }
+
+    pub(crate) fn set_subtype2(&mut self, value: u8) {
+        self.set_byte(SPRITE_SUBTYPE2, value);
+    }
+
+    pub(crate) fn set_flags2(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLAGS2, value);
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.set_byte(SPRITE_X_LO, value);
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.set_position(SPRITE_X_LO, SPRITE_X_HI, value);
+    }
+
+    pub(crate) fn set_c(&mut self, value: u8) {
+        self.set_byte(SPRITE_C, value);
+    }
+
+    pub(crate) fn set_b(&mut self, value: u8) {
+        self.set_byte(SPRITE_B, value);
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.set_byte(SPRITE_Y_LO, value);
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.set_position(SPRITE_Y_LO, SPRITE_Y_HI, value);
+    }
+
+    pub(crate) fn set_delay_aux1(&mut self, value: u8) {
+        self.set_byte(SPRITE_DELAY_AUX1, value);
+    }
+
+    pub(crate) fn add_subtype2(&mut self, value: u8) {
+        self.add_byte(SPRITE_SUBTYPE2, value);
+    }
+
+    pub(crate) fn increment_subtype2(&mut self) {
+        self.add_byte(SPRITE_SUBTYPE2, 1);
+    }
+
+    pub(crate) fn increment_ignore_projectile(&mut self) {
+        self.add_byte(SPRITE_IGNORE_PROJECTILE, 1);
+    }
+
+    pub(crate) fn set_flags4(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLAGS4, value);
+    }
+
+    pub(crate) fn set_g(&mut self, value: u8) {
+        self.set_byte(SPRITE_G, value);
+    }
+
+    pub(crate) fn subtract_z_velocity(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_Z_VELOCITY, value);
+    }
+
+    pub(crate) fn set_hit_timer(&mut self, value: u8) {
+        self.set_byte(SPRITE_HIT_TIMER, value);
+    }
+
+    pub(crate) fn set_flags3(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLAGS3, value);
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.set_byte(SPRITE_X_HI, value);
+    }
+
+    pub(crate) fn set_e(&mut self, value: u8) {
+        self.set_byte(SPRITE_E, value);
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.set_byte(SPRITE_Y_HI, value);
+    }
+
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLOOR, value);
+    }
+
+    pub(crate) fn set_deflection_bits(&mut self, value: u8) {
+        self.set_byte(SPRITE_DEFL_BITS, value);
+    }
+
+    pub(crate) fn set_delay_aux4(&mut self, value: u8) {
+        self.set_byte(SPRITE_DELAY_AUX4, value);
+    }
+
+    pub(crate) fn set_health(&mut self, value: u8) {
+        self.set_byte(SPRITE_HEALTH, value);
+    }
+
+    pub(crate) fn set_subtype(&mut self, value: u8) {
+        self.set_byte(SPRITE_SUBTYPE, value);
+    }
+
+    pub(crate) fn set_delay_aux2(&mut self, value: u8) {
+        self.set_byte(SPRITE_DELAY_AUX2, value);
+    }
+
+    pub(crate) fn set_f(&mut self, value: u8) {
+        self.set_byte(SPRITE_F, value);
+    }
+
+    pub(crate) fn set_anim_clock(&mut self, value: u8) {
+        self.set_byte(SPRITE_ANIM_CLOCK, value);
+    }
+
+    pub(crate) fn set_bump_damage(&mut self, value: u8) {
+        self.set_byte(SPRITE_BUMP_DAMAGE, value);
+    }
+
+    pub(crate) fn set_flags5(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLAGS5, value);
+    }
+
+    pub(crate) fn set_object_priority(&mut self, value: u8) {
+        self.set_byte(SPRITE_OBJ_PRIO, value);
+    }
+
+    pub(crate) fn add_x_low(&mut self, value: u8) {
+        self.add_byte(SPRITE_X_LO, value);
+    }
+
+    pub(crate) fn or_flags3(&mut self, value: u8) {
+        self.or_byte(SPRITE_FLAGS3, value);
+    }
+
+    pub(crate) fn add_b(&mut self, value: u8) {
+        self.add_byte(SPRITE_B, value);
+    }
+
+    pub(crate) fn set_stunned(&mut self, value: u8) {
+        self.set_byte(SPRITE_STUNNED, value);
+    }
+
+    pub(crate) fn add_g(&mut self, value: u8) {
+        self.add_byte(SPRITE_G, value);
+    }
+
+    pub(crate) fn and_flags3(&mut self, value: u8) {
+        self.and_byte(SPRITE_FLAGS3, value);
+    }
+
+    pub(crate) fn set_incoming_damage(&mut self, value: u8) {
+        self.set_byte(SPRITE_INCOMING_DAMAGE, value);
+    }
+
+    pub(crate) fn set_n(&mut self, value: u8) {
+        self.set_byte(SPRITE_N, value);
+    }
+
+    pub(crate) fn set_n_word(&mut self, value: u16) {
+        self.set_word_at(SPRITE_N + self.slot * 2, value);
+    }
+
+    pub(crate) fn or_object_priority(&mut self, value: u8) {
+        self.or_byte(SPRITE_OBJ_PRIO, value);
+    }
+
+    pub(crate) fn set_x_recoil(&mut self, value: u8) {
+        self.set_byte(SPRITE_X_RECOIL, value);
+    }
+
+    pub(crate) fn set_y_recoil(&mut self, value: u8) {
+        self.set_byte(SPRITE_Y_RECOIL, value);
+    }
+
+    pub(crate) fn add_flags2(&mut self, value: u8) {
+        self.add_byte(SPRITE_FLAGS2, value);
+    }
+
+    pub(crate) fn add_y_low(&mut self, value: u8) {
+        self.add_byte(SPRITE_Y_LO, value);
+    }
+
+    pub(crate) fn set_die_action(&mut self, value: u8) {
+        self.set_byte(SPRITE_DIE_ACTION, value);
+    }
+
+    pub(crate) fn add_z_velocity(&mut self, value: u8) {
+        self.add_byte(SPRITE_Z_VELOCITY, value);
+    }
+
+    pub(crate) fn add_c(&mut self, value: u8) {
+        self.add_byte(SPRITE_C, value);
+    }
+
+    pub(crate) fn or_deflection_bits(&mut self, value: u8) {
+        self.or_byte(SPRITE_DEFL_BITS, value);
+    }
+
+    pub(crate) fn set_delay_aux3(&mut self, value: u8) {
+        self.set_byte(SPRITE_DELAY_AUX3, value);
+    }
+
+    pub(crate) fn and_flags2(&mut self, value: u8) {
+        self.and_byte(SPRITE_FLAGS2, value);
+    }
+
+    pub(crate) fn increment_g(&mut self) {
+        self.add_byte(SPRITE_G, 1);
+    }
+
+    pub(crate) fn set_pause(&mut self, value: u8) {
+        self.set_byte(SPRITE_PAUSE, value);
+    }
+
+    pub(crate) fn set_room(&mut self, value: u8) {
+        self.set_byte(SPRITE_ROOM, value);
+    }
+
+    pub(crate) fn set_wall_collision(&mut self, value: u8) {
+        self.set_byte(SPRITE_WALL_COLLISION, value);
+    }
+
+    pub(crate) fn set_z_subpixel(&mut self, value: u8) {
+        self.set_byte(SPRITE_Z_SUBPIXEL, value);
+    }
+
+    pub(crate) fn subtract_y_low(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_Y_LO, value);
+    }
+
+    pub(crate) fn add_z(&mut self, value: u8) {
+        self.add_byte(SPRITE_Z, value);
+    }
+
+    pub(crate) fn clear_flags3_bits(&mut self, mask: u8) {
+        let next = self.state.byte(self.slot, SPRITE_FLAGS3) & !mask;
+        self.set_byte(SPRITE_FLAGS3, next);
+    }
+
+    pub(crate) fn decrement_subtype2(&mut self) -> u8 {
+        self.subtract_byte(SPRITE_SUBTYPE2, 1)
+    }
+
+    pub(crate) fn or_flags2(&mut self, value: u8) {
+        self.or_byte(SPRITE_FLAGS2, value);
+    }
+
+    pub(crate) fn or_object_priority_bits(&mut self, value: u8) {
+        self.or_byte(SPRITE_OBJ_PRIO, value);
+    }
+
+    pub(crate) fn subtract_flags2(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_FLAGS2, value);
+    }
+
+    pub(crate) fn add_subtype(&mut self, value: u8) {
+        self.add_byte(SPRITE_SUBTYPE, value);
+    }
+
+    pub(crate) fn decrement_z_velocity(&mut self) {
+        self.subtract_byte(SPRITE_Z_VELOCITY, 1);
+    }
+
+    pub(crate) fn increment_anim_clock(&mut self) {
+        self.add_byte(SPRITE_ANIM_CLOCK, 1);
+    }
+
+    pub(crate) fn increment_b(&mut self) {
+        self.add_byte(SPRITE_B, 1);
+    }
+
+    pub(crate) fn increment_c(&mut self) {
+        self.add_byte(SPRITE_C, 1);
+    }
+
+    pub(crate) fn increment_e(&mut self) -> u8 {
+        self.add_byte(SPRITE_E, 1)
+    }
+
+    pub(crate) fn negate_x_velocity(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_X_VELOCITY).wrapping_neg();
+        self.set_byte(SPRITE_X_VELOCITY, next);
+    }
+
+    pub(crate) fn negate_y_velocity(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_Y_VELOCITY).wrapping_neg();
+        self.set_byte(SPRITE_Y_VELOCITY, next);
+    }
+
+    pub(crate) fn increment_flags4(&mut self) {
+        self.add_byte(SPRITE_FLAGS4, 1);
+    }
+
+    pub(crate) fn set_flags(&mut self, value: u8) {
+        self.set_byte(SPRITE_FLAGS, value);
+    }
+
+    pub(crate) fn and_deflection_bits(&mut self, value: u8) {
+        self.and_byte(SPRITE_DEFL_BITS, value);
+    }
+
+    pub(crate) fn and_flags5(&mut self, value: u8) {
+        self.and_byte(SPRITE_FLAGS5, value);
+    }
+
+    pub(crate) fn decrement_g(&mut self) {
+        self.subtract_byte(SPRITE_G, 1);
+    }
+
+    pub(crate) fn masked_or_oam_flags(&mut self, mask: u8, value: u8) {
+        let next = (self.state.byte(self.slot, SPRITE_OAM_FLAGS) & mask) | value;
+        self.set_byte(SPRITE_OAM_FLAGS, next);
+    }
+
+    pub(crate) fn or_wall_collision(&mut self, value: u8) {
+        self.or_byte(SPRITE_WALL_COLLISION, value);
+    }
+
+    pub(crate) fn set_draw_i(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_I, value);
+    }
+
+    pub(crate) fn set_draw_work_byte_3(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_WORK_BYTE_3, value);
+    }
+
+    pub(crate) fn subtract_b(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_B, value);
+    }
+
+    pub(crate) fn and_object_priority(&mut self, value: u8) {
+        self.and_byte(SPRITE_OBJ_PRIO, value);
+    }
+
+    pub(crate) fn decrement_c(&mut self) {
+        self.subtract_byte(SPRITE_C, 1);
+    }
+
+    pub(crate) fn decrement_subtype(&mut self) {
+        self.subtract_byte(SPRITE_SUBTYPE, 1);
+    }
+
+    pub(crate) fn increment_subtype(&mut self) {
+        self.add_byte(SPRITE_SUBTYPE, 1);
+    }
+
+    pub(crate) fn masked_or_flags2(&mut self, mask: u8, value: u8) {
+        let next = (self.state.byte(self.slot, SPRITE_FLAGS2) & mask) | value;
+        self.set_byte(SPRITE_FLAGS2, next);
+    }
+
+    pub(crate) fn masked_or_flags3(&mut self, mask: u8, value: u8) {
+        let next = (self.state.byte(self.slot, SPRITE_FLAGS3) & mask) | value;
+        self.set_byte(SPRITE_FLAGS3, next);
+    }
+
+    pub(crate) fn or_hit_timer(&mut self, value: u8) {
+        self.or_byte(SPRITE_HIT_TIMER, value);
+    }
+
+    pub(crate) fn set_draw_work_byte_1(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_WORK_BYTE_1, value);
+    }
+
+    pub(crate) fn set_draw_work_byte_2(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_WORK_BYTE_2, value);
+    }
+
+    pub(crate) fn set_draw_work_byte_4(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_WORK_BYTE_4, value);
+    }
+
+    pub(crate) fn set_draw_work_byte_5(&mut self, value: u8) {
+        self.set_byte(SPRITE_DRAW_WORK_BYTE_5, value);
+    }
+
+    pub(crate) fn subtract_x_low(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_X_LO, value);
+    }
+
+    pub(crate) fn xor_flags3(&mut self, value: u8) {
+        self.xor_byte(SPRITE_FLAGS3, value);
+    }
+
+    pub(crate) fn add_e(&mut self, value: u8) {
+        self.add_byte(SPRITE_E, value);
+    }
+
+    pub(crate) fn and_bump_damage(&mut self, value: u8) {
+        self.and_byte(SPRITE_BUMP_DAMAGE, value);
+    }
+
+    pub(crate) fn and_subtype(&mut self, value: u8) {
+        self.and_byte(SPRITE_SUBTYPE, value);
+    }
+
+    pub(crate) fn clear_deflection_bits(&mut self, mask: u8) {
+        let next = self.state.byte(self.slot, SPRITE_DEFL_BITS) & !mask;
+        self.set_byte(SPRITE_DEFL_BITS, next);
+    }
+
+    pub(crate) fn clear_object_priority_bits(&mut self, mask: u8) {
+        let next = self.state.byte(self.slot, SPRITE_OBJ_PRIO) & !mask;
+        self.set_byte(SPRITE_OBJ_PRIO, next);
+    }
+
+    pub(crate) fn clear_prep_runtime_state(&mut self) {
+        for base in [
+            SPRITE_A,
+            SPRITE_AI_STATE,
+            SPRITE_ANIM_CLOCK,
+            SPRITE_B,
+            SPRITE_C,
+            SPRITE_D,
+            SPRITE_DELAY_AUX1,
+            SPRITE_DELAY_AUX2,
+            SPRITE_DELAY_AUX4,
+            SPRITE_DELAY_MAIN,
+            SPRITE_DRAW_I,
+            SPRITE_DRAW_WORK_BYTE_1,
+            SPRITE_DRAW_WORK_BYTE_2,
+            SPRITE_DRAW_WORK_BYTE_3,
+            SPRITE_DRAW_WORK_BYTE_4,
+            SPRITE_DRAW_WORK_BYTE_5,
+            SPRITE_E,
+            SPRITE_F,
+            SPRITE_G,
+            SPRITE_GRAPHICS,
+            SPRITE_HEAD_DIR,
+            SPRITE_HEALTH,
+            SPRITE_HIT_TIMER,
+            SPRITE_IGNORE_PROJECTILE,
+            SPRITE_INCOMING_DAMAGE,
+            SPRITE_OAM_FLAGS,
+            SPRITE_OBJ_PRIO,
+            SPRITE_PAUSE,
+            SPRITE_STUNNED,
+            SPRITE_SUBTYPE2,
+            SPRITE_WALL_COLLISION,
+            SPRITE_X_RECOIL,
+            SPRITE_X_SUBPIXEL,
+            SPRITE_X_VELOCITY,
+            SPRITE_Y_RECOIL,
+            SPRITE_Y_SUBPIXEL,
+            SPRITE_Y_VELOCITY,
+            SPRITE_Z,
+            SPRITE_Z_SUBPIXEL,
+            SPRITE_Z_VELOCITY,
+        ] {
+            self.set_byte(base, 0);
+        }
+    }
+
+    pub(crate) fn decrement_anim_clock(&mut self) {
+        self.subtract_byte(SPRITE_ANIM_CLOCK, 1);
+    }
+
+    pub(crate) fn decrement_f(&mut self) {
+        self.subtract_byte(SPRITE_F, 1);
+    }
+
+    pub(crate) fn decrement_health(&mut self) {
+        self.subtract_byte(SPRITE_HEALTH, 1);
+    }
+
+    pub(crate) fn decrement_z_subpixel(&mut self) -> u8 {
+        self.subtract_byte(SPRITE_Z_SUBPIXEL, 1)
+    }
+
+    pub(crate) fn increment_die_action(&mut self) {
+        self.add_byte(SPRITE_DIE_ACTION, 1);
+    }
+
+    pub(crate) fn increment_draw_work_byte_3(&mut self) {
+        self.add_byte(SPRITE_DRAW_WORK_BYTE_3, 1);
+    }
+
+    pub(crate) fn masked_or_flags(&mut self, mask: u8, value: u8) {
+        let next = (self.state.byte(self.slot, SPRITE_FLAGS) & mask) | value;
+        self.set_byte(SPRITE_FLAGS, next);
+    }
+
+    pub(crate) fn negate_z_subpixel(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_Z_SUBPIXEL).wrapping_neg();
+        self.set_byte(SPRITE_Z_SUBPIXEL, next);
+    }
+
+    pub(crate) fn negate_z_velocity(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_Z_VELOCITY).wrapping_neg();
+        self.set_byte(SPRITE_Z_VELOCITY, next);
+    }
+
+    pub(crate) fn or_flags4(&mut self, value: u8) {
+        self.or_byte(SPRITE_FLAGS4, value);
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.set_byte(SPRITE_X_SUBPIXEL, value);
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.set_byte(SPRITE_Y_SUBPIXEL, value);
+    }
+
+    pub(crate) fn subtract_f(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_F, value);
+    }
+
+    pub(crate) fn subtract_g(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_G, value);
+    }
+
+    pub(crate) fn subtract_subtype2(&mut self, value: u8) {
+        self.subtract_byte(SPRITE_SUBTYPE2, value);
+    }
+
+    pub(crate) fn xor_b(&mut self, value: u8) {
+        self.xor_byte(SPRITE_B, value);
+    }
+
+    pub(crate) fn xor_c(&mut self, value: u8) {
+        self.xor_byte(SPRITE_C, value);
+    }
+
+    pub(crate) fn add_anim_clock(&mut self, value: u8) {
+        self.add_byte(SPRITE_ANIM_CLOCK, value);
+    }
+
+    pub(crate) fn and_x_velocity(&mut self, value: u8) {
+        self.and_byte(SPRITE_X_VELOCITY, value);
+    }
+
+    pub(crate) fn and_y_velocity(&mut self, value: u8) {
+        self.and_byte(SPRITE_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn decrement_e(&mut self) -> u8 {
+        self.subtract_byte(SPRITE_E, 1)
+    }
+
+    pub(crate) fn decrement_stunned(&mut self) {
+        self.subtract_byte(SPRITE_STUNNED, 1);
+    }
+
+    pub(crate) fn decrement_wall_collision(&mut self) {
+        self.subtract_byte(SPRITE_WALL_COLLISION, 1);
+    }
+
+    pub(crate) fn halve_delay_main(&mut self) {
+        let next = self.state.byte(self.slot, SPRITE_DELAY_MAIN) >> 1;
+        self.set_byte(SPRITE_DELAY_MAIN, next);
+    }
+
+    pub(crate) fn halve_x_velocity(&mut self) {
+        let next = ((self.state.byte(self.slot, SPRITE_X_VELOCITY) as i8) >> 1) as u8;
+        self.set_byte(SPRITE_X_VELOCITY, next);
+    }
+
+    pub(crate) fn halve_y_velocity(&mut self) {
+        let next = ((self.state.byte(self.slot, SPRITE_Y_VELOCITY) as i8) >> 1) as u8;
+        self.set_byte(SPRITE_Y_VELOCITY, next);
+    }
+
+    pub(crate) fn increment_z_subpixel(&mut self) -> u8 {
+        self.add_byte(SPRITE_Z_SUBPIXEL, 1)
+    }
+
+    pub(crate) fn shift_x_velocity_left(&mut self, amount: u32) {
+        let next = self
+            .state
+            .byte(self.slot, SPRITE_X_VELOCITY)
+            .wrapping_shl(amount);
+        self.set_byte(SPRITE_X_VELOCITY, next);
+    }
+
+    pub(crate) fn shift_y_velocity_left(&mut self, amount: u32) {
+        let next = self
+            .state
+            .byte(self.slot, SPRITE_Y_VELOCITY)
+            .wrapping_shl(amount);
+        self.set_byte(SPRITE_Y_VELOCITY, next);
+    }
+
+    pub(crate) fn move_x(&mut self) {
+        if self.state.byte(self.slot, SPRITE_X_VELOCITY) == 0 {
+            return;
+        }
+        self.move_axis24(
+            SPRITE_X_SUBPIXEL,
+            SPRITE_X_LO,
+            SPRITE_X_HI,
+            SPRITE_X_VELOCITY,
+        );
+    }
+
+    pub(crate) fn move_y(&mut self) {
+        if self.state.byte(self.slot, SPRITE_Y_VELOCITY) == 0 {
+            return;
+        }
+        self.move_axis24(
+            SPRITE_Y_SUBPIXEL,
+            SPRITE_Y_LO,
+            SPRITE_Y_HI,
+            SPRITE_Y_VELOCITY,
+        );
+    }
+
+    pub(crate) fn move_z(&mut self) {
+        self.move_axis16(SPRITE_Z_SUBPIXEL, SPRITE_Z, SPRITE_Z_VELOCITY);
+    }
+}
+
+const ANCILLA_WORK_BASE: usize = ANCILLA_OBJPRIO;
+const ANCILLA_WORK_END: usize = ANCILLA_NUMSPR + ANCILLA_SLOT_COUNT;
+const ANCILLA_WORK_LEN: usize = ANCILLA_WORK_END - ANCILLA_WORK_BASE;
+const ANCILLA_FIELD_BASES: &[usize] = &[
+    ANCILLA_OBJPRIO,
+    ANCILLA_U,
+    ANCILLA_Z_VELOCITY,
+    ANCILLA_Z,
+    ANCILLA_Z_SUBPIXEL_PLAYER,
+    ANCILLA_K,
+    ANCILLA_L,
+    ANCILLA_A,
+    ANCILLA_B,
+    ANCILLA_G,
+    ANCILLA_WORK_BYTE_3,
+    ANCILLA_WORK_BYTE_1,
+    ANCILLA_S_PLAYER,
+    ANCILLA_AUX_TIMER,
+    ANCILLA_H,
+    ANCILLA_FLOOR2,
+    ANCILLA_WORK_BYTE_23,
+    ANCILLA_T_PLAYER,
+    ANCILLA_WORK_BYTE_24,
+    ANCILLA_TILE_ATTRIBUTE,
+    ANCILLA_R,
+    ANCILLA_WORK_BYTE_26,
+    ANCILLA_WORK_BYTE_25,
+    ANCILLA_WORK_BYTE_22,
+    ANCILLA_WORK_BYTE_4,
+    ANCILLA_Y_LO,
+    ANCILLA_X_LO,
+    ANCILLA_Y_HI,
+    ANCILLA_X_HI,
+    ANCILLA_Y_VELOCITY,
+    ANCILLA_X_VELOCITY,
+    ANCILLA_Y_SUBPIXEL,
+    ANCILLA_X_SUBPIXEL,
+    ANCILLA_TYPE,
+    ANCILLA_STEP,
+    ANCILLA_ITEM_TO_LINK,
+    ANCILLA_TIMER,
+    ANCILLA_DIRECTION,
+    ANCILLA_FLOOR,
+    ANCILLA_OAM_IDX,
+    ANCILLA_NUMSPR,
+];
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AncillaSlotsState {
+    work: Vec<u8>,
+}
+
+impl Default for AncillaSlotsState {
+    fn default() -> Self {
+        Self {
+            work: vec![0; ANCILLA_WORK_LEN],
+        }
+    }
+}
+
+impl AncillaSlotsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for offset in Self::field_offsets() {
+            let index = Self::work_index(offset);
+            state.work[index] = ram.get(offset).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for offset in Self::field_offsets() {
+            ram[offset] = self.byte_at(offset);
+        }
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> NativeAncillaSlotView<'_> {
+        NativeAncillaSlotView { state: self, slot }
+    }
+
+    pub(crate) fn slot_mut<'a>(
+        &'a mut self,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> NativeAncillaSlotBridgeMut<'a> {
+        NativeAncillaSlotBridgeMut {
+            state: self,
+            ram,
+            slot,
+        }
+    }
+
+    fn work_index(offset: usize) -> usize {
+        offset - ANCILLA_WORK_BASE
+    }
+
+    fn field_offsets() -> impl Iterator<Item = usize> {
+        ANCILLA_FIELD_BASES
+            .iter()
+            .copied()
+            .flat_map(|base| (0..ANCILLA_SLOT_COUNT).map(move |slot| base + slot))
+    }
+
+    fn byte_at(&self, offset: usize) -> u8 {
+        self.work
+            .get(Self::work_index(offset))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn set_byte_at(&mut self, offset: usize, value: u8) {
+        let index = Self::work_index(offset);
+        if self.work.len() < ANCILLA_WORK_LEN {
+            self.work.resize(ANCILLA_WORK_LEN, 0);
+        }
+        self.work[index] = value;
+    }
+
+    fn byte(&self, slot: usize, offset: usize) -> u8 {
+        self.byte_at(offset + slot)
+    }
+
+    fn set_byte(&mut self, slot: usize, offset: usize, value: u8) {
+        self.set_byte_at(offset + slot, value);
+    }
+
+    fn word_at(&self, offset: usize) -> u16 {
+        u16::from(self.byte_at(offset)) | (u16::from(self.byte_at(offset + 1)) << 8)
+    }
+
+    fn set_word_at(&mut self, offset: usize, value: u16) {
+        self.set_byte_at(offset, value as u8);
+        self.set_byte_at(offset + 1, (value >> 8) as u8);
+    }
+
+    fn packed_position(&self, slot: usize, low_offset: usize, high_offset: usize) -> u16 {
+        u16::from(self.byte(slot, low_offset)) | (u16::from(self.byte(slot, high_offset)) << 8)
+    }
+
+    fn set_position(&mut self, slot: usize, low_offset: usize, high_offset: usize, value: u16) {
+        self.set_byte(slot, low_offset, value as u8);
+        self.set_byte(slot, high_offset, (value >> 8) as u8);
+    }
+
+    fn move_axis24(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        low_offset: usize,
+        high_offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos = u32::from(self.byte(slot, subpixel_offset))
+            | (u32::from(self.byte(slot, low_offset)) << 8)
+            | (u32::from(self.byte(slot, high_offset)) << 16);
+        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u32;
+        let moved = pos.wrapping_add(delta);
+        self.set_byte(slot, subpixel_offset, moved as u8);
+        self.set_byte(slot, low_offset, (moved >> 8) as u8);
+        self.set_byte(slot, high_offset, (moved >> 16) as u8);
+    }
+
+    fn move_axis16(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos =
+            (u16::from(self.byte(slot, offset)) << 8) | u16::from(self.byte(slot, subpixel_offset));
+        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u16;
+        let moved = pos.wrapping_add(delta);
+        self.set_byte(slot, subpixel_offset, moved as u8);
+        self.set_byte(slot, offset, (moved >> 8) as u8);
+    }
+
+    fn add_byte(&mut self, slot: usize, offset: usize, value: u8) -> u8 {
+        let next = self.byte(slot, offset).wrapping_add(value);
+        self.set_byte(slot, offset, next);
+        next
+    }
+
+    fn subtract_byte(&mut self, slot: usize, offset: usize, value: u8) -> u8 {
+        let next = self.byte(slot, offset).wrapping_sub(value);
+        self.set_byte(slot, offset, next);
+        next
+    }
+
+    fn xor_byte(&mut self, slot: usize, offset: usize, value: u8) -> u8 {
+        let next = self.byte(slot, offset) ^ value;
+        self.set_byte(slot, offset, next);
+        next
+    }
+
+    fn or_byte(&mut self, slot: usize, offset: usize, value: u8) {
+        let next = self.byte(slot, offset) | value;
+        self.set_byte(slot, offset, next);
+    }
+
+    fn and_byte(&mut self, slot: usize, offset: usize, value: u8) {
+        let next = self.byte(slot, offset) & value;
+        self.set_byte(slot, offset, next);
+    }
+
+    fn negate_byte(&mut self, slot: usize, offset: usize) {
+        let next = self.byte(slot, offset).wrapping_neg();
+        self.set_byte(slot, offset, next);
+    }
+}
+
+pub(crate) struct NativeAncillaSlotView<'a> {
+    state: &'a AncillaSlotsState,
+    slot: usize,
+}
+
+impl<'a> NativeAncillaSlotView<'a> {
+    pub(crate) fn slot(&self) -> u8 {
+        self.slot as u8
+    }
+
+    pub(crate) fn ancilla_type(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_TYPE)
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.ancilla_type() != 0
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.state
+            .packed_position(self.slot, ANCILLA_X_LO, ANCILLA_X_HI)
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_X_LO)
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_X_HI)
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.state
+            .packed_position(self.slot, ANCILLA_Y_LO, ANCILLA_Y_HI)
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Y_LO)
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Y_HI)
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_X_VELOCITY)
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Y_VELOCITY)
+    }
+
+    pub(crate) fn z_velocity(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Z_VELOCITY)
+    }
+
+    pub(crate) fn x_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_X_SUBPIXEL)
+    }
+
+    pub(crate) fn y_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Y_SUBPIXEL)
+    }
+
+    pub(crate) fn z(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Z)
+    }
+
+    pub(crate) fn z_subpixel(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Z_SUBPIXEL_PLAYER)
+    }
+
+    pub(crate) fn item_to_link(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_ITEM_TO_LINK)
+    }
+
+    pub(crate) fn timer(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_TIMER)
+    }
+
+    pub(crate) fn floor(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_FLOOR)
+    }
+
+    pub(crate) fn floor2(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_FLOOR2)
+    }
+
+    pub(crate) fn object_priority(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_OBJPRIO)
+    }
+
+    pub(crate) fn u(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_U)
+    }
+
+    pub(crate) fn num_sprites(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_NUMSPR)
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_DIRECTION)
+    }
+
+    pub(crate) fn tile_attribute(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_TILE_ATTRIBUTE)
+    }
+
+    pub(crate) fn step(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_STEP)
+    }
+
+    pub(crate) fn aux_timer(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_AUX_TIMER)
+    }
+
+    pub(crate) fn work_byte_3(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_3)
+    }
+
+    pub(crate) fn work_byte_1(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_1)
+    }
+
+    pub(crate) fn s_player(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_S_PLAYER)
+    }
+
+    pub(crate) fn t_player(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_T_PLAYER)
+    }
+
+    pub(crate) fn a(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_A)
+    }
+
+    pub(crate) fn b(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_B)
+    }
+
+    pub(crate) fn ab_word(&self) -> u16 {
+        u16::from(self.a()) | (u16::from(self.b()) << 8)
+    }
+
+    pub(crate) fn a_word(&self) -> u16 {
+        self.state.word_at(ANCILLA_A + self.slot)
+    }
+
+    pub(crate) fn l(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_L)
+    }
+
+    pub(crate) fn h(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_H)
+    }
+
+    pub(crate) fn k(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_K)
+    }
+
+    pub(crate) fn g(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_G)
+    }
+
+    pub(crate) fn r(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_R)
+    }
+
+    pub(crate) fn work_byte_22(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_22)
+    }
+
+    pub(crate) fn work_byte_23(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_23)
+    }
+
+    pub(crate) fn work_byte_24(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_24)
+    }
+
+    pub(crate) fn work_byte_4(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_4)
+    }
+
+    pub(crate) fn work_byte_25(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_25)
+    }
+
+    pub(crate) fn work_byte_26(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_WORK_BYTE_26)
+    }
+}
+
+pub(crate) struct NativeAncillaSlotBridgeMut<'a> {
+    state: &'a mut AncillaSlotsState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeAncillaSlotBridgeMut<'a> {
+    fn sync(&mut self) {
+        for base in ANCILLA_FIELD_BASES.iter().copied() {
+            let offset = base + self.slot;
+            self.ram[offset] = self.state.byte_at(offset);
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        for base in ANCILLA_FIELD_BASES.iter().copied() {
+            let offset = base + self.slot;
+            debug_assert_eq!(self.state.byte_at(offset), self.ram[offset]);
+        }
+    }
+
+    fn set_byte(&mut self, offset: usize, value: u8) {
+        self.state.set_byte(self.slot, offset, value);
+        self.sync();
+    }
+
+    fn add_byte(&mut self, offset: usize, value: u8) -> u8 {
+        let next = self.state.add_byte(self.slot, offset, value);
+        self.sync();
+        next
+    }
+
+    fn subtract_byte(&mut self, offset: usize, value: u8) -> u8 {
+        let next = self.state.subtract_byte(self.slot, offset, value);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_ancilla_type(&mut self, value: u8) {
+        self.set_byte(ANCILLA_TYPE, value);
+    }
+
+    pub(crate) fn increment_ancilla_type(&mut self) -> u8 {
+        self.add_byte(ANCILLA_TYPE, 1)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.set_ancilla_type(0);
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.state
+            .set_position(self.slot, ANCILLA_X_LO, ANCILLA_X_HI, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.set_byte(ANCILLA_X_LO, value);
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.set_byte(ANCILLA_X_HI, value);
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.state
+            .set_position(self.slot, ANCILLA_Y_LO, ANCILLA_Y_HI, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Y_LO, value);
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Y_HI, value);
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.set_byte(ANCILLA_X_SUBPIXEL, value);
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Y_SUBPIXEL, value);
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.set_byte(ANCILLA_X_VELOCITY, value);
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_X_VELOCITY)
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.state.byte(self.slot, ANCILLA_Y_VELOCITY)
+    }
+
+    pub(crate) fn add_x_velocity(&mut self, value: u8) -> u8 {
+        self.add_byte(ANCILLA_X_VELOCITY, value)
+    }
+
+    pub(crate) fn add_y_velocity(&mut self, value: u8) -> u8 {
+        self.add_byte(ANCILLA_Y_VELOCITY, value)
+    }
+
+    pub(crate) fn subtract_y_velocity(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_Y_VELOCITY, value);
+    }
+
+    pub(crate) fn negate_x_velocity(&mut self) {
+        self.state.negate_byte(self.slot, ANCILLA_X_VELOCITY);
+        self.sync();
+    }
+
+    pub(crate) fn negate_y_velocity(&mut self) {
+        self.state.negate_byte(self.slot, ANCILLA_Y_VELOCITY);
+        self.sync();
+    }
+
+    pub(crate) fn set_z_velocity(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Z_VELOCITY, value);
+    }
+
+    pub(crate) fn add_z_velocity(&mut self, value: u8) {
+        self.add_byte(ANCILLA_Z_VELOCITY, value);
+    }
+
+    pub(crate) fn tick_z_velocity(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_Z_VELOCITY, 1)
+    }
+
+    pub(crate) fn set_z(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Z, value);
+    }
+
+    pub(crate) fn set_z_subpixel(&mut self, value: u8) {
+        self.set_byte(ANCILLA_Z_SUBPIXEL_PLAYER, value);
+    }
+
+    pub(crate) fn move_x(&mut self) {
+        self.state.move_axis24(
+            self.slot,
+            ANCILLA_X_SUBPIXEL,
+            ANCILLA_X_LO,
+            ANCILLA_X_HI,
+            ANCILLA_X_VELOCITY,
+        );
+        self.sync();
+    }
+
+    pub(crate) fn move_y(&mut self) {
+        self.state.move_axis24(
+            self.slot,
+            ANCILLA_Y_SUBPIXEL,
+            ANCILLA_Y_LO,
+            ANCILLA_Y_HI,
+            ANCILLA_Y_VELOCITY,
+        );
+        self.sync();
+    }
+
+    pub(crate) fn move_z(&mut self) {
+        self.state.move_axis16(
+            self.slot,
+            ANCILLA_Z_SUBPIXEL_PLAYER,
+            ANCILLA_Z,
+            ANCILLA_Z_VELOCITY,
+        );
+        self.sync();
+    }
+
+    pub(crate) fn set_item_to_link(&mut self, value: u8) {
+        self.set_byte(ANCILLA_ITEM_TO_LINK, value);
+    }
+
+    pub(crate) fn advance_item_to_link(&mut self) -> u8 {
+        self.add_byte(ANCILLA_ITEM_TO_LINK, 1)
+    }
+
+    pub(crate) fn add_item_to_link(&mut self, value: u8) {
+        self.add_byte(ANCILLA_ITEM_TO_LINK, value);
+    }
+
+    pub(crate) fn retreat_item_to_link(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_ITEM_TO_LINK, 1)
+    }
+
+    pub(crate) fn toggle_item_to_link_bit0(&mut self) -> u8 {
+        let next = self.state.xor_byte(self.slot, ANCILLA_ITEM_TO_LINK, 1);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.set_byte(ANCILLA_TIMER, value);
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_TIMER, 1)
+    }
+
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.set_byte(ANCILLA_FLOOR, value);
+    }
+
+    pub(crate) fn set_floor2(&mut self, value: u8) {
+        self.set_byte(ANCILLA_FLOOR2, value);
+    }
+
+    pub(crate) fn set_oam_index(&mut self, value: u8) {
+        self.set_byte(ANCILLA_OAM_IDX, value);
+    }
+
+    pub(crate) fn set_num_sprites(&mut self, value: u8) {
+        self.set_byte(ANCILLA_NUMSPR, value);
+    }
+
+    pub(crate) fn set_object_priority(&mut self, value: u8) {
+        self.set_byte(ANCILLA_OBJPRIO, value);
+    }
+
+    pub(crate) fn xor_object_priority(&mut self, value: u8) {
+        self.state.xor_byte(self.slot, ANCILLA_OBJPRIO, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_direction(&mut self, value: u8) {
+        self.set_byte(ANCILLA_DIRECTION, value);
+    }
+
+    pub(crate) fn or_direction(&mut self, value: u8) {
+        self.state.or_byte(self.slot, ANCILLA_DIRECTION, value);
+        self.sync();
+    }
+
+    pub(crate) fn and_direction(&mut self, value: u8) {
+        self.state.and_byte(self.slot, ANCILLA_DIRECTION, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_direction(&mut self, value: u8) {
+        self.add_byte(ANCILLA_DIRECTION, value);
+    }
+
+    pub(crate) fn set_tile_attribute(&mut self, value: u8) {
+        self.set_byte(ANCILLA_TILE_ATTRIBUTE, value);
+    }
+
+    pub(crate) fn set_step(&mut self, value: u8) {
+        self.set_byte(ANCILLA_STEP, value);
+    }
+
+    pub(crate) fn advance_step(&mut self) -> u8 {
+        self.add_byte(ANCILLA_STEP, 1)
+    }
+
+    pub(crate) fn add_step(&mut self, value: u8) {
+        self.add_byte(ANCILLA_STEP, value);
+    }
+
+    pub(crate) fn retreat_step(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_STEP, 1)
+    }
+
+    pub(crate) fn set_aux_timer(&mut self, value: u8) {
+        self.set_byte(ANCILLA_AUX_TIMER, value);
+    }
+
+    pub(crate) fn advance_aux_timer(&mut self) -> u8 {
+        self.add_byte(ANCILLA_AUX_TIMER, 1)
+    }
+
+    pub(crate) fn add_aux_timer(&mut self, value: u8) {
+        self.add_byte(ANCILLA_AUX_TIMER, value);
+    }
+
+    pub(crate) fn tick_aux_timer(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_AUX_TIMER, 1)
+    }
+
+    pub(crate) fn set_work_byte_3(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_3, value);
+    }
+
+    pub(crate) fn add_work_byte_3(&mut self, value: u8) {
+        self.add_byte(ANCILLA_WORK_BYTE_3, value);
+    }
+
+    pub(crate) fn set_work_byte_1(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_1, value);
+    }
+
+    pub(crate) fn subtract_work_byte_1(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_WORK_BYTE_1, value);
+    }
+
+    pub(crate) fn set_a(&mut self, value: u8) {
+        self.set_byte(ANCILLA_A, value);
+    }
+
+    pub(crate) fn advance_a(&mut self) -> u8 {
+        self.add_byte(ANCILLA_A, 1)
+    }
+
+    pub(crate) fn set_a_word(&mut self, value: u16) {
+        self.state.set_word_at(ANCILLA_A + self.slot, value);
+        self.sync();
+        self.ram[ANCILLA_A + self.slot + 1] = self.state.byte_at(ANCILLA_A + self.slot + 1);
+        debug_assert_eq!(
+            self.state.byte_at(ANCILLA_A + self.slot + 1),
+            self.ram[ANCILLA_A + self.slot + 1]
+        );
+    }
+
+    pub(crate) fn set_b(&mut self, value: u8) {
+        self.set_byte(ANCILLA_B, value);
+    }
+
+    pub(crate) fn set_l(&mut self, value: u8) {
+        self.set_byte(ANCILLA_L, value);
+    }
+
+    pub(crate) fn advance_l(&mut self) -> u8 {
+        self.add_byte(ANCILLA_L, 1)
+    }
+
+    pub(crate) fn add_l(&mut self, value: u8) {
+        self.add_byte(ANCILLA_L, value);
+    }
+
+    pub(crate) fn retreat_l(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_L, 1)
+    }
+
+    pub(crate) fn set_h(&mut self, value: u8) {
+        self.set_byte(ANCILLA_H, value);
+    }
+
+    pub(crate) fn set_k(&mut self, value: u8) {
+        self.set_byte(ANCILLA_K, value);
+    }
+
+    pub(crate) fn toggle_k_bit0(&mut self) -> u8 {
+        let next = self.state.xor_byte(self.slot, ANCILLA_K, 1);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn advance_k(&mut self) -> u8 {
+        self.add_byte(ANCILLA_K, 1)
+    }
+
+    pub(crate) fn add_k(&mut self, value: u8) {
+        self.add_byte(ANCILLA_K, value);
+    }
+
+    pub(crate) fn retreat_k(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_K, 1)
+    }
+
+    pub(crate) fn tick_k(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_K, 1)
+    }
+
+    pub(crate) fn set_g(&mut self, value: u8) {
+        self.set_byte(ANCILLA_G, value);
+    }
+
+    pub(crate) fn subtract_g(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_G, value);
+    }
+
+    pub(crate) fn tick_g(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_G, 1)
+    }
+
+    pub(crate) fn set_s_player(&mut self, value: u8) {
+        self.set_byte(ANCILLA_S_PLAYER, value);
+    }
+
+    pub(crate) fn set_t_player(&mut self, value: u8) {
+        self.set_byte(ANCILLA_T_PLAYER, value);
+    }
+
+    pub(crate) fn set_r(&mut self, value: u8) {
+        self.set_byte(ANCILLA_R, value);
+    }
+
+    pub(crate) fn advance_r(&mut self) -> u8 {
+        self.add_byte(ANCILLA_R, 1)
+    }
+
+    pub(crate) fn add_r(&mut self, value: u8) {
+        self.add_byte(ANCILLA_R, value);
+    }
+
+    pub(crate) fn tick_s_player(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_S_PLAYER, 1)
+    }
+
+    pub(crate) fn set_u(&mut self, value: u8) {
+        self.set_byte(ANCILLA_U, value);
+    }
+
+    pub(crate) fn subtract_u(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_U, value);
+    }
+
+    pub(crate) fn advance_work_byte_1_mod4(&mut self) -> u8 {
+        let next = self.state.add_byte(self.slot, ANCILLA_WORK_BYTE_1, 1) & 3;
+        self.state.set_byte(self.slot, ANCILLA_WORK_BYTE_1, next);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn add_work_byte_1_mod4(&mut self, value: u8) -> u8 {
+        let next = self.state.add_byte(self.slot, ANCILLA_WORK_BYTE_1, value) & 3;
+        self.state.set_byte(self.slot, ANCILLA_WORK_BYTE_1, next);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn tick_work_byte_3(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_WORK_BYTE_3, 1)
+    }
+
+    pub(crate) fn advance_work_byte_3(&mut self) -> u8 {
+        self.add_byte(ANCILLA_WORK_BYTE_3, 1)
+    }
+
+    pub(crate) fn set_work_byte_4(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_4, value);
+    }
+
+    pub(crate) fn subtract_work_byte_4(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_WORK_BYTE_4, value);
+    }
+
+    pub(crate) fn set_work_byte_22(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_22, value);
+    }
+
+    pub(crate) fn tick_work_byte_22(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_WORK_BYTE_22, 1)
+    }
+
+    pub(crate) fn subtract_work_byte_22(&mut self, value: u8) {
+        self.subtract_byte(ANCILLA_WORK_BYTE_22, value);
+    }
+
+    pub(crate) fn set_work_byte_23(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_23, value);
+    }
+
+    pub(crate) fn advance_work_byte_23(&mut self) -> u8 {
+        self.add_byte(ANCILLA_WORK_BYTE_23, 1)
+    }
+
+    pub(crate) fn add_work_byte_23(&mut self, value: u8) {
+        self.add_byte(ANCILLA_WORK_BYTE_23, value);
+    }
+
+    pub(crate) fn set_work_byte_24(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_24, value);
+    }
+
+    pub(crate) fn advance_work_byte_24(&mut self) -> u8 {
+        self.add_byte(ANCILLA_WORK_BYTE_24, 1)
+    }
+
+    pub(crate) fn add_work_byte_24(&mut self, value: u8) {
+        self.add_byte(ANCILLA_WORK_BYTE_24, value);
+    }
+
+    pub(crate) fn set_work_byte_25(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_25, value);
+    }
+
+    pub(crate) fn set_work_byte_26(&mut self, value: u8) {
+        self.set_byte(ANCILLA_WORK_BYTE_26, value);
+    }
+
+    pub(crate) fn advance_work_byte_25(&mut self) -> u8 {
+        self.add_byte(ANCILLA_WORK_BYTE_25, 1)
+    }
+
+    pub(crate) fn retreat_work_byte_25(&mut self) -> u8 {
+        self.subtract_byte(ANCILLA_WORK_BYTE_25, 1)
+    }
+
+    pub(crate) fn advance_work_byte_4(&mut self) -> u8 {
+        self.add_byte(ANCILLA_WORK_BYTE_4, 1)
+    }
+}
+
+const OVERLORD_WORK_BASE: usize = OVERLORD_TYPE;
+const OVERLORD_WORK_END: usize = OVERLORD_OFFSET_SPRITE_POS + OVERLORD_SLOT_COUNT * 2;
+const OVERLORD_WORK_LEN: usize = OVERLORD_WORK_END - OVERLORD_WORK_BASE;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverlordSlotsState {
+    work: Vec<u8>,
+    spawned_area: [u8; OVERLORD_SLOT_COUNT],
+}
+
+impl Default for OverlordSlotsState {
+    fn default() -> Self {
+        Self {
+            work: vec![0; OVERLORD_WORK_LEN],
+            spawned_area: [0; OVERLORD_SLOT_COUNT],
+        }
+    }
+}
+
+impl OverlordSlotsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..OVERLORD_SLOT_COUNT {
+            state.spawned_area[slot] = ram.get(OVERLORD_SPAWNED_AREA + slot).copied().unwrap_or(0);
+        }
+        for (index, value) in state.work.iter_mut().enumerate() {
+            *value = ram.get(OVERLORD_WORK_BASE + index).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, value) in self.work.iter().copied().enumerate() {
+            ram[OVERLORD_WORK_BASE + index] = value;
+        }
+        for slot in 0..OVERLORD_SLOT_COUNT {
+            ram[OVERLORD_SPAWNED_AREA + slot] = self.spawned_area[slot];
+        }
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> NativeOverlordSlotView<'_> {
+        NativeOverlordSlotView { state: self, slot }
+    }
+
+    pub(crate) fn slot_mut<'a>(
+        &'a mut self,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> NativeOverlordSlotBridgeMut<'a> {
+        NativeOverlordSlotBridgeMut {
+            state: self,
+            ram,
+            slot,
+        }
+    }
+
+    fn work_index(offset: usize) -> usize {
+        offset - OVERLORD_WORK_BASE
+    }
+
+    fn byte_at(&self, offset: usize) -> u8 {
+        self.work
+            .get(Self::work_index(offset))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn set_byte_at(&mut self, offset: usize, value: u8) {
+        let index = Self::work_index(offset);
+        if self.work.len() < OVERLORD_WORK_LEN {
+            self.work.resize(OVERLORD_WORK_LEN, 0);
+        }
+        self.work[index] = value;
+    }
+
+    fn word_at(&self, offset: usize) -> u16 {
+        u16::from(self.byte_at(offset)) | (u16::from(self.byte_at(offset + 1)) << 8)
+    }
+
+    fn set_word_at(&mut self, offset: usize, value: u16) {
+        self.set_byte_at(offset, value as u8);
+        self.set_byte_at(offset + 1, (value >> 8) as u8);
+    }
+
+    fn x(&self, slot: usize) -> u16 {
+        u16::from(self.x_low(slot)) | (u16::from(self.x_high(slot)) << 8)
+    }
+
+    fn y(&self, slot: usize) -> u16 {
+        u16::from(self.y_low(slot)) | (u16::from(self.y_high(slot)) << 8)
+    }
+
+    fn x_low(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_X_LO + slot)
+    }
+
+    fn adjacent_x_low_word(&self, slot: usize) -> u16 {
+        self.word_at(OVERLORD_X_LO + slot)
+    }
+
+    fn x_high(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_X_HI + slot)
+    }
+
+    fn y_low(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_Y_LO + slot)
+    }
+
+    fn y_high(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_Y_HI + slot)
+    }
+
+    fn overlord_type(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_TYPE + slot)
+    }
+
+    fn gen1(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_GEN1 + slot)
+    }
+
+    fn gen1_word(&self, slot: usize) -> u16 {
+        self.word_at(OVERLORD_GEN1 + slot)
+    }
+
+    fn gen2(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_GEN2 + slot)
+    }
+
+    fn gen2_word(&self, slot: usize) -> u16 {
+        self.word_at(OVERLORD_GEN2 + slot)
+    }
+
+    fn gen3(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_GEN3 + slot)
+    }
+
+    fn floor(&self, slot: usize) -> u8 {
+        self.byte_at(OVERLORD_FLOOR + slot)
+    }
+
+    fn spawned_area(&self, slot: usize) -> u8 {
+        self.spawned_area[slot]
+    }
+
+    fn sprite_block_pos(&self, slot: usize) -> u16 {
+        self.word_at(OVERLORD_OFFSET_SPRITE_POS + slot * 2)
+    }
+
+    fn set_x(&mut self, slot: usize, value: u16) {
+        self.set_byte_at(OVERLORD_X_LO + slot, value as u8);
+        self.set_byte_at(OVERLORD_X_HI + slot, (value >> 8) as u8);
+    }
+
+    fn set_x_low(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_X_LO + slot, value);
+    }
+
+    fn set_adjacent_x_low_word(&mut self, slot: usize, value: u16) {
+        self.set_word_at(OVERLORD_X_LO + slot, value);
+    }
+
+    fn subtract_adjacent_x_low_word(&mut self, slot: usize, value: u16) -> u16 {
+        let updated = self.adjacent_x_low_word(slot).wrapping_sub(value);
+        self.set_adjacent_x_low_word(slot, updated);
+        updated
+    }
+
+    fn set_x_high(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_X_HI + slot, value);
+    }
+
+    fn increment_x_high(&mut self, slot: usize) {
+        let value = self.x_high(slot).wrapping_add(1);
+        self.set_x_high(slot, value);
+    }
+
+    fn add_x_low(&mut self, slot: usize, value: u8) {
+        let value = self.x_low(slot).wrapping_add(value);
+        self.set_x_low(slot, value);
+    }
+
+    fn set_circle_x(&mut self, slot: usize, value: u16) {
+        self.set_byte_at(OVERLORD_X_HI + slot, value as u8);
+        self.set_byte_at(OVERLORD_Y_HI + slot, (value >> 8) as u8);
+    }
+
+    fn set_circle_y(&mut self, slot: usize, value: u16) {
+        self.set_byte_at(OVERLORD_GEN2 + slot, value as u8);
+        self.set_byte_at(OVERLORD_FLOOR + slot, (value >> 8) as u8);
+    }
+
+    fn set_y(&mut self, slot: usize, value: u16) {
+        self.set_byte_at(OVERLORD_Y_LO + slot, value as u8);
+        self.set_byte_at(OVERLORD_Y_HI + slot, (value >> 8) as u8);
+    }
+
+    fn set_y_low(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_Y_LO + slot, value);
+    }
+
+    fn set_y_high(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_Y_HI + slot, value);
+    }
+
+    fn subtract_x_low(&mut self, slot: usize, value: u8) {
+        let value = self.x_low(slot).wrapping_sub(value);
+        self.set_x_low(slot, value);
+    }
+
+    fn set_overlord_type(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_TYPE + slot, value);
+    }
+
+    fn clear(&mut self, slot: usize) {
+        self.set_overlord_type(slot, 0);
+    }
+
+    fn set_gen1(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_GEN1 + slot, value);
+    }
+
+    fn add_gen1(&mut self, slot: usize, value: u8) {
+        let value = self.gen1(slot).wrapping_add(value);
+        self.set_gen1(slot, value);
+    }
+
+    fn add_gen1_word(&mut self, slot: usize, value: u16) {
+        let next = self.gen1_word(slot).wrapping_add(value);
+        self.set_word_at(OVERLORD_GEN1 + slot, next);
+    }
+
+    fn subtract_gen1(&mut self, slot: usize, value: u8) {
+        let value = self.gen1(slot).wrapping_sub(value);
+        self.set_gen1(slot, value);
+    }
+
+    fn set_gen2(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_GEN2 + slot, value);
+    }
+
+    fn add_gen2(&mut self, slot: usize, value: u8) {
+        let value = self.gen2(slot).wrapping_add(value);
+        self.set_gen2(slot, value);
+    }
+
+    fn add_gen2_word(&mut self, slot: usize, value: u16) {
+        let next = self.gen2_word(slot).wrapping_add(value);
+        self.set_word_at(OVERLORD_GEN2 + slot, next);
+    }
+
+    fn subtract_gen2(&mut self, slot: usize, value: u8) {
+        let value = self.gen2(slot).wrapping_sub(value);
+        self.set_gen2(slot, value);
+    }
+
+    fn set_gen3(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_GEN3 + slot, value);
+    }
+
+    fn add_gen3(&mut self, slot: usize, value: u8) {
+        let value = self.gen3(slot).wrapping_add(value);
+        self.set_gen3(slot, value);
+    }
+
+    fn set_floor(&mut self, slot: usize, value: u8) {
+        self.set_byte_at(OVERLORD_FLOOR + slot, value);
+    }
+
+    fn set_sprite_block_pos(&mut self, slot: usize, value: u16) {
+        self.set_word_at(OVERLORD_OFFSET_SPRITE_POS + slot * 2, value);
+    }
+
+    fn set_spawned_area(&mut self, slot: usize, value: u8) {
+        self.spawned_area[slot] = value;
+    }
+}
+
+pub(crate) struct NativeOverlordSlotView<'a> {
+    state: &'a OverlordSlotsState,
+    slot: usize,
+}
+
+impl<'a> NativeOverlordSlotView<'a> {
+    pub(crate) fn x(&self) -> u16 {
+        self.state.x(self.slot)
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.state.y(self.slot)
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.state.x_low(self.slot)
+    }
+
+    pub(crate) fn adjacent_x_low_word(&self) -> u16 {
+        self.state.adjacent_x_low_word(self.slot)
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.state.x_high(self.slot)
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.state.y_low(self.slot)
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.state.y_high(self.slot)
+    }
+
+    pub(crate) fn overlord_type(&self) -> u8 {
+        self.state.overlord_type(self.slot)
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.state.overlord_type(self.slot) != 0
+    }
+
+    pub(crate) fn gen1(&self) -> u8 {
+        self.state.gen1(self.slot)
+    }
+
+    pub(crate) fn gen1_word(&self) -> u16 {
+        self.state.gen1_word(self.slot)
+    }
+
+    pub(crate) fn gen2(&self) -> u8 {
+        self.state.gen2(self.slot)
+    }
+
+    pub(crate) fn gen2_word(&self) -> u16 {
+        self.state.gen2_word(self.slot)
+    }
+
+    pub(crate) fn gen3(&self) -> u8 {
+        self.state.gen3(self.slot)
+    }
+
+    pub(crate) fn floor(&self) -> u8 {
+        self.state.floor(self.slot)
+    }
+
+    pub(crate) fn spawned_area(&self) -> u8 {
+        self.state.spawned_area(self.slot)
+    }
+
+    pub(crate) fn sprite_block_pos(&self) -> u16 {
+        self.state.sprite_block_pos(self.slot)
+    }
+}
+
+pub(crate) struct NativeOverlordSlotBridgeMut<'a> {
+    state: &'a mut OverlordSlotsState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeOverlordSlotBridgeMut<'a> {
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, OverlordSlotsState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.state.set_x(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.state.set_x_low(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_adjacent_x_low_word(&mut self, value: u16) {
+        self.state.set_adjacent_x_low_word(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_adjacent_x_low_word(&mut self, value: u16) -> u16 {
+        let updated = self.state.subtract_adjacent_x_low_word(self.slot, value);
+        self.sync();
+        updated
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.state.x_low(self.slot)
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.state.set_x_high(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_x_high(&mut self) {
+        self.state.increment_x_high(self.slot);
+        self.sync();
+    }
+
+    pub(crate) fn add_x_low(&mut self, value: u8) {
+        self.state.add_x_low(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_circle_x(&mut self, value: u16) {
+        self.state.set_circle_x(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_circle_y(&mut self, value: u16) {
+        self.state.set_circle_y(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.state.set_y(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.state.set_y_low(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.state.set_y_high(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_x_low(&mut self, value: u8) {
+        self.state.subtract_x_low(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_overlord_type(&mut self, value: u8) {
+        self.state.set_overlord_type(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.state.clear(self.slot);
+        self.sync();
+    }
+
+    pub(crate) fn set_gen1(&mut self, value: u8) {
+        self.state.set_gen1(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_gen1(&mut self, value: u8) {
+        self.state.add_gen1(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_gen1_word(&mut self, value: u16) {
+        self.state.add_gen1_word(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_gen1(&mut self, value: u8) {
+        self.state.subtract_gen1(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_gen2(&mut self, value: u8) {
+        self.state.set_gen2(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_gen2(&mut self, value: u8) {
+        self.state.add_gen2(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_gen2_word(&mut self, value: u16) {
+        self.state.add_gen2_word(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_gen2(&mut self, value: u8) {
+        self.state.subtract_gen2(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_gen3(&mut self, value: u8) {
+        self.state.set_gen3(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn add_gen3(&mut self, value: u8) {
+        self.state.add_gen3(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.state.set_floor(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprite_block_pos(&mut self, value: u16) {
+        self.state.set_sprite_block_pos(self.slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_spawned_area(&mut self, value: u8) {
+        self.state.set_spawned_area(self.slot, value);
+        self.sync();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GarnishSlotState {
+    garnish_type: u8,
+    x_low: u8,
+    x_high: u8,
+    y_low: u8,
+    y_high: u8,
+    x_velocity: u8,
+    y_velocity: u8,
+    x_subpixel: u8,
+    y_subpixel: u8,
+    countdown: u8,
+    sprite: u8,
+    floor: u8,
+    oam_flags: u8,
+}
+
+impl GarnishSlotState {
+    fn load_from_ram(ram: &[u8], slot: usize) -> Self {
+        Self {
+            garnish_type: ram.get(GARNISH_TYPE + slot).copied().unwrap_or(0),
+            x_low: ram.get(GARNISH_X_LO + slot).copied().unwrap_or(0),
+            x_high: ram.get(GARNISH_X_HI + slot).copied().unwrap_or(0),
+            y_low: ram.get(GARNISH_Y_LO + slot).copied().unwrap_or(0),
+            y_high: ram.get(GARNISH_Y_HI + slot).copied().unwrap_or(0),
+            x_velocity: ram.get(GARNISH_X_VELOCITY + slot).copied().unwrap_or(0),
+            y_velocity: ram.get(GARNISH_Y_VELOCITY + slot).copied().unwrap_or(0),
+            x_subpixel: ram.get(GARNISH_X_SUBPIXEL + slot).copied().unwrap_or(0),
+            y_subpixel: ram.get(GARNISH_Y_SUBPIXEL + slot).copied().unwrap_or(0),
+            countdown: ram.get(GARNISH_COUNTDOWN + slot).copied().unwrap_or(0),
+            sprite: ram.get(GARNISH_SPRITE + slot).copied().unwrap_or(0),
+            floor: ram.get(GARNISH_FLOOR + slot).copied().unwrap_or(0),
+            oam_flags: ram.get(GARNISH_OAM_FLAGS + slot).copied().unwrap_or(0),
+        }
+    }
+
+    fn write_to_ram(&self, ram: &mut [u8], slot: usize) {
+        ram[GARNISH_TYPE + slot] = self.garnish_type;
+        ram[GARNISH_X_LO + slot] = self.x_low;
+        ram[GARNISH_X_HI + slot] = self.x_high;
+        ram[GARNISH_Y_LO + slot] = self.y_low;
+        ram[GARNISH_Y_HI + slot] = self.y_high;
+        ram[GARNISH_X_VELOCITY + slot] = self.x_velocity;
+        ram[GARNISH_Y_VELOCITY + slot] = self.y_velocity;
+        ram[GARNISH_X_SUBPIXEL + slot] = self.x_subpixel;
+        ram[GARNISH_Y_SUBPIXEL + slot] = self.y_subpixel;
+        ram[GARNISH_COUNTDOWN + slot] = self.countdown;
+        ram[GARNISH_SPRITE + slot] = self.sprite;
+        ram[GARNISH_FLOOR + slot] = self.floor;
+        ram[GARNISH_OAM_FLAGS + slot] = self.oam_flags;
+    }
+
+    pub(crate) fn garnish_type(&self) -> u8 {
+        self.garnish_type
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.garnish_type == 0
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        u16::from(self.x_low) | (u16::from(self.x_high) << 8)
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.x_low
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.x_high
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        u16::from(self.y_low) | (u16::from(self.y_high) << 8)
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.y_low
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.y_high
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.x_velocity
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.y_velocity
+    }
+
+    pub(crate) fn x_subpixel(&self) -> u8 {
+        self.x_subpixel
+    }
+
+    pub(crate) fn y_subpixel(&self) -> u8 {
+        self.y_subpixel
+    }
+
+    pub(crate) fn countdown(&self) -> u8 {
+        self.countdown
+    }
+
+    pub(crate) fn sprite(&self) -> u8 {
+        self.sprite
+    }
+
+    pub(crate) fn floor(&self) -> u8 {
+        self.floor
+    }
+
+    pub(crate) fn oam_flags(&self) -> u8 {
+        self.oam_flags
+    }
+
+    pub(crate) fn set_garnish_type(&mut self, value: u8) {
+        self.garnish_type = value;
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.set_garnish_type(0);
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.x_low = value as u8;
+        self.x_high = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.x_low = value;
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.x_high = value;
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.y_low = value as u8;
+        self.y_high = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.y_low = value;
+    }
+
+    pub(crate) fn add_y_low(&mut self, value: u8) {
+        self.y_low = self.y_low.wrapping_add(value);
+    }
+
+    pub(crate) fn subtract_y_low(&mut self, value: u8) {
+        self.y_low = self.y_low.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.y_high = value;
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.x_velocity = value;
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.y_velocity = value;
+    }
+
+    pub(crate) fn add_y_velocity(&mut self, value: u8) {
+        self.y_velocity = self.y_velocity.wrapping_add(value);
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.x_subpixel = value;
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.y_subpixel = value;
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.countdown = value;
+    }
+
+    pub(crate) fn subtract_countdown(&mut self, value: u8) {
+        self.countdown = self.countdown.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_sprite(&mut self, value: u8) {
+        self.sprite = value;
+    }
+
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.floor = value;
+    }
+
+    pub(crate) fn set_oam_flags(&mut self, value: u8) {
+        self.oam_flags = value;
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GarnishSlotsState {
+    slots: [GarnishSlotState; GARNISH_SLOT_COUNT],
+}
+
+impl GarnishSlotsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..GARNISH_SLOT_COUNT {
+            state.slots[slot] = GarnishSlotState::load_from_ram(ram, slot);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for slot in 0..GARNISH_SLOT_COUNT {
+            self.slots[slot].write_to_ram(ram, slot);
+        }
+    }
+
+    pub(crate) fn slot(&self, slot: usize) -> NativeGarnishSlotView<'_> {
+        NativeGarnishSlotView {
+            state: &self.slots[slot],
+        }
+    }
+
+    pub(crate) fn slot_mut<'a>(
+        &'a mut self,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> NativeGarnishSlotBridgeMut<'a> {
+        NativeGarnishSlotBridgeMut {
+            state: &mut self.slots[slot],
+            ram,
+            slot,
+        }
+    }
+}
+
+pub(crate) struct NativeGarnishSlotView<'a> {
+    state: &'a GarnishSlotState,
+}
+
+impl<'a> NativeGarnishSlotView<'a> {
+    pub(crate) fn garnish_type(&self) -> u8 {
+        self.state.garnish_type()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.state.is_empty()
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.state.x()
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.state.x_low()
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.state.x_high()
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.state.y()
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.state.y_low()
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.state.y_high()
+    }
+
+    pub(crate) fn x_velocity(&self) -> u8 {
+        self.state.x_velocity()
+    }
+
+    pub(crate) fn y_velocity(&self) -> u8 {
+        self.state.y_velocity()
+    }
+
+    pub(crate) fn x_subpixel(&self) -> u8 {
+        self.state.x_subpixel()
+    }
+
+    pub(crate) fn y_subpixel(&self) -> u8 {
+        self.state.y_subpixel()
+    }
+
+    pub(crate) fn countdown(&self) -> u8 {
+        self.state.countdown()
+    }
+
+    pub(crate) fn sprite(&self) -> u8 {
+        self.state.sprite()
+    }
+
+    pub(crate) fn floor(&self) -> u8 {
+        self.state.floor()
+    }
+
+    pub(crate) fn oam_flags(&self) -> u8 {
+        self.state.oam_flags()
+    }
+}
+
+pub(crate) struct NativeGarnishSlotBridgeMut<'a> {
+    state: &'a mut GarnishSlotState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeGarnishSlotBridgeMut<'a> {
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram, self.slot);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            GarnishSlotState::load_from_ram(self.ram, self.slot)
+        );
+    }
+
+    pub(crate) fn set_garnish_type(&mut self, value: u8) {
+        self.state.set_garnish_type(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.state.clear();
+        self.sync();
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.state.set_x(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.state.set_x_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.state.set_x_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.state.set_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.state.set_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_y_low(&mut self, value: u8) {
+        self.state.add_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_y_low(&mut self, value: u8) {
+        self.state.subtract_y_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.state.set_y_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.state.set_x_velocity(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.state.set_y_velocity(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_y_velocity(&mut self, value: u8) {
+        self.state.add_y_velocity(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.state.set_x_subpixel(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.state.set_y_subpixel(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.state.set_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn subtract_countdown(&mut self, value: u8) {
+        self.state.subtract_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_sprite(&mut self, value: u8) {
+        self.state.set_sprite(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.state.set_floor(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_oam_flags(&mut self, value: u8) {
+        self.state.set_oam_flags(value);
+        self.sync();
     }
 }
 
@@ -805,12 +4053,21 @@ impl SpriteSystemState {
 
 pub(crate) struct NativeSpriteSystemBridgeMut<'a> {
     state: &'a mut SpriteSystemState,
+    sprite_slots: &'a mut SpriteSlotsState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeSpriteSystemBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpriteSystemState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+    pub(crate) fn new(
+        state: &'a mut SpriteSystemState,
+        sprite_slots: &'a mut SpriteSlotsState,
+        ram: &'a mut [u8],
+    ) -> Self {
+        Self {
+            state,
+            sprite_slots,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
@@ -887,10 +4144,12 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
 
     pub(crate) fn fill_live_states(&mut self, value: u8) {
         self.ram[SPRITE_STATE..SPRITE_STATE + SPRITE_SLOT_COUNT].fill(value);
+        *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
     pub(crate) fn clear_live_table_pages(&mut self) {
         self.ram[SPRITE_Y_LO..SPRITE_Y_LO + 256 * 3].fill(0);
+        *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
     pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {

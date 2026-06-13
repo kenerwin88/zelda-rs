@@ -16,6 +16,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from migrate_native_state_access import (
+    MIGRATED_NATIVE_READ_ACCESSORS,
+    MIGRATED_SINGLE_ARG_NATIVE_ACCESSORS,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "crates" / "zelda3" / "src"
@@ -47,6 +52,109 @@ NATIVE_TRANSITION_MUT_RE = re.compile(r"\bNative[A-Za-z0-9]*Mut\b")
 ALLOWED_NATIVE_TRANSITION_MUT_NAMES = {
     "NativeRamBridgeViewMut",
     "NativeRamBridgeMut",
+}
+NATIVE_READ_ACCESSOR_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(accessor) for accessor in MIGRATED_NATIVE_READ_ACCESSORS)
+    + r")\(\)"
+)
+MIGRATED_SINGLE_ARG_NATIVE_ACCESSOR_RE = re.compile(
+    r"(?:\.\s*|\bfn\s+)(?:"
+    + "|".join(re.escape(accessor) for accessor in MIGRATED_SINGLE_ARG_NATIVE_ACCESSORS)
+    + r")\s*\("
+)
+FRAME_RAM_VIEW_RE = re.compile(r"\bRamFrameStateView(?:Mut)?\b")
+FRAME_CONTROL_ADDRESSES = {
+    0x0010: "MAIN_MODULE",
+    0x0011: "SUBMODULE",
+    0x00B0: "SUBSUBMODULE",
+    0x001A: "FRAME_COUNTER",
+    0x010C: "SAVED_MODULE_FOR_MENU",
+    0x0FC1: "MODAL_PAUSE_FLAG",
+}
+WORLD_LOCATION_ADDRESSES = {
+    0x001B: "PLAYER_IS_INDOORS",
+    0x008A: "OVERWORLD_SCREEN_INDEX",
+    0x00A0: "DUNGEON_ROOM",
+}
+DISPLAY_CORE_ADDRESSES = {
+    0x0013: "INIDISP_COPY",
+    0x001C: "TM_COPY",
+    0x001D: "TS_COPY",
+    0x001E: "TMW_COPY",
+    0x001F: "TSW_COPY",
+    0x0094: "BGMODE_COPY",
+    0x0095: "MOSAIC_COPY",
+    0x0096: "W12SEL_COPY",
+    0x0097: "W34SEL_COPY",
+    0x0098: "WOBJSEL_COPY",
+}
+DISPLAY_UPLOAD_METADATA_ADDRESSES = {
+    0x0116: "NMI_LOAD_TARGET_ADDR",
+    0x0412: "INCREMENTAL_COUNTER_FOR_VRAM",
+    0x1000: "VRAM_UPLOAD_OFFSET",
+}
+DISPLAY_CONTROL_ADDRESSES = {
+    0x0012: "NMI_BOOLEAN",
+    0x0017: "NMI_SUBROUTINE_INDEX",
+    0x0019: "NMI_UPDATE_TILEMAP_DST",
+    0x009B: "HDMAEN_COPY",
+    0x00FF: "VIRQ_TRIGGER",
+    0x0118: "NMI_UPDATE_TILEMAP_SRC",
+    0x0128: "IRQ_FLAG",
+    0x012A: "NMI_THREAD_ACTIVE",
+    0x0134: "ANIMATED_TILE_VRAM_ADDR",
+    0x0649: "CRYSTAL_ROTATION_COUNTER",
+    0x0710: "NMI_DISABLE_CORE_UPDATES",
+    0x0AAA: "LOAD_CHR_HALFSLOT_EVEN_ODD",
+    0x0ADC: "ANIMATED_TILE_DATA_SRC",
+    0x0AE8: "DMA_HEAD_POINTER",
+    0x0AEA: "DMA_BODY_POINTER",
+    0x0C00B: "MOSAIC_TARGET_LEVEL",
+    0x0C011: "MOSAIC_LEVEL",
+    0x1F0A: "POLY_THREAD_STACK",
+    0x1F0C: "NMI_FLAG_UPDATE_POLYHEDRAL",
+}
+DISPLAY_PALETTE_FILTER_ADDRESSES = {
+    0x0099: "CGWSEL_COPY",
+    0x009A: "CGADSUB_COPY",
+    0x009C: "COLDATA_COPY0",
+    0x009D: "COLDATA_COPY1",
+    0x009E: "COLDATA_COPY2",
+    0x0C007: "PALETTE_FILTER_COUNTDOWN",
+    0x0C009: "DARKENING_OR_LIGHTENING_SCREEN",
+}
+DISPLAY_LINK_DMA_SOURCE_ADDRESSES = {
+    0x0AC0: "DMA_SOURCE_ADDR_6",
+    0x0AC2: "DMA_SOURCE_ADDR_11",
+    0x0AC4: "DMA_SOURCE_ADDR_7",
+    0x0AC6: "DMA_SOURCE_ADDR_12",
+    0x0AC8: "DMA_SOURCE_ADDR_8",
+    0x0ACA: "DMA_SOURCE_ADDR_13",
+    0x0ACC: "DMA_SOURCE_ADDR_3",
+    0x0ACE: "DMA_SOURCE_ADDR_0",
+    0x0AD0: "DMA_SOURCE_ADDR_4",
+    0x0AD2: "DMA_SOURCE_ADDR_1",
+    0x0AD4: "DMA_SOURCE_ADDR_5",
+    0x0AD6: "DMA_SOURCE_ADDR_2",
+    0x0AD8: "DMA_SOURCE_ADDR_10",
+    0x0ADA: "DMA_SOURCE_ADDR_15",
+    0x0AE0: "DMA_SOURCE_ADDR_9",
+    0x0AE2: "DMA_SOURCE_ADDR_14",
+    0x0AEC: "DMA_SOURCE_ADDR_16",
+    0x0AEE: "DMA_SOURCE_ADDR_18",
+    0x0AF0: "DMA_SOURCE_ADDR_17",
+    0x0AF2: "DMA_SOURCE_ADDR_19",
+    0x0AF6: "DMA_SOURCE_ADDR_20",
+    0x0AF8: "DMA_SOURCE_ADDR_21",
+}
+DISPLAY_ANIMATION_MESSAGE_ADDRESSES = {
+    0x0219: "MESSAGE_DMA_DST_ADDR",
+    0x021D: "MESSAGE_DMA_TILE_BASE",
+    0x021F: "MESSAGE_DMA_TILE_LIMIT",
+    0x0221: "MESSAGE_DMA_TILE_SENTINEL",
+    0x0AF4: "FLAG_TRAVEL_BIRD",
+    0x0C00D: "BG_TILE_ANIMATION_COUNTDOWN",
 }
 WEAK_NAME_RE = re.compile(r"(?:^|_)(UNK\d*|SOME|VAR\d*|TMP|SCRATCH)(?:_|$)")
 REVIEWED_WEAK_RAM_NAMES = {
@@ -83,6 +191,21 @@ class RamConst:
     address: int
 
 
+@dataclass(frozen=True)
+class SemanticAccessor:
+    name: str
+    return_type: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class SemanticAccessorUse:
+    path: Path
+    line: int
+    accessor: SemanticAccessor
+    method: str
+
+
 def rust_files() -> list[Path]:
     return sorted(SRC_ROOT.rglob("*.rs"))
 
@@ -101,6 +224,40 @@ def is_game_state_access_layer(path: Path) -> bool:
 
 def is_public_ram_constant_registry(path: Path) -> bool:
     return path == SRC_ROOT / "game_state" / "constants.rs"
+
+
+def is_frame_view_source(path: Path) -> bool:
+    return path == SRC_ROOT / "game_state" / "view" / "frame.rs"
+
+
+def is_frame_projection_source(path: Path) -> bool:
+    return (
+        is_frame_view_source(path)
+        or path == SRC_ROOT / "game_state" / "native" / "frame.rs"
+        or path == SRC_ROOT / "game_state" / "constants.rs"
+    )
+
+
+def is_world_location_projection_source(path: Path) -> bool:
+    return (
+        path == SRC_ROOT / "game_state" / "native" / "world.rs"
+        or path == SRC_ROOT / "game_state" / "constants.rs"
+    )
+
+
+def is_display_core_projection_source(path: Path) -> bool:
+    return (
+        path == SRC_ROOT / "game_state" / "native" / "display.rs"
+        or path == SRC_ROOT / "game_state" / "constants.rs"
+    )
+
+
+def is_display_projection_source(path: Path) -> bool:
+    return is_display_core_projection_source(path)
+
+
+def is_non_address_sized_constant(name: str) -> bool:
+    return name.endswith("_BYTES") or name.endswith("_COUNT") or name.endswith("_COUNT_LIMIT")
 
 
 def line_for_offset(text: str, offset: int) -> int:
@@ -157,6 +314,165 @@ def check_file(path: Path) -> list[Finding]:
                 f"native transition wrapper should be named BridgeMut: {name}",
             )
         )
+    for match in NATIVE_READ_ACCESSOR_RE.finditer(text):
+        findings.append(
+            Finding(
+                path,
+                line_for_offset(text, match.start()),
+                "native-owned state read accessor; read the game_state path directly",
+            )
+        )
+    for match in MIGRATED_SINGLE_ARG_NATIVE_ACCESSOR_RE.finditer(text):
+        findings.append(
+            Finding(
+                path,
+                line_for_offset(text, match.start()),
+                "migrated native slot accessor shim; use the game_state slot path directly",
+            )
+        )
+    if not is_frame_view_source(path):
+        for match in FRAME_RAM_VIEW_RE.finditer(text):
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    "byte-backed frame view is compatibility-only; use game_state.frame or the native frame bridge",
+                )
+            )
+    if not is_frame_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            frame_name = FRAME_CONTROL_ADDRESSES.get(address)
+            if frame_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private frame-control RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.frame or canonical {frame_name}",
+                )
+            )
+    if not is_world_location_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            world_name = WORLD_LOCATION_ADDRESSES.get(address)
+            if world_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private world-location RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.world.location or canonical {world_name}",
+                )
+            )
+    if not is_display_core_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_CORE_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display-core RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display or canonical {display_name}",
+                )
+            )
+    if not is_display_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_UPLOAD_METADATA_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display upload-metadata RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display or canonical {display_name}",
+                )
+            )
+    if not is_display_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_CONTROL_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display-control RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display or canonical {display_name}",
+                )
+            )
+    if not is_display_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_PALETTE_FILTER_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display palette-filter RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display.palette_filter or canonical {display_name}",
+                )
+            )
+    if not is_display_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_LINK_DMA_SOURCE_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display Link DMA source RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display.link_dma_source or canonical {display_name}",
+                )
+            )
+    if not is_display_projection_source(path):
+        for match in PRIVATE_CONST_RE.finditer(text):
+            name = match.group(1)
+            address = int(match.group(2), 16)
+            if is_non_address_sized_constant(name):
+                continue
+            display_name = DISPLAY_ANIMATION_MESSAGE_ADDRESSES.get(address)
+            if display_name is None:
+                continue
+            findings.append(
+                Finding(
+                    path,
+                    line_for_offset(text, match.start()),
+                    f"private display animation/message RAM alias {name}@0x{address:04x}; "
+                    f"use game_state.display or canonical {display_name}",
+                )
+            )
     return findings
 
 
@@ -233,6 +549,311 @@ def native_bridge_findings() -> list[Finding]:
                 )
             )
     return findings
+
+
+def classify_semantic_accessor(return_type: str) -> str | None:
+    compact = " ".join(return_type.split())
+    if compact.startswith("Ram"):
+        return "ram-backed-view"
+    if compact.startswith("Native") and "BridgeMut" in compact:
+        return "native-bridge-mutator"
+    if compact.startswith("&") and ("State" in compact or "Read" in compact):
+        return "native-read-helper"
+    if compact.endswith("State"):
+        return "native-copy-helper"
+    return None
+
+
+def semantic_accessors() -> dict[str, SemanticAccessor]:
+    text = (SRC_ROOT / "zelda_rtl.rs").read_text()
+    accessors: dict[str, SemanticAccessor] = {}
+    pattern = re.compile(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+([a-z][A-Za-z0-9_]*)\s*"
+        r"\([^)]*\)\s*->\s*([^{]+?)\s*\{",
+        re.MULTILINE | re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        name = match.group(1)
+        return_type = " ".join(match.group(2).split())
+        kind = classify_semantic_accessor(return_type)
+        if kind is None:
+            continue
+        accessors[name] = SemanticAccessor(name, return_type, kind)
+    return accessors
+
+
+def semantic_accessor_uses() -> list[SemanticAccessorUse]:
+    accessors = semantic_accessors()
+    if not accessors:
+        return []
+    accessor_names = "|".join(re.escape(name) for name in sorted(accessors, key=len, reverse=True))
+    chained_pattern = re.compile(
+        rf"\bself\s*\.\s*({accessor_names})\s*"
+        r"\([^;\n]*?\)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        re.MULTILINE,
+    )
+    alias_pattern = re.compile(
+        rf"\blet\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        rf"self\s*\.\s*({accessor_names})\s*\([^;\n]*\)\s*;",
+        re.MULTILINE,
+    )
+    uses: list[SemanticAccessorUse] = []
+    for path in rust_files():
+        if is_game_state_access_layer(path):
+            continue
+        text = path.read_text()
+        for match in chained_pattern.finditer(text):
+            if is_inside_simple_string_literal(text, match.start()):
+                continue
+            accessor = accessors[match.group(1)]
+            uses.append(
+                SemanticAccessorUse(
+                    path,
+                    line_for_offset(text, match.start()),
+                    accessor,
+                    match.group(2),
+                )
+            )
+        for match in alias_pattern.finditer(text):
+            if is_inside_simple_string_literal(text, match.start()):
+                continue
+            accessor = accessors[match.group(2)]
+            uses.append(
+                SemanticAccessorUse(
+                    path,
+                    line_for_offset(text, match.start()),
+                    accessor,
+                    "<alias>",
+                )
+            )
+    return sorted(
+        uses,
+        key=lambda use: (use.accessor.kind, use.accessor.name, use.method, str(use.path), use.line),
+    )
+
+
+def native_read_helper_findings() -> list[SemanticAccessorUse]:
+    return [use for use in semantic_accessor_uses() if use.accessor.kind == "native-read-helper"]
+
+
+def native_copy_helper_findings() -> list[SemanticAccessorUse]:
+    return [use for use in semantic_accessor_uses() if use.accessor.kind == "native-copy-helper"]
+
+
+def non_player_ram_backed_view_findings() -> list[SemanticAccessorUse]:
+    allowed_player_views = {"player_state", "player_state_mut"}
+    return [
+        use
+        for use in semantic_accessor_uses()
+        if use.accessor.kind == "ram-backed-view" and use.accessor.name not in allowed_player_views
+    ]
+
+
+def print_native_read_helper_failures(uses: list[SemanticAccessorUse], limit: int = 40) -> None:
+    for use in uses[:limit]:
+        rel = use.path.relative_to(REPO_ROOT)
+        print(
+            f"{rel}:{use.line}: native-owned state read helper "
+            f"{use.accessor.name}().{use.method}(); read the game_state path directly",
+            file=sys.stderr,
+        )
+    if len(uses) > limit:
+        print(
+            f"... {len(uses) - limit} more native-owned state read helper use(s); "
+            "rerun with --report-migration-candidates --migration-candidate-kind native-read-helper",
+            file=sys.stderr,
+        )
+
+
+def print_native_copy_helper_failures(uses: list[SemanticAccessorUse], limit: int = 40) -> None:
+    for use in uses[:limit]:
+        rel = use.path.relative_to(REPO_ROOT)
+        print(
+            f"{rel}:{use.line}: native-owned copy helper "
+            f"{use.accessor.name}().{use.method}(); use native game_state ownership directly",
+            file=sys.stderr,
+        )
+    if len(uses) > limit:
+        print(
+            f"... {len(uses) - limit} more native-owned copy helper use(s); "
+            "rerun with --report-migration-candidates --migration-candidate-kind native-copy-helper",
+            file=sys.stderr,
+        )
+
+
+def print_non_player_ram_backed_view_failures(uses: list[SemanticAccessorUse], limit: int = 40) -> None:
+    for use in uses[:limit]:
+        rel = use.path.relative_to(REPO_ROOT)
+        print(
+            f"{rel}:{use.line}: non-player byte-backed semantic view "
+            f"{use.accessor.name}().{use.method}(); use native game_state or a native bridge",
+            file=sys.stderr,
+        )
+    if len(uses) > limit:
+        print(
+            f"... {len(uses) - limit} more non-player byte-backed semantic view use(s); "
+            "rerun with --report-migration-candidates --migration-candidate-kind ram-backed-view",
+            file=sys.stderr,
+        )
+
+
+def print_semantic_migration_candidates(
+    limit: int,
+    kinds: list[str] | None,
+    accessor_filter: str | None,
+    exclude_accessor_filter: str | None,
+    path_filter: str | None,
+    exclude_path_filter: str | None,
+    output_format: str,
+) -> int:
+    uses = semantic_accessor_uses()
+    if kinds:
+        allowed_kinds = set(kinds)
+        uses = [use for use in uses if use.accessor.kind in allowed_kinds]
+    if accessor_filter:
+        accessor_re = re.compile(accessor_filter)
+        uses = [use for use in uses if accessor_re.search(use.accessor.name)]
+    if exclude_accessor_filter:
+        exclude_accessor_re = re.compile(exclude_accessor_filter)
+        uses = [use for use in uses if not exclude_accessor_re.search(use.accessor.name)]
+    if path_filter:
+        path_re = re.compile(path_filter)
+        uses = [use for use in uses if path_re.search(str(use.path.relative_to(REPO_ROOT)))]
+    if exclude_path_filter:
+        exclude_path_re = re.compile(exclude_path_filter)
+        uses = [use for use in uses if not exclude_path_re.search(str(use.path.relative_to(REPO_ROOT)))]
+
+    by_accessor: dict[tuple[str, str, str], list[SemanticAccessorUse]] = {}
+    for use in uses:
+        key = (use.accessor.kind, use.accessor.name, use.method)
+        by_accessor.setdefault(key, []).append(use)
+
+    priority = {
+        "ram-backed-view": 0,
+        "native-read-helper": 1,
+        "native-copy-helper": 2,
+        "native-bridge-mutator": 3,
+    }
+    rows = sorted(
+        by_accessor.items(),
+        key=lambda item: (
+            priority.get(item[0][0], 99),
+            -len(item[1]),
+            item[0][1],
+            item[0][2],
+        ),
+    )
+    total = sum(len(group) for _, group in rows)
+    filters = []
+    if kinds:
+        filters.append(f"kind={','.join(kinds)}")
+    if accessor_filter:
+        filters.append(f"accessor=/{accessor_filter}/")
+    if exclude_accessor_filter:
+        filters.append(f"exclude-accessor=/{exclude_accessor_filter}/")
+    if path_filter:
+        filters.append(f"path=/{path_filter}/")
+    if exclude_path_filter:
+        filters.append(f"exclude-path=/{exclude_path_filter}/")
+    suffix = f" ({'; '.join(filters)})" if filters else ""
+
+    if output_format == "json":
+        shown = rows if limit <= 0 else rows[:limit]
+        payload = {
+            "filters": {
+                "kinds": kinds or [],
+                "accessor": accessor_filter,
+                "exclude_accessor": exclude_accessor_filter,
+                "path": path_filter,
+                "exclude_path": exclude_path_filter,
+            },
+            "total_uses": total,
+            "total_groups": len(rows),
+            "groups": [
+                {
+                    "uses": len(group),
+                    "kind": kind,
+                    "accessor": accessor,
+                    "method": method,
+                    "return_type": group[0].accessor.return_type,
+                    "first_path": str(group[0].path.relative_to(REPO_ROOT)),
+                    "first_line": group[0].line,
+                }
+                for (kind, accessor, method), group in shown
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return total
+
+    print(f"semantic migration candidates{suffix}: {total} accessor use(s), {len(rows)} grouped call pattern(s)")
+    if not rows:
+        return 0
+    shown = rows if limit <= 0 else rows[:limit]
+    for (kind, accessor, method), group in shown:
+        sample = group[0]
+        rel = sample.path.relative_to(REPO_ROOT)
+        print(f"{len(group):4} {kind:22} {accessor}().{method}() first={rel}:{sample.line}")
+    if len(shown) < len(rows):
+        print(f"... {len(rows) - len(shown)} more grouped pattern(s); pass --migration-candidate-limit 0 to show all")
+    return total
+
+
+def print_top_accessor_methods(
+    title: str,
+    uses: list[SemanticAccessorUse],
+    limit: int,
+) -> None:
+    print(f"{title}: {len(uses)} use(s)")
+    if not uses:
+        return
+    grouped: dict[tuple[str, str, str], list[SemanticAccessorUse]] = {}
+    for use in uses:
+        grouped.setdefault((use.accessor.kind, use.accessor.name, use.method), []).append(use)
+    rows = sorted(
+        grouped.items(),
+        key=lambda item: (-len(item[1]), item[0][1], item[0][2]),
+    )
+    shown = rows if limit <= 0 else rows[:limit]
+    for (_kind, accessor, method), group in shown:
+        sample = group[0]
+        rel = sample.path.relative_to(REPO_ROOT)
+        print(f"  {len(group):4} {accessor}().{method}() first={rel}:{sample.line}")
+    if len(shown) < len(rows):
+        print(f"  ... {len(rows) - len(shown)} more grouped pattern(s); pass --migration-progress-limit 0")
+
+
+def print_semantic_migration_progress(limit: int) -> int:
+    """Summarize migration state by authority class.
+
+    This intentionally does not treat dual-write bridge mutators as the same
+    kind of work as byte-backed views. Bridge use is expected while RAM is still
+    being projected for parity; native read/copy helpers and non-player
+    byte-backed views are regressions or cleanup targets.
+    """
+
+    uses = semantic_accessor_uses()
+    native_reads = [use for use in uses if use.accessor.kind == "native-read-helper"]
+    native_copies = [use for use in uses if use.accessor.kind == "native-copy-helper"]
+    ram_backed = [use for use in uses if use.accessor.kind == "ram-backed-view"]
+    non_player_ram = [
+        use for use in ram_backed if use.accessor.name not in {"player_state", "player_state_mut"}
+    ]
+    player_ram = [
+        use for use in ram_backed if use.accessor.name in {"player_state", "player_state_mut"}
+    ]
+    bridge_mutators = [use for use in uses if use.accessor.kind == "native-bridge-mutator"]
+
+    print("semantic migration progress")
+    print(f"  native read helper cleanup: {len(native_reads)} use(s)")
+    print(f"  native copy helper cleanup: {len(native_copies)} use(s)")
+    print(f"  non-player byte-backed views: {len(non_player_ram)} use(s)")
+    print(f"  player byte-backed compatibility views: {len(player_ram)} use(s)")
+    print(f"  dual-write native bridge mutators: {len(bridge_mutators)} use(s)")
+    print()
+    print_top_accessor_methods("player byte-backed compatibility backlog", player_ram, limit)
+    print()
+    print_top_accessor_methods("dual-write bridge usage, expected during transition", bridge_mutators, limit)
+    return len(uses)
 
 
 def scan_consts() -> list[RamConst]:
@@ -607,6 +1228,61 @@ def main() -> int:
         action="store_true",
         help="print non-failing NativeRamBridgeView use outside approved runtime bridge boundaries",
     )
+    parser.add_argument(
+        "--report-migration-candidates",
+        action="store_true",
+        help="print grouped semantic accessor uses that are candidates for native GameState migration",
+    )
+    parser.add_argument(
+        "--report-migration-progress",
+        action="store_true",
+        help="summarize semantic migration progress by authority class",
+    )
+    parser.add_argument(
+        "--migration-candidate-limit",
+        type=int,
+        default=40,
+        help="maximum grouped migration candidate rows to print; use 0 for all",
+    )
+    parser.add_argument(
+        "--migration-progress-limit",
+        type=int,
+        default=12,
+        help="maximum grouped rows per migration progress section; use 0 for all",
+    )
+    parser.add_argument(
+        "--migration-candidate-kind",
+        action="append",
+        choices=[
+            "ram-backed-view",
+            "native-read-helper",
+            "native-copy-helper",
+            "native-bridge-mutator",
+        ],
+        help="limit migration candidates to one accessor kind; repeat for multiple kinds",
+    )
+    parser.add_argument(
+        "--migration-candidate-accessor",
+        help="regular expression for accessor/helper names to include",
+    )
+    parser.add_argument(
+        "--migration-candidate-exclude-accessor",
+        help="regular expression for accessor/helper names to exclude",
+    )
+    parser.add_argument(
+        "--migration-candidate-path",
+        help="regular expression for relative Rust file paths to include",
+    )
+    parser.add_argument(
+        "--migration-candidate-exclude-path",
+        help="regular expression for relative Rust file paths to exclude",
+    )
+    parser.add_argument(
+        "--migration-candidate-format",
+        choices=["text", "json"],
+        default="text",
+        help="migration candidate report format",
+    )
     args = parser.parse_args()
 
     findings = [finding for path in rust_files() for finding in check_file(path)]
@@ -614,6 +1290,19 @@ def main() -> int:
         for finding in findings:
             rel = finding.path.relative_to(REPO_ROOT)
             print(f"{rel}:{finding.line}: {finding.message}", file=sys.stderr)
+        return 1
+
+    native_read_helper_uses = native_read_helper_findings()
+    if native_read_helper_uses and not args.report_migration_candidates:
+        print_native_read_helper_failures(native_read_helper_uses)
+        return 1
+    native_copy_helper_uses = native_copy_helper_findings()
+    if native_copy_helper_uses and not args.report_migration_candidates:
+        print_native_copy_helper_failures(native_copy_helper_uses)
+        return 1
+    non_player_ram_backed_view_uses = non_player_ram_backed_view_findings()
+    if non_player_ram_backed_view_uses and not args.report_migration_candidates:
+        print_non_player_ram_backed_view_failures(non_player_ram_backed_view_uses)
         return 1
 
     constants = scan_consts()
@@ -634,6 +1323,25 @@ def main() -> int:
         for finding in native_bridge_findings_list:
             rel = finding.path.relative_to(REPO_ROOT)
             print(f"{rel}:{finding.line}: note: {finding.message}", file=sys.stderr)
+
+    migration_candidate_count = (
+        print_semantic_migration_candidates(
+            args.migration_candidate_limit,
+            args.migration_candidate_kind,
+            args.migration_candidate_accessor,
+            args.migration_candidate_exclude_accessor,
+            args.migration_candidate_path,
+            args.migration_candidate_exclude_path,
+            args.migration_candidate_format,
+        )
+        if args.report_migration_candidates
+        else 0
+    )
+    migration_progress_count = (
+        print_semantic_migration_progress(args.migration_progress_limit)
+        if args.report_migration_progress
+        else 0
+    )
 
     if args.write_doc:
         doc_path = args.doc if args.doc.is_absolute() else REPO_ROOT / args.doc
@@ -663,6 +1371,10 @@ def main() -> int:
         message += f"; {len(direct_findings)} non-view direct RAM access note(s)"
     if args.report_native_bridge:
         message += f"; {len(native_bridge_findings_list)} non-boundary native bridge note(s)"
+    if args.report_migration_candidates:
+        message += f"; {migration_candidate_count} semantic migration candidate accessor use(s)"
+    if args.report_migration_progress:
+        message += f"; {migration_progress_count} semantic migration accessor use(s)"
     print(message)
     return 0
 

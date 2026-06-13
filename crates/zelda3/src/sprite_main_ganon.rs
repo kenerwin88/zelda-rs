@@ -506,12 +506,12 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_graphics(graphics);
         }
 
-        if self.dungeon_torch_state().ganon_torch_count() == 2
-            && self.dungeon_torch_state().ganon_torch_count() != self.sprite_slot(k).room()
+        if self.game_state.dungeon.torch.ganon_torch_count() == 2
+            && self.game_state.dungeon.torch.ganon_torch_count() != self.sprite_slot(k).room()
         {
             self.sprite_slot_mut(k).set_delay_aux1(64);
         }
-        let torch_count = self.dungeon_torch_state().ganon_torch_count();
+        let torch_count = self.game_state.dungeon.torch.ganon_torch_count();
         self.sprite_slot_mut(k).set_room(torch_count);
 
         self.ganon_draw(k);
@@ -552,7 +552,7 @@ impl ZeldaState {
         }
 
         if (self.sprite_slot(k).ignore_projectile() | self.player_state().immobilized_flag()) == 0
-            && self.dungeon_torch_state().ganon_torch_count() == 2
+            && self.game_state.dungeon.torch.ganon_torch_count() == 2
         {
             self.sprite_check_damage_to_and_from_link(k);
         }
@@ -664,9 +664,21 @@ impl ZeldaState {
                 }
                 self.sprite_slot_mut(k).increment_ignore_projectile();
                 let x = (u16::from(self.sprite_slot(k).x_high()) << 8)
-                    | u16::from(self.swamola_target(0).x_low());
+                    | u16::from(
+                        self.game_state
+                            .effects
+                            .sprite_histories
+                            .swamola_target(0)
+                            .x_low(),
+                    );
                 let y = (u16::from(self.sprite_slot(k).y_high()) << 8)
-                    | u16::from(self.swamola_target(0).y_low());
+                    | u16::from(
+                        self.game_state
+                            .effects
+                            .sprite_histories
+                            .swamola_target(0)
+                            .y_low(),
+                    );
                 if self.ganon_attempt_trident_catch(x, y) {
                     let direction = self.sprite_slot(k).subtype() >> 2;
                     self.sprite_slot_mut(k).set_direction(direction);
@@ -733,7 +745,11 @@ impl ZeldaState {
                 if self.sprite_slot(k).health() < 161 {
                     self.sprite_slot_mut(k).set_health(160);
                 }
-                self.overlord_slot_mut(2).set_x_low(40);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 2)
+                    .set_x_low(40);
                 if self.sprite_slot(k).delay_main() == 0 {
                     self.sprite_slot_mut(k).set_ai_state(8);
                     self.sprite_slot_mut(k).set_delay_main(255);
@@ -764,7 +780,10 @@ impl ZeldaState {
                     }
                 } else {
                     let idx = ((self.sprite_slot(k).delay_main() >> 4) & 15) as usize;
-                    self.overlord_slot_mut(2)
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 2)
                         .add_x_low(BAT_ORBIT_RADIUS_DELTAS[idx] as u8);
                     self.ganon_phase1_animate_trident_spin(k);
                     self.ganon_handle_fire_bat_circle(k);
@@ -856,7 +875,7 @@ impl ZeldaState {
                     if self.sprite_slot(k).delay_main() == 1 {
                         self.system_signals_mut().set_ambient_sound_effect(5);
                         self.ganon_select_warp_location(k, 13);
-                        self.player_state_mut().clear_immobilized();
+                        self.follower_link_state_mut().clear_immobilized();
                         self.ganon_spawn_falling_tiles_overlord(k);
                         if self.sprite_slot(k).anim_clock() >= 4 {
                             self.ganon_select_warp_location(k, 10);
@@ -872,7 +891,7 @@ impl ZeldaState {
                             1
                         };
                         self.world_scroll_mut().set_bg1_y_offset(offs);
-                        self.player_state_mut().immobilize();
+                        self.follower_link_state_mut().immobilize();
                     }
                 } else {
                     const GFX16: [u8; 2] = [2, 10];
@@ -993,7 +1012,7 @@ impl ZeldaState {
             self.ganon_bat_draw(k);
             if self.sprite_slot(k).pause() != 0 {
                 self.sprite_slot_mut(k).set_state(0);
-                let bits = self.dungeon_savegame_state().savegame_state_bits() | 0x8000;
+                let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x8000;
                 self.dungeon_savegame_state_mut()
                     .set_savegame_state_bits(bits);
             }
@@ -1056,8 +1075,8 @@ impl ZeldaState {
     //   return (uint16)(cur_sprite_x - x + 4) < 8 && (uint16)(cur_sprite_y - y + 4) < 8;
     // }
     pub(super) fn ganon_attempt_trident_catch(&self, x: u16, y: u16) -> bool {
-        let cx = self.sprite_workspace().current_sprite_x();
-        let cy = self.sprite_workspace().current_sprite_y();
+        let cx = self.game_state.sprites.workspace.current_sprite_x();
+        let cy = self.game_state.sprites.workspace.current_sprite_y();
         cx.wrapping_sub(x).wrapping_add(4) < 8 && cy.wrapping_sub(y).wrapping_add(4) < 8
     }
 
@@ -1083,14 +1102,23 @@ impl ZeldaState {
     // }
     pub(super) fn ganon_handle_fire_bat_circle(&mut self, _k: usize) {
         // WORD(overlord_x_lo[0]) -= 4 — 16-bit wrap.
-        self.overlord_slot_mut(0).subtract_adjacent_x_low_word(4);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, 0)
+            .subtract_adjacent_x_low_word(4);
 
-        let scale = self.overlord_slot(2).x_low();
+        let scale = self.game_state.sprites.overlord_slots.slot(2).x_low();
         let sprite0_x = self.sprite_get_x(0);
         let sprite0_y = self.sprite_get_y(0);
 
         for i in 0..8usize {
-            let base = self.overlord_slot(0).adjacent_x_low_word();
+            let base = self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(0)
+                .adjacent_x_low_word();
             let t: u16 = base.wrapping_add((i as u16).wrapping_mul(64)) & 0x1ff;
             if self.sprite_slot(i + 1).ai_state() != 2 {
                 let j = ((t >> 5).wrapping_sub(4) & 0xf) as usize;
@@ -1104,11 +1132,19 @@ impl ZeldaState {
             // i32 to allow the negative-extend before re-casting to 16-bit / 8-bit.
             let xs = ganon_sin(t, scale) as i16;
             let x = (sprite0_x as i32).wrapping_add(xs as i32);
-            self.overlord_slot_mut(i + 1).set_circle_x(x as u16);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i + 1)
+                .set_circle_x(x as u16);
 
             let ys = ganon_sin(t.wrapping_add(0x80), scale) as i16;
             let y = (sprite0_y as i32).wrapping_add(ys as i32);
-            self.overlord_slot_mut(i + 1).set_circle_y(y as u16);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, i + 1)
+                .set_circle_y(y as u16);
         }
         self.temp_counter_mut().set(8);
     }
@@ -1183,7 +1219,15 @@ impl ZeldaState {
         // The C loop keeps walking down past slot 0. The accessor layer keeps
         // the modernized port inside the real overlord slot range.
         let mut j_i32: i32 = 7;
-        while j_i32 >= 0 && self.overlord_slot(j_i32 as usize).overlord_type() != 0 {
+        while j_i32 >= 0
+            && self
+                .game_state
+                .sprites
+                .overlord_slots
+                .slot(j_i32 as usize)
+                .overlord_type()
+                != 0
+        {
             j_i32 -= 1;
         }
         if j_i32 < 0 {
@@ -1198,20 +1242,45 @@ impl ZeldaState {
 
         let j = j_i32 as usize;
         let ti = t as usize;
-        self.overlord_slot_mut(j)
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
             .set_overlord_type(GANON_FALLING_TILE_OVERLORD_TYPES[ti]);
-        self.overlord_slot_mut(j)
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
             .set_x_low(GANON_FALLING_TILE_OVERLORD_X_LOW[ti]);
         // overlord_x_hi[j] = link_x_coord >> 8  — read the high byte of the 16-bit link_x_coord.
         let x_high = self.player_state().x_high();
-        self.overlord_slot_mut(j).set_x_high(x_high);
-        self.overlord_slot_mut(j)
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
+            .set_x_high(x_high);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
             .set_y_low(GANON_FALLING_TILE_OVERLORD_Y_LOW[ti]);
         let y_high = self.player_state().y_high();
-        self.overlord_slot_mut(j).set_y_high(y_high);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
+            .set_y_high(y_high);
         // overlord_gen1 / overlord_gen2 — clear both.
-        self.overlord_slot_mut(j).set_gen1(0);
-        self.overlord_slot_mut(j).set_gen2(0);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
+            .set_gen1(0);
+        self.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut self.ram, j)
+            .set_gen2(0);
     }
 
     // void Ganon_Func1(int k, int t) {  // sprite_main.c:15010
@@ -1334,8 +1403,8 @@ impl ZeldaState {
                 self.sprite_slot(k).health(),
                 self.sprite_slot(k).subtype(),
                 self.sprite_slot(k).direction(),
-                self.swamola_target(0).x_low(),
-                self.swamola_target(0).y_low(),
+                self.game_state.effects.sprite_histories.swamola_target(0).x_low(),
+                self.game_state.effects.sprite_histories.swamola_target(0).y_low(),
             );
         }
         let rnd = self.get_random_number();
@@ -1376,7 +1445,7 @@ impl ZeldaState {
         if sign8(g)
             || (self.sprite_slot(k).ai_state() != 19
                 && self.sprite_slot(k).delay_aux4() == 0
-                && self.dungeon_torch_state().ganon_torch_count() == 0)
+                && self.game_state.dungeon.torch.ganon_torch_count() == 0)
         {
             let _ = self.sprite_prep_oam_coord_or_double_ret(k);
             return;
@@ -1402,7 +1471,7 @@ impl ZeldaState {
 
         let z = (self.sprite_slot(k).z() as u16).wrapping_sub(1);
         let frame: u16 = if (z >> 11) > 4 { 4 } else { z >> 11 };
-        let cy = self.sprite_workspace().current_sprite_y();
+        let cy = self.game_state.sprites.workspace.current_sprite_y();
         self.sprite_workspace_mut()
             .set_current_sprite_y(cy.wrapping_add(z));
         self.oam_state_mut().set_current_pointer(0x9f4);
@@ -1471,14 +1540,25 @@ impl ZeldaState {
     }
 
     fn dungeon_extinguish_torch_for_ganon(&mut self) {
-        let y = self.dungeon_torch_state().attr_index() * 2
-            + self.dungeon_torch_state().torches_start_index() as usize;
+        let y = self.game_state.dungeon.torch.attr_index() * 2
+            + self.game_state.dungeon.torch.torches_start_index() as usize;
         let idx = y >> 1;
-        let mut r8 = self.dungeon_object_tracking().object_tilemap_pos(idx) & 0x7fff;
+        let mut r8 = self
+            .game_state
+            .dungeon
+            .object_tracking
+            .object_tilemap_pos(idx)
+            & 0x7fff;
         self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(idx, r8);
 
-        let opos = (self.dungeon_object_tracking().object_pos_in_objdata(idx) & 0xff) >> 1;
+        let opos = (self
+            .game_state
+            .dungeon
+            .object_tracking
+            .object_pos_in_objdata(idx)
+            & 0xff)
+            >> 1;
         self.dungeon_torch_mut()
             .set_torch_data_word_index(opos as usize, r8);
 
@@ -1486,24 +1566,24 @@ impl ZeldaState {
         self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
         self.request_nmi_copy_packets();
 
-        if self.dungeon_torch_state().wants_lights_out() != 0
-            && self.dungeon_torch_state().lit_torches() != 0
+        if self.game_state.dungeon.torch.wants_lights_out() != 0
+            && self.game_state.dungeon.torch.lit_torches() != 0
         {
             self.dungeon_torch_mut().decrement_lit_torches();
-            if self.dungeon_torch_state().lit_torches() < 3 {
-                if self.dungeon_torch_state().lit_torches() == 0 {
+            if self.game_state.dungeon.torch.lit_torches() < 3 {
+                if self.game_state.dungeon.torch.lit_torches() == 0 {
                     self.set_sub_screen_layers(1);
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let plus =
-                    LIT_TORCHES_COLOR_PLUS[self.dungeon_torch_state().lit_torches() as usize];
+                    LIT_TORCHES_COLOR_PLUS[self.game_state.dungeon.torch.lit_torches() as usize];
                 self.set_overworld_fixed_color_adjustment(plus);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
             }
         }
 
-        let torch_timer = self.dungeon_torch_state().attr_index();
+        let torch_timer = self.game_state.dungeon.torch.attr_index();
         self.dungeon_torch_mut().clear_timer(torch_timer);
         self.dungeon_torch_mut().clear_attr();
     }
@@ -1536,7 +1616,7 @@ impl ZeldaState {
 
     fn ganon_draw_emit_body_oam_for_ganon(&mut self, k: usize, info: (u16, u16, u8)) {
         let (info_x, info_y, info_flags) = info;
-        let mut oam = self.oam_state().current_pointer_usize() + 5 * 4;
+        let mut oam = self.game_state.oam.current_pointer_usize() + 5 * 4;
         let g = self.sprite_slot(k).graphics() as usize;
         for i in 0..12 {
             let j = g * 12 + i;
@@ -1555,7 +1635,7 @@ impl ZeldaState {
         if offs == 15 {
             return;
         }
-        let oam = self.oam_state().current_pointer_usize() + (5 + usize::from(offs)) * 4;
+        let oam = self.game_state.oam.current_pointer_usize() + (5 + usize::from(offs)) * 4;
         let j = usize::from(self.sprite_slot(k).head_direction()) * 2
             + if self.sprite_slot(k).direction() != 0 {
                 6
@@ -1743,7 +1823,11 @@ mod tests {
         let mut s = fresh_state();
         let k = 0;
         // Pre-clear overlord slot 7 so the search succeeds.
-        s.overlord_slot_mut(7).clear();
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 7)
+            .clear();
         s.sprite_slot_mut(k).set_anim_clock(0);
         // Seed link coords so we can verify the high-byte copy.
         s.player_state_mut().set_x(0x0234);
@@ -1751,21 +1835,24 @@ mod tests {
         s.ganon_spawn_falling_tiles_overlord(k);
         assert_eq!(s.sprite_slot(k).anim_clock(), 1);
         assert_eq!(
-            s.overlord_slot(7).overlord_type(),
+            s.game_state.sprites.overlord_slots.slot(7).overlord_type(),
             GANON_FALLING_TILE_OVERLORD_TYPES[0]
         );
         assert_eq!(
-            s.overlord_slot(7).x_low(),
+            s.game_state.sprites.overlord_slots.slot(7).x_low(),
             GANON_FALLING_TILE_OVERLORD_X_LOW[0]
         );
-        assert_eq!(s.overlord_slot(7).x_high(), 0x02);
-        assert_eq!(s.overlord_slot(7).y_high(), 0x05);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(7).x_high(), 0x02);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(7).y_high(), 0x05);
 
         // Advance the anim clock past 3 and ensure no further write happens.
         s.sprite_slot_mut(k).set_anim_clock(4);
-        let bak = s.overlord_slot(7).overlord_type();
+        let bak = s.game_state.sprites.overlord_slots.slot(7).overlord_type();
         s.ganon_spawn_falling_tiles_overlord(k);
-        assert_eq!(s.overlord_slot(7).overlord_type(), bak);
+        assert_eq!(
+            s.game_state.sprites.overlord_slots.slot(7).overlord_type(),
+            bak
+        );
         assert_eq!(s.sprite_slot(k).anim_clock(), 4);
     }
 
@@ -1773,9 +1860,17 @@ mod tests {
     fn handle_fire_bat_circle_writes_eight_overlords_and_seeds_counter() {
         let mut s = fresh_state();
         // Seed overlord_x_lo word to a known value so we can predict t for each i.
-        s.overlord_slot_mut(0).set_adjacent_x_low_word(0x10);
-        s.overlord_slot_mut(2).set_x_low(0); // scale = 0 -> GanonSin returns 0.
-                                             // Sprite 0 at (0x80, 0x80) for predictable add.
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 0)
+            .set_adjacent_x_low_word(0x10);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_x_low(0); // scale = 0 -> GanonSin returns 0.
+                           // Sprite 0 at (0x80, 0x80) for predictable add.
         s.sprite_set_x(0, 0x80);
         s.sprite_set_y(0, 0x80);
         // sprite_ai_state for indices 1..=8: leave them at 0 so the velocity
@@ -1788,15 +1883,22 @@ mod tests {
 
         // overlord_x_lo word should have decremented by 4.
         assert_eq!(
-            s.overlord_slot(0).adjacent_x_low_word(),
+            s.game_state
+                .sprites
+                .overlord_slots
+                .slot(0)
+                .adjacent_x_low_word(),
             0x10u16.wrapping_sub(4)
         );
         // tmp_counter is set to 8.
-        assert_eq!(s.temp_counter().value(), 8);
+        assert_eq!(s.game_state.scratch_counter.value(), 8);
         // With scale = 0, GanonSin -> 0, so every overlord_x_hi[i+1] == sprite_x_lo(0) == 0x80.
         for i in 0..8 {
-            assert_eq!(s.overlord_slot(i + 1).x_high(), 0x80);
-            assert_eq!(s.overlord_slot(i + 1).gen2(), 0x80);
+            assert_eq!(
+                s.game_state.sprites.overlord_slots.slot(i + 1).x_high(),
+                0x80
+            );
+            assert_eq!(s.game_state.sprites.overlord_slots.slot(i + 1).gen2(), 0x80);
         }
     }
 

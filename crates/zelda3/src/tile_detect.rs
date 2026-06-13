@@ -12,12 +12,16 @@ const TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
-        let world = self.world_scroll();
+        let world = &self.game_state.world.scroll;
         let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
             & world.overworld_offset_mask_y())
             << 3)
             | (x.wrapping_sub(world.overworld_offset_base_x()) & world.overworld_offset_mask_x());
-        let map16 = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
+        let map16 = self
+            .game_state
+            .dungeon
+            .room_tilemaps
+            .bg2_tile_by_byte_pos(pos);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
         let mut attr = self.asset_u8(163, (map8 & 0x01ff) as usize);
@@ -27,7 +31,7 @@ impl ZeldaState {
         if env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame()
         {
-            let world = self.world_scroll();
+            let world = &self.game_state.world.scroll;
             eprintln!(
                 "tile-probe frame={} x=0x{:04x} y=0x{:04x} pos=0x{:04x} map16=0x{:04x} map8=0x{:04x} attr=0x{:02x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x}",
                 self.game_state.frame.frame_counter,
@@ -51,7 +55,7 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let detect_y = link_y.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16);
@@ -77,7 +81,7 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x =
@@ -100,7 +104,7 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let y = link_y.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16) & mask;
@@ -118,7 +122,7 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x = (link_x.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16)
@@ -133,7 +137,7 @@ impl ZeldaState {
     pub(super) fn player_tile_detect_nearby(&mut self) {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[0] as u16) & mask) >> 3;
@@ -152,24 +156,30 @@ impl ZeldaState {
         let k = k as usize;
         let bak0 = self.game_state.world.location.dungeon_room_index();
         let bak1 = self.player_state().lower_level_state();
-        if self.ancilla_slot(k).work_byte_1() != 0 {
-            if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
+        if self.game_state.sprites.ancilla_slots.slot(k).work_byte_1() != 0 {
+            if self
+                .game_state
+                .dungeon
+                .stair_movement
+                .kind_of_in_room_staircase()
+                == 0
+            {
                 self.increment_dungeon_room_index_by(0x10);
             }
             self.player_state_mut().set_lower_level_state(bak1 ^ 1);
         }
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
-        let dir = self.ancilla_slot(k).direction() as i32;
+        let dir = self.game_state.sprites.ancilla_slots.slot(k).direction() as i32;
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        if self.dungeon_room_load().header_collision() == 2 {
+        if self.game_state.dungeon.room_load.header_collision() == 2 {
             self.player_state_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
-                x.wrapping_add(self.world_scroll().bg1_x())
-                    .wrapping_sub(self.world_scroll().bg2_x()),
-                y.wrapping_add(self.world_scroll().bg1_y())
-                    .wrapping_sub(self.world_scroll().bg2_y()),
+                x.wrapping_add(self.game_state.world.scroll.bg1_x())
+                    .wrapping_sub(self.game_state.world.scroll.bg2_x()),
+                y.wrapping_add(self.game_state.world.scroll.bg1_y())
+                    .wrapping_sub(self.game_state.world.scroll.bg2_y()),
                 dir,
             );
             self.player_state_mut().set_lower_level_state(0);
@@ -183,7 +193,7 @@ impl ZeldaState {
         const CHECK_X: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
         const CHECK_Y: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
         let base = dir as usize * 2;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let y0 = y.wrapping_add(CHECK_Y[base] as u16) & mask;
         let y1 = y.wrapping_add(CHECK_Y[base + 1] as u16) & mask;
         let x0 = (x.wrapping_add(CHECK_X[base] as u16) & mask) >> 3;
@@ -208,18 +218,18 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         const DETECT_Y: [i8; 4] = [8, 23, 16, 16];
         const DETECT_X: [i8; 4] = [8, 8, 0, 15];
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(DETECT_X[y] as i16 as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(DETECT_Y[y] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
-        if ((self.tile_detect_position().collision_bits()
-            | self.tile_detect_position().horizontal_ledge() as u16)
+        if ((self.game_state.player.tile_detection.collision_bits()
+            | self.game_state.player.tile_detection.horizontal_ledge() as u16)
             & 3)
             == 0
-            && ((self.tile_detect_position().vertical_ledge()
-                | self.tile_detect_position().diagonal_ledge_tiles())
+            && ((self.game_state.player.tile_detection.vertical_ledge()
+                | self.game_state.player.tile_detection.diagonal_ledge_tiles())
                 & 0x33)
                 == 0
         {
@@ -239,7 +249,7 @@ impl ZeldaState {
     pub(super) fn tile_check_for_mirror_bonk(&mut self) {
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(2) & mask) >> 3;
@@ -259,7 +269,7 @@ impl ZeldaState {
         const DOORWAY_DETECT_X: [i8; 4] = [8, 8, -1, 16];
         const DOORWAY_DETECT_Y: [i8; 4] = [-1, 24, 16, 16];
         let o = dw.wrapping_sub(1) as usize * 2;
-        let mask = self.tile_detect_position().location_calc_mask();
+        let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(DOORWAY_DETECT_X[o] as i16 as u16) & mask) >> 3;
@@ -310,12 +320,12 @@ impl ZeldaState {
         let is_indoors = self.game_state.world.location.is_indoors();
         let trace = env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame();
-        let r14_before = self.tile_detect_position().collision_bits();
-        let r12_before = self.tile_detect_position().slope_collision_bits();
-        let misc_before = self.tile_detect_position().misc_tiles();
-        let normal_before = self.tile_detect_position().normal_tiles();
-        let pit_before = self.tile_detect_position().pit_tile();
-        let diag_before = self.tile_detect_position().diag_state();
+        let r14_before = self.game_state.player.tile_detection.collision_bits();
+        let r12_before = self.game_state.player.tile_detection.slope_collision_bits();
+        let misc_before = self.game_state.player.tile_detection.misc_tiles();
+        let normal_before = self.game_state.player.tile_detection.normal_tiles();
+        let pit_before = self.game_state.player.tile_detection.pit_tile();
+        let diag_before = self.game_state.player.tile_detection.diag_state();
         let below_before = self.player_state().tile_below();
         let tile = if is_indoors {
             self.player_state_mut().clear_force_move_high_byte();
@@ -326,7 +336,7 @@ impl ZeldaState {
                 } else {
                     0
                 };
-            let mut tile = self.dungeon_bg2_attributes().bg2_attr(offset);
+            let mut tile = self.game_state.dungeon.bg2_attributes.bg2_attr(offset);
             if self.player_state().cheat_walk_through_walls() != 0 {
                 tile = 0;
             }
@@ -349,20 +359,20 @@ impl ZeldaState {
                 tile,
                 self.player_state().x(),
                 self.player_state().y(),
-                self.player_state().speed_setting(),
-                self.player_state().speed_modifier(),
+                self.game_state.player.follower_link.speed_setting(),
+                self.game_state.player.follower_link.speed_modifier(),
                 r14_before,
-                self.tile_detect_position().collision_bits(),
+                self.game_state.player.tile_detection.collision_bits(),
                 r12_before,
-                self.tile_detect_position().slope_collision_bits(),
+                self.game_state.player.tile_detection.slope_collision_bits(),
                 misc_before,
-                self.tile_detect_position().misc_tiles(),
+                self.game_state.player.tile_detection.misc_tiles(),
                 normal_before,
-                self.tile_detect_position().normal_tiles(),
+                self.game_state.player.tile_detection.normal_tiles(),
                 pit_before,
-                self.tile_detect_position().pit_tile(),
+                self.game_state.player.tile_detection.pit_tile(),
                 diag_before,
-                self.tile_detect_position().diag_state(),
+                self.game_state.player.tile_detection.diag_state(),
                 below_before,
                 self.player_state().tile_below(),
             );
@@ -410,7 +420,7 @@ impl ZeldaState {
             | 0xbf
             | 0xd0..=0xef => {
                 if !is_indoors {
-                    let normal = self.tile_detect_position().normal_tiles() | bits;
+                    let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
                     self.tile_detect_position_mut().set_normal_tiles(normal);
                 }
             }
@@ -421,7 +431,7 @@ impl ZeldaState {
                 if is_indoors {
                 self.tile_detect_position_mut().or_collision_bits(bits);
                 } else {
-                    let grass = self.tile_detect_position().thick_grass() | bits;
+                    let grass = self.game_state.player.tile_detection.thick_grass() | bits;
                     self.tile_detect_position_mut().set_thick_grass(grass);
                 }
             }
@@ -430,46 +440,46 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_collision_bits(bits);
                 } else {
                     self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                    let deepwater = self.tile_detect_position().deepwater() | (bits << 4);
+                    let deepwater = self.game_state.player.tile_detection.deepwater() | (bits << 4);
                     self.tile_detect_position_mut().set_deepwater(deepwater);
                 }
             }
             0x08 => {
-                let deepwater = self.tile_detect_position().deepwater() | bits;
+                let deepwater = self.game_state.player.tile_detection.deepwater() | bits;
                 self.tile_detect_position_mut().set_deepwater(deepwater);
             }
             0x09 => {
-                let shallow = self.tile_detect_position().shallow_water() | bits;
+                let shallow = self.game_state.player.tile_detection.shallow_water() | bits;
                 self.tile_detect_position_mut().set_shallow_water(shallow);
             }
             0x0a => {
-                let normal = self.tile_detect_position().normal_tiles() | bits;
+                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
                 self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x0c => {
-                let moving_floor = self.tile_detect_position().moving_floor_tiles() | bits;
+                let moving_floor = self.game_state.player.tile_detection.moving_floor_tiles() | bits;
                 self.tile_detect_position_mut().set_moving_floor_tiles(moving_floor);
             }
             0x0d => {
                 if !self.player_state().is_menu_blocked()
-                    && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
+                    && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_mut().or_spike_floor_and_triggers((bits << 4) as u8);
                 }
             }
             0x0e => {
-                let icy = self.tile_detect_position().icy_floor() | bits;
+                let icy = self.game_state.player.tile_detection.icy_floor() | bits;
                 self.tile_detect_position_mut().set_icy_floor(icy);
             }
             0x0f => {
-                let icy = self.tile_detect_position().icy_floor() | (bits << 4);
+                let icy = self.game_state.player.tile_detection.icy_floor() | (bits << 4);
                 self.tile_detect_position_mut().set_icy_floor(icy);
             }
             0x6c..=0x6f if is_indoors => {
                 self.tile_detect_position_mut().or_collision_bits(bits);
             }
             0x6c..=0x6f => {
-                let normal = self.tile_detect_position().normal_tiles() | bits;
+                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
                 self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x10..=0x13 => {
@@ -480,14 +490,14 @@ impl ZeldaState {
             }
             0x18..=0x1b => {
                 const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
-                let diagonal = self.tile_detect_position().diagonal_tile() | bits;
+                let diagonal = self.game_state.player.tile_detection.diagonal_tile() | bits;
                 self.tile_detect_position_mut().set_diagonal_tile(diagonal);
                 self.tile_detect_position_mut().or_slope_collision_bits(bits);
                 self.tile_detect_position_mut()
                     .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
             }
             0x1c => {
-                let water_stair = self.tile_detect_position().water_staircase() | bits;
+                let water_stair = self.game_state.player.tile_detection.water_staircase() | bits;
                 self.tile_detect_position_mut().set_water_staircase(water_stair);
             }
             0x1d..=0x1f => {
@@ -504,8 +514,8 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x27 => {
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | bits;
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_misc_tiles(misc);
             }
@@ -535,12 +545,12 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x40 => {
-                let grass = self.tile_detect_position().thick_grass() | bits;
+                let grass = self.game_state.player.tile_detection.thick_grass() | bits;
                 self.tile_detect_position_mut().set_thick_grass(grass);
             }
             0x44 => {
                 if !self.player_state().is_menu_blocked()
-                    && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
+                    && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_mut().or_spike_cactus_tiles(bits as u8);
                 } else {
@@ -552,13 +562,13 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_collision_bits(bits);
             }
             0x48 | 0x4a => {
-                let aftermath = self.tile_detect_position().destruction_aftermath() | bits;
-                let normal = self.tile_detect_position().normal_tiles() | bits;
+                let aftermath = self.game_state.player.tile_detection.destruction_aftermath() | bits;
+                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
                 self.tile_detect_position_mut().set_destruction_aftermath(aftermath);
                 self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x4b => {
-                let grass = self.tile_detect_position().thick_grass() | (bits << 4);
+                let grass = self.game_state.player.tile_detection.thick_grass() | (bits << 4);
                 self.tile_detect_position_mut().set_thick_grass(grass);
             }
             0x4c | 0x4d => {
@@ -579,9 +589,9 @@ impl ZeldaState {
                     if tile == 0x50 || tile == 0x51 {
                         self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
                     }
-                    let read_something = self.tile_detect_position().read_something() | bits;
-                    let r14 = self.tile_detect_position().collision_bits() | bits;
-                    let misc = self.tile_detect_position().misc_tiles() | bits;
+                    let read_something = self.game_state.player.tile_detection.read_something() | bits;
+                    let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                    let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                     self.tile_detect_position_mut().set_read_something(read_something);
                     self.tile_detect_position_mut().set_liftable_tile_index((i * 2) as u8);
                     self.tile_detect_position_mut().set_collision_bits(r14);
@@ -593,12 +603,12 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
             }
             0x58..=0x5d | 0x63 => {
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | bits;
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                 self.tile_detect_position_mut().set_misc_tiles(misc);
                 self.tile_detect_position_mut().set_interacting_tile(tile as u16);
                 if tile != 0x63
-                    && self.dungeon_room_items().chest_location((tile - 0x58) as usize)
+                    && self.game_state.dungeon.room_items.chest_location((tile - 0x58) as usize)
                         >= 0x8000
                 {
                     self.tile_detect_position_mut().set_collision_bits(r14);
@@ -607,28 +617,28 @@ impl ZeldaState {
                         self.tile_detect_position_mut().set_tile_type(tile as u16);
                     }
                 } else {
-                    let chest = self.tile_detect_position().chest() | bits;
+                    let chest = self.game_state.player.tile_detection.chest() | bits;
                     self.tile_detect_position_mut().set_collision_bits(r14);
                     self.tile_detect_position_mut().set_chest(chest);
                 }
             }
             0x60 => {
                 if is_indoors {
-                    let misc_bits = if self.dungeon_bg2_attributes().bg2_attr(offset + 64) == 0x60 {
+                    let misc_bits = if self.game_state.dungeon.bg2_attributes.bg2_attr(offset + 64) == 0x60 {
                         bits << 8
                     } else {
                         bits << 12
                     };
-                    let misc = self.tile_detect_position().misc_tiles() | misc_bits;
+                    let misc = self.game_state.player.tile_detection.misc_tiles() | misc_bits;
                     self.tile_detect_position_mut().set_misc_tiles(misc);
                 } else {
-                    let normal = self.tile_detect_position().normal_tiles() | bits;
+                    let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
                     self.tile_detect_position_mut().set_normal_tiles(normal);
                 }
             }
             0x67 => {
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | bits;
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_misc_tiles(misc);
                 self.tile_detect_position_mut().or_spike_cactus_tiles((bits << 4) as u8);
@@ -648,16 +658,16 @@ impl ZeldaState {
             0x70..=0x7f => {
                 if bits & 2 != 0 {
                     let block_flags =
-                        self.tile_detect_position().block_flags() | (1 << (tile & 0x0f));
+                        self.game_state.player.tile_detection.block_flags() | (1 << (tile & 0x0f));
                     self.tile_detect_position_mut().set_block_flags(block_flags);
                 }
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | bits;
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0x80..=0x8d => {
-                let r14 = self.tile_detect_position().collision_bits()
+                let r14 = self.game_state.player.tile_detection.collision_bits()
                     | if tile == 0x82 || tile == 0x83 {
                         (bits << 4) | (bits << 8)
                     } else {
@@ -667,20 +677,20 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0x8e | 0x8f => {
-                let r14 = self.tile_detect_position().collision_bits() | (bits << 4);
+                let r14 = self.game_state.player.tile_detection.collision_bits() | (bits << 4);
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().or_dashable_tiles(bits as u8);
                 self.tile_detect_position_mut().clear_door_direction_flags();
             }
             0x90..=0x9f | 0xa8..=0xaf => {
                 self.world_transient_mut().set_room_transitioning_flags(if tile < 0x98 { 1 } else { 3 });
-                let r14 = self.tile_detect_position().collision_bits() | (bits << 4) | (bits << 8);
+                let r14 = self.game_state.player.tile_detection.collision_bits() | (bits << 4) | (bits << 8);
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xa0..=0xa5 => {
                 self.world_transient_mut().set_room_transitioning_flags(2);
-                let r14 = self.tile_detect_position().collision_bits()
+                let r14 = self.game_state.player.tile_detection.collision_bits()
                     | if tile == 0xa2 || tile == 0xa3 {
                         (bits << 4) | (bits << 8)
                     } else {
@@ -690,14 +700,14 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xc0..=0xcf => {
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | bits;
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0xf0..=0xff => {
-                let r14 = self.tile_detect_position().collision_bits() | bits;
-                let misc = self.tile_detect_position().misc_tiles() | (bits << 4);
+                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
+                let misc = self.game_state.player.tile_detection.misc_tiles() | (bits << 4);
                 self.tile_detect_position_mut().set_collision_bits(r14);
                 self.tile_detect_position_mut().set_misc_tiles(misc);
             }

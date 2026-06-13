@@ -162,10 +162,12 @@ impl ZeldaState {
             self.sprite_set_x(ju, self.player_state().x().wrapping_add(8));
             self.sprite_set_y(ju, self.player_state().y().wrapping_add(16));
             let bottle = self
-                .player_resources()
+                .game_state
+                .inventory
+                .player_resources
                 .equipped_bottle_index()
                 .wrapping_sub(1) as usize;
-            if self.inventory_items().bottle(bottle) == 8 {
+            if self.game_state.inventory.items.bottle(bottle) == 8 {
                 self.sprite_slot_mut(ju).set_head_direction(1);
             }
             self.initialize_spawned_bee(ju);
@@ -311,8 +313,8 @@ impl ZeldaState {
         }
         let x = self.sprite_get_x(j);
         let y = self.sprite_get_y(j);
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         if cur_x.wrapping_sub(x).wrapping_add(16) >= 24
             || cur_y.wrapping_sub(y).wrapping_sub(8) >= 24
         {
@@ -399,7 +401,7 @@ impl ZeldaState {
     //     sprite_delay_aux4[k] = 40;
     // }
     pub(super) fn bee_handle_interactions(&mut self, k: usize) {
-        let dmi = self.dialogue_message_index().value();
+        let dmi = self.game_state.messaging.dialogue_message_index.value();
         if self.game_state.frame.submodule == 2 && (dmi == 0xc8 || dmi == 0xca) {
             self.sprite_slot_mut(k).set_delay_aux4(40);
         }
@@ -467,10 +469,10 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot(k).e() == 0 {
                     self.sprite_slot_mut(k).clear();
-                    let or_bottle = self.inventory_items().bottle(0)
-                        | self.inventory_items().bottle(1)
-                        | self.inventory_items().bottle(2)
-                        | self.inventory_items().bottle(3);
+                    let or_bottle = self.game_state.inventory.items.bottle(0)
+                        | self.game_state.inventory.items.bottle(1)
+                        | self.game_state.inventory.items.bottle(2)
+                        | self.game_state.inventory.items.bottle(3);
                     if (or_bottle & 8) == 0 {
                         self.gold_bee_spawn_self(k);
                     }
@@ -628,7 +630,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_find_empty_bottle(&self) -> i32 {
         for i in 0..4 {
-            if self.inventory_items().bottle(i) == 2 {
+            if self.game_state.inventory.items.bottle(i) == 2 {
                 return i as i32;
             }
         }
@@ -720,7 +722,14 @@ impl ZeldaState {
                 let sprite = self.sprite_slot(k);
                 if sprite.a() == 0 && sprite.e() != 0 {
                     self.sprite_slot_mut(k).set_ai_state(3);
-                } else if (self.save_progress().progress_indicator_3() & 2) != 0 {
+                } else if (self
+                    .game_state
+                    .inventory
+                    .save_progress
+                    .progress_indicator_3()
+                    & 2)
+                    != 0
+                {
                     self.sprite_show_solicited_message(k, 0xd4);
                 } else if (self.sprite_show_solicited_message(k, 0xd1) & 0x100) != 0 {
                     self.sprite_slot_mut(k).set_ai_state(1);
@@ -728,7 +737,7 @@ impl ZeldaState {
             }
             1 => {
                 if self.multiselect_choice().value() == 0
-                    && self.player_resources().rupees_goal() >= 100
+                    && self.game_state.inventory.player_resources.rupees_goal() >= 100
                 {
                     self.sprite_show_message_unconditional(0xd2);
                     self.sprite_slot_mut(k).set_ai_state(2);
@@ -741,7 +750,12 @@ impl ZeldaState {
                 self.player_state_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x16, 0);
                 self.save_progress_mut().or_progress_indicator_3(2);
-                let rupees = self.player_resources().rupees_goal().wrapping_sub(100);
+                let rupees = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .rupees_goal()
+                    .wrapping_sub(100);
                 self.player_resources_mut().set_rupees_goal(rupees);
                 self.sprite_slot_mut(k).set_ai_state(0);
             }
@@ -872,7 +886,7 @@ impl ZeldaState {
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
         self.temp_counter_mut().set(4);
         loop {
-            let i = self.temp_counter().value() as usize;
+            let i = self.game_state.scratch_counter.value() as usize;
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, FISH_REWARD_TYPE[i], &mut info);
             if j < 0 {
@@ -885,7 +899,7 @@ impl ZeldaState {
                 FISH_REWARD_YV[i],
             );
             self.temp_counter_mut().decrement();
-            if (self.temp_counter().value() as i8) < 0 {
+            if (self.game_state.scratch_counter.value() as i8) < 0 {
                 break;
             }
         }
@@ -917,7 +931,7 @@ impl ZeldaState {
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
         self.temp_counter_mut().set(4);
         loop {
-            let i = self.temp_counter().value() as usize;
+            let i = self.game_state.scratch_counter.value() as usize;
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0xdb, &mut info);
             if j >= 0 {
@@ -929,7 +943,7 @@ impl ZeldaState {
                 );
             }
             self.temp_counter_mut().decrement();
-            if (self.temp_counter().value() as i8) < 0 {
+            if (self.game_state.scratch_counter.value() as i8) < 0 {
                 break;
             }
         }
@@ -984,7 +998,7 @@ impl ZeldaState {
         if time & 0x18 == 0 {
             return;
         }
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let mut i: i32 = 3;
         loop {
             let x = xin.wrapping_add(SPRITE_DISTRESS_X_OFFSETS[i as usize] as i16 as u16);
@@ -1069,11 +1083,16 @@ mod tests {
     fn make_link_idle(state: &mut ZeldaState) {
         state.clear_modal_pause_flag();
         state.set_submodule(0);
-        state.player_state_mut().clear_auxiliary_state();
+        state.follower_link_state_mut().clear_auxiliary_state();
         state.player_state_mut().clear_item_hold_pose();
-        state.player_state_mut().clear_state_bits();
+        state.follower_link_state_mut().clear_state_bits();
         for slot in 0..5 {
-            state.ancilla_slot_mut(slot).clear();
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot_mut(&mut state.ram, slot)
+                .clear();
         }
         state.player_state_mut().set_x(0x1000);
         state.player_state_mut().set_y(0x1000);
@@ -1249,7 +1268,7 @@ mod tests {
             assert_eq!(sprite.z_velocity(), 32);
             assert_eq!(sprite.delay_aux4(), 32);
         }
-        assert_eq!(state.temp_counter().value(), 0xff);
+        assert_eq!(state.game_state.scratch_counter.value(), 0xff);
     }
 
     #[test]
@@ -1267,7 +1286,7 @@ mod tests {
         assert_eq!(state.sprite_slot(12).sprite_type(), 0xe0);
         assert_eq!(state.sprite_slot(11).sprite_type(), 0xdb);
         assert_eq!(state.sprite_slot(11).delay_aux4(), 32);
-        assert_eq!(state.temp_counter().value(), 0xff);
+        assert_eq!(state.game_state.scratch_counter.value(), 0xff);
     }
 
     #[test]
@@ -1305,7 +1324,10 @@ mod tests {
         state.sprite_bottle_vendor(k);
 
         assert_eq!(state.sprite_slot(k).ai_state(), 2);
-        assert_eq!(state.dialogue_message_index().value(), 0xd2);
+        assert_eq!(
+            state.game_state.messaging.dialogue_message_index.value(),
+            0xd2
+        );
     }
 
     #[test]
@@ -1325,7 +1347,10 @@ mod tests {
 
         assert_eq!(state.sprite_slot(k).ai_state(), 0);
         assert_eq!(state.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2, 2);
-        assert_eq!(state.player_resources().rupees_goal(), 50);
+        assert_eq!(
+            state.game_state.inventory.player_resources.rupees_goal(),
+            50
+        );
     }
 
     #[test]
@@ -1389,7 +1414,7 @@ mod tests {
         state.sprite_slot_mut(k).set_head_direction(0);
 
         state.bee_put_in_bottle(k);
-        assert_eq!(state.inventory_items().bottle(1), 7);
+        assert_eq!(state.game_state.inventory.items.bottle(1), 7);
         assert_eq!(state.sprite_slot(k).state(), 0);
     }
 
@@ -1417,8 +1442,11 @@ mod tests {
         assert_eq!(sprite.ai_state(), 1);
         // Sprite_ShowMessageUnconditional(0xca) wrote dialogue index and
         // bumped main_module_index to 14.
-        assert_eq!(state.dialogue_message_index().value(), 0xca);
-        assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(
+            state.game_state.messaging.dialogue_message_index.value(),
+            0xca
+        );
+        assert_eq!(state.game_state.frame.main_module, 14);
     }
 
     #[test]

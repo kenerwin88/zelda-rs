@@ -306,8 +306,8 @@ impl ZeldaState {
     pub(super) fn sprite_trinexx_check_damage_to_flashing_segment(&mut self, k: usize) {
         let old_x = self.sprite_get_x(k);
         let old_y = self.sprite_get_y(k);
-        let cur_x = self.sprite_workspace().current_sprite_x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         self.sprite_set_x(k, cur_x);
         self.sprite_set_y(k, cur_y);
         self.sprite_slot_mut(k).set_deflection_bits(0x80);
@@ -331,7 +331,7 @@ impl ZeldaState {
                 .subtype2()
                 .wrapping_sub(TRINEXX_BODY_HISTORY_OFFSETS[i])
                 & 0x7f) as usize;
-            let history = self.moldorm_history(j);
+            let history = self.game_state.effects.sprite_histories.moldorm_history(j);
             let cur_x = history.x();
             let cur_y = history.y();
             self.sprite_workspace_mut().set_current_sprite_x(cur_x);
@@ -352,15 +352,17 @@ impl ZeldaState {
                 let mut player = self.player_state_mut();
                 player.set_auxiliary_state(1);
                 player.set_incapacitated_timer(16);
-                player.xor_actual_velocity_xy(255);
+                self.follower_link_state_mut().xor_actual_velocity_xy(255);
             }
 
             let oam = self
-                .oam_state()
+                .game_state
+                .oam
                 .current_pointer()
                 .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i]);
             let ext = self
-                .oam_state()
+                .game_state
+                .oam
                 .current_extended_pointer()
                 .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i] >> 2);
             self.oam_state_mut().set_current_pointer(oam);
@@ -389,7 +391,7 @@ impl ZeldaState {
 
     // void Sprite_CB_TrinexxRockHead(int k) {  // 9db0ca
     pub(super) fn sprite_cb_trinexx_rock_head(&mut self, k: usize) {
-        if self.overlord_slot(0).x_high() != 0 {
+        if self.game_state.sprites.overlord_slots.slot(0).x_high() != 0 {
             self.sprite_trinexx_final_phase(k);
             return;
         }
@@ -403,7 +405,11 @@ impl ZeldaState {
         if (ai_state as i8).is_negative() {
             self.player_state_mut().set_menu_block_flag(ai_state);
             if self.sprite_slot(k).delay_main() == 0 {
-                self.overlord_slot_mut(0).increment_x_high();
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 0)
+                    .increment_x_high();
                 self.sprite_initialized_segmented_for_small_bosses(k);
                 self.sprite_slot_mut(k).set_subtype2(0);
                 self.sprite_slot_mut(k).set_head_direction(0);
@@ -431,7 +437,11 @@ impl ZeldaState {
                     let value = self.sprite_slot(k).y_low().wrapping_sub(12);
                     self.sprite_slot_mut(k).set_c(value);
                 }
-                self.overlord_slot_mut(7).add_x_low(2);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 7)
+                    .add_x_low(2);
             } else if self.sprite_slot(k).delay_main() < 0xe0 {
                 if (self.sprite_slot(k).delay_main() & 3) == 0 {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
@@ -476,9 +486,13 @@ impl ZeldaState {
             };
             self.sprite_slot_mut(k).set_graphics(graphics);
         }
-        if self.overlord_slot(6).x_low() != 0 {
+        if self.game_state.sprites.overlord_slots.slot(6).x_low() != 0 {
             if (self.game_state.frame.frame_counter & 1) == 0 {
-                self.overlord_slot_mut(6).subtract_x_low(1);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 6)
+                    .subtract_x_low(1);
             }
             return;
         }
@@ -508,9 +522,15 @@ impl ZeldaState {
                     }
                     const TRINEXX_FIRE_HEAD_INTRO_X: [u8; 4] = [0x60, 0x78, 0x78, 0x90];
                     const TRINEXX_ICE_HEAD_INTRO_X: [u8; 4] = [0x80, 0x70, 0x60, 0x80];
-                    self.overlord_slot_mut(0)
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 0)
                         .set_x_low(TRINEXX_FIRE_HEAD_INTRO_X[j as usize]);
-                    self.overlord_slot_mut(1)
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 1)
                         .set_x_low(TRINEXX_ICE_HEAD_INTRO_X[j as usize]);
                     let subtype =
                         j.wrapping_add(u8::from((self.get_random_number() & 3) == 0) * 0x80);
@@ -528,9 +548,9 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_delay_main(48);
                 } else {
                     let x = ((self.sprite_slot(k).x_high() as u16) << 8)
-                        | u16::from(self.overlord_slot(0).x_low());
+                        | u16::from(self.game_state.sprites.overlord_slots.slot(0).x_low());
                     let y = ((self.sprite_slot(k).y_high() as u16) << 8)
-                        | u16::from(self.overlord_slot(1).x_low());
+                        | u16::from(self.game_state.sprites.overlord_slots.slot(1).x_low());
                     let speed = if (self.sprite_slot(k).subtype() as i8).is_negative() {
                         16
                     } else {
@@ -559,13 +579,19 @@ impl ZeldaState {
                         self.sprite_slot_mut(k).set_c(value);
                     }
                     if self
-                        .overlord_slot(0)
+                        .game_state
+                        .sprites
+                        .overlord_slots
+                        .slot(0)
                         .x_low()
                         .wrapping_sub(self.sprite_slot(k).x_low())
                         .wrapping_add(2)
                         < 4
                         && self
-                            .overlord_slot(1)
+                            .game_state
+                            .sprites
+                            .overlord_slots
+                            .slot(1)
                             .x_low()
                             .wrapping_sub(self.sprite_slot(k).y_low())
                             .wrapping_add(2)
@@ -637,20 +663,40 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn trinexx_wag_tail(&mut self, _k: usize) {
-        if self.overlord_slot(5).x_low() == 0 {
-            self.overlord_slot_mut(4).add_x_low(1);
-            if (self.overlord_slot(4).x_low() & 3) == 0 {
-                let j = (self.overlord_slot(3).x_low() & 1) as usize;
+        if self.game_state.sprites.overlord_slots.slot(5).x_low() == 0 {
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, 4)
+                .add_x_low(1);
+            if (self.game_state.sprites.overlord_slots.slot(4).x_low() & 3) == 0 {
+                let j = (self.game_state.sprites.overlord_slots.slot(3).x_low() & 1) as usize;
                 let delta: i8 = if j != 0 { -1 } else { 1 };
-                self.overlord_slot_mut(2).add_x_low(delta as u8);
+                self.game_state
+                    .sprites
+                    .overlord_slots
+                    .slot_mut(&mut self.ram, 2)
+                    .add_x_low(delta as u8);
                 let limit: u8 = if j != 0 { 0 } else { 6 };
-                if self.overlord_slot(2).x_low() == limit {
-                    self.overlord_slot_mut(3).add_x_low(1);
-                    self.overlord_slot_mut(5).set_x_low(8);
+                if self.game_state.sprites.overlord_slots.slot(2).x_low() == limit {
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 3)
+                        .add_x_low(1);
+                    self.game_state
+                        .sprites
+                        .overlord_slots
+                        .slot_mut(&mut self.ram, 5)
+                        .set_x_low(8);
                 }
             }
         } else {
-            self.overlord_slot_mut(5).subtract_x_low(1);
+            self.game_state
+                .sprites
+                .overlord_slots
+                .slot_mut(&mut self.ram, 5)
+                .subtract_x_low(1);
         }
     }
 
@@ -682,7 +728,8 @@ impl ZeldaState {
             let mut player = self.player_state_mut();
             player.set_auxiliary_state(1);
             player.set_incapacitated_timer(16);
-            player.set_actual_velocity_xy(pt.x as u8, pt.y as u8);
+            self.follower_link_state_mut()
+                .set_actual_velocity_xy(pt.x as u8, pt.y as u8);
         }
     }
 
@@ -829,7 +876,10 @@ impl ZeldaState {
                         self.sprite_garnish_spawn_sparkle(k, x as i16 as u16, u16::from(y));
                     if self.sprite_slot(k).sprite_type() == 0xcc && sparkle >= 0 {
                         let value = 0x0e;
-                        self.garnish_slot_mut(sparkle as usize)
+                        self.game_state
+                            .sprites
+                            .garnish_slots
+                            .slot_mut(&mut self.ram, sparkle as usize)
                             .set_garnish_type(value);
                     }
                 }
@@ -887,7 +937,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state().current_pointer_usize();
+        let mut oam = self.game_state.oam.current_pointer_usize();
         let count = usize::from(self.sprite_slot(k).subtype2());
         for i in 0..count {
             let j = i + k * 9;
@@ -1163,7 +1213,7 @@ impl ZeldaState {
             | ((self.game_state.frame.frame_counter << 1) & 14);
         self.sprite_slot_mut(k).set_oam_flags(oam_flags);
         let graphics = LIGHTNING_GRAPHICS_BY_PHASE[j]
-            + if self.dungeon_room_tracking().room_index2() == 0x20 {
+            + if self.game_state.dungeon.room_tracking.room_index2() == 0x20 {
                 4
             } else {
                 0
@@ -1180,7 +1230,7 @@ impl ZeldaState {
         if self
             .sprite_slot(k)
             .y_low()
-            .wrapping_sub(self.world_scroll().bg2_y_low())
+            .wrapping_sub(self.game_state.world.scroll.bg2_y_low())
             >= 0xd0
         {
             self.sprite_slot_mut(k).set_state(0);
@@ -1307,11 +1357,15 @@ impl ZeldaState {
         const DY: [i8; 4] = [0, 1, 0, -1];
         let j = ((self.sprite_slot(k).subtype2() >> 4) & 3) as usize;
         let cur_x = self
-            .sprite_workspace()
+            .game_state
+            .sprites
+            .workspace
             .current_sprite_x()
             .wrapping_add_signed(i16::from(DX[j]));
         let cur_y = self
-            .sprite_workspace()
+            .game_state
+            .sprites
+            .workspace
             .current_sprite_y()
             .wrapping_add_signed(i16::from(DY[j]));
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
@@ -1524,7 +1578,7 @@ impl ZeldaState {
 
         self.temp_counter_mut().set(1);
         loop {
-            let idx = self.temp_counter().value() as usize;
+            let idx = self.game_state.scratch_counter.value() as usize;
             let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0x23, &mut info);
             if j >= 0 {
@@ -1541,7 +1595,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(j).set_delay_aux1(64);
             }
             self.temp_counter_mut().decrement();
-            if (self.temp_counter().value() as i8) < 0 {
+            if (self.game_state.scratch_counter.value() as i8) < 0 {
                 break;
             }
         }
@@ -1649,8 +1703,8 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_state(0);
             }
             self.sprite_slot_mut(k).decrement_subtype2();
-            let bg2_x = self.world_scroll().bg2_x_low();
-            let bg2_y = self.world_scroll().bg2_y_low();
+            let bg2_x = self.game_state.world.scroll.bg2_x_low();
+            let bg2_y = self.game_state.world.scroll.bg2_y_low();
             self.sprite_workspace_mut().add_current_sprite_x_low(bg2_x);
             self.sprite_workspace_mut().add_current_sprite_y_low(bg2_y);
             self.sprite_make_boss_explosion_for_small_bosses(k);
@@ -1684,7 +1738,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.inventory_items().sword_type() >= 3 {
+        if self.game_state.inventory.items.sword_type() >= 3 {
             if self.sprite_return_if_recoiling(k) {
                 return;
             }
@@ -1847,8 +1901,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn yellow_stalfos_draw(&mut self, k: usize) {
-        let old_oam = self.oam_state().current_pointer();
-        let old_ext = self.oam_state().current_extended_pointer();
+        let old_oam = self.game_state.oam.current_pointer();
+        let old_ext = self.game_state.oam.current_extended_pointer();
         self.oam_state_mut()
             .set_current_pointer(old_oam.wrapping_add(4));
         self.oam_state_mut()
@@ -1886,7 +1940,7 @@ impl ZeldaState {
         let y = info.y.wrapping_sub(self.sprite_slot(k).c() as u16);
         let charnum = YELLOW_STALFOS_HEAD_CHARS[j];
         let flags = YELLOW_STALFOS_HEAD_FLAGS[j] | info.flags;
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_helper0_for_small_bosses(oam, x, y, charnum, flags, 2);
     }
 
@@ -1902,7 +1956,9 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_from_link(k) != 0 && self.inventory_items().sword_type() < 2 {
+        if self.sprite_check_damage_from_link(k) != 0
+            && self.game_state.inventory.items.sword_type() < 2
+        {
             self.sprite_slot_mut(k).set_hit_timer(0);
             self.sprite_attempt_damage_to_link_plus_recoil(k);
             if self.player_state().blink_countdown() == 0 {
@@ -1912,11 +1968,17 @@ impl ZeldaState {
 
         let link_y = self.player_state().y();
         let link_x = self.player_state().x();
-        let cur_y = self.sprite_workspace().current_sprite_y();
-        let cur_x = self.sprite_workspace().current_sprite_x();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         if link_y.wrapping_sub(cur_y).wrapping_add(8) < 24
             && link_x.wrapping_sub(cur_x).wrapping_add(32) < 64
-            && sign8(self.player_state().actual_y_velocity().wrapping_sub(1))
+            && sign8(
+                self.game_state
+                    .player
+                    .follower_link
+                    .actual_y_velocity()
+                    .wrapping_sub(1),
+            )
         {
             {
                 let mut player = self.player_state_mut();
@@ -1926,7 +1988,7 @@ impl ZeldaState {
             let mut player = self.player_state_mut();
             player.set_auxiliary_state(1);
             player.set_incapacitated_timer(12);
-            player.set_actual_velocity_xy(0, 48);
+            self.follower_link_state_mut().set_actual_velocity_xy(0, 48);
         }
     }
 
@@ -2207,24 +2269,48 @@ mod tests {
         // overlord_x_lo[5] is the cooldown timer. Non-zero ticks down by
         // one and leaves the rest of the tail state untouched.
         let mut s = fresh_state();
-        s.overlord_slot_mut(5).set_x_low(4);
-        s.overlord_slot_mut(4).set_x_low(0);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 5)
+            .set_x_low(4);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 4)
+            .set_x_low(0);
         s.trinexx_wag_tail(0);
-        assert_eq!(s.overlord_slot(5).x_low(), 3);
-        assert_eq!(s.overlord_slot(4).x_low(), 0);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(5).x_low(), 3);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(4).x_low(), 0);
 
         // With the cooldown cleared and the step counter at 3, the next
         // call bumps to 4 (the 0&3 branch fires), advances the swing
         // amount, and arms the cooldown when it hits the boundary (6).
-        s.overlord_slot_mut(5).set_x_low(0);
-        s.overlord_slot_mut(4).set_x_low(3);
-        s.overlord_slot_mut(3).set_x_low(0); // direction bit: forward.
-        s.overlord_slot_mut(2).set_x_low(5);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 5)
+            .set_x_low(0);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 4)
+            .set_x_low(3);
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 3)
+            .set_x_low(0); // direction bit: forward.
+        s.game_state
+            .sprites
+            .overlord_slots
+            .slot_mut(&mut s.ram, 2)
+            .set_x_low(5);
         s.trinexx_wag_tail(0);
-        assert_eq!(s.overlord_slot(4).x_low(), 4);
-        assert_eq!(s.overlord_slot(2).x_low(), 6);
-        assert_eq!(s.overlord_slot(3).x_low(), 1);
-        assert_eq!(s.overlord_slot(5).x_low(), 8);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(4).x_low(), 4);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(2).x_low(), 6);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(3).x_low(), 1);
+        assert_eq!(s.game_state.sprites.overlord_slots.slot(5).x_low(), 8);
     }
 
     #[test]
@@ -2248,7 +2334,7 @@ mod tests {
         s.sprite_slot_mut(pick).set_ai_state(0);
         s.vitreous_set_minions_forth(k);
         assert_eq!(s.sprite_slot(pick).ai_state(), 1);
-        assert_eq!(s.system_signals().sound_effect_1(), 0x15);
+        assert_eq!(s.game_state.system_signals.sound_effect_1(), 0x15);
         // subtype2 was 63 → bumped to 64 → kept (not rolled back).
         assert_eq!(s.sprite_slot(k).subtype2(), 64);
     }
@@ -2293,7 +2379,7 @@ mod tests {
         assert_eq!(s.sprite_get_y(15), 0x0450);
         assert_eq!(s.sprite_slot(15).z(), (-32i8) as u8);
         assert_eq!(s.sprite_slot(15).c(), (-32i8) as u8);
-        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x20);
+        assert_eq!(s.game_state.system_signals.sound_effect_1() & 0x3f, 0x20);
     }
 
     #[test]
@@ -2304,8 +2390,8 @@ mod tests {
         s.sprite_set_y(k, 0x0240);
         s.sprite_slot_mut(k).set_z(6);
         s.ice_ball_split(k);
-        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x1f);
-        assert_eq!(s.temp_counter().value(), 0xff);
+        assert_eq!(s.game_state.system_signals.sound_effect_1() & 0x3f, 0x1f);
+        assert_eq!(s.game_state.scratch_counter.value(), 0xff);
 
         let first_x = s.sprite_slot(15).x_velocity();
         let b = if first_x == (-32i8) as u8 {
@@ -2339,7 +2425,7 @@ mod tests {
         s.sprite_slot_mut(k).set_z(7);
         s.red_bari_split(k);
 
-        assert_eq!(s.temp_counter().value(), 0xff);
+        assert_eq!(s.game_state.scratch_counter.value(), 0xff);
         for (slot, x, x_vel) in [(15usize, 0x0188u16, 32i8), (14, 0x0180, -32i8)] {
             assert_eq!(s.sprite_slot(slot).sprite_type(), 0x23);
             assert_eq!(s.sprite_slot(slot).state(), 9);
@@ -2367,7 +2453,7 @@ mod tests {
         s.sidenexx_exhale_danger(k);
 
         assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 1);
-        assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x19);
+        assert_eq!(s.game_state.system_signals.sound_effect_2() & 0x3f, 0x19);
         for (slot, c) in [(15usize, (-2i8) as u8), (14, 1u8)] {
             assert_eq!(s.sprite_slot(slot).sprite_type(), 0xcd);
             assert_eq!(s.sprite_slot(slot).state(), 9);
@@ -2394,7 +2480,7 @@ mod tests {
         s.sidenexx_exhale_danger(k);
 
         assert_eq!(s.ram[SMALL_BOSS_SHARED_WORK_A], 0);
-        assert_eq!(s.system_signals().sound_effect_1() & 0x3f, 0x2a);
+        assert_eq!(s.game_state.system_signals.sound_effect_1() & 0x3f, 0x2a);
         assert_eq!(s.sprite_slot(15).sprite_type(), 0xcc);
         assert_eq!(s.sprite_slot(15).state(), 9);
         assert_eq!(s.sprite_get_x(15), 0x0130);

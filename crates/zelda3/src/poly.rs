@@ -127,12 +127,12 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_shape_pointer(&mut self) {
-        let shape_depth_bias = (self.poly_runtime().config1() as u16)
+        let shape_depth_bias = (self.game_state.poly.runtime.config1() as u16)
             .wrapping_mul(2)
             .wrapping_add(0x80);
         self.poly_runtime_mut()
             .set_shape_depth_bias(shape_depth_bias);
-        let model_offset = (self.poly_runtime().model() as u16).wrapping_mul(2);
+        let model_offset = (self.game_state.poly.runtime.model() as u16).wrapping_mul(2);
         self.poly_runtime_mut().set_tmp0_word(model_offset);
 
         let config = self.poly_config();
@@ -145,10 +145,10 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_rotation_matrix(&mut self) {
-        let angle_a = self.poly_runtime().angle_a() as usize;
+        let angle_a = self.game_state.poly.runtime.angle_a() as usize;
         let sin_a = POLY_ROTATION_SIN_COS[angle_a];
         let cos_a = POLY_ROTATION_SIN_COS[angle_a + 64];
-        let angle_b = self.poly_runtime().angle_b() as usize;
+        let angle_b = self.game_state.poly.runtime.angle_b() as usize;
         let sin_b = POLY_ROTATION_SIN_COS[angle_b];
         let cos_b = POLY_ROTATION_SIN_COS[angle_b + 64];
 
@@ -166,7 +166,7 @@ impl ZeldaState {
 
     pub(super) fn polyhedral_operate_rotation(&mut self) {
         let vertex = self.poly_config().vertex;
-        let mut i = self.poly_runtime().num_vertices() as usize;
+        let mut i = self.game_state.poly.runtime.num_vertices() as usize;
         while i != 0 {
             i -= 1;
             let src = vertex[i];
@@ -174,19 +174,19 @@ impl ZeldaState {
                 .set_fromlut_position(src.z as u8, src.y as u8, src.x as u8);
             self.polyhedral_rotate_point();
             self.polyhedral_project_point();
-            let f0 = self.poly_runtime().f0();
-            let f1 = self.poly_runtime().f1();
-            let x = self.poly_runtime().base_x().wrapping_add(f0);
-            let y = self.poly_runtime().base_y().wrapping_sub(f1);
+            let f0 = self.game_state.poly.runtime.f0();
+            let f1 = self.game_state.poly.runtime.f1();
+            let x = self.game_state.poly.runtime.base_x().wrapping_add(f0);
+            let y = self.game_state.poly.runtime.base_y().wrapping_sub(f1);
             self.poly_projected_vertex_mut().set_position(i, x, y);
         }
     }
 
     pub(super) fn polyhedral_rotate_point(&mut self) {
-        let x = self.poly_runtime().fromlut_x() as i32;
-        let y = self.poly_runtime().fromlut_y() as i32;
-        let z = self.poly_runtime().fromlut_z() as i32;
-        let poly_state = self.poly_runtime();
+        let x = self.game_state.poly.runtime.fromlut_x() as i32;
+        let y = self.game_state.poly.runtime.fromlut_y() as i32;
+        let z = self.game_state.poly.runtime.fromlut_z() as i32;
+        let poly_state = &self.game_state.poly.runtime;
         let sin_a = poly_state.rotation_sin_a() as i32;
         let cos_a = poly_state.rotation_cos_a() as i32;
         let sin_b = poly_state.rotation_sin_b() as i32;
@@ -195,7 +195,7 @@ impl ZeldaState {
         let e1 = poly_state.rotation_e1() as i32;
         let e2 = poly_state.rotation_e2() as i32;
         let e3 = poly_state.rotation_e3() as i32;
-        let shape_depth_bias = self.poly_runtime().shape_depth_bias() as i32;
+        let shape_depth_bias = self.game_state.poly.runtime.shape_depth_bias() as i32;
 
         self.poly_runtime_mut()
             .set_f0_word((cos_b * z - sin_b * x) as i16 as u16);
@@ -208,8 +208,14 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_project_point(&mut self) {
-        let f0 = self.poly_divide(self.poly_runtime().f0_word(), self.poly_runtime().f2_word());
-        let f1 = self.poly_divide(self.poly_runtime().f1_word(), self.poly_runtime().f2_word());
+        let f0 = self.poly_divide(
+            self.game_state.poly.runtime.f0_word(),
+            self.game_state.poly.runtime.f2_word(),
+        );
+        let f1 = self.poly_divide(
+            self.game_state.poly.runtime.f1_word(),
+            self.game_state.poly.runtime.f2_word(),
+        );
         self.poly_runtime_mut().set_f0_word(f0);
         self.poly_runtime_mut().set_f1_word(f1);
     }
@@ -248,7 +254,7 @@ impl ZeldaState {
             loop {
                 let j = poly[src] as usize;
                 src += 1;
-                let projected = self.poly_projected_vertex();
+                let projected = &self.game_state.poly.projected_vertices;
                 let x = projected.x(j);
                 let y = projected.y(j);
                 self.poly_face_coords_mut().set_coord(i, x);
@@ -273,7 +279,7 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_calculate_cross_product(&mut self) -> i16 {
-        let face = self.poly_face_coords();
+        let face = &self.game_state.poly.face_coords;
         let mut a = (face.coord(3) as i16).wrapping_sub(face.coord(1) as i16);
         let mut tmp0 = (a as i32)
             .wrapping_mul((face.coord(6).wrapping_sub(face.coord(4)) as i8) as i32)
@@ -288,13 +294,13 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_set_foreground_color(&mut self) {
-        let poly_state = self.poly_runtime();
+        let poly_state = &self.game_state.poly.runtime;
         let t = if poly_state.model() != 0 {
             poly_state.config1() >> 5
         } else {
             0
         };
-        let a = (((self.poly_runtime().tmp0_word() as u32) << (t + 1)) >> 8) as u8;
+        let a = (((self.game_state.poly.runtime.tmp0_word() as u32) << (t + 1)) >> 8) as u8;
         let color = if a <= 1 {
             1
         } else if a >= 7 {
@@ -312,15 +318,15 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_draw_face(&mut self) {
-        let mut n = self.poly_face_coords().xy_coords_count() as usize;
-        let mut min_y = self.poly_face_coords().coord(n);
+        let mut n = self.game_state.poly.face_coords.xy_coords_count() as usize;
+        let mut min_y = self.game_state.poly.face_coords.coord(n);
         let mut min_idx = n;
         loop {
             n = n.wrapping_sub(2);
             if n == 0 {
                 break;
             }
-            let y = self.poly_face_coords().coord(n);
+            let y = self.game_state.poly.face_coords.coord(n);
             if y < min_y {
                 min_y = y;
                 min_idx = n;
@@ -331,11 +337,11 @@ impl ZeldaState {
             + (((min_y & 0x38) ^ if min_y & 0x20 != 0 { 0x24 } else { 0 }) as u16) * 64
             + ((min_y & 7) as u16) * 2;
         self.poly_runtime_mut().set_raster_dst_ptr(raster_dst_ptr);
-        let total_steps = self.poly_face_coords().xy_coords_count() >> 1;
+        let total_steps = self.game_state.poly.face_coords.xy_coords_count() >> 1;
         self.poly_raster_edge_mut()
             .set_both_cur_vertex_idx(min_idx as u8);
         self.poly_raster_edge_mut().set_total_num_steps(total_steps);
-        let min_x = self.poly_face_coords().coord(min_idx - 1);
+        let min_x = self.game_state.poly.face_coords.coord(min_idx - 1);
         self.poly_raster_edge_mut().set_left_current(min_x, min_y);
         self.poly_raster_edge_mut().set_right_current(min_x, min_y);
         if self.polyhedral_set_left() || self.polyhedral_set_right() {
@@ -344,7 +350,7 @@ impl ZeldaState {
 
         loop {
             self.polyhedral_fill_line();
-            let mut raster_dst_ptr = self.poly_runtime().raster_dst_ptr();
+            let mut raster_dst_ptr = self.game_state.poly.runtime.raster_dst_ptr();
             if raster_dst_ptr as u8 != 0x0e {
                 raster_dst_ptr = raster_dst_ptr.wrapping_add(2);
             } else {
@@ -353,18 +359,18 @@ impl ZeldaState {
             }
             self.poly_runtime_mut().set_raster_dst_ptr(raster_dst_ptr);
 
-            let edge = self.poly_raster_edge();
+            let edge = &self.game_state.poly.raster_edge;
             if edge.y0_cur() == edge.y0_trigger() {
-                let x0_target = self.poly_raster_edge().x0_target();
+                let x0_target = self.game_state.poly.raster_edge.x0_target();
                 self.poly_raster_edge_mut().set_left_current_x(x0_target);
                 if self.polyhedral_set_left() {
                     return;
                 }
             }
             self.poly_raster_edge_mut().increment_y0_cur();
-            let edge = self.poly_raster_edge();
+            let edge = &self.game_state.poly.raster_edge;
             if edge.y1_cur() == edge.y1_trigger() {
-                let x1_target = self.poly_raster_edge().x1_target();
+                let x1_target = self.game_state.poly.raster_edge.x1_target();
                 self.poly_raster_edge_mut().set_right_current_x(x1_target);
                 if self.polyhedral_set_right() {
                     return;
@@ -377,18 +383,20 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_fill_line(&mut self) {
-        let left = POLY_LEFT_EDGE_MASKS[((self.poly_runtime().x0_fraction() >> 8) & 7) as usize];
-        let right = POLY_RIGHT_EDGE_MASKS[((self.poly_runtime().x1_fraction() >> 8) & 7) as usize];
-        let tmp2 = ((self.poly_runtime().x0_fraction() >> 8) & 0x38) as u8;
+        let left =
+            POLY_LEFT_EDGE_MASKS[((self.game_state.poly.runtime.x0_fraction() >> 8) & 7) as usize];
+        let right =
+            POLY_RIGHT_EDGE_MASKS[((self.game_state.poly.runtime.x1_fraction() >> 8) & 7) as usize];
+        let tmp2 = ((self.game_state.poly.runtime.x0_fraction() >> 8) & 0x38) as u8;
         self.poly_runtime_mut().set_tmp2(tmp2);
-        let mut d0 = ((self.poly_runtime().x1_fraction() >> 8) & 0x38) as i32;
-        let mut ptr = self.poly_runtime().raster_dst_ptr() as usize + d0 as usize * 4;
-        d0 -= self.poly_runtime().tmp2() as i32;
+        let mut d0 = ((self.game_state.poly.runtime.x1_fraction() >> 8) & 0x38) as i32;
+        let mut ptr = self.game_state.poly.runtime.raster_dst_ptr() as usize + d0 as usize * 4;
+        d0 -= self.game_state.poly.runtime.tmp2() as i32;
         if d0 == 0 {
             let mask = left & right;
             self.poly_runtime_mut().set_tmp1_word(mask);
-            self.blend_poly_word(ptr, self.poly_runtime().raster_color0(), mask);
-            self.blend_poly_word(ptr + 16, self.poly_runtime().raster_color1(), mask);
+            self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), mask);
+            self.blend_poly_word(ptr + 16, self.game_state.poly.runtime.raster_color1(), mask);
             return;
         }
         if d0 < 0 {
@@ -396,22 +404,26 @@ impl ZeldaState {
         }
 
         let mut n = d0 >> 3;
-        self.blend_poly_word(ptr, self.poly_runtime().raster_color0(), right);
-        self.blend_poly_word(ptr + 16, self.poly_runtime().raster_color1(), right);
+        self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), right);
+        self.blend_poly_word(
+            ptr + 16,
+            self.game_state.poly.runtime.raster_color1(),
+            right,
+        );
         ptr = ptr.wrapping_sub(0x20);
         loop {
             n -= 1;
             if n == 0 {
                 break;
             }
-            let color0 = self.poly_runtime().raster_color0();
-            let color1 = self.poly_runtime().raster_color1();
+            let color0 = self.game_state.poly.runtime.raster_color0();
+            let color1 = self.game_state.poly.runtime.raster_color1();
             self.poly_runtime_mut().set_bitmap_word(ptr, color0);
             self.poly_runtime_mut().set_bitmap_word(ptr + 16, color1);
             ptr = ptr.wrapping_sub(0x20);
         }
-        self.blend_poly_word(ptr, self.poly_runtime().raster_color0(), left);
-        self.blend_poly_word(ptr + 16, self.poly_runtime().raster_color1(), left);
+        self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), left);
+        self.blend_poly_word(ptr + 16, self.game_state.poly.runtime.raster_color1(), left);
         self.poly_runtime_mut().set_tmp1_word(left);
         self.poly_runtime_mut().clear_raster_full_word_count();
     }
@@ -421,21 +433,21 @@ impl ZeldaState {
             if self.poly_raster_edge_mut().decrement_total_num_steps() < 0 {
                 return true;
             }
-            let mut i = self.poly_raster_edge().cur_vertex_idx0() as i32 - 2;
+            let mut i = self.game_state.poly.raster_edge.cur_vertex_idx0() as i32 - 2;
             if i == 0 {
-                i = self.poly_face_coords().xy_coords_count() as i32;
+                i = self.game_state.poly.face_coords.xy_coords_count() as i32;
             }
             let i = i as usize;
-            let y = self.poly_face_coords().coord(i);
-            let x = self.poly_face_coords().coord(i - 1);
-            let y0_cur = self.poly_raster_edge().y0_cur();
+            let y = self.game_state.poly.face_coords.coord(i);
+            let x = self.game_state.poly.face_coords.coord(i - 1);
+            let y0_cur = self.game_state.poly.raster_edge.y0_cur();
             if y < y0_cur {
                 return true;
             }
             if y != y0_cur {
                 self.poly_raster_edge_mut().set_left_target(x, y);
                 self.poly_raster_edge_mut().set_cur_vertex_idx0(i as u8);
-                let edge = self.poly_raster_edge();
+                let edge = &self.game_state.poly.raster_edge;
                 let x0_cur = edge.x0_cur();
                 let y0_cur = edge.y0_cur();
                 let y0_trigger = edge.y0_trigger();
@@ -457,21 +469,21 @@ impl ZeldaState {
             if self.poly_raster_edge_mut().decrement_total_num_steps() < 0 {
                 return true;
             }
-            let mut i = self.poly_raster_edge().cur_vertex_idx1() as usize;
-            if i == self.poly_face_coords().xy_coords_count() as usize {
+            let mut i = self.game_state.poly.raster_edge.cur_vertex_idx1() as usize;
+            if i == self.game_state.poly.face_coords.xy_coords_count() as usize {
                 i = 0;
             }
             i += 2;
-            let y = self.poly_face_coords().coord(i);
-            let x = self.poly_face_coords().coord(i - 1);
-            let y1_cur = self.poly_raster_edge().y1_cur();
+            let y = self.game_state.poly.face_coords.coord(i);
+            let x = self.game_state.poly.face_coords.coord(i - 1);
+            let y1_cur = self.game_state.poly.raster_edge.y1_cur();
             if y < y1_cur {
                 return true;
             }
             if y != y1_cur {
                 self.poly_raster_edge_mut().set_right_target(x, y);
                 self.poly_raster_edge_mut().set_cur_vertex_idx1(i as u8);
-                let edge = self.poly_raster_edge();
+                let edge = &self.game_state.poly.raster_edge;
                 let x1_cur = edge.x1_cur();
                 let y1_cur = edge.y1_cur();
                 let y1_trigger = edge.y1_trigger();
@@ -494,6 +506,6 @@ impl ZeldaState {
     }
 
     fn poly_config(&self) -> &'static PolyConfig {
-        &POLY_MODEL_CONFIGS[self.poly_runtime().model() as usize]
+        &POLY_MODEL_CONFIGS[self.game_state.poly.runtime.model() as usize]
     }
 }

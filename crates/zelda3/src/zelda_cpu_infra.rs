@@ -1350,8 +1350,8 @@ fn semantic_frame_from_native_game(game: &ZeldaState) -> SemanticFrame {
 
 fn semantic_world_from_native_game(game: &ZeldaState) -> SemanticWorld {
     let location = &game.game_state.world.location;
-    let region = game.world_region();
-    let scroll = game.world_scroll();
+    let region = &game.game_state.world.region;
+    let scroll = &game.game_state.world.scroll;
     let map16 = game.game_state.world.overworld.map16.active_load;
     SemanticWorld {
         dungeon_room: location.dungeon_room(),

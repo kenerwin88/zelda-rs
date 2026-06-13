@@ -28,27 +28,14 @@ use crate::game_state::constants::{
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 use crate::game_state::{
-    loaded_room_data_word, ArcheryGameState, AttractSceneState, Bg1MovementAccumulatorState,
-    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
-    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BombosSpellState,
-    BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState, CompatibilityBytesView,
-    CompatibilityBytesViewMut, DecodedMessageTextState, DialogueMessageIndexState,
-    DialogueNumberState, DiggingGamePrizeState, DisplayState, DoorDebrisState,
-    DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState,
-    DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState, DungeonMovableBlockState,
-    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomDoorSetupState,
-    DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState,
-    DungeonRoomRuntimeState, DungeonRoomTilemapState, DungeonRoomTrackingState,
-    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
-    DungeonStairListsState, DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState,
-    EndingCreditState, EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState,
-    FollowerLinkState, FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState,
-    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
-    HistoryPositionState, HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState,
-    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot,
-    MazeGameTimerState, MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState,
-    MinigameState, MirrorWarpState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
-    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
+    loaded_room_data_word, Bg1MovementAccumulatorState, BirdTravelDestinationState,
+    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
+    BombosBlastState, BombosFireColumnState, BossHomePositionRead, CachedSpriteRead,
+    CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList, FollowerLinkState,
+    GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
+    HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, IntroActorRead,
+    LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot,
+    MultiselectChoiceRead, NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
     NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
@@ -98,31 +85,20 @@ use crate::game_state::{
     NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut,
-    NativeSwamolaTargetBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
-    NativeSystemWorkAreaBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
-    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
+    NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
+    NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeSystemWorkAreaBridgeMut,
+    NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut,
+    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OamState, OverworldConfigTableRead, OverworldEventInfoState,
-    OverworldMap16Decode, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferState,
-    PaletteFilterState, PlayerResourcesState, PlayerTileAttributeTableState, PolyFaceCoordsState,
-    PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
-    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RamAncillaSlotView,
-    RamAncillaSlotViewMut, RamGarnishSlotView, RamGarnishSlotViewMut, RamOverlordSlotView,
-    RamOverlordSlotViewMut, RamPlayerStateView, RamPlayerStateViewMut, RamSpriteSlotView,
-    RamSpriteSlotViewMut, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
-    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionState, SpotlightHdmaState,
-    SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSystemState, SpriteWorkspaceState,
-    SwimAccelerationState, SystemSignalsState, TagalongSlotRead, TileDetectionState,
-    TowerSealOrbitState, TowerSealSparkleState, TowerSealState, TrinexxPaletteState,
-    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisSlotState, WeatherVaneState,
-    WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldRegionState,
-    WorldScrollState, WorldTransientState,
+    NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
+    OverworldMap16LoadState, OverworldMap16SourcePage, PpuScrollCopyState, QuakeBoltSlotState,
+    RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
+    SmallOverworldMap16ScrollBackupState, SystemSignalsState, TagalongSlotRead,
+    TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -311,24 +287,20 @@ const GRAB_WALL_ANIM_STEPS: [u8; 7] = [0, 1, 2, 3, 1, 2, 3];
 const GRAB_WALL_ANIM_TIMER: [u8; 7] = [0, 5, 5, 12, 5, 5, 12];
 const GRAB_WALL_ANIM_STEPS2: [u8; 10] = [0, 1, 2, 3, 4, 0, 1, 2, 3, 0x20];
 
-const MAIN_MODULE_INDEX: usize = 0x10;
 const LINK_Y_COORD: usize = 0x20;
 const LINK_X_COORD: usize = 0x22;
 const LINK_Z_COORD: usize = 0x24;
 const LINK_DIRECTION_LAST: usize = 0x26;
 const ATTRACT_NEXT_LEGEND_GFX: usize = 0x26;
-const INIDISP_COPY: usize = 0x13;
 const NMI_LOAD_BG_FROM_VRAM: usize = 0x14;
 const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
 const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
-const FRAME_COUNTER: usize = 0x1a;
 // Shared zero-page scratch; NES_Ver2 aliases include BMWORK/CRTNL/CRTNR, but these slots
 // are reused by unrelated player, overworld, and tile-detection code paths.
 const SCRATCH_0: usize = 0x72;
 const SCRATCH_A: usize = 0x73;
 const SCRATCH_1: usize = 0x74;
-const PLAYER_IS_INDOORS: usize = 0x1b;
 const LINK_SUBPIXEL_Y: usize = 0x2a;
 const LINK_SUBPIXEL_X: usize = 0x2b;
 const LINK_SUBPIXEL_Z: usize = 0x2c;
@@ -375,27 +347,17 @@ const LINK_DIRECTION: usize = 0x67;
 const INDEX_OF_INTERACTING_TILE: usize = 0x76;
 const ALLOW_SCROLL_Z: usize = 0x78;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
-const CGWSEL_COPY: usize = 0x99;
-const CGADSUB_COPY: usize = 0x9a;
-const COLDATA_COPY0: usize = 0x9c;
-const COLDATA_COPY1: usize = 0x9d;
-const COLDATA_COPY2: usize = 0x9e;
 const BG1_X_OFFSET: usize = 0x11a;
 const BG1_Y_OFFSET: usize = 0x11c;
 const FLAG_CUSTOM_SPELL_ANIM_ACTIVE: usize = 0x112;
 const OAM_CUR_PTR: usize = 0x90;
 const OAM_EXT_CUR_PTR: usize = 0x92;
-const OVERWORLD_SCREEN_INDEX: usize = 0x8a;
 const OVERLAY_INDEX: usize = 0x8c;
 const LAST_LIGHT_VS_DARK_WORLD: usize = 0x7b;
-const SUBMODULE_INDEX: usize = 0x11;
-const SUBSUBMODULE_INDEX: usize = 0xb0;
 const DUNG_DRAW_WIDTH_INDICATOR: usize = 0xb2;
 const DUNG_DRAW_HEIGHT_INDICATOR: usize = 0xb4;
-const DUNGEON_ROOM_INDEX_PREV: usize = 0xa2;
 const DUNG_LINE_PTRS_ROW0: usize = 0xbf;
 const DUNG_LOAD_PTR_OFFS: usize = 0xba;
-const DUNGEON_ROOM_INDEX: usize = 0xa0;
 const DUNG_CUR_FLOOR: usize = 0xa4;
 const QUADRANT_FULLSIZE_X: usize = 0xa6;
 const QUADRANT_FULLSIZE_Y: usize = 0xa7;
@@ -407,7 +369,6 @@ const IS_STANDING_IN_DOORWAY: usize = 0x6c;
 const TILEMAP_LOCATION_CALC_MASK: usize = 0xec;
 const ROOM_TRANSITIONING_FLAGS: usize = 0xef;
 const DUNG_HDR_COLLISION_2: usize = 0xad;
-const ANIMATED_TILE_VRAM_ADDR: usize = 0x134;
 const LINK_RECOIL_Z_VEL: usize = 0xc7;
 const KSRM_OFFS_GLOVES: usize = 0x354;
 const KSRM_OFFS_DIED_COUNTER: usize = 0x405;
@@ -441,7 +402,6 @@ const OVERWORLD_HOLE_SCAN_STEP: usize = 0x10f;
 const OAM_PRIORITY_VALUE: usize = 0x64;
 // NES_Ver2: GOVRCFG, game-over check flag.
 const GAME_OVER_CHECK_FLAG: usize = 0x10a;
-const SAVED_MODULE_FOR_MENU: usize = 0x10c;
 const MAPBAK_TM: usize = 0x0c211;
 const MAPBAK_TS: usize = 0x0c212;
 const LINK_Y_COORD_SPEXIT: usize = 0x0c108;
@@ -740,7 +700,6 @@ const PALETTE_MAIN_INDOORS_COPY: usize = 0x0ab7;
 const OVERWORLD_PALETTE_AUX3_BP7_LO: usize = 0x0ab8;
 const PALETTE_SWAP_FLAG: usize = 0x0abd;
 const EXTENDED_OAM: usize = 0x0a00;
-const ANIMATED_TILE_DATA_SRC: usize = 0x0adc;
 const LINK_ITEM_BOW: usize = 0x0f340;
 const LINK_ITEM_BOOMERANG: usize = 0x0f341;
 const LINK_ITEM_HOOKSHOT: usize = 0x0f342;
@@ -823,32 +782,7 @@ const ATTRACT_MAIDEN_WARP_TIMER_B: usize = 0x63;
 const OVERWORLD_MAP_STATE: usize = 0x200;
 const LINK_DEBUG_VALUE_1: usize = 0x20b;
 const HUD_INVENTORY_ORDER: usize = 0x0225;
-const DMA_SOURCE_ADDR_6: usize = 0x0ac0;
-const DMA_SOURCE_ADDR_11: usize = 0x0ac2;
-const DMA_SOURCE_ADDR_7: usize = 0x0ac4;
-const DMA_SOURCE_ADDR_12: usize = 0x0ac6;
-const DMA_SOURCE_ADDR_8: usize = 0x0ac8;
-const DMA_SOURCE_ADDR_13: usize = 0x0aca;
-const DMA_SOURCE_ADDR_3: usize = 0x0acc;
-const DMA_SOURCE_ADDR_0: usize = 0x0ace;
-const DMA_SOURCE_ADDR_4: usize = 0x0ad0;
-const DMA_SOURCE_ADDR_1: usize = 0x0ad2;
-const DMA_SOURCE_ADDR_5: usize = 0x0ad4;
-const DMA_SOURCE_ADDR_2: usize = 0x0ad6;
-const DMA_SOURCE_ADDR_10: usize = 0x0ad8;
-const DMA_SOURCE_ADDR_15: usize = 0x0ada;
-const DMA_SOURCE_ADDR_9: usize = 0x0ae0;
-const DMA_SOURCE_ADDR_14: usize = 0x0ae2;
 // NES_Ver2: OPTHPT/OPTBPT, option head/body DMA pointers.
-const DMA_SOURCE_ADDR_16: usize = 0x0aec;
-const DMA_SOURCE_ADDR_18: usize = 0x0aee;
-const DMA_SOURCE_ADDR_17: usize = 0x0af0;
-const DMA_SOURCE_ADDR_19: usize = 0x0af2;
-const FLAG_TRAVEL_BIRD: usize = 0x0af4;
-const DMA_SOURCE_ADDR_20: usize = 0x0af6;
-const DMA_SOURCE_ADDR_21: usize = 0x0af8;
-const PALETTE_FILTER_COUNTDOWN: usize = 0x0c007;
-const DARKENING_OR_LIGHTENING_SCREEN: usize = 0x0c009;
 const SPRITE_N: usize = 0x0bc0;
 const RAW_SFX_PAN_VALUE: usize = 0x0cf8;
 const RUPEE_SFX_SOUND_DELAY: usize = 0x0cfd;
@@ -916,7 +850,6 @@ const CUR_SPRITE_X: usize = 0x0fd8;
 const CUR_SPRITE_Y: usize = 0x0fda;
 const GARNISH_TYPE: usize = 0x1f800;
 const BEAMOS_X_HI: usize = 0x1fe00;
-const BG_TILE_ANIMATION_COUNTDOWN: usize = 0x0c00d;
 const LINK_DMA_SOURCE_OFFSET: usize = 0x0c00f;
 const LINK_DMA_COUNTDOWN: usize = 0x0c013;
 const LINK_DMA_TILE_OFFSET: usize = 0x0c015;
@@ -1504,13 +1437,13 @@ impl ZeldaState {
             frame.main_module,
             frame.submodule,
             frame.subsubmodule,
-            self.tile_detect_position().tile_collision_bits_primary(),
-            self.tile_detect_position().tile_collision_bits_secondary(),
-            self.dungeon_doors().door_open_counter_low(),
+            self.game_state.player.tile_detection.tile_collision_bits_primary(),
+            self.game_state.player.tile_detection.tile_collision_bits_secondary(),
+            self.game_state.dungeon.doors.door_open_counter_low(),
             self.player_state().last_direction(),
             self.player_state().swim_direction_flags(),
-            self.player_state().speed_setting(),
-            self.player_state().speed_modifier(),
+            self.game_state.player.follower_link.speed_setting(),
+            self.game_state.player.follower_link.speed_modifier(),
             self.player_state().direction(),
             self.player_state().handler_state(),
             self.player_state().x(),
@@ -1539,15 +1472,15 @@ impl ZeldaState {
                 .map(|(addr, value)| format!("0x{addr:05x}=0x{value:02x}"))
                 .unwrap_or_else(|| "none".to_string()),
             self.player_state().swim_direction_flags(),
-            self.tile_detect_position().deepwater() as u8,
-            self.tile_detect_position().deepwater_high(),
-            self.tile_detect_position().normal_tiles() as u8,
-            self.tile_detect_position().normal_tiles_high(),
+            self.game_state.player.tile_detection.deepwater() as u8,
+            self.game_state.player.tile_detection.deepwater_high(),
+            self.game_state.player.tile_detection.normal_tiles() as u8,
+            self.game_state.player.tile_detection.normal_tiles_high(),
             self.player_state().deep_water_state(),
             self.player_state().palette_bits_of_oam(),
-            self.tile_detect_position().palette_bits_high(),
-            self.tile_detect_position().deepwater(),
-            self.tile_detect_position().normal_tiles(),
+            self.game_state.player.tile_detection.palette_bits_high(),
+            self.game_state.player.tile_detection.deepwater(),
+            self.game_state.player.tile_detection.normal_tiles(),
             self.player_state().deep_water_state(),
             self.player_state().x(),
             self.player_state().y(),
@@ -1577,10 +1510,10 @@ impl ZeldaState {
                 .unwrap_or_else(|| "-".to_string()),
             raw,
             out,
-            self.system_signals().ambient_sound_effect(),
-            self.system_signals().sound_effect_1(),
-            self.system_signals().sound_effect_2(),
-            self.system_signals().raw_sfx_pan_value(),
+            self.game_state.system_signals.ambient_sound_effect(),
+            self.game_state.system_signals.sound_effect_1(),
+            self.game_state.system_signals.sound_effect_2(),
+            self.game_state.system_signals.raw_sfx_pan_value(),
         );
     }
 
@@ -1663,9 +1596,9 @@ impl ZeldaState {
             frame.subsubmodule,
             self.player_state().handler_state(),
             self.player_state().near_pit_state(),
-            self.tile_detect_position().pit_tile(),
-            self.tile_detect_position().water_staircase(),
-            self.tile_detect_position().deepwater(),
+            self.game_state.player.tile_detection.pit_tile(),
+            self.game_state.player.tile_detection.water_staircase(),
+            self.game_state.player.tile_detection.deepwater(),
             self.player_state().flippers(),
             self.player_state().is_bunny_mirror() as u8,
             self.player_state().moon_pearl(),
@@ -1676,19 +1609,19 @@ impl ZeldaState {
             self.player_state().y(),
             self.player_state().x_subpixel(),
             self.player_state().y_subpixel(),
-            self.player_state().actual_x_velocity(),
-            self.player_state().actual_y_velocity(),
-            self.player_state().y_velocity(),
+            self.game_state.player.follower_link.actual_x_velocity(),
+            self.game_state.player.follower_link.actual_y_velocity(),
+            self.game_state.player.follower_link.y_velocity(),
             self.player_state().direction(),
             self.player_state().last_direction(),
             self.player_state().last_direction_moved_towards(),
-            self.tile_detect_position().collision_bits(),
-            self.tile_detect_position().slope_collision_bits(),
-            self.tile_detect_position().normal_tiles(),
-            self.tile_detect_position().vertical_ledge(),
-            self.tile_detect_position().stair_tile(),
+            self.game_state.player.tile_detection.collision_bits(),
+            self.game_state.player.tile_detection.slope_collision_bits(),
+            self.game_state.player.tile_detection.normal_tiles(),
+            self.game_state.player.tile_detection.vertical_ledge(),
+            self.game_state.player.tile_detection.stair_tile(),
             self.player_state().defense_flags(),
-            self.player_resources().current_health(),
+            self.game_state.inventory.player_resources.current_health(),
         );
     }
 
@@ -1728,24 +1661,22 @@ impl ZeldaState {
         RamPlayerStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn follower_link_state(&self) -> FollowerLinkState {
-        self.game_state.player.follower_link
+    pub(crate) fn sync_follower_link_state_from_ram(&mut self) {
+        self.game_state
+            .player
+            .sync_follower_link_from_ram(&self.ram);
+    }
+
+    pub(crate) fn follower_link_state(&self) -> &FollowerLinkState {
+        &self.game_state.player.follower_link
     }
 
     pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
         NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
     }
 
-    pub(crate) fn enhanced_features(&self) -> &EnhancedFeaturesState {
-        &self.game_state.enhanced_features
-    }
-
     pub(crate) fn enhanced_features_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {
         NativeEnhancedFeaturesBridgeMut::new(&mut self.game_state.enhanced_features, &mut self.ram)
-    }
-
-    pub(crate) fn system_signals(&self) -> &SystemSignalsState {
-        &self.game_state.system_signals
     }
 
     pub(crate) fn system_signals_mut(&mut self) -> NativeSystemSignalsBridgeMut<'_> {
@@ -1794,19 +1725,11 @@ impl ZeldaState {
         self.system_signals_mut().set_sound_effect_2(sound_effect);
     }
 
-    pub(crate) fn special_exit_position(&self) -> &SpecialExitPositionState {
-        &self.game_state.player.special_exit_position
-    }
-
     pub(crate) fn special_exit_position_mut(&mut self) -> NativeSpecialExitPositionBridgeMut<'_> {
         NativeSpecialExitPositionBridgeMut::new(
             &mut self.game_state.player.special_exit_position,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn swim_acceleration(&self) -> &SwimAccelerationState {
-        &self.game_state.player.swim_acceleration
     }
 
     pub(crate) fn swim_acceleration_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
@@ -1827,16 +1750,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn tile_detect_position(&self) -> &TileDetectionState {
-        &self.game_state.player.tile_detection
-    }
-
     pub(crate) fn tile_detect_position_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
         NativeTileDetectionBridgeMut::new(&mut self.game_state.player.tile_detection, &mut self.ram)
-    }
-
-    pub(crate) fn ppu_scroll_copy(&self) -> &PpuScrollCopyState {
-        &self.game_state.display.ppu_scroll_copy
     }
 
     pub(crate) fn ppu_scroll_copy_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
@@ -1846,16 +1761,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn attract_scene(&self) -> &AttractSceneState {
-        &self.game_state.ending.attract_scene
-    }
-
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
         NativeAttractSceneBridgeMut::new(&mut self.game_state.ending.attract_scene, &mut self.ram)
-    }
-
-    pub(crate) fn dialogue_message_index(&self) -> &DialogueMessageIndexState {
-        &self.game_state.messaging.dialogue_message_index
     }
 
     pub(crate) fn dialogue_message_index_mut(&mut self) -> NativeDialogueMessageIndexBridgeMut<'_> {
@@ -1879,24 +1786,14 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn pushed_block(&self) -> &PushedBlockState {
-        &self.game_state.player.pushed_block
-    }
-
     pub(crate) fn pushed_block_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
         NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
-    pub(crate) fn player_tile_attributes(&self) -> &PlayerTileAttributeTableState {
-        &self.game_state.player.tile_attributes
-    }
-
-    pub(crate) fn inventory_items(&self) -> &InventoryItemsState {
-        &self.game_state.inventory.items
-    }
-
     pub(crate) fn item_memory_value(&self, item_memory_addr: usize) -> u8 {
-        self.inventory_items()
+        self.game_state
+            .inventory
+            .items
             .item_memory_value(&self.ram, item_memory_addr)
     }
 
@@ -1904,19 +1801,11 @@ impl ZeldaState {
         NativeInventoryItemsBridgeMut::new(&mut self.game_state.inventory.items, &mut self.ram)
     }
 
-    pub(crate) fn player_resources(&self) -> &PlayerResourcesState {
-        &self.game_state.inventory.player_resources
-    }
-
     pub(crate) fn player_resources_mut(&mut self) -> NativePlayerResourcesBridgeMut<'_> {
         NativePlayerResourcesBridgeMut::new(
             &mut self.game_state.inventory.player_resources,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn frame_state(&self) -> &FrameState {
-        &self.game_state.frame
     }
 
     fn frame_state_bridge_mut(&mut self) -> NativeFrameStateBridgeMut<'_> {
@@ -1992,10 +1881,6 @@ impl ZeldaState {
         self.frame_state_bridge_mut().increment_modal_pause_flag()
     }
 
-    pub(crate) fn world_location_state(&self) -> &WorldLocationState {
-        &self.game_state.world.location
-    }
-
     fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
         NativeWorldLocationBridgeMut::new(&mut self.game_state.world.location, &mut self.ram)
     }
@@ -2032,16 +1917,8 @@ impl ZeldaState {
         self.world_location_bridge_mut().set_indoor_flag(value);
     }
 
-    pub(crate) fn world_scroll(&self) -> &WorldScrollState {
-        &self.game_state.world.scroll
-    }
-
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
         NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
-    }
-
-    pub(crate) fn world_camera_boundaries(&self) -> &WorldCameraBoundariesState {
-        &self.game_state.world.camera_boundaries
     }
 
     pub(crate) fn world_camera_boundaries_mut(
@@ -2053,10 +1930,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn world_palette_theme(&self) -> &WorldPaletteThemeState {
-        &self.game_state.world.palette_theme
-    }
-
     pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {
         NativeWorldPaletteThemeBridgeMut::new(
             &mut self.game_state.world.palette_theme,
@@ -2064,16 +1937,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn world_region(&self) -> &WorldRegionState {
-        &self.game_state.world.region
-    }
-
     pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
         NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
-    }
-
-    pub(crate) fn world_transient(&self) -> &WorldTransientState {
-        &self.game_state.world.transient
     }
 
     pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
@@ -2650,10 +2515,6 @@ impl ZeldaState {
         .set_previous_screen_transition(value);
     }
 
-    pub(crate) fn display_state(&self) -> &DisplayState {
-        &self.game_state.display
-    }
-
     pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
         self.game_state
             .display
@@ -3176,19 +3037,11 @@ impl ZeldaState {
             .set_travel_bird_tile_offset(value);
     }
 
-    pub(crate) fn save_progress(&self) -> &SaveProgressState {
-        &self.game_state.inventory.save_progress
-    }
-
     pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
         NativeSaveProgressBridgeMut::new(
             &mut self.game_state.inventory.save_progress,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn mirror_warp_scratch(&self) -> &MirrorWarpState {
-        &self.game_state.inventory.mirror_warp
     }
 
     pub(crate) fn mirror_warp_scratch_mut(&mut self) -> NativeMirrorWarpBridgeMut<'_> {
@@ -3204,16 +3057,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_header(&self) -> &DungeonHeaderState {
-        &self.game_state.dungeon.header
-    }
-
     pub(crate) fn dungeon_header_mut(&mut self) -> NativeDungeonHeaderBridgeMut<'_> {
         NativeDungeonHeaderBridgeMut::new(&mut self.game_state.dungeon.header, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_key_slots(&self) -> &DungeonKeySlotsState {
-        &self.game_state.inventory.dungeon_key_slots
     }
 
     pub(crate) fn dungeon_key_slots_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
@@ -3223,16 +3068,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_torch_state(&self) -> &DungeonTorchState {
-        &self.game_state.dungeon.torch
-    }
-
     pub(crate) fn dungeon_torch_mut(&mut self) -> NativeDungeonTorchBridgeMut<'_> {
         NativeDungeonTorchBridgeMut::new(&mut self.game_state.dungeon.torch, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_savegame_state(&self) -> &DungeonSavegameState {
-        &self.game_state.dungeon.savegame_state
     }
 
     pub(crate) fn dungeon_savegame_state_mut(&mut self) -> NativeDungeonSavegameBridgeMut<'_> {
@@ -3242,12 +3079,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_bg2_attributes(&self) -> &DungeonBg2AttributeState {
-        &self.game_state.dungeon.bg2_attributes
-    }
-
     pub(crate) fn dungeon_tile_attribute(&self, tile: usize) -> u8 {
-        self.dungeon_bg2_attributes().attr_for_tile(&self.ram, tile)
+        self.game_state
+            .dungeon
+            .bg2_attributes
+            .attr_for_tile(&self.ram, tile)
     }
 
     pub(crate) fn dungeon_bg2_attributes_mut(&mut self) -> NativeDungeonBg2AttributeBridgeMut<'_> {
@@ -3257,19 +3093,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_stair_lists(&self) -> &DungeonStairListsState {
-        &self.game_state.dungeon.stair_lists
-    }
-
     pub(crate) fn dungeon_stair_lists_mut(&mut self) -> NativeDungeonStairListsBridgeMut<'_> {
         NativeDungeonStairListsBridgeMut::new(
             &mut self.game_state.dungeon.stair_lists,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn dungeon_stair_movement(&self) -> &DungeonStairMovementState {
-        &self.game_state.dungeon.stair_movement
     }
 
     pub(crate) fn dungeon_stair_movement_mut(&mut self) -> NativeDungeonStairMovementBridgeMut<'_> {
@@ -3279,10 +3107,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_moving_floor(&self) -> &DungeonMovingFloorState {
-        &self.game_state.dungeon.moving_floor
-    }
-
     pub(crate) fn dungeon_moving_floor_mut(&mut self) -> NativeDungeonMovingFloorBridgeMut<'_> {
         NativeDungeonMovingFloorBridgeMut::new(
             &mut self.game_state.dungeon.moving_floor,
@@ -3290,19 +3114,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tracking(&self) -> &DungeonRoomTrackingState {
-        &self.game_state.dungeon.room_tracking
-    }
-
     pub(crate) fn dungeon_room_tracking_mut(&mut self) -> NativeDungeonRoomTrackingBridgeMut<'_> {
         NativeDungeonRoomTrackingBridgeMut::new(
             &mut self.game_state.dungeon.room_tracking,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn dungeon_object_tracking(&self) -> &DungeonObjectTrackingState {
-        &self.game_state.dungeon.object_tracking
     }
 
     pub(crate) fn dungeon_object_tracking_mut(
@@ -3314,24 +3130,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_doors(&self) -> &DungeonDoorState {
-        &self.game_state.dungeon.doors
-    }
-
     pub(crate) fn dungeon_doors_mut(&mut self) -> NativeDungeonDoorBridgeMut<'_> {
         NativeDungeonDoorBridgeMut::new(&mut self.game_state.dungeon.doors, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_room_load(&self) -> &DungeonRoomLoadState {
-        &self.game_state.dungeon.room_load
-    }
-
     pub(crate) fn dungeon_room_load_mut(&mut self) -> NativeDungeonRoomLoadBridgeMut<'_> {
         NativeDungeonRoomLoadBridgeMut::new(&mut self.game_state.dungeon.room_load, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_environment(&self) -> &DungeonEnvironmentState {
-        &self.game_state.dungeon.environment
     }
 
     pub(crate) fn dungeon_environment_mut(&mut self) -> NativeDungeonEnvironmentBridgeMut<'_> {
@@ -3341,10 +3145,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tilemaps(&self) -> &DungeonRoomTilemapState {
-        &self.game_state.dungeon.room_tilemaps
-    }
-
     pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
         NativeDungeonRoomTilemapBridgeMut::new(
             &mut self.game_state.dungeon.room_tilemaps,
@@ -3352,16 +3152,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_items(&self) -> &DungeonRoomItemState {
-        &self.game_state.dungeon.room_items
-    }
-
     pub(crate) fn dungeon_room_items_mut(&mut self) -> NativeDungeonRoomItemBridgeMut<'_> {
         NativeDungeonRoomItemBridgeMut::new(&mut self.game_state.dungeon.room_items, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_room_effects(&self) -> &DungeonRoomEffectsState {
-        &self.game_state.dungeon.room_effects
     }
 
     pub(crate) fn dungeon_room_effects_mut(&mut self) -> NativeDungeonRoomEffectsBridgeMut<'_> {
@@ -3371,19 +3163,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_parser(&self) -> &DungeonRoomParserState {
-        &self.game_state.dungeon.room_parser
-    }
-
     pub(crate) fn dungeon_room_parser_mut(&mut self) -> NativeDungeonRoomParserBridgeMut<'_> {
         NativeDungeonRoomParserBridgeMut::new(
             &mut self.game_state.dungeon.room_parser,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn dungeon_room_doors(&self) -> &DungeonRoomDoorSetupState {
-        &self.game_state.dungeon.door_setup
     }
 
     pub(crate) fn dungeon_room_doors_mut(&mut self) -> NativeDungeonRoomDoorSetupBridgeMut<'_> {
@@ -3393,19 +3177,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_runtime(&self) -> &DungeonRoomRuntimeState {
-        &self.game_state.dungeon.room_runtime
-    }
-
     pub(crate) fn dungeon_room_runtime_mut(&mut self) -> NativeDungeonRoomRuntimeBridgeMut<'_> {
         NativeDungeonRoomRuntimeBridgeMut::new(
             &mut self.game_state.dungeon.room_runtime,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn dungeon_movable_blocks(&self) -> &DungeonMovableBlockState {
-        &self.game_state.dungeon.movable_blocks
     }
 
     pub(crate) fn dungeon_movable_blocks_mut(&mut self) -> NativeDungeonMovableBlockBridgeMut<'_> {
@@ -3422,19 +3198,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn scratch_word(&self) -> &DungeonScratchWordState {
-        &self.game_state.dungeon.scratch_word
-    }
-
     pub(crate) fn scratch_word_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
         NativeDungeonScratchWordBridgeMut::new(
             &mut self.game_state.dungeon.scratch_word,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn ending_scratch(&self) -> &DungeonScratchWordState {
-        &self.game_state.dungeon.scratch_word
     }
 
     pub(crate) fn ending_scratch_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
@@ -3444,16 +3212,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn save_load_scratch(&self) -> &SaveLoadTransferState {
-        &self.game_state.save_load_transfer
-    }
-
     pub(crate) fn save_load_scratch_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
         NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_map_scratch(&self) -> &DungeonMapDisplayState {
-        &self.game_state.dungeon_map_display
     }
 
     pub(crate) fn dungeon_map_scratch_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
@@ -3463,24 +3223,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_secret_scratch(&self) -> &DungeonSecretState {
-        &self.game_state.dungeon_secret
-    }
-
     pub(crate) fn dungeon_secret_scratch_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
         NativeDungeonSecretBridgeMut::new(&mut self.game_state.dungeon_secret, &mut self.ram)
     }
 
-    pub(crate) fn temp_counter(&self) -> &ScratchCounterState {
-        &self.game_state.scratch_counter
-    }
-
     pub(crate) fn temp_counter_mut(&mut self) -> NativeScratchCounterBridgeMut<'_> {
         NativeScratchCounterBridgeMut::new(&mut self.game_state.scratch_counter, &mut self.ram)
-    }
-
-    pub(crate) fn overworld_event_info(&self) -> &OverworldEventInfoState {
-        &self.game_state.world.overworld.event_info
     }
 
     pub(crate) fn overworld_event_info_mut(&mut self) -> NativeOverworldEventInfoBridgeMut<'_> {
@@ -3504,16 +3252,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn palette_buffer(&self) -> &PaletteBufferState {
-        &self.game_state.display.palette_buffer
-    }
-
     pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
         NativePaletteBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
-    pub(crate) fn palette_filter(&self) -> &PaletteFilterState {
-        &self.game_state.display.palette_filter
     }
 
     pub(crate) fn palette_filter_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
@@ -3531,10 +3271,6 @@ impl ZeldaState {
         NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn hud_inventory_order_state(&self) -> &HudInventoryOrderState {
-        &self.game_state.display.hud_inventory_order
-    }
-
     fn hud_inventory_order_bridge_mut(&mut self) -> NativeHudInventoryOrderBridgeMut<'_> {
         NativeHudInventoryOrderBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
@@ -3549,32 +3285,16 @@ impl ZeldaState {
             .swap_items(old_pos, new_pos);
     }
 
-    pub(crate) fn archery_game(&self) -> &ArcheryGameState {
-        &self.game_state.archery_game
-    }
-
     pub(crate) fn archery_game_mut(&mut self) -> NativeArcheryGameBridgeMut<'_> {
         NativeArcheryGameBridgeMut::new(&mut self.game_state.archery_game, &mut self.ram)
-    }
-
-    pub(crate) fn minigame_state(&self) -> &MinigameState {
-        &self.game_state.minigame
     }
 
     pub(crate) fn minigame_state_mut(&mut self) -> NativeMinigameBridgeMut<'_> {
         NativeMinigameBridgeMut::new(&mut self.game_state.minigame, &mut self.ram)
     }
 
-    pub(crate) fn sprite_battle(&self) -> &SpriteBattleState {
-        &self.game_state.sprite_battle
-    }
-
     pub(crate) fn sprite_battle_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
         NativeSpriteBattleBridgeMut::new(&mut self.game_state.sprite_battle, &mut self.ram)
-    }
-
-    pub(crate) fn shared_message_timer_state(&self) -> &SharedMessageTimerState {
-        &self.game_state.messaging.shared_message_timer
     }
 
     fn shared_message_timer_bridge_mut(&mut self) -> NativeSharedMessageTimerBridgeMut<'_> {
@@ -3594,10 +3314,6 @@ impl ZeldaState {
 
     pub(crate) fn tick_shared_message_timer(&mut self) -> u16 {
         self.shared_message_timer_bridge_mut().tick()
-    }
-
-    pub(crate) fn intro_scene_state(&self) -> &IntroSceneState {
-        &self.game_state.ending.intro_scene
     }
 
     fn intro_scene_bridge_mut(&mut self) -> NativeIntroSceneBridgeMut<'_> {
@@ -3629,10 +3345,6 @@ impl ZeldaState {
         self.intro_scene_bridge_mut().decrement_triforce_countdown();
     }
 
-    pub(crate) fn ending_credit_state(&self) -> &EndingCreditState {
-        &self.game_state.ending.credits
-    }
-
     fn ending_credit_bridge_mut(&mut self) -> NativeEndingCreditBridgeMut<'_> {
         NativeEndingCreditBridgeMut::new(&mut self.game_state.ending.credits, &mut self.ram)
     }
@@ -3657,10 +3369,6 @@ impl ZeldaState {
             .set_death_count_digit_tile_base(value);
     }
 
-    pub(crate) fn intro_sword(&self) -> &IntroSwordState {
-        &self.game_state.intro_sword
-    }
-
     pub(crate) fn intro_sword_mut(&mut self) -> NativeIntroSwordBridgeMut<'_> {
         NativeIntroSwordBridgeMut::new(&mut self.game_state.intro_sword, &mut self.ram)
     }
@@ -3675,10 +3383,6 @@ impl ZeldaState {
 
     pub(crate) fn overworld_map16_decode_mut(&mut self) -> NativeOverworldMap16DecodeBridgeMut<'_> {
         NativeOverworldMap16DecodeBridgeMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn room_bounds(&self) -> &RoomBoundsState {
-        &self.game_state.world.room_bounds
     }
 
     pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
@@ -3912,16 +3616,8 @@ impl ZeldaState {
             .advance_offset_by(value)
     }
 
-    pub(crate) fn poly_runtime(&self) -> &PolyRuntimeState {
-        &self.game_state.poly.runtime
-    }
-
     pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
         NativePolyRuntimeBridgeMut::new(&mut self.game_state.poly.runtime, &mut self.ram)
-    }
-
-    pub(crate) fn poly_projected_vertex(&self) -> &PolyProjectedVerticesState {
-        &self.game_state.poly.projected_vertices
     }
 
     pub(crate) fn poly_projected_vertex_mut(&mut self) -> NativePolyProjectedVerticesBridgeMut<'_> {
@@ -3931,16 +3627,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn poly_face_coords(&self) -> &PolyFaceCoordsState {
-        &self.game_state.poly.face_coords
-    }
-
     pub(crate) fn poly_face_coords_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
         NativePolyFaceCoordsBridgeMut::new(&mut self.game_state.poly.face_coords, &mut self.ram)
-    }
-
-    pub(crate) fn poly_raster_edge(&self) -> &PolyRasterEdgeState {
-        &self.game_state.poly.raster_edge
     }
 
     pub(crate) fn poly_raster_edge_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
@@ -3957,10 +3645,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn effect_angle_scratch(&self) -> &EffectAngleScratchState {
-        &self.game_state.effects.angle_scratch
     }
 
     pub(crate) fn effect_angle_scratch_mut(&mut self) -> NativeEffectAngleScratchBridgeMut<'_> {
@@ -3980,10 +3664,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn quake_spell_scratch(&self) -> &QuakeSpellState {
-        &self.game_state.effects.quake_spell
     }
 
     pub(crate) fn quake_spell_scratch_mut(&mut self) -> NativeQuakeSpellBridgeMut<'_> {
@@ -4015,10 +3695,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn bombos_spell_scratch(&self) -> &BombosSpellState {
-        &self.game_state.effects.bombos_spell
     }
 
     pub(crate) fn bombos_spell_scratch_mut(&mut self) -> NativeBombosSpellBridgeMut<'_> {
@@ -4053,10 +3729,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn tower_seal_scratch(&self) -> &TowerSealState {
-        &self.game_state.effects.tower_seal
     }
 
     pub(crate) fn tower_seal_scratch_mut(&mut self) -> NativeTowerSealBridgeMut<'_> {
@@ -4180,10 +3852,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn weather_vane_state(&self) -> &WeatherVaneState {
-        &self.game_state.world.overworld.weather_vane
     }
 
     fn weather_vane_bridge_mut(&mut self) -> NativeWeatherVaneBridgeMut<'_> {
@@ -4342,16 +4010,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn door_debris(&self) -> &DoorDebrisState {
-        &self.game_state.effects.door_debris
-    }
-
     pub(crate) fn door_debris_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {
         NativeDoorDebrisBridgeMut::new(&mut self.game_state.effects.door_debris, &mut self.ram)
-    }
-
-    pub(crate) fn digging_game_prize(&self) -> &DiggingGamePrizeState {
-        &self.game_state.effects.digging_game_prize
     }
 
     pub(crate) fn digging_game_prize_mut(&mut self) -> NativeDiggingGamePrizeBridgeMut<'_> {
@@ -4361,10 +4021,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn draw_scratch_position(&self) -> &SpriteDrawHitboxWorkState {
-        &self.game_state.sprites.draw_hitbox_work
-    }
-
     pub(crate) fn draw_scratch_position_mut(
         &mut self,
     ) -> NativeSpriteDrawWorkPositionBridgeMut<'_> {
@@ -4372,10 +4028,6 @@ impl ZeldaState {
             &mut self.game_state.sprites.draw_hitbox_work,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn hitbox_scratch_offset(&self) -> &SpriteDrawHitboxWorkState {
-        &self.game_state.sprites.draw_hitbox_work
     }
 
     pub(crate) fn hitbox_scratch_offset_mut(
@@ -4394,28 +4046,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dialogue_number(&self) -> &DialogueNumberState {
-        &self.game_state.messaging.dialogue_number
-    }
-
-    pub(crate) fn messaging_state(&self) -> &MessagingRuntimeState {
-        &self.game_state.messaging.runtime
-    }
-
     pub(crate) fn messaging_state_mut(&mut self) -> NativeMessagingRuntimeBridgeMut<'_> {
         NativeMessagingRuntimeBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    pub(crate) fn messaging_text(&self) -> &DecodedMessageTextState {
-        &self.game_state.messaging.decoded_text
-    }
-
     pub(crate) fn messaging_text_mut(&mut self) -> NativeDecodedMessageTextBridgeMut<'_> {
         NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
-    }
-
-    pub(crate) fn messaging_render_buffer(&self) -> &MessagingRenderBufferState {
-        &self.game_state.messaging.render_buffer
     }
 
     pub(crate) fn messaging_render_buffer_mut(
@@ -4427,10 +4063,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn vwf_glyph_spacing(&self) -> &VwfRenderState {
-        &self.game_state.messaging.vwf_render
-    }
-
     pub(crate) fn vwf_glyph_spacing_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
         NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
@@ -4440,10 +4072,6 @@ impl ZeldaState {
             &mut self.game_state.messaging.dialogue_source_offset,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn select_file_scratch(&self) -> &SelectFileMenuState {
-        &self.game_state.messaging.select_file_menu
     }
 
     pub(crate) fn select_file_scratch_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
@@ -4524,19 +4152,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn follower_state(&self) -> &FollowerRuntimeState {
-        &self.game_state.sprites.follower_runtime
-    }
-
     pub(crate) fn follower_state_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
         NativeFollowerRuntimeBridgeMut::new(
             &mut self.game_state.sprites.follower_runtime,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn chain_chomp_history(&self) -> &ChainChompHistoryState {
-        &self.game_state.sprites.chain_chomp_history
     }
 
     pub(crate) fn chain_chomp_history_mut(&mut self) -> NativeChainChompHistoryBridgeMut<'_> {
@@ -4555,19 +4175,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn maze_game_timer(&self) -> &MazeGameTimerState {
-        &self.game_state.sprites.maze_game_timer
-    }
-
     pub(crate) fn maze_game_timer_mut(&mut self) -> NativeMazeGameTimerBridgeMut<'_> {
         NativeMazeGameTimerBridgeMut::new(
             &mut self.game_state.sprites.maze_game_timer,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn enemy_damage_subclass_table(&self) -> &EnemyDamageSubclassTableState {
-        &self.game_state.sprites.enemy_damage_subclasses
     }
 
     pub(crate) fn enemy_damage_subclass_table_mut(
@@ -4577,10 +4189,6 @@ impl ZeldaState {
             &mut self.game_state.sprites.enemy_damage_subclasses,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn ether_orbit(&self) -> &EtherOrbitState {
-        &self.game_state.sprites.ether_orbit
     }
 
     pub(crate) fn ether_orbit_mut(&mut self) -> NativeEtherOrbitBridgeMut<'_> {
@@ -4594,10 +4202,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dual_layer_tile_cache(&self) -> &DualLayerTileCacheState {
-        &self.game_state.sprites.dual_layer_tile_cache
-    }
-
     pub(crate) fn dual_layer_tile_cache_mut(&mut self) -> NativeDualLayerTileCacheBridgeMut<'_> {
         NativeDualLayerTileCacheBridgeMut::new(
             &mut self.game_state.sprites.dual_layer_tile_cache,
@@ -4605,56 +4209,27 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn sprite_slot(&self, slot: usize) -> RamSpriteSlotView<'_> {
-        RamSpriteSlotView::new(&self.ram, slot)
+    pub(crate) fn sprite_slot(&self, slot: usize) -> NativeSpriteSlotView<'_> {
+        self.game_state.sprites.sprite_slots.slot(slot)
     }
 
-    pub(crate) fn sprite_slot_mut(&mut self, slot: usize) -> RamSpriteSlotViewMut<'_> {
-        RamSpriteSlotViewMut::new(&mut self.ram, slot)
-    }
-
-    pub(crate) fn sprite_system(&self) -> &SpriteSystemState {
-        &self.game_state.sprites.system
+    pub(crate) fn sprite_slot_mut(&mut self, slot: usize) -> NativeSpriteSlotBridgeMut<'_> {
+        self.game_state
+            .sprites
+            .sprite_slots
+            .slot_mut(&mut self.ram, slot)
     }
 
     pub(crate) fn sprite_system_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
-        NativeSpriteSystemBridgeMut::new(&mut self.game_state.sprites.system, &mut self.ram)
-    }
-
-    pub(crate) fn sprite_workspace(&self) -> &SpriteWorkspaceState {
-        &self.game_state.sprites.workspace
+        NativeSpriteSystemBridgeMut::new(
+            &mut self.game_state.sprites.system,
+            &mut self.game_state.sprites.sprite_slots,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn sprite_workspace_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
         NativeSpriteWorkspaceBridgeMut::new(&mut self.game_state.sprites.workspace, &mut self.ram)
-    }
-
-    pub(crate) fn ancilla_slot(&self, slot: usize) -> RamAncillaSlotView<'_> {
-        RamAncillaSlotView::new(&self.ram, slot)
-    }
-
-    pub(crate) fn ancilla_slot_mut(&mut self, slot: usize) -> RamAncillaSlotViewMut<'_> {
-        RamAncillaSlotViewMut::new(&mut self.ram, slot)
-    }
-
-    pub(crate) fn overlord_slot(&self, slot: usize) -> RamOverlordSlotView<'_> {
-        RamOverlordSlotView::new(&self.ram, slot)
-    }
-
-    pub(crate) fn overlord_slot_mut(&mut self, slot: usize) -> RamOverlordSlotViewMut<'_> {
-        RamOverlordSlotViewMut::new(&mut self.ram, slot)
-    }
-
-    pub(crate) fn garnish_slot(&self, slot: usize) -> RamGarnishSlotView<'_> {
-        RamGarnishSlotView::new(&self.ram, slot)
-    }
-
-    pub(crate) fn garnish_slot_mut(&mut self, slot: usize) -> RamGarnishSlotViewMut<'_> {
-        RamGarnishSlotViewMut::new(&mut self.ram, slot)
-    }
-
-    pub(crate) fn garnish_state(&self) -> &GarnishRuntimeState {
-        &self.game_state.sprites.garnish_runtime
     }
 
     pub(crate) fn garnish_state_mut(&mut self) -> NativeGarnishRuntimeBridgeMut<'_> {
@@ -4664,16 +4239,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn oam_state(&self) -> &OamState {
-        &self.game_state.oam
-    }
-
     pub(crate) fn oam_state_mut(&mut self) -> NativeOamStateBridgeMut<'_> {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
-    }
-
-    pub(crate) fn overworld_sprite_presence(&self) -> &OverworldSpritePresenceState {
-        &self.game_state.sprites.overworld_sprite_presence
     }
 
     pub(crate) fn overworld_sprite_presence_mut(
@@ -4685,16 +4252,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn memorized_tile(&self) -> &MemorizedTileState {
-        &self.game_state.memorized_tiles
-    }
-
     pub(crate) fn memorized_tile_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
-    }
-
-    pub(crate) fn overworld_sprite_loaded(&self) -> &OverworldSpriteLoadedState {
-        &self.game_state.sprites.overworld_sprite_loaded
     }
 
     pub(crate) fn overworld_sprite_loaded_mut(
@@ -4704,10 +4263,6 @@ impl ZeldaState {
             &mut self.game_state.sprites.overworld_sprite_loaded,
             &mut self.ram,
         )
-    }
-
-    pub(crate) fn trinexx_palette_state(&self) -> &TrinexxPaletteState {
-        &self.game_state.display.trinexx_palette
     }
 
     fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {
@@ -4750,10 +4305,6 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    pub(crate) fn spotlight_hdma(&self) -> &SpotlightHdmaState {
-        &self.game_state.display.spotlight_hdma
-    }
-
     pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
         NativeSpotlightHdmaBridgeMut::new(
             &mut self.game_state.display.spotlight_hdma,
@@ -4776,10 +4327,6 @@ impl ZeldaState {
             .project_dynamic_table_to_reserved_hdma_table(count);
     }
 
-    pub(crate) fn water_hdma_window(&self) -> &WaterHdmaWindowState {
-        &self.game_state.display.water_hdma_window
-    }
-
     pub(crate) fn water_hdma_window_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
         NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
@@ -4791,10 +4338,6 @@ impl ZeldaState {
             &mut self.game_state.display.overworld_palette_backup,
             &mut self.ram,
         )
-    }
-
-    pub fn overworld_map16_load_state(&self) -> OverworldMap16LoadState {
-        self.game_state.world.overworld.map16.active_load
     }
 
     pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
@@ -4960,6 +4503,7 @@ impl ZeldaState {
         state.sync_native_game_state_from_ram();
         state.assert_native_frame_state_matches_ram();
         state.assert_native_world_location_state_matches_ram();
+        state.assert_native_display_state_matches_ram();
         state.assert_native_save_progress_matches_ram();
         state
     }
@@ -5157,6 +4701,7 @@ impl ZeldaState {
         self.sync_native_game_state_from_ram();
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
         self.replay_trace_col("run-frame-entry");
         self.replay_trace_ram_watch("run-frame-entry");
         if !self.initialized {
@@ -5219,6 +4764,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
         self.sync_overworld_map16_state_from_ram();
     }
 
@@ -5482,7 +5028,7 @@ impl ZeldaState {
             Box::new([(0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8]); 224]);
         for line in 0..=224usize {
             if line == 128 && self.game_state.display.has_irq_control_flag() {
-                let name_scroll_x = self.select_file_scratch().name_scroll_x();
+                let name_scroll_x = self.game_state.messaging.select_file_menu.name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
@@ -5642,6 +5188,7 @@ impl ZeldaState {
     fn configure_ppu_side_space(&mut self) {
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
         let mut extra_left = 0u16;
         let mut extra_right = 0u16;
         let mut extra_bottom = 0u16;
@@ -5657,24 +5204,44 @@ impl ZeldaState {
                 extra_right = PPU_SIDE_SPACE_LIMIT;
                 extra_bottom = 16;
             } else {
-                let bg2x = self.world_scroll().bg2_x();
-                let bg2y = self.world_scroll().bg2_y();
-                extra_left = bg2x.wrapping_sub(self.world_scroll().scroll_x_start());
-                extra_right = self.world_scroll().scroll_x_end().wrapping_sub(bg2x);
-                extra_bottom = self.world_scroll().scroll_y_end().wrapping_sub(bg2y);
+                let bg2x = self.game_state.world.scroll.bg2_x();
+                let bg2y = self.game_state.world.scroll.bg2_y();
+                extra_left = bg2x.wrapping_sub(self.game_state.world.scroll.scroll_x_start());
+                extra_right = self
+                    .game_state
+                    .world
+                    .scroll
+                    .scroll_x_end()
+                    .wrapping_sub(bg2x);
+                extra_bottom = self
+                    .game_state
+                    .world
+                    .scroll
+                    .scroll_y_end()
+                    .wrapping_sub(bg2y);
             }
         } else if module == 7 {
-            if !(self.dungeon_torch_state().dungeon_dark_with_lantern()
+            if !(self.game_state.dungeon.torch.dungeon_dark_with_lantern()
                 && self.game_state.display.sub_screen_layers != 0)
             {
-                let qm = (self.world_transient().quadrant_fullsize_x() >> 1) as usize;
-                let bg2x = self.world_scroll().bg2_x();
-                extra_left = bg2x.saturating_sub(self.room_bounds().x_bound(qm));
-                extra_right = self.room_bounds().x_bound(qm + 2).saturating_sub(bg2x);
+                let qm = (self.game_state.world.transient.quadrant_fullsize_x() >> 1) as usize;
+                let bg2x = self.game_state.world.scroll.bg2_x();
+                extra_left = bg2x.saturating_sub(self.game_state.world.room_bounds.x_bound(qm));
+                extra_right = self
+                    .game_state
+                    .world
+                    .room_bounds
+                    .x_bound(qm + 2)
+                    .saturating_sub(bg2x);
             }
-            let qy = (self.world_transient().quadrant_fullsize_y() >> 1) as usize;
-            let bg2y = self.world_scroll().bg2_y();
-            extra_bottom = self.room_bounds().y_bound(qy + 2).saturating_sub(bg2y);
+            let qy = (self.game_state.world.transient.quadrant_fullsize_y() >> 1) as usize;
+            let bg2y = self.game_state.world.scroll.bg2_y();
+            extra_bottom = self
+                .game_state
+                .world
+                .room_bounds
+                .y_bound(qy + 2)
+                .saturating_sub(bg2y);
         } else if module == 20 || module == 0 || module == 1 {
             extra_left = PPU_SIDE_SPACE_LIMIT;
             extra_right = PPU_SIDE_SPACE_LIMIT;
@@ -5740,8 +5307,16 @@ impl ZeldaState {
                     MAP_MODE_PERSPECTIVE_ZOOMS_FAR[223],
                 );
             } else if hdma_chans[0].table.as_deref() == Some(&ATTRACT_INDIRECT_HDMA_SETUP) {
-                let low = self.spotlight_hdma().hdma_table_dynamic_entry(0);
-                let high = self.spotlight_hdma().hdma_table_dynamic_entry(223);
+                let low = self
+                    .game_state
+                    .display
+                    .spotlight_hdma
+                    .hdma_table_dynamic_entry(0);
+                let high = self
+                    .game_state
+                    .display
+                    .spotlight_hdma
+                    .hdma_table_dynamic_entry(223);
                 self.set_mode7_perspective_correction(low, high);
             } else {
                 self.set_mode7_perspective_correction(0, 0);
@@ -5754,7 +5329,7 @@ impl ZeldaState {
 
         for line in 0..=output_height {
             if line == 128 && self.game_state.display.has_irq_control_flag() {
-                let name_scroll_x = self.select_file_scratch().name_scroll_x();
+                let name_scroll_x = self.game_state.messaging.select_file_menu.name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
@@ -5911,6 +5486,7 @@ impl ZeldaState {
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
         self.sync_overworld_map16_state_from_ram();
         self.emu_synchronize_whole_state();
     }
@@ -6213,7 +5789,7 @@ impl ZeldaState {
         } else {
             Self::state_recorder_record(&mut state_recorder, inputs as u16);
             let apui00 = self.zelda_is_music_playing() as u8;
-            if apui00 != self.system_signals().apui00() {
+            if apui00 != self.game_state.system_signals.apui00() {
                 self.system_signals_mut().set_apui00(apui00);
                 let apui00_offset = SystemSignalsState::apui00_offset();
                 self.emu_sync_memory_region(apui00_offset, 1);
@@ -6225,7 +5801,7 @@ impl ZeldaState {
                 );
             }
             if self.game_state.display.has_animated_tile_data_source() {
-                if self.system_signals().bugs_fixed() < BUGFIX_LATEST {
+                if self.game_state.system_signals.bugs_fixed() < BUGFIX_LATEST {
                     if !self.rom_startup_timing {
                         self.system_signals_mut().set_bugs_fixed(BUGFIX_LATEST);
                         self.emu_sync_memory_region(RAM_BUGS_FIXED, 1);
@@ -6237,7 +5813,7 @@ impl ZeldaState {
                         );
                     }
                 }
-                let enhanced_features0 = self.enhanced_features().bits();
+                let enhanced_features0 = self.game_state.enhanced_features.bits();
                 let wanted_zelda_features = self.wanted_zelda_features;
                 if enhanced_features0 != wanted_zelda_features {
                     self.enhanced_features_mut().set_bits(wanted_zelda_features);
@@ -6257,13 +5833,14 @@ impl ZeldaState {
         self.sync_native_game_state_from_ram();
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
         let frame = &self.game_state.frame;
         let use_bsnes_poly_scheduler = self.rom_startup_timing
             && frame.main_module == 0
             && matches!(frame.submodule, 3 | 4)
             && frame.frame_counter >= configured_poly_scheduler_frame_threshold();
         self.bsnes_hold_intro_step_this_frame = false;
-        let run_what = if self.system_signals().bugs_fixed() < BUGFIX_POLY_RENDERER
+        let run_what = if self.game_state.system_signals.bugs_fixed() < BUGFIX_POLY_RENDERER
             && !use_bsnes_poly_scheduler
         {
             if self.game_state.display.nmi_thread_uses_poly_stack() {
@@ -6276,8 +5853,8 @@ impl ZeldaState {
             let carry = if self.game_state.display.nmi_thread_active {
                 if use_bsnes_poly_scheduler {
                     let previous_counter = self.bsnes_poly_scheduler_counter;
-                    let step_waiting = self.attract_scene().intro_step_index() == 1
-                        && self.attract_scene().intro_did_run_step() != 0;
+                    let step_waiting = self.game_state.ending.attract_scene.intro_step_index() == 1
+                        && self.game_state.ending.attract_scene.intro_did_run_step() != 0;
                     let first_frame_boundary_hold = step_waiting
                         && !self.bsnes_intro_step_carry_phase_active
                         && previous_counter == 0;
@@ -6294,7 +5871,7 @@ impl ZeldaState {
                     }
                     self.bsnes_poly_scheduler_counter =
                         self.bsnes_poly_scheduler_counter.wrapping_add(virq);
-                    self.attract_scene().intro_did_run_step() != 0
+                    self.game_state.ending.attract_scene.intro_did_run_step() != 0
                 } else {
                     let carry = self.advance_crystal_rotation_counter(virq);
                     self.emu_sync_memory_region(CRYSTAL_ROTATION_COUNTER, 1);
@@ -6310,7 +5887,7 @@ impl ZeldaState {
             }
         };
         if self.emu_runframe.is_none()
-            || self.enhanced_features().bits() != 0
+            || self.game_state.enhanced_features.bits() != 0
             || self.dialogue_flags != 0
         {
             self.replay_trace_ram_watch("before-run-frame-internal");
@@ -6474,7 +6051,12 @@ impl ZeldaState {
                     wram_patch_addr(LINK_ARROW_REFILL_COUNTER),
                     10,
                 );
-                let rupees = self.player_resources().rupees_goal().wrapping_add(100);
+                let rupees = self
+                    .game_state
+                    .inventory
+                    .player_resources
+                    .rupees_goal()
+                    .wrapping_add(100);
                 self.state_recoder_multi_patch_patch(
                     &mut state_recorder,
                     &mut mp,
@@ -6617,6 +6199,7 @@ impl ZeldaState {
         self.set_link_animated_tile_dma_sources(0xb280, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
     }
 
     fn startup_initialize_memory(&mut self) {
@@ -6634,10 +6217,11 @@ impl ZeldaState {
         self.system_signals_mut().increment_cgram_update_flag();
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
     }
 
     fn zelda_run_poly_loop(&mut self) {
-        let can_run_poly = self.attract_scene().intro_did_run_step() != 0
+        let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
         if can_run_poly {
             self.poly_run_frame();
@@ -6702,7 +6286,8 @@ impl ZeldaState {
         self.player_state_mut().clear_action_scratch_state();
         self.player_state_mut().set_y_button_action_step(0);
         self.player_state_mut().set_y_button_action_flags(0);
-        self.player_state_mut().clear_button_mask_b_y_bits(0x40);
+        self.follower_link_state_mut()
+            .clear_button_mask_b_y_bits(0x40);
         self.player_state_mut().clear_state_item_and_grab_flags();
         self.player_state_mut().clear_defense_flags();
         self.link_reset_swimming_state();
@@ -6713,17 +6298,18 @@ impl ZeldaState {
                 self.link_force_unequip_cape_quietly();
             }
             self.link_reset_sword_and_item_usage();
-            self.player_state_mut().set_sprite_damage_disable_timer(1);
+            self.follower_link_state_mut()
+                .set_sprite_damage_disable_timer(1);
             self.player_state_mut().clear_action_handler_timer();
             self.player_state_mut().set_spin_attack_delay_timer(2);
             self.player_state_mut().clear_animation_step();
             self.player_state_mut().clear_cardinal_direction();
             self.set_sound_effect_1_with_link_pan(43);
-            self.player_state_mut().set_handler_state(7);
+            self.follower_link_state_mut().set_handler_state(7);
             self.link_state_zapped();
         } else {
             self.player_state_mut().clear_moving_against_diag_tile();
-            self.player_state_mut().set_handler_state(6);
+            self.follower_link_state_mut().set_handler_state(6);
             self.link_state_recoil();
         }
     }
@@ -6739,15 +6325,19 @@ impl ZeldaState {
         self.tile_detect_main_handler(4);
         self.replay_trace_submodule("pits-after-tile-detect");
         self.replay_trace_player_state("pits-after-tile-detect");
-        if self.tile_detect_position().pit_tile() & 1 == 0 {
-            if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
+        if self.game_state.player.tile_detection.pit_tile() & 1 == 0 {
+            if self
+                .game_state
+                .enhanced_features
+                .has(FEATURES0_MISC_BUG_FIXES)
+            {
                 self.player_state_mut().clear_near_pit_state();
             }
-            if self.player_state().is_running() {
+            if self.game_state.player.follower_link.is_running() {
                 self.link_state_dashing();
                 return;
             }
-            self.player_state_mut().set_speed_setting(0);
+            self.follower_link_state_mut().set_speed_setting(0);
             self.link_cancel_dash();
             if self.player_state().button_mask_b_y() & 0x80 == 0 {
                 self.player_state_mut().clear_direction_lock_bits(1);
@@ -6761,7 +6351,8 @@ impl ZeldaState {
             } else {
                 23
             };
-            self.player_state_mut().set_handler_state(handler_state);
+            self.follower_link_state_mut()
+                .set_handler_state(handler_state);
             match self.player_state().handler_state() {
                 23 => self.player_handler_17_bunny(),
                 3 => self.link_state_temporary_bunny(),
@@ -6774,10 +6365,10 @@ impl ZeldaState {
         self.player_tile_detect_nearby();
         self.replay_trace_submodule("pits-after-nearby");
         self.replay_trace_player_state("pits-after-nearby");
-        self.player_state_mut().set_speed_setting(4);
-        if self.tile_detect_position().pit_tile() & 0x0f == 0 {
+        self.follower_link_state_mut().set_speed_setting(4);
+        if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0 {
             self.player_state_mut().clear_near_pit_state();
-            self.player_state_mut().set_speed_setting(0);
+            self.follower_link_state_mut().set_speed_setting(0);
             let player_state = self.player_state();
             let handler_state = if !player_state.is_bunny_mirror() {
                 0
@@ -6786,7 +6377,8 @@ impl ZeldaState {
             } else {
                 23
             };
-            self.player_state_mut().set_handler_state(handler_state);
+            self.follower_link_state_mut()
+                .set_handler_state(handler_state);
             self.link_cancel_dash();
             if self.player_state().button_mask_b_y() & 0x80 == 0 {
                 self.player_state_mut().clear_direction_lock_bits(1);
@@ -6795,18 +6387,20 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position().pit_tile() & 0x0f != 0x0f {
+        if self.game_state.player.tile_detection.pit_tile() & 0x0f != 0x0f {
             self.replay_trace_player_state("pits-edge-slide-entry");
             let mut i = 3i8;
             loop {
-                if self.tile_detect_position().pit_tile() & 0x0f == FALL_HOLE_PIT_DIRS[i as usize] {
+                if self.game_state.player.tile_detection.pit_tile() & 0x0f
+                    == FALL_HOLE_PIT_DIRS[i as usize]
+                {
                     i += 4;
                     break;
                 }
                 i -= 1;
                 if i < 0 {
                     i = 3;
-                    let mut pit_tile = self.tile_detect_position().pit_tile();
+                    let mut pit_tile = self.game_state.player.tile_detection.pit_tile();
                     while pit_tile & 1 == 0 {
                         i -= 1;
                         pit_tile >>= 1;
@@ -6820,7 +6414,7 @@ impl ZeldaState {
             if self.player_state().direction() & FALL_HOLE_DIRS[idx] != 0 {
                 self.player_state_mut()
                     .set_last_direction_from_current_direction();
-                self.player_state_mut().set_speed_setting(6);
+                self.follower_link_state_mut().set_speed_setting(6);
                 self.link_handle_moving_animation_full_long_entry();
             } else {
                 let old_dir = self.player_state().direction();
@@ -6846,21 +6440,22 @@ impl ZeldaState {
             }
             self.player_state_mut().set_direction(0);
             self.player_state_mut().set_near_pit_state(2);
-            self.player_state_mut().set_sprite_damage_disable_timer(1);
-            self.player_state_mut().set_button_mask_b_y(0);
+            self.follower_link_state_mut()
+                .set_sprite_damage_disable_timer(1);
+            self.follower_link_state_mut().set_button_mask_b_y(0);
             self.player_state_mut().set_button_b_frames(0);
             self.player_state_mut().clear_item_in_hand();
             self.player_state_mut().clear_position_mode();
             self.player_state_mut().set_incapacitated_timer(0);
-            self.player_state_mut().clear_auxiliary_state();
+            self.follower_link_state_mut().clear_auxiliary_state();
             self.ancilla_sfx3_near(31);
         }
 
         self.player_state_mut().clear_direction_lock();
         self.player_state_mut().set_incapacitated_timer(0);
-        self.player_state_mut().set_z(0);
-        self.player_state_mut().set_actual_z_velocity(0);
-        self.player_state_mut().clear_auxiliary_state();
+        self.follower_link_state_mut().set_z(0);
+        self.follower_link_state_mut().set_actual_z_velocity(0);
+        self.follower_link_state_mut().clear_auxiliary_state();
         self.player_state_mut().clear_given_damage();
         self.player_state_mut().clear_transforming();
         self.link_force_unequip_cape_quietly();
@@ -6873,7 +6468,7 @@ impl ZeldaState {
         self.player_state_mut().advance_pit_data_index();
         let x = self.player_state().pit_data_index();
         self.player_state_mut().set_sprite_oam_state_timer(9);
-        if self.follower_state().indicator() != 13 && x == 1 {
+        if self.game_state.sprites.follower_runtime.indicator() != 13 && x == 1 {
             self.follower_state_mut().set_appearance_none_flag(x);
         }
 
@@ -6883,11 +6478,11 @@ impl ZeldaState {
             self.player_state_mut().set_pit_data_index(6);
             self.player_state_mut().set_near_pit_state(3);
             self.player_state_mut().set_visibility_status(12);
-            self.player_state_mut().set_speed_modifier(16);
+            self.follower_link_state_mut().set_speed_modifier(16);
             let y = self
                 .player_state()
                 .y()
-                .wrapping_sub(self.world_scroll().bg2_y()) as u8;
+                .wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
             self.player_state_mut().clear_state_item_and_grab_flags();
             self.player_state_mut().set_y_button_action_timer(0);
             if self.game_state.world.location.is_indoors() {
@@ -6902,7 +6497,7 @@ impl ZeldaState {
             let previous_room = self.game_state.world.location.dungeon_room_index();
             self.dungeon_room_tracking_mut()
                 .set_room_index_prev(previous_room);
-            let room = self.dungeon_header().travel_destination(0);
+            let room = self.game_state.dungeon.header.travel_destination(0);
             self.set_dungeon_room_index(room);
             let player_y = self.player_state().y();
             self.tile_detect_position_mut().set_y(player_y);
@@ -6928,10 +6523,10 @@ impl ZeldaState {
     }
 
     fn link_state_tree_pull_reset_to_normal(&mut self) {
-        self.player_state_mut().set_facing(0);
-        self.player_state_mut().clear_state_bits();
+        self.follower_link_state_mut().set_facing(0);
+        self.follower_link_state_mut().clear_state_bits();
         self.player_state_mut().clear_direction_lock();
-        self.player_state_mut().clear_handler_state();
+        self.follower_link_state_mut().clear_handler_state();
     }
 
     fn link_state_tree_pull_tail(&mut self) {
@@ -6947,16 +6542,17 @@ impl ZeldaState {
         if self.player_state().about_to_jump_off_ledge() != 0 {
             self.dungeon_handle_layer_change();
         }
-        self.player_state_mut().set_z(0);
-        self.player_state_mut().clear_auxiliary_state();
-        self.player_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_z(0);
+        self.follower_link_state_mut().clear_auxiliary_state();
+        self.follower_link_state_mut().set_speed_setting(0);
         self.player_state_mut().clear_direction_lock();
         self.player_state_mut().clear_item_in_hand();
         self.player_state_mut().clear_position_mode();
         self.player_state_mut().clear_action_handler_timer();
-        self.player_state_mut().clear_sprite_damage_disable_timer();
+        self.follower_link_state_mut()
+            .clear_sprite_damage_disable_timer();
         self.player_state_mut().clear_electrocute_on_touch();
-        self.player_state_mut().clear_actual_velocity_xy();
+        self.follower_link_state_mut().clear_actual_velocity_xy();
     }
 
     fn finish_ground_movement_tail(&mut self, clear_vel_after: bool) {
@@ -6972,13 +6568,14 @@ impl ZeldaState {
     }
 
     fn finish_ground_movement_clear_vel_tail(&mut self) {
-        self.player_state_mut().clear_movement_velocity();
+        self.follower_link_state_mut().clear_movement_velocity();
         self.finish_ground_movement_camera_tail();
     }
 
     fn finish_ground_movement_camera_tail(&mut self) {
         self.player_state_mut().clear_pit_correction();
-        if self.apply_links_movement_to_camera_called && self.enhanced_features().has(4096) {
+        if self.apply_links_movement_to_camera_called && self.game_state.enhanced_features.has(4096)
+        {
             return;
         }
         self.handle_indoor_camera_and_doors();
@@ -7011,22 +6608,22 @@ impl ZeldaState {
         self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
-        if self.system_signals().sound_effect_2() == 0 {
+        if self.game_state.system_signals.sound_effect_2() == 0 {
             self.system_signals_mut().set_sound_effect_2(14);
         }
         loc & 0x7fff
     }
 
     fn cache_camera_properties_for_player(&mut self) {
-        let bg2_x = self.world_scroll().bg2_x();
-        let bg2_y = self.world_scroll().bg2_y();
+        let bg2_x = self.game_state.world.scroll.bg2_x();
+        let bg2_y = self.game_state.world.scroll.bg2_y();
         self.ppu_scroll_copy_mut()
             .cache_bg2_live_scroll_from(bg2_x, bg2_y);
         self.player_state_mut().cache_current_position();
-        let y_start = self.room_bounds().y_bound(0);
-        let y_end = self.room_bounds().y_bound(2);
-        let x_start = self.room_bounds().x_bound(0);
-        let x_end = self.room_bounds().x_bound(2);
+        let y_start = self.game_state.world.room_bounds.y_bound(0);
+        let y_end = self.game_state.world.room_bounds.y_bound(2);
+        let x_start = self.game_state.world.room_bounds.x_bound(0);
+        let x_end = self.game_state.world.room_bounds.x_bound(2);
         self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         self.world_camera_boundaries_mut().cache_scroll_targets();
@@ -7060,11 +6657,11 @@ impl ZeldaState {
     }
 
     fn ancilla_x(&self, k: usize) -> u16 {
-        self.ancilla_slot(k).x()
+        self.game_state.sprites.ancilla_slots.slot(k).x()
     }
 
     fn ancilla_y(&self, k: usize) -> u16 {
-        self.ancilla_slot(k).y()
+        self.game_state.sprites.ancilla_slots.slot(k).y()
     }
 
     fn sprite_y(&self, k: usize) -> u16 {
@@ -7218,7 +6815,10 @@ impl ZeldaState {
     }
 
     fn has_player_layer_collision(&self, mask: u8) -> bool {
-        self.tile_detect_position().has_layer_collision(mask)
+        self.game_state
+            .player
+            .tile_detection
+            .has_layer_collision(mask)
     }
 
     fn set_player_layer_collision(&mut self, mask: u8, enabled: bool) {
@@ -7502,6 +7102,14 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::constants::{
+        ANIMATED_TILE_DATA_SRC, BG_TILE_ANIMATION_COUNTDOWN, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1,
+        DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13,
+        DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
+        DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
+        DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5,
+        DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
+    };
 
     fn test_sync_all(state: &mut ZeldaState) {
         state.ram[0x42] = state.ram[0x42].wrapping_add(1);
@@ -7539,7 +7147,7 @@ mod tests {
 
         assert_eq!(state.scratch_word_mut().decrement_high(), 1);
 
-        assert_eq!(state.scratch_word().word(), 0x0100);
+        assert_eq!(state.game_state.dungeon.scratch_word.word(), 0x0100);
         assert_eq!(state.game_state.display.pending_nmi_subroutine, 11);
     }
 
@@ -7698,14 +7306,20 @@ mod tests {
 
         state.triforce_room_handle_poly();
 
-        assert_eq!(state.poly_runtime().config1(), 8);
-        assert_eq!(state.attract_scene().intro_step_index(), 0);
-        assert_eq!(state.ram[SUBSUBMODULE_INDEX], 8);
-        assert_eq!(state.poly_runtime().angle_a(), 8);
-        assert_eq!(state.poly_runtime().angle_b(), 13);
-        assert_eq!(state.attract_scene().intro_did_run_step(), 1);
+        assert_eq!(state.game_state.poly.runtime.config1(), 8);
+        assert_eq!(state.game_state.ending.attract_scene.intro_step_index(), 0);
+        assert_eq!(state.game_state.frame.subsubmodule, 8);
+        assert_eq!(state.game_state.poly.runtime.angle_a(), 8);
+        assert_eq!(state.game_state.poly.runtime.angle_b(), 13);
+        assert_eq!(
+            state.game_state.ending.attract_scene.intro_did_run_step(),
+            1
+        );
         assert_eq!(state.ram[0x1e02], 0);
-        assert_eq!(state.attract_scene().intro_frame_counter(), 1);
+        assert_eq!(
+            state.game_state.ending.attract_scene.intro_frame_counter(),
+            1
+        );
     }
 
     #[test]
@@ -7773,8 +7387,8 @@ mod tests {
         state.credits_handle_scene_fade();
 
         assert_eq!(state.game_state.display.screen_brightness, 1);
-        assert_eq!(state.ending_scratch().primary_word(), 0x0301);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 0);
+        assert_eq!(state.game_state.dungeon.scratch_word.primary_word(), 0x0301);
+        assert_eq!(state.game_state.frame.submodule, 0);
     }
 
     #[test]
@@ -7787,8 +7401,8 @@ mod tests {
         state.credits_handle_scene_fade();
 
         assert_eq!(state.game_state.display.screen_brightness, 0);
-        assert_eq!(state.ending_scratch().primary_word(), 0x0300);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 1);
+        assert_eq!(state.game_state.dungeon.scratch_word.primary_word(), 0x0300);
+        assert_eq!(state.game_state.frame.submodule, 1);
     }
 
     #[test]
@@ -7947,31 +7561,15 @@ mod tests {
             ("sprite_main_world.rs", include_str!("sprite_main_world.rs")),
         ] {
             for needle in [
-                "self.ram[MAIN_MODULE_INDEX]",
-                "self.ram[SUBMODULE_INDEX]",
-                "self.ram[SUBSUBMODULE_INDEX]",
+                concat!("self.", "ram[MAIN_MODULE_INDEX]"),
+                concat!("self.", "ram[SUBMODULE_INDEX]"),
+                concat!("self.", "ram[SUBSUBMODULE_INDEX]"),
             ] {
                 assert!(
                     !source.contains(needle),
-                    "{path} should use typed frame-control views for {needle}"
+                    "{path} should use native frame state for {needle}"
                 );
             }
-        }
-    }
-
-    #[test]
-    fn zelda_rtl_frame_state_raw_slots_are_guard_needles_only() {
-        let source = include_str!("zelda_rtl.rs");
-        for needle in [
-            concat!("self.", "ram[MAIN_MODULE_INDEX]"),
-            concat!("self.", "ram[SUBMODULE_INDEX]"),
-            concat!("self.", "ram[SUBSUBMODULE_INDEX]"),
-        ] {
-            assert_eq!(
-                source.matches(needle).count(),
-                1,
-                "zelda_rtl.rs should only contain the guard needle for {needle}"
-            );
         }
     }
 
@@ -8341,12 +7939,29 @@ mod tests {
         state.ancilla_add_item_receipt(0x22, 4, 0);
 
         assert_eq!(state.ram[reward_addr], 99);
-        assert_eq!(state.ancilla_slot(4).ancilla_type(), 0x22);
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0x22
+        );
         assert_eq!(state.ram[ANCILLA_ITEM_TO_LINK + 4], 0x24);
-        assert_eq!(state.ancilla_slot(4).work_byte_1(), 0);
-        assert_eq!(state.ancilla_slot(4).work_byte_3(), 9);
-        assert_eq!(state.ancilla_slot(4).work_byte_4(), 5);
-        assert_eq!(state.system_signals().sound_effect_2(), 0x4f);
+        assert_eq!(
+            state.game_state.sprites.ancilla_slots.slot(4).work_byte_1(),
+            0
+        );
+        assert_eq!(
+            state.game_state.sprites.ancilla_slots.slot(4).work_byte_3(),
+            9
+        );
+        assert_eq!(
+            state.game_state.sprites.ancilla_slots.slot(4).work_byte_4(),
+            5
+        );
+        assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x4f);
     }
 
     #[test]
@@ -8370,14 +7985,14 @@ mod tests {
     fn receive_item_enters_hold_item_state_for_normal_receipts() {
         let mut state = ZeldaState::new();
         state.ram[ITEM_RECEIPT_METHOD] = 0;
-        state.player_state_mut().set_auxiliary_state(1);
+        state.follower_link_state_mut().set_auxiliary_state(1);
         state.player_state_mut().set_incapacitated_timer(7);
         state.ram[COUNTDOWN_FOR_BLINK] = 8;
-        state.player_state_mut().set_state_bits(0xff);
-        state.player_state_mut().set_button_mask_b_y(0xff);
+        state.follower_link_state_mut().set_state_bits(0xff);
+        state.follower_link_state_mut().set_button_mask_b_y(0xff);
         state.player_state_mut().set_y_button_action_flags(0xff);
         state.player_state_mut().set_button_b_frames(0xff);
-        state.player_state_mut().set_speed_setting(0xff);
+        state.follower_link_state_mut().set_speed_setting(0xff);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
         state.player_state_mut().set_item_in_hand(0xff);
         state.player_state_mut().set_position_mode(0xff);
@@ -8395,7 +8010,7 @@ mod tests {
         assert_eq!(state.player_state().button_mask_b_y(), 0);
         assert_eq!(state.player_state().y_button_action_flags(), 0);
         assert_eq!(state.player_state().button_b_frames(), 0);
-        assert_eq!(state.player_state().speed_setting(), 0);
+        assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
         assert_eq!(state.player_state().item_in_hand(), 0);
         assert_eq!(state.player_state().position_mode(), 0);
@@ -8459,8 +8074,11 @@ mod tests {
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x5678);
         assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 1);
         assert_eq!(state.player_state().swim_direction_flags(), 3);
-        assert_eq!(state.player_state().actual_x_velocity(), 16);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_x_velocity(),
+            16
+        );
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(state.player_state().actual_z_velocity(), 24);
         assert_eq!(state.player_state().incapacitated_timer(), 16);
         assert_eq!(state.player_state().auxiliary_state(), 1);
@@ -8482,8 +8100,11 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
-        assert_eq!(state.player_state().actual_y_velocity(), 24);
-        assert_eq!(state.player_state().actual_x_velocity(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_y_velocity(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
         assert_eq!(state.player_state().actual_z_velocity(), 36);
         assert_eq!(state.player_state().incapacitated_timer(), 24);
         assert_eq!(state.player_state().auxiliary_state(), 1);
@@ -8499,8 +8120,11 @@ mod tests {
         state.start_movement_collision_checks_x_handle_outdoors();
 
         assert_eq!(link_test_byte(&state, LINK_GIVE_DAMAGE), 8);
-        assert_eq!(state.player_state().actual_x_velocity(), 24);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_x_velocity(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(state.player_state().actual_z_velocity(), 36);
         assert_eq!(state.player_state().incapacitated_timer(), 24);
         assert_eq!(state.player_state().auxiliary_state(), 1);
@@ -8509,8 +8133,8 @@ mod tests {
     #[test]
     fn outdoor_x_misc_bugfix_runs_slope_check_while_dashing_vertically() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_running_state(1);
-        state.player_state_mut().set_facing(0);
+        state.follower_link_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_facing(0);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         state.tile_detect_position_mut().set_slope_collision_bits(5);
         set_link_test_word(&mut state, LINK_X_COORD, 0x44);
@@ -8559,12 +8183,12 @@ mod tests {
 
         state.player_state_mut().set_somaria_platform_state(0);
         state.player_state_mut().set_y_button_action_flags(0xff);
-        state.player_state_mut().set_button_mask_b_y(0x7f);
-        state.player_state_mut().set_state_bits(0x7f);
+        state.follower_link_state_mut().set_button_mask_b_y(0x7f);
+        state.follower_link_state_mut().set_state_bits(0x7f);
         state.player_state_mut().set_item_in_hand(3);
         state.ram[PLAYER_DEFENSE_FLAGS] = 0xff;
         set_link_test_byte(&mut state, LINK_MOVING_AGAINST_DIAG_TILE, 0xff);
-        state.player_state_mut().set_speed_setting(5);
+        state.follower_link_state_mut().set_speed_setting(5);
         state.follower_state_mut().set_indicator(2);
 
         state.link_perform_dash();
@@ -8573,27 +8197,27 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 29);
         assert_eq!(link_test_byte(&state, LINK_DASH_CTR), 64);
         assert_eq!(state.player_state().handler_state(), 17);
-        assert_eq!(state.player_state().running_state(), 1);
+        assert_eq!(state.game_state.player.follower_link.running_state(), 1);
         assert_eq!(state.player_state().button_mask_b_y(), 0);
         assert_eq!(state.player_state().state_bits(), 0);
         assert_eq!(state.player_state().item_in_hand(), 0);
         assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS], 0);
         assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0);
-        assert_eq!(state.player_state().speed_setting(), 0);
+        assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(read_le_u16(&state.ram, TIMER_TAGALONG_REACQUIRE), 64);
     }
 
     #[test]
     fn perform_rupee_pull_resets_properties_and_enters_pull_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_facing(2);
+        state.follower_link_state_mut().set_facing(2);
         state.link_perform_rupee_pull();
         assert_eq!(state.player_state().handler_state(), 0);
 
-        state.player_state_mut().set_facing(0);
-        state.player_state_mut().set_actual_y_velocity(9);
-        state.player_state_mut().set_actual_x_velocity(8);
-        state.player_state_mut().set_button_mask_b_y(0xff);
+        state.follower_link_state_mut().set_facing(0);
+        state.follower_link_state_mut().set_actual_y_velocity(9);
+        state.follower_link_state_mut().set_actual_x_velocity(8);
+        state.follower_link_state_mut().set_button_mask_b_y(0xff);
         set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
 
         state.link_perform_rupee_pull();
@@ -8601,8 +8225,8 @@ mod tests {
         assert_eq!(state.player_state().grabbing_wall(), 2);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
         assert_eq!(state.player_state().handler_state(), 29);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
-        assert_eq!(state.player_state().actual_x_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
         assert_eq!(state.player_state().button_mask_b_y(), 0);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
     }
@@ -8623,7 +8247,7 @@ mod tests {
         state.handle_nudging(1);
 
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x1f);
-        assert_eq!(state.tile_detect_position().collision_bits(), 1);
+        assert_eq!(state.game_state.player.tile_detection.collision_bits(), 1);
     }
 
     #[test]
@@ -8696,7 +8320,7 @@ mod tests {
     #[test]
     fn dash_repel_applies_tile_rebound_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_running_state(1);
         set_link_test_byte(&mut state, LINK_DASH_CTR, 32);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 2);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 3);
@@ -8704,30 +8328,36 @@ mod tests {
         state.repel_dash();
 
         assert_eq!(
-            state.player_state().actual_x_velocity(),
+            state.game_state.player.follower_link.actual_x_velocity(),
             0u8.wrapping_sub(24)
         );
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(state.player_state().actual_z_velocity(), 36);
         assert_eq!(state.player_state().incapacitated_timer(), 24);
         assert_eq!(state.player_state().auxiliary_state(), 1);
         assert_eq!(link_test_byte(&state, LINK_WANT_MAKE_NOISE_WHEN_DASHED), 1);
         assert_eq!(link_test_byte(&state, LINK_DIRECTION), 1);
-        assert_eq!(state.swim_acceleration().acceleration(2), 256);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.acceleration(2),
+            256
+        );
     }
 
     #[test]
     fn sprite_repel_dash_uses_facing_as_rebound_direction() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_running_state(1);
         set_link_test_byte(&mut state, LINK_DASH_CTR, 32);
-        state.player_state_mut().set_facing(4);
+        state.follower_link_state_mut().set_facing(4);
 
         state.sprite_repel_dash();
 
         assert_eq!(link_test_byte(&state, LINK_LAST_DIRECTION_MOVED_TOWARDS), 2);
-        assert_eq!(state.player_state().actual_x_velocity(), 24);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_x_velocity(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(state.player_state().incapacitated_timer(), 24);
     }
 
@@ -8735,8 +8365,8 @@ mod tests {
     fn flag67_with_directions_derives_direction_from_actual_velocity() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION, 0xff);
-        state.player_state_mut().set_actual_y_velocity(0xf0);
-        state.player_state_mut().set_actual_x_velocity(2);
+        state.follower_link_state_mut().set_actual_y_velocity(0xf0);
+        state.follower_link_state_mut().set_actual_x_velocity(2);
 
         state.flag67_with_directions();
 
@@ -8748,9 +8378,9 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
-        state.player_state_mut().set_actual_x_velocity(16);
+        state.follower_link_state_mut().set_actual_x_velocity(16);
         state
-            .player_state_mut()
+            .follower_link_state_mut()
             .set_actual_y_velocity(0u8.wrapping_sub(16));
         write_le_u16(&mut state.ram, DRAG_PLAYER_X, 1);
         write_le_u16(&mut state.ram, DRAG_PLAYER_Y, 0xffff);
@@ -8813,12 +8443,18 @@ mod tests {
         state.handle_swim_stroke_and_subpixels();
 
         assert_eq!(link_test_byte(&state, LINK_DIRECTION), 0x05);
-        assert_eq!(state.swim_acceleration().acceleration(0), 12);
-        assert_eq!(state.swim_acceleration().acceleration(2), 12);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.acceleration(0),
+            12
+        );
+        assert_eq!(
+            state.game_state.player.swim_acceleration.acceleration(2),
+            12
+        );
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_X), 12);
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_Y), 12);
-        assert_eq!(state.player_state().actual_x_velocity(), 0);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
     }
 
     #[test]
@@ -8827,7 +8463,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
         state.player_state_mut().set_swim_direction_flags(8);
-        state.player_state_mut().set_joypad1h_last(8);
+        state.follower_link_state_mut().set_joypad1h_last(8);
 
         state.link_handle_moving_animation_full_long_entry();
 
@@ -8851,7 +8487,7 @@ mod tests {
     fn moving_animation_dash_advances_dash_cycle() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
-        state.player_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_running_state(1);
         set_link_test_byte(&mut state, LINK_COUNTDOWN_FOR_DASH, 32);
         set_link_test_byte(&mut state, LINK_FRAME_CHANGE_COUNTER, 1);
 
@@ -8880,8 +8516,8 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_X_PAGE_MOVEMENT_DELTA), 1);
         assert_eq!(link_test_byte(&state, LINK_QUADRANT_X), 1);
         assert_eq!(state.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT], 0x21);
-        assert_eq!(state.room_bounds().x_bound(0), 0x0200);
-        assert_eq!(state.room_bounds().x_bound(2), 0x0220);
+        assert_eq!(state.game_state.world.room_bounds.x_bound(0), 0x0200);
+        assert_eq!(state.game_state.world.room_bounds.x_bound(2), 0x0220);
         assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
     }
 
@@ -8904,7 +8540,7 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_X_PAGE_MOVEMENT_DELTA), 1);
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x00f3);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 1);
+        assert_eq!(state.game_state.frame.submodule, 1);
         assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 2);
         assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET), 256);
         assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET_END), 0);
@@ -8930,7 +8566,7 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_Y_PAGE_MOVEMENT_DELTA), 1);
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x00f4);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 1);
+        assert_eq!(state.game_state.frame.submodule, 1);
         assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 0);
         assert_eq!(read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET), 256);
         assert_eq!(read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET_END), 16);
@@ -8951,7 +8587,7 @@ mod tests {
         state.Dungeon_TryScreenEdgeTransition();
 
         assert_eq!(link_test_byte(&state, LINK_QUADRANT_X), 1);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 2);
+        assert_eq!(state.game_state.frame.submodule, 2);
         assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 2);
         assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET), 256);
         assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET_END), 0);
@@ -8963,8 +8599,8 @@ mod tests {
         state.set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
         state.player_state_mut().set_incapacitated_timer(5);
-        state.player_state_mut().set_actual_x_velocity(12);
-        state.player_state_mut().set_actual_y_velocity(34);
+        state.follower_link_state_mut().set_actual_x_velocity(12);
+        state.follower_link_state_mut().set_actual_y_velocity(34);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0123);
         set_link_test_word(&mut state, LINK_X_COORD_PREV, 0x0088);
@@ -8972,23 +8608,23 @@ mod tests {
 
         state.Dungeon_TryScreenEdgeTransition();
 
-        assert_eq!(state.player_state().actual_x_velocity(), 0);
-        assert_eq!(state.player_state().actual_y_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
+        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(link_test_byte(&state, LINK_RECOILMODE_TIMER), 3);
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x0088);
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x0099);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 0);
+        assert_eq!(state.game_state.frame.submodule, 0);
     }
 
     #[test]
     fn recoil_z_velocity_shift_matches_c_do_while_condition() {
         fn run_recoil_step(initial_recoil_timer: u8) -> (u8, u8) {
             let mut state = ZeldaState::new();
-            state.player_state_mut().set_handler_state(2);
-            state.player_state_mut().set_auxiliary_state(1);
+            state.follower_link_state_mut().set_handler_state(2);
+            state.follower_link_state_mut().set_auxiliary_state(1);
             state.player_state_mut().set_incapacitated_timer(8);
             set_link_test_byte(&mut state, LINK_RECOILMODE_TIMER, initial_recoil_timer);
-            state.player_state_mut().set_actual_z_velocity(0xf8);
+            state.follower_link_state_mut().set_actual_z_velocity(0xf8);
             set_link_test_byte(&mut state, LINK_ACTUAL_VEL_Z_COPY, 0x24);
             set_link_test_word(&mut state, LINK_Z_COORD, 0xffff);
 
@@ -9025,19 +8661,39 @@ mod tests {
             .set_camera_y_coord_scroll_low(0x9999);
         state.world_transient_mut().set_quadrant_fullsize_y(2);
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 2);
-        state.player_state_mut().set_facing(8);
+        state.follower_link_state_mut().set_facing(8);
         state.player_state_mut().set_lower_level_state(1);
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
         state.dungeon_stair_movement_mut().set_current_floor(0xff);
 
         state.cache_camera_properties_if_outdoors();
 
-        assert_eq!(state.ppu_scroll_copy().bg2_h_copy2_cached(), 0x1111);
-        assert_eq!(state.ppu_scroll_copy().bg2_v_copy2_cached(), 0x2222);
+        assert_eq!(
+            state
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2_cached(),
+            0x1111
+        );
+        assert_eq!(
+            state
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2_cached(),
+            0x2222
+        );
         assert_eq!(link_test_word(&state, LINK_Y_COORD_CACHED), 0x3333);
         assert_eq!(link_test_word(&state, LINK_X_COORD_CACHED), 0x4444);
-        assert_eq!(state.world_transient().cached_room_bounds_y_start, 0x5555);
-        assert_eq!(state.world_transient().cached_room_bounds_x_end, 0x6666);
+        assert_eq!(
+            state.game_state.world.transient.cached_room_bounds_y_start,
+            0x5555
+        );
+        assert_eq!(
+            state.game_state.world.transient.cached_room_bounds_x_end,
+            0x6666
+        );
         assert_eq!(
             read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET_CACHED),
             0x7777
@@ -9075,7 +8731,7 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
         assert_eq!(link_test_byte(&state, LINK_VISIBILITY_STATUS), 0x0c);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 20);
+        assert_eq!(state.game_state.frame.submodule, 20);
     }
 
     #[test]
@@ -9108,7 +8764,7 @@ mod tests {
     fn link_initialize_applies_misc_bugfix_cleanup() {
         let mut state = ZeldaState::new();
         state.enhanced_features_mut().set_bits(0x1000);
-        state.player_state_mut().set_button_mask_b_y(0xff);
+        state.follower_link_state_mut().set_button_mask_b_y(0xff);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
         set_link_test_byte(&mut state, LINK_IS_NEAR_MOVEABLE_STATUE, 1);
         set_link_test_byte(&mut state, LINK_ON_CONVEYOR_BELT, 1);
@@ -9146,7 +8802,14 @@ mod tests {
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
         assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0);
         assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 0);
-        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            0
+        );
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 0);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
         assert_eq!(link_test_byte(&state, LINK_TIMER_TEMPBUNNY), 0);
@@ -9184,10 +8847,17 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(state.player_state().pit_data_index(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
-        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            0
+        );
 
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
-        state.player_state_mut().set_handler_state(6);
+        state.follower_link_state_mut().set_handler_state(6);
         state.link_reset_state_after_damaging_pit();
         assert_eq!(state.player_state().handler_state(), 0);
     }
@@ -9195,15 +8865,15 @@ mod tests {
     #[test]
     fn z_velocity_change_matches_recoil_and_turtle_rock_rules() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_actual_z_velocity(10);
+        state.follower_link_state_mut().set_actual_z_velocity(10);
         state.player_change_z(2);
         assert_eq!(state.player_state().actual_z_velocity(), 8);
 
-        state.player_state_mut().set_handler_state(19);
+        state.follower_link_state_mut().set_handler_state(19);
         state.link_handle_change_in_z_velocity();
         assert_eq!(state.player_state().actual_z_velocity(), 7);
 
-        state.player_state_mut().set_actual_z_velocity(0xfe);
+        state.follower_link_state_mut().set_actual_z_velocity(0xfe);
         set_link_test_byte(&mut state, LINK_Z_COORD, 0);
         state.link_handle_change_in_z_velocity();
         assert_eq!(state.player_state().actual_z_velocity(), 0xfe);
@@ -9219,7 +8889,7 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
         state.player_state_mut().set_grabbing_wall(1);
-        state.player_state_mut().set_speed_setting(2);
+        state.follower_link_state_mut().set_speed_setting(2);
         state.ram[SWIMMING_COUNTDOWN] = 7;
         state.swim_acceleration_mut().set_acceleration(0, 0x1234);
 
@@ -9228,9 +8898,9 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 1);
         assert_eq!(state.player_state().swim_direction_flags(), 8);
         assert_eq!(state.player_state().grabbing_wall(), 0);
-        assert_eq!(state.player_state().speed_setting(), 0);
+        assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
-        assert_eq!(state.swim_acceleration().acceleration(0), 0);
+        assert_eq!(state.game_state.player.swim_acceleration.acceleration(0), 0);
     }
 
     #[test]
@@ -9244,7 +8914,10 @@ mod tests {
         state.link_splash_upon_landing();
 
         assert_eq!(state.player_state().handler_state(), 4);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 0x24);
+        assert_eq!(
+            state.game_state.system_signals.sound_effect_1() & 0x3f,
+            0x24
+        );
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
@@ -9265,13 +8938,20 @@ mod tests {
         assert_eq!(link_test_byte(&bunny, LINK_IS_BUNNY), 0);
         assert_eq!(bunny.player_state().auxiliary_state(), 0);
         assert_eq!(bunny.player_state().animation_step(), 0);
-        assert_eq!(bunny.swim_acceleration().speed_active_flag(0), 0);
+        assert_eq!(
+            bunny
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            0
+        );
     }
 
     #[test]
     fn swim_accels_start_ramp_and_snap_to_table() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_joypad1h_last(0x0d);
+        state.follower_link_state_mut().set_joypad1h_last(0x0d);
         state.swim_acceleration_mut().set_acceleration(0, 0);
         state.swim_acceleration_mut().set_max_speed(0, 0);
         state.swim_acceleration_mut().set_acceleration(2, 260);
@@ -9279,12 +8959,12 @@ mod tests {
 
         state.link_handle_swim_accels();
 
-        assert_eq!(state.swim_acceleration().acceleration(0), 1);
-        assert_eq!(state.swim_acceleration().max_speed(0), 240);
-        assert_eq!(state.swim_acceleration().max_speed(2), 288);
+        assert_eq!(state.game_state.player.swim_acceleration.acceleration(0), 1);
+        assert_eq!(state.game_state.player.swim_acceleration.max_speed(0), 240);
+        assert_eq!(state.game_state.player.swim_acceleration.max_speed(2), 288);
 
         state.link_handle_swim_accels();
-        assert_eq!(state.swim_acceleration().max_speed(0), 384);
+        assert_eq!(state.game_state.player.swim_acceleration.max_speed(0), 384);
     }
 
     #[test]
@@ -9297,10 +8977,16 @@ mod tests {
 
         state.link_flag_max_accels();
 
-        assert_eq!(state.swim_acceleration().max_speed(0), 0x0110);
-        assert_eq!(state.swim_acceleration().mode(0), 1);
-        assert_eq!(state.swim_acceleration().max_speed(2), 0x2222);
-        assert_eq!(state.swim_acceleration().mode(2), 0);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(0),
+            0x0110
+        );
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(2),
+            0x2222
+        );
+        assert_eq!(state.game_state.player.swim_acceleration.mode(2), 0);
     }
 
     #[test]
@@ -9309,19 +8995,28 @@ mod tests {
         state.swim_acceleration_mut().set_max_speed(0, 0x1111);
 
         state.link_set_ice_max_accel();
-        assert_eq!(state.swim_acceleration().max_speed(0), 0x1111);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(0),
+            0x1111
+        );
 
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
         state.link_set_ice_max_accel();
 
-        assert_eq!(state.swim_acceleration().max_speed(0), 0x0180);
-        assert_eq!(state.swim_acceleration().max_speed(2), 0x0180);
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(0),
+            0x0180
+        );
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(2),
+            0x0180
+        );
     }
 
     #[test]
     fn swim_momentum_sets_direction_and_starting_accel() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_joypad1h_last(0x09);
+        state.follower_link_state_mut().set_joypad1h_last(0x09);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 2);
         state.player_state_mut().set_swim_direction_flags(0x04);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x08);
@@ -9330,12 +9025,22 @@ mod tests {
         state.link_set_momentum();
 
         assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER), 8);
-        assert_eq!(state.swim_acceleration().mode(0), 2);
-        assert_eq!(state.swim_acceleration().max_speed(0), 240);
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 2);
+        assert_eq!(state.game_state.player.swim_acceleration.max_speed(0), 240);
         assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER + 2), 8);
-        assert_eq!(state.swim_acceleration().mode(2), 0);
-        assert_eq!(state.swim_acceleration().acceleration_direction(2), 1);
-        assert_eq!(state.swim_acceleration().max_speed(2), 0x1234);
+        assert_eq!(state.game_state.player.swim_acceleration.mode(2), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .acceleration_direction(2),
+            1
+        );
+        assert_eq!(
+            state.game_state.player.swim_acceleration.max_speed(2),
+            0x1234
+        );
     }
 
     #[test]
@@ -9361,25 +9066,49 @@ mod tests {
         state.reset_all_acceleration();
 
         for offset in [0, 2] {
-            assert_eq!(state.swim_acceleration().speed_active_flag(offset), 0);
-            assert_eq!(state.swim_acceleration().mode(offset), 0);
-            assert_eq!(state.swim_acceleration().acceleration(offset), 0);
-            assert_eq!(state.swim_acceleration().max_speed(offset), 0);
+            assert_eq!(
+                state
+                    .game_state
+                    .player
+                    .swim_acceleration
+                    .speed_active_flag(offset),
+                0
+            );
+            assert_eq!(state.game_state.player.swim_acceleration.mode(offset), 0);
+            assert_eq!(
+                state
+                    .game_state
+                    .player
+                    .swim_acceleration
+                    .acceleration(offset),
+                0
+            );
+            assert_eq!(
+                state.game_state.player.swim_acceleration.max_speed(offset),
+                0
+            );
         }
         for offset in [SWIM_STROKE_FRAME_COUNTER, SWIM_STROKE_FRAME_COUNTER + 2] {
             assert_eq!(read_le_u16(&state.ram, offset), 0);
         }
-        assert_eq!(state.swim_acceleration().acceleration_direction(0), 0xffff);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .acceleration_direction(0),
+            0xffff
+        );
     }
 
     #[test]
     fn swimming_handler_without_flippers_only_clears_action_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_button_mask_b_y(0xff);
+        state.follower_link_state_mut().set_button_mask_b_y(0xff);
         state.player_state_mut().set_button_b_frames(9);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 7);
         set_link_test_byte(&mut state, LINK_SPIN_ATTACK_STEP_COUNTER, 6);
-        state.player_state_mut().set_state_bits(5);
+        state.follower_link_state_mut().set_state_bits(5);
         state.player_state_mut().set_picking_throw_state(4);
         set_link_test_byte(&mut state, LINK_ITEM_FLIPPERS, 0);
 
@@ -9396,11 +9125,11 @@ mod tests {
     #[test]
     fn swimming_handler_starts_hard_stroke_and_advances_swim_animation() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_handler_state(4);
+        state.follower_link_state_mut().set_handler_state(4);
         set_link_test_byte(&mut state, LINK_ITEM_FLIPPERS, 1);
         set_link_test_byte(&mut state, LINK_FRAME_CHANGE_COUNTER, 7);
-        state.player_state_mut().set_filtered_joypad_l(0x80);
-        state.player_state_mut().set_joypad1h_last(8);
+        state.follower_link_state_mut().set_filtered_joypad_l(0x80);
+        state.follower_link_state_mut().set_joypad1h_last(8);
         state.swim_acceleration_mut().set_acceleration(0, 1);
 
         state.player_handler_04_swimming();
@@ -9411,14 +9140,14 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0x80);
         assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 1);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 6);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 37);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 37);
         assert_eq!(state.player_state().swim_direction_flags(), 8);
     }
 
     #[test]
     fn swim_movement_without_input_resets_idle_flag_moving_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_handler_state(4);
+        state.follower_link_state_mut().set_handler_state(4);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
         state.ram[PLAYER_DEFENSE_FLAGS] = 0xff;
         state.ram[PIT_CORRECTION_ACTIVE_FLAG] = 1;
@@ -9431,14 +9160,21 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_Y_VEL), 0);
         assert_eq!(link_test_byte(&state, LINK_X_VEL), 0);
         assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS] & 0x0f, 0);
-        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            0
+        );
         assert_eq!(state.ram[PIT_CORRECTION_ACTIVE_FLAG], 0);
     }
 
     #[test]
     fn set_the_max_accel_marks_ready_axis_and_resets_inactive_axis() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_joypad1h_last(0x0c);
+        state.follower_link_state_mut().set_joypad1h_last(0x0c);
         state.swim_acceleration_mut().set_acceleration(0, 260);
         state.swim_acceleration_mut().set_max_speed(0, 240);
         state.swim_acceleration_mut().set_mode(0, 0);
@@ -9447,23 +9183,44 @@ mod tests {
 
         state.link_set_the_max_accel();
 
-        assert_eq!(state.swim_acceleration().speed_active_flag(0), 1);
-        assert_eq!(state.swim_acceleration().mode(0), 1);
-        assert_eq!(state.swim_acceleration().speed_active_flag(2), 0);
-        assert_eq!(state.swim_acceleration().max_speed(2), 240);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            1
+        );
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(2),
+            0
+        );
+        assert_eq!(state.game_state.player.swim_acceleration.max_speed(2), 240);
 
         set_link_test_byte(&mut state, LINK_SWIM_HARD_STROKE, 1);
         state.swim_acceleration_mut().set_speed_active_flag(0, 0);
         state.link_set_the_max_accel();
-        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
-        assert_eq!(state.swim_acceleration().mode(0), 1);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .swim_acceleration
+                .speed_active_flag(0),
+            0
+        );
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
     }
 
     #[test]
     fn handle_toss_clears_a_press_state_when_throwing() {
         let mut state = ZeldaState::new();
         state.player_state_mut().set_y_button_action_flags(0x80);
-        state.player_state_mut().set_filtered_joypad_l(0x80);
+        state.follower_link_state_mut().set_filtered_joypad_l(0x80);
         state.player_state_mut().set_item_action_step_var(7);
         state.player_state_mut().set_throw_oam_state_index(8);
         state.player_state_mut().set_y_button_action_step(9);
@@ -9478,7 +9235,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
 
         state.player_state_mut().set_y_button_action_flags(0x80);
-        state.player_state_mut().set_filtered_joypad_l(0x80);
+        state.follower_link_state_mut().set_filtered_joypad_l(0x80);
         state.player_state_mut().set_picking_throw_state(1);
         assert!(!state.link_handle_toss());
         assert_eq!(state.player_state().y_button_action_flags(), 0x80);
@@ -9533,7 +9290,7 @@ mod tests {
         assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 4);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 21);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 21);
 
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
@@ -9556,7 +9313,7 @@ mod tests {
     fn y_button_magic_and_item_reset_helpers_match_c_gates() {
         let mut state = ZeldaState::new();
         assert!(!state.check_y_button_press());
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         assert!(state.check_y_button_press());
         assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0x40);
         assert!(!state.check_y_button_press());
@@ -9570,9 +9327,12 @@ mod tests {
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 1);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
         assert!(!state.link_check_magic_cost(1));
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
-        assert_eq!(state.dialogue_message_index().value(), 123);
-        assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 60);
+        assert_eq!(
+            state.game_state.messaging.dialogue_message_index.value(),
+            123
+        );
+        assert_eq!(state.game_state.frame.main_module, 14);
 
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 125);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
@@ -9582,7 +9342,7 @@ mod tests {
 
         state.player_state_mut().set_y_button_action_step(1);
         state.player_state_mut().set_y_button_action_flags(2);
-        state.player_state_mut().set_state_bits(3);
+        state.follower_link_state_mut().set_state_bits(3);
         state.player_state_mut().set_picking_throw_state(4);
         state.player_state_mut().set_grabbing_wall(5);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
@@ -9598,7 +9358,7 @@ mod tests {
     #[test]
     fn cape_item_activation_and_no_magic_prompt_match_c_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 10);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 1);
 
@@ -9607,17 +9367,20 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 1);
         assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 8);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 20);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 20);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 20);
         assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
 
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         state.link_item_cape();
 
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
-        assert_eq!(state.dialogue_message_index().value(), 123);
-        assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 60);
+        assert_eq!(
+            state.game_state.messaging.dialogue_message_index.value(),
+            123
+        );
+        assert_eq!(state.game_state.frame.main_module, 14);
     }
 
     #[test]
@@ -9655,18 +9418,18 @@ mod tests {
 
         state.ram[CAPE_DECREMENT_COUNTER] = 2;
         set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 0);
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         state.link_item_cape();
 
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 21);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 21);
     }
 
     #[test]
     fn rod_hammer_and_bow_item_handlers_advance_c_timers() {
         let mut rod = ZeldaState::new();
-        rod.player_state_mut().set_filtered_joypad_h(0x40);
+        rod.follower_link_state_mut().set_filtered_joypad_h(0x40);
         rod.player_resources_mut().set_magic_power(20);
         rod.ram[EQ_SELECTED_ROD] = 1;
         rod.link_item_rod();
@@ -9674,17 +9437,20 @@ mod tests {
         assert!(rod.player_state().item_in_hand_has(1));
         assert_eq!(link_test_byte(&rod, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&rod, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
-        assert_eq!(rod.ancilla_slot(4).ancilla_type(), 2);
+        assert_eq!(
+            rod.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
+            2
+        );
 
         let mut hammer = ZeldaState::new();
-        hammer.player_state_mut().set_filtered_joypad_h(0x40);
+        hammer.follower_link_state_mut().set_filtered_joypad_h(0x40);
         hammer.link_item_hammer();
         assert_eq!(hammer.player_state().item_in_hand(), 2);
         assert_eq!(link_test_byte(&hammer, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&hammer, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
 
         let mut bow = ZeldaState::new();
-        bow.player_state_mut().set_button_mask_b_y(0x40);
+        bow.follower_link_state_mut().set_button_mask_b_y(0x40);
         bow.player_state_mut().set_item_in_hand(0x10);
         set_link_test_byte(&mut bow, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         bow.ram[PLAYER_HANDLER_TIMER] = 2;
@@ -9696,13 +9462,16 @@ mod tests {
         assert!(!bow.player_state().item_in_hand_has(0x10));
         assert_eq!(bow.player_state().button_mask_b_y() & 0x40, 0);
         assert_eq!(bow.player_state().button_b_frames(), 9);
-        assert_eq!(bow.ancilla_slot(4).ancilla_type(), 9);
+        assert_eq!(
+            bow.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
+            9
+        );
     }
 
     #[test]
     fn boomerang_bombs_book_and_desert_prayer_match_c_state() {
         let mut boom = ZeldaState::new();
-        boom.player_state_mut().set_filtered_joypad_h(0x40);
+        boom.follower_link_state_mut().set_filtered_joypad_h(0x40);
         boom.inventory_items_mut().set_inventory_item(1, 1);
         boom.link_item_boomerang();
         assert_eq!(boom.player_state().item_in_hand(), 0x80);
@@ -9719,43 +9488,51 @@ mod tests {
         assert_eq!(link_test_byte(&boom, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
 
         let mut bombs = ZeldaState::new();
-        bombs.player_state_mut().set_filtered_joypad_h(0x40);
+        bombs.follower_link_state_mut().set_filtered_joypad_h(0x40);
         bombs.player_resources_mut().set_bombs(1);
         bombs.link_item_bombs();
         // C `AncillaAdd_Bomb(7, 1)` allocates via `Ancilla_AllocInit(7, 1)`, which
         // for ancilla types 7/8 walks slots [limit..0], so slot 1 receives the
         // bomb ancilla. See zelda3/src/ancilla.c:5763 and ancilla.c:6990.
-        assert_eq!(bombs.ancilla_slot(1).ancilla_type(), 7);
+        assert_eq!(
+            bombs
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(1)
+                .ancilla_type(),
+            7
+        );
         assert_eq!(bombs.player_state().button_mask_b_y() & 0x40, 0);
         assert_eq!(link_test_byte(&bombs, LINK_ITEM_BOMBS), 0);
         assert_eq!(bombs.player_state().item_in_hand(), 0);
 
         let mut book = ZeldaState::new();
-        book.player_state_mut().set_filtered_joypad_h(0x40);
+        book.follower_link_state_mut().set_filtered_joypad_h(0x40);
         book.link_item_book();
-        assert_eq!(book.system_signals().sound_effect_1() & 0x3f, 60);
+        assert_eq!(book.game_state.system_signals.sound_effect_1() & 0x3f, 60);
 
         let mut prayer = ZeldaState::new();
-        prayer.player_state_mut().set_filtered_joypad_h(0x40);
+        prayer.follower_link_state_mut().set_filtered_joypad_h(0x40);
         prayer.ram[ITEM_PICKUP_IN_PROGRESS_FLAG] = 1;
         prayer.set_main_module(9);
         set_link_test_byte(&mut prayer, LINK_DIRECTION, 0x0f);
         prayer.link_item_book();
-        assert_eq!(prayer.ram[SUBMODULE_INDEX], 5);
-        assert_eq!(prayer.ram[SAVED_MODULE_FOR_MENU], 9);
-        assert_eq!(prayer.ram[MAIN_MODULE_INDEX], 14);
+        assert_eq!(prayer.game_state.frame.submodule, 5);
+        assert_eq!(prayer.game_state.frame.saved_module_for_menu, 9);
+        assert_eq!(prayer.game_state.frame.main_module, 14);
         assert_eq!(prayer.game_state.frame.modal_pause_flag, 1);
         assert_eq!(prayer.player_state().y_button_action_timer(), 22);
         assert_eq!(prayer.player_state().state_bits(), 2);
         assert_eq!(link_test_byte(&prayer, LINK_DIRECTION), 0);
-        assert_eq!(prayer.system_signals().ambient_sound_effect(), 17);
-        assert_eq!(prayer.system_signals().music_control(), 242);
+        assert_eq!(prayer.game_state.system_signals.ambient_sound_effect(), 17);
+        assert_eq!(prayer.game_state.system_signals.music_control(), 242);
     }
 
     #[test]
     fn lamp_powder_and_shovel_item_handlers_match_core_state() {
         let mut lamp = ZeldaState::new();
-        lamp.player_state_mut().set_filtered_joypad_h(0x40);
+        lamp.follower_link_state_mut().set_filtered_joypad_h(0x40);
         lamp.inventory_items_mut().set_inventory_item(10, 1);
         lamp.player_resources_mut().set_magic_power(32);
         set_link_test_byte(&mut lamp, LINK_CANT_CHANGE_DIRECTION, 1);
@@ -9765,11 +9542,17 @@ mod tests {
         assert_eq!(lamp.player_state().button_mask_b_y(), 0);
         assert_eq!(lamp.player_state().button_b_frames(), 0);
         assert_eq!(link_test_byte(&lamp, LINK_CANT_CHANGE_DIRECTION), 0);
-        assert_eq!(lamp.ancilla_slot(4).ancilla_type(), 0x1a);
-        assert_eq!(lamp.ancilla_slot(3).ancilla_type(), 0x2f);
+        assert_eq!(
+            lamp.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
+            0x1a
+        );
+        assert_eq!(
+            lamp.game_state.sprites.ancilla_slots.slot(3).ancilla_type(),
+            0x2f
+        );
 
         let mut powder = ZeldaState::new();
-        powder.player_state_mut().set_filtered_joypad_h(0x40);
+        powder.follower_link_state_mut().set_filtered_joypad_h(0x40);
         powder.inventory_items_mut().set_mushroom(2);
         powder.player_resources_mut().set_magic_power(16);
         powder.link_item_powder();
@@ -9779,7 +9562,7 @@ mod tests {
         assert_eq!(link_test_byte(&powder, LINK_DIRECTION), 0);
 
         let mut shovel = ZeldaState::new();
-        shovel.player_state_mut().set_filtered_joypad_h(0x40);
+        shovel.follower_link_state_mut().set_filtered_joypad_h(0x40);
         shovel.link_item_shovel();
         assert_eq!(shovel.player_state().position_mode(), 1);
         assert_eq!(link_test_byte(&shovel, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
@@ -9798,27 +9581,37 @@ mod tests {
     #[test]
     fn flute_item_countdown_and_weather_vane_branch_match_c_state() {
         let mut countdown = ZeldaState::new();
-        countdown.player_state_mut().set_button_mask_b_y(0x40);
+        countdown
+            .follower_link_state_mut()
+            .set_button_mask_b_y(0x40);
         countdown.ram[FLUTE_COUNTDOWN] = 2;
         countdown.link_item_flute();
         assert_eq!(countdown.ram[FLUTE_COUNTDOWN], 1);
         assert_eq!(countdown.player_state().button_mask_b_y() & 0x40, 0x40);
 
         let mut flute = ZeldaState::new();
-        flute.player_state_mut().set_filtered_joypad_h(0x40);
+        flute.follower_link_state_mut().set_filtered_joypad_h(0x40);
         flute.inventory_items_mut().set_flute(2);
         flute.set_overworld_screen_word(0x18);
         set_link_test_word(&mut flute, LINK_Y_COORD, 0x780);
         set_link_test_word(&mut flute, LINK_X_COORD, 0x200);
         flute.link_item_flute();
         assert_eq!(flute.ram[FLUTE_COUNTDOWN], 128);
-        assert_eq!(flute.system_signals().sound_effect_1(), 0);
-        assert_eq!(flute.ram[SUBMODULE_INDEX], 45);
-        assert_eq!(flute.ancilla_slot(4).ancilla_type(), 55);
+        assert_eq!(flute.game_state.system_signals.sound_effect_1(), 0);
+        assert_eq!(flute.game_state.frame.submodule, 45);
+        assert_eq!(
+            flute
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            55
+        );
 
         let mut shovel_dispatch = ZeldaState::new();
         shovel_dispatch
-            .player_state_mut()
+            .follower_link_state_mut()
             .set_filtered_joypad_h(0x40);
         shovel_dispatch.inventory_items_mut().set_flute(1);
         shovel_dispatch.link_item_shovel_and_flute();
@@ -9828,7 +9621,7 @@ mod tests {
     #[test]
     fn medallion_item_start_and_state_progression_match_core_state() {
         let mut ether = ZeldaState::new();
-        ether.player_state_mut().set_filtered_joypad_h(0x40);
+        ether.follower_link_state_mut().set_filtered_joypad_h(0x40);
         ether.inventory_items_mut().set_sword_type(1);
         ether.player_resources_mut().set_magic_power(64);
         ether.link_item_ether();
@@ -9837,17 +9630,25 @@ mod tests {
         assert_eq!(link_test_byte(&ether, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&ether, LINK_DELAY_TIMER_SPIN_ATTACK), 5);
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 0);
-        assert_eq!(ether.system_signals().sound_effect_2() & 0x3f, 35);
+        assert_eq!(ether.game_state.system_signals.sound_effect_2() & 0x3f, 35);
 
         ether.player_state_mut().set_spin_attack_delay_timer(0);
         ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK] = 9;
         ether.link_state_using_ether();
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 10);
         assert_eq!(ether.ram[SPIN_ATTACK_SOUND_LATCH], 1);
-        assert_eq!(ether.ancilla_slot(4).ancilla_type(), 24);
+        assert_eq!(
+            ether
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            24
+        );
 
         let mut quake = ZeldaState::new();
-        quake.player_state_mut().set_filtered_joypad_h(0x40);
+        quake.follower_link_state_mut().set_filtered_joypad_h(0x40);
         quake.inventory_items_mut().set_sword_type(1);
         quake.player_resources_mut().set_magic_power(64);
         quake.link_item_quake();
@@ -9857,35 +9658,46 @@ mod tests {
         assert_eq!(link_test_byte(&quake, LINK_Z_COORD_MIRROR), 0);
 
         let mut blocked = ZeldaState::new();
-        blocked.player_state_mut().set_filtered_joypad_h(0x40);
+        blocked
+            .follower_link_state_mut()
+            .set_filtered_joypad_h(0x40);
         blocked.player_resources_mut().set_magic_power(64);
         blocked.link_item_bombos();
         assert_eq!(blocked.player_state().handler_state(), 0);
-        assert_eq!(blocked.system_signals().sound_effect_1() & 0x3f, 60);
+        assert_eq!(
+            blocked.game_state.system_signals.sound_effect_1() & 0x3f,
+            60
+        );
     }
 
     #[test]
     fn mirror_item_crossing_and_follower_cleanup_match_core_state() {
         let mut mirror = ZeldaState::new();
-        mirror.player_state_mut().set_filtered_joypad_h(0x40);
+        mirror.follower_link_state_mut().set_filtered_joypad_h(0x40);
         mirror.enhanced_features_mut().set_bits(8);
         mirror.set_overworld_screen_word(0x40);
         set_link_test_word(&mut mirror, LINK_Y_COORD, 0x1234);
         set_link_test_word(&mut mirror, LINK_X_COORD, 0x5678);
-        mirror.player_state_mut().set_actual_x_velocity(7);
-        mirror.player_state_mut().set_actual_y_velocity(9);
+        mirror.follower_link_state_mut().set_actual_x_velocity(7);
+        mirror.follower_link_state_mut().set_actual_y_velocity(9);
         mirror.link_item_mirror();
         assert_eq!(mirror.ram[LAST_LIGHT_VS_DARK_WORLD], 0x40);
         assert_eq!(mirror.bird_travel_destination(15).y, 0x1234);
         assert_eq!(mirror.bird_travel_destination(15).x, 0x5678);
-        assert_eq!(mirror.ram[SUBMODULE_INDEX], 35);
+        assert_eq!(mirror.game_state.frame.submodule, 35);
         assert_eq!(
             link_test_byte(&mirror, LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE),
             1
         );
         assert_eq!(mirror.player_state().handler_state(), 20);
-        assert_eq!(mirror.player_state().actual_x_velocity(), 0);
-        assert_eq!(mirror.player_state().actual_y_velocity(), 0);
+        assert_eq!(
+            mirror.game_state.player.follower_link.actual_x_velocity(),
+            0
+        );
+        assert_eq!(
+            mirror.game_state.player.follower_link.actual_y_velocity(),
+            0
+        );
 
         let mut crossing = ZeldaState::new();
         crossing.ram[LAST_LIGHT_VS_DARK_WORLD] = 0;
@@ -9897,7 +9709,7 @@ mod tests {
         ranges[163] = (0x80, 0x100);
         crossing.assets = Some(AssetPack { data, ranges });
         crossing.link_state_crossing_worlds();
-        assert_eq!(crossing.ram[SUBMODULE_INDEX], 44);
+        assert_eq!(crossing.game_state.frame.submodule, 44);
         assert_eq!(crossing.player_state().handler_state(), 20);
 
         let mut follower = ZeldaState::new();
@@ -9915,8 +9727,8 @@ mod tests {
     #[test]
     fn hookshot_item_and_timeout_state_match_core_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
-        state.player_state_mut().set_facing(4);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_facing(4);
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
         state.swim_acceleration_mut().set_speed_active_flag(0, 1);
@@ -9927,12 +9739,28 @@ mod tests {
         assert_eq!(state.player_state().position_mode(), 4);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 7);
-        assert_eq!(state.ancilla_slot(4).ancilla_type(), 0x1f);
-        assert_eq!(state.messaging_state().game_over_letter_cursor(), 4);
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0x1f
+        );
+        assert_eq!(
+            state.game_state.messaging.runtime.game_over_letter_cursor(),
+            4
+        );
         assert_eq!(state.ram[ANCILLA_X_VEL + 4], 0xc0);
         assert_eq!(read_le_u16(&state.ram, ANCILLA_X_LO + 4), 0x00fc);
 
-        state.ancilla_slot_mut(4).set_ancilla_type(0);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_ancilla_type(0);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.player_state_mut().set_button_b_frames(12);
         state.link_state_hookshotting();
@@ -9946,7 +9774,7 @@ mod tests {
     #[test]
     fn cane_of_somaria_start_consumes_magic_and_enters_item_pose() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 32);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
 
@@ -9957,26 +9785,47 @@ mod tests {
         assert!(state.player_state().position_mode_has(8));
         assert_eq!(link_test_byte(&state, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
-        assert_eq!(state.ancilla_slot(4).ancilla_type(), 0x2c);
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0x2c
+        );
     }
 
     #[test]
     fn cane_of_byrna_start_and_finish_match_timer_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 40);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
 
         state.link_item_cane_of_byrna();
 
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 24);
-        assert_eq!(state.ancilla_slot(4).ancilla_type(), 0x30);
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0x30
+        );
         assert_eq!(state.player_state().position_mode(), 8);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 18);
 
-        state.ancilla_slot_mut(4).set_ancilla_type(0);
-        state.player_state_mut().set_button_mask_b_y(0x40);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_ancilla_type(0);
+        state.follower_link_state_mut().set_button_mask_b_y(0x40);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.ram[PLAYER_HANDLER_TIMER] = 2;
         state.link_item_cane_of_byrna();
@@ -9990,8 +9839,8 @@ mod tests {
     #[test]
     fn bug_net_start_and_finish_match_c_timer_table() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_filtered_joypad_h(0x40);
-        state.player_state_mut().set_facing(4);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
+        state.follower_link_state_mut().set_facing(4);
 
         state.link_item_net();
 
@@ -9999,9 +9848,9 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
         assert_eq!(state.player_state().position_mode(), 16);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 50);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 50);
 
-        state.player_state_mut().set_button_mask_b_y(0x40);
+        state.follower_link_state_mut().set_button_mask_b_y(0x40);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.player_state_mut().set_item_action_step_var(9);
         state.link_item_net();
@@ -10018,8 +9867,8 @@ mod tests {
     #[test]
     fn bug_net_right_facing_finish_does_not_read_past_timer_table() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_button_mask_b_y(0x40);
-        state.player_state_mut().set_facing(6);
+        state.follower_link_state_mut().set_button_mask_b_y(0x40);
+        state.follower_link_state_mut().set_facing(6);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.player_state_mut().set_item_action_step_var(9);
         state.ram[PLAYER_HANDLER_TIMER] = 8;
@@ -10059,12 +9908,12 @@ mod tests {
     #[test]
     fn zapped_state_advances_timer_and_finishes_on_eighth_pulse() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_handler_state(7);
+        state.follower_link_state_mut().set_handler_state(7);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.ram[PLAYER_HANDLER_TIMER] = 7;
         set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 1);
         set_link_test_byte(&mut state, LINK_ELECTROCUTE_ON_TOUCH, 1);
-        state.player_state_mut().set_auxiliary_state(1);
+        state.follower_link_state_mut().set_auxiliary_state(1);
         state.set_mosaic_level(0x20);
         state.set_mosaic_direction(1);
 
@@ -10102,29 +9951,55 @@ mod tests {
     #[test]
     fn cancel_dash_clears_running_state_and_dash_ancilla() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_running_state(1);
         set_link_test_byte(&mut state, LINK_COUNTDOWN_FOR_DASH, 12);
-        state.player_state_mut().set_speed_setting(16);
+        state.follower_link_state_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
         state.swim_acceleration_mut().set_mode(0, 0x1234);
-        state.ancilla_slot_mut(0).set_ancilla_type(0x1e);
-        state.ancilla_slot_mut(4).set_ancilla_type(0x1e);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 0)
+            .set_ancilla_type(0x1e);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_ancilla_type(0x1e);
 
         state.link_cancel_dash();
 
-        assert_eq!(state.ancilla_slot(0).ancilla_type(), 0);
-        assert_eq!(state.ancilla_slot(4).ancilla_type(), 0);
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(0)
+                .ancilla_type(),
+            0
+        );
+        assert_eq!(
+            state
+                .game_state
+                .sprites
+                .ancilla_slots
+                .slot(4)
+                .ancilla_type(),
+            0
+        );
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 0);
-        assert_eq!(state.player_state().speed_setting(), 0);
-        assert_eq!(state.player_state().running_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
+        assert_eq!(state.game_state.player.follower_link.running_state(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
-        assert_eq!(state.swim_acceleration().mode(0), 0);
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 0);
     }
 
     #[test]
     fn exiting_dash_resets_or_counts_down_like_c_state() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_handler_state(18);
+        state.follower_link_state_mut().set_handler_state(18);
         set_link_test_byte(&mut state, LINK_COUNTDOWN_FOR_DASH, 3);
 
         state.link_state_exiting_dash();
@@ -10132,9 +10007,9 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 4);
         assert_eq!(state.player_state().handler_state(), 18);
 
-        state.player_state_mut().set_joypad1h_last(1);
-        state.player_state_mut().set_running_state(1);
-        state.player_state_mut().set_speed_setting(16);
+        state.follower_link_state_mut().set_joypad1h_last(1);
+        state.follower_link_state_mut().set_running_state(1);
+        state.follower_link_state_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
         state.player_state_mut().set_button_b_frames(8);
         state.swim_acceleration_mut().set_mode(0, 0x1234);
@@ -10142,10 +10017,10 @@ mod tests {
         state.link_state_exiting_dash();
 
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 0);
-        assert_eq!(state.player_state().speed_setting(), 0);
+        assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(state.player_state().handler_state(), 0);
-        assert_eq!(state.player_state().running_state(), 0);
-        assert_eq!(state.swim_acceleration().mode(0), 0);
+        assert_eq!(state.game_state.player.follower_link.running_state(), 0);
+        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
     }
 
@@ -10169,7 +10044,7 @@ mod tests {
 
         state.tile_detect_main_handler(1);
 
-        assert_eq!(state.tile_detect_position().collision_bits(), 0);
+        assert_eq!(state.game_state.player.tile_detection.collision_bits(), 0);
         assert_eq!(read_le_u16(&state.ram, TILEDETECT_NORMAL_TILES), 1);
     }
 
@@ -10188,7 +10063,7 @@ mod tests {
         state.tile_detect_main_handler(0);
 
         assert_eq!(state.player_state().water_ripple_or_grass_state(), 1);
-        assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 28);
+        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 28);
         assert_eq!(state.ram[RAW_SFX_PAN_VALUE], 28);
     }
 
@@ -10459,22 +10334,44 @@ mod tests {
 
         state.run_frame_internal(0, crate::RUN_MAIN);
 
-        assert_eq!(state.ram[SUBMODULE_INDEX], 1);
-        assert_eq!(state.ram[SUBSUBMODULE_INDEX], 1);
+        assert_eq!(state.game_state.frame.submodule, 1);
+        assert_eq!(state.game_state.frame.subsubmodule, 1);
         assert_eq!(state.game_state.display.screen_brightness, 15);
         assert_eq!(state.game_state.display.main_screen_layers, 16);
         assert_eq!(state.game_state.display.bg_mode, 9);
-        assert_eq!(state.palette_filter().color_window_selection(), 0x20);
-        assert_eq!(state.palette_filter().color_math_control(), 0x20);
-        assert_eq!(state.palette_filter().fixed_color_red(), 0x20);
-        assert_eq!(state.palette_filter().fixed_color_green(), 0x40);
-        assert_eq!(state.palette_filter().fixed_color_blue(), 0x80);
+        assert_eq!(
+            state
+                .game_state
+                .display
+                .palette_filter
+                .color_window_selection(),
+            0x20
+        );
+        assert_eq!(
+            state.game_state.display.palette_filter.color_math_control(),
+            0x20
+        );
+        assert_eq!(
+            state.game_state.display.palette_filter.fixed_color_red(),
+            0x20
+        );
+        assert_eq!(
+            state.game_state.display.palette_filter.fixed_color_green(),
+            0x40
+        );
+        assert_eq!(
+            state.game_state.display.palette_filter.fixed_color_blue(),
+            0x80
+        );
         assert_eq!(state.game_state.display.core_update_disable_flag, 0x80);
         assert_eq!(state.game_state.display.nmi_load_target_page(), 0x46);
         assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
-        assert_eq!(state.system_signals().sound_effect_2(), 0);
-        assert_eq!(state.ending_scratch().primary_word(), 0x1bfe);
-        assert_eq!(state.ending_scratch().secondary_word(), 0x17fe);
+        assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
+        assert_eq!(state.game_state.dungeon.scratch_word.primary_word(), 0x1bfe);
+        assert_eq!(
+            state.game_state.dungeon.scratch_word.secondary_word(),
+            0x17fe
+        );
         assert_eq!(
             &state.ram[OAM_BUF..OAM_BUF + 16],
             &[
@@ -10557,8 +10454,8 @@ mod tests {
         state.run_frame_internal(0, crate::RUN_MAIN);
         state.run_frame_internal(0, crate::RUN_MAIN);
 
-        assert_eq!(state.ram[SUBMODULE_INDEX], 1);
-        assert_eq!(state.ram[SUBSUBMODULE_INDEX], 2);
+        assert_eq!(state.game_state.frame.submodule, 1);
+        assert_eq!(state.game_state.frame.subsubmodule, 2);
         assert_eq!(
             &state.ram[OAM_BUF..OAM_BUF + 16],
             &[
@@ -10566,8 +10463,11 @@ mod tests {
                 0x6e, 0x32
             ]
         );
-        assert_eq!(state.ending_scratch().primary_word(), 0x17fe);
-        assert_eq!(state.ending_scratch().secondary_word(), 0x13fe);
+        assert_eq!(state.game_state.dungeon.scratch_word.primary_word(), 0x17fe);
+        assert_eq!(
+            state.game_state.dungeon.scratch_word.secondary_word(),
+            0x13fe
+        );
     }
 
     #[test]
@@ -10577,7 +10477,7 @@ mod tests {
         state.set_submodule(7);
         state.set_subsubmodule(0xf3);
         state.palette_filter_mut().set_countdown(0);
-        state.player_state_mut().set_filtered_joypad_h(0x10);
+        state.follower_link_state_mut().set_filtered_joypad_h(0x10);
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_Y_COORD, 0x12);
         state.ram[LINK_Y_COORD + 0x6f] = 0x34;
@@ -10589,9 +10489,9 @@ mod tests {
         assert_eq!(state.game_state.display.main_screen_layers, 0x15);
         assert_eq!(state.game_state.display.sub_screen_layers, 0);
         assert_eq!(state.game_state.world.location.indoor_flag(), 0);
-        assert_eq!(state.system_signals().music_control(), 0xf1);
-        assert_eq!(state.ram[MAIN_MODULE_INDEX], 1);
-        assert_eq!(state.ram[SUBMODULE_INDEX], 0);
+        assert_eq!(state.game_state.system_signals.music_control(), 0xf1);
+        assert_eq!(state.game_state.frame.main_module, 1);
+        assert_eq!(state.game_state.frame.submodule, 0);
         assert_eq!(state.ram[RESTART_CHECK_FLAG], 1);
         assert_eq!(link_test_byte(&state, LINK_Y_COORD), 0);
         assert_eq!(state.ram[LINK_Y_COORD + 0x6f], 0);
@@ -10601,12 +10501,12 @@ mod tests {
     #[test]
     fn name_file_x_scroll_both_horizontal_bits_match_c_rom_table() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_joypad1h_last(0x03);
+        state.follower_link_state_mut().set_joypad1h_last(0x03);
         state.select_file_scratch_mut().set_name_column(21);
 
         state.name_file_check_for_scroll_input_x();
 
-        let select_file = state.select_file_scratch();
+        let select_file = &state.game_state.messaging.select_file_menu;
         assert_eq!(select_file.name_column(), 53);
         assert_eq!(select_file.name_scroll_x_step(), 1);
         assert_eq!(select_file.name_scroll_x_direction(), 2);

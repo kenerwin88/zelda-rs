@@ -30,7 +30,7 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
-        let music_control = self.system_signals().music_control();
+        let music_control = self.game_state.system_signals.music_control();
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
             self.system_signals_mut()
                 .set_last_music_control(music_control);
@@ -42,18 +42,20 @@ impl ZeldaState {
             self.system_signals_mut().set_music_control(0);
         }
 
-        let ambient_sound_effect = self.system_signals().ambient_sound_effect();
+        let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
         if ambient_sound_effect != 0 {
             self.system_signals_mut()
                 .save_ambient_sound_effect_as_last();
             self.zelda_apu_write(0x2141, ambient_sound_effect);
             self.system_signals_mut().clear_ambient_sound_effect();
-        } else if self.zelda_apu_read(0x2141) == self.system_signals().last_ambient_sound_effect() {
+        } else if self.zelda_apu_read(0x2141)
+            == self.game_state.system_signals.last_ambient_sound_effect()
+        {
             self.zelda_apu_write(0x2141, 0);
         }
 
-        self.zelda_apu_write(0x2142, self.system_signals().sound_effect_1());
-        self.zelda_apu_write(0x2143, self.system_signals().sound_effect_2());
+        self.zelda_apu_write(0x2142, self.game_state.system_signals.sound_effect_1());
+        self.zelda_apu_write(0x2143, self.game_state.system_signals.sound_effect_2());
         self.system_signals_mut().clear_sound_effect_1();
         self.system_signals_mut().clear_sound_effect_2();
     }
@@ -75,13 +77,13 @@ impl ZeldaState {
             }
         }
 
-        if self.system_signals().should_update_cgram() {
+        if self.game_state.system_signals.should_update_cgram() {
             for i in 0..0x100 {
-                self.ppu.cgram[i] = self.palette_buffer().main_color(i);
+                self.ppu.cgram[i] = self.game_state.display.palette_buffer.main_color(i);
             }
         }
 
-        if self.system_signals().should_update_hud() {
+        if self.game_state.system_signals.should_update_hud() {
             let dst = self
                 .game_state
                 .display
@@ -681,27 +683,63 @@ impl ZeldaState {
             0x2125,
             self.game_state.display.object_color_window_selection,
         );
-        self.zelda_ppu_write(0x2130, self.palette_filter().color_window_selection());
-        self.zelda_ppu_write(0x2131, self.palette_filter().color_math_control());
-        self.zelda_ppu_write(0x2132, self.palette_filter().fixed_color_red());
-        self.zelda_ppu_write(0x2132, self.palette_filter().fixed_color_green());
-        self.zelda_ppu_write(0x2132, self.palette_filter().fixed_color_blue());
+        self.zelda_ppu_write(
+            0x2130,
+            self.game_state
+                .display
+                .palette_filter
+                .color_window_selection(),
+        );
+        self.zelda_ppu_write(
+            0x2131,
+            self.game_state.display.palette_filter.color_math_control(),
+        );
+        self.zelda_ppu_write(
+            0x2132,
+            self.game_state.display.palette_filter.fixed_color_red(),
+        );
+        self.zelda_ppu_write(
+            0x2132,
+            self.game_state.display.palette_filter.fixed_color_green(),
+        );
+        self.zelda_ppu_write(
+            0x2132,
+            self.game_state.display.palette_filter.fixed_color_blue(),
+        );
         self.zelda_ppu_write(0x212c, self.game_state.display.main_screen_layers);
         self.zelda_ppu_write(0x212d, self.game_state.display.sub_screen_layers);
         self.zelda_ppu_write(0x212e, self.game_state.display.main_screen_window_layers);
         self.zelda_ppu_write(0x212f, self.game_state.display.sub_screen_window_layers);
-        self.zelda_ppu_write(0x210d, self.ppu_scroll_copy().bg1_h_copy_low());
-        self.zelda_ppu_write(0x210d, self.ppu_scroll_copy().bg1_h_high());
-        self.zelda_ppu_write(0x210e, self.ppu_scroll_copy().bg1_v_copy_low());
-        self.zelda_ppu_write(0x210e, self.ppu_scroll_copy().bg1_v_high());
-        self.zelda_ppu_write(0x210f, self.ppu_scroll_copy().bg2_h_copy_low());
-        self.zelda_ppu_write(0x210f, self.ppu_scroll_copy().bg2_h_high());
-        self.zelda_ppu_write(0x2110, self.ppu_scroll_copy().bg2_v_copy_low());
-        self.zelda_ppu_write(0x2110, self.ppu_scroll_copy().bg2_v_high());
-        self.zelda_ppu_write(0x2111, self.ppu_scroll_copy().bg3_h_copy2_low());
-        self.zelda_ppu_write(0x2111, self.ppu_scroll_copy().bg3_h_high());
-        self.zelda_ppu_write(0x2112, self.ppu_scroll_copy().bg3_v_copy2_low());
-        self.zelda_ppu_write(0x2112, self.ppu_scroll_copy().bg3_v_high());
+        self.zelda_ppu_write(
+            0x210d,
+            self.game_state.display.ppu_scroll_copy.bg1_h_copy_low(),
+        );
+        self.zelda_ppu_write(0x210d, self.game_state.display.ppu_scroll_copy.bg1_h_high());
+        self.zelda_ppu_write(
+            0x210e,
+            self.game_state.display.ppu_scroll_copy.bg1_v_copy_low(),
+        );
+        self.zelda_ppu_write(0x210e, self.game_state.display.ppu_scroll_copy.bg1_v_high());
+        self.zelda_ppu_write(
+            0x210f,
+            self.game_state.display.ppu_scroll_copy.bg2_h_copy_low(),
+        );
+        self.zelda_ppu_write(0x210f, self.game_state.display.ppu_scroll_copy.bg2_h_high());
+        self.zelda_ppu_write(
+            0x2110,
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy_low(),
+        );
+        self.zelda_ppu_write(0x2110, self.game_state.display.ppu_scroll_copy.bg2_v_high());
+        self.zelda_ppu_write(
+            0x2111,
+            self.game_state.display.ppu_scroll_copy.bg3_h_copy2_low(),
+        );
+        self.zelda_ppu_write(0x2111, self.game_state.display.ppu_scroll_copy.bg3_h_high());
+        self.zelda_ppu_write(
+            0x2112,
+            self.game_state.display.ppu_scroll_copy.bg3_v_copy2_low(),
+        );
+        self.zelda_ppu_write(0x2112, self.game_state.display.ppu_scroll_copy.bg3_v_high());
         self.zelda_ppu_write(0x2100, self.game_state.display.screen_brightness);
         self.zelda_ppu_write(0x2106, self.game_state.display.mosaic_copy);
         self.zelda_ppu_write(0x2105, self.game_state.display.bg_mode);
@@ -710,10 +748,28 @@ impl ZeldaState {
             self.zelda_ppu_write(0x211c, 0);
             self.zelda_ppu_write(0x211d, 0);
             self.zelda_ppu_write(0x211d, 0);
-            self.zelda_ppu_write(0x211f, self.ppu_scroll_copy().mode7_center_x() as u8);
-            self.zelda_ppu_write(0x211f, self.ppu_scroll_copy().mode7_center_x_high());
-            self.zelda_ppu_write(0x2120, self.ppu_scroll_copy().mode7_center_y() as u8);
-            self.zelda_ppu_write(0x2120, self.ppu_scroll_copy().mode7_center_y_high());
+            self.zelda_ppu_write(
+                0x211f,
+                self.game_state.display.ppu_scroll_copy.mode7_center_x() as u8,
+            );
+            self.zelda_ppu_write(
+                0x211f,
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .mode7_center_x_high(),
+            );
+            self.zelda_ppu_write(
+                0x2120,
+                self.game_state.display.ppu_scroll_copy.mode7_center_y() as u8,
+            );
+            self.zelda_ppu_write(
+                0x2120,
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .mode7_center_y_high(),
+            );
         }
         self.zelda_ppu_write(0x210b, 0x22);
         self.zelda_ppu_write(0x210c, 0x07);
@@ -742,25 +798,26 @@ impl ZeldaState {
         let r0 = reversed as u8;
         let r1 = (reversed >> 8) as u8;
 
-        let last2_l = self.player_state().joypad1l_last2();
+        let last2_l = self.game_state.player.follower_link.joypad1l_last2();
         let filtered_joypad_l = (r0 ^ last2_l) & r0;
-        self.player_state_mut().set_joypad1l_last(r0);
-        self.player_state_mut()
+        self.follower_link_state_mut().set_joypad1l_last(r0);
+        self.follower_link_state_mut()
             .set_filtered_joypad_l(filtered_joypad_l);
-        self.player_state_mut().set_joypad1l_last2(r0);
+        self.follower_link_state_mut().set_joypad1l_last2(r0);
 
-        let last2_h = self.player_state().joypad1h_last2();
+        let last2_h = self.game_state.player.follower_link.joypad1h_last2();
         let filtered_joypad_h = (r1 ^ last2_h) & r1;
-        self.player_state_mut().set_joypad1h_last(r1);
-        self.player_state_mut()
+        self.follower_link_state_mut().set_joypad1h_last(r1);
+        self.follower_link_state_mut()
             .set_filtered_joypad_h(filtered_joypad_h);
-        self.player_state_mut().set_joypad1h_last2(r1);
+        self.follower_link_state_mut().set_joypad1h_last2(r1);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::constants::{ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_ADDR};
 
     #[test]
     fn nmi_core_update_copies_animated_tiles_even_from_zero_source() {

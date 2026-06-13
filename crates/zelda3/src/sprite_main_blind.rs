@@ -939,8 +939,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_prep_blind_prepare_battle(&mut self, k: usize) {
-        let dung_state = self.dungeon_savegame_state().savegame_state_bits();
-        if self.follower_state().indicator() != 6 && (dung_state & 0x2000) != 0 {
+        let dung_state = self.game_state.dungeon.savegame_state.savegame_state_bits();
+        if self.game_state.sprites.follower_runtime.indicator() != 6 && (dung_state & 0x2000) != 0 {
             let mut sprite = self.sprite_slot_mut(k);
             sprite.set_delay_aux2(96);
             sprite.set_c(1);
@@ -1143,7 +1143,12 @@ impl ZeldaState {
                     sprite.set_subtype(1);
                 } else {
                     self.sprite_slot_mut(k).set_z_subpixel(0);
-                    let new_limit = self.sprite_system().limit_instance().wrapping_add(1);
+                    let new_limit = self
+                        .game_state
+                        .sprites
+                        .system
+                        .limit_instance()
+                        .wrapping_add(1);
                     self.sprite_system_mut().set_limit_instance(new_limit);
                     if new_limit == 3 {
                         self.sprite_kill_friends_for_blind();
@@ -1554,9 +1559,9 @@ impl ZeldaState {
             self.sprite_check_damage_to_and_from_link_for_blind(k);
         }
         let link_x = self.player_state().x();
-        let cur_x = self.sprite_workspace().current_sprite_x();
+        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let link_y = self.player_state().y();
-        let cur_y = self.sprite_workspace().current_sprite_y();
+        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let dx = link_x.wrapping_sub(cur_x).wrapping_add(14);
         let dy = link_y.wrapping_sub(cur_y);
         let blink_or_disable = self.player_state().blink_countdown()
@@ -1566,7 +1571,7 @@ impl ZeldaState {
             let mut player = self.player_state_mut();
             player.set_auxiliary_state(1);
             player.set_incapacitated_timer(16);
-            player.xor_actual_velocity_xy(255);
+            self.follower_link_state_mut().xor_actual_velocity_xy(255);
         }
     }
 
@@ -1593,7 +1598,7 @@ impl ZeldaState {
             let direction = self.sprite_slot(k).direction();
             let t1 = if direction == 3 { -t1_raw } else { t1_raw };
             let t0 = (direction as i32 - 2) * 8;
-            let b = self.sprite_system().blind_head_anim_counter() as i32;
+            let b = self.game_state.sprites.system.blind_head_anim_counter() as i32;
             let idx = ((b >> 3) & 7) + ((b >> 2) & 1) + t0;
             // C reads kBlind_HeadDir[idx]; idx can be 0..16 (17 entries).
             let head_dir = BLIND_HEAD_DIRECTION_BASES[(idx as usize) & 0xff] as i32;
@@ -1698,7 +1703,7 @@ impl ZeldaState {
     }
 
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
-        let oam = self.oam_state().current_pointer_usize();
+        let oam = self.game_state.oam.current_pointer_usize();
         let j = (self.sprite_slot(k).head_direction() & 15) as usize;
         self.oam_state_mut()
             .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
@@ -1768,7 +1773,7 @@ impl ZeldaState {
     }
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {
-        let oam = self.oam_state().current_pointer_usize() + oam_idx * 4;
+        let oam = self.game_state.oam.current_pointer_usize() + oam_idx * 4;
         self.oam_state_mut().set_entry_y(oam, y);
     }
 
@@ -1779,7 +1784,7 @@ impl ZeldaState {
         charnum: u8,
         flags: u8,
     ) {
-        let oam = self.oam_state().current_pointer_usize() + oam_idx as usize * 4;
+        let oam = self.game_state.oam.current_pointer_usize() + oam_idx as usize * 4;
         self.oam_state_mut().set_entry_char(oam, charnum);
         self.oam_state_mut().merge_entry_flags(oam, 0x3f, flags);
     }
