@@ -2939,7 +2939,7 @@ mod tests {
         ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 0xff;
         ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
 
-        let mut prize = DiggingGamePrizeState::default();
+        let mut prize = DiggingGamePrizeState::load_from_ram(&ram);
         {
             let mut bridge = NativeDiggingGamePrizeBridgeMut::new(&mut prize, &mut ram);
             bridge.increment_attempts();
@@ -2949,6 +2949,28 @@ mod tests {
         assert_eq!(prize.attempts(), 0);
         assert_eq!(prize.spawned_marker(), 0);
         assert_eq!(ram[DIGGING_GAME_PRIZE_ATTEMPTS], 0);
+        assert_eq!(ram[DIGGING_GAME_PRIZE_SPAWNED], 0);
+    }
+
+    #[test]
+    fn native_digging_game_prize_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 0xff;
+        ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 9;
+        native_ram[DIGGING_GAME_PRIZE_SPAWNED] = 0;
+        let mut prize = DiggingGamePrizeState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDiggingGamePrizeBridgeMut::new(&mut prize, &mut ram);
+            bridge.increment_attempts();
+        }
+
+        assert_eq!(prize.attempts(), 10);
+        assert_eq!(prize.spawned_marker(), 0);
+        assert_eq!(ram[DIGGING_GAME_PRIZE_ATTEMPTS], 10);
         assert_eq!(ram[DIGGING_GAME_PRIZE_SPAWNED], 0);
     }
 
@@ -2981,7 +3003,7 @@ mod tests {
         ram[DOOR_DEBRIS_Y + 3] = 0xff;
         ram[DOOR_DEBRIS_DIRECTION + 3] = 0xff;
 
-        let mut debris = DoorDebrisState::default();
+        let mut debris = DoorDebrisState::load_from_ram(&ram);
         {
             let mut bridge = NativeDoorDebrisBridgeMut::new(&mut debris, &mut ram);
             bridge.set_y_low_and_x_low_from_word(3, 0x1234);
@@ -3000,6 +3022,34 @@ mod tests {
         assert_eq!(ram[DOOR_DEBRIS_Y + 3], 0x34);
         assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_X + 4), 0x4567);
         assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_Y + 4), 0x89ab);
+        assert_eq!(ram[DOOR_DEBRIS_DIRECTION + 3], 2);
+    }
+
+    #[test]
+    fn native_door_debris_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DOOR_DEBRIS_X + 3] = 0xff;
+        ram[DOOR_DEBRIS_Y + 3] = 0xee;
+        ram[DOOR_DEBRIS_DIRECTION + 3] = 0xdd;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        ram[DOOR_DEBRIS_X + 1] = 0x99;
+        native_ram[DOOR_DEBRIS_X + 3] = 0x12;
+        native_ram[DOOR_DEBRIS_Y + 3] = 0x34;
+        native_ram[DOOR_DEBRIS_DIRECTION + 3] = 1;
+        let mut debris = DoorDebrisState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDoorDebrisBridgeMut::new(&mut debris, &mut ram);
+            bridge.set_direction(3, 2);
+        }
+
+        assert_eq!(debris.x(3), 0x12);
+        assert_eq!(debris.y(3), 0x34);
+        assert_eq!(debris.direction(3), 2);
+        assert_eq!(ram[DOOR_DEBRIS_X + 1], 0);
+        assert_eq!(ram[DOOR_DEBRIS_X + 3], 0x12);
+        assert_eq!(ram[DOOR_DEBRIS_Y + 3], 0x34);
         assert_eq!(ram[DOOR_DEBRIS_DIRECTION + 3], 2);
     }
 

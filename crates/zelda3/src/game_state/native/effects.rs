@@ -2623,7 +2623,6 @@ pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
 
 impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DiggingGamePrizeState, ram: &'a mut [u8]) -> Self {
-        *state = DiggingGamePrizeState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2757,7 +2756,6 @@ pub(crate) struct NativeDoorDebrisBridgeMut<'a> {
 
 impl<'a> NativeDoorDebrisBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DoorDebrisState, ram: &'a mut [u8]) -> Self {
-        *state = DoorDebrisState::load_from_ram(ram);
         Self { state, ram }
     }
 
