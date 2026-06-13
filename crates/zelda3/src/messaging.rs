@@ -1282,7 +1282,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut().set_hud_palette(0);
         self.InitializeTilesets();
         self.increment_overworld_map_state();
-        self.dungeon_state_view_mut().set_draw_width_indicator(0);
+        self.dungeon_room_load_mut().set_draw_width_indicator(0);
         self.Overworld_LoadOverlays2();
         self.decrement_submodule();
         self.system_signals_view_mut().set_sound_effect_2(16);
@@ -1437,18 +1437,18 @@ impl ZeldaState {
             return;
         }
 
-        if self.dungeon_state_view().draw_width_indicator() != 0 {
+        if self.dungeon_room_load().draw_width_indicator() != 0 {
             let draw_width = self
-                .dungeon_state_view()
+                .dungeon_room_load()
                 .draw_width_indicator()
                 .wrapping_sub(1);
-            self.dungeon_state_view_mut()
+            self.dungeon_room_load_mut()
                 .set_draw_width_indicator(draw_width);
         } else if self.player_state_view().filtered_joypad_l() & 0x30 != 0
             || self.DidPressButtonForMap()
         {
             self.system_signals_view_mut().set_sound_effect_2(36);
-            self.dungeon_state_view_mut().set_draw_width_indicator(8);
+            self.dungeon_room_load_mut().set_draw_width_indicator(8);
             let t = (self.overworld_map_flags() ^ 1) & 1;
             self.set_overworld_map_flags(t | 0x80);
             self.set_mode7_zoom_timer(OVERWORLD_MAP_TIMER[t as usize]);
@@ -1539,7 +1539,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut().set_hud_palette(0);
         self.InitializeTilesets();
         self.system_signals_view_mut().increment_cgram_update_flag();
-        self.dungeon_state_view_mut().set_draw_width_indicator(0);
+        self.dungeon_room_load_mut().set_draw_width_indicator(0);
         self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
         let saved_module = self.frame_state().saved_module_for_menu;
@@ -2719,13 +2719,13 @@ impl ZeldaState {
         self.hud_rebuild();
 
         self.clear_screen_transition();
-        self.dungeon_state_view_mut().clear_quadrant_upload_index();
+        self.dungeon_room_load_mut().clear_quadrant_upload_index();
         loop {
             self.WaterFlood_BuildOneQuadrantForVRAM();
             self.upload_tilemap_now();
             self.Dungeon_PrepareNextRoomQuadrantUpload();
             self.upload_tilemap_now();
-            if self.dungeon_state_view().quadrant_upload_index() == 0x10 {
+            if self.dungeon_room_load().quadrant_upload_index() == 0x10 {
                 break;
             }
         }

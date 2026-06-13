@@ -2825,13 +2825,13 @@ impl ZeldaState {
         let mut torch = self.dungeon_state_view().lit_torches();
         if self.dungeon_state_view().wants_lights_out() == 0 {
             let mut a = 0x20;
-            if self.dungeon_state_view().bg2_properties() != 0 {
+            if self.dungeon_room_load().bg2_properties() != 0 {
                 a = 0x32;
-                if self.dungeon_state_view().bg2_properties() != 7 {
+                if self.dungeon_room_load().bg2_properties() != 7 {
                     a = 0x62;
-                    if self.dungeon_state_view().bg2_properties() != 4 {
+                    if self.dungeon_room_load().bg2_properties() != 4 {
                         a = 0x20;
-                        if self.dungeon_state_view().bg2_properties() == 2 {
+                        if self.dungeon_room_load().bg2_properties() == 2 {
                             self.Palette_AssertTranslucencySwap();
                             if self.world_location_state().dungeon_room_index() == 13 {
                                 self.graphics_scratch_mut()

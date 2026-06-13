@@ -527,7 +527,7 @@ impl ZeldaState {
             .set_camera_y_coord_scroll_low(0x017f);
         self.world_camera_boundaries_mut()
             .set_camera_y_coord_scroll_hi(0x0181);
-        self.dungeon_state_view_mut().set_quadrants_visited(2);
+        self.dungeon_room_load_mut().set_quadrants_visited(2);
         self.dungeon_doors_mut().set_current_door_index(2);
         self.palette_buffer_view_mut().set_sp0l(0);
         self.palette_buffer_view_mut().set_sp5l(3);
@@ -872,10 +872,10 @@ impl ZeldaState {
 
         let (x, y) = if self.player_state_view().item_receipt_method() == 1 {
             let y = ((chest_pos & 0x1f80) >> 4)
-                .wrapping_add(self.dungeon_state_view().loading_bg_offset_v() & 0xff00)
+                .wrapping_add(self.dungeon_room_load().loading_bg_offset_v() & 0xff00)
                 .wrapping_add(receive_item_tab2_misc(item) as i16 as u16);
             let x = ((chest_pos & 0x007e) << 2)
-                .wrapping_add(self.dungeon_state_view().loading_bg_offset_h() & 0xff00)
+                .wrapping_add(self.dungeon_room_load().loading_bg_offset_h() & 0xff00)
                 .wrapping_add(receive_item_tab3_misc(item) as u16);
             (x, y)
         } else {

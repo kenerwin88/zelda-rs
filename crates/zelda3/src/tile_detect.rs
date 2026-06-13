@@ -165,7 +165,7 @@ impl ZeldaState {
         let dir = self.ancilla_slot_view(k).direction() as i32;
         self.tile_detect_position_view_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        if self.dungeon_state_view().header_collision() == 2 {
+        if self.dungeon_room_load().header_collision() == 2 {
             self.player_state_view_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
                 x.wrapping_add(self.world_scroll().bg1_x())

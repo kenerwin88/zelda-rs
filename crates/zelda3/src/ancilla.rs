@@ -1337,7 +1337,7 @@ impl ZeldaState {
                     flag = true;
                     continue;
                 } else if a == 0x0c || a == 0x1c {
-                    if self.dungeon_state_view().header_collision() != 3 {
+                    if self.dungeon_room_load().header_collision() != 3 {
                         if self.ancilla_slot_view(k).floor() == 0
                             && self.ancilla_slot_view(k).z() != 0
                             && self.ancilla_slot_view(k).z() != 0xff
@@ -5834,7 +5834,7 @@ impl ZeldaState {
                     flag = true;
                     continue;
                 } else if a == 0x0c || a == 0x1c {
-                    if self.dungeon_state_view().header_collision() != 3 {
+                    if self.dungeon_room_load().header_collision() != 3 {
                         if self.ancilla_slot_view(k).floor() == 0
                             && self.ancilla_slot_view(k).z() != 0
                             && self.ancilla_slot_view(k).z() != 0xff
@@ -8254,13 +8254,13 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_tile_attribute(value);
             return 0;
         }
-        if self.dungeon_state_view().header_collision() == 0 {
+        if self.dungeon_room_load().header_collision() == 0 {
             return self.ancilla_check_tile_collision_one_floor(k) as u8;
         }
 
         let mut x = 0u16;
         let mut y = 0u16;
-        if self.dungeon_state_view().header_collision() < 3 {
+        if self.dungeon_room_load().header_collision() < 3 {
             x = self
                 .world_scroll()
                 .bg1_x()
@@ -8860,13 +8860,13 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_check_tile_collision_class2(&mut self, k: usize) -> bool {
-        if self.dungeon_state_view().header_collision() == 0 {
+        if self.dungeon_room_load().header_collision() == 0 {
             return self.ancilla_check_tile_collision_class2_inner(k);
         }
 
         let mut x = 0u16;
         let mut y = 0u16;
-        if self.dungeon_state_view().header_collision() < 3 {
+        if self.dungeon_room_load().header_collision() < 3 {
             x = self
                 .world_scroll()
                 .bg1_x()
@@ -9020,7 +9020,7 @@ impl ZeldaState {
                 t,
                 self.ancilla_slot_view(k).u(),
                 self.world_location_state().indoor_flag,
-                self.dungeon_state_view().header_collision(),
+                self.dungeon_room_load().header_collision(),
                 self.world_scroll().bg1_x(),
                 self.world_scroll().bg1_y(),
                 self.world_scroll().bg2_x(),

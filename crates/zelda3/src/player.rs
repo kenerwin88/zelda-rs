@@ -904,7 +904,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_moving_floor(&mut self) {
-        if self.dungeon_state_view().header_collision() == 0 {
+        if self.dungeon_room_load().header_collision() == 0 {
             return;
         }
         let z = self.player_state_view().z_low();
@@ -929,13 +929,13 @@ impl ZeldaState {
     }
 
     pub(super) fn check_if_room_needs_double_layer_check(&mut self) -> bool {
-        if self.dungeon_state_view().header_collision() == 0
-            || self.dungeon_state_view().header_collision() == 4
+        if self.dungeon_room_load().header_collision() == 0
+            || self.dungeon_room_load().header_collision() == 4
         {
             return false;
         }
 
-        if self.dungeon_state_view().header_collision() >= 2 {
+        if self.dungeon_room_load().header_collision() >= 2 {
             let y = self
                 .player_state_view()
                 .y()
@@ -957,7 +957,7 @@ impl ZeldaState {
     }
 
     pub(super) fn create_velocity_from_moving_background(&mut self) {
-        if self.dungeon_state_view().header_collision() != 1 {
+        if self.dungeon_room_load().header_collision() != 1 {
             let x = self
                 .player_state_view()
                 .x()
@@ -1352,7 +1352,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .set_actual_velocity_xy(actual_x_velocity, actual_y_velocity);
 
-        if self.dungeon_state_view().header_collision() == 4 {
+        if self.dungeon_room_load().header_collision() == 4 {
             self.link_apply_moving_floor_velocity();
         }
         self.player_state_view_mut().clear_page_movement_deltas();
@@ -1402,7 +1402,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_direction_mask_a(mask);
             } else {
                 let mut set_thingy = false;
-                if self.dungeon_state_view().header_collision() == 0
+                if self.dungeon_room_load().header_collision() == 0
                     && self.player_state_view().has_auxiliary_state()
                     && self.tile_detect_position_view().slope_collision_bits() & 3 != 0
                 {
@@ -1457,7 +1457,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_direction_mask_b(mask);
             } else {
                 let mut set_thingy_b = false;
-                if self.dungeon_state_view().header_collision() == 0
+                if self.dungeon_room_load().header_collision() == 0
                     && self.player_state_view().has_auxiliary_state()
                     && self.tile_detect_position_view().slope_collision_bits() & 3 != 0
                 {
@@ -2365,7 +2365,7 @@ impl ZeldaState {
         } else {
             if self.player_state_view().doorway_state() == 2 {
                 if self.player_state_view().num_orthogonal_directions() == 0 {
-                    if self.dungeon_state_view().header_collision() != 3
+                    if self.dungeon_room_load().header_collision() != 3
                         || !self.player_state_view().is_on_lower_level()
                     {
                         self.link_add_in_velocity_y();
@@ -2444,7 +2444,7 @@ impl ZeldaState {
 
             if self.player_state_view().doorway_state() == 1
                 && self.player_state_view().num_orthogonal_directions() == 0
-                && (self.dungeon_state_view().header_collision() != 3
+                && (self.dungeon_room_load().header_collision() != 3
                     || !self.player_state_view().is_on_lower_level())
             {
                 self.snap_on_x();
@@ -3272,8 +3272,8 @@ impl ZeldaState {
             }
         }
 
-        if self.dungeon_state_view().header_collision() == 0
-            || self.dungeon_state_view().header_collision() == 4
+        if self.dungeon_room_load().header_collision() == 0
+            || self.dungeon_room_load().header_collision() == 4
             || !self.player_state_view().is_on_lower_level()
         {
             self.handle_indoor_pushblock_timeout(y_axis);
@@ -3834,8 +3834,8 @@ impl ZeldaState {
         };
 
         if can_double_layer && self.check_if_room_needs_double_layer_check() {
-            if self.dungeon_state_view().header_collision() >= 2
-                && self.dungeon_state_view().header_collision() != 3
+            if self.dungeon_room_load().header_collision() >= 2
+                && self.dungeon_room_load().header_collision() != 3
             {
                 self.player_state_view_mut().set_tile_coll_flag(2);
                 self.player_tile_detect_nearby();
@@ -3882,7 +3882,7 @@ impl ZeldaState {
             self.create_velocity_from_moving_background();
         }
 
-        let collision = self.dungeon_state_view().header_collision();
+        let collision = self.dungeon_room_load().header_collision();
         let moved =
             (self.player_state_view().x_velocity() | self.player_state_view().y_velocity()) != 0;
         if collision == 2 {
@@ -3943,7 +3943,7 @@ impl ZeldaState {
         self.replay_trace_submodule("cardinal-after-dir-vel");
 
         if self.world_location_state().is_outdoors()
-            || self.dungeon_state_view().header_collision() != 4
+            || self.dungeon_room_load().header_collision() != 4
             || self.player_state_view().handler_state() != 4
         {
             return;
@@ -4134,7 +4134,7 @@ impl ZeldaState {
     }
 
     pub(super) fn halt_link_when_using_items(&mut self) {
-        if self.dungeon_state_view().header_collision_2() == 2
+        if self.dungeon_room_load().header_collision_2() == 2
             && self.has_player_layer_collision(
                 crate::game_state::constants::player::LAYER_COLLISION_BOTH,
             )
@@ -6876,7 +6876,7 @@ impl ZeldaState {
             self.ancilla_sfx2_near(0x21);
         }
 
-        if self.dungeon_state_view().header_collision_2() == 2
+        if self.dungeon_room_load().header_collision_2() == 2
             && self.tile_detect_position_view().water_staircase() & 0x0f != 0
         {
             self.player_state_view_mut().set_layer_collision_flags(
@@ -8355,8 +8355,8 @@ impl ZeldaState {
         let pos = self.dungeon_object_tracking().object_tilemap_pos(idx_word);
         let mut x = (pos & 0x007e) << 2;
         let mut y = (pos & 0x1f80) >> 4;
-        x = x.wrapping_add(self.dungeon_state_view().loading_bg_offset_h() & 0xff00);
-        y = y.wrapping_add(self.dungeon_state_view().loading_bg_offset_v() & 0xff00);
+        x = x.wrapping_add(self.dungeon_room_load().loading_bg_offset_h() & 0xff00);
+        y = y.wrapping_add(self.dungeon_room_load().loading_bg_offset_v() & 0xff00);
 
         self.pushed_block_view_mut().init_slot(slot, x, y);
 

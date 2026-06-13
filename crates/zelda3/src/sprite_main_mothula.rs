@@ -874,10 +874,10 @@ impl ZeldaState {
                     1
                 };
                 self.dungeon_moving_floor_mut().set_floor_x_offset(x_offs);
-                self.dungeon_state_view_mut()
+                self.dungeon_room_load_mut()
                     .set_header_collision_2_mirror(1);
             } else {
-                self.dungeon_state_view_mut()
+                self.dungeon_room_load_mut()
                     .set_header_collision_2_mirror(0);
             }
         } else {

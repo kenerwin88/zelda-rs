@@ -1,21 +1,27 @@
 use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, CHANGEABLE_DUNGEON_OBJECT_INDEX,
-    DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
-    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
-    DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE,
+    COMPOSITE_OF_LAYOUT_AND_QUADRANT, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON,
+    DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
+    DUNGEON_DOOR_DIRECTION, DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY,
+    DUNGEON_HEADER_COLLISION_2_MIRROR, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE,
     DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS,
     DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
     DUNGEON_WORK_R18, DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR,
-    DUNG_CUR_FLOOR_CACHED, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED,
-    DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS,
-    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_INDEX_OF_TORCHES_START,
-    DUNG_INTER_STAIRCASES, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
-    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1,
-    DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS,
-    DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
-    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
-    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
+    DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
+    DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED,
+    DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR,
+    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES,
+    DUNG_HDR_BG2_PROPERTIES_BACKUP, DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2,
+    DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT,
+    DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
+    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
+    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
+    DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT,
+    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX,
+    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
+    WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -74,6 +80,7 @@ pub(crate) struct DungeonState {
     pub(crate) room_tracking: DungeonRoomTrackingState,
     pub(crate) object_tracking: DungeonObjectTrackingState,
     pub(crate) doors: DungeonDoorState,
+    pub(crate) room_load: DungeonRoomLoadState,
 }
 
 impl DungeonState {
@@ -91,6 +98,7 @@ impl DungeonState {
             room_tracking: DungeonRoomTrackingState::load_from_ram(ram),
             object_tracking: DungeonObjectTrackingState::load_from_ram(ram),
             doors: DungeonDoorState::load_from_ram(ram),
+            room_load: DungeonRoomLoadState::load_from_ram(ram),
         }
     }
 
@@ -101,6 +109,283 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomLoadState {
+    header_collision: u8,
+    header_collision_2: u8,
+    header_collision_2_mirror: u16,
+    bg2_properties: u8,
+    bg2_properties_backup: u8,
+    layout_and_starting_quadrant: u8,
+    layout_quadrant_key: u8,
+    quadrants_visited: u16,
+    quadrant_upload_index: u8,
+    draw_width_indicator: u16,
+    draw_height_indicator: u16,
+    overlay_to_load: u8,
+    selected_key_door_x2: u16,
+    load_ptr_offset: u16,
+    loading_bg_offset_h: u16,
+    loading_bg_offset_v: u16,
+}
+
+impl DungeonRoomLoadState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            header_collision: ram.get(DUNG_HDR_COLLISION).copied().unwrap_or(0),
+            header_collision_2: ram.get(DUNG_HDR_COLLISION_2).copied().unwrap_or(0),
+            header_collision_2_mirror: read_le_u16(ram, DUNGEON_HEADER_COLLISION_2_MIRROR),
+            bg2_properties: ram.get(DUNG_HDR_BG2_PROPERTIES).copied().unwrap_or(0),
+            bg2_properties_backup: ram
+                .get(DUNG_HDR_BG2_PROPERTIES_BACKUP)
+                .copied()
+                .unwrap_or(0),
+            layout_and_starting_quadrant: ram
+                .get(DUNG_LAYOUT_AND_STARTING_QUADRANT)
+                .copied()
+                .unwrap_or(0),
+            layout_quadrant_key: ram
+                .get(COMPOSITE_OF_LAYOUT_AND_QUADRANT)
+                .copied()
+                .unwrap_or(0),
+            quadrants_visited: read_le_u16(ram, DUNG_QUADRANTS_VISITED),
+            quadrant_upload_index: ram.get(DUNG_CUR_QUADRANT_UPLOAD).copied().unwrap_or(0),
+            draw_width_indicator: read_le_u16(ram, DUNG_DRAW_WIDTH_INDICATOR),
+            draw_height_indicator: read_le_u16(ram, DUNG_DRAW_HEIGHT_INDICATOR),
+            overlay_to_load: ram.get(DUNG_OVERLAY_TO_LOAD).copied().unwrap_or(0),
+            selected_key_door_x2: read_le_u16(ram, DUNG_WHICH_KEY_X2_DUNGEON),
+            load_ptr_offset: read_le_u16(ram, DUNG_LOAD_PTR_OFFS),
+            loading_bg_offset_h: read_le_u16(ram, DUNG_LOADE_BGOFFS_H_COPY),
+            loading_bg_offset_v: read_le_u16(ram, DUNG_LOADE_BGOFFS_V_COPY),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DUNG_HDR_COLLISION] = self.header_collision;
+        ram[DUNG_HDR_COLLISION_2] = self.header_collision_2;
+        write_le_u16(
+            ram,
+            DUNGEON_HEADER_COLLISION_2_MIRROR,
+            self.header_collision_2_mirror,
+        );
+        ram[DUNG_HDR_BG2_PROPERTIES] = self.bg2_properties;
+        ram[DUNG_HDR_BG2_PROPERTIES_BACKUP] = self.bg2_properties_backup;
+        ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] = self.layout_and_starting_quadrant;
+        ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] = self.layout_quadrant_key;
+        write_le_u16(ram, DUNG_QUADRANTS_VISITED, self.quadrants_visited);
+        ram[DUNG_CUR_QUADRANT_UPLOAD] = self.quadrant_upload_index;
+        write_le_u16(ram, DUNG_DRAW_WIDTH_INDICATOR, self.draw_width_indicator);
+        write_le_u16(ram, DUNG_DRAW_HEIGHT_INDICATOR, self.draw_height_indicator);
+        ram[DUNG_OVERLAY_TO_LOAD] = self.overlay_to_load;
+        write_le_u16(ram, DUNG_WHICH_KEY_X2_DUNGEON, self.selected_key_door_x2);
+        write_le_u16(ram, DUNG_LOAD_PTR_OFFS, self.load_ptr_offset);
+        write_le_u16(ram, DUNG_LOADE_BGOFFS_H_COPY, self.loading_bg_offset_h);
+        write_le_u16(ram, DUNG_LOADE_BGOFFS_V_COPY, self.loading_bg_offset_v);
+    }
+
+    pub(crate) fn header_collision(&self) -> u8 {
+        self.header_collision
+    }
+
+    pub(crate) fn header_collision_2(&self) -> u8 {
+        self.header_collision_2
+    }
+
+    pub(crate) fn header_collision_2_mirror(&self) -> u8 {
+        self.header_collision_2_mirror as u8
+    }
+
+    pub(crate) fn header_collision_2_mirror_high(&self) -> u8 {
+        (self.header_collision_2_mirror >> 8) as u8
+    }
+
+    pub(crate) fn bg2_properties(&self) -> u8 {
+        self.bg2_properties
+    }
+
+    pub(crate) fn layout_quadrant_key(&self) -> u8 {
+        self.layout_quadrant_key
+    }
+
+    pub(crate) fn quadrants_visited(&self) -> u16 {
+        self.quadrants_visited
+    }
+
+    pub(crate) fn quadrant_upload_index(&self) -> u8 {
+        self.quadrant_upload_index
+    }
+
+    pub(crate) fn draw_width_indicator(&self) -> u8 {
+        self.draw_width_indicator as u8
+    }
+
+    pub(crate) fn draw_width_indicator_word(&self) -> u16 {
+        self.draw_width_indicator
+    }
+
+    pub(crate) fn draw_height_indicator(&self) -> u8 {
+        self.draw_height_indicator as u8
+    }
+
+    pub(crate) fn draw_height_indicator_word(&self) -> u16 {
+        self.draw_height_indicator
+    }
+
+    pub(crate) fn overlay_to_load(&self) -> u8 {
+        self.overlay_to_load
+    }
+
+    pub(crate) fn selected_key_door_x2(&self) -> u16 {
+        self.selected_key_door_x2
+    }
+
+    pub(crate) fn load_ptr_offset(&self) -> u16 {
+        self.load_ptr_offset
+    }
+
+    pub(crate) fn loading_bg_offset_h(&self) -> u16 {
+        self.loading_bg_offset_h
+    }
+
+    pub(crate) fn loading_bg_offset_v(&self) -> u16 {
+        self.loading_bg_offset_v
+    }
+
+    fn set_header_collision(&mut self, value: u8) {
+        self.header_collision = value;
+    }
+
+    fn set_header_collision_2(&mut self, value: u8) {
+        self.header_collision_2 = value;
+    }
+
+    fn clear_header_collision_2(&mut self) {
+        self.header_collision_2 = 0;
+    }
+
+    fn set_header_collision_2_mirror(&mut self, value: u8) {
+        self.header_collision_2_mirror =
+            (self.header_collision_2_mirror & 0xff00) | u16::from(value);
+    }
+
+    fn set_header_collision_2_mirror_high(&mut self, value: u8) {
+        self.header_collision_2_mirror =
+            (self.header_collision_2_mirror & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn increment_header_collision_2_mirror(&mut self) -> u8 {
+        let value = self.header_collision_2_mirror().wrapping_add(1);
+        self.set_header_collision_2_mirror(value);
+        value
+    }
+
+    fn copy_header_collision_2_to_mirror(&mut self) {
+        self.set_header_collision_2_mirror(self.header_collision_2);
+    }
+
+    fn set_bg2_properties(&mut self, value: u8) {
+        self.bg2_properties = value;
+    }
+
+    fn clear_bg2_properties(&mut self) {
+        self.bg2_properties = 0;
+    }
+
+    fn set_bg2_properties_backup(&mut self, value: u8) {
+        self.bg2_properties_backup = value;
+    }
+
+    fn set_layout_quadrant_key(&mut self, value: u8) {
+        self.layout_quadrant_key = value;
+    }
+
+    fn update_layout_quadrant_key(&mut self, quadrant_y: u8, quadrant_x: u8) -> u8 {
+        let key = self.layout_and_starting_quadrant | quadrant_y | quadrant_x;
+        self.set_layout_quadrant_key(key);
+        key
+    }
+
+    fn set_quadrants_visited(&mut self, value: u16) {
+        self.quadrants_visited = value;
+    }
+
+    fn or_quadrants_visited(&mut self, value: u16) -> u16 {
+        self.quadrants_visited |= value;
+        self.quadrants_visited
+    }
+
+    fn clear_quadrant_upload_index(&mut self) {
+        self.quadrant_upload_index = 0;
+    }
+
+    fn advance_quadrant_upload_index_by(&mut self, value: u8) -> u8 {
+        self.quadrant_upload_index = self.quadrant_upload_index.wrapping_add(value);
+        self.quadrant_upload_index
+    }
+
+    fn set_draw_width_indicator(&mut self, value: u8) {
+        self.draw_width_indicator = (self.draw_width_indicator & 0xff00) | u16::from(value);
+    }
+
+    fn set_draw_width_indicator_word(&mut self, value: u16) {
+        self.draw_width_indicator = value;
+    }
+
+    fn set_draw_height_indicator(&mut self, value: u8) {
+        self.draw_height_indicator = (self.draw_height_indicator & 0xff00) | u16::from(value);
+    }
+
+    fn set_draw_height_indicator_word(&mut self, value: u16) {
+        self.draw_height_indicator = value;
+    }
+
+    fn set_draw_dimensions(&mut self, width: u8, height: u8) {
+        self.set_draw_width_indicator(width);
+        self.set_draw_height_indicator(height);
+    }
+
+    fn set_draw_dimensions_words(&mut self, width: u16, height: u16) {
+        self.draw_width_indicator = width;
+        self.draw_height_indicator = height;
+    }
+
+    fn set_overlay_to_load(&mut self, value: u8) {
+        self.overlay_to_load = value;
+    }
+
+    fn set_overlay_to_load_if_empty(&mut self, value: u8) {
+        if self.overlay_to_load == 0 {
+            self.overlay_to_load = value;
+        }
+    }
+
+    fn clear_overlay_to_load(&mut self) {
+        self.overlay_to_load = 0;
+    }
+
+    fn set_selected_key_door_x2(&mut self, value: u16) {
+        self.selected_key_door_x2 = value;
+    }
+
+    fn set_selected_key_door(&mut self, door: usize) {
+        self.selected_key_door_x2 = (door * 2) as u16;
+    }
+
+    fn set_load_ptr_offset(&mut self, value: u16) {
+        self.load_ptr_offset = value;
+    }
+
+    fn advance_load_ptr_offset_by(&mut self, value: u16) -> u16 {
+        self.load_ptr_offset = self.load_ptr_offset.wrapping_add(value);
+        self.load_ptr_offset
+    }
+
+    fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
+        self.loading_bg_offset_h = horizontal;
+        self.loading_bg_offset_v = vertical;
     }
 }
 
@@ -2324,6 +2609,184 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
 
     pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
         self.state.clear_door_barrier_or_switch_flag();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomLoadBridgeMut<'a> {
+    state: &'a mut DungeonRoomLoadState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomLoadState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomLoadState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonRoomLoadState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_header_collision(&mut self, value: u8) {
+        self.state.set_header_collision(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_header_collision_2(&mut self, value: u8) {
+        self.state.set_header_collision_2(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_header_collision_2(&mut self) {
+        self.state.clear_header_collision_2();
+        self.sync();
+    }
+
+    pub(crate) fn set_header_collision_2_mirror(&mut self, value: u8) {
+        self.state.set_header_collision_2_mirror(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_header_collision_2_mirror_high(&mut self, value: u8) {
+        self.state.set_header_collision_2_mirror_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_header_collision_2_mirror(&mut self) -> u8 {
+        let value = self.state.increment_header_collision_2_mirror();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn copy_header_collision_2_to_mirror(&mut self) {
+        self.state.copy_header_collision_2_to_mirror();
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_properties(&mut self, value: u8) {
+        self.state.set_bg2_properties(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_bg2_properties(&mut self) {
+        self.state.clear_bg2_properties();
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_properties_backup(&mut self, value: u8) {
+        self.state.set_bg2_properties_backup(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_layout_quadrant_key(&mut self, value: u8) {
+        self.state.set_layout_quadrant_key(value);
+        self.sync();
+    }
+
+    pub(crate) fn update_layout_quadrant_key(&mut self, quadrant_y: u8, quadrant_x: u8) -> u8 {
+        let key = self
+            .state
+            .update_layout_quadrant_key(quadrant_y, quadrant_x);
+        self.sync();
+        key
+    }
+
+    pub(crate) fn set_quadrants_visited(&mut self, value: u16) {
+        self.state.set_quadrants_visited(value);
+        self.sync();
+    }
+
+    pub(crate) fn or_quadrants_visited(&mut self, value: u16) -> u16 {
+        let visited = self.state.or_quadrants_visited(value);
+        self.sync();
+        visited
+    }
+
+    pub(crate) fn clear_quadrant_upload_index(&mut self) {
+        self.state.clear_quadrant_upload_index();
+        self.sync();
+    }
+
+    pub(crate) fn advance_quadrant_upload_index_by(&mut self, value: u8) -> u8 {
+        let index = self.state.advance_quadrant_upload_index_by(value);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn set_draw_width_indicator(&mut self, value: u8) {
+        self.state.set_draw_width_indicator(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_width_indicator_word(&mut self, value: u16) {
+        self.state.set_draw_width_indicator_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_height_indicator(&mut self, value: u8) {
+        self.state.set_draw_height_indicator(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_height_indicator_word(&mut self, value: u16) {
+        self.state.set_draw_height_indicator_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_dimensions(&mut self, width: u8, height: u8) {
+        self.state.set_draw_dimensions(width, height);
+        self.sync();
+    }
+
+    pub(crate) fn set_draw_dimensions_words(&mut self, width: u16, height: u16) {
+        self.state.set_draw_dimensions_words(width, height);
+        self.sync();
+    }
+
+    pub(crate) fn set_overlay_to_load(&mut self, value: u8) {
+        self.state.set_overlay_to_load(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_overlay_to_load_if_empty(&mut self, value: u8) {
+        self.state.set_overlay_to_load_if_empty(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_overlay_to_load(&mut self) {
+        self.state.clear_overlay_to_load();
+        self.sync();
+    }
+
+    pub(crate) fn set_selected_key_door_x2(&mut self, value: u16) {
+        self.state.set_selected_key_door_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_selected_key_door(&mut self, door: usize) {
+        self.state.set_selected_key_door(door);
+        self.sync();
+    }
+
+    pub(crate) fn set_load_ptr_offset(&mut self, value: u16) {
+        self.state.set_load_ptr_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_load_ptr_offset_by(&mut self, value: u16) -> u16 {
+        let offset = self.state.advance_load_ptr_offset_by(value);
+        self.sync();
+        offset
+    }
+
+    pub(crate) fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
+        self.state.set_loading_bg_offsets(horizontal, vertical);
         self.sync();
     }
 }

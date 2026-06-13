@@ -422,7 +422,7 @@ impl ZeldaState {
             } else if self.sprite_slot_view(k).delay_main() >= 0xe0 {
                 if (self.sprite_slot_view(k).delay_main() & 3) == 0 {
                     self.dungeon_moving_floor_mut().set_floor_y_velocity(0xffff);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_room_load_mut()
                         .set_header_collision_2_mirror(1);
                 }
                 self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
@@ -552,7 +552,7 @@ impl ZeldaState {
                         .set_floor_y_velocity(floor_y_vel);
                     self.dungeon_moving_floor_mut()
                         .set_floor_x_velocity(floor_x_vel);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_room_load_mut()
                         .set_header_collision_2_mirror(1);
                     self.trinexx_cache_position(k);
                     {

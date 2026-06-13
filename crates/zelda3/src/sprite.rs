@@ -4091,7 +4091,7 @@ impl ZeldaState {
             4, 0x44, 4, 0x44, 0x44, 4, 0xc4, 0x84, 4, 0x44, 0x84, 0xc4,
         ];
 
-        if self.dungeon_state_view().header_collision() == 4 {
+        if self.dungeon_room_load().header_collision() == 4 {
             let value = 0x30;
             self.sprite_slot_view_mut(k).set_object_priority(value);
         }
@@ -7601,7 +7601,7 @@ impl ZeldaState {
         let value = 0;
         self.sprite_slot_view_mut(k).set_wall_collision(value);
         let f4 = self.sprite_slot_view(k).flags4();
-        let dung_coll = self.dungeon_state_view().header_collision();
+        let dung_coll = self.dungeon_room_load().header_collision();
         // sign8: top bit set.
         if (f4 & 0x80) != 0 || dung_coll == 0 {
             self.sprite_check_tile_collision_single_layer(k);
@@ -7639,7 +7639,7 @@ impl ZeldaState {
         }
 
         if sign8(self.sprite_slot_view(k).flags4())
-            || self.dungeon_state_view().header_collision() == 0
+            || self.dungeon_room_load().header_collision() == 0
         {
             if self.sprite_slot_view(k).y_velocity() != 0 {
                 self.sprite_check_for_tile_in_direction_vertical(
@@ -7714,7 +7714,7 @@ impl ZeldaState {
                 self.sprite_apply_conveyor(k, i32::from(self.sprite_workspace_view().tile_type()))
             }
             8 => {
-                if self.dungeon_state_view().header_collision() == 4 {
+                if self.dungeon_room_load().header_collision() == 4 {
                     self.sprite_apply_conveyor(k, 0x6a);
                 }
             }

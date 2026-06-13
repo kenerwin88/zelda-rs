@@ -463,7 +463,7 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.dungeon_state_view_mut().clear_lights_out_request();
-        self.dungeon_state_view_mut().set_header_collision(0);
+        self.dungeon_room_load_mut().set_header_collision(0);
         self.player_state_view_mut().clear_lower_level_states();
         self.increment_submodule();
         self.system_signals_view_mut().increment_hud_update_flag();
@@ -2499,7 +2499,7 @@ impl ZeldaState {
                     .clear_overworld_aux_or_main_offset();
                 self.world_palette_theme_mut().set_hud_palette(0);
                 self.FindPartnerWhirlpoolExit();
-                self.dungeon_state_view_mut().set_draw_width_indicator(0);
+                self.dungeon_room_load_mut().set_draw_width_indicator(0);
                 self.Overworld_LoadOverlays2();
                 self.decrement_submodule();
                 self.set_pending_nmi_subroutine(12);
