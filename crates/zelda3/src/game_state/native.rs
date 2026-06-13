@@ -84,8 +84,8 @@ pub(crate) use player::{
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
-    NativePolyRasterEdgeBridgeMut, PolyFaceCoordsState, PolyProjectedVerticesState,
-    PolyRasterEdgeState, PolyState,
+    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyFaceCoordsState,
+    PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
 };
 pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,

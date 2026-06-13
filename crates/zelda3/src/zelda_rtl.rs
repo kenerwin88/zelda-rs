@@ -73,13 +73,13 @@ use crate::game_state::{
     NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
     NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
-    NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
-    NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut, NativeRamBridgeView,
-    NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
-    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeRamBridgeView, NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut,
+    NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
+    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
@@ -90,19 +90,18 @@ use crate::game_state::{
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
-    PolyProjectedVerticesState, PolyRasterEdgeState, PolyStateView, PolyStateViewMut,
-    PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState,
-    SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
-    SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaState,
-    SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView,
-    SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TileDetectionState, TowerSealOrbitView,
-    TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
-    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
-    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
-    WorldStateViewMut,
+    PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
+    PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
+    SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
+    SkullWoodsFireSlotState, SkullWoodsFireState, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
+    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemState,
+    SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
+    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
+    TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView, WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3543,12 +3542,12 @@ impl ZeldaState {
             .advance_offset_by(value)
     }
 
-    pub(crate) fn poly_state_view(&self) -> PolyStateView<'_> {
-        PolyStateView::new(&self.ram)
+    pub(crate) fn poly_runtime(&self) -> PolyRuntimeState {
+        PolyRuntimeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_state_view_mut(&mut self) -> PolyStateViewMut<'_> {
-        PolyStateViewMut::new(&mut self.ram)
+    pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
+        NativePolyRuntimeBridgeMut::new(&mut self.game_state.poly.runtime, &mut self.ram)
     }
 
     pub(crate) fn poly_projected_vertex_view(&self) -> PolyProjectedVerticesState {
@@ -7262,18 +7261,18 @@ mod tests {
     fn triforce_poly_step0_falls_through_once_like_c() {
         let mut state = ZeldaState::new();
         state.attract_state_view_mut().set_intro_step_index(0);
-        state.poly_state_view_mut().set_config1(10);
+        state.poly_runtime_mut().set_config1(10);
         state.ram[SUBSUBMODULE_INDEX] = 8;
-        state.poly_state_view_mut().set_angle_a(7);
-        state.poly_state_view_mut().set_angle_b(11);
+        state.poly_runtime_mut().set_angle_a(7);
+        state.poly_runtime_mut().set_angle_b(11);
 
         state.triforce_room_handle_poly();
 
-        assert_eq!(state.poly_state_view().config1(), 8);
+        assert_eq!(state.poly_runtime().config1(), 8);
         assert_eq!(state.attract_state_view().intro_step_index(), 0);
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 8);
-        assert_eq!(state.poly_state_view().angle_a(), 8);
-        assert_eq!(state.poly_state_view().angle_b(), 13);
+        assert_eq!(state.poly_runtime().angle_a(), 8);
+        assert_eq!(state.poly_runtime().angle_b(), 13);
         assert_eq!(state.attract_state_view().intro_did_run_step(), 1);
         assert_eq!(state.ram[0x1e02], 0);
         assert_eq!(state.attract_state_view().intro_frame_counter(), 1);

@@ -1080,7 +1080,7 @@ impl ZeldaState {
             .set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
         self.intro_init_gfx_helper();
-        self.poly_state_view_mut().clear_config1();
+        self.poly_runtime_mut().clear_config1();
         for k in 0..3 {
             self.intro_actor_view_mut(k).set_init_phase(1);
             self.intro_actor_view_mut(k).set_subtype(7);
@@ -1102,9 +1102,9 @@ impl ZeldaState {
         }
         match self.attract_state_view().intro_step_index() {
             0 => {
-                self.poly_state_view_mut().subtract_config1(2);
-                if self.poly_state_view().config1() < 2 {
-                    self.poly_state_view_mut().clear_config1();
+                self.poly_runtime_mut().subtract_config1(2);
+                if self.poly_runtime().config1() < 2 {
+                    self.poly_runtime_mut().clear_config1();
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.increment_subsubmodule();
                 }
@@ -1112,25 +1112,25 @@ impl ZeldaState {
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.intro_actor_view_mut(1).set_y_velocity(5);
                 }
-                self.poly_state_view_mut().add_angle_b(2);
-                self.poly_state_view_mut().add_angle_a(1);
+                self.poly_runtime_mut().add_angle_b(2);
+                self.poly_runtime_mut().add_angle_a(1);
             }
             1 => {
                 if self.frame_state().subsubmodule >= 10 {
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.intro_actor_view_mut(1).set_y_velocity(5);
                 }
-                self.poly_state_view_mut().add_angle_b(2);
-                self.poly_state_view_mut().add_angle_a(1);
+                self.poly_runtime_mut().add_angle_b(2);
+                self.poly_runtime_mut().add_angle_a(1);
             }
             2 => {
                 self.start_triforce_countdown(0x1c0);
-                if self.poly_state_view().config1() < 128 {
-                    self.poly_state_view_mut().increment_config1();
-                } else if (self.poly_state_view().angle_b().wrapping_sub(10) & 0x7f) >= 92
-                    && self.poly_state_view().angle_a().wrapping_sub(11) >= 220
+                if self.poly_runtime().config1() < 128 {
+                    self.poly_runtime_mut().increment_config1();
+                } else if (self.poly_runtime().angle_b().wrapping_sub(10) & 0x7f) >= 92
+                    && self.poly_runtime().angle_a().wrapping_sub(11) >= 220
                 {
-                    self.poly_state_view_mut().clear_angles();
+                    self.poly_runtime_mut().clear_angles();
                     self.increment_subsubmodule();
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.system_signals_view_mut().set_sound_effect_1(44);
@@ -1140,8 +1140,8 @@ impl ZeldaState {
                     break_triforce_handle_poly(self);
                     return;
                 }
-                self.poly_state_view_mut().add_angle_b(5);
-                self.poly_state_view_mut().add_angle_a(3);
+                self.poly_runtime_mut().add_angle_b(5);
+                self.poly_runtime_mut().add_angle_a(3);
             }
             3 => {
                 self.attract_state_view_mut().decrement_intro_step_timer();
@@ -1165,8 +1165,8 @@ impl ZeldaState {
             .increment_intro_frame_counter();
         self.activate_nmi_thread();
         if self.attract_state_view().intro_did_run_step() == 0 {
-            self.poly_state_view_mut().add_angle_b(3);
-            self.poly_state_view_mut().add_angle_a(1);
+            self.poly_runtime_mut().add_angle_b(3);
+            self.poly_runtime_mut().add_angle_a(1);
             self.attract_state_view_mut().mark_intro_did_run_step();
         }
         self.scene_animate_every_sprite();
@@ -2706,15 +2706,15 @@ impl ZeldaState {
     }
 
     pub(super) fn crystal_cutscene_initialize_polyhedral(&mut self) {
-        self.poly_state_view_mut().set_config1(156);
-        self.poly_state_view_mut().set_color_mode(1);
+        self.poly_runtime_mut().set_config1(156);
+        self.poly_runtime_mut().set_color_mode(1);
         self.activate_nmi_thread();
         self.attract_state_view_mut().mark_intro_did_run_step();
-        self.poly_state_view_mut().set_base_x(32);
-        self.poly_state_view_mut().set_base_y(32);
-        self.poly_state_view_mut().set_shape_depth_bias_low(32);
-        self.poly_state_view_mut().set_model(0);
-        self.poly_state_view_mut().set_angle_a(16);
+        self.poly_runtime_mut().set_base_x(32);
+        self.poly_runtime_mut().set_base_y(32);
+        self.poly_runtime_mut().set_shape_depth_bias_low(32);
+        self.poly_runtime_mut().set_model(0);
+        self.poly_runtime_mut().set_angle_a(16);
         self.set_sub_screen_layers(0);
         self.set_main_screen_layers(0x16);
     }
@@ -3105,14 +3105,14 @@ impl ZeldaState {
         self.polyhedral_initialize_thread();
         self.load_triforce_sprite_palette();
         self.set_vertical_irq_trigger(0x90);
-        self.poly_state_view_mut().set_config1(0xff);
-        self.poly_state_view_mut().set_base_x(32);
-        self.poly_state_view_mut().set_base_y(32);
-        self.poly_state_view_mut().set_shape_depth_bias_low(32);
-        self.poly_state_view_mut().set_angle_a(0xa0);
-        self.poly_state_view_mut().set_angle_b(0x60);
-        self.poly_state_view_mut().set_color_mode(1);
-        self.poly_state_view_mut().set_model(1);
+        self.poly_runtime_mut().set_config1(0xff);
+        self.poly_runtime_mut().set_base_x(32);
+        self.poly_runtime_mut().set_base_y(32);
+        self.poly_runtime_mut().set_shape_depth_bias_low(32);
+        self.poly_runtime_mut().set_angle_a(0xa0);
+        self.poly_runtime_mut().set_angle_b(0x60);
+        self.poly_runtime_mut().set_color_mode(1);
+        self.poly_runtime_mut().set_model(1);
         self.activate_nmi_thread();
         self.attract_state_view_mut().mark_intro_did_run_step();
         if self.rom_startup_timing() {
@@ -3177,23 +3177,23 @@ impl ZeldaState {
                 if self.attract_state_view().intro_step_timer() == 64 {
                     self.attract_state_view_mut().increment_intro_step_index();
                 }
-                self.poly_state_view_mut().add_angle_b(5);
-                self.poly_state_view_mut().add_angle_a(3);
+                self.poly_runtime_mut().add_angle_b(5);
+                self.poly_runtime_mut().add_angle_a(3);
             }
             1 => {
-                if self.poly_state_view().config1() < 2 {
-                    self.poly_state_view_mut().clear_config1();
+                if self.poly_runtime().config1() < 2 {
+                    self.poly_runtime_mut().clear_config1();
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.attract_state_view_mut().set_intro_step_timer(64);
                     return;
                 }
-                self.poly_state_view_mut().subtract_config1(2);
-                self.poly_state_view_mut().add_angle_b(5);
-                self.poly_state_view_mut().add_angle_a(3);
-                if self.poly_state_view().config1() < 225 {
+                self.poly_runtime_mut().subtract_config1(2);
+                self.poly_runtime_mut().add_angle_b(5);
+                self.poly_runtime_mut().add_angle_a(3);
+                if self.poly_runtime().config1() < 225 {
                     self.set_submodule(4);
                 }
-                if self.poly_state_view().config1() == 113 {
+                if self.poly_runtime().config1() == 113 {
                     self.system_signals_view_mut().set_music_control(1);
                 }
             }
@@ -3202,24 +3202,22 @@ impl ZeldaState {
                 if self.attract_state_view().intro_step_timer() == 0 {
                     self.attract_state_view_mut().increment_intro_step_index();
                 } else {
-                    self.poly_state_view_mut().add_angle_b(5);
-                    self.poly_state_view_mut().add_angle_a(3);
+                    self.poly_runtime_mut().add_angle_b(5);
+                    self.poly_runtime_mut().add_angle_a(3);
                 }
             }
             3 => {
-                if self.poly_state_view().angle_b() >= 250
-                    && self.poly_state_view().angle_a() >= 252
-                {
+                if self.poly_runtime().angle_b() >= 250 && self.poly_runtime().angle_a() >= 252 {
                     self.attract_state_view_mut().increment_intro_step_index();
                     self.attract_state_view_mut().set_intro_step_timer(32);
                 } else {
-                    self.poly_state_view_mut().add_angle_b(5);
-                    self.poly_state_view_mut().add_angle_a(3);
+                    self.poly_runtime_mut().add_angle_b(5);
+                    self.poly_runtime_mut().add_angle_a(3);
                 }
             }
             4 => {
-                self.poly_state_view_mut().set_angle_b(0);
-                self.poly_state_view_mut().set_angle_a(0);
+                self.poly_runtime_mut().set_angle_b(0);
+                self.poly_runtime_mut().set_angle_a(0);
                 self.attract_state_view_mut().decrement_intro_step_timer();
                 if self.attract_state_view().intro_step_timer() == 0 {
                     self.attract_state_view_mut().increment_intro_step_index();

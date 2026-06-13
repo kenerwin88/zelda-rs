@@ -583,7 +583,7 @@ impl ZeldaState {
 
     pub(super) fn crystal_maiden_run_cutscene(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_e();
-        self.poly_state_view_mut().add_angle_b(6);
+        self.poly_runtime_mut().add_angle_b(6);
         if self.frame_state().submodule != 0 {
             return;
         }
@@ -598,12 +598,12 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             2 => {
-                if self.poly_state_view().config1() < 6 {
-                    self.poly_state_view_mut().clear_config1();
+                if self.poly_runtime().config1() < 6 {
+                    self.poly_runtime_mut().clear_config1();
                     self.sprite_slot_view_mut(k).increment_ai_state();
                 } else {
-                    self.poly_state_view_mut().subtract_config1(3);
-                    if self.poly_state_view().config1() >= 64 {
+                    self.poly_runtime_mut().subtract_config1(3);
+                    if self.poly_runtime().config1() >= 64 {
                         self.ancilla_add_sword_charge_sparkle_from_ancilla(
                             self.sprite_slot_view(k).a() as usize,
                         );
