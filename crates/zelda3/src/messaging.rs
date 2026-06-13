@@ -372,7 +372,7 @@ impl ZeldaState {
         if self.frame_state().submodule == 0 {
             self.set_subsubmodule(0);
             self.set_bg_vram_load_mode(1);
-            if self.multiselect_choice_view().value() != 0 {
+            if self.multiselect_choice().value() != 0 {
                 self.system_signals_mut().set_ambient_sound_effect(15);
                 self.set_main_module(23);
                 self.set_submodule(1);
@@ -395,7 +395,7 @@ impl ZeldaState {
         self.EnableForceBlank();
         self.EraseTileMaps_normal();
         let bak = self.save_progress().which_starting_point();
-        let choice = self.multiselect_choice_view().value();
+        let choice = self.multiselect_choice().value();
         self.save_progress_mut()
             .set_which_starting_point(LOCATION_MENU_START_POSITIONS[choice as usize]);
         self.set_subsubmodule(0);
@@ -3363,7 +3363,7 @@ impl ZeldaState {
 
     pub(super) fn RenderText_FindYItem_Previous(&mut self) {
         loop {
-            let mut x = self.multiselect_choice_view().value();
+            let mut x = self.multiselect_choice().value();
             if (x as i8) < 0 {
                 self.multiselect_choice_mut().set_value(31);
                 x = 31;
@@ -3381,7 +3381,7 @@ impl ZeldaState {
 
     pub(super) fn RenderText_FindYItem_Next(&mut self) {
         loop {
-            let mut x = self.multiselect_choice_view().value();
+            let mut x = self.multiselect_choice().value();
             if x >= 32 {
                 self.multiselect_choice_mut().set_value(0);
                 x = 0;
@@ -3398,7 +3398,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_DrawSelectedYItem(&mut self) {
-        let item = self.multiselect_choice_view().value();
+        let item = self.multiselect_choice().value();
         let variant = if item == 3 || item == 32 {
             1
         } else {
@@ -3438,7 +3438,7 @@ impl ZeldaState {
             } else {
                 1
             };
-            if self.multiselect_choice_view().value() == t {
+            if self.multiselect_choice().value() == t {
                 return;
             }
             self.multiselect_choice_mut().set_value(t);
@@ -3464,7 +3464,7 @@ impl ZeldaState {
             self.system_signals_mut().set_sound_effect_1(43);
             self.messaging_state_mut().set_text_render_state(4);
         } else if y & 12 != 0 {
-            let mut choice = self.multiselect_choice_view().value();
+            let mut choice = self.multiselect_choice().value();
             choice = if y & 8 != 0 {
                 if choice == 0 {
                     2
@@ -3500,7 +3500,7 @@ impl ZeldaState {
             self.messaging_state_mut().set_text_render_state(4);
         } else if y & 12 != 0 {
             let t = if y & 8 != 0 { 0 } else { 1 };
-            if self.multiselect_choice_view().value() == t {
+            if self.multiselect_choice().value() == t {
                 return;
             }
             self.multiselect_choice_mut().set_value(t);

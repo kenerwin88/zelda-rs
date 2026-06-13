@@ -1172,12 +1172,12 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeMultiselectChoiceView<'a> {
+pub(crate) struct MultiselectChoiceRead<'a> {
     choice: &'a MultiselectChoiceState,
     runtime: &'a MessagingRuntimeState,
 }
 
-impl<'a> NativeMultiselectChoiceView<'a> {
+impl<'a> MultiselectChoiceRead<'a> {
     pub(crate) fn new(
         choice: &'a MultiselectChoiceState,
         runtime: &'a MessagingRuntimeState,

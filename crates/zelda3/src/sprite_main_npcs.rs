@@ -605,7 +605,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive_npcs(k) {
             return;
         }
-        if self.multiselect_choice_view().value() == 0 {
+        if self.multiselect_choice().value() == 0 {
             let j = self.sprite_find_empty_bottle();
             if j >= 0 {
                 let value = 7u8.wrapping_add(self.sprite_slot_view(k).head_direction());
@@ -728,7 +728,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0
+                if self.multiselect_choice().value() == 0
                     && self.player_resources().rupees_goal() >= 100
                 {
                     self.sprite_show_message_unconditional(0xd2);

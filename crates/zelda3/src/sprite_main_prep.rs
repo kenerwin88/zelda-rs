@@ -837,7 +837,7 @@ impl ZeldaState {
                 }
             }
             1 | 3 => {
-                if self.multiselect_choice_view().value() == 0
+                if self.multiselect_choice().value() == 0
                     && self.player_resources().rupees_goal() >= 20
                 {
                     self.sprite_slot_view_mut(k).set_head_direction(0);
@@ -2171,7 +2171,7 @@ impl ZeldaState {
                 }
             }
             3 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     if self.follower_state().dropped() != 0 {
                         self.sprite_show_message_unconditional(0x10c);
                         self.sprite_slot_view_mut(k).set_ai_state(2);
@@ -2358,7 +2358,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     self.sprite_show_message_unconditional(0x8a);
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                     self.player_state_view_mut().immobilize();
@@ -2370,7 +2370,7 @@ impl ZeldaState {
             }
             2 => {
                 self.sprite_slot_view_mut(k).set_ai_state(3);
-                let j = self.multiselect_choice_view().value() as usize;
+                let j = self.multiselect_choice().value() as usize;
                 self.sprite_slot_view_mut(k).set_c(j as u8);
                 let item = self.inventory_items().inventory_item(j);
                 let value = 0;
@@ -2423,7 +2423,7 @@ impl ZeldaState {
                 }
             }
             5 => {
-                let ai_state = if self.multiselect_choice_view().value() == 0 {
+                let ai_state = if self.multiselect_choice().value() == 0 {
                     6
                 } else {
                     11
@@ -2518,7 +2518,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(12);
             }
             12 => {
-                let ai_state = if self.multiselect_choice_view().value() == 0 {
+                let ai_state = if self.multiselect_choice().value() == 0 {
                     13
                 } else {
                     6
@@ -2551,7 +2551,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     let i = u8::from(self.player_resources().has_bomb_or_arrow_upgrade());
                     self.sprite_slot_view_mut(k).set_graphics(i * 2);
                     let cost_index = (i * 2) as usize;
@@ -2568,7 +2568,7 @@ impl ZeldaState {
                 let i = self
                     .sprite_slot_view(k)
                     .graphics()
-                    .wrapping_add(self.multiselect_choice_view().value());
+                    .wrapping_add(self.multiselect_choice().value());
                 self.dialogue_number_mut()
                     .set_high_pair(COST_HEX[i as usize]);
                 if self.player_resources().rupees_goal() < COST[i as usize] as u16 {
@@ -2637,7 +2637,7 @@ impl ZeldaState {
                 }
             }
             7 => {
-                let ai_state = if self.multiselect_choice_view().value() == 0 {
+                let ai_state = if self.multiselect_choice().value() == 0 {
                     8
                 } else {
                     12
@@ -3371,7 +3371,7 @@ impl ZeldaState {
             }
             1 => {
                 let rupees = self.player_resources().rupees_goal();
-                if self.multiselect_choice_view().value() == 0 && rupees >= 80 {
+                if self.multiselect_choice().value() == 0 && rupees >= 80 {
                     self.player_resources_mut()
                         .set_rupees_goal(rupees.wrapping_sub(80));
                     self.sprite_show_message_unconditional(0x188);

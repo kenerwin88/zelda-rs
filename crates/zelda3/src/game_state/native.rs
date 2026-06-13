@@ -73,11 +73,11 @@ pub(crate) use inventory::{
 };
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
-    MessagingRenderBufferState, MessagingRuntimeState, MessagingState,
+    MessagingRenderBufferState, MessagingRuntimeState, MessagingState, MultiselectChoiceRead,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeSelectFileMenuBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SelectFileMenuState,
     SharedMessageTimerState, VwfRenderState,
 };
@@ -2645,7 +2645,7 @@ mod tests {
         assert_eq!(state.messaging.dialogue_message_index.value(), 0x0123);
         assert_eq!(state.messaging.multiselect_choice.value(), 0x04);
         assert_eq!(
-            NativeMultiselectChoiceView::new(
+            MultiselectChoiceRead::new(
                 &state.messaging.multiselect_choice,
                 &state.messaging.runtime
             )
@@ -4398,7 +4398,7 @@ mod tests {
         let mut choice = MultiselectChoiceState::load_from_ram(&ram);
         assert_eq!(choice.value(), 0x04);
         assert_eq!(
-            NativeMultiselectChoiceView::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
+            MultiselectChoiceRead::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
                 .value_word(),
             0x0204
         );
@@ -4432,7 +4432,7 @@ mod tests {
 
         assert_eq!(choice.value(), 0x04);
         assert_eq!(
-            NativeMultiselectChoiceView::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
+            MultiselectChoiceRead::new(&choice, &MessagingRuntimeState::load_from_ram(&ram))
                 .value_word(),
             0x0204
         );

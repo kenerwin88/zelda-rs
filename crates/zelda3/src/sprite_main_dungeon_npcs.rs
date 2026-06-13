@@ -634,7 +634,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             7 => {
-                if self.multiselect_choice_view().value() != 0 {
+                if self.multiselect_choice().value() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(5);
                 } else {
                     self.sprite_show_message_unconditional(0x139);
@@ -715,7 +715,7 @@ impl ZeldaState {
                 self.sprite_show_message_unconditional(0x25);
             }
             3 => {
-                if self.multiselect_choice_view().value() != 0 {
+                if self.multiselect_choice().value() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                 } else {
                     self.sprite_slot_view_mut(k).increment_ai_state();
@@ -1195,7 +1195,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                if self.multiselect_choice_view().value_word() == 0 {
+                if self.multiselect_choice().value_word() == 0 {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.player_state_view_mut().clear_immobilized();
                 } else {
@@ -1930,7 +1930,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             1 => {
-                let choice = self.multiselect_choice_view().value_word();
+                let choice = self.multiselect_choice().value_word();
                 if choice == 0 && self.shop_item_handle_cost(10) {
                     self.sprite_show_message_unconditional(0x11f);
                     self.follower_state_mut().or_event_flags(3);
@@ -1987,7 +1987,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             1 => {
-                let choice = self.multiselect_choice_view().value_word();
+                let choice = self.multiselect_choice().value_word();
                 if choice != 0 || !self.shop_item_handle_cost(100) {
                     self.sprite_show_message_unconditional(0x11c);
                     self.sprite_slot_view_mut(k).set_subtype2(3);
@@ -2491,7 +2491,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value_word() == 0 {
+                if self.multiselect_choice().value_word() == 0 {
                     self.sprite_show_message_unconditional(0xd9);
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                 } else {
@@ -2500,7 +2500,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                if self.multiselect_choice_view().value_word() == 0 {
+                if self.multiselect_choice().value_word() == 0 {
                     if self.inventory_items().sword_type() < 3 {
                         self.sprite_show_message_unconditional(0xda);
                         self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -2514,7 +2514,7 @@ impl ZeldaState {
                 }
             }
             3 => {
-                let choice = self.multiselect_choice_view().value_word();
+                let choice = self.multiselect_choice().value_word();
                 let rupees = self.player_resources().rupees_goal();
                 if choice != 0 || rupees < 10 {
                     self.sprite_show_message_unconditional(0xdc);

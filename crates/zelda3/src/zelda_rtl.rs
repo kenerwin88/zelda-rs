@@ -48,8 +48,8 @@ use crate::game_state::{
     IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead,
+    NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
     NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
@@ -76,8 +76,8 @@ use crate::game_state::{
     NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
     NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -1850,8 +1850,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn multiselect_choice_view(&self) -> NativeMultiselectChoiceView<'_> {
-        NativeMultiselectChoiceView::new(
+    pub(crate) fn multiselect_choice(&self) -> MultiselectChoiceRead<'_> {
+        MultiselectChoiceRead::new(
             &self.game_state.messaging.multiselect_choice,
             &self.game_state.messaging.runtime,
         )

@@ -877,7 +877,7 @@ impl ZeldaState {
                     self.dialogue_message_index_mut().set_value(0x142);
                     self.sprite_show_message_minimal_c();
                 } else if j == 79 {
-                    if self.multiselect_choice_view().value() == 0 {
+                    if self.multiselect_choice().value() == 0 {
                         self.dialogue_message_index_mut().set_value(0x143);
                         self.sprite_show_message_minimal_c();
                     } else {
@@ -887,7 +887,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_delay_main(value);
                     }
                 } else if j == 78 {
-                    if self.multiselect_choice_view().value() == 0
+                    if self.multiselect_choice().value() == 0
                         && self.player_resources().rupees_goal() >= 500
                     {
                         let rupees = self.player_resources().rupees_goal().wrapping_sub(500);
@@ -12550,7 +12550,7 @@ impl ZeldaState {
                 self.faerie_handle_movement(k);
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     let j = self.sprite_find_empty_bottle();
                     if j >= 0 {
                         let value = 6;
@@ -16486,7 +16486,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
             2 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     let value = 3;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     self.sprite_show_message_unconditional(0x002d);
@@ -16845,7 +16845,7 @@ impl ZeldaState {
                 }
             }
             3 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     if self.sprite_slot_view(k).delay_main() == 0 {
                         let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -18016,7 +18016,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 && self.shop_item_handle_cost(30) {
+                if self.multiselect_choice().value() == 0 && self.shop_item_handle_cost(30) {
                     self.minigame_state_mut().set_credits(2);
                     self.sprite_show_message_unconditional(0x0164);
                     let value = 2;
@@ -18095,7 +18095,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 && self.shop_item_handle_cost(20) {
+                if self.multiselect_choice().value() == 0 && self.shop_item_handle_cost(20) {
                     self.minigame_state_mut().set_credits(1);
                     self.sprite_show_message_unconditional(0x017f);
                     let value = 2;
@@ -18138,7 +18138,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.multiselect_choice_view().value() == 0 && self.shop_item_handle_cost(100) {
+                if self.multiselect_choice().value() == 0 && self.shop_item_handle_cost(100) {
                     self.minigame_state_mut().set_credits(1);
                     self.sprite_show_message_unconditional(0x017f);
                     let value = 2;
@@ -18499,7 +18499,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => self.dark_world_hint_npc_idle(k),
             1 => {
-                if self.multiselect_choice_view().value() == 0
+                if self.multiselect_choice().value() == 0
                     && self.dark_world_hint_npc_handle_payment()
                 {
                     self.sprite_show_message_unconditional(paid_msg);

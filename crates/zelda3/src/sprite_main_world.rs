@@ -1226,7 +1226,7 @@ impl ZeldaState {
                 _ => {}
             },
             1 => {
-                if self.multiselect_choice_view().value() == 0 {
+                if self.multiselect_choice().value() == 0 {
                     self.sprite_show_message_unconditional(0xe6);
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                 } else {
