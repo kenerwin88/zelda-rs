@@ -1,9 +1,9 @@
 use crate::game_state::constants::{
-    ACTIVATE_BOMB_TRAP_OVERLORD, ATTRIBUTES_FOR_TILE_PLAYER, AUX_TILE_THEME_INDEX,
-    BIG_ROCK_STARTING_ADDRESS, BLOCK_TRAP_CHECK_FLAG, CHANGEABLE_DUNGEON_OBJECT_INDEX,
-    COMPOSITE_OF_LAYOUT_AND_QUADRANT, CRUSH_WALL_DOOR_INDEX_X2, CRUSH_WALL_PROGRESS,
-    DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
-    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
+    ACTIVATE_BOMB_TRAP_OVERLORD, ADJACENT_DOORS, ADJACENT_DOORS_FLAGS, ATTRIBUTES_FOR_TILE_PLAYER,
+    AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, BLOCK_TRAP_CHECK_FLAG,
+    CHANGEABLE_DUNGEON_OBJECT_INDEX, COMPOSITE_OF_LAYOUT_AND_QUADRANT, CRUSH_WALL_DOOR_INDEX_X2,
+    CRUSH_WALL_PROGRESS, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER,
+    DOOR_TYPE_AND_SLOT, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
     DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR,
@@ -12,29 +12,30 @@ use crate::game_state::constants::{
     DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED,
     DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED,
     DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS,
-    DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED,
-    DUNG_FLAG_SOMARIA_BLOCK_SWITCH, DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN,
-    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES,
-    DUNG_HDR_BG2_PROPERTIES_BACKUP, DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2,
-    DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
-    DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0, DUNG_LOADE_BGOFFS_H_COPY,
-    DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
-    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_BIGKEY_LOCKS_X2, DUNG_NUM_CHESTS_X2,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
-    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
-    DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
-    DUNG_NUM_TOGGLE_FLOOR, DUNG_NUM_TOGGLE_PALACE, DUNG_OBJECT_POS_IN_OBJDATA,
-    DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD, DUNG_QUADRANTS_VISITED,
-    DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2, DUNG_SAVEGAME_STATE_BITS,
-    DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
-    DUNG_WHICH_KEY_X2_DUNGEON, FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT,
-    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
+    DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR, DUNG_EXIT_DOOR_ADDRESSES,
+    DUNG_EXIT_DOOR_COUNT, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED, DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
+    DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
+    DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
+    DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
+    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
+    DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR, DUNG_LOAD_PTR_BANK,
+    DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
+    DUNG_NUM_BIGKEY_LOCKS_X2, DUNG_NUM_CHESTS_X2, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1,
+    DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_NUM_TOGGLE_FLOOR, DUNG_NUM_TOGGLE_PALACE,
+    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
+    DUNG_QUADRANTS_VISITED, DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2,
+    DUNG_SAVEGAME_STATE_BITS, DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS, DUNG_WANT_LIGHTS_OUT,
+    DUNG_WANT_LIGHTS_OUT_COPY, DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS,
+    FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
+    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
     MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
     MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
     MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
     OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
     OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
-    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
+    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESET_XY_CHECK_FLAGS,
     SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
     WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
     WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
@@ -63,6 +64,8 @@ const MOVING_WALL_REPLACEMENT_WORDS: usize = 64;
 const DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT: usize = 16;
 const DUNGEON_ROOM_TOGGLE_SLOT_COUNT: usize = 8;
 const DUNGEON_POT_REVEAL_ROOM_COUNT: usize = 0x140;
+const DUNGEON_ADJACENT_DOOR_COUNT: usize = 8;
+const DUNGEON_EXIT_DOOR_COUNT: usize = 4;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
@@ -123,6 +126,7 @@ pub(crate) struct DungeonState {
     pub(crate) room_items: DungeonRoomItemState,
     pub(crate) room_effects: DungeonRoomEffectsState,
     pub(crate) room_parser: DungeonRoomParserState,
+    pub(crate) door_setup: DungeonRoomDoorSetupState,
 }
 
 impl DungeonState {
@@ -146,6 +150,7 @@ impl DungeonState {
             room_items: DungeonRoomItemState::load_from_ram(ram),
             room_effects: DungeonRoomEffectsState::load_from_ram(ram),
             room_parser: DungeonRoomParserState::load_from_ram(ram),
+            door_setup: DungeonRoomDoorSetupState::load_from_ram(ram),
         }
     }
 
@@ -1644,6 +1649,153 @@ impl DungeonStairMovementState {
 
     fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
         self.in_room_kind = value;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomDoorSetupState {
+    adjacent_door_flags: u16,
+    adjacent_doors: [u16; DUNGEON_ADJACENT_DOOR_COUNT],
+    exit_door_count_x2: u16,
+    exit_door_addresses: [u16; DUNGEON_EXIT_DOOR_COUNT],
+    invisible_door_marker: u16,
+    active_room_load_ptr: u16,
+    active_room_load_ptr_bank: u8,
+    width_road_address: u16,
+    reset_xy_check_flags: u16,
+}
+
+impl DungeonRoomDoorSetupState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut adjacent_doors = [0; DUNGEON_ADJACENT_DOOR_COUNT];
+        for (index, door) in adjacent_doors.iter_mut().enumerate() {
+            *door = read_le_u16(ram, ADJACENT_DOORS + index * 2);
+        }
+
+        let mut exit_door_addresses = [0; DUNGEON_EXIT_DOOR_COUNT];
+        for (index, address) in exit_door_addresses.iter_mut().enumerate() {
+            *address = read_le_u16(ram, DUNG_EXIT_DOOR_ADDRESSES + index * 2);
+        }
+
+        Self {
+            adjacent_door_flags: read_le_u16(ram, ADJACENT_DOORS_FLAGS),
+            adjacent_doors,
+            exit_door_count_x2: read_le_u16(ram, DUNG_EXIT_DOOR_COUNT),
+            exit_door_addresses,
+            invisible_door_marker: read_le_u16(ram, INVISIBLE_DOOR_DIR_AND_INDEX_X2),
+            active_room_load_ptr: read_le_u16(ram, DUNG_LOAD_PTR),
+            active_room_load_ptr_bank: ram.get(DUNG_LOAD_PTR_BANK).copied().unwrap_or(0),
+            width_road_address: read_le_u16(ram, DUNG_WIDTH_ROAD_ADDRESS),
+            reset_xy_check_flags: read_le_u16(ram, RESET_XY_CHECK_FLAGS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, ADJACENT_DOORS_FLAGS, self.adjacent_door_flags);
+        for (index, &door) in self.adjacent_doors.iter().enumerate() {
+            write_le_u16(ram, ADJACENT_DOORS + index * 2, door);
+        }
+        write_le_u16(ram, DUNG_EXIT_DOOR_COUNT, self.exit_door_count_x2);
+        for (index, &address) in self.exit_door_addresses.iter().enumerate() {
+            write_le_u16(ram, DUNG_EXIT_DOOR_ADDRESSES + index * 2, address);
+        }
+        write_le_u16(
+            ram,
+            INVISIBLE_DOOR_DIR_AND_INDEX_X2,
+            self.invisible_door_marker,
+        );
+        write_le_u16(ram, DUNG_LOAD_PTR, self.active_room_load_ptr);
+        ram[DUNG_LOAD_PTR_BANK] = self.active_room_load_ptr_bank;
+        write_le_u16(ram, DUNG_WIDTH_ROAD_ADDRESS, self.width_road_address);
+        write_le_u16(ram, RESET_XY_CHECK_FLAGS, self.reset_xy_check_flags);
+    }
+
+    pub(crate) fn adjacent_door_flags(&self) -> u16 {
+        self.adjacent_door_flags
+    }
+
+    pub(crate) fn adjacent_door(&self, index: usize) -> u16 {
+        self.adjacent_doors.get(index).copied().unwrap_or(0xffff)
+    }
+
+    pub(crate) fn has_exit_door_address(&self, address: u16) -> bool {
+        self.exit_door_addresses
+            .iter()
+            .any(|&existing| existing == address)
+    }
+
+    pub(crate) fn invisible_door_marker(&self) -> u16 {
+        self.invisible_door_marker
+    }
+
+    pub(crate) fn active_room_load_ptr(&self) -> u16 {
+        self.active_room_load_ptr
+    }
+
+    pub(crate) fn active_room_load_ptr_bank(&self) -> u8 {
+        self.active_room_load_ptr_bank
+    }
+
+    pub(crate) fn width_road_address(&self) -> u16 {
+        self.width_road_address
+    }
+
+    pub(crate) fn reset_xy_check_flags(&self) -> u16 {
+        self.reset_xy_check_flags
+    }
+
+    fn clear_invisible_door_marker(&mut self) {
+        self.invisible_door_marker = 0xffff;
+    }
+
+    fn set_invisible_door_marker(&mut self, slot: usize, direction: u16) {
+        self.invisible_door_marker = (((slot as u16) << 8) | direction) * 2;
+    }
+
+    fn clear_exit_door_count_and_flags(&mut self) {
+        self.exit_door_count_x2 = 0;
+        self.exit_door_addresses = [0; DUNGEON_EXIT_DOOR_COUNT];
+    }
+
+    fn append_exit_door_address(&mut self, address: u16) -> usize {
+        let index = usize::from(self.exit_door_count_x2 >> 1);
+        if let Some(slot) = self.exit_door_addresses.get_mut(index) {
+            *slot = address;
+        }
+        self.exit_door_count_x2 = self.exit_door_count_x2.wrapping_add(2);
+        index
+    }
+
+    fn set_active_room_load_ptr(&mut self, value: u16) {
+        self.active_room_load_ptr = value;
+    }
+
+    fn set_active_room_load_ptr_bank(&mut self, value: u8) {
+        self.active_room_load_ptr_bank = value;
+    }
+
+    fn add_reset_xy_check_flags(&mut self, value: u16) -> u16 {
+        self.reset_xy_check_flags |= value;
+        self.reset_xy_check_flags
+    }
+
+    fn set_adjacent_door_flags(&mut self, value: u16) {
+        self.adjacent_door_flags = value;
+    }
+
+    fn mark_adjacent_door_flag(&mut self, index: usize) -> u16 {
+        self.adjacent_door_flags |= 0x8000u16 >> (index & 15);
+        self.adjacent_door_flags
+    }
+
+    fn set_adjacent_door(&mut self, index: usize, value: u16) {
+        if let Some(door) = self.adjacent_doors.get_mut(index) {
+            *door = value;
+        }
+    }
+
+    fn mark_no_adjacent_doors(&mut self) {
+        self.set_adjacent_door(0, 0xffff);
     }
 }
 
@@ -4578,6 +4730,94 @@ impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
 
     pub(crate) fn set_room_layout_and_starting_quadrant(&mut self, value: u16) {
         self.state.set_room_layout_and_starting_quadrant(value);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomDoorSetupBridgeMut<'a> {
+    state: &'a mut DungeonRoomDoorSetupState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomDoorSetupState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomDoorSetupState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomDoorSetupState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_room_door_info_word(&mut self, dst: usize, index: usize, value: u16) {
+        write_le_u16(self.ram, dst + index * 2, value);
+        *self.state = DungeonRoomDoorSetupState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_invisible_door_marker(&mut self) {
+        self.state.clear_invisible_door_marker();
+        self.sync();
+    }
+
+    pub(crate) fn set_invisible_door_marker(&mut self, slot: usize, direction: u16) {
+        self.state.set_invisible_door_marker(slot, direction);
+        self.sync();
+    }
+
+    pub(crate) fn clear_exit_door_count_and_flags(&mut self) {
+        self.state.clear_exit_door_count_and_flags();
+        self.sync();
+    }
+
+    pub(crate) fn append_exit_door_address(&mut self, address: u16) -> usize {
+        let index = self.state.append_exit_door_address(address);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn set_active_room_load_ptr(&mut self, value: u16) {
+        self.state.set_active_room_load_ptr(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_active_room_load_ptr_bank(&mut self, value: u8) {
+        self.state.set_active_room_load_ptr_bank(value);
+        self.sync();
+    }
+
+    pub(crate) fn add_reset_xy_check_flags(&mut self, value: u16) -> u16 {
+        let flags = self.state.add_reset_xy_check_flags(value);
+        self.sync();
+        flags
+    }
+
+    pub(crate) fn set_adjacent_door_flags(&mut self, value: u16) {
+        self.state.set_adjacent_door_flags(value);
+        self.sync();
+    }
+
+    pub(crate) fn mark_adjacent_door_flag(&mut self, index: usize) -> u16 {
+        let flags = self.state.mark_adjacent_door_flag(index);
+        self.sync();
+        flags
+    }
+
+    pub(crate) fn set_adjacent_door(&mut self, index: usize, value: u16) {
+        self.state.set_adjacent_door(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn mark_no_adjacent_doors(&mut self) {
+        self.state.mark_no_adjacent_doors();
         self.sync();
     }
 }

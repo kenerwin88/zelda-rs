@@ -1190,7 +1190,7 @@ impl ZeldaState {
             self.dungeon_room_parser_mut()
                 .clear_room_parser_words(&[offset]);
         }
-        self.dungeon_state_view_mut().clear_invisible_door_marker();
+        self.dungeon_room_doors_mut().clear_invisible_door_marker();
         self.fill_ram(DUNG_TORCH_TIMERS_DUNGEON, 16, 0);
         self.dungeon_object_tracking_mut()
             .clear_replacement_tile_states();
@@ -1201,7 +1201,7 @@ impl ZeldaState {
         }
         self.dungeon_doors_mut().clear_door_tilemap_addresses();
         self.dungeon_doors_mut().clear_door_tables();
-        self.dungeon_state_view_mut()
+        self.dungeon_room_doors_mut()
             .clear_exit_door_count_and_flags();
         self.dungeon_room_load_mut().set_load_ptr_offset(0);
         self.RoomDraw_DrawFloorsCurrentRoom();
@@ -1362,14 +1362,14 @@ impl ZeldaState {
         for i in 0..max_words {
             let word = read_word_from_slice(&doors, i * 2);
             if word == 0xffff {
-                self.dungeon_state_view_mut()
+                self.dungeon_room_doors_mut()
                     .set_room_door_info_word(dst, i, 0);
                 return;
             }
-            self.dungeon_state_view_mut()
+            self.dungeon_room_doors_mut()
                 .set_room_door_info_word(dst, i, word);
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_room_doors_mut()
             .set_room_door_info_word(dst, max_words, 0);
     }
 
@@ -1401,7 +1401,7 @@ impl ZeldaState {
 
         self.Dungeon_LoadAdjacentRoomDoors(room);
         for i in 0..8 {
-            let mut a = self.dungeon_state_view().adjacent_door(i);
+            let mut a = self.dungeon_room_doors().adjacent_door(i);
             if a == 0xffff {
                 break;
             }
@@ -1422,7 +1422,7 @@ impl ZeldaState {
                                     break;
                                 }
                                 self.dungeon_environment_mut().clear_trapdoors_down();
-                            } else if self.dungeon_state_view().adjacent_door_flags()
+                            } else if self.dungeon_room_doors().adjacent_door_flags()
                                 & upper_bitmask(i)
                                 == 0
                             {
@@ -1444,19 +1444,19 @@ impl ZeldaState {
 
     fn Dungeon_LoadAdjacentRoomDoors(&mut self, room: usize) {
         let flags = (self.asset_u16_from_ram(0xf000, room) & 0xf000) | 0x0f00;
-        self.dungeon_state_view_mut().set_adjacent_door_flags(flags);
+        self.dungeon_room_doors_mut().set_adjacent_door_flags(flags);
         let Some(doors) = self.GetRoomDoorInfo(room).map(Vec::from) else {
-            self.dungeon_state_view_mut().mark_no_adjacent_doors();
+            self.dungeon_room_doors_mut().mark_no_adjacent_doors();
             return;
         };
         for i in 0..8 {
             let a = read_word_from_slice(&doors, i * 2);
-            self.dungeon_state_view_mut().set_adjacent_door(i, a);
+            self.dungeon_room_doors_mut().set_adjacent_door(i, a);
             if a == 0xffff {
                 break;
             }
             if (a & 0xff00) == 0x4000 || (a & 0xff00) < 0x0200 {
-                self.dungeon_state_view_mut().mark_adjacent_door_flag(i);
+                self.dungeon_room_doors_mut().mark_adjacent_door_flag(i);
             }
         }
     }
@@ -2878,15 +2878,15 @@ impl ZeldaState {
                         .set_watergate_tilemap_pos_x2(dsto * 2);
                 } else {
                     self.RoomDraw_Object_Nx4(10, 0x13e8, dsto);
-                    let load_ptr = self.dungeon_state_view().active_room_load_ptr();
+                    let load_ptr = self.dungeon_room_doors().active_room_load_ptr();
                     let load_ptr_offs = self.dungeon_room_load().load_ptr_offset();
-                    let load_ptr_bank = self.dungeon_state_view().active_room_load_ptr_bank();
+                    let load_ptr_bank = self.dungeon_room_doors().active_room_load_ptr_bank();
                     self.RoomTag_OperateWaterFlooring();
-                    self.dungeon_state_view_mut()
+                    self.dungeon_room_doors_mut()
                         .set_active_room_load_ptr_bank(load_ptr_bank);
                     self.dungeon_room_load_mut()
                         .set_load_ptr_offset(load_ptr_offs);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_room_doors_mut()
                         .set_active_room_load_ptr(load_ptr);
                 }
             }
@@ -3158,7 +3158,7 @@ impl ZeldaState {
     }
 
     pub(super) fn room_draw_register_exit_door(&mut self, dsto: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_doors_mut()
             .append_exit_door_address(dsto * 2);
     }
 
@@ -3268,7 +3268,7 @@ impl ZeldaState {
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_DOWN[42] as usize, dsto);
         let next = self.dungeon_doors().current_door_index().wrapping_add(2);
         self.dungeon_doors_mut().set_current_door_index(next);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_doors_mut()
             .add_reset_xy_check_flags(0x0200);
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_UP[42] as usize, dsto + xy(0, 6) as u16);
     }
@@ -3424,7 +3424,7 @@ impl ZeldaState {
             return remapped as u16;
         }
 
-        self.dungeon_state_view_mut()
+        self.dungeon_room_doors_mut()
             .set_invisible_door_marker(slot, direction);
         let opened = self.dungeon_doors().opened_doors_including_adjacent() | upper_bitmask(slot);
         self.dungeon_doors_mut()
@@ -5452,7 +5452,7 @@ impl ZeldaState {
                 blast_wall_x_open,
                 blast_wall_y_open,
             );
-        let reset_xy_flags = self.dungeon_state_view().reset_xy_check_flags();
+        let reset_xy_flags = self.dungeon_room_doors().reset_xy_check_flags();
         self.world_transient_mut()
             .apply_reset_xy_quadrant_overrides(reset_xy_flags);
     }
@@ -8610,7 +8610,7 @@ impl ZeldaState {
     }
 
     fn door_address_is_exit(&self, address: u16) -> bool {
-        self.dungeon_state_view().has_exit_door_address(address)
+        self.dungeon_room_doors().has_exit_door_address(address)
     }
 
     fn Door_LoadBlastWallAttr(&mut self, k: usize) {
@@ -8639,7 +8639,7 @@ impl ZeldaState {
     }
 
     fn ChangeDoorToSwitch(&self) {
-        assert_eq!(self.dungeon_state_view().width_road_address(), 0);
+        assert_eq!(self.dungeon_room_doors().width_road_address(), 0);
     }
 
     fn Dungeon_FlipCrystalPegAttribute(&mut self) {
@@ -11965,7 +11965,7 @@ impl ZeldaState {
             }
         }
 
-        let invisible = self.dungeon_state_view().invisible_door_marker();
+        let invisible = self.dungeon_room_doors().invisible_door_marker();
         if invisible & 0x0080 == 0
             && self.player_state_view().doorway_state() == 0
             && (self.player_state_view().x() >> 8) == 0x000c
