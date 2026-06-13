@@ -2288,8 +2288,8 @@ impl ZeldaState {
         self.sprite_sfx_queue_sfx3_with_pan(j, 0x1e);
         self.sprite_slot_view_mut(j).set_c(1);
         let t = self.get_random_number();
-        let mut x = self.world_state_view().bg2_x();
-        let mut y = self.world_state_view().bg2_y();
+        let mut x = self.world_scroll().bg2_x();
+        let mut y = self.world_scroll().bg2_y();
         if t & 2 != 0 {
             x = x.wrapping_add(t as u16);
             y = y.wrapping_add(CHICKEN_AVENGER[(t & 1) as usize] as u16);

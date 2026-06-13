@@ -4031,7 +4031,7 @@ impl ZeldaState {
             player.set_actual_velocity_xy(0, 0);
             player.clear_movement_velocity();
             if link_y
-                .wrapping_sub(self.world_state_view().bg2_y())
+                .wrapping_sub(self.world_scroll().bg2_y())
                 .wrapping_sub(16)
                 >= 0x100
             {
@@ -4918,7 +4918,7 @@ impl ZeldaState {
         } else {
             1
         };
-        self.world_state_view_mut().set_bg1_y_offset(bg1_y);
+        self.world_scroll_mut().set_bg1_y_offset(bg1_y);
 
         match self.sprite_slot_view(k).g() {
             0 => {

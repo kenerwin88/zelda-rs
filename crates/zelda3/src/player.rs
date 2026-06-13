@@ -184,8 +184,8 @@ impl ZeldaState {
         if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
             self.player_state_view_mut()
                 .clear_misc_bugfix_movement_state();
-            self.world_state_view_mut().set_bg1_y_offset(0);
-            self.world_state_view_mut().set_bg1_x_offset(0);
+            self.world_scroll_mut().set_bg1_y_offset(0);
+            self.world_scroll_mut().set_bg1_x_offset(0);
 
             let player = self.player_state_view();
             if !player.has_moon_pearl() && player.is_darkworld_save() {
@@ -939,15 +939,15 @@ impl ZeldaState {
             let y = self
                 .player_state_view()
                 .y()
-                .wrapping_add(self.world_state_view().bg1_y())
-                .wrapping_sub(self.world_state_view().bg2_y());
+                .wrapping_add(self.world_scroll().bg1_y())
+                .wrapping_sub(self.world_scroll().bg2_y());
             self.player_state_view_mut().set_y(y);
 
             let x = self
                 .player_state_view()
                 .x()
-                .wrapping_add(self.world_state_view().bg1_x())
-                .wrapping_sub(self.world_state_view().bg2_x());
+                .wrapping_add(self.world_scroll().bg1_x())
+                .wrapping_sub(self.world_scroll().bg2_x());
             self.player_state_view_mut().set_x(x);
             self.player_state_view_mut()
                 .cache_moving_floor_position(x, y);
@@ -969,13 +969,13 @@ impl ZeldaState {
             let new_y = self
                 .player_state_view()
                 .y()
-                .wrapping_add(self.world_state_view().bg2_y())
-                .wrapping_sub(self.world_state_view().bg1_y());
+                .wrapping_add(self.world_scroll().bg2_y())
+                .wrapping_sub(self.world_scroll().bg1_y());
             let new_x = self
                 .player_state_view()
                 .x()
-                .wrapping_add(self.world_state_view().bg2_x())
-                .wrapping_sub(self.world_state_view().bg1_x());
+                .wrapping_add(self.world_scroll().bg2_x())
+                .wrapping_sub(self.world_scroll().bg1_x());
             self.player_state_view_mut().set_y(new_y);
             self.player_state_view_mut().set_x(new_x);
             if self.player_state_view().direction() != 0 {
@@ -3490,12 +3490,12 @@ impl ZeldaState {
         let dir = self.player_state_view().facing_index();
         let x = self.player_state_view().x().wrapping_add(X[dir] as u16) & !0x0f;
         let y = self.player_state_view().y().wrapping_add(Y[dir] as u16) & !0x0f;
-        let pos = ((y.wrapping_sub(self.world_state_view().overworld_offset_base_y())
-            & self.world_state_view().overworld_offset_mask_y())
+        let pos = ((y.wrapping_sub(self.world_scroll().overworld_offset_base_y())
+            & self.world_scroll().overworld_offset_mask_y())
             << 3)
             .wrapping_add(
-                ((x >> 3).wrapping_sub(self.world_state_view().overworld_offset_base_x()))
-                    & self.world_state_view().overworld_offset_mask_x(),
+                ((x >> 3).wrapping_sub(self.world_scroll().overworld_offset_base_x()))
+                    & self.world_scroll().overworld_offset_mask_x(),
             );
         (pos, x, y)
     }
@@ -8383,12 +8383,12 @@ impl ZeldaState {
         let y = self
             .pushed_block_view()
             .y(j)
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(1);
         let x = self
             .pushed_block_view()
             .x(j)
-            .wrapping_sub(self.world_state_view().bg2_x());
+            .wrapping_sub(self.world_scroll().bg2_x());
         let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE
             [self.pushed_block_view().animation_mode() as usize]
             .min(CHAR.len() - 1)];

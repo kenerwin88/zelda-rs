@@ -439,8 +439,8 @@ impl ZeldaState {
             self.world_state_view_mut().clear_overlay_index_word();
             self.dungeon_entrance_backup_view_mut().clear_overlay_high();
         }
-        self.world_state_view_mut().set_bg1_y_offset(0);
-        self.world_state_view_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
         self.dungeon_state_view_mut().clear_game_over_check_flag();
 
         if self.follower_state_view().indicator_word() == 4
@@ -525,14 +525,14 @@ impl ZeldaState {
         let scroll_y = self.asset_u16(assets.scroll_y, i);
         self.ppu_scroll_copy_view_mut().set_bg1_v_copy(scroll_y);
         self.ppu_scroll_copy_view_mut().set_bg2_v_copy(scroll_y);
-        self.world_state_view_mut().set_bg1_y(scroll_y);
-        self.world_state_view_mut().set_bg2_y(scroll_y);
+        self.world_scroll_mut().set_bg1_y(scroll_y);
+        self.world_scroll_mut().set_bg2_y(scroll_y);
 
         let scroll_x = self.asset_u16(assets.scroll_x, i);
         self.ppu_scroll_copy_view_mut().set_bg1_h_copy(scroll_x);
         self.ppu_scroll_copy_view_mut().set_bg2_h_copy(scroll_x);
-        self.world_state_view_mut().set_bg1_x(scroll_x);
-        self.world_state_view_mut().set_bg2_x(scroll_x);
+        self.world_scroll_mut().set_bg1_x(scroll_x);
+        self.world_scroll_mut().set_bg2_x(scroll_x);
 
         if self.save_progress_view().progress_indicator_word() != 0 {
             let player_y = self.asset_u16(assets.player_y, i);
@@ -840,7 +840,7 @@ impl ZeldaState {
     fn Module07_0C_FloodSwampWater_raise_window(&mut self, tab0: [i8; 4], tab1: [i8; 4]) {
         let k = (self.dungeon_state_view().water_transition_counter() & 3) as usize;
         let r0 = 0x0688u16
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(0x24);
         let x_radius = self
             .dungeon_state_view()
@@ -861,7 +861,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .increment_water_transition_counter();
         let lower = 0x0688u16
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(self.dungeon_state_view().water_hdma_y_radius());
         self.spotlight_hdma_view_mut().set_y_lower(lower);
         let upper = lower.wrapping_add(y_span);
@@ -1262,8 +1262,8 @@ impl ZeldaState {
         const ADJUSTMENT: [i16; 2] = [256, -256];
 
         let submodule = self.frame_state().submodule;
-        let bg_h = self.world_state_view().bg2_x();
-        let bg_v = self.world_state_view().bg2_y();
+        let bg_h = self.world_scroll().bg2_x();
+        let bg_v = self.world_scroll().bg2_y();
         let direction = self.player_state_view().direction() & 0x0f;
         let (load_h, load_v) = if submodule == 0 {
             (bg_h & !0x01ff, bg_v & !0x01ff)
@@ -5252,14 +5252,14 @@ impl ZeldaState {
 
         if idx < 2 {
             let h = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_x()
                 .wrapping_sub(self.player_state_view().x().wrapping_sub(0x77))
                 .wrapping_add(LAMP_CONE_BG1_X_BASE_OFFSETS[idx]);
-            self.world_state_view_mut().set_bg1_x(h);
+            self.world_scroll_mut().set_bg1_x(h);
 
             let t = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_y()
                 .wrapping_sub(self.player_state_view().y().wrapping_sub(0x58))
                 .wrapping_add(LAMP_CONE_BG1_Y_BASE_OFFSETS[idx])
@@ -5270,14 +5270,14 @@ impl ZeldaState {
                 .set_bg1_v_copy2(t.wrapping_sub(LAMP_CONE_SCROLL_BASELINES[idx] as u16));
         } else {
             let v = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_y()
                 .wrapping_sub(self.player_state_view().y().wrapping_sub(0x72))
                 .wrapping_add(LAMP_CONE_BG1_Y_BASE_OFFSETS[idx]);
-            self.world_state_view_mut().set_bg1_y(v);
+            self.world_scroll_mut().set_bg1_y(v);
 
             let t = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_x()
                 .wrapping_sub(self.player_state_view().x().wrapping_sub(0x58))
                 .wrapping_add(LAMP_CONE_BG1_X_BASE_OFFSETS[idx])
@@ -7175,12 +7175,12 @@ impl ZeldaState {
         let y = self
             .pushed_block_view()
             .y(i)
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(1);
         let x = self
             .pushed_block_view()
             .x(i)
-            .wrapping_sub(self.world_state_view().bg2_x());
+            .wrapping_sub(self.world_scroll().bg2_x());
 
         if self.pushed_block_view().animation_mode() < 3 {
             self.oam_state_view_mut()
@@ -8927,8 +8927,8 @@ impl ZeldaState {
         let offs = self
             .dungeon_state_view_mut()
             .sub_floor_x_offset(floor_x_velocity);
-        let bg1 = self.world_state_view().bg2_x().wrapping_add(offs);
-        self.world_state_view_mut().set_bg1_x(bg1);
+        let bg1 = self.world_scroll().bg2_x().wrapping_add(offs);
+        self.world_scroll_mut().set_bg1_x(bg1);
 
         if self.dungeon_state_view().floor_x_velocity() != 0 {
             let target0 =
@@ -8957,11 +8957,11 @@ impl ZeldaState {
         } else {
             1
         };
-        self.world_state_view_mut().set_bg1_x_offset(x as u16);
-        self.world_state_view_mut().set_bg1_y_offset((-x) as u16);
+        self.world_scroll_mut().set_bg1_x_offset(x as u16);
+        self.world_scroll_mut().set_bg1_y_offset((-x) as u16);
         if self.dungeon_state_view().header_tag(k) == 0 {
-            self.world_state_view_mut().set_bg1_x_offset(0);
-            self.world_state_view_mut().set_bg1_y_offset(0);
+            self.world_scroll_mut().set_bg1_x_offset(0);
+            self.world_scroll_mut().set_bg1_y_offset(0);
         }
     }
 
@@ -8983,8 +8983,8 @@ impl ZeldaState {
         let offs = self
             .dungeon_state_view_mut()
             .add_floor_x_offset(floor_x_velocity);
-        let bg1 = self.world_state_view().bg2_x().wrapping_add(offs);
-        self.world_state_view_mut().set_bg1_x(bg1);
+        let bg1 = self.world_scroll().bg2_x().wrapping_add(offs);
+        self.world_scroll_mut().set_bg1_x(bg1);
 
         if self.dungeon_state_view().floor_x_velocity() != 0 {
             let target0 =
@@ -9014,8 +9014,8 @@ impl ZeldaState {
         self.dungeon_state_view_mut().clear_header_tag(k);
         self.player_state_view_mut().clear_immobilized();
         self.clear_modal_pause_flag();
-        self.world_state_view_mut().set_bg1_x_offset(0);
-        self.world_state_view_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
     }
 
     pub(super) fn RoomTag_MovingWallTorchesCheck(&mut self, k: usize) {
@@ -9366,10 +9366,10 @@ impl ZeldaState {
     }
 
     pub(super) fn MirrorBg1Bg2Offs(&mut self) {
-        let h = self.world_state_view().bg2_x();
-        let v = self.world_state_view().bg2_y();
-        self.world_state_view_mut().set_bg1_x(h);
-        self.world_state_view_mut().set_bg1_y(v);
+        let h = self.world_scroll().bg2_x();
+        let v = self.world_scroll().bg2_y();
+        self.world_scroll_mut().set_bg1_x(h);
+        self.world_scroll_mut().set_bg1_y(v);
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State13(&mut self) {
@@ -9627,8 +9627,7 @@ impl ZeldaState {
             player.set_speed_modifier(16);
         }
 
-        let y =
-            (self.player_state_view().y() as u8).wrapping_sub(self.world_state_view().bg2_y_low());
+        let y = (self.player_state_view().y() as u8).wrapping_sub(self.world_scroll().bg2_y_low());
         {
             let mut player = self.player_state_view_mut();
             player.clear_state_bits();
@@ -10109,8 +10108,8 @@ impl ZeldaState {
                     self.dungeon_state_view_mut().set_bg2_tile(i, 0x01ec);
                     self.dungeon_state_view_mut().set_bg1_tile(i, 0x01ec);
                 }
-                self.world_state_view_mut().set_bg1_y_offset(0);
-                self.world_state_view_mut().set_bg1_x_offset(0);
+                self.world_scroll_mut().set_bg1_y_offset(0);
+                self.world_scroll_mut().set_bg1_x_offset(0);
                 self.dungeon_state_view_mut().clear_floor_offsets();
                 self.clear_screen_transition();
                 self.dungeon_state_view_mut().clear_quadrant_upload_index();
@@ -10242,23 +10241,23 @@ impl ZeldaState {
     pub(super) fn DungeonTransition_ScrollRoom(&mut self) {
         self.increment_transition_counter();
         let i = self.screen_transition() as usize;
-        self.world_state_view_mut().set_bg1_y_offset(0);
-        self.world_state_view_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
         let delta = DUNGEON_TRANSITION_SCROLL_DELTAS[i] as i16 as u16;
 
         let t = if i >= 2 {
-            let t = self.world_state_view().bg2_x().wrapping_add(delta) & !1;
-            self.world_state_view_mut().set_bg2_x(t);
-            self.world_state_view_mut().set_bg1_x(t);
+            let t = self.world_scroll().bg2_x().wrapping_add(delta) & !1;
+            self.world_scroll_mut().set_bg2_x(t);
+            self.world_scroll_mut().set_bg1_x(t);
             if self.transition_counter() >= DUNGEON_TRANSITION_PLAYER_MOVE_FRAMES[i] {
                 let x = self.player_state_view().x().wrapping_add(delta);
                 self.player_state_view_mut().set_x(x);
             }
             t
         } else {
-            let t = self.world_state_view().bg2_y().wrapping_add(delta) & !1;
-            self.world_state_view_mut().set_bg2_y(t);
-            self.world_state_view_mut().set_bg1_y(t);
+            let t = self.world_scroll().bg2_y().wrapping_add(delta) & !1;
+            self.world_scroll_mut().set_bg2_y(t);
+            self.world_scroll_mut().set_bg1_y(t);
             if self.transition_counter() >= DUNGEON_TRANSITION_PLAYER_MOVE_FRAMES[i] {
                 let y = self.player_state_view().y().wrapping_add(delta);
                 self.player_state_view_mut().set_y(y);
@@ -10752,12 +10751,12 @@ impl ZeldaState {
         self.follower_state_view_mut().set_appearance_none_flag(12);
         let mut i = self.screen_transition() as usize;
         let y = self
-            .world_state_view()
+            .world_scroll()
             .bg2_y()
             .wrapping_add(DUNGEON_TRANSITION_SCROLL_DELTAS[i] as i16 as u16)
             & !3;
-        self.world_state_view_mut().set_bg1_y(y);
-        self.world_state_view_mut().set_bg2_y(y);
+        self.world_scroll_mut().set_bg1_y(y);
+        self.world_scroll_mut().set_bg2_y(y);
         if (y & 0x01fc) == self.world_state_view().up_down_scroll_target(i) {
             if self.frame_state().submodule >= 18 {
                 i += 2;
@@ -10876,8 +10875,8 @@ impl ZeldaState {
             self.ppu_scroll_copy_view_mut()
                 .step_bg2_v_copy2_toward_cached();
         }
-        if self.world_state_view().bg2_x() == self.ppu_scroll_copy_view().bg2_h_copy2_cached()
-            && self.world_state_view().bg2_y() == self.ppu_scroll_copy_view().bg2_v_copy2_cached()
+        if self.world_scroll().bg2_x() == self.ppu_scroll_copy_view().bg2_h_copy2_cached()
+            && self.world_scroll().bg2_y() == self.ppu_scroll_copy_view().bg2_v_copy2_cached()
         {
             self.increment_subsubmodule();
         }
@@ -11246,11 +11245,11 @@ impl ZeldaState {
         self.follower_state_view_mut().set_indicator(0);
 
         let floor_x = self
-            .world_state_view()
+            .world_scroll()
             .bg2_x()
             .wrapping_sub(self.player_state_view().x())
             .wrapping_add(0x79);
-        let floor_y = 0x30u16.wrapping_sub(self.world_state_view().bg1_y_low() as u16);
+        let floor_y = 0x30u16.wrapping_sub(self.world_scroll().bg1_y_low() as u16);
         self.dungeon_state_view_mut()
             .set_floor_offsets(floor_x, floor_y);
         self.dungeon_state_view_mut()
@@ -11325,13 +11324,13 @@ impl ZeldaState {
         self.orient_lamp_light_cone();
         self.replay_trace_ram_watch("module07-after-lamp");
 
-        let bg2x = self.world_state_view().bg2_x();
-        let bg2y = self.world_state_view().bg2_y();
-        let bg1x = self.world_state_view().bg1_x();
-        let bg1y = self.world_state_view().bg1_y();
+        let bg2x = self.world_scroll().bg2_x();
+        let bg2y = self.world_scroll().bg2_y();
+        let bg1x = self.world_scroll().bg1_x();
+        let bg1y = self.world_scroll().bg1_y();
 
-        let bg1_x_offset = self.world_state_view().bg1_x_offset();
-        let bg1_y_offset = self.world_state_view().bg1_y_offset();
+        let bg1_x_offset = self.world_scroll().bg1_x_offset();
+        let bg1_y_offset = self.world_scroll().bg1_y_offset();
         self.ppu_scroll_copy_view_mut().set_bg1_bg2_live_and_copy(
             bg2x.wrapping_add(bg1_x_offset),
             bg2y.wrapping_add(bg1_y_offset),
@@ -11343,16 +11342,16 @@ impl ZeldaState {
         let mut bg1y_restore = bg1y;
         if self.dungeon_state_view().header_collision_2_mirror() != 0 {
             bg1x_restore = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_x()
                 .wrapping_add(self.dungeon_state_view().floor_x_offset());
             bg1y_restore = self
-                .world_state_view()
+                .world_scroll()
                 .bg2_y()
                 .wrapping_add(self.dungeon_state_view().floor_y_offset());
-            self.world_state_view_mut().set_bg1_x(bg1x_restore);
+            self.world_scroll_mut().set_bg1_x(bg1x_restore);
             self.ppu_scroll_copy_view_mut().copy_bg1_live_to_ppu_copy();
-            self.world_state_view_mut().set_bg1_y(bg1y_restore);
+            self.world_scroll_mut().set_bg1_y(bg1y_restore);
             self.ppu_scroll_copy_view_mut().copy_bg1_live_to_ppu_copy();
         }
 
@@ -11361,10 +11360,10 @@ impl ZeldaState {
         self.sprite_main();
         self.replay_trace_ram_watch("module07-after-sprite-main");
 
-        self.world_state_view_mut().set_bg2_x(bg2x);
-        self.world_state_view_mut().set_bg2_y(bg2y);
-        self.world_state_view_mut().set_bg1_x(bg1x_restore);
-        self.world_state_view_mut().set_bg1_y(bg1y_restore);
+        self.world_scroll_mut().set_bg2_x(bg2x);
+        self.world_scroll_mut().set_bg2_y(bg2y);
+        self.world_scroll_mut().set_bg1_x(bg1x_restore);
+        self.world_scroll_mut().set_bg1_y(bg1y_restore);
 
         self.link_oam_main();
         self.replay_trace_ram_watch("module07-after-link-oam");
@@ -11454,8 +11453,8 @@ impl ZeldaState {
                 .floor_x_offset()
                 .wrapping_sub(t as u16);
             self.dungeon_state_view_mut().set_floor_x_offset(x_offs);
-            let bg1 = self.world_state_view().bg2_x().wrapping_add(x_offs);
-            self.world_state_view_mut().set_bg1_x(bg1);
+            let bg1 = self.world_scroll().bg2_x().wrapping_add(x_offs);
+            self.world_scroll_mut().set_bg1_x(bg1);
         } else {
             self.dungeon_state_view_mut().set_floor_y_velocity(t as u16);
             let y_offs = self
@@ -11463,8 +11462,8 @@ impl ZeldaState {
                 .floor_y_offset()
                 .wrapping_sub(t as u16);
             self.dungeon_state_view_mut().set_floor_y_offset(y_offs);
-            let bg1 = self.world_state_view().bg2_y().wrapping_add(y_offs);
-            self.world_state_view_mut().set_bg1_y(bg1);
+            let bg1 = self.world_scroll().bg2_y().wrapping_add(y_offs);
+            self.world_scroll_mut().set_bg1_y(bg1);
         }
     }
 
@@ -11671,15 +11670,12 @@ impl ZeldaState {
                     qm += 2;
                 }
 
-                if self.world_state_view().bg2_y() == self.room_bounds_view().y_bound(qm) {
+                if self.world_scroll().bg2_y() == self.room_bounds_view().y_bound(qm) {
                     continue;
                 }
 
-                let bg2 = self
-                    .world_state_view()
-                    .bg2_y()
-                    .wrapping_add(scrollamt as u16);
-                self.world_state_view_mut().set_bg2_y(bg2);
+                let bg2 = self.world_scroll().bg2_y().wrapping_add(scrollamt as u16);
+                self.world_scroll_mut().set_bg2_y(bg2);
                 if self.world_location_state().dungeon_room == 0xffff {
                     continue;
                 }
@@ -11690,11 +11686,8 @@ impl ZeldaState {
                     .wrapping_add(0x8000);
                 self.ppu_scroll_copy_view_mut().set_bg1_v_subpixel(subpixel);
                 let bg1_delta = (scrollamt >> 1) + i16::from(subpixel & 0x8000 == 0);
-                let bg1 = self
-                    .world_state_view()
-                    .bg1_y()
-                    .wrapping_add(bg1_delta as u16);
-                self.world_state_view_mut().set_bg1_y(bg1);
+                let bg1 = self.world_scroll().bg1_y().wrapping_add(bg1_delta as u16);
+                self.world_scroll_mut().set_bg1_y(bg1);
                 let camera_low = self
                     .world_state_view()
                     .camera_y_coord_scroll_low()
@@ -11730,15 +11723,12 @@ impl ZeldaState {
                     qm += 2;
                 }
 
-                if self.world_state_view().bg2_x() == self.room_bounds_view().x_bound(qm) {
+                if self.world_scroll().bg2_x() == self.room_bounds_view().x_bound(qm) {
                     continue;
                 }
 
-                let bg2 = self
-                    .world_state_view()
-                    .bg2_x()
-                    .wrapping_add(scrollamt as u16);
-                self.world_state_view_mut().set_bg2_x(bg2);
+                let bg2 = self.world_scroll().bg2_x().wrapping_add(scrollamt as u16);
+                self.world_scroll_mut().set_bg2_x(bg2);
                 if self.world_location_state().dungeon_room == 0xffff {
                     continue;
                 }
@@ -11749,11 +11739,8 @@ impl ZeldaState {
                     .wrapping_add(0x8000);
                 self.ppu_scroll_copy_view_mut().set_bg1_h_subpixel(subpixel);
                 let bg1_delta = (scrollamt >> 1) + i16::from(subpixel & 0x8000 == 0);
-                let bg1 = self
-                    .world_state_view()
-                    .bg1_x()
-                    .wrapping_add(bg1_delta as u16);
-                self.world_state_view_mut().set_bg1_x(bg1);
+                let bg1 = self.world_scroll().bg1_x().wrapping_add(bg1_delta as u16);
+                self.world_scroll_mut().set_bg1_x(bg1);
                 let camera_low = self
                     .world_state_view()
                     .camera_x_coord_scroll_low()

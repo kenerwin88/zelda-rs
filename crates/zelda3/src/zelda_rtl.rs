@@ -85,8 +85,8 @@ use crate::game_state::{
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
     NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
+    NativeWorldLocationBridgeMut, NativeWorldScrollBridgeMut, OamStateView, OverlordSlotView,
+    OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
@@ -101,7 +101,7 @@ use crate::game_state::{
     TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
     TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
     WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView, WorldStateViewMut,
+    WorldLocationState, WorldScrollState, WorldStateView, WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2008,6 +2008,14 @@ impl ZeldaState {
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
         self.world_location_bridge_mut().set_indoor_flag(value);
+    }
+
+    pub(crate) fn world_scroll(&self) -> WorldScrollState {
+        WorldScrollState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
+        NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {
@@ -5160,23 +5168,23 @@ impl ZeldaState {
                 extra_right = PPU_SIDE_SPACE_LIMIT;
                 extra_bottom = 16;
             } else {
-                let bg2x = self.world_state_view().bg2_x();
-                let bg2y = self.world_state_view().bg2_y();
-                extra_left = bg2x.wrapping_sub(self.world_state_view().scroll_x_start());
-                extra_right = self.world_state_view().scroll_x_end().wrapping_sub(bg2x);
-                extra_bottom = self.world_state_view().scroll_y_end().wrapping_sub(bg2y);
+                let bg2x = self.world_scroll().bg2_x();
+                let bg2y = self.world_scroll().bg2_y();
+                extra_left = bg2x.wrapping_sub(self.world_scroll().scroll_x_start());
+                extra_right = self.world_scroll().scroll_x_end().wrapping_sub(bg2x);
+                extra_bottom = self.world_scroll().scroll_y_end().wrapping_sub(bg2y);
             }
         } else if module == 7 {
             if !(self.dungeon_state_view().dungeon_dark_with_lantern()
                 && self.display_state().sub_screen_layers != 0)
             {
                 let qm = (self.world_state_view().quadrant_fullsize_x() >> 1) as usize;
-                let bg2x = self.world_state_view().bg2_x();
+                let bg2x = self.world_scroll().bg2_x();
                 extra_left = bg2x.saturating_sub(self.room_bounds_view().x_bound(qm));
                 extra_right = self.room_bounds_view().x_bound(qm + 2).saturating_sub(bg2x);
             }
             let qy = (self.world_state_view().quadrant_fullsize_y() >> 1) as usize;
-            let bg2y = self.world_state_view().bg2_y();
+            let bg2y = self.world_scroll().bg2_y();
             extra_bottom = self.room_bounds_view().y_bound(qy + 2).saturating_sub(bg2y);
         } else if module == 20 || module == 0 || module == 1 {
             extra_left = PPU_SIDE_SPACE_LIMIT;
@@ -6426,7 +6434,7 @@ impl ZeldaState {
             let y = self
                 .player_state_view()
                 .y()
-                .wrapping_sub(self.world_state_view().bg2_y()) as u8;
+                .wrapping_sub(self.world_scroll().bg2_y()) as u8;
             self.player_state_view_mut()
                 .clear_state_item_and_grab_flags();
             self.player_state_view_mut().set_y_button_action_timer(0);
@@ -7907,7 +7915,7 @@ mod tests {
         state.ram[reward_addr] = 98;
         set_link_test_word(&mut state, LINK_X_COORD, 0x100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x80);
-        state.world_state_view_mut().set_bg2_x(0x40);
+        state.world_scroll_mut().set_bg2_x(0x40);
 
         set_link_test_byte(&mut state, LINK_RECEIVEITEM_INDEX, 0x24);
         state.ancilla_add_item_receipt(0x22, 4, 0);
@@ -8586,8 +8594,8 @@ mod tests {
     #[test]
     fn cache_camera_properties_if_outdoors_snapshots_scroll_state() {
         let mut state = ZeldaState::new();
-        state.world_state_view_mut().set_bg2_x(0x1111);
-        state.world_state_view_mut().set_bg2_y(0x2222);
+        state.world_scroll_mut().set_bg2_x(0x1111);
+        state.world_scroll_mut().set_bg2_y(0x2222);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x3333);
         set_link_test_word(&mut state, LINK_X_COORD, 0x4444);
         state.room_bounds_view_mut().set_y_bound(0, 0x5555);
@@ -9976,8 +9984,8 @@ mod tests {
         assert_eq!(state.ppu.extra_bottom_cur, 16);
 
         state.set_main_module(7);
-        state.world_state_view_mut().set_bg2_x(0x0110);
-        state.world_state_view_mut().set_bg2_y(0x0108);
+        state.world_scroll_mut().set_bg2_x(0x0110);
+        state.world_scroll_mut().set_bg2_y(0x0108);
         state.room_bounds_view_mut().set_x_bound(0, 0x0100);
         state.room_bounds_view_mut().set_x_bound(2, 0x0140);
         state.room_bounds_view_mut().set_y_bound(2, 0x0120);

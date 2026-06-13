@@ -859,7 +859,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             16 => {
-                self.world_state_view_mut().set_bg1_y_offset(0);
+                self.world_scroll_mut().set_bg1_y_offset(0);
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     if self.sprite_slot_view(k).delay_main() == 1 {
                         self.system_signals_view_mut().set_ambient_sound_effect(5);
@@ -879,7 +879,7 @@ impl ZeldaState {
                         } else {
                             1
                         };
-                        self.world_state_view_mut().set_bg1_y_offset(offs);
+                        self.world_scroll_mut().set_bg1_y_offset(offs);
                         self.player_state_view_mut().immobilize();
                     }
                 } else {

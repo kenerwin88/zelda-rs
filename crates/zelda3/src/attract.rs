@@ -127,7 +127,7 @@ impl ZeldaState {
         self.attract_build_backgrounds();
         self.messaging_state_view_mut().clear_module();
         self.dialogue_message_index_view_mut().set_value(0x112);
-        self.world_state_view_mut().set_bg2_y(0);
+        self.world_scroll_mut().set_bg2_y(0);
         self.attract_scene_mut().set_legend_ctr(0x1010);
         self.attract_scene_mut().add_state(3);
 
@@ -353,12 +353,12 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2_low(0);
         let bg2_hofs = self.ppu_scroll_copy_view().bg2_h_copy() & 0x01ff;
         let bg2_vofs = self.ppu_scroll_copy_view().bg2_v_copy() & 0x01ff;
-        let bg2_hofs2 = self.world_state_view().bg2_x() & 0x01ff;
-        let bg2_vofs2 = self.world_state_view().bg2_y() & 0x01ff;
+        let bg2_hofs2 = self.world_scroll().bg2_x() & 0x01ff;
+        let bg2_vofs2 = self.world_scroll().bg2_y() & 0x01ff;
         self.ppu_scroll_copy_view_mut().set_bg2_h_copy(bg2_hofs);
         self.ppu_scroll_copy_view_mut().set_bg2_v_copy(bg2_vofs);
-        self.world_state_view_mut().set_bg2_x(bg2_hofs2);
-        self.world_state_view_mut().set_bg2_y(bg2_vofs2);
+        self.world_scroll_mut().set_bg2_x(bg2_hofs2);
+        self.world_scroll_mut().set_bg2_y(bg2_vofs2);
     }
 
     pub(super) fn attract_control_map_zoom(&mut self) {
@@ -505,7 +505,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_show_timed_text_message(&mut self) {
-        let bg2_vofs2 = self.world_state_view().bg2_y();
+        let bg2_vofs2 = self.world_scroll().bg2_y();
         self.attract_scene_mut().set_bg2_vofs_backup(bg2_vofs2);
         self.player_state_view_mut().set_joypad1l_last(0);
         self.player_state_view_mut().set_filtered_joypad_l(0);
@@ -1158,7 +1158,7 @@ impl ZeldaState {
             .sprite_slot_view(k)
             .y()
             .wrapping_add(y_offset as u16)
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }

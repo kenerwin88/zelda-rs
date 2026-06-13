@@ -1189,7 +1189,7 @@ impl ZeldaState {
         if self
             .sprite_slot_view(k)
             .y_low()
-            .wrapping_sub(self.world_state_view().bg2_y_low())
+            .wrapping_sub(self.world_scroll().bg2_y_low())
             >= 0xd0
         {
             self.sprite_slot_view_mut(k).set_state(0);
@@ -1660,8 +1660,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             self.sprite_slot_view_mut(k).decrement_subtype2();
-            let bg2_x = self.world_state_view().bg2_x_low();
-            let bg2_y = self.world_state_view().bg2_y_low();
+            let bg2_x = self.world_scroll().bg2_x_low();
+            let bg2_y = self.world_scroll().bg2_y_low();
             self.sprite_workspace_view_mut()
                 .add_current_sprite_x_low(bg2_x);
             self.sprite_workspace_view_mut()

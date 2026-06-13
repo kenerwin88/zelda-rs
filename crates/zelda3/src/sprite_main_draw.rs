@@ -832,7 +832,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 127;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
-                    self.world_state_view_mut().set_bg1_x_offset(0);
+                    self.world_scroll_mut().set_bg1_x_offset(0);
                     let value = 4;
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 } else {
@@ -841,7 +841,7 @@ impl ZeldaState {
                     } else {
                         1
                     };
-                    self.world_state_view_mut().set_bg1_x_offset(offs);
+                    self.world_scroll_mut().set_bg1_x_offset(offs);
                     self.player_state_view_mut().immobilize();
                 }
             }
@@ -1139,7 +1139,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 255;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
-                    self.world_state_view_mut().set_bg1_x_offset(0);
+                    self.world_scroll_mut().set_bg1_x_offset(0);
                     self.system_signals_view_mut().set_ambient_sound_effect(5);
                     let value = 48;
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
@@ -1151,7 +1151,7 @@ impl ZeldaState {
                         self.system_signals_view_mut().set_ambient_sound_effect(7);
                     }
                     let offs = if j & 1 != 0 { (-1i16) as u16 } else { 1 };
-                    self.world_state_view_mut().set_bg1_x_offset(offs);
+                    self.world_scroll_mut().set_bg1_x_offset(offs);
                     self.player_state_view_mut().immobilize();
                 }
             }
@@ -1942,7 +1942,7 @@ impl ZeldaState {
         oam = self.oam_state_view().current_pointer_usize();
         let info_y = self
             .sprite_get_y(k)
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         let info_x = info.x;
         let mut i: i32 = 2;
         loop {
@@ -2581,10 +2581,10 @@ impl ZeldaState {
         let xb = self
             .sprite_slot_view(k)
             .a()
-            .wrapping_sub(self.world_state_view().bg2_x() as u8);
+            .wrapping_sub(self.world_scroll().bg2_x() as u8);
         let yb = ((self.sprite_slot_view(k).c() as u16)
             | ((self.sprite_slot_view(k).y_high() as u16) << 8))
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
 
         let xvel = self.sprite_slot_view(k).x_velocity() as i8;
         let xidx: u8 = if (xvel.wrapping_add(3) as u8) < 7 {
@@ -5152,9 +5152,9 @@ impl ZeldaState {
                 && self.sprite_slot_view(k).anim_clock() != 0
             {
                 let link_x = (self.player_state_view().x() as u8)
-                    .wrapping_sub(self.world_state_view().bg2_x_low());
+                    .wrapping_sub(self.world_scroll().bg2_x_low());
                 let link_y = (self.player_state_view().y() as u8)
-                    .wrapping_sub(self.world_state_view().bg2_y_low())
+                    .wrapping_sub(self.world_scroll().bg2_y_low())
                     .wrapping_add(8);
                 if link_x.wrapping_sub(x).wrapping_add(12) < 24
                     && link_y.wrapping_sub(y).wrapping_add(8) < 16
@@ -5542,7 +5542,7 @@ impl ZeldaState {
         let x = self
             .sprite_slot_view(k)
             .x_low()
-            .wrapping_sub(self.world_state_view().bg2_x_low());
+            .wrapping_sub(self.world_scroll().bg2_x_low());
         self.oam_state_view_mut().set_entry_x(oam, x);
         if x.wrapping_add(32) < 64 {
             let value = 0;
@@ -5552,7 +5552,7 @@ impl ZeldaState {
         let y = self
             .sprite_slot_view(k)
             .y_low()
-            .wrapping_sub(self.world_state_view().bg2_y_low());
+            .wrapping_sub(self.world_scroll().bg2_y_low());
         self.oam_state_view_mut().set_entry_y(oam, y);
         if y.wrapping_add(16) < 32 {
             let value = 0;
@@ -5678,8 +5678,8 @@ impl ZeldaState {
         for i in (0..32).rev() {
             let j = g * 32 + i;
             let history = self.beamos_laser_history_view(j);
-            let x = history.x().wrapping_sub(self.world_state_view().bg2_x());
-            let y = history.y().wrapping_sub(self.world_state_view().bg2_y());
+            let x = history.x().wrapping_sub(self.world_scroll().bg2_x());
+            let y = history.y().wrapping_sub(self.world_scroll().bg2_y());
             self.set_oam_helper0_at_for_draw(oam, x, y, 0x5c, info.flags, 0);
             oam += 4;
         }
@@ -6684,7 +6684,7 @@ impl ZeldaState {
         let z = (self.sprite_slot_view(k).z().min(32)) >> 3;
         let y = self
             .sprite_get_y(k)
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         self.set_oam_helper0_at_for_draw(
             oam + 16,
             x.wrapping_sub(8).wrapping_add(z as u16),
@@ -9988,7 +9988,7 @@ impl ZeldaState {
         }
         self.sprite_move_xy(k);
         self.bat_crash_draw_hardcoded_garbage(k);
-        self.world_state_view_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
         if self.sprite_slot_view(k).delay_aux3() != 0 {
             if self.sprite_slot_view(k).delay_aux3() == 1 {
                 self.system_signals_view_mut().set_ambient_sound_effect(5);
@@ -9998,7 +9998,7 @@ impl ZeldaState {
             } else {
                 (-1i16) as u16
             };
-            self.world_state_view_mut().set_bg1_y_offset(offs);
+            self.world_scroll_mut().set_bg1_y_offset(offs);
         }
         if self.sprite_slot_view(k).delay_main() == 0 {
             let value = self.sprite_slot_view(k).graphics().wrapping_add(1) & 3;
@@ -14349,10 +14349,10 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
                     let value = 2;
                     self.sprite_slot_view_mut(k).set_flags4(value);
-                    let base_y = self.world_state_view().overworld_offset_base_y();
-                    let mask_y = self.world_state_view().overworld_offset_mask_y();
-                    let base_x = self.world_state_view().overworld_offset_base_x();
-                    let mask_x = self.world_state_view().overworld_offset_mask_x();
+                    let base_y = self.world_scroll().overworld_offset_base_y();
+                    let mask_y = self.world_scroll().overworld_offset_mask_y();
+                    let base_x = self.world_scroll().overworld_offset_base_x();
+                    let mask_x = self.world_scroll().overworld_offset_mask_x();
                     let pos = ((ovy.wrapping_sub(base_y) & mask_y) * 8)
                         .wrapping_add((ovx >> 3).wrapping_sub(base_x) & mask_x);
                     self.overworld_draw_wooden_door(pos, false);
@@ -14381,10 +14381,10 @@ impl ZeldaState {
                     let ovy = overlord.y();
                     self.sprite_set_x(k, ovx);
                     self.sprite_set_y(k, ovy);
-                    let base_y = self.world_state_view().overworld_offset_base_y();
-                    let mask_y = self.world_state_view().overworld_offset_mask_y();
-                    let base_x = self.world_state_view().overworld_offset_base_x();
-                    let mask_x = self.world_state_view().overworld_offset_mask_x();
+                    let base_y = self.world_scroll().overworld_offset_base_y();
+                    let mask_y = self.world_scroll().overworld_offset_mask_y();
+                    let base_x = self.world_scroll().overworld_offset_base_x();
+                    let mask_x = self.world_scroll().overworld_offset_mask_x();
                     let pos = ((ovy.wrapping_sub(base_y) & mask_y) * 8)
                         .wrapping_add((ovx >> 3).wrapping_sub(base_x) & mask_x);
                     self.overworld_draw_wooden_door(pos, true);
@@ -20411,8 +20411,7 @@ impl ZeldaState {
                         .wrapping_sub(self.player_state_view().y())
                         .wrapping_add(24)
                         < 41
-                    && (self.world_state_view().bg1_x_offset()
-                        | self.world_state_view().bg1_y_offset())
+                    && (self.world_scroll().bg1_x_offset() | self.world_scroll().bg1_y_offset())
                         != 0
                 {
                     let value = 1;
@@ -20478,8 +20477,7 @@ impl ZeldaState {
                         .wrapping_sub(self.player_state_view().y())
                         .wrapping_add(40)
                         < 46
-                    && (self.world_state_view().bg1_x_offset()
-                        | self.world_state_view().bg1_y_offset())
+                    && (self.world_scroll().bg1_x_offset() | self.world_scroll().bg1_y_offset())
                         != 0
                 {
                     let value = 1;
@@ -20574,8 +20572,7 @@ impl ZeldaState {
                         .wrapping_sub(self.player_state_view().y())
                         .wrapping_add(32)
                         < 81
-                    && ((self.world_state_view().bg1_x_offset()
-                        | self.world_state_view().bg1_y_offset())
+                    && ((self.world_scroll().bg1_x_offset() | self.world_scroll().bg1_y_offset())
                         & 0xff)
                         != 0
                 {
@@ -22478,13 +22475,13 @@ impl ZeldaState {
                 let link_x = self.player_state_view().x() as u8;
                 let link_y = self.player_state_view().y() as u8;
                 if ox
-                    .wrapping_add(self.world_state_view().bg2_x() as u8)
+                    .wrapping_add(self.world_scroll().bg2_x() as u8)
                     .wrapping_sub(link_x)
                     .wrapping_add(12)
                     < 24
                     && oy < 0xf0
                     && oy
-                        .wrapping_add(self.world_state_view().bg2_y() as u8)
+                        .wrapping_add(self.world_scroll().bg2_y() as u8)
                         .wrapping_sub(link_y)
                         .wrapping_add(4)
                         < 16
@@ -24103,7 +24100,7 @@ impl ZeldaState {
         let g = usize::from(self.sprite_slot_view(k).graphics());
         let ybase = self
             .sprite_get_y(k)
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         for i in (0..=2).rev() {
             let j = i + g * 3;
             let big = BIG[j];
@@ -25242,11 +25239,11 @@ impl ZeldaState {
             let history = self.moldorm_history_view(j);
             let x = history
                 .x()
-                .wrapping_sub(self.world_state_view().bg2_x())
+                .wrapping_sub(self.world_scroll().bg2_x())
                 .wrapping_add(XY[i] as i16 as u16);
             let y = history
                 .y()
-                .wrapping_sub(self.world_state_view().bg2_y())
+                .wrapping_sub(self.world_scroll().bg2_y())
                 .wrapping_add(XY[i] as i16 as u16);
             self.set_oam_helper0_at_for_draw(oam, x, y, CH[i], info_flags, BIG[i]);
             oam += 4;
@@ -25397,12 +25394,12 @@ impl ZeldaState {
                     let history = self.moldorm_history_view(i);
                     let xlo = history
                         .x_low()
-                        .wrapping_sub(self.world_state_view().bg2_x_low());
+                        .wrapping_sub(self.world_scroll().bg2_x_low());
                     let segment = self.lanmola_segment_motion_view(i);
                     let ylo = history
                         .y_low()
                         .wrapping_sub(segment.z_offset())
-                        .wrapping_sub(self.world_state_view().bg2_y_low());
+                        .wrapping_sub(self.world_scroll().bg2_y_low());
                     let mut info = SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0x00, &mut info);
                     if j >= 0 {
@@ -25416,11 +25413,11 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(j).set_a(value);
                         self.sprite_set_x(
                             j,
-                            self.world_state_view().bg2_x().wrapping_add(u16::from(xlo)),
+                            self.world_scroll().bg2_x().wrapping_add(u16::from(xlo)),
                         );
                         self.sprite_set_y(
                             j,
-                            self.world_state_view().bg2_y().wrapping_add(u16::from(ylo)),
+                            self.world_scroll().bg2_y().wrapping_add(u16::from(ylo)),
                         );
                         let value = 3;
                         self.sprite_slot_view_mut(j).set_flags2(value);
@@ -25512,7 +25509,7 @@ impl ZeldaState {
             r2 = r2.wrapping_sub(8) & 63;
             let history_x_low = self.moldorm_history_view(hist).x_low();
             let history_y_low = self.moldorm_history_view(hist).y_low();
-            let entry_x = history_x_low.wrapping_sub(self.world_state_view().bg2_x_low());
+            let entry_x = history_x_low.wrapping_sub(self.world_scroll().bg2_x_low());
             self.oam_state_view_mut().set_entry_x(oam, entry_x);
             let segment = self.lanmola_segment_motion_view(hist);
             let z_offset = segment.z_offset();
@@ -25520,7 +25517,7 @@ impl ZeldaState {
             if !sign8(z_offset) {
                 let entry_y = history_y_low
                     .wrapping_sub(z_offset)
-                    .wrapping_sub(self.world_state_view().bg2_y_low());
+                    .wrapping_sub(self.world_scroll().bg2_y_low());
                 self.oam_state_view_mut().set_entry_y(oam, entry_y);
             }
             let charnum = if n != 7 || i != 0 {
@@ -25552,13 +25549,13 @@ impl ZeldaState {
             r5 = r5.wrapping_sub(8) & 63;
             let history_x_low = self.moldorm_history_view(hist).x_low();
             let history_y_low = self.moldorm_history_view(hist).y_low();
-            let entry_x = history_x_low.wrapping_sub(self.world_state_view().bg2_x_low());
+            let entry_x = history_x_low.wrapping_sub(self.world_scroll().bg2_x_low());
             self.oam_state_view_mut().set_entry_x(oam, entry_x);
             let segment = self.lanmola_segment_motion_view(hist);
             if !sign8(segment.z_offset()) {
                 let entry_y = history_y_low
                     .wrapping_add(10)
-                    .wrapping_sub(self.world_state_view().bg2_y_low());
+                    .wrapping_sub(self.world_scroll().bg2_y_low());
                 self.oam_state_view_mut().set_entry_y(oam, entry_y);
             }
             self.oam_state_view_mut().set_entry_char(oam, 0x6c);
@@ -25585,10 +25582,10 @@ impl ZeldaState {
                 oam,
                 self.sprite_slot_view(k)
                     .x_low()
-                    .wrapping_sub(self.world_state_view().bg2_x_low()),
+                    .wrapping_sub(self.world_scroll().bg2_x_low()),
                 self.sprite_slot_view(k)
                     .y_low()
-                    .wrapping_sub(self.world_state_view().bg2_y_low()),
+                    .wrapping_sub(self.world_scroll().bg2_y_low()),
                 CHAR2[j],
                 FLAGS2[j] | 0x31,
                 2,
@@ -25616,11 +25613,11 @@ impl ZeldaState {
             let x = self
                 .sprite_slot_view(k)
                 .direction()
-                .wrapping_sub(self.world_state_view().bg2_x_low());
+                .wrapping_sub(self.world_scroll().bg2_x_low());
             let y = self
                 .sprite_slot_view(k)
                 .wall_collision()
-                .wrapping_sub(self.world_state_view().bg2_y_low());
+                .wrapping_sub(self.world_scroll().bg2_y_low());
             for i in (0..=1).rev() {
                 let j = i + r6;
                 self.set_oam_plain_at_for_draw(
@@ -26068,12 +26065,12 @@ impl ZeldaState {
                 .chain_chomp_history_view()
                 .x(pos)
                 .wrapping_add(r8)
-                .wrapping_sub(self.world_state_view().bg2_x());
+                .wrapping_sub(self.world_scroll().bg2_x());
             let y = self
                 .chain_chomp_history_view()
                 .y(pos)
                 .wrapping_add(r8)
-                .wrapping_sub(self.world_state_view().bg2_y());
+                .wrapping_sub(self.world_scroll().bg2_y());
             self.set_oam_helper0_at_for_draw(oam, x, y, 0x8b, (flags & 0xf0) | 0x0d, 0);
             pos += 1;
             oam += 4;
@@ -26411,7 +26408,7 @@ impl ZeldaState {
         let xoffs = u16::from(X_OFFS[usize::from(z >> 1)]);
         let y = self
             .sprite_get_y(k)
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         let oam = self.oam_state_view().current_pointer_usize();
         self.set_oam_helper0_at_for_draw(
             oam,
@@ -27189,8 +27186,8 @@ mod tests {
         s.sprite_slot_view_mut(k).set_c(7);
         // Force the prep helper to return None by setting BG2HOFS far away.
         // Then verify the OAM flags were written even though we early-return.
-        s.world_state_view_mut().set_bg2_x(0x4000);
-        s.world_state_view_mut().set_bg2_y(0x4000);
+        s.world_scroll_mut().set_bg2_x(0x4000);
+        s.world_scroll_mut().set_bg2_y(0x4000);
         s.sprite_slot_view_mut(k).set_x_low(0);
         s.sprite_slot_view_mut(k).set_y_low(0);
         s.sprite_draw_thrown_item_gigantic(k);

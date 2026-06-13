@@ -208,8 +208,8 @@ impl ZeldaState {
         self.Overworld_LoadGFXAndScreenSize();
         self.increment_submodule();
         self.player_state_view_mut().set_handler_state(20);
-        self.world_state_view_mut().set_bg1_x_offset(0);
-        self.world_state_view_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
         self.dungeon_state_view_mut().clear_savegame_state_bits();
         self.player_state_view_mut().clear_movement_velocity();
         self.palette_buffer_view_mut().set_main_color(0, 0x7fff);
@@ -307,7 +307,7 @@ impl ZeldaState {
         self.set_overworld_map_state(0);
         self.clear_core_update_disable_flag();
         self.set_main_module(9);
-        self.world_state_view_mut().set_bg1_y_low(0);
+        self.world_scroll_mut().set_bg1_y_low(0);
         let music = if self.inventory_items().has_moon_pearl() {
             9
         } else {
@@ -680,8 +680,8 @@ impl ZeldaState {
         if self.display_state().screen_brightness != 0 {
             return;
         }
-        self.world_state_view_mut().set_bg1_x_offset(0);
-        self.world_state_view_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
         self.player_state_view_mut().set_y_velocity(0);
         self.player_state_view_mut().clear_immobilized();
         self.Palette_RevertTranslucencySwap();
@@ -972,7 +972,7 @@ impl ZeldaState {
     pub(super) fn sprite_sfx_queue_sfx1_with_pan(&mut self, k: usize, a: u8) {
         if self.system_signals_view().ambient_sound_effect_is_clear() {
             let x = self.sprite_slot_view(k).x();
-            let sfx = a | Self::calculate_sfx_pan_with_scroll(x, self.world_state_view().bg2_x());
+            let sfx = a | Self::calculate_sfx_pan_with_scroll(x, self.world_scroll().bg2_x());
             self.system_signals_view_mut().set_ambient_sound_effect(sfx);
         }
     }
@@ -1036,7 +1036,7 @@ impl ZeldaState {
     pub(super) fn link_calculate_sfx_pan(&self) -> u8 {
         Self::calculate_sfx_pan_with_scroll(
             self.player_state_view().x(),
-            self.world_state_view().bg2_x(),
+            self.world_scroll().bg2_x(),
         )
     }
 
@@ -1060,12 +1060,12 @@ impl ZeldaState {
 
     pub(super) fn calculate_sfx_pan_arbitrary(&self, a: u8) -> u8 {
         const TORCH_PANS: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
-        TORCH_PANS[((a.wrapping_sub(self.world_state_view().bg2_x_low()) >> 5) & 7) as usize]
+        TORCH_PANS[((a.wrapping_sub(self.world_scroll().bg2_x_low()) >> 5) & 7) as usize]
     }
 
     pub(super) fn sprite_calculate_sfx_pan(&self, k: usize) -> u8 {
         let x = self.sprite_slot_view(k).x();
-        Self::calculate_sfx_pan_with_scroll(x, self.world_state_view().bg2_x())
+        Self::calculate_sfx_pan_with_scroll(x, self.world_scroll().bg2_x())
     }
 
     pub(super) fn sprite_sfx_queue_sfx2_with_pan(&mut self, k: usize, a: u8) {

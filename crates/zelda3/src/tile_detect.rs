@@ -168,10 +168,10 @@ impl ZeldaState {
         if self.dungeon_state_view().header_collision() == 2 {
             self.player_state_view_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
-                x.wrapping_add(self.world_state_view().bg1_x())
-                    .wrapping_sub(self.world_state_view().bg2_x()),
-                y.wrapping_add(self.world_state_view().bg1_y())
-                    .wrapping_sub(self.world_state_view().bg2_y()),
+                x.wrapping_add(self.world_scroll().bg1_x())
+                    .wrapping_sub(self.world_scroll().bg2_x()),
+                y.wrapping_add(self.world_scroll().bg1_y())
+                    .wrapping_sub(self.world_scroll().bg2_y()),
                 dir,
             );
             self.player_state_view_mut().set_lower_level_state(0);

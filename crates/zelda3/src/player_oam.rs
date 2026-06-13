@@ -2118,11 +2118,11 @@ impl ZeldaState {
         let xcoord = self
             .player_state_view()
             .x()
-            .wrapping_sub(self.world_state_view().bg2_x()) as u8;
+            .wrapping_sub(self.world_scroll().bg2_x()) as u8;
         let ycoord = self
             .player_state_view()
             .y()
-            .wrapping_sub(self.world_state_view().bg2_y()) as u8;
+            .wrapping_sub(self.world_scroll().bg2_y()) as u8;
         self.player_state_view_mut().disable_oam_offsets();
         let scratch_0_var = self.player_state_view().water_ripple_or_grass_state() != 0;
         let mut oam_priority_value =
@@ -2556,7 +2556,7 @@ impl ZeldaState {
                     let oam_y = self
                         .player_state_view()
                         .y()
-                        .wrapping_sub(self.world_state_view().bg2_y())
+                        .wrapping_sub(self.world_scroll().bg2_y())
                         .wrapping_add(
                             kOffsToShadowGivenDir_Y[self.player_state_view().facing_mirror_index()]
                                 as i16 as u16,
@@ -2637,11 +2637,11 @@ impl ZeldaState {
         let door_x = self
             .player_state_view()
             .x()
-            .wrapping_sub(self.world_state_view().bg2_x());
+            .wrapping_sub(self.world_scroll().bg2_x());
         let door_y = self
             .player_state_view()
             .y()
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         let hide = (self.player_state_view().doorway_state() != 0
             && (door_x < 4 || door_x >= 252 || door_y < 4 || door_y >= 224))
             || {
@@ -2834,7 +2834,7 @@ impl ZeldaState {
             .tile_detect_position_view()
             .y()
             .wrapping_sub(12)
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_add(29) as u8;
         let mut oam_pos = ((if self.player_state_view().water_ripple_or_grass_state() != 0 {
             kShadow_oam_indexes_1[r4loc]
@@ -2936,8 +2936,7 @@ impl ZeldaState {
 
     fn link_oam_calculate_x_offset_relative_link(&mut self, x: u8) {
         let x = x as i8 as i32;
-        let value =
-            self.player_state_view().x() as i32 + x - self.world_state_view().bg2_x() as i32;
+        let value = self.player_state_view().x() as i32 + x - self.world_scroll().bg2_x() as i32;
         self.player_state_view_mut()
             .set_bit9_of_xcoord_word(((value >> 8) & 1) as u16);
     }

@@ -329,8 +329,8 @@ impl ZeldaState {
     }
 
     pub(super) fn world_map_setup_hdma(&mut self) {
-        self.world_state_view_mut().set_bg1_x(0x0080);
-        self.world_state_view_mut().set_bg1_y(0x00c8);
+        self.world_scroll_mut().set_bg1_x(0x0080);
+        self.world_scroll_mut().set_bg1_y(0x00c8);
         self.ppu_scroll_copy_view_mut().set_mode7_center_y(0x01c9);
         self.ppu_scroll_copy_view_mut().set_mode7_center_x(0x0100);
         self.set_bg12_window_selection(0);
@@ -346,7 +346,7 @@ impl ZeldaState {
             self.set_mode7_zoom_timer(12);
             self.set_overworld_map_flags(1);
             let y = self.special_exit_position_view().map_zoom_y();
-            self.world_state_view_mut().set_bg1_y(y);
+            self.world_scroll_mut().set_bg1_y(y);
             self.ppu_scroll_copy_view_mut()
                 .set_mode7_center_y(y.wrapping_add(0x100));
             let t0 = self.special_exit_position_view().map_zoom_x_offset();
@@ -361,7 +361,7 @@ impl ZeldaState {
             } else {
                 t1
             };
-            self.world_state_view_mut()
+            self.world_scroll_mut()
                 .set_bg1_x(t2.wrapping_add(0x80) & !1);
             self.OverworldMap_SetupHdma();
             self.set_hdma_enable_mask(0xc0);
@@ -2632,7 +2632,7 @@ impl ZeldaState {
         let r10 = self
             .water_hdma_window_view()
             .window_y()
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         let y_radius = self.water_hdma_window_view().window_y_radius();
         self.spotlight_hdma_view_mut()
             .set_y_lower(r10.wrapping_sub(y_radius));
@@ -2645,7 +2645,7 @@ impl ZeldaState {
         let window_x_center = self
             .water_hdma_window_view()
             .window_x()
-            .wrapping_sub(self.world_state_view().bg2_x());
+            .wrapping_sub(self.world_scroll().bg2_x());
         self.spotlight_hdma_view_mut()
             .set_window_x_center(window_x_center);
         let r12 = self
@@ -2705,12 +2705,12 @@ impl ZeldaState {
         let lower = self
             .water_hdma_window_view()
             .window_y()
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         self.spotlight_hdma_view_mut().set_y_lower(lower);
         let window_x_center = self
             .water_hdma_window_view()
             .window_x()
-            .wrapping_sub(self.world_state_view().bg2_x());
+            .wrapping_sub(self.world_scroll().bg2_x());
         self.spotlight_hdma_view_mut()
             .set_window_x_center(window_x_center);
         let r14 = self.water_hdma_window_view().window_x_radius() ^ 1;
@@ -3313,7 +3313,7 @@ impl ZeldaState {
         let r14 = self
             .player_state_view()
             .y()
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_add(12);
         let radius = self.spotlight_hdma_view().window_radius();
         self.spotlight_hdma_view_mut()
@@ -3323,7 +3323,7 @@ impl ZeldaState {
         let x_center = self
             .player_state_view()
             .x()
-            .wrapping_sub(self.world_state_view().bg2_x())
+            .wrapping_sub(self.world_scroll().bg2_x())
             .wrapping_add(8);
         self.spotlight_hdma_view_mut().set_window_x_center(x_center);
         self.spotlight_hdma_view_mut().set_window_y_buffer(radius);

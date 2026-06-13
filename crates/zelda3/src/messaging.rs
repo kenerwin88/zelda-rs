@@ -239,12 +239,12 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module0e-before-run-interface");
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
-        let bg1_x_offset = self.world_state_view().bg1_x_offset();
-        let bg1_y_offset = self.world_state_view().bg1_y_offset();
-        let bg2x = self.world_state_view().bg2_x().wrapping_add(bg1_x_offset);
-        let bg2y = self.world_state_view().bg2_y().wrapping_add(bg1_y_offset);
-        let bg1x = self.world_state_view().bg1_x().wrapping_add(bg1_x_offset);
-        let bg1y = self.world_state_view().bg1_y().wrapping_add(bg1_y_offset);
+        let bg1_x_offset = self.world_scroll().bg1_x_offset();
+        let bg1_y_offset = self.world_scroll().bg1_y_offset();
+        let bg2x = self.world_scroll().bg2_x().wrapping_add(bg1_x_offset);
+        let bg2y = self.world_scroll().bg2_y().wrapping_add(bg1_y_offset);
+        let bg1x = self.world_scroll().bg1_x().wrapping_add(bg1_x_offset);
+        let bg1y = self.world_scroll().bg1_y().wrapping_add(bg1_y_offset);
         self.ppu_scroll_copy_view_mut().set_bg2_h_copy(bg2x);
         self.ppu_scroll_copy_view_mut().set_bg2_v_copy(bg2y);
         self.ppu_scroll_copy_view_mut().set_bg1_h_copy(bg1x);
@@ -427,7 +427,7 @@ impl ZeldaState {
         let r14 = self
             .player_state_view()
             .y()
-            .wrapping_sub(self.world_state_view().bg2_y())
+            .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_add(12);
         let radius = self.spotlight_hdma_view().window_radius_byte();
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(radius));
@@ -444,7 +444,7 @@ impl ZeldaState {
         let spotlight_x_center = self
             .player_state_view()
             .x()
-            .wrapping_sub(self.world_state_view().bg2_x())
+            .wrapping_sub(self.world_scroll().bg2_x())
             .wrapping_add(8);
         self.spotlight_hdma_view_mut()
             .set_window_x_center(spotlight_x_center);
@@ -791,8 +791,8 @@ impl ZeldaState {
         self.palette_filter_view_mut().set_countdown_word(0);
         self.palette_filter_view_mut()
             .set_darkening_or_lightening_screen_word(0);
-        self.world_state_view_mut().set_bg1_x_offset(0);
-        self.world_state_view_mut().set_bg1_y_offset(0);
+        self.world_scroll_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
         let cgwsel = self.palette_filter_view().color_window_and_math_word();
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_cgwsel_word(cgwsel);
@@ -1055,11 +1055,11 @@ impl ZeldaState {
             self.system_signals_view_mut().clear_restart_check_flag();
             self.system_signals_view_mut().clear_game_over_check_flag();
             self.system_signals_view_mut().set_queued_music_control(0);
-            self.world_state_view_mut().set_bg1_x(0);
-            self.world_state_view_mut().set_bg2_x(0);
+            self.world_scroll_mut().set_bg1_x(0);
+            self.world_scroll_mut().set_bg2_x(0);
             self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
-            self.world_state_view_mut().set_bg1_y(0);
-            self.world_state_view_mut().set_bg2_y(0);
+            self.world_scroll_mut().set_bg1_y(0);
+            self.world_scroll_mut().set_bg2_y(0);
             self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
             self.ppu_scroll_copy_view_mut().set_bg1_h_copy(0);
             self.ppu_scroll_copy_view_mut().set_bg2_h_copy(0);
@@ -1353,17 +1353,17 @@ impl ZeldaState {
         self.increment_overworld_map_state();
         let tm_ts = self.display_state().layer_masks_word();
         self.ppu_scroll_copy_view_mut().set_mapbak_tm_word(tm_ts);
-        let bg1hofs = self.world_state_view().bg1_x();
-        let bg2hofs = self.world_state_view().bg2_x();
-        let bg1vofs = self.world_state_view().bg1_y();
-        let bg2vofs = self.world_state_view().bg2_y();
+        let bg1hofs = self.world_scroll().bg1_x();
+        let bg2hofs = self.world_scroll().bg2_x();
+        let bg1vofs = self.world_scroll().bg1_y();
+        let bg2vofs = self.world_scroll().bg2_y();
         self.ppu_scroll_copy_view_mut()
             .set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
-        self.world_state_view_mut().set_bg1_x(0);
-        self.world_state_view_mut().set_bg2_x(0);
+        self.world_scroll_mut().set_bg1_x(0);
+        self.world_scroll_mut().set_bg2_x(0);
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
-        self.world_state_view_mut().set_bg1_y(0);
-        self.world_state_view_mut().set_bg2_y(0);
+        self.world_scroll_mut().set_bg1_y(0);
+        self.world_scroll_mut().set_bg2_y(0);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
         let cgwsel_cgadsub = self.palette_filter_view().color_window_and_math_word();
         self.ppu_scroll_copy_view_mut()
@@ -1454,7 +1454,7 @@ impl ZeldaState {
             self.set_mode7_zoom_timer(OVERWORLD_MAP_TIMER[t as usize]);
             if self.mode7_zoom_timer() == 12 {
                 let y = self.special_exit_position_view().map_zoom_y();
-                self.world_state_view_mut().set_bg1_y(y);
+                self.world_scroll_mut().set_bg1_y(y);
                 self.ppu_scroll_copy_view_mut()
                     .set_mode7_center_y(y.wrapping_add(0x100));
                 let t0 = self.special_exit_position_view().map_zoom_x_offset();
@@ -1469,27 +1469,27 @@ impl ZeldaState {
                 } else {
                     t1
                 };
-                self.world_state_view_mut()
+                self.world_scroll_mut()
                     .set_bg1_x(t2.wrapping_add(0x80) & !1);
             } else {
-                self.world_state_view_mut().set_bg1_y(200);
+                self.world_scroll_mut().set_bg1_y(200);
                 self.ppu_scroll_copy_view_mut()
                     .set_mode7_center_y(200 + 256);
-                self.world_state_view_mut().set_bg1_x(128);
+                self.world_scroll_mut().set_bg1_x(128);
             }
         }
 
         if self.overworld_map_flags() != 0 {
             let k = ((self.player_state_view().joypad1h_last() & 12) >> 1) as usize;
-            let bg1vofs = self.world_state_view().bg1_y();
+            let bg1vofs = self.world_scroll().bg1_y();
             if bg1vofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 let next = bg1vofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16);
-                self.world_state_view_mut().set_bg1_y(next);
+                self.world_scroll_mut().set_bg1_y(next);
                 self.ppu_scroll_copy_view_mut()
                     .set_mode7_center_y(next.wrapping_add(0x100));
             }
             let k = ((self.player_state_view().joypad1h_last() & 3) * 2 + 1) as usize;
-            let bg1hofs = self.world_state_view().bg1_x();
+            let bg1hofs = self.world_scroll().bg1_x();
             if bg1hofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 self.ppu_scroll_copy_view_mut()
                     .set_bg1_h_copy2(bg1hofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16));
@@ -1517,10 +1517,10 @@ impl ZeldaState {
         let bg2hofs = self.ppu_scroll_copy_view().map_backup_bg2_h_copy2();
         let bg1vofs = self.ppu_scroll_copy_view().map_backup_bg1_v_copy2();
         let bg2vofs = self.ppu_scroll_copy_view().map_backup_bg2_v_copy2();
-        self.world_state_view_mut().set_bg1_x(bg1hofs);
-        self.world_state_view_mut().set_bg2_x(bg2hofs);
-        self.world_state_view_mut().set_bg1_y(bg1vofs);
-        self.world_state_view_mut().set_bg2_y(bg2vofs);
+        self.world_scroll_mut().set_bg1_x(bg1hofs);
+        self.world_scroll_mut().set_bg2_x(bg2hofs);
+        self.world_scroll_mut().set_bg1_y(bg1vofs);
+        self.world_scroll_mut().set_bg2_y(bg2vofs);
         let tm_ts = self.ppu_scroll_copy_view().mapbak_tm_word();
         self.set_layer_masks_word(tm_ts);
         self.Attract_SetUpConclusionHDMA();
@@ -1764,7 +1764,7 @@ impl ZeldaState {
                 u16::from(t2).wrapping_add(0x80)
             };
             Some((
-                x.wrapping_sub(self.world_state_view().bg1_x())
+                x.wrapping_sub(self.world_scroll().bg1_x())
                     .wrapping_add(0x80),
                 yval + 12,
             ))
@@ -1802,7 +1802,7 @@ impl ZeldaState {
             } else {
                 t10.wrapping_add(0x80)
             };
-            let xval = t11.wrapping_sub(self.world_state_view().bg1_x());
+            let xval = t11.wrapping_sub(self.world_scroll().bg1_x());
             let xt = if self
                 .enhanced_features_view()
                 .has(FEATURE_EXTEND_SCREEN64_MAP)
@@ -2389,7 +2389,7 @@ impl ZeldaState {
             .set_scroll_input(u16::from(joypad_h));
         let x = usize::from((joypad_h >> 3) & 1);
         let target = self
-            .world_state_view()
+            .world_scroll()
             .bg2_y()
             .wrapping_add_signed(DUNGEON_MAP_FLOOR_SCROLL_TARGET_DELTAS[x]);
         self.dungeon_map_scratch_view_mut()
@@ -2417,10 +2417,10 @@ impl ZeldaState {
         self.dungeon_map_scratch_view_mut()
             .add_marker_y_offset_signed(i16::from(DUNGEON_MAP_SCROLL_MARKER_Y_DELTAS[x]));
         let bg2 = self
-            .world_state_view()
+            .world_scroll()
             .bg2_y()
             .wrapping_add_signed(i16::from(DUNGEON_MAP_SCROLL_BG_Y_DELTAS[x]));
-        self.world_state_view_mut().set_bg2_y(bg2);
+        self.world_scroll_mut().set_bg2_y(bg2);
         if bg2 == self.dungeon_map_scratch_view().dungmap_scroll_target_y() {
             self.dungeon_map_scratch_view_mut()
                 .clear_dungmap_floor_scroll_step();
@@ -2760,8 +2760,8 @@ impl ZeldaState {
 
     pub(super) fn DungMap_4(&mut self) {
         let scroll_target = self.dungeon_map_scratch_view().dungmap_scroll_target_y();
-        let y = self.world_state_view().bg2_y().wrapping_add(scroll_target);
-        self.world_state_view_mut().set_bg2_y(y);
+        let y = self.world_scroll().bg2_y().wrapping_add(scroll_target);
+        self.world_scroll_mut().set_bg2_y(y);
         let marker_y = self
             .dungeon_map_scratch_view()
             .dungmap_player_marker_y()
@@ -2802,24 +2802,24 @@ impl ZeldaState {
         let palette = self.palette_buffer_view().main_full_slice().to_vec();
         self.ppu_scroll_copy_view_mut()
             .copy_mapbak_palette_from(&palette);
-        let bg1_x_offset = self.world_state_view().bg1_x_offset();
-        let bg1_y_offset = self.world_state_view().bg1_y_offset();
+        let bg1_x_offset = self.world_scroll().bg1_x_offset();
+        let bg1_y_offset = self.world_scroll().bg1_y_offset();
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_bg1_x_offset(bg1_x_offset);
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_bg1_y_offset(bg1_y_offset);
-        self.world_state_view_mut().set_bg1_x_offset(0);
-        self.world_state_view_mut().set_bg1_y_offset(0);
-        let bg1hofs = self.world_state_view().bg1_x();
-        let bg2hofs = self.world_state_view().bg2_x();
-        let bg1vofs = self.world_state_view().bg1_y();
-        let bg2vofs = self.world_state_view().bg2_y();
+        self.world_scroll_mut().set_bg1_x_offset(0);
+        self.world_scroll_mut().set_bg1_y_offset(0);
+        let bg1hofs = self.world_scroll().bg1_x();
+        let bg2hofs = self.world_scroll().bg2_x();
+        let bg1vofs = self.world_scroll().bg1_y();
+        let bg2vofs = self.world_scroll().bg2_y();
         self.ppu_scroll_copy_view_mut()
             .set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
-        self.world_state_view_mut().set_bg1_x(0);
-        self.world_state_view_mut().set_bg1_y(0);
-        self.world_state_view_mut().set_bg2_x(0);
-        self.world_state_view_mut().set_bg2_y(0);
+        self.world_scroll_mut().set_bg1_x(0);
+        self.world_scroll_mut().set_bg1_y(0);
+        self.world_scroll_mut().set_bg2_x(0);
+        self.world_scroll_mut().set_bg2_y(0);
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
         let cgwsel = self.palette_filter_view().color_window_and_math_word();
@@ -2848,16 +2848,16 @@ impl ZeldaState {
         let bg2vofs = self.ppu_scroll_copy_view().map_backup_bg2_v_copy2();
         self.palette_filter_view_mut()
             .set_color_window_and_math_word(cgwsel);
-        self.world_state_view_mut().set_bg1_x(bg1hofs);
-        self.world_state_view_mut().set_bg2_x(bg2hofs);
-        self.world_state_view_mut().set_bg1_y(bg1vofs);
-        self.world_state_view_mut().set_bg2_y(bg2vofs);
+        self.world_scroll_mut().set_bg1_x(bg1hofs);
+        self.world_scroll_mut().set_bg2_x(bg2hofs);
+        self.world_scroll_mut().set_bg1_y(bg1vofs);
+        self.world_scroll_mut().set_bg2_y(bg2vofs);
         self.ppu_scroll_copy_view_mut().set_bg3_v_copy2(0);
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
         let bg1_x_offset = self.ppu_scroll_copy_view().mapbak_bg1_x_offset();
         let bg1_y_offset = self.ppu_scroll_copy_view().mapbak_bg1_y_offset();
-        self.world_state_view_mut().set_bg1_x_offset(bg1_x_offset);
-        self.world_state_view_mut().set_bg1_y_offset(bg1_y_offset);
+        self.world_scroll_mut().set_bg1_x_offset(bg1_x_offset);
+        self.world_scroll_mut().set_bg1_y_offset(bg1_y_offset);
         self.system_signals_view_mut().increment_cgram_update_flag();
     }
 
@@ -3630,7 +3630,7 @@ impl ZeldaState {
         let y = self
             .player_state_view()
             .y()
-            .wrapping_sub(self.world_state_view().bg2_y());
+            .wrapping_sub(self.world_scroll().bg2_y());
         let flag = usize::from(y < 0x78);
         self.messaging_state_view_mut()
             .set_text_msgbox_topleft(TEXT_POSITIONS[flag]);
@@ -3747,12 +3747,12 @@ impl ZeldaState {
             .player_state_view()
             .y()
             .wrapping_add(16)
-            .wrapping_sub(self.world_state_view().bg2_y())) as u8;
+            .wrapping_sub(self.world_scroll().bg2_y())) as u8;
         let x = (self
             .player_state_view()
             .x()
             .wrapping_add(7)
-            .wrapping_sub(self.world_state_view().bg2_x())) as u8;
+            .wrapping_sub(self.world_scroll().bg2_x())) as u8;
         let flags = DEATH_SPR_FLAGS[self.player_state_view().lower_level_state() as usize & 1] | 2;
         self.set_oam_plain(0x74, x, y, 0xaa, flags, 2);
     }

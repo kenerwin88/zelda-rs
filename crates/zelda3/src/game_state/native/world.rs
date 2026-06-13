@@ -178,6 +178,145 @@ impl WorldLocationState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldScrollState {
+    pub(crate) bg1_x: u16,
+    pub(crate) bg1_y: u16,
+    pub(crate) bg2_x: u16,
+    pub(crate) bg2_y: u16,
+    pub(crate) bg1_x_offset: u16,
+    pub(crate) bg1_y_offset: u16,
+    pub(crate) camera_x: u16,
+    pub(crate) camera_y: u16,
+    pub(crate) overworld_offset_base_x: u16,
+    pub(crate) overworld_offset_base_y: u16,
+    pub(crate) overworld_offset_mask_x: u16,
+    pub(crate) overworld_offset_mask_y: u16,
+    pub(crate) scroll_x_start: u16,
+    pub(crate) scroll_x_end: u16,
+    pub(crate) scroll_y_end: u16,
+}
+
+impl WorldScrollState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            bg1_x: read_le_u16(ram, BG1_X_SCROLL),
+            bg1_y: read_le_u16(ram, BG1_Y_SCROLL),
+            bg2_x: read_le_u16(ram, BG2_X_SCROLL),
+            bg2_y: read_le_u16(ram, BG2_Y_SCROLL),
+            bg1_x_offset: read_le_u16(ram, BG1_X_OFFSET),
+            bg1_y_offset: read_le_u16(ram, BG1_Y_OFFSET),
+            camera_x: read_le_u16(ram, CAMERA_X),
+            camera_y: read_le_u16(ram, CAMERA_Y),
+            overworld_offset_base_x: read_le_u16(ram, OVERWORLD_OFFSET_BASE_X),
+            overworld_offset_base_y: read_le_u16(ram, OVERWORLD_OFFSET_BASE_Y),
+            overworld_offset_mask_x: read_le_u16(ram, OVERWORLD_OFFSET_MASK_X),
+            overworld_offset_mask_y: read_le_u16(ram, OVERWORLD_OFFSET_MASK_Y),
+            scroll_x_start: read_le_u16(ram, OVERWORLD_SCROLL_X_START),
+            scroll_x_end: read_le_u16(ram, OVERWORLD_SCROLL_X_END),
+            scroll_y_end: read_le_u16(ram, OVERWORLD_SCROLL_Y_END),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, BG1_X_SCROLL, self.bg1_x);
+        write_le_u16(ram, BG1_Y_SCROLL, self.bg1_y);
+        write_le_u16(ram, BG2_X_SCROLL, self.bg2_x);
+        write_le_u16(ram, BG2_Y_SCROLL, self.bg2_y);
+        write_le_u16(ram, BG1_X_OFFSET, self.bg1_x_offset);
+        write_le_u16(ram, BG1_Y_OFFSET, self.bg1_y_offset);
+        write_le_u16(ram, CAMERA_X, self.camera_x);
+        write_le_u16(ram, CAMERA_Y, self.camera_y);
+        write_le_u16(ram, OVERWORLD_OFFSET_BASE_X, self.overworld_offset_base_x);
+        write_le_u16(ram, OVERWORLD_OFFSET_BASE_Y, self.overworld_offset_base_y);
+        write_le_u16(ram, OVERWORLD_OFFSET_MASK_X, self.overworld_offset_mask_x);
+        write_le_u16(ram, OVERWORLD_OFFSET_MASK_Y, self.overworld_offset_mask_y);
+        write_le_u16(ram, OVERWORLD_SCROLL_X_START, self.scroll_x_start);
+        write_le_u16(ram, OVERWORLD_SCROLL_X_END, self.scroll_x_end);
+        write_le_u16(ram, OVERWORLD_SCROLL_Y_END, self.scroll_y_end);
+    }
+
+    pub(crate) fn bg1_x(&self) -> u16 {
+        self.bg1_x
+    }
+
+    pub(crate) fn bg1_x_low(&self) -> u8 {
+        self.bg1_x as u8
+    }
+
+    pub(crate) fn bg1_y(&self) -> u16 {
+        self.bg1_y
+    }
+
+    pub(crate) fn bg1_y_low(&self) -> u8 {
+        self.bg1_y as u8
+    }
+
+    pub(crate) fn bg2_x(&self) -> u16 {
+        self.bg2_x
+    }
+
+    pub(crate) fn bg2_x_low(&self) -> u8 {
+        self.bg2_x as u8
+    }
+
+    pub(crate) fn bg2_y(&self) -> u16 {
+        self.bg2_y
+    }
+
+    pub(crate) fn bg2_y_low(&self) -> u8 {
+        self.bg2_y as u8
+    }
+
+    pub(crate) fn bg1_x_offset(&self) -> u16 {
+        self.bg1_x_offset
+    }
+
+    pub(crate) fn bg1_y_offset(&self) -> u16 {
+        self.bg1_y_offset
+    }
+
+    pub(crate) fn bg1_offset_mask(&self) -> u16 {
+        self.bg1_x_offset | self.bg1_y_offset
+    }
+
+    pub(crate) fn camera_x(&self) -> u16 {
+        self.camera_x
+    }
+
+    pub(crate) fn camera_y(&self) -> u16 {
+        self.camera_y
+    }
+
+    pub(crate) fn overworld_offset_base_x(&self) -> u16 {
+        self.overworld_offset_base_x
+    }
+
+    pub(crate) fn overworld_offset_base_y(&self) -> u16 {
+        self.overworld_offset_base_y
+    }
+
+    pub(crate) fn overworld_offset_mask_x(&self) -> u16 {
+        self.overworld_offset_mask_x
+    }
+
+    pub(crate) fn overworld_offset_mask_y(&self) -> u16 {
+        self.overworld_offset_mask_y
+    }
+
+    pub(crate) fn scroll_x_start(&self) -> u16 {
+        self.scroll_x_start
+    }
+
+    pub(crate) fn scroll_x_end(&self) -> u16 {
+        self.scroll_x_end
+    }
+
+    pub(crate) fn scroll_y_end(&self) -> u16 {
+        self.scroll_y_end
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WeatherVaneState {
     pub(crate) countdown: u16,
     pub(crate) music_latch: u8,
@@ -1014,6 +1153,7 @@ impl RoomBoundsState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldState {
     pub(crate) location: WorldLocationState,
+    pub(crate) scroll: WorldScrollState,
     pub(crate) overworld: OverworldState,
     pub(crate) room_bounds: RoomBoundsState,
 }
@@ -1022,6 +1162,7 @@ impl WorldState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             location: WorldLocationState::load_from_ram(ram),
+            scroll: WorldScrollState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
             room_bounds: RoomBoundsState::load_from_ram(ram),
         }
@@ -1029,8 +1170,105 @@ impl WorldState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.location.write_to_ram(ram);
+        self.scroll.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
         self.room_bounds.write_to_ram(ram);
+    }
+}
+
+pub(crate) struct NativeWorldScrollBridgeMut<'a> {
+    state: &'a mut WorldScrollState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWorldScrollBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut WorldScrollState, ram: &'a mut [u8]) -> Self {
+        *state = WorldScrollState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, WorldScrollState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_bg1_x(&mut self, value: u16) {
+        self.state.bg1_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
+        self.state.bg1_x = (self.state.bg1_x & 0xff00) | u16::from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_y(&mut self, value: u16) {
+        self.state.bg1_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
+        self.state.bg1_y = (self.state.bg1_y & 0xff00) | u16::from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_x(&mut self, value: u16) {
+        self.state.bg2_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn add_bg2_x(&mut self, value: u16) {
+        self.state.bg2_x = self.state.bg2_x.wrapping_add(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_y(&mut self, value: u16) {
+        self.state.bg2_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
+        self.state.bg1_x_offset = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
+        self.state.bg1_y_offset = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_offsets(&mut self, x: u16, y: u16) {
+        self.state.bg1_x_offset = x;
+        self.state.bg1_y_offset = y;
+        self.sync();
+    }
+
+    pub(crate) fn clear_bg1_offsets(&mut self) {
+        self.set_bg1_offsets(0, 0);
+    }
+
+    pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
+        self.state.overworld_offset_base_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
+        self.state.overworld_offset_base_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
+        self.state.overworld_offset_mask_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
+        self.state.overworld_offset_mask_x = value;
+        self.sync();
     }
 }
 
