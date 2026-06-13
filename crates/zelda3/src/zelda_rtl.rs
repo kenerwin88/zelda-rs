@@ -3317,8 +3317,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tilemaps(&self) -> &DungeonRoomTilemapState {
-        &self.game_state.dungeon.room_tilemaps
+    pub(crate) fn dungeon_room_tilemaps(&self) -> DungeonRoomTilemapState {
+        DungeonRoomTilemapState::load_from_ram(&self.ram)
     }
 
     pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
