@@ -6835,7 +6835,9 @@ impl ZeldaState {
     }
 
     fn cache_camera_properties_for_player(&mut self) {
-        self.ppu_scroll_copy_mut().cache_bg2_live_scroll();
+        let scroll = self.world_scroll();
+        self.ppu_scroll_copy_mut()
+            .cache_bg2_live_scroll_from(scroll.bg2_x(), scroll.bg2_y());
         self.player_state_mut().cache_current_position();
         let y_start = self.room_bounds().y_bound(0);
         let y_end = self.room_bounds().y_bound(2);

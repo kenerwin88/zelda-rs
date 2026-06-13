@@ -5196,7 +5196,7 @@ mod tests {
         write_le_u16(&mut ram, SPOTLIGHT_WINDOW_Y_BUFFER, 0x9abc);
         write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC + 6, 0xbeef);
 
-        let mut spotlight = SpotlightHdmaState::default();
+        let mut spotlight = SpotlightHdmaState::load_from_ram(&ram);
         {
             let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
             bridge.set_y_lower(0x0030);
@@ -5222,6 +5222,26 @@ mod tests {
         assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_STATE), 0x5602);
         assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_Y_BUFFER), 0x9abb);
         assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC + 6), 0);
+    }
+
+    #[test]
+    fn native_spotlight_hdma_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SPOTLIGHT_Y_LOWER, 0x0010);
+        write_le_u16(&mut ram, SPOTLIGHT_WINDOW_RADIUS, 0x0020);
+        let mut spotlight = SpotlightHdmaState::default();
+        spotlight.set_y_lower(0x1200);
+        spotlight.set_window_radius(0x3456);
+
+        {
+            let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
+            bridge.add_window_radius_byte(0x01);
+        }
+
+        assert_eq!(spotlight.y_lower(), 0x1200);
+        assert_eq!(spotlight.window_radius(), 0x3457);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_Y_LOWER), 0x1200);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_RADIUS), 0x3457);
     }
 
     #[test]
@@ -5253,7 +5273,7 @@ mod tests {
         ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = 0x34;
         ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = 0x56;
 
-        let mut backup = OverworldPaletteBackupState::default();
+        let mut backup = OverworldPaletteBackupState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldPaletteBackupBridgeMut::new(&mut backup, &mut ram);
             bridge.set_main_indoors_backup(0x9a);
@@ -5267,6 +5287,30 @@ mod tests {
         assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x9a);
         assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0xbc);
         assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0xde);
+    }
+
+    #[test]
+    fn native_overworld_palette_backup_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = 0x12;
+        ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = 0x34;
+        ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = 0x56;
+        let mut backup = OverworldPaletteBackupState::default();
+        backup.set_main_indoors(0x80);
+        backup.set_aux3_bg_palette_7(0x81);
+        backup.set_main_indoors_copy(0x82);
+
+        {
+            let mut bridge = NativeOverworldPaletteBackupBridgeMut::new(&mut backup, &mut ram);
+            bridge.set_main_indoors_backup(0x90);
+        }
+
+        assert_eq!(backup.main_indoors(), 0x90);
+        assert_eq!(backup.aux3_bg_palette_7(), 0x81);
+        assert_eq!(backup.main_indoors_copy(), 0x82);
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x90);
+        assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0x81);
+        assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0x82);
     }
 
     #[test]
@@ -6715,7 +6759,7 @@ mod tests {
         write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW, 0x2002);
         ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4].copy_from_slice(&[1, 2, 3, 4]);
 
-        let mut scroll = PpuScrollCopyState::default();
+        let mut scroll = PpuScrollCopyState::load_from_ram(&ram);
         {
             let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
             bridge.cache_bg2_live_scroll();
@@ -6734,6 +6778,26 @@ mod tests {
         assert_eq!(read_le_u16(&ram, CAMERA_X_COORD_SCROLL_LOW_CACHED), 0x2002);
         assert_eq!(&scroll.mapbak_palette_slice()[..4], &[5, 6, 7, 4]);
         assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[5, 6, 7, 4]);
+    }
+
+    #[test]
+    fn native_ppu_scroll_copy_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0060);
+        write_le_u16(&mut ram, MAPBAK_CGWSEL, 0x1234);
+        let mut scroll = PpuScrollCopyState::default();
+        scroll.set_bg2_h_copy2(0x2200);
+        scroll.set_mapbak_cgwsel_word(0x5678);
+
+        {
+            let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
+            bridge.add_bg2_h_copy2(0x10);
+        }
+
+        assert_eq!(scroll.bg2_h_copy2(), 0x2210);
+        assert_eq!(scroll.mapbak_cgwsel_word(), 0x5678);
+        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x2210);
+        assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0x5678);
     }
 
     #[test]

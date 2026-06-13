@@ -1788,6 +1788,11 @@ impl PpuScrollCopyState {
         self.bg2_v_copy2_cached = self.bg2_v_copy2;
     }
 
+    pub(crate) fn cache_bg2_live_scroll_from(&mut self, bg2_h: u16, bg2_v: u16) {
+        self.bg2_h_copy2_cached = bg2_h;
+        self.bg2_v_copy2_cached = bg2_v;
+    }
+
     pub(crate) fn cache_camera_scroll(&mut self, camera_y: u16, camera_x: u16) {
         self.camera_y_scroll_cached = camera_y;
         self.camera_x_scroll_cached = camera_x;
@@ -3293,8 +3298,12 @@ pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
 
 impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
     pub(crate) fn new(backup: &'a mut OverworldPaletteBackupState, ram: &'a mut [u8]) -> Self {
-        *backup = OverworldPaletteBackupState::load_from_ram(ram);
         Self { backup, ram }
+    }
+
+    fn sync(&mut self) {
+        self.backup.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -3306,20 +3315,17 @@ impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
 
     pub(crate) fn set_main_indoors_backup(&mut self, value: u8) {
         self.backup.set_main_indoors(value);
-        self.ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_aux3_bg_palette_7_backup(&mut self, value: u8) {
         self.backup.set_aux3_bg_palette_7(value);
-        self.ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_main_indoors_copy_backup(&mut self, value: u8) {
         self.backup.set_main_indoors_copy(value);
-        self.ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3330,7 +3336,6 @@ pub(crate) struct NativeSpotlightHdmaBridgeMut<'a> {
 
 impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpotlightHdmaState, ram: &'a mut [u8]) -> Self {
-        *state = SpotlightHdmaState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3447,7 +3452,6 @@ pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
 
 impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PpuScrollCopyState, ram: &'a mut [u8]) -> Self {
-        *state = PpuScrollCopyState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3493,6 +3497,7 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_bg2_h_copy2_cached(value: u16);
         fn set_bg2_v_copy2_cached(value: u16);
         fn cache_bg2_live_scroll();
+        fn cache_bg2_live_scroll_from(bg2_h: u16, bg2_v: u16);
         fn save_special_exit_bg2_live_scroll();
         fn save_exit_bg2_live_scroll();
         fn restore_special_exit_bg2_scroll_to_all_layers();
