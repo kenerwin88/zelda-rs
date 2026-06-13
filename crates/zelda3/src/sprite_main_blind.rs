@@ -1878,12 +1878,12 @@ mod tests {
             sprite.set_direction(2); // t0 = 0, no negation
         }
         s.player_state_mut().set_x(0); // tab idx 0 -> t1 = 0
-        s.ram[BLIND_HEAD_ANIM_COUNTER] = 0; // idx 0 -> table[0] = 0
+        s.sprite_system_mut().set_blind_head_anim_counter(0); // idx 0 -> table[0] = 0
         s.blind_animate(1);
         assert_eq!(s.sprite_slot(1).head_direction(), 0);
 
         // BLIND_HEAD_ANIM_COUNTER=8 -> (8>>3 & 7)=1, (8>>2 & 1)=0, idx=1 -> table[1] = 1
-        s.ram[BLIND_HEAD_ANIM_COUNTER] = 8;
+        s.sprite_system_mut().set_blind_head_anim_counter(8);
         s.blind_animate(1);
         assert_eq!(s.sprite_slot(1).head_direction(), 1);
     }

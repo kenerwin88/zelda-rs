@@ -731,7 +731,6 @@ pub(crate) struct NativeSpriteSystemBridgeMut<'a> {
 
 impl<'a> NativeSpriteSystemBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpriteSystemState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteSystemState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1166,7 +1165,6 @@ pub(crate) struct NativeSpriteWorkspaceBridgeMut<'a> {
 
 impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpriteWorkspaceState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteWorkspaceState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1625,7 +1623,6 @@ pub(crate) struct NativeFollowerRuntimeBridgeMut<'a> {
 
 impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut FollowerRuntimeState, ram: &'a mut [u8]) -> Self {
-        *state = FollowerRuntimeState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1998,7 +1995,6 @@ pub(crate) struct NativeGarnishRuntimeBridgeMut<'a> {
 
 impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut GarnishRuntimeState, ram: &'a mut [u8]) -> Self {
-        *state = GarnishRuntimeState::load_from_ram(ram);
         Self { state, ram }
     }
 

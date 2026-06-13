@@ -8673,7 +8673,7 @@ mod tests {
     fn sprite_place_weapon_tink_respects_active_repulsespark_timer() {
         let mut active = fresh_state();
         let k = 5;
-        active.ram[REPULSESPARK_TIMER_SPRITE] = 3;
+        active.garnish_state_mut().set_repulsespark_timer(3);
         active.system_signals_mut().set_sound_effect_1(0);
         active.sprite_place_weapon_tink(k);
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
@@ -8694,7 +8694,7 @@ mod tests {
     #[test]
     fn link_place_weapon_tink_uses_link_oam_offsets_and_x_carry() {
         let mut active = fresh_state();
-        active.ram[REPULSESPARK_TIMER_SPRITE] = 3;
+        active.garnish_state_mut().set_repulsespark_timer(3);
         active.player_state_mut().set_x(0x00f0);
         active.player_state_mut().set_oam_x_offset(0x20);
         active.link_place_weapon_tink();
@@ -9133,8 +9133,9 @@ mod tests {
     fn sprite_check_if_lifted_permissive_delegates_to_lifted_helper_side_effects() {
         let mut s = fresh_state();
         let k = 3;
-        s.ram[CUR_OBJECT_INDEX] = k as u8;
-        s.ram[FLAG_IS_SPRITE_TO_PICK_UP_CACHED] = (k as u8).wrapping_add(1);
+        s.sprite_system_mut().set_cur_object_index(k as u8);
+        s.player_state_mut()
+            .set_sprite_pickup_flag_cached((k as u8).wrapping_add(1));
         s.sprite_slot_mut(k).set_state(9);
         s.player_state_mut().set_filtered_joypad_l(0xff);
         s.sprite_slot_mut(k).set_e(5);

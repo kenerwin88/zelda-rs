@@ -4353,8 +4353,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn follower_state(&self) -> FollowerRuntimeState {
-        FollowerRuntimeState::load_from_ram(&self.ram)
+    pub(crate) fn follower_state(&self) -> &FollowerRuntimeState {
+        &self.game_state.sprites.follower_runtime
     }
 
     pub(crate) fn follower_state_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
@@ -4442,16 +4442,16 @@ impl ZeldaState {
         SpriteSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn sprite_system(&self) -> SpriteSystemState {
-        SpriteSystemState::load_from_ram(&self.ram)
+    pub(crate) fn sprite_system(&self) -> &SpriteSystemState {
+        &self.game_state.sprites.system
     }
 
     pub(crate) fn sprite_system_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
         NativeSpriteSystemBridgeMut::new(&mut self.game_state.sprites.system, &mut self.ram)
     }
 
-    pub(crate) fn sprite_workspace(&self) -> SpriteWorkspaceState {
-        SpriteWorkspaceState::load_from_ram(&self.ram)
+    pub(crate) fn sprite_workspace(&self) -> &SpriteWorkspaceState {
+        &self.game_state.sprites.workspace
     }
 
     pub(crate) fn sprite_workspace_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
@@ -4482,8 +4482,8 @@ impl ZeldaState {
         GarnishSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn garnish_state(&self) -> GarnishRuntimeState {
-        GarnishRuntimeState::load_from_ram(&self.ram)
+    pub(crate) fn garnish_state(&self) -> &GarnishRuntimeState {
+        &self.game_state.sprites.garnish_runtime
     }
 
     pub(crate) fn garnish_state_mut(&mut self) -> NativeGarnishRuntimeBridgeMut<'_> {
@@ -8400,7 +8400,7 @@ mod tests {
         state.ram[PLAYER_DEFENSE_FLAGS] = 0xff;
         set_link_test_byte(&mut state, LINK_MOVING_AGAINST_DIAG_TILE, 0xff);
         state.player_state_mut().set_speed_setting(5);
-        state.ram[FOLLOWER_INDICATOR] = 2;
+        state.follower_state_mut().set_indicator(2);
 
         state.link_perform_dash();
 
@@ -9727,8 +9727,8 @@ mod tests {
         assert_eq!(crossing.player_state().handler_state(), 20);
 
         let mut follower = ZeldaState::new();
-        follower.ram[FOLLOWER_INDICATOR] = 13;
-        follower.ram[FOLLOWER_DROPPED] = 1;
+        follower.follower_state_mut().set_indicator(13);
+        follower.follower_state_mut().set_dropped(1);
         set_link_test_byte(&mut follower, LINK_CAPE_MODE, 1);
         follower.handle_followers_after_mirroring();
         assert_eq!(follower.ram[SUPER_BOMB_INDICATOR_TIMER], 0xfe);

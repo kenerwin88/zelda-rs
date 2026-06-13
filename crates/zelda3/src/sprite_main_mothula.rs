@@ -5230,8 +5230,8 @@ mod tests {
         // valid; we assert side-effects independent of index.
         s.sprite_workspace_mut().set_room_origin_x_high(0x10);
         s.sprite_workspace_mut().set_room_origin_y_high(0x20);
-        write_le_u16(&mut s.ram, SPRCOLL_X_SIZE, 0xffff);
-        write_le_u16(&mut s.ram, SPRCOLL_Y_SIZE, 0xffff);
+        s.garnish_state_mut().set_sprcoll_x_size(0xffff);
+        s.garnish_state_mut().set_sprcoll_y_size(0xffff);
 
         s.mothula_handle_spikes(k);
         // head_dir was set to 0x40 before the spawn path. If the spawn

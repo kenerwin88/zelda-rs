@@ -8362,17 +8362,18 @@ mod tests {
     }
 
     #[test]
-    fn native_garnish_runtime_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[GARNISH_ACTIVE] = 0x03;
-        ram[OVERWORLD_BOULDER_TRAP_COUNT] = 0xff;
-        ram[OVERWORLD_BOULDER_TRAP_TIMER] = 0x7f;
-        ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = 0x22;
-        ram[REPULSESPARK_ANIM_DELAY] = 0x00;
-        write_le_u16(&mut ram, SPRCOLL_X_BASE, 0x1234);
-        write_le_u16(&mut ram, SPRCOLL_Y_BASE, 0x5678);
+    fn native_garnish_runtime_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[GARNISH_ACTIVE] = 0x03;
+        native_ram[OVERWORLD_BOULDER_TRAP_COUNT] = 0xff;
+        native_ram[OVERWORLD_BOULDER_TRAP_TIMER] = 0x7f;
+        native_ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = 0x22;
+        native_ram[REPULSESPARK_ANIM_DELAY] = 0x00;
+        write_le_u16(&mut native_ram, SPRCOLL_X_BASE, 0x1234);
+        write_le_u16(&mut native_ram, SPRCOLL_Y_BASE, 0x5678);
+        let mut garnish = GarnishRuntimeState::load_from_ram(&native_ram);
 
-        let mut garnish = GarnishRuntimeState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeGarnishRuntimeBridgeMut::new(&mut garnish, &mut ram);
             bridge.set_active_type(0x0a);
@@ -8408,17 +8409,18 @@ mod tests {
 
     #[test]
     fn native_follower_runtime_bridge_preserves_overlapping_timer_tail_byte() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[FOLLOWER_INDICATOR] = 0x04;
-        ram[TAGALONG_DATA_INDEX] = 0x13;
-        ram[TAGALONG_HOOKSHOT_INTERLOCK] = 0x02;
-        ram[TIMER_TAGALONG_REACQUIRE] = 0x34;
-        ram[FOLLOWER_TAIL_WRITE_INDEX] = 0x12;
-        ram[TAGALONG_ANIM_FRAME_COUNTER] = 0x02;
-        write_le_u16(&mut ram, FOLLOWER_SAVED_Y, 0x5678);
-        write_le_u16(&mut ram, FOLLOWER_SAVED_X, 0x9abc);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[FOLLOWER_INDICATOR] = 0x04;
+        native_ram[TAGALONG_DATA_INDEX] = 0x13;
+        native_ram[TAGALONG_HOOKSHOT_INTERLOCK] = 0x02;
+        native_ram[TIMER_TAGALONG_REACQUIRE] = 0x34;
+        native_ram[FOLLOWER_TAIL_WRITE_INDEX] = 0x12;
+        native_ram[TAGALONG_ANIM_FRAME_COUNTER] = 0x02;
+        write_le_u16(&mut native_ram, FOLLOWER_SAVED_Y, 0x5678);
+        write_le_u16(&mut native_ram, FOLLOWER_SAVED_X, 0x9abc);
+        let mut follower = FollowerRuntimeState::load_from_ram(&native_ram);
 
-        let mut follower = FollowerRuntimeState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeFollowerRuntimeBridgeMut::new(&mut follower, &mut ram);
             bridge.set_reacquire_timer(0xabcd);

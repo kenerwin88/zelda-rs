@@ -6091,8 +6091,8 @@ mod tests {
         let mut snitch = fresh_state();
         snitch.sprite_slot_mut(k).set_state(9);
         snitch.sprite_slot_mut(k).set_sprite_type(0x35);
-        write_le_u16(&mut snitch.ram, SPRCOLL_X_BASE_PREP, 0x1200);
-        write_le_u16(&mut snitch.ram, SPRCOLL_Y_BASE_PREP, 0x3400);
+        snitch.garnish_state_mut().set_sprcoll_x_base(0x1200);
+        snitch.garnish_state_mut().set_sprcoll_y_base(0x3400);
         snitch.snitch_spawn_guard(k);
         assert_eq!(snitch.sprite_slot(0).sprite_type(), 0x45);
         assert_eq!(snitch.sprite_slot(0).state(), 9);
