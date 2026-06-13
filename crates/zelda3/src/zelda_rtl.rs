@@ -2060,7 +2060,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_transient(&self) -> WorldTransientState {
-        WorldTransientState::load_from_ram(&self.ram)
+        self.game_state.world.transient.clone()
     }
 
     pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
@@ -6844,7 +6844,7 @@ impl ZeldaState {
         self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         self.world_camera_boundaries_mut().cache_scroll_targets();
-        self.ppu_scroll_copy_mut().cache_camera_scroll();
+        self.world_camera_boundaries_mut().cache_camera_scroll();
         self.world_transient_mut().cache_quadrant_fullsize_state();
         self.player_state_mut().cache_current_quadrants();
         self.player_state_mut().cache_facing();
@@ -8849,7 +8849,7 @@ mod tests {
         state
             .world_camera_boundaries_mut()
             .set_camera_y_coord_scroll_low(0x9999);
-        state.ram[QUADRANT_FULLSIZE_Y] = 2;
+        state.world_transient_mut().set_quadrant_fullsize_y(2);
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 2);
         state.player_state_mut().set_facing(8);
         state.player_state_mut().set_lower_level_state(1);
@@ -8862,8 +8862,8 @@ mod tests {
         assert_eq!(state.ppu_scroll_copy().bg2_v_copy2_cached(), 0x2222);
         assert_eq!(link_test_word(&state, LINK_Y_COORD_CACHED), 0x3333);
         assert_eq!(link_test_word(&state, LINK_X_COORD_CACHED), 0x4444);
-        assert_eq!(read_le_u16(&state.ram, CACHED_ROOM_BOUNDS_Y_START), 0x5555);
-        assert_eq!(read_le_u16(&state.ram, CACHED_ROOM_BOUNDS_X_END), 0x6666);
+        assert_eq!(state.world_transient().cached_room_bounds_y_start, 0x5555);
+        assert_eq!(state.world_transient().cached_room_bounds_x_end, 0x6666);
         assert_eq!(
             read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET_CACHED),
             0x7777
@@ -8909,8 +8909,8 @@ mod tests {
         let mut state = ZeldaState::new();
         state.set_dungeon_room(0x0104);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
-        state.ram[QUADRANT_FULLSIZE_Y] = 1;
-        state.ram[QUADRANT_FULLSIZE_X] = 1;
+        state.world_transient_mut().set_quadrant_fullsize_y(1);
+        state.world_transient_mut().set_quadrant_fullsize_x(1);
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 1);
         set_link_test_byte(&mut state, LINK_QUADRANT_X, 1);
 
@@ -9661,7 +9661,7 @@ mod tests {
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 0);
         assert_eq!(ether.system_signals().sound_effect_2() & 0x3f, 35);
 
-        set_link_test_byte(&mut ether, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
+        ether.player_state_mut().set_spin_attack_delay_timer(0);
         ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK] = 9;
         ether.link_state_using_ether();
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 10);

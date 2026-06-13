@@ -3354,6 +3354,125 @@ mod tests {
     }
 
     #[test]
+    fn world_transient_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0x01;
+        ram[ALLOW_SCROLL_Z] = 0x02;
+        ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = 0x03;
+        write_le_u16(&mut ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED, 0x0405);
+        write_le_u16(&mut ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS, 0x0607);
+        ram[SUPER_BOMB_INDICATOR_TIMER] = 0x08;
+        ram[IS_STANDING_IN_DOORWAY_CACHED] = 0x09;
+        write_le_u16(&mut ram, CACHED_ROOM_BOUNDS_Y_START, 0x0a0b);
+        write_le_u16(&mut ram, CACHED_ROOM_BOUNDS_X_END, 0x0c0d);
+        write_le_u16(&mut ram, OVERWORLD_PEG_PUZZLE_PROGRESS, 0x0e0f);
+        ram[OVERWORLD_HOLE_TILEMAP_POS] = 0x10;
+        ram[HUD_CUR_ITEM_X] = 0x11;
+        write_le_u16(&mut ram, DOOR_ANIMATION_STEP_INDICATOR, 0x1213);
+        ram[ROOM_TRANSITIONING_FLAGS] = 0x14;
+        ram[QUADRANT_FULLSIZE_X] = 0x15;
+        ram[QUADRANT_FULLSIZE_Y] = 0x16;
+        ram[MAPBAK_TM] = 0x17;
+        ram[MAPBAK_TS] = 0x18;
+        ram[OVERWORLD_HOLE_SCAN_STEP] = 0x19;
+        write_le_u16(&mut ram, DUNG_REPLACEMENT_TILE_STATE + 4, 0x1a1b);
+
+        let transient = WorldTransientState::load_from_ram(&ram);
+        assert_eq!(transient.flag_custom_spell_anim_active(), 0x01);
+        assert_eq!(transient.allow_scroll_z(), 0x02);
+        assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0x03);
+        assert_eq!(transient.big_key_door_message_triggered(), 0x0405);
+        assert_eq!(transient.savegame_has_master_sword_flags(), 0x0607);
+        assert_eq!(transient.super_bomb_indicator_timer(), 0x08);
+        assert_eq!(transient.is_standing_in_doorway_cached(), 0x09);
+        assert_eq!(transient.overworld_peg_puzzle_progress(), 0x0e0f);
+        assert_eq!(transient.overworld_hole_tilemap_pos(), 0x10);
+        assert_eq!(transient.hud_cur_item_x(), 0x11);
+        assert_eq!(transient.door_animation_step(), 0x1213);
+        assert_eq!(transient.room_transitioning_flags(), 0x14);
+        assert_eq!(transient.quadrant_fullsize_x(), 0x15);
+        assert_eq!(transient.quadrant_fullsize_y(), 0x16);
+        assert_eq!(transient.dung_replacement_tile_state(2), 0x1a1b);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        transient.write_to_ram(&mut projected);
+        assert_eq!(WorldTransientState::load_from_ram(&projected), transient);
+    }
+
+    #[test]
+    fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut transient = WorldTransientState::default();
+        {
+            let mut bridge = NativeWorldTransientBridgeMut::new(&mut transient, &mut ram);
+            bridge.set_custom_spell_animation_active();
+            bridge.set_allow_scroll_z(0x02);
+            bridge.set_room_transitioning_flags(0x03);
+            bridge.set_cached_room_bounds(0x0405, 0x0607, 0x0809, 0x0a0b);
+            bridge.set_standing_in_doorway_cached(0x0c);
+            bridge.set_door_animation_step_word(0x0d0e);
+            bridge.set_quadrant_fullsize_x(0x0f);
+            bridge.set_quadrant_fullsize_y(0x10);
+            bridge.cache_quadrant_fullsize_state();
+            bridge.set_mapbak_tm(0x11);
+            bridge.set_mapbak_ts(0x12);
+            bridge.set_overworld_peg_puzzle_progress(0x1314);
+            bridge.set_dung_replacement_tile_state(2, 0x1516);
+        }
+
+        assert_eq!(transient.flag_custom_spell_anim_active(), 1);
+        assert_eq!(transient.allow_scroll_z(), 0x02);
+        assert_eq!(transient.room_transitioning_flags(), 0x03);
+        assert_eq!(transient.is_standing_in_doorway_cached(), 0x0c);
+        assert_eq!(transient.door_animation_step(), 0x0d0e);
+        assert_eq!(transient.quadrant_fullsize_x(), 0x0f);
+        assert_eq!(transient.quadrant_fullsize_y(), 0x10);
+        assert_eq!(transient.overworld_peg_puzzle_progress(), 0x1314);
+        assert_eq!(transient.dung_replacement_tile_state(2), 0x1516);
+        assert_eq!(ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 1);
+        assert_eq!(ram[ALLOW_SCROLL_Z], 0x02);
+        assert_eq!(ram[ROOM_TRANSITIONING_FLAGS], 0x03);
+        assert_eq!(ram[IS_STANDING_IN_DOORWAY_CACHED], 0x0c);
+        assert_eq!(read_le_u16(&ram, DOOR_ANIMATION_STEP_INDICATOR), 0x0d0e);
+        assert_eq!(ram[QUADRANT_FULLSIZE_X], 0x0f);
+        assert_eq!(ram[QUADRANT_FULLSIZE_Y], 0x10);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_PEG_PUZZLE_PROGRESS), 0x1314);
+        assert_eq!(read_le_u16(&ram, DUNG_REPLACEMENT_TILE_STATE + 4), 0x1516);
+    }
+
+    #[test]
+    fn native_world_transient_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut transient = WorldTransientState::default();
+        {
+            let mut bridge = NativeWorldTransientBridgeMut::new(&mut transient, &mut ram);
+            bridge.set_custom_spell_animation_active();
+            bridge.set_allow_scroll_z(0x02);
+            bridge.set_room_transitioning_flags(0x03);
+            bridge.set_door_animation_step_word(0x0405);
+        }
+
+        ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0xaa;
+        ram[ALLOW_SCROLL_Z] = 0xbb;
+        ram[ROOM_TRANSITIONING_FLAGS] = 0xcc;
+        write_le_u16(&mut ram, DOOR_ANIMATION_STEP_INDICATOR, 0xdddd);
+
+        {
+            let mut bridge = NativeWorldTransientBridgeMut::new(&mut transient, &mut ram);
+            bridge.clear_custom_spell_animation();
+        }
+
+        assert_eq!(transient.flag_custom_spell_anim_active(), 0);
+        assert_eq!(transient.allow_scroll_z(), 0x02);
+        assert_eq!(transient.room_transitioning_flags(), 0x03);
+        assert_eq!(transient.door_animation_step(), 0x0405);
+        assert_eq!(ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 0);
+        assert_eq!(ram[ALLOW_SCROLL_Z], 0x02);
+        assert_eq!(ram[ROOM_TRANSITIONING_FLAGS], 0x03);
+        assert_eq!(read_le_u16(&ram, DOOR_ANIMATION_STEP_INDICATOR), 0x0405);
+    }
+
+    #[test]
     fn world_scroll_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, BG1_X_SCROLL, 0x0101);

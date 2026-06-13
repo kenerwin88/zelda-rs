@@ -208,7 +208,7 @@ impl ZeldaState {
     pub(super) fn link_reset_properties_c(&mut self) {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
-            self.player_state_mut().clear_custom_spell_animation();
+            self.world_transient_mut().clear_custom_spell_animation();
         }
 
         self.player_state_mut().reset_properties_c_fields();
@@ -2503,7 +2503,7 @@ impl ZeldaState {
         if self.tile_detect_position().vertical_ledge() & 0x70 != 0 && self.run_ledge_hop_timer() {
             self.link_cancel_dash();
             self.player_state_mut().set_sprite_damage_disable_timer(1);
-            self.player_state_mut().set_allow_scroll_z(1);
+            self.world_transient_mut().set_allow_scroll_z(1);
             self.player_state_mut().set_handler_state(11);
             self.player_state_mut().set_incapacitated_timer(0);
             self.player_state_mut().set_z_mirror(0xffff);
@@ -2787,7 +2787,7 @@ impl ZeldaState {
             self.set_link_z_coord_mirror_low_ff();
             self.player_state_mut().set_incapacitated_timer(0);
             self.player_state_mut().set_sprite_damage_disable_timer(1);
-            self.player_state_mut().set_allow_scroll_z(1);
+            self.world_transient_mut().set_allow_scroll_z(1);
             self.player_state_mut().clear_defense_flags();
             self.player_state_mut().set_speed_setting(0);
             return;
@@ -2877,7 +2877,7 @@ impl ZeldaState {
         self.player_state_mut().set_sprite_damage_disable_timer(1);
         self.player_state_mut().clear_defense_flags();
         self.player_state_mut().set_speed_setting(0);
-        self.player_state_mut().set_allow_scroll_z(1);
+        self.world_transient_mut().set_allow_scroll_z(1);
         self.player_state_mut().set_auxiliary_state(2);
         self.player_state_mut()
             .set_actual_z_velocity_mirror_and_copy(20);
@@ -5928,41 +5928,9 @@ impl ZeldaState {
         let x_end = self.room_bounds().x_bound(2);
         self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        copy_le_u16(
-            &mut self.ram,
-            UP_DOWN_SCROLL_TARGET_CACHED,
-            UP_DOWN_SCROLL_TARGET,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            UP_DOWN_SCROLL_TARGET_END_CACHED,
-            UP_DOWN_SCROLL_TARGET_END,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            LEFT_RIGHT_SCROLL_TARGET_CACHED,
-            LEFT_RIGHT_SCROLL_TARGET,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            LEFT_RIGHT_SCROLL_TARGET_END_CACHED,
-            LEFT_RIGHT_SCROLL_TARGET_END,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
-            CAMERA_Y_COORD_SCROLL_LOW,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            CAMERA_X_COORD_SCROLL_LOW_CACHED,
-            CAMERA_X_COORD_SCROLL_LOW,
-        );
-        copy_le_u16(
-            &mut self.ram,
-            QUADRANT_FULLSIZE_X_CACHED,
-            QUADRANT_FULLSIZE_X,
-        );
+        self.world_camera_boundaries_mut().cache_scroll_targets();
+        self.world_camera_boundaries_mut().cache_camera_scroll();
+        self.world_transient_mut().cache_quadrant_fullsize_state();
         self.player_state_mut().cache_current_quadrants();
         self.player_state_mut().cache_facing();
         self.player_state_mut().cache_lower_level_states();
@@ -6382,7 +6350,8 @@ impl ZeldaState {
         self.player_state_mut().set_spin_attack_delay_timer(0);
         self.player_state_mut().set_handler_state(26);
         self.player_state_mut().set_sprite_damage_disable_timer(1);
-        self.player_state_mut().set_custom_spell_animation_active();
+        self.world_transient_mut()
+            .set_custom_spell_animation_active();
     }
 
     pub(super) fn link_state_reading_desert_tablet(&mut self) {
@@ -6643,7 +6612,7 @@ impl ZeldaState {
                     self.ancilla_sfx2_near(33);
                 }
                 self.player_state_mut().clear_sprite_damage_disable_timer();
-                self.player_state_mut().set_allow_scroll_z(0);
+                self.world_transient_mut().set_allow_scroll_z(0);
                 self.player_state_mut().clear_auxiliary_state();
                 self.player_state_mut().set_actual_z_velocity(0xff);
                 self.player_state_mut().set_z(0xffff);
@@ -6996,7 +6965,7 @@ impl ZeldaState {
                 {
                     self.player_state_mut().clear_sprite_damage_disable_timer();
                 }
-                self.player_state_mut().set_allow_scroll_z(0);
+                self.world_transient_mut().set_allow_scroll_z(0);
                 self.player_state_mut().clear_auxiliary_state();
                 self.player_state_mut().set_actual_z_velocity(0xff);
                 self.player_state_mut().set_z(0xffff);

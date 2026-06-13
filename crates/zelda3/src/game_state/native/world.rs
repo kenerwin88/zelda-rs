@@ -10,6 +10,8 @@ const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
 const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
+const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
+    (DOOR_ANIMATION_STEP_INDICATOR - DUNG_REPLACEMENT_TILE_STATE) / 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverworldMap16SourcePage {
@@ -1699,6 +1701,13 @@ impl WorldTransientState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+        }
+        self.write_scalar_fields_to_ram(ram);
+    }
+
+    fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
         ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = self.custom_spell_animation_flag;
         ram[ALLOW_SCROLL_Z] = self.allow_scroll_z;
         ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = self.milestone_item_graphics_countdown;
@@ -1759,9 +1768,6 @@ impl WorldTransientState {
         ram[MAPBAK_TS] = self.map_backup_subscreen_layer;
         ram[MOVE_OVERLAY_CTR] = self.move_overlay_counter;
         ram[OVERWORLD_HOLE_SCAN_STEP] = self.overworld_hole_scan_step;
-        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
-            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
-        }
     }
 
     pub(crate) fn flag_custom_spell_anim_active(&self) -> u8 {
@@ -2254,6 +2260,12 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn cache_camera_scroll(&mut self) {
+        self.state.cached_camera_y_low = self.state.camera_y_low;
+        self.state.cached_camera_x_low = self.state.camera_x_low;
+        self.sync();
+    }
+
     pub(crate) fn restore_scroll_targets_from_cached(&mut self) {
         self.state.scroll_targets = self.state.cached_scroll_targets;
         self.sync();
@@ -2519,21 +2531,37 @@ pub(crate) struct NativeWorldTransientBridgeMut<'a> {
 
 impl<'a> NativeWorldTransientBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut WorldTransientState, ram: &'a mut [u8]) -> Self {
-        *state = WorldTransientState::load_from_ram(ram);
         Self { state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        self.state.write_scalar_fields_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, WorldTransientState::load_from_ram(self.ram));
+        let mut loaded = WorldTransientState::load_from_ram(self.ram);
+        loaded.dungeon_replacement_tiles = self.state.dungeon_replacement_tiles.clone();
+        debug_assert_eq!(*self.state, loaded);
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
         self.state.room_transitioning_flags = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_custom_spell_animation(&mut self) {
+        self.state.custom_spell_animation_flag = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_custom_spell_animation_active(&mut self) {
+        self.state.custom_spell_animation_flag = 1;
+        self.sync();
+    }
+
+    pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
+        self.state.allow_scroll_z = value;
         self.sync();
     }
 
@@ -2574,11 +2602,14 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
     pub(crate) fn set_door_animation_step(&mut self, value: u8) {
         self.state.door_animation_step =
             (self.state.door_animation_step & 0xff00) | u16::from(value);
+        self.state.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] =
+            self.state.door_animation_step;
         self.sync();
     }
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
         self.state.door_animation_step = value;
+        self.state.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] = value;
         self.sync();
     }
 
@@ -2770,7 +2801,8 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
         self.state.dungeon_replacement_tiles[index] = value;
-        self.sync();
+        write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {

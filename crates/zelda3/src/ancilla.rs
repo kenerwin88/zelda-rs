@@ -2853,7 +2853,8 @@ impl ZeldaState {
             for i in 0..5 {
                 self.quake_bolt_mut(i).set_timer(1);
             }
-            self.player_state_mut().set_custom_spell_animation_active();
+            self.world_transient_mut()
+                .set_custom_spell_animation_active();
             let quake_origin_y = self.player_state().y().wrapping_add(26);
             let quake_origin_x = self.player_state().x().wrapping_add(8);
             self.quake_spell_scratch_mut()
@@ -2873,7 +2874,8 @@ impl ZeldaState {
                 ether.set_work_byte_3(3);
                 ether.set_y_velocity(127);
             }
-            self.player_state_mut().set_custom_spell_animation_active();
+            self.world_transient_mut()
+                .set_custom_spell_animation_active();
             self.ether_orbit_mut().set_radius(40);
             self.set_chr_halfslot_request(9);
             self.ether_orbit_mut().set_spin_countdown(0x40);
@@ -3096,7 +3098,8 @@ impl ZeldaState {
             .set_blast_release_countdown(0x80);
         self.bombos_fire_column_mut(0).set_radial_angle(0x10);
         self.set_chr_halfslot_request(11);
-        self.player_state_mut().set_custom_spell_animation_active();
+        self.world_transient_mut()
+            .set_custom_spell_animation_active();
         {
             let mut bombos = self.ancilla_slot_mut(k);
             bombos.set_step(0);
@@ -3486,7 +3489,8 @@ impl ZeldaState {
         self.blast_wall_explosion_mut(1).set_phase(0);
         self.blast_wall_scratch_mut().clear_secondary_state();
         self.blast_wall_explosion_mut(0).set_phase(1);
-        self.player_state_mut().set_custom_spell_animation_active();
+        self.world_transient_mut()
+            .set_custom_spell_animation_active();
         self.blast_wall_explosion_mut(0).set_timer(3);
 
         let mut j = self.blast_wall_scratch().direction() as usize;
@@ -7410,7 +7414,7 @@ impl ZeldaState {
                 if self.player_state().handler_state() == 25
                     || self.player_state().handler_state() == 26
                 {
-                    self.player_state_mut().clear_custom_spell_animation();
+                    self.world_transient_mut().clear_custom_spell_animation();
                     self.player_state_mut().clear_force_hold_sword_up();
                     self.player_state_mut().clear_handler_state();
                 }
@@ -11223,7 +11227,7 @@ impl ZeldaState {
             self.ancilla_slot_mut(0).set_ancilla_type(0);
             let value = 0;
             self.ancilla_slot_mut(1).set_ancilla_type(value);
-            self.player_state_mut().clear_custom_spell_animation();
+            self.world_transient_mut().clear_custom_spell_animation();
         }
     }
 

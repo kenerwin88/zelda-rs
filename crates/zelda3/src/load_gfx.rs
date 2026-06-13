@@ -1561,7 +1561,7 @@ impl ZeldaState {
             if k != 18 {
                 tilebytes = 0x46;
                 if k == 2 {
-                    self.player_state_mut().clear_custom_spell_animation();
+                    self.world_transient_mut().clear_custom_spell_animation();
                 }
             }
         }
