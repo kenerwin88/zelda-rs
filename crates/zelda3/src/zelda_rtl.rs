@@ -106,13 +106,13 @@ use crate::game_state::{
     OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
     PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
-    PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
+    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
     SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
     SkullWoodsFireSlotState, SkullWoodsFireState, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
+    SpecialExitPositionState, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemState,
     SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationView, SystemSignalsState, TagalongSlotView,
+    SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState, TagalongSlotView,
     TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
     TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
     WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
@@ -1779,8 +1779,8 @@ impl ZeldaState {
         self.system_signals_mut().set_sound_effect_2(sound_effect);
     }
 
-    pub(crate) fn special_exit_position_view(&self) -> SpecialExitPositionView<'_> {
-        SpecialExitPositionView::new(&self.game_state.player.special_exit_position)
+    pub(crate) fn special_exit_position(&self) -> &SpecialExitPositionState {
+        &self.game_state.player.special_exit_position
     }
 
     pub(crate) fn special_exit_position_mut(&mut self) -> NativeSpecialExitPositionBridgeMut<'_> {
@@ -1790,8 +1790,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn swim_acceleration_view(&self) -> SwimAccelerationView<'_> {
-        SwimAccelerationView::new(&self.game_state.player.swim_acceleration)
+    pub(crate) fn swim_acceleration(&self) -> &SwimAccelerationState {
+        &self.game_state.player.swim_acceleration
     }
 
     pub(crate) fn swim_acceleration_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
@@ -1864,8 +1864,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn pushed_block_view(&self) -> PushedBlockView<'_> {
-        PushedBlockView::new(&self.game_state.player.pushed_block)
+    pub(crate) fn pushed_block(&self) -> &PushedBlockState {
+        &self.game_state.player.pushed_block
     }
 
     pub(crate) fn pushed_block_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
@@ -8496,7 +8496,7 @@ mod tests {
         assert_eq!(state.player_state_view().auxiliary_state(), 1);
         assert_eq!(link_test_byte(&state, LINK_WANT_MAKE_NOISE_WHEN_DASHED), 1);
         assert_eq!(link_test_byte(&state, LINK_DIRECTION), 1);
-        assert_eq!(state.swim_acceleration_view().acceleration(2), 256);
+        assert_eq!(state.swim_acceleration().acceleration(2), 256);
     }
 
     #[test]
@@ -8593,8 +8593,8 @@ mod tests {
         state.handle_swim_stroke_and_subpixels();
 
         assert_eq!(link_test_byte(&state, LINK_DIRECTION), 0x05);
-        assert_eq!(state.swim_acceleration_view().acceleration(0), 12);
-        assert_eq!(state.swim_acceleration_view().acceleration(2), 12);
+        assert_eq!(state.swim_acceleration().acceleration(0), 12);
+        assert_eq!(state.swim_acceleration().acceleration(2), 12);
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_X), 12);
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_Y), 12);
         assert_eq!(state.player_state_view().actual_x_velocity(), 0);
@@ -8916,7 +8916,7 @@ mod tests {
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
         assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0);
         assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 0);
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 0);
+        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 0);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
         assert_eq!(link_test_byte(&state, LINK_TIMER_TEMPBUNNY), 0);
@@ -8954,7 +8954,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(state.player_state_view().pit_data_index(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 0);
+        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
 
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
         state.player_state_view_mut().set_handler_state(6);
@@ -9000,7 +9000,7 @@ mod tests {
         assert_eq!(state.player_state_view().grabbing_wall(), 0);
         assert_eq!(state.player_state_view().speed_setting(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
-        assert_eq!(state.swim_acceleration_view().acceleration(0), 0);
+        assert_eq!(state.swim_acceleration().acceleration(0), 0);
     }
 
     #[test]
@@ -9035,7 +9035,7 @@ mod tests {
         assert_eq!(link_test_byte(&bunny, LINK_IS_BUNNY), 0);
         assert_eq!(bunny.player_state_view().auxiliary_state(), 0);
         assert_eq!(bunny.player_state_view().animation_step(), 0);
-        assert_eq!(bunny.swim_acceleration_view().speed_active_flag(0), 0);
+        assert_eq!(bunny.swim_acceleration().speed_active_flag(0), 0);
     }
 
     #[test]
@@ -9049,12 +9049,12 @@ mod tests {
 
         state.link_handle_swim_accels();
 
-        assert_eq!(state.swim_acceleration_view().acceleration(0), 1);
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 240);
-        assert_eq!(state.swim_acceleration_view().max_speed(2), 288);
+        assert_eq!(state.swim_acceleration().acceleration(0), 1);
+        assert_eq!(state.swim_acceleration().max_speed(0), 240);
+        assert_eq!(state.swim_acceleration().max_speed(2), 288);
 
         state.link_handle_swim_accels();
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 384);
+        assert_eq!(state.swim_acceleration().max_speed(0), 384);
     }
 
     #[test]
@@ -9067,10 +9067,10 @@ mod tests {
 
         state.link_flag_max_accels();
 
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 0x0110);
-        assert_eq!(state.swim_acceleration_view().mode(0), 1);
-        assert_eq!(state.swim_acceleration_view().max_speed(2), 0x2222);
-        assert_eq!(state.swim_acceleration_view().mode(2), 0);
+        assert_eq!(state.swim_acceleration().max_speed(0), 0x0110);
+        assert_eq!(state.swim_acceleration().mode(0), 1);
+        assert_eq!(state.swim_acceleration().max_speed(2), 0x2222);
+        assert_eq!(state.swim_acceleration().mode(2), 0);
     }
 
     #[test]
@@ -9079,13 +9079,13 @@ mod tests {
         state.swim_acceleration_mut().set_max_speed(0, 0x1111);
 
         state.link_set_ice_max_accel();
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 0x1111);
+        assert_eq!(state.swim_acceleration().max_speed(0), 0x1111);
 
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
         state.link_set_ice_max_accel();
 
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 0x0180);
-        assert_eq!(state.swim_acceleration_view().max_speed(2), 0x0180);
+        assert_eq!(state.swim_acceleration().max_speed(0), 0x0180);
+        assert_eq!(state.swim_acceleration().max_speed(2), 0x0180);
     }
 
     #[test]
@@ -9100,12 +9100,12 @@ mod tests {
         state.link_set_momentum();
 
         assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER), 8);
-        assert_eq!(state.swim_acceleration_view().mode(0), 2);
-        assert_eq!(state.swim_acceleration_view().max_speed(0), 240);
+        assert_eq!(state.swim_acceleration().mode(0), 2);
+        assert_eq!(state.swim_acceleration().max_speed(0), 240);
         assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER + 2), 8);
-        assert_eq!(state.swim_acceleration_view().mode(2), 0);
-        assert_eq!(state.swim_acceleration_view().acceleration_direction(2), 1);
-        assert_eq!(state.swim_acceleration_view().max_speed(2), 0x1234);
+        assert_eq!(state.swim_acceleration().mode(2), 0);
+        assert_eq!(state.swim_acceleration().acceleration_direction(2), 1);
+        assert_eq!(state.swim_acceleration().max_speed(2), 0x1234);
     }
 
     #[test]
@@ -9131,18 +9131,15 @@ mod tests {
         state.reset_all_acceleration();
 
         for offset in [0, 2] {
-            assert_eq!(state.swim_acceleration_view().speed_active_flag(offset), 0);
-            assert_eq!(state.swim_acceleration_view().mode(offset), 0);
-            assert_eq!(state.swim_acceleration_view().acceleration(offset), 0);
-            assert_eq!(state.swim_acceleration_view().max_speed(offset), 0);
+            assert_eq!(state.swim_acceleration().speed_active_flag(offset), 0);
+            assert_eq!(state.swim_acceleration().mode(offset), 0);
+            assert_eq!(state.swim_acceleration().acceleration(offset), 0);
+            assert_eq!(state.swim_acceleration().max_speed(offset), 0);
         }
         for offset in [SWIM_STROKE_FRAME_COUNTER, SWIM_STROKE_FRAME_COUNTER + 2] {
             assert_eq!(read_le_u16(&state.ram, offset), 0);
         }
-        assert_eq!(
-            state.swim_acceleration_view().acceleration_direction(0),
-            0xffff
-        );
+        assert_eq!(state.swim_acceleration().acceleration_direction(0), 0xffff);
     }
 
     #[test]
@@ -9204,7 +9201,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_Y_VEL), 0);
         assert_eq!(link_test_byte(&state, LINK_X_VEL), 0);
         assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS] & 0x0f, 0);
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 0);
+        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
         assert_eq!(state.ram[PIT_CORRECTION_ACTIVE_FLAG], 0);
     }
 
@@ -9220,16 +9217,16 @@ mod tests {
 
         state.link_set_the_max_accel();
 
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 1);
-        assert_eq!(state.swim_acceleration_view().mode(0), 1);
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(2), 0);
-        assert_eq!(state.swim_acceleration_view().max_speed(2), 240);
+        assert_eq!(state.swim_acceleration().speed_active_flag(0), 1);
+        assert_eq!(state.swim_acceleration().mode(0), 1);
+        assert_eq!(state.swim_acceleration().speed_active_flag(2), 0);
+        assert_eq!(state.swim_acceleration().max_speed(2), 240);
 
         set_link_test_byte(&mut state, LINK_SWIM_HARD_STROKE, 1);
         state.swim_acceleration_mut().set_speed_active_flag(0, 0);
         state.link_set_the_max_accel();
-        assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 0);
-        assert_eq!(state.swim_acceleration_view().mode(0), 1);
+        assert_eq!(state.swim_acceleration().speed_active_flag(0), 0);
+        assert_eq!(state.swim_acceleration().mode(0), 1);
     }
 
     #[test]
@@ -9893,7 +9890,7 @@ mod tests {
         assert_eq!(state.player_state_view().speed_setting(), 0);
         assert_eq!(state.player_state_view().running_state(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
-        assert_eq!(state.swim_acceleration_view().mode(0), 0);
+        assert_eq!(state.swim_acceleration().mode(0), 0);
     }
 
     #[test]
@@ -9920,7 +9917,7 @@ mod tests {
         assert_eq!(state.player_state_view().speed_setting(), 0);
         assert_eq!(state.player_state_view().handler_state(), 0);
         assert_eq!(state.player_state_view().running_state(), 0);
-        assert_eq!(state.swim_acceleration_view().mode(0), 0);
+        assert_eq!(state.swim_acceleration().mode(0), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
     }
 

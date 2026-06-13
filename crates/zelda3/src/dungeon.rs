@@ -6089,8 +6089,8 @@ impl ZeldaState {
         self.pushed_block_mut().reset_animation_timer();
         self.pushed_block_mut().set_animation_mode(0);
         self.PushBlock_ApplyVelocity(i as u8);
-        let y = self.pushed_block_view().y(i);
-        let x = self.pushed_block_view().x(i);
+        let y = self.pushed_block().y(i);
+        let x = self.pushed_block().x(i);
         self.PushBlock_HandleCollision(i as u8, x, y);
     }
 
@@ -6119,7 +6119,7 @@ impl ZeldaState {
         const PUSH_BLOCK_Y_RECOIL_BY_DIRECTION: [u8; 4] = [0xe0, 0x20, 0x00, 0x00];
 
         let i = i as usize;
-        let facing = self.pushed_block_view().facing_player(i) >> 1;
+        let facing = self.pushed_block().facing_player(i) >> 1;
         let m = PUSHED_BLOCK_DIR_MASK[facing as usize];
         self.player_state_view_mut().set_actual_velocity_xy(0, 0);
 
@@ -6129,7 +6129,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_actual_x_velocity(vel as i8 as u8);
             o = self
-                .pushed_block_view()
+                .pushed_block()
                 .x_fixed24(i)
                 .wrapping_add((vel * 16) as u32);
             self.pushed_block_mut().set_x_fixed24(i, o);
@@ -6138,13 +6138,13 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_actual_y_velocity(vel as i8 as u8);
             o = self
-                .pushed_block_view()
+                .pushed_block()
                 .y_fixed24(i)
                 .wrapping_add((vel * 16) as u32);
             self.pushed_block_mut().set_y_fixed24(i, o);
         }
 
-        if ((o >> 8) as u8 & 0x0f) == self.pushed_block_view().target_low(i) {
+        if ((o >> 8) as u8 & 0x0f) == self.pushed_block().target_low(i) {
             let j = self
                 .dungeon_object_tracking()
                 .changeable_object_index(i)
@@ -6159,8 +6159,8 @@ impl ZeldaState {
             self.player_state_view_mut().and_defense_flags(!0x04);
         }
 
-        let x = self.pushed_block_view().x(i);
-        let y = self.pushed_block_view().y(i);
+        let x = self.pushed_block().x(i);
+        let y = self.pushed_block().y(i);
         for j in (0..16usize).rev() {
             let sprite = self.sprite_slot_view(j);
             if sprite.state() >= 9 {
@@ -6224,7 +6224,7 @@ impl ZeldaState {
 
         self.player_state_view_mut().and_defense_flags(!4);
         if (r0 >= r4 && r0 < r6) || (r2 >= r4 && r2 < r6) {
-            if self.player_state_view().facing() == self.pushed_block_view().facing_player(i) {
+            if self.player_state_view().facing() == self.pushed_block().facing_player(i) {
                 let defense_flags =
                     if self.dungeon_object_tracking().changeable_object_index(i) != 0 {
                         4
@@ -7157,16 +7157,16 @@ impl ZeldaState {
         self.oam_allocate_from_region_b(4);
 
         let y = self
-            .pushed_block_view()
+            .pushed_block()
             .y(i)
             .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(1);
         let x = self
-            .pushed_block_view()
+            .pushed_block()
             .x(i)
             .wrapping_sub(self.world_scroll().bg2_x());
 
-        if self.pushed_block_view().animation_mode() < 3 {
+        if self.pushed_block().animation_mode() < 3 {
             self.oam_state_mut()
                 .write_current_entry_with_extended(x as u8, y as u8, 12, 0x20, 2);
         }
@@ -11580,7 +11580,7 @@ impl ZeldaState {
             match self.dungeon_object_tracking().replacement_tile_state(k) {
                 1 => {
                     self.RoomDraw_16x16Single(obj as u8);
-                    let dir = self.pushed_block_view().push_direction_index();
+                    let dir = self.pushed_block().push_direction_index();
                     let pos = self
                         .dungeon_object_tracking()
                         .object_tilemap_pos(k)

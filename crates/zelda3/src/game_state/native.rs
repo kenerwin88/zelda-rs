@@ -93,8 +93,8 @@ pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 pub(crate) use player::{
     Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeTileDetectionBridgeMut, PlayerState, PlayerTileAttributeTableState, PushedBlockView,
-    SpecialExitPositionView, SwimAccelerationView, TileDetectionState,
+    NativeTileDetectionBridgeMut, PlayerState, PlayerTileAttributeTableState, PushedBlockState,
+    SpecialExitPositionState, SwimAccelerationState, TileDetectionState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
@@ -148,8 +148,6 @@ use effects::QuakeBoltState;
 use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
-#[cfg(test)]
-use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use sprites::{
     DualLayerTileCacheState, EnemyDamageSubclassTableState, FailedSpinSparkleSpawnState,

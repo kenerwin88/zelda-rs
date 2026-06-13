@@ -1199,8 +1199,8 @@ impl ZeldaState {
             self.WorldMap_AddSprite(16, 2, 0x3e, 0, pt.x.wrapping_sub(4), pt.y.wrapping_sub(4));
         }
 
-        let ybak = self.special_exit_position_view().y();
-        let xbak = self.special_exit_position_view().x();
+        let ybak = self.special_exit_position().y();
+        let xbak = self.special_exit_position().x();
         for i in (0..8).rev() {
             let bird_x = u16::from(BIRD_TRAVEL_X_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_X_LOW[i]);
             let bird_y = u16::from(BIRD_TRAVEL_Y_HIGH[i]) << 8 | u16::from(BIRD_TRAVEL_Y_LOW[i]);
@@ -1421,11 +1421,11 @@ impl ZeldaState {
             self.set_overworld_map_flags(t | 0x80);
             self.set_mode7_zoom_timer(OVERWORLD_MAP_TIMER[t as usize]);
             if self.mode7_zoom_timer() == 12 {
-                let y = self.special_exit_position_view().map_zoom_y();
+                let y = self.special_exit_position().map_zoom_y();
                 self.world_scroll_mut().set_bg1_y(y);
                 self.ppu_scroll_copy_mut()
                     .set_mode7_center_y(y.wrapping_add(0x100));
-                let t0 = self.special_exit_position_view().map_zoom_x_offset();
+                let t0 = self.special_exit_position().map_zoom_x_offset();
                 let abs_t0 = if (t0 as i16) < 0 {
                     0u16.wrapping_sub(t0)
                 } else {
@@ -1531,8 +1531,8 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_HandleSprites(&mut self) {
-        let ybak = self.special_exit_position_view().y();
-        let xbak = self.special_exit_position_view().x();
+        let ybak = self.special_exit_position().y();
+        let xbak = self.special_exit_position().x();
 
         if self.frame_state().frame_counter & 0x10 != 0 {
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
@@ -1707,7 +1707,7 @@ impl ZeldaState {
             0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed,
             0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
         ];
-        let spexit = self.special_exit_position_view();
+        let spexit = self.special_exit_position();
         let y_spexit = spexit.y();
         let x_spexit = spexit.x();
         if self.overworld_map_flags() == 0 {

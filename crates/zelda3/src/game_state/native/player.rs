@@ -1253,60 +1253,6 @@ impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
     }
 }
 
-pub(crate) struct PushedBlockView<'a> {
-    state: &'a PushedBlockState,
-}
-
-impl<'a> PushedBlockView<'a> {
-    pub(crate) fn new(state: &'a PushedBlockState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn x(&self, slot: usize) -> u16 {
-        self.state.x(slot)
-    }
-
-    pub(crate) fn y(&self, slot: usize) -> u16 {
-        self.state.y(slot)
-    }
-
-    pub(crate) fn x_low(&self, slot: usize) -> u8 {
-        self.state.x_low(slot)
-    }
-
-    pub(crate) fn y_low(&self, slot: usize) -> u8 {
-        self.state.y_low(slot)
-    }
-
-    pub(crate) fn subpixel(&self, slot: usize) -> u8 {
-        self.state.subpixel(slot)
-    }
-
-    pub(crate) fn target_low(&self, slot: usize) -> u8 {
-        self.state.target_low(slot)
-    }
-
-    pub(crate) fn facing_player(&self, slot: usize) -> u8 {
-        self.state.facing_player(slot)
-    }
-
-    pub(crate) fn animation_mode(&self) -> u8 {
-        self.state.animation_mode()
-    }
-
-    pub(crate) fn push_direction_index(&self) -> usize {
-        self.state.push_direction_index()
-    }
-
-    pub(crate) fn x_fixed24(&self, slot: usize) -> u32 {
-        self.state.x_fixed24(slot)
-    }
-
-    pub(crate) fn y_fixed24(&self, slot: usize) -> u32 {
-        self.state.y_fixed24(slot)
-    }
-}
-
 pub(crate) struct NativePushedBlockBridgeMut<'a> {
     state: &'a mut PushedBlockState,
     ram: &'a mut [u8],
@@ -1485,44 +1431,6 @@ fn axis_word(values: [u16; SWIM_AXIS_COUNT], offset: usize) -> u16 {
         .unwrap_or(0)
 }
 
-pub(crate) struct SwimAccelerationView<'a> {
-    state: &'a SwimAccelerationState,
-}
-
-impl<'a> SwimAccelerationView<'a> {
-    pub(crate) fn new(state: &'a SwimAccelerationState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn mode(&self, offset: usize) -> u16 {
-        self.state.mode(offset)
-    }
-
-    pub(crate) fn mode_low(&self, axis: usize) -> u8 {
-        self.state.mode_low(axis)
-    }
-
-    pub(crate) fn speed_active_flag(&self, offset: usize) -> u16 {
-        self.state.speed_active_flag(offset)
-    }
-
-    pub(crate) fn max_speed(&self, offset: usize) -> u16 {
-        self.state.max_speed(offset)
-    }
-
-    pub(crate) fn acceleration_direction(&self, offset: usize) -> u16 {
-        self.state.acceleration_direction(offset)
-    }
-
-    pub(crate) fn acceleration(&self, offset: usize) -> u16 {
-        self.state.acceleration(offset)
-    }
-
-    pub(crate) fn has_any_acceleration(&self) -> bool {
-        self.state.has_any_acceleration()
-    }
-}
-
 pub(crate) struct NativeSwimAccelerationBridgeMut<'a> {
     state: &'a mut SwimAccelerationState,
     ram: &'a mut [u8],
@@ -1596,32 +1504,6 @@ impl<'a> NativeSwimAccelerationBridgeMut<'a> {
             self.state.max_speed[axis] = 0;
             self.sync();
         }
-    }
-}
-
-pub(crate) struct SpecialExitPositionView<'a> {
-    state: &'a SpecialExitPositionState,
-}
-
-impl<'a> SpecialExitPositionView<'a> {
-    pub(crate) fn new(state: &'a SpecialExitPositionState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn x(&self) -> u16 {
-        self.state.x()
-    }
-
-    pub(crate) fn y(&self) -> u16 {
-        self.state.y()
-    }
-
-    pub(crate) fn map_zoom_y(&self) -> u16 {
-        self.state.map_zoom_y()
-    }
-
-    pub(crate) fn map_zoom_x_offset(&self) -> u16 {
-        self.state.map_zoom_x_offset()
     }
 }
 

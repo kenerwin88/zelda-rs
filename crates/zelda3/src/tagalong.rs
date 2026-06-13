@@ -1514,7 +1514,7 @@ impl ZeldaState {
             && (self.follower_state().indicator() == 6 || self.follower_state().indicator() == 1)
         {
             yt = 8;
-            av = if self.swim_acceleration_view().acceleration(0) != 0 {
+            av = if self.swim_acceleration().acceleration(0) != 0 {
                 (self.frame_state().frame_counter >> 1) & 4
             } else {
                 (self.frame_state().frame_counter >> 2) & 4

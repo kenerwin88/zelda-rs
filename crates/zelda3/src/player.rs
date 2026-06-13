@@ -273,8 +273,8 @@ impl ZeldaState {
         let mut mask = 0x0c;
         for offset in [0, 2] {
             if self.player_state_view().joypad1h_last() & mask != 0 {
-                let acceleration = self.swim_acceleration_view().acceleration(offset);
-                let max_speed = self.swim_acceleration_view().max_speed(offset);
+                let acceleration = self.swim_acceleration().acceleration(offset);
+                let max_speed = self.swim_acceleration().max_speed(offset);
                 if acceleration != 0 && max_speed >= 384 {
                     let target = SWIM_ACCELERATION_TARGETS
                         .iter()
@@ -300,7 +300,7 @@ impl ZeldaState {
         }
 
         for offset in [2, 0] {
-            let acceleration = self.swim_acceleration_view().acceleration(offset);
+            let acceleration = self.swim_acceleration().acceleration(offset);
             if acceleration != 0 {
                 self.swim_acceleration_mut()
                     .set_max_speed(offset, acceleration);
@@ -347,7 +347,7 @@ impl ZeldaState {
                     self.swim_acceleration_mut().set_mode(offset, 0);
                 }
 
-                if self.swim_acceleration_view().max_speed(offset) == 0 {
+                if self.swim_acceleration().max_speed(offset) == 0 {
                     self.swim_acceleration_mut().set_max_speed(offset, 240);
                 }
             }
@@ -372,11 +372,11 @@ impl ZeldaState {
             return;
         }
 
-        let has_swim_velocity = self.swim_acceleration_view().acceleration(0)
-            | self.swim_acceleration_view().acceleration(2)
+        let has_swim_velocity = self.swim_acceleration().acceleration(0)
+            | self.swim_acceleration().acceleration(2)
             != 0;
         if !has_swim_velocity {
-            let swim = self.swim_acceleration_view();
+            let swim = self.swim_acceleration();
             if swim.mode_low(0) != 2 && swim.mode_low(1) != 2 {
                 self.reset_all_acceleration();
             }
@@ -437,8 +437,8 @@ impl ZeldaState {
                 if self.player_state_view().is_running() {
                     direction = self.player_state_view().swim_direction_flags();
                 } else {
-                    if self.swim_acceleration_view().acceleration(0)
-                        | self.swim_acceleration_view().acceleration(2)
+                    if self.swim_acceleration().acceleration(0)
+                        | self.swim_acceleration().acceleration(2)
                         == 0
                     {
                         self.player_state_view_mut().clear_defense_flags();
@@ -485,11 +485,11 @@ impl ZeldaState {
 
         let mut mask = 0x0c;
         for offset in [0, 2] {
-            let mode = self.swim_acceleration_view().mode(offset);
+            let mode = self.swim_acceleration().mode(offset);
             if self.player_state_view().joypad1h_last() & mask != 0 && mode != 2 {
-                let speed_active = self.swim_acceleration_view().speed_active_flag(offset);
-                let acceleration = self.swim_acceleration_view().acceleration(offset);
-                let max_speed = self.swim_acceleration_view().max_speed(offset);
+                let speed_active = self.swim_acceleration().speed_active_flag(offset);
+                let acceleration = self.swim_acceleration().acceleration(offset);
+                let max_speed = self.swim_acceleration().max_speed(offset);
                 if speed_active != 0 || (acceleration >= 240 && acceleration >= max_speed) {
                     self.swim_acceleration_mut().set_mode(offset, 0);
                     if acceleration >= 240 {
@@ -1605,7 +1605,7 @@ impl ZeldaState {
                 self.swim_acceleration_mut().set_mode(offset, 1);
             }
 
-            let mut table_index = self.swim_acceleration_view().mode(offset);
+            let mut table_index = self.swim_acceleration().mode(offset);
             if self.player_state_view().flag_moving() != 0 {
                 table_index =
                     table_index.wrapping_add(u16::from(self.player_state_view().flag_moving()) * 4);
@@ -1613,7 +1613,7 @@ impl ZeldaState {
 
             let delta = SWIM_ACCELERATION_DELTAS[table_index as usize] as i16 as u16;
             let mut sum = self
-                .swim_acceleration_view()
+                .swim_acceleration()
                 .acceleration(offset)
                 .wrapping_add(delta);
             if (sum as i16) <= 0 {
@@ -1621,7 +1621,7 @@ impl ZeldaState {
                     .mask_direction(SWIM_AXIS_DIRECTION_CLEAR_MASKS[i]);
                 self.player_state_view_mut()
                     .set_last_direction_from_current_direction();
-                if self.swim_acceleration_view().mode(offset) == 2 {
+                if self.swim_acceleration().mode(offset) == 2 {
                     self.swim_acceleration_mut().set_mode(offset, 0);
                     self.swim_acceleration_mut().set_max_speed(offset, 240);
                     self.swim_acceleration_mut().set_acceleration(offset, 2);
@@ -1632,21 +1632,21 @@ impl ZeldaState {
                 }
             } else {
                 let dir_index =
-                    self.swim_acceleration_view().acceleration_direction(offset) as usize + i * 2;
+                    self.swim_acceleration().acceleration_direction(offset) as usize + i * 2;
                 self.player_state_view_mut()
                     .add_direction_flags(SWIM_DIRECTION_BITS_BY_AXIS[dir_index]);
-                let max_sum = self.swim_acceleration_view().max_speed(offset);
+                let max_sum = self.swim_acceleration().max_speed(offset);
                 if sum >= max_sum {
                     sum = max_sum;
                 }
                 self.swim_acceleration_mut().set_acceleration(offset, sum);
             }
 
-            stroke[i] = self.swim_acceleration_view().acceleration(offset);
+            stroke[i] = self.swim_acceleration().acceleration(offset);
             if self.player_state_view().has_swim_axis_drag() {
                 stroke[i] = stroke[i].wrapping_sub(stroke[i] >> 2);
             }
-            if self.swim_acceleration_view().acceleration_direction(offset) == 0 {
+            if self.swim_acceleration().acceleration_direction(offset) == 0 {
                 stroke[i] = 0u16.wrapping_sub(stroke[i]);
             }
         }
@@ -3280,12 +3280,12 @@ impl ZeldaState {
                             self.pushed_block_mut().set_facing_player(slot, facing);
                             self.pushed_block_mut().set_push_direction(facing);
                             let target = if y_axis {
-                                let y_lo = self.pushed_block_view().y_low(slot);
+                                let y_lo = self.pushed_block().y_low(slot);
                                 y_lo.wrapping_sub(u8::from(
                                     self.player_state_view().last_direction_moved_towards() == 1,
                                 ))
                             } else {
-                                let x_lo = self.pushed_block_view().x_low(slot);
+                                let x_lo = self.pushed_block().x_low(slot);
                                 x_lo.wrapping_sub(u8::from(
                                     self.player_state_view().last_direction_moved_towards() != 2,
                                 ))
@@ -8313,16 +8313,15 @@ impl ZeldaState {
         j >>= 1;
         self.oam_allocate_from_region_b(4);
         let y = self
-            .pushed_block_view()
+            .pushed_block()
             .y(j)
             .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_sub(1);
         let x = self
-            .pushed_block_view()
+            .pushed_block()
             .x(j)
             .wrapping_sub(self.world_scroll().bg2_x());
-        let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE
-            [self.pushed_block_view().animation_mode() as usize]
+        let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE[self.pushed_block().animation_mode() as usize]
             .min(CHAR.len() - 1)];
         if ch != 0xff {
             let oam = self.oam_state().current_pointer_usize();

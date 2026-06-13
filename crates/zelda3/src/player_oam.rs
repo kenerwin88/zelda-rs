@@ -2193,8 +2193,8 @@ impl ZeldaState {
                 yt = 0x11;
                 rt &= 1;
                 if (submodule == 0 && self.player_state_view().joypad1h_last() & 0x0f != 0)
-                    || (self.swim_acceleration_view().acceleration(0)
-                        | self.swim_acceleration_view().acceleration(2))
+                    || (self.swim_acceleration().acceleration(0)
+                        | self.swim_acceleration().acceleration(2))
                         != 0
                 {
                     yt = 0x13;

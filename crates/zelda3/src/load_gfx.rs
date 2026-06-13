@@ -344,11 +344,11 @@ impl ZeldaState {
             self.set_mode7_zoom_step_counter(4);
             self.set_mode7_zoom_timer(12);
             self.set_overworld_map_flags(1);
-            let y = self.special_exit_position_view().map_zoom_y();
+            let y = self.special_exit_position().map_zoom_y();
             self.world_scroll_mut().set_bg1_y(y);
             self.ppu_scroll_copy_mut()
                 .set_mode7_center_y(y.wrapping_add(0x100));
-            let t0 = self.special_exit_position_view().map_zoom_x_offset();
+            let t0 = self.special_exit_position().map_zoom_x_offset();
             let abs_t0 = if (t0 as i16) < 0 {
                 0u16.wrapping_sub(t0)
             } else {
