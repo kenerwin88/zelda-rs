@@ -2991,7 +2991,6 @@ pub(crate) struct NativeOverworldEventInfoBridgeMut<'a> {
 
 impl<'a> NativeOverworldEventInfoBridgeMut<'a> {
     pub(crate) fn new(event_info: &'a mut OverworldEventInfoState, ram: &'a mut [u8]) -> Self {
-        *event_info = OverworldEventInfoState::load_from_ram(ram);
         Self { event_info, ram }
     }
 
@@ -3002,22 +3001,24 @@ impl<'a> NativeOverworldEventInfoBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.event_info.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_event_info(&mut self, screen: usize, value: u8) {
         self.event_info.set_event_info(screen, value);
-        self.ram[OVERWORLD_EVENT_INFO + screen] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_event_bits(&mut self, screen: usize, mask: u8) {
         self.event_info.set_event_bits(screen, mask);
-        self.ram[OVERWORLD_EVENT_INFO + screen] |= mask;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
         self.event_info.clear_event_bits(screen, mask);
-        self.ram[OVERWORLD_EVENT_INFO + screen] &= !mask;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3028,7 +3029,6 @@ pub(crate) struct NativeOverworldConfigTableBridgeMut<'a> {
 
 impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
     pub(crate) fn new(config_table: &'a mut OverworldConfigTableState, ram: &'a mut [u8]) -> Self {
-        *config_table = OverworldConfigTableState::load_from_ram(ram);
         Self { config_table, ram }
     }
 
@@ -3039,23 +3039,24 @@ impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.config_table.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn copy_music_primary(&mut self, data: &[u8]) {
         self.config_table.copy_music_primary(data);
-        self.ram[OVERWORLD_MUSIC_TABLE..OVERWORLD_MUSIC_TABLE + 64].copy_from_slice(&data[..64]);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn copy_music_secondary(&mut self, data: &[u8]) {
         self.config_table.copy_music_secondary(data);
-        self.ram[OVERWORLD_MUSIC_TABLE + 64..OVERWORLD_MUSIC_TABLE + 160]
-            .copy_from_slice(&data[..96]);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
         self.config_table.set_music(screen, value);
-        self.ram[OVERWORLD_MUSIC_TABLE + screen] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3373,7 +3374,6 @@ pub(crate) struct NativeOverworldMap16BridgeMut<'a> {
 
 impl<'a> NativeOverworldMap16BridgeMut<'a> {
     pub(crate) fn new(map16: &'a mut OverworldMap16State, ram: &'a mut [u8]) -> Self {
-        *map16 = OverworldMap16State::load_from_ram(ram);
         Self { map16, ram }
     }
 
@@ -3381,34 +3381,34 @@ impl<'a> NativeOverworldMap16BridgeMut<'a> {
         debug_assert_eq!(*self.map16, OverworldMap16State::load_from_ram(self.ram));
     }
 
+    fn sync(&mut self) {
+        self.map16.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_active_load(&mut self, state: OverworldMap16LoadState) {
         self.map16.active_load = state;
-        state.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_previous_load(&mut self, state: OverworldMap16LoadState) {
         self.map16.previous_load = state;
-        state.write_previous_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_special_exit_src_off(&mut self, src_off: u16) {
         self.map16.special_exit_src_off = src_off;
-        write_le_u16(self.ram, MAP16_LOAD_SRC_OFF_SPEXIT, src_off);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_exit_src_off(&mut self, src_off: u16) {
         self.map16.exit_src_off = src_off;
-        write_le_u16(self.ram, MAP16_LOAD_SRC_OFF_EXIT, src_off);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_small_scroll_backup(&mut self, state: SmallOverworldMap16ScrollBackupState) {
         self.map16.small_scroll_backup = state;
-        state.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3419,7 +3419,6 @@ pub(crate) struct NativeOverworldEntranceBridgeMut<'a> {
 
 impl<'a> NativeOverworldEntranceBridgeMut<'a> {
     pub(crate) fn new(entrance: &'a mut OverworldEntranceState, ram: &'a mut [u8]) -> Self {
-        *entrance = OverworldEntranceState::load_from_ram(ram);
         Self { entrance, ram }
     }
 
@@ -3430,10 +3429,14 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.entrance.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
         self.entrance.special_entrance_trigger = value;
-        self.ram[TRIGGER_SPECIAL_ENTRANCE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_special_entrance_trigger(&mut self) {
@@ -3442,8 +3445,7 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
 
     pub(crate) fn set_sequence_counter(&mut self, value: u8) {
         self.entrance.sequence_counter = value;
-        self.ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_sequence_counter(&mut self) {
@@ -3470,7 +3472,6 @@ pub(crate) struct NativeOverworldExitBridgeMut<'a> {
 
 impl<'a> NativeOverworldExitBridgeMut<'a> {
     pub(crate) fn new(exit: &'a mut OverworldExitState, ram: &'a mut [u8]) -> Self {
-        *exit = OverworldExitState::load_from_ram(ram);
         Self { exit, ram }
     }
 
@@ -3478,16 +3479,19 @@ impl<'a> NativeOverworldExitBridgeMut<'a> {
         debug_assert_eq!(*self.exit, OverworldExitState::load_from_ram(self.ram));
     }
 
+    fn sync(&mut self) {
+        self.exit.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_exit_screen(&mut self, value: u16) {
         self.exit.exit_screen = value;
-        write_le_u16(self.ram, OVERWORLD_SCREEN_INDEX_EXIT, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_special_exit_screen(&mut self, value: u16) {
         self.exit.special_exit_screen = value;
-        write_le_u16(self.ram, OVERWORLD_SCREEN_INDEX_SPEXIT, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -3498,7 +3502,6 @@ pub(crate) struct NativeOverworldTransitionBridgeMut<'a> {
 
 impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     pub(crate) fn new(transition: &'a mut OverworldTransitionState, ram: &'a mut [u8]) -> Self {
-        *transition = OverworldTransitionState::load_from_ram(ram);
         Self { transition, ram }
     }
 
@@ -3509,17 +3512,20 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.transition.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_direction_bits(&mut self, value: u8) {
         self.transition.direction_bits =
             (self.transition.direction_bits & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_SCREEN_TRANS_DIR_BITS2] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_direction_bits_word(&mut self, value: u16) {
         self.transition.direction_bits = value;
-        write_le_u16(self.ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_direction_bits(&mut self) {
@@ -3549,14 +3555,12 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
         self.transition.edge_direction_bits =
             (self.transition.edge_direction_bits & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_SCREEN_TRANS_DIR_BITS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_edge_direction_bits_word(&mut self, value: u16) {
         self.transition.edge_direction_bits = value;
-        write_le_u16(self.ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_edge_direction_bits(&mut self) {
@@ -3565,21 +3569,18 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn set_direction_enum(&mut self, value: u8) {
         self.transition.direction_enum = value;
-        self.ram[OVERWORLD_TRANSITION_DIR] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
         self.transition.screen_transition =
             (self.transition.screen_transition & 0xff00) | u16::from(value);
-        self.ram[OVERWORLD_SCREEN_TRANSITION] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_screen_transition_word(&mut self, value: u16) {
         self.transition.screen_transition = value;
-        write_le_u16(self.ram, OVERWORLD_SCREEN_TRANSITION, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_screen_transition(&mut self) {
@@ -3588,8 +3589,7 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn set_transition_counter(&mut self, value: u8) {
         self.transition.transition_counter = value;
-        self.ram[TRANSITION_COUNTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_transition_counter(&mut self) -> u8 {
@@ -3600,8 +3600,7 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn set_countdown(&mut self, value: u8) {
         self.transition.countdown = value;
-        self.ram[OW_COUNTDOWN_TRANSITION] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_countdown(&mut self) -> u8 {
@@ -3613,17 +3612,7 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     pub(crate) fn save_previous_direction_bits(&mut self) {
         self.transition.previous_direction_bits = u16::from(self.transition.edge_direction_bits());
         self.transition.previous_direction_bits2 = self.transition.direction_bits_word();
-        write_le_u16(
-            self.ram,
-            OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV,
-            self.transition.previous_direction_bits,
-        );
-        write_le_u16(
-            self.ram,
-            OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV,
-            self.transition.previous_direction_bits2,
-        );
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn restore_previous_direction_bits(&mut self) {
@@ -3633,7 +3622,6 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn set_previous_screen_transition(&mut self, value: u8) {
         self.transition.previous_screen_transition = value;
-        self.ram[OVERWORLD_SCREEN_TRANSITION_PREV] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }

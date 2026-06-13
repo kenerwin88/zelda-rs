@@ -3786,13 +3786,13 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_event_info_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_event_info_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[OVERWORLD_EVENT_INFO + 0x02] = 0x40;
         ram[OVERWORLD_EVENT_INFO + 0x5b] = 0x20;
         ram[OVERWORLD_EVENT_INFO + 0x9f] = 0x02;
 
-        let mut event_info = OverworldEventInfoState::default();
+        let mut event_info = OverworldEventInfoState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldEventInfoBridgeMut::new(&mut event_info, &mut ram);
             bridge.set_event_info(0x02, 0x10);
@@ -3833,7 +3833,7 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_config_table_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_config_table_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[OVERWORLD_MUSIC_TABLE + 0x02] = 0x31;
         ram[OVERWORLD_MUSIC_TABLE + 0x80] = 0x42;
@@ -3842,7 +3842,7 @@ mod tests {
 
         let primary = [0x24; 64];
         let secondary = [0x46; 96];
-        let mut config_table = OverworldConfigTableState::default();
+        let mut config_table = OverworldConfigTableState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldConfigTableBridgeMut::new(&mut config_table, &mut ram);
             bridge.copy_music_primary(&primary);
@@ -4338,7 +4338,7 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_map16_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_map16_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
         write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
@@ -4352,7 +4352,7 @@ mod tests {
         write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, 0x0079);
         write_le_u16(&mut ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, 0x000a);
 
-        let mut map16 = OverworldMap16State::default();
+        let mut map16 = OverworldMap16State::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldMap16BridgeMut::new(&mut map16, &mut ram);
             bridge.set_active_load(OverworldMap16LoadState {
@@ -4423,12 +4423,12 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_entrance_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_entrance_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[TRIGGER_SPECIAL_ENTRANCE] = 5;
         ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = 0xff;
 
-        let mut entrance = OverworldEntranceState::default();
+        let mut entrance = OverworldEntranceState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldEntranceBridgeMut::new(&mut entrance, &mut ram);
             bridge.set_special_entrance_trigger(3);
@@ -4463,12 +4463,12 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_exit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_exit_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_EXIT, 0x0111);
         write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX_SPEXIT, 0x0222);
 
-        let mut exit = OverworldExitState::default();
+        let mut exit = OverworldExitState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldExitBridgeMut::new(&mut exit, &mut ram);
             bridge.set_exit_screen(0x0033);
@@ -4532,7 +4532,7 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_transition_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_overworld_transition_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, 0x0102);
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, 0x0108);
@@ -4541,7 +4541,7 @@ mod tests {
         ram[TRANSITION_COUNTER] = 9;
         ram[OW_COUNTDOWN_TRANSITION] = 1;
 
-        let mut transition = OverworldTransitionState::default();
+        let mut transition = OverworldTransitionState::load_from_ram(&ram);
         {
             let mut bridge = NativeOverworldTransitionBridgeMut::new(&mut transition, &mut ram);
             bridge.and_direction_bits(0x0b);
