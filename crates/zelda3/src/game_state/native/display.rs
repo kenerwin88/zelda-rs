@@ -886,7 +886,6 @@ pub(crate) struct NativePaletteBufferBridgeMut<'a> {
 
 impl<'a> NativePaletteBufferBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        display.palette_buffer = PaletteBufferState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2567,7 +2566,6 @@ pub(crate) struct NativePaletteFilterBridgeMut<'a> {
 
 impl<'a> NativePaletteFilterBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        display.palette_filter = PaletteFilterState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2725,7 +2723,6 @@ pub(crate) struct NativeHudInventoryOrderBridgeMut<'a> {
 
 impl<'a> NativeHudInventoryOrderBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2765,8 +2762,6 @@ pub(crate) struct NativeHudStateBridgeMut<'a> {
 
 impl<'a> NativeHudStateBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        display.hud_runtime = HudRuntimeState::load_from_ram(ram);
-        display.hud_tilemap = HudTilemapState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2882,7 +2877,6 @@ pub(crate) struct NativeTrinexxPaletteBridgeMut<'a> {
 
 impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2955,7 +2949,6 @@ pub(crate) struct NativeWaterHdmaWindowBridgeMut<'a> {
 
 impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -3560,7 +3553,6 @@ pub(crate) struct NativeDisplayStateBridgeMut<'a> {
 
 impl<'a> NativeDisplayStateBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 

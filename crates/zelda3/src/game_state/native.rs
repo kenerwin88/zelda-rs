@@ -6161,7 +6161,7 @@ mod tests {
         write_le_u16(&mut ram, SPOTLIGHT_Y_UPPER, 0x1111);
         write_le_u16(&mut ram, SPOTLIGHT_WINDOW_Y_BUFFER, 0x2210);
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativeWaterHdmaWindowBridgeMut::new(&mut display, &mut ram);
             bridge.set_window_x(0x0220);
@@ -6363,7 +6363,7 @@ mod tests {
         let mut ram = vec![0xff; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x12ab);
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativePaletteBufferBridgeMut::new(&mut display, &mut ram);
             bridge.set_main_color(2, 0x1234);
@@ -6469,7 +6469,7 @@ mod tests {
         ram[COLDATA_COPY1] = 0x40;
         ram[COLDATA_COPY2] = 0x80;
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativePaletteFilterBridgeMut::new(&mut display, &mut ram);
             bridge.increment_countdown();
@@ -6552,7 +6552,7 @@ mod tests {
         ram[TRINEXX_RED_SHELL_PALETTE_STEP] = 0xff;
         ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = 0xfe;
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativeTrinexxPaletteBridgeMut::new(&mut display, &mut ram);
             bridge.set_red_shell_delay(3);
@@ -7304,7 +7304,7 @@ mod tests {
     #[test]
     fn native_hud_inventory_order_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
 
         {
             let mut bridge = NativeHudInventoryOrderBridgeMut::new(&mut display, &mut ram);
@@ -7396,7 +7396,7 @@ mod tests {
         ram[BOTTLE_MENU_ROW] = 5;
         ram[HUD_TILE_INDICES_BUFFER + 4] = 0x34;
         ram[HUD_TILE_INDICES_BUFFER + 5] = 0x12;
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
 
         {
             let mut bridge = NativeHudStateBridgeMut::new(&mut display, &mut ram);
@@ -7773,7 +7773,7 @@ mod tests {
         write_le_u16(&mut ram, ANIMATED_TILE_DATA_SRC, 0xa680);
         write_le_u16(&mut ram, ANIMATED_TILE_VRAM_ADDR, 0x3b00);
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativeDisplayStateBridgeMut::new(&mut display, &mut ram);
             bridge.increment_screen_brightness();
