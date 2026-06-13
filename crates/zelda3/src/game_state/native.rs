@@ -78,10 +78,11 @@ pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
     MazeGameTimerView, NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
+    NativeOverworldSpritePresenceBridgeMut, NativePrizeDropCycleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteState, TagalongSlotView,
+    NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState, OverworldSpritePresenceState,
+    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -5326,5 +5327,30 @@ mod tests {
         );
         assert_eq!(ram[OVERWORLD_SCREEN_INDEX + 1], 0);
         assert_eq!(ram[OVERLAY_INDEX + 1], 0);
+    }
+
+    #[test]
+    fn native_overworld_sprite_flag_bridges_dual_write_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_SPRITE_PRESENCE + 3] = 0x12;
+        ram[OVERWORLD_SPRITE_WAS_LOADED + 4] = 0b1010_0000;
+
+        let mut presence = OverworldSpritePresenceState::default();
+        {
+            let mut bridge = NativeOverworldSpritePresenceBridgeMut::new(&mut presence, &mut ram);
+            bridge.set_marker(3, 0x34);
+        }
+        assert_eq!(presence.marker(3), 0x34);
+        assert_eq!(ram[OVERWORLD_SPRITE_PRESENCE + 3], 0x34);
+
+        let mut loaded = OverworldSpriteLoadedState::default();
+        {
+            let mut bridge = NativeOverworldSpriteLoadedBridgeMut::new(&mut loaded, &mut ram);
+            bridge.clear_loaded_mask(32, 0b0010_0000);
+            bridge.set_loaded_mask(32, 0b0000_0010);
+        }
+        assert!(loaded.is_loaded(32, 0b0000_0010));
+        assert!(!loaded.is_loaded(32, 0b0010_0000));
+        assert_eq!(ram[OVERWORLD_SPRITE_WAS_LOADED + 4], 0b1000_0010);
     }
 }

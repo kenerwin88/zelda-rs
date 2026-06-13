@@ -67,7 +67,8 @@ use crate::game_state::{
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
+    NativeOverworldSpritePresenceBridgeMut, NativeOverworldTransitionBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
     NativeQuakeSpellBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
@@ -81,24 +82,23 @@ use crate::game_state::{
     NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
     OverworldConfigTableView, OverworldEventInfoState, OverworldMap16DecodeView,
     OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldSpriteLoadedView, OverworldSpriteLoadedViewMut, OverworldSpritePresenceView,
-    OverworldSpritePresenceViewMut, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsView,
-    PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
-    PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView,
-    QuakeBoltView, QuakeBoltViewMut, QuakeSpellState, RoomBoundsView, RoomBoundsViewMut,
-    SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
-    SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
+    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsView, PolyFaceCoordsViewMut, PolyProjectedVertexView,
+    PolyProjectedVertexViewMut, PolyRasterEdgeView, PolyRasterEdgeViewMut, PolyStateView,
+    PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltView, QuakeBoltViewMut,
+    QuakeSpellState, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressState,
+    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
+    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
+    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4143,14 +4143,17 @@ impl ZeldaState {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_presence_view(&self) -> OverworldSpritePresenceView<'_> {
-        OverworldSpritePresenceView::new(&self.ram)
+    pub(crate) fn overworld_sprite_presence_view(&self) -> OverworldSpritePresenceState {
+        OverworldSpritePresenceState::load_from_ram(&self.ram)
     }
 
     pub(crate) fn overworld_sprite_presence_view_mut(
         &mut self,
-    ) -> OverworldSpritePresenceViewMut<'_> {
-        OverworldSpritePresenceViewMut::new(&mut self.ram)
+    ) -> NativeOverworldSpritePresenceBridgeMut<'_> {
+        NativeOverworldSpritePresenceBridgeMut::new(
+            &mut self.game_state.sprites.overworld_sprite_presence,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn memorized_tile_view(&self) -> &MemorizedTileState {
@@ -4161,12 +4164,17 @@ impl ZeldaState {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedView<'_> {
-        OverworldSpriteLoadedView::new(&self.ram)
+    pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedState {
+        OverworldSpriteLoadedState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded_view_mut(&mut self) -> OverworldSpriteLoadedViewMut<'_> {
-        OverworldSpriteLoadedViewMut::new(&mut self.ram)
+    pub(crate) fn overworld_sprite_loaded_view_mut(
+        &mut self,
+    ) -> NativeOverworldSpriteLoadedBridgeMut<'_> {
+        NativeOverworldSpriteLoadedBridgeMut::new(
+            &mut self.game_state.sprites.overworld_sprite_loaded,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn trinexx_palette_state(&self) -> TrinexxPaletteState {

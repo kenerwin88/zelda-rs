@@ -4,8 +4,9 @@ use crate::game_state::constants::{
     ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y,
     ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
     MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI,
-    TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
+    PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI,
+    TAGALONG_Y_LO, TAGALONG_Z,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -14,6 +15,7 @@ const TAGALONG_SLOT_COUNT: usize = 20;
 const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ETHER_ANGLE_COUNT: usize = 8;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
+const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -25,6 +27,8 @@ pub(crate) struct SpriteState {
     pub(crate) tagalong_trail: TagalongTrailState,
     pub(crate) chain_chomp_history: ChainChompHistoryState,
     pub(crate) ether_orbit: EtherOrbitState,
+    pub(crate) overworld_sprite_presence: OverworldSpritePresenceState,
+    pub(crate) overworld_sprite_loaded: OverworldSpriteLoadedState,
 }
 
 impl SpriteState {
@@ -38,6 +42,8 @@ impl SpriteState {
             tagalong_trail: TagalongTrailState::load_from_ram(ram),
             chain_chomp_history: ChainChompHistoryState::load_from_ram(ram),
             ether_orbit: EtherOrbitState::load_from_ram(ram),
+            overworld_sprite_presence: OverworldSpritePresenceState::load_from_ram(ram),
+            overworld_sprite_loaded: OverworldSpriteLoadedState::load_from_ram(ram),
         }
     }
 
@@ -50,6 +56,180 @@ impl SpriteState {
         self.tagalong_trail.write_to_ram(ram);
         self.chain_chomp_history.write_to_ram(ram);
         self.ether_orbit.write_to_ram(ram);
+        self.overworld_sprite_presence.write_to_ram(ram);
+        self.overworld_sprite_loaded.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldSpritePresenceState {
+    markers: Vec<u8>,
+}
+
+impl Default for OverworldSpritePresenceState {
+    fn default() -> Self {
+        Self {
+            markers: vec![0; OVERWORLD_SPRITE_FLAG_COUNT],
+        }
+    }
+}
+
+impl OverworldSpritePresenceState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            markers: ram[OVERWORLD_SPRITE_PRESENCE
+                ..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_FLAG_COUNT]
+                .to_vec(),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_FLAG_COUNT]
+            .fill(0);
+        let len = self.markers.len().min(OVERWORLD_SPRITE_FLAG_COUNT);
+        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + len]
+            .copy_from_slice(&self.markers[..len]);
+    }
+
+    pub(crate) fn marker(&self, index: usize) -> u8 {
+        self.markers.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_marker(&mut self, index: usize, value: u8) {
+        if let Some(marker) = self.markers.get_mut(index) {
+            *marker = value;
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldSpriteLoadedState {
+    flags: Vec<u8>,
+}
+
+impl Default for OverworldSpriteLoadedState {
+    fn default() -> Self {
+        Self {
+            flags: vec![0; OVERWORLD_SPRITE_FLAG_COUNT],
+        }
+    }
+}
+
+impl OverworldSpriteLoadedState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            flags: ram[OVERWORLD_SPRITE_WAS_LOADED
+                ..OVERWORLD_SPRITE_WAS_LOADED + OVERWORLD_SPRITE_FLAG_COUNT]
+                .to_vec(),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + OVERWORLD_SPRITE_FLAG_COUNT]
+            .fill(0);
+        let len = self.flags.len().min(OVERWORLD_SPRITE_FLAG_COUNT);
+        ram[OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + len]
+            .copy_from_slice(&self.flags[..len]);
+    }
+
+    pub(crate) fn is_loaded(&self, block: u16, loaded_mask: u8) -> bool {
+        self.flags
+            .get(usize::from(block >> 3))
+            .is_some_and(|flag| flag & loaded_mask != 0)
+    }
+
+    pub(crate) fn clear_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        if let Some(flag) = self.flags.get_mut(usize::from(block >> 3)) {
+            *flag &= !loaded_mask;
+        }
+    }
+
+    pub(crate) fn set_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        if let Some(flag) = self.flags.get_mut(usize::from(block >> 3)) {
+            *flag |= loaded_mask;
+        }
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.flags.fill(0);
+    }
+}
+
+pub(crate) struct NativeOverworldSpritePresenceBridgeMut<'a> {
+    state: &'a mut OverworldSpritePresenceState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldSpritePresenceBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut OverworldSpritePresenceState, ram: &'a mut [u8]) -> Self {
+        *state = OverworldSpritePresenceState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            OverworldSpritePresenceState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_marker(&mut self, index: usize, value: u8) {
+        self.state.set_marker(index, value);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeOverworldSpriteLoadedBridgeMut<'a> {
+    state: &'a mut OverworldSpriteLoadedState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut OverworldSpriteLoadedState, ram: &'a mut [u8]) -> Self {
+        *state = OverworldSpriteLoadedState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            OverworldSpriteLoadedState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn clear_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        self.state.clear_loaded_mask(block, loaded_mask);
+        self.sync();
+    }
+
+    pub(crate) fn clear_loaded_mask_wrapped(&mut self, block: u16, loaded_mask: u8) {
+        let address = (OVERWORLD_SPRITE_WAS_LOADED + usize::from(block >> 3)) & 0x1ffff;
+        self.ram[address] &= !loaded_mask;
+        if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
+            if index < OVERWORLD_SPRITE_FLAG_COUNT {
+                self.state.clear_loaded_mask(block, loaded_mask);
+            }
+        }
+    }
+
+    pub(crate) fn set_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        self.state.set_loaded_mask(block, loaded_mask);
+        self.sync();
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.state.clear_all();
+        self.sync();
     }
 }
 
