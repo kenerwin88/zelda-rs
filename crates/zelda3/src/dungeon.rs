@@ -490,7 +490,7 @@ impl ZeldaState {
             player.set_actual_z_velocity(0xff);
         }
 
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .clear_moving_wall_torch_blink_phase();
         self.dungeon_environment_mut()
             .clear_orange_blue_barrier_state();
@@ -668,7 +668,7 @@ impl ZeldaState {
 
     pub(super) fn ApplyGrayscaleFixed_Incremental(&mut self) {
         let mut a = self.palette_filter_view().fixed_color_red() & 0x1f;
-        let target = self.dungeon_state_view().fixed_color_plusminus();
+        let target = self.dungeon_room_effects().fixed_color_plusminus();
         if a == target {
             return;
         }
@@ -698,7 +698,7 @@ impl ZeldaState {
         self.OrientLampLightCone();
         self.ApplyGrayscaleFixed_Incremental();
         if self.palette_filter_view().fixed_color_red() & 0x1f
-            != self.dungeon_state_view().fixed_color_plusminus()
+            != self.dungeon_room_effects().fixed_color_plusminus()
         {
             return;
         }
@@ -3264,7 +3264,7 @@ impl ZeldaState {
         self.dungeon_header_view_mut().clear_header_tag(slot);
         self.world_transient_mut()
             .force_vertical_fullsize_for_blast_wall();
-        self.dungeon_state_view_mut().mark_blast_wall_y_open();
+        self.dungeon_room_effects_mut().mark_blast_wall_y_open();
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_DOWN[42] as usize, dsto);
         let next = self.dungeon_doors().current_door_index().wrapping_add(2);
         self.dungeon_doors_mut().set_current_door_index(next);
@@ -3851,10 +3851,10 @@ impl ZeldaState {
     }
 
     pub(super) fn MovingWall_FillReplacementBuffer(&mut self, dsto: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .fill_moving_wall_replacement_buffer(0x01ec);
         let value = (dsto & 0x001f) | if dsto & 0x0020 != 0 { 0x0400 } else { 0 } | 0x1000;
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_moving_wall_write_point(value);
     }
 
@@ -3869,7 +3869,7 @@ impl ZeldaState {
         let size0 = SIZES0[width as usize];
         let size1 = SIZES1[height as usize];
         self.MovingWall_FillReplacementBuffer(dsto.wrapping_sub(size1).wrapping_sub(1));
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_moving_wall_dot_pointer(height.wrapping_mul(2));
 
         let fill_src = 0x03d8;
@@ -3906,7 +3906,7 @@ impl ZeldaState {
             .increment_header_collision_2_mirror();
         let size1 = SIZES1[height as usize];
         let size0 = SIZES0[width as usize];
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_moving_wall_dot_pointer(height.wrapping_mul(2));
         self.MovingWall_FillReplacementBuffer(dsto.wrapping_add(3).wrapping_add(size1));
 
@@ -5441,8 +5441,8 @@ impl ZeldaState {
         let flags = LAYOUT_QUADRANT_FLAGS[self.dungeon_room_load().layout_quadrant_key() as usize];
         let horizontal_mask = self.player_state_view().quadrant_x_mask();
         let vertical_mask = self.player_state_view().quadrant_y_mask();
-        let blast_wall_x_open = self.dungeon_state_view().blast_wall_x_open();
-        let blast_wall_y_open = self.dungeon_state_view().blast_wall_y_open();
+        let blast_wall_x_open = self.dungeon_room_effects().blast_wall_x_open();
+        let blast_wall_y_open = self.dungeon_room_effects().blast_wall_y_open();
         self.world_transient_mut()
             .apply_dungeon_layout_quadrant_fullsize(
                 flags,
@@ -5718,7 +5718,7 @@ impl ZeldaState {
     fn update_quadrant_fullsize_x_after_transition(&mut self) {
         let flags = LAYOUT_QUADRANT_FLAGS[self.dungeon_room_load().layout_quadrant_key() as usize];
         let mask = self.player_state_view().quadrant_x_mask();
-        let blast_wall_x_open = self.dungeon_state_view().blast_wall_x_open();
+        let blast_wall_x_open = self.dungeon_room_effects().blast_wall_x_open();
         self.world_transient_mut()
             .apply_dungeon_layout_horizontal_fullsize(flags, mask, blast_wall_x_open);
     }
@@ -5726,7 +5726,7 @@ impl ZeldaState {
     fn update_quadrant_fullsize_y_after_transition(&mut self) {
         let flags = LAYOUT_QUADRANT_FLAGS[self.dungeon_room_load().layout_quadrant_key() as usize];
         let mask = self.player_state_view().quadrant_y_mask();
-        let blast_wall_y_open = self.dungeon_state_view().blast_wall_y_open();
+        let blast_wall_y_open = self.dungeon_room_effects().blast_wall_y_open();
         self.world_transient_mut()
             .apply_dungeon_layout_vertical_fullsize(flags, mask, blast_wall_y_open);
     }
@@ -6467,7 +6467,7 @@ impl ZeldaState {
                 self.set_subsubmodule(0);
                 self.system_signals_view_mut().set_sound_effect_2(27);
                 self.set_submodule(3);
-                self.dungeon_state_view_mut()
+                self.dungeon_room_effects_mut()
                     .toggle_moving_wall_torch_blink_phase();
                 self.Dungeon_RestoreStarTileChr();
             }
@@ -6604,7 +6604,7 @@ impl ZeldaState {
         while self.dungeon_doors().door_type_and_slot(door) & !1 != 0x30 {
             door += 1;
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_blast_wall_door_index(door);
 
         let mut i = (((self.player_state_view().y() >> 8) & 1) + 1) * 2;
@@ -6612,7 +6612,7 @@ impl ZeldaState {
             i = (self.player_state_view().x() >> 8) & 1;
         }
 
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_blast_wall_message_direction(u16::from(
                 BLAST_WALL_MESSAGE_DIRECTION_BY_QUADRANT[i as usize],
             ));
@@ -6622,10 +6622,11 @@ impl ZeldaState {
             .wrapping_add(BLAST_WALL_DOOR_TILEMAP_OFFSETS[i as usize]);
         let x = ((pos & 0x007e) << 2).wrapping_add(self.dungeon_room_load().loading_bg_offset_h());
         let y = ((pos & 0x1f80) >> 4).wrapping_add(self.dungeon_room_load().loading_bg_offset_v());
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_blast_wall_message_position(x, y);
         self.system_signals_view_mut().set_sound_effect_2(27);
-        self.dungeon_state_view_mut().set_crush_wall_progress_low(1);
+        self.dungeon_room_effects_mut()
+            .set_crush_wall_progress_low(1);
         self.ancilla_add_blast_wall();
     }
 
@@ -6782,7 +6783,7 @@ impl ZeldaState {
         };
         let palace = (self.save_progress_view().palace_index_x2() >> 1) as usize;
         if prizes & DUNGEON_CRYSTAL_PENDANT_BITS[palace] == 0 {
-            self.dungeon_state_view_mut()
+            self.dungeon_room_effects_mut()
                 .request_moving_wall_torch_update();
             if self.ancilla_spawn_falling_prize(BOSS_FINISHED_FALLING_ITEM[palace]) < 0 {
                 return;
@@ -7445,7 +7446,7 @@ impl ZeldaState {
         let mut dst = dsto as u16 + 2;
         let fill = self.tile_word(src, 24);
         let count = self
-            .dungeon_state_view()
+            .dungeon_room_effects()
             .crush_wall_progress()
             .wrapping_sub(1);
         for _ in 0..count {
@@ -7466,7 +7467,7 @@ impl ZeldaState {
         let mut r6 = 0x80u16;
         let mut r14 = 0u16;
         let mut r10 = self
-            .dungeon_state_view()
+            .dungeon_room_effects()
             .crush_wall_progress()
             .wrapping_add(3);
         let mut r2 = 0u16;
@@ -8926,8 +8927,8 @@ impl ZeldaState {
         self.world_scroll_mut().set_bg1_x(bg1);
 
         if self.dungeon_moving_floor().floor_x_velocity() != 0 {
-            let target0 =
-                MOVING_WALL_EAST_TARGET_OFFSETS[self.dungeon_state_view().moving_wall_dot_index()];
+            let target0 = MOVING_WALL_EAST_TARGET_OFFSETS
+                [self.dungeon_room_effects().moving_wall_dot_index()];
             if offs < target0 {
                 let target1 = MOVING_WALL_EAST_TARGET_OFFSETS
                     [(self.RoomTag_AdvanceGiganticWall(k) >> 1) as usize & 7];
@@ -8938,7 +8939,7 @@ impl ZeldaState {
             self.set_pending_nmi_subroutine(5);
             let neg = (0u16.wrapping_sub(offs) & 0x01f8) >> 3;
             let target = self
-                .dungeon_state_view()
+                .dungeon_room_effects()
                 .moving_wall_write_point()
                 .wrapping_sub(neg)
                 & 0x141f;
@@ -8982,8 +8983,8 @@ impl ZeldaState {
         self.world_scroll_mut().set_bg1_x(bg1);
 
         if self.dungeon_moving_floor().floor_x_velocity() != 0 {
-            let target0 =
-                MOVING_WALL_WEST_TARGET_OFFSETS[self.dungeon_state_view().moving_wall_dot_index()];
+            let target0 = MOVING_WALL_WEST_TARGET_OFFSETS
+                [self.dungeon_room_effects().moving_wall_dot_index()];
             if offs >= target0 {
                 let target1 = MOVING_WALL_WEST_TARGET_OFFSETS
                     [(self.RoomTag_AdvanceGiganticWall(k) >> 1) as usize & 7];
@@ -8993,7 +8994,7 @@ impl ZeldaState {
             }
             self.set_pending_nmi_subroutine(5);
             let mut target = self
-                .dungeon_state_view()
+                .dungeon_room_effects()
                 .moving_wall_write_point()
                 .wrapping_add((offs & 0x01f8) >> 3);
             if target & 0x1020 != 0 {
@@ -9045,7 +9046,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomTag_AdvanceGiganticWall(&mut self, k: usize) -> u8 {
-        let mut i = self.dungeon_state_view().moving_wall_dot_pointer();
+        let mut i = self.dungeon_room_effects().moving_wall_dot_pointer();
         if self.dungeon_header_view().header_tag(k) < 0x20 {
             self.dungeon_room_load_mut().set_header_collision(0);
             self.set_main_screen_layers(0x16);
@@ -9299,7 +9300,7 @@ impl ZeldaState {
         self.Dungeon_FlagRoomData_Quadrants();
         self.system_signals_view_mut().set_sound_effect_2(14);
         self.request_nmi_copy_packets();
-        self.dungeon_state_view_mut().mark_trap_trigger_latched();
+        self.dungeon_room_effects_mut().mark_trap_trigger_latched();
         loc + 2
     }
 
@@ -9876,10 +9877,10 @@ impl ZeldaState {
             } else {
                 3
             };
-            self.dungeon_state_view_mut()
+            self.dungeon_room_effects_mut()
                 .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
             self.Dungeon_ApproachFixedColor_variable(
-                self.dungeon_state_view().fixed_color_plusminus(),
+                self.dungeon_room_effects().fixed_color_plusminus(),
             );
             self.clear_mosaic_target_level();
         }
@@ -10424,7 +10425,7 @@ impl ZeldaState {
                 }
                 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let torch = self.dungeon_torch_state().lit_torches() as usize;
-                self.dungeon_state_view_mut()
+                self.dungeon_room_effects_mut()
                     .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
@@ -11141,9 +11142,11 @@ impl ZeldaState {
         };
         self.palette_filter_view_mut()
             .set_color_math_control(color_math_control);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
-        self.Dungeon_ApproachFixedColor_variable(self.dungeon_state_view().fixed_color_plusminus());
+        self.Dungeon_ApproachFixedColor_variable(
+            self.dungeon_room_effects().fixed_color_plusminus(),
+        );
         self.palette_filter_view_mut().set_countdown(0x1f);
         self.clear_mosaic_target_level();
         self.palette_filter_view_mut()
@@ -11314,7 +11317,7 @@ impl ZeldaState {
             if self.frame_state().submodule == 0 {
                 self.dungeon_process_torches_and_doors();
                 self.replay_trace_ram_watch("module07-after-torches-doors");
-                if self.dungeon_state_view().crush_wall_progress() != 0 {
+                if self.dungeon_room_effects().crush_wall_progress() != 0 {
                     self.dungeon_clear_away_exploding_wall();
                     self.replay_trace_ram_watch("module07-after-blast-wall");
                 }
@@ -12079,7 +12082,7 @@ impl ZeldaState {
     pub(super) fn dungeon_clear_away_exploding_wall(&mut self) {
         self.player_state_view_mut().set_immobilized_flag(6);
         self.set_modal_pause_flag(6);
-        if self.dungeon_state_view().blast_wall_message_state() != 6 {
+        if self.dungeon_room_effects().blast_wall_message_state() != 6 {
             return;
         }
 
@@ -12087,7 +12090,7 @@ impl ZeldaState {
         self.tile_detect_position_view_mut()
             .clear_slope_collision_bits();
         self.dungeon_doors_mut().clear_door_animation_step();
-        let blast_door_x2 = self.dungeon_state_view().blast_wall_door_index_x2();
+        let blast_door_x2 = self.dungeon_room_effects().blast_wall_door_index_x2();
         self.dungeon_doors_mut()
             .set_current_door_index(blast_door_x2);
 
@@ -12105,10 +12108,10 @@ impl ZeldaState {
 
         self.set_core_update_disable_flag_word(0xffff);
         let walls2 = self
-            .dungeon_state_view()
+            .dungeon_room_effects()
             .crush_wall_progress()
             .wrapping_add(2);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut()
             .set_crush_wall_progress(walls2);
 
         if walls2 == 21 {
@@ -12119,18 +12122,19 @@ impl ZeldaState {
             self.dungeon_doors_mut().or_opened_doors(mask);
 
             if self.dungeon_doors().door_direction(door) & 2 != 0 {
-                self.dungeon_state_view_mut().mark_blast_wall_x_open();
+                self.dungeon_room_effects_mut().mark_blast_wall_x_open();
                 self.world_transient_mut()
                     .force_horizontal_fullsize_for_blast_wall();
             } else {
-                self.dungeon_state_view_mut().mark_blast_wall_y_open();
+                self.dungeon_room_effects_mut().mark_blast_wall_y_open();
                 self.world_transient_mut()
                     .force_vertical_fullsize_for_blast_wall();
             }
             self.world_transient_mut().cache_quadrant_fullsize_state();
             self.Door_LoadBlastWallAttr(door);
-            self.dungeon_state_view_mut().set_crush_wall_progress(0);
-            self.dungeon_state_view_mut().clear_blast_wall_door_index();
+            self.dungeon_room_effects_mut().set_crush_wall_progress(0);
+            self.dungeon_room_effects_mut()
+                .clear_blast_wall_door_index();
             self.Dungeon_FlagRoomData_Quadrants();
             self.player_state_view_mut().clear_immobilized();
             self.clear_modal_pause_flag();

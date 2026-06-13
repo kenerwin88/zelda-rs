@@ -302,7 +302,8 @@ impl ZeldaState {
         {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            self.dungeon_state_view_mut().increment_trap_trigger_latch();
+            self.dungeon_room_effects_mut()
+                .increment_trap_trigger_latch();
         }
     }
 
@@ -679,7 +680,7 @@ impl ZeldaState {
             return;
         }
         if self.overlord_slot_view(k).gen1() == 0 {
-            if self.dungeon_state_view().trap_trigger_latch() != 0 {
+            if self.dungeon_room_effects().trap_trigger_latch() != 0 {
                 let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                 self.overlord_slot_view_mut(k).set_gen1(value);
             }
@@ -710,7 +711,7 @@ impl ZeldaState {
             [0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90];
         let a = self.overlord_slot_view(k).gen1();
         if a == 0 {
-            if self.dungeon_state_view().has_bomb_trap_activation() {
+            if self.dungeon_room_effects().has_bomb_trap_activation() {
                 let value = 1;
                 self.overlord_slot_view_mut(k).set_gen1(value);
             }

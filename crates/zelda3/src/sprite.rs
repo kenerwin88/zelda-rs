@@ -1498,8 +1498,8 @@ impl ZeldaState {
         self.archery_game_view_mut().clear_hit_counter();
         self.archery_game_view_mut().set_arrows_left(0);
         self.garnish_state_view_mut().clear_active_type();
-        self.dungeon_state_view_mut().clear_trap_trigger_latch();
-        self.dungeon_state_view_mut()
+        self.dungeon_room_effects_mut().clear_trap_trigger_latch();
+        self.dungeon_room_effects_mut()
             .set_activate_bomb_trap_overlord(0);
         self.attract_scene_mut().clear_intro_palette_flash_count();
         self.sprite_workspace_view_mut().set_reset_scratch_a(0);

@@ -1,22 +1,24 @@
 use crate::game_state::constants::{
-    ATTRIBUTES_FOR_TILE_PLAYER, AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS,
-    BLOCK_TRAP_CHECK_FLAG, CHANGEABLE_DUNGEON_OBJECT_INDEX, COMPOSITE_OF_LAYOUT_AND_QUADRANT,
+    ACTIVATE_BOMB_TRAP_OVERLORD, ATTRIBUTES_FOR_TILE_PLAYER, AUX_TILE_THEME_INDEX,
+    BIG_ROCK_STARTING_ADDRESS, BLOCK_TRAP_CHECK_FLAG, CHANGEABLE_DUNGEON_OBJECT_INDEX,
+    COMPOSITE_OF_LAYOUT_AND_QUADRANT, CRUSH_WALL_DOOR_INDEX_X2, CRUSH_WALL_PROGRESS,
     DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
     DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
     DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR,
-    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_BG1, DUNG_BG2,
-    DUNG_CHEST_LOCATIONS, DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR,
-    DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
-    DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED,
-    DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR,
-    DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED, DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
-    DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
-    DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
-    DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
-    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
-    DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
+    DUNGEON_TORCH_DATA, DUNGEON_TRAP_TRIGGER_LATCH, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_BG1,
+    DUNG_BG2, DUNG_BLASTWALL_FLAG_X, DUNG_BLASTWALL_FLAG_Y, DUNG_CHEST_LOCATIONS,
+    DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED,
+    DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED,
+    DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS,
+    DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED,
+    DUNG_FLAG_SOMARIA_BLOCK_SWITCH, DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN,
+    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES,
+    DUNG_HDR_BG2_PROPERTIES_BACKUP, DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2,
+    DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
+    DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0, DUNG_LOADE_BGOFFS_H_COPY,
+    DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
     DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_BIGKEY_LOCKS_X2, DUNG_NUM_CHESTS_X2,
     DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
     DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
@@ -25,10 +27,12 @@ use crate::game_state::constants::{
     DUNG_QUADRANTS_VISITED, DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2,
     DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
     DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
-    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
-    ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_MAP_STATE,
-    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
-    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
+    MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
+    MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
+    MOVING_WALL_TORCH_UPDATE_FLAG, MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE,
+    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS,
+    OVERWORLD_MAP_STATE, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
+    REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
     WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
     WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
@@ -53,6 +57,7 @@ const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
+const MOVING_WALL_REPLACEMENT_WORDS: usize = 64;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
@@ -108,6 +113,7 @@ pub(crate) struct DungeonState {
     pub(crate) environment: DungeonEnvironmentState,
     pub(crate) room_tilemaps: DungeonRoomTilemapState,
     pub(crate) room_items: DungeonRoomItemState,
+    pub(crate) room_effects: DungeonRoomEffectsState,
 }
 
 impl DungeonState {
@@ -129,6 +135,7 @@ impl DungeonState {
             environment: DungeonEnvironmentState::load_from_ram(ram),
             room_tilemaps: DungeonRoomTilemapState::load_from_ram(ram),
             room_items: DungeonRoomItemState::load_from_ram(ram),
+            room_effects: DungeonRoomEffectsState::load_from_ram(ram),
         }
     }
 
@@ -1627,6 +1634,235 @@ impl DungeonStairMovementState {
 
     fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
         self.in_room_kind = value;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomEffectsState {
+    blast_wall_x_open: u8,
+    blast_wall_y_open: u8,
+    crush_wall_progress: u16,
+    blast_wall_door_index_x2: u16,
+    moving_wall_dot_pointer: u8,
+    moving_wall_write_point: u16,
+    moving_wall_torch_blink_phase: u8,
+    moving_wall_torch_update_flag: u8,
+    fixed_color_plusminus: u8,
+    trap_trigger_latch: u8,
+    bomb_trap_activation: u8,
+    blast_wall_message_state: u8,
+    blast_wall_message_x: u16,
+    blast_wall_message_y: u16,
+    blast_wall_message_direction: u16,
+    moving_wall_replacement_buffer: Vec<u16>,
+}
+
+impl Default for DungeonRoomEffectsState {
+    fn default() -> Self {
+        Self {
+            blast_wall_x_open: 0,
+            blast_wall_y_open: 0,
+            crush_wall_progress: 0,
+            blast_wall_door_index_x2: 0,
+            moving_wall_dot_pointer: 0,
+            moving_wall_write_point: 0,
+            moving_wall_torch_blink_phase: 0,
+            moving_wall_torch_update_flag: 0,
+            fixed_color_plusminus: 0,
+            trap_trigger_latch: 0,
+            bomb_trap_activation: 0,
+            blast_wall_message_state: 0,
+            blast_wall_message_x: 0,
+            blast_wall_message_y: 0,
+            blast_wall_message_direction: 0,
+            moving_wall_replacement_buffer: vec![0; MOVING_WALL_REPLACEMENT_WORDS],
+        }
+    }
+}
+
+impl DungeonRoomEffectsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut moving_wall_replacement_buffer = vec![0; MOVING_WALL_REPLACEMENT_WORDS];
+        for (index, value) in moving_wall_replacement_buffer.iter_mut().enumerate() {
+            *value = read_le_u16(ram, MOVING_WALL_REPLACEMENT_BUFFER + index * 2);
+        }
+        Self {
+            blast_wall_x_open: ram.get(DUNG_BLASTWALL_FLAG_X).copied().unwrap_or(0),
+            blast_wall_y_open: ram.get(DUNG_BLASTWALL_FLAG_Y).copied().unwrap_or(0),
+            crush_wall_progress: read_le_u16(ram, CRUSH_WALL_PROGRESS),
+            blast_wall_door_index_x2: read_le_u16(ram, CRUSH_WALL_DOOR_INDEX_X2),
+            moving_wall_dot_pointer: ram.get(MOVING_WALL_DOT_POINTER).copied().unwrap_or(0),
+            moving_wall_write_point: read_le_u16(ram, MOVING_WALL_WRITE_POINT),
+            moving_wall_torch_blink_phase: ram
+                .get(MOVING_WALL_TORCH_BLINK_PHASE)
+                .copied()
+                .unwrap_or(0),
+            moving_wall_torch_update_flag: ram
+                .get(MOVING_WALL_TORCH_UPDATE_FLAG)
+                .copied()
+                .unwrap_or(0),
+            fixed_color_plusminus: ram
+                .get(OVERWORLD_FIXED_COLOR_PLUSMINUS)
+                .copied()
+                .unwrap_or(0),
+            trap_trigger_latch: ram.get(DUNGEON_TRAP_TRIGGER_LATCH).copied().unwrap_or(0),
+            bomb_trap_activation: ram.get(ACTIVATE_BOMB_TRAP_OVERLORD).copied().unwrap_or(0),
+            blast_wall_message_state: ram.get(MESSAGING_BUF_DUNGEON).copied().unwrap_or(0),
+            blast_wall_message_x: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a),
+            blast_wall_message_y: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18),
+            blast_wall_message_direction: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1c),
+            moving_wall_replacement_buffer,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[DUNG_BLASTWALL_FLAG_X] = self.blast_wall_x_open;
+        ram[DUNG_BLASTWALL_FLAG_Y] = self.blast_wall_y_open;
+        write_le_u16(ram, CRUSH_WALL_PROGRESS, self.crush_wall_progress);
+        write_le_u16(ram, CRUSH_WALL_DOOR_INDEX_X2, self.blast_wall_door_index_x2);
+        ram[MOVING_WALL_DOT_POINTER] = self.moving_wall_dot_pointer;
+        write_le_u16(ram, MOVING_WALL_WRITE_POINT, self.moving_wall_write_point);
+        ram[MOVING_WALL_TORCH_BLINK_PHASE] = self.moving_wall_torch_blink_phase;
+        ram[MOVING_WALL_TORCH_UPDATE_FLAG] = self.moving_wall_torch_update_flag;
+        ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
+        ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
+        ram[ACTIVATE_BOMB_TRAP_OVERLORD] = self.bomb_trap_activation;
+        ram[MESSAGING_BUF_DUNGEON] = self.blast_wall_message_state;
+        write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a, self.blast_wall_message_x);
+        write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18, self.blast_wall_message_y);
+        write_le_u16(
+            ram,
+            MESSAGING_BUF_DUNGEON + 0x1c,
+            self.blast_wall_message_direction,
+        );
+        for (index, &value) in self.moving_wall_replacement_buffer.iter().enumerate() {
+            write_le_u16(ram, MOVING_WALL_REPLACEMENT_BUFFER + index * 2, value);
+        }
+    }
+
+    pub(crate) fn blast_wall_x_open(&self) -> bool {
+        self.blast_wall_x_open != 0
+    }
+
+    pub(crate) fn blast_wall_y_open(&self) -> bool {
+        self.blast_wall_y_open != 0
+    }
+
+    pub(crate) fn crush_wall_progress(&self) -> u16 {
+        self.crush_wall_progress
+    }
+
+    pub(crate) fn moving_wall_dot_pointer(&self) -> u8 {
+        self.moving_wall_dot_pointer
+    }
+
+    pub(crate) fn moving_wall_dot_index(&self) -> usize {
+        usize::from(self.moving_wall_dot_pointer >> 1) & 7
+    }
+
+    pub(crate) fn moving_wall_write_point(&self) -> u16 {
+        self.moving_wall_write_point
+    }
+
+    pub(crate) fn fixed_color_plusminus(&self) -> u8 {
+        self.fixed_color_plusminus
+    }
+
+    pub(crate) fn blast_wall_door_index_x2(&self) -> u16 {
+        self.blast_wall_door_index_x2
+    }
+
+    pub(crate) fn trap_trigger_latch(&self) -> u8 {
+        self.trap_trigger_latch
+    }
+
+    pub(crate) fn has_bomb_trap_activation(&self) -> bool {
+        self.bomb_trap_activation != 0
+    }
+
+    pub(crate) fn blast_wall_message_state(&self) -> u8 {
+        self.blast_wall_message_state
+    }
+
+    fn fill_moving_wall_replacement_buffer(&mut self, value: u16) {
+        self.moving_wall_replacement_buffer.fill(value);
+    }
+
+    fn set_moving_wall_write_point(&mut self, value: u16) {
+        self.moving_wall_write_point = value;
+    }
+
+    fn set_moving_wall_dot_pointer(&mut self, value: u8) {
+        self.moving_wall_dot_pointer = value;
+    }
+
+    fn set_fixed_color_plusminus(&mut self, value: u8) {
+        self.fixed_color_plusminus = value;
+    }
+
+    fn toggle_moving_wall_torch_blink_phase(&mut self) {
+        self.moving_wall_torch_blink_phase ^= 1;
+    }
+
+    fn request_moving_wall_torch_update(&mut self) {
+        self.moving_wall_torch_update_flag = 0x80;
+    }
+
+    fn clear_moving_wall_torch_blink_phase(&mut self) {
+        self.moving_wall_torch_blink_phase = 0;
+    }
+
+    fn set_blast_wall_door_index_x2(&mut self, value: u16) {
+        self.blast_wall_door_index_x2 = value;
+    }
+
+    fn set_blast_wall_door_index(&mut self, door: usize) {
+        self.set_blast_wall_door_index_x2((door * 2) as u16);
+    }
+
+    fn clear_blast_wall_door_index(&mut self) {
+        self.set_blast_wall_door_index_x2(0);
+    }
+
+    fn mark_blast_wall_x_open(&mut self) {
+        self.blast_wall_x_open = 1;
+    }
+
+    fn mark_blast_wall_y_open(&mut self) {
+        self.blast_wall_y_open = 1;
+    }
+
+    fn set_crush_wall_progress(&mut self, value: u16) {
+        self.crush_wall_progress = value;
+    }
+
+    fn set_crush_wall_progress_low(&mut self, value: u8) {
+        self.crush_wall_progress = (self.crush_wall_progress & 0xff00) | u16::from(value);
+    }
+
+    fn increment_trap_trigger_latch(&mut self) {
+        self.trap_trigger_latch = self.trap_trigger_latch.wrapping_add(1);
+    }
+
+    fn mark_trap_trigger_latched(&mut self) {
+        self.trap_trigger_latch = 1;
+    }
+
+    fn clear_trap_trigger_latch(&mut self) {
+        self.trap_trigger_latch = 0;
+    }
+
+    fn set_blast_wall_message_direction(&mut self, value: u16) {
+        self.blast_wall_message_direction = value;
+    }
+
+    fn set_blast_wall_message_position(&mut self, x: u16, y: u16) {
+        self.blast_wall_message_x = x;
+        self.blast_wall_message_y = y;
+    }
+
+    fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
+        self.bomb_trap_activation = value;
     }
 }
 
@@ -3873,6 +4109,125 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
 
     pub(crate) fn set_replacement_tilemap_quad(&mut self, index: usize, quad: [u16; 4]) {
         self.state.set_replacement_tilemap_quad(index, quad);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomEffectsBridgeMut<'a> {
+    state: &'a mut DungeonRoomEffectsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomEffectsState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomEffectsState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomEffectsState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn fill_moving_wall_replacement_buffer(&mut self, value: u16) {
+        self.state.fill_moving_wall_replacement_buffer(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_moving_wall_write_point(&mut self, value: u16) {
+        self.state.set_moving_wall_write_point(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_moving_wall_dot_pointer(&mut self, value: u8) {
+        self.state.set_moving_wall_dot_pointer(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_fixed_color_plusminus(&mut self, value: u8) {
+        self.state.set_fixed_color_plusminus(value);
+        self.sync();
+    }
+
+    pub(crate) fn toggle_moving_wall_torch_blink_phase(&mut self) {
+        self.state.toggle_moving_wall_torch_blink_phase();
+        self.sync();
+    }
+
+    pub(crate) fn request_moving_wall_torch_update(&mut self) {
+        self.state.request_moving_wall_torch_update();
+        self.sync();
+    }
+
+    pub(crate) fn clear_moving_wall_torch_blink_phase(&mut self) {
+        self.state.clear_moving_wall_torch_blink_phase();
+        self.sync();
+    }
+
+    pub(crate) fn set_blast_wall_door_index(&mut self, door: usize) {
+        self.state.set_blast_wall_door_index(door);
+        self.sync();
+    }
+
+    pub(crate) fn clear_blast_wall_door_index(&mut self) {
+        self.state.clear_blast_wall_door_index();
+        self.sync();
+    }
+
+    pub(crate) fn mark_blast_wall_x_open(&mut self) {
+        self.state.mark_blast_wall_x_open();
+        self.sync();
+    }
+
+    pub(crate) fn mark_blast_wall_y_open(&mut self) {
+        self.state.mark_blast_wall_y_open();
+        self.sync();
+    }
+
+    pub(crate) fn set_crush_wall_progress(&mut self, value: u16) {
+        self.state.set_crush_wall_progress(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_crush_wall_progress_low(&mut self, value: u8) {
+        self.state.set_crush_wall_progress_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_trap_trigger_latch(&mut self) {
+        self.state.increment_trap_trigger_latch();
+        self.sync();
+    }
+
+    pub(crate) fn mark_trap_trigger_latched(&mut self) {
+        self.state.mark_trap_trigger_latched();
+        self.sync();
+    }
+
+    pub(crate) fn clear_trap_trigger_latch(&mut self) {
+        self.state.clear_trap_trigger_latch();
+        self.sync();
+    }
+
+    pub(crate) fn set_blast_wall_message_direction(&mut self, value: u16) {
+        self.state.set_blast_wall_message_direction(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_blast_wall_message_position(&mut self, x: u16, y: u16) {
+        self.state.set_blast_wall_message_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
+        self.state.set_activate_bomb_trap_overlord(value);
         self.sync();
     }
 }

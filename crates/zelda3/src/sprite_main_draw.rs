@@ -9256,7 +9256,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 if j == 13 {
                     if self.sprite_slot_view(k).sprite_type() == 6 {
-                        self.dungeon_state_view_mut()
+                        self.dungeon_room_effects_mut()
                             .set_activate_bomb_trap_overlord(1);
                         self.system_signals_view_mut().set_sound_effect_1(0x3c);
                     } else {
