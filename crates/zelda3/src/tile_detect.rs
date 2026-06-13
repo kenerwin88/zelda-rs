@@ -12,7 +12,7 @@ const TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
-        let world = self.world_state_view();
+        let world = self.world_scroll();
         let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
             & world.overworld_offset_mask_y())
             << 3)
@@ -27,7 +27,7 @@ impl ZeldaState {
         if env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame()
         {
-            let world = self.world_state_view();
+            let world = self.world_scroll();
             eprintln!(
                 "tile-probe frame={} x=0x{:04x} y=0x{:04x} pos=0x{:04x} map16=0x{:04x} map8=0x{:04x} attr=0x{:02x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x}",
                 self.frame_state().frame_counter,
@@ -684,13 +684,13 @@ impl ZeldaState {
                 self.tile_detect_position_view_mut().clear_door_direction_flags();
             }
             0x90..=0x9f | 0xa8..=0xaf => {
-                self.world_state_view_mut().set_room_transitioning_flags(if tile < 0x98 { 1 } else { 3 });
+                self.world_transient_mut().set_room_transitioning_flags(if tile < 0x98 { 1 } else { 3 });
                 let r14 = self.tile_detect_position_view().collision_bits() | (bits << 4) | (bits << 8);
                 self.tile_detect_position_view_mut().set_collision_bits(r14);
                 self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xa0..=0xa5 => {
-                self.world_state_view_mut().set_room_transitioning_flags(2);
+                self.world_transient_mut().set_room_transitioning_flags(2);
                 let r14 = self.tile_detect_position_view().collision_bits()
                     | if tile == 0xa2 || tile == 0xa3 {
                         (bits << 4) | (bits << 8)

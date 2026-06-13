@@ -81,7 +81,7 @@ impl ZeldaState {
     pub(super) fn get_random_number(&mut self) -> u8 {
         let before = self.world_region().rng_seed();
         let mut t = self
-            .world_state_view()
+            .world_region()
             .rng_seed()
             .wrapping_add(self.frame_state().frame_counter);
         t = if t & 1 != 0 { t >> 1 } else { (t >> 1) ^ 0xb8 };
@@ -522,9 +522,9 @@ impl ZeldaState {
             return;
         }
 
-        self.world_state_view_mut()
+        self.world_camera_boundaries_mut()
             .set_camera_y_coord_scroll_low(0x017f);
-        self.world_state_view_mut()
+        self.world_camera_boundaries_mut()
             .set_camera_y_coord_scroll_hi(0x0181);
         self.dungeon_state_view_mut().set_quadrants_visited(2);
         self.dungeon_state_view_mut().set_current_door_index(2);
@@ -1084,7 +1084,7 @@ impl ZeldaState {
 
     pub(super) fn main_show_text_message(&mut self) {
         if self.frame_state().main_module != 14 {
-            self.world_state_view_mut()
+            self.world_transient_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_view_mut().clear_module();
             self.set_submodule(2);

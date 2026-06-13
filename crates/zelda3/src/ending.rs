@@ -579,10 +579,7 @@ impl ZeldaState {
 
     pub(super) fn credits_operate_scrolling_and_tile_map(&mut self) {
         self.credits_handle_camera_scroll_control();
-        if self
-            .world_state_view()
-            .has_screen_transition_direction_bits()
-        {
+        if self.has_screen_transition_direction_bits() {
             self.OverworldHandleMapScroll();
         }
     }
@@ -611,7 +608,7 @@ impl ZeldaState {
         self.enable_force_blank();
         self.erase_tile_maps_normal();
         let i = (self.frame_state().submodule >> 1) as usize;
-        self.world_state_view_mut()
+        self.world_region_mut()
             .set_which_entrance(ENDING_SCENE_ENTRANCES[i]);
         self.Dungeon_LoadEntrance();
         self.dungeon_state_view_mut().clear_lit_torches();
@@ -1582,7 +1579,7 @@ impl ZeldaState {
                 const CREDITS_CASE2_SPRITE_GFX: [u8; 5] = [3, 3, 3, 3, 3];
                 const CASE2_DELAY: [u8; 2] = [0x30, 0x10];
                 let bird_frame_idx = ((self.frame_state().frame_counter >> 2) & 1) as usize;
-                self.world_state_view_mut()
+                self.world_transient_mut()
                     .set_flag_travel_bird(CREDITS_CASE2_BIRD_FLAG_FRAMES[bird_frame_idx]);
                 let mut k = 6usize;
                 let j = ((self.sprite_slot_view(k).x_velocity() >> 7) & 1) as usize;
@@ -2327,20 +2324,18 @@ impl ZeldaState {
             let which_axis = if y_vel < 0 { 0 } else { 1 };
             let other_axis = if y_vel < 0 { 1 } else { 0 };
             let mut value = self
-                .world_state_view()
+                .world_camera_boundaries()
                 .overworld_scroll_counter_for_axis(which_axis)
                 .wrapping_add(y_vel.unsigned_abs() as u16);
             if (value as i16).wrapping_sub(0x10) >= 0 {
                 value = value.wrapping_sub(0x10);
-                let bits = self
-                    .world_state_view()
-                    .screen_transition_direction_bits_word()
-                    | if y_vel < 0 { 8 } else { 4 };
+                let bits =
+                    self.screen_transition_direction_bits_word() | if y_vel < 0 { 8 } else { 4 };
                 self.set_screen_transition_direction_bits_word(bits);
             }
-            self.world_state_view_mut()
+            self.world_camera_boundaries_mut()
                 .set_overworld_scroll_counter_for_axis(which_axis, value);
-            self.world_state_view_mut()
+            self.world_camera_boundaries_mut()
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = y_vel as i16 as u16;
             self.set_overworld_vertical_scroll_delta(r4);
@@ -2365,20 +2360,18 @@ impl ZeldaState {
             let which_axis = if x_vel < 0 { 2 } else { 3 };
             let other_axis = if x_vel < 0 { 3 } else { 2 };
             let mut value = self
-                .world_state_view()
+                .world_camera_boundaries()
                 .overworld_scroll_counter_for_axis(which_axis)
                 .wrapping_add(x_vel.unsigned_abs() as u16);
             if (value as i16).wrapping_sub(0x10) >= 0 {
                 value = value.wrapping_sub(0x10);
-                let bits = self
-                    .world_state_view()
-                    .screen_transition_direction_bits_word()
-                    | if x_vel < 0 { 2 } else { 1 };
+                let bits =
+                    self.screen_transition_direction_bits_word() | if x_vel < 0 { 2 } else { 1 };
                 self.set_screen_transition_direction_bits_word(bits);
             }
-            self.world_state_view_mut()
+            self.world_camera_boundaries_mut()
                 .set_overworld_scroll_counter_for_axis(which_axis, value);
-            self.world_state_view_mut()
+            self.world_camera_boundaries_mut()
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = x_vel as i16 as u16;
             self.set_overworld_horizontal_scroll_delta(r4);

@@ -2006,7 +2006,7 @@ impl ZeldaState {
             self.sprite_proximity_activation();
         }
         let dark_world = u8::from(self.save_progress_view().dark_world_state() != 0);
-        self.world_state_view_mut()
+        self.world_region_mut()
             .set_dark_world_region_index(dark_world);
         if self.frame_state().submodule == 0 {
             self.player_state_view_mut().set_drag_player_x(0);
@@ -7870,7 +7870,7 @@ impl ZeldaState {
         const PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL: u8 = 13;
         const PLAYER_HANDLER_STATE_GROUND_LOCAL: u8 = 0;
         self.dialogue_message_index_view_mut().set_value(msg);
-        self.world_state_view_mut()
+        self.world_transient_mut()
             .clear_tile_interaction_shared_flag();
         self.messaging_state_view_mut().clear_module();
         let main_module = self.frame_state().main_module;
@@ -7896,7 +7896,7 @@ impl ZeldaState {
     //   main_module_index = 14;
     // }
     pub(super) fn sprite_show_message_minimal_c(&mut self) {
-        self.world_state_view_mut()
+        self.world_transient_mut()
             .clear_tile_interaction_shared_flag();
         self.messaging_state_view_mut().clear_module();
         let main_module = self.frame_state().main_module;

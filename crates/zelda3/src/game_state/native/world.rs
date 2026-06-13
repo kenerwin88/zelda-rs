@@ -9,6 +9,7 @@ const OVERWORLD_CONFIG_SCREENS: usize = 160;
 const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
+const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverworldMap16SourcePage {
@@ -1577,6 +1578,244 @@ impl WorldRegionState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldTransientState {
+    pub(crate) custom_spell_animation_flag: u8,
+    pub(crate) allow_scroll_z: u8,
+    pub(crate) milestone_item_graphics_countdown: u8,
+    pub(crate) big_key_door_message_triggered: u16,
+    pub(crate) savegame_master_sword_flags: u16,
+    pub(crate) super_bomb_indicator_timer: u8,
+    pub(crate) standing_in_doorway_cached: u8,
+    pub(crate) overworld_peg_puzzle_progress: u16,
+    pub(crate) overworld_hole_tilemap_position: u8,
+    pub(crate) overworld_bomb_tile_sweep_x: u16,
+    pub(crate) overworld_bomb_tile_sweep_y_end: u16,
+    pub(crate) hud_current_item_x: u8,
+    pub(crate) door_animation_step: u16,
+    pub(crate) room_transitioning_flags: u8,
+    pub(crate) travel_bird_flag: u8,
+    pub(crate) tile_interaction_shared_flag: u8,
+    pub(crate) hud_floor_changed_timer: u8,
+    pub(crate) quadrant_fullsize_x: u8,
+    pub(crate) quadrant_fullsize_y: u8,
+    pub(crate) cached_quadrant_fullsize_x: u8,
+    pub(crate) cached_quadrant_fullsize_y: u8,
+    pub(crate) tilemap_layer_copy: u16,
+    pub(crate) special_exit_tilemap_layer_copy: u16,
+    pub(crate) exit_tilemap_layer_copy: u16,
+    pub(crate) map_backup_main_layer: u8,
+    pub(crate) map_backup_subscreen_layer: u8,
+    pub(crate) move_overlay_counter: u8,
+    pub(crate) overworld_hole_scan_step: u8,
+    pub(crate) dungeon_replacement_tiles: Vec<u16>,
+}
+
+impl Default for WorldTransientState {
+    fn default() -> Self {
+        Self {
+            custom_spell_animation_flag: 0,
+            allow_scroll_z: 0,
+            milestone_item_graphics_countdown: 0,
+            big_key_door_message_triggered: 0,
+            savegame_master_sword_flags: 0,
+            super_bomb_indicator_timer: 0,
+            standing_in_doorway_cached: 0,
+            overworld_peg_puzzle_progress: 0,
+            overworld_hole_tilemap_position: 0,
+            overworld_bomb_tile_sweep_x: 0,
+            overworld_bomb_tile_sweep_y_end: 0,
+            hud_current_item_x: 0,
+            door_animation_step: 0,
+            room_transitioning_flags: 0,
+            travel_bird_flag: 0,
+            tile_interaction_shared_flag: 0,
+            hud_floor_changed_timer: 0,
+            quadrant_fullsize_x: 0,
+            quadrant_fullsize_y: 0,
+            cached_quadrant_fullsize_x: 0,
+            cached_quadrant_fullsize_y: 0,
+            tilemap_layer_copy: 0,
+            special_exit_tilemap_layer_copy: 0,
+            exit_tilemap_layer_copy: 0,
+            map_backup_main_layer: 0,
+            map_backup_subscreen_layer: 0,
+            move_overlay_counter: 0,
+            overworld_hole_scan_step: 0,
+            dungeon_replacement_tiles: vec![0; DUNGEON_REPLACEMENT_TILE_WORDS],
+        }
+    }
+}
+
+impl WorldTransientState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut dungeon_replacement_tiles = vec![0; DUNGEON_REPLACEMENT_TILE_WORDS];
+        for (index, tile) in dungeon_replacement_tiles.iter_mut().enumerate() {
+            *tile = read_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2);
+        }
+        Self {
+            custom_spell_animation_flag: ram_byte(ram, FLAG_CUSTOM_SPELL_ANIM_ACTIVE),
+            allow_scroll_z: ram_byte(ram, ALLOW_SCROLL_Z),
+            milestone_item_graphics_countdown: ram_byte(ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN),
+            big_key_door_message_triggered: read_le_u16(ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED),
+            savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
+            super_bomb_indicator_timer: ram_byte(ram, SUPER_BOMB_INDICATOR_TIMER),
+            standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
+            overworld_peg_puzzle_progress: read_le_u16(ram, OVERWORLD_PEG_PUZZLE_PROGRESS),
+            overworld_hole_tilemap_position: ram_byte(ram, OVERWORLD_HOLE_TILEMAP_POS),
+            overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
+            overworld_bomb_tile_sweep_y_end: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_Y_END),
+            hud_current_item_x: ram_byte(ram, HUD_CUR_ITEM_X),
+            door_animation_step: read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR),
+            room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
+            travel_bird_flag: ram_byte(ram, FLAG_TRAVEL_BIRD),
+            tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
+            hud_floor_changed_timer: ram_byte(ram, HUD_FLOOR_CHANGED_TIMER),
+            quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X),
+            quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_Y),
+            cached_quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED),
+            cached_quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED + 1),
+            tilemap_layer_copy: read_le_u16(ram, TM_COPY),
+            special_exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_SPEXIT),
+            exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_EXIT),
+            map_backup_main_layer: ram_byte(ram, MAPBAK_TM),
+            map_backup_subscreen_layer: ram_byte(ram, MAPBAK_TS),
+            move_overlay_counter: ram_byte(ram, MOVE_OVERLAY_CTR),
+            overworld_hole_scan_step: ram_byte(ram, OVERWORLD_HOLE_SCAN_STEP),
+            dungeon_replacement_tiles,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = self.custom_spell_animation_flag;
+        ram[ALLOW_SCROLL_Z] = self.allow_scroll_z;
+        ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = self.milestone_item_graphics_countdown;
+        write_le_u16(
+            ram,
+            BIG_KEY_DOOR_MESSAGE_TRIGGERED,
+            self.big_key_door_message_triggered,
+        );
+        write_le_u16(
+            ram,
+            SAVEGAME_HAS_MASTER_SWORD_FLAGS,
+            self.savegame_master_sword_flags,
+        );
+        ram[SUPER_BOMB_INDICATOR_TIMER] = self.super_bomb_indicator_timer;
+        ram[IS_STANDING_IN_DOORWAY_CACHED] = self.standing_in_doorway_cached;
+        write_le_u16(
+            ram,
+            OVERWORLD_PEG_PUZZLE_PROGRESS,
+            self.overworld_peg_puzzle_progress,
+        );
+        ram[OVERWORLD_HOLE_TILEMAP_POS] = self.overworld_hole_tilemap_position;
+        write_le_u16(
+            ram,
+            OVERWORLD_BOMB_TILE_SWEEP_X,
+            self.overworld_bomb_tile_sweep_x,
+        );
+        write_le_u16(
+            ram,
+            OVERWORLD_BOMB_TILE_SWEEP_Y_END,
+            self.overworld_bomb_tile_sweep_y_end,
+        );
+        ram[HUD_CUR_ITEM_X] = self.hud_current_item_x;
+        write_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR, self.door_animation_step);
+        ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
+        ram[FLAG_TRAVEL_BIRD] = self.travel_bird_flag;
+        ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
+        ram[HUD_FLOOR_CHANGED_TIMER] = self.hud_floor_changed_timer;
+        ram[QUADRANT_FULLSIZE_X] = self.quadrant_fullsize_x;
+        ram[QUADRANT_FULLSIZE_Y] = self.quadrant_fullsize_y;
+        ram[QUADRANT_FULLSIZE_X_CACHED] = self.cached_quadrant_fullsize_x;
+        ram[QUADRANT_FULLSIZE_X_CACHED + 1] = self.cached_quadrant_fullsize_y;
+        write_le_u16(ram, TM_COPY, self.tilemap_layer_copy);
+        write_le_u16(ram, TM_COPY_SPEXIT, self.special_exit_tilemap_layer_copy);
+        write_le_u16(ram, TM_COPY_EXIT, self.exit_tilemap_layer_copy);
+        ram[MAPBAK_TM] = self.map_backup_main_layer;
+        ram[MAPBAK_TS] = self.map_backup_subscreen_layer;
+        ram[MOVE_OVERLAY_CTR] = self.move_overlay_counter;
+        ram[OVERWORLD_HOLE_SCAN_STEP] = self.overworld_hole_scan_step;
+        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+        }
+    }
+
+    pub(crate) fn flag_custom_spell_anim_active(&self) -> u8 {
+        self.custom_spell_animation_flag
+    }
+
+    pub(crate) fn allow_scroll_z(&self) -> u8 {
+        self.allow_scroll_z
+    }
+
+    pub(crate) fn milestone_item_gfx_swap_countdown(&self) -> u8 {
+        self.milestone_item_graphics_countdown
+    }
+
+    pub(crate) fn big_key_door_message_triggered(&self) -> u16 {
+        self.big_key_door_message_triggered
+    }
+
+    pub(crate) fn savegame_has_master_sword_flags(&self) -> u16 {
+        self.savegame_master_sword_flags
+    }
+
+    pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
+        self.super_bomb_indicator_timer
+    }
+
+    pub(crate) fn is_standing_in_doorway_cached(&self) -> u8 {
+        self.standing_in_doorway_cached
+    }
+
+    pub(crate) fn overworld_peg_puzzle_progress(&self) -> u16 {
+        self.overworld_peg_puzzle_progress
+    }
+
+    pub(crate) fn overworld_hole_tilemap_pos(&self) -> u8 {
+        self.overworld_hole_tilemap_position
+    }
+
+    pub(crate) fn hud_cur_item_x(&self) -> u8 {
+        self.hud_current_item_x
+    }
+
+    pub(crate) fn door_animation_step(&self) -> u16 {
+        self.door_animation_step
+    }
+
+    pub(crate) fn quadrant_fullsize_x(&self) -> u8 {
+        self.quadrant_fullsize_x
+    }
+
+    pub(crate) fn quadrant_fullsize_y(&self) -> u8 {
+        self.quadrant_fullsize_y
+    }
+
+    pub(crate) fn horizontal_room_bounds_base_index(&self) -> usize {
+        (self.quadrant_fullsize_x >> 1) as usize
+    }
+
+    pub(crate) fn vertical_room_bounds_base_index(&self) -> usize {
+        (self.quadrant_fullsize_y >> 1) as usize
+    }
+
+    pub(crate) fn dungeon_quadrant_visit_index(
+        &self,
+        player_quadrant_y: u8,
+        player_quadrant_x: u8,
+    ) -> usize {
+        ((self.quadrant_fullsize_y as usize) << 2)
+            + ((self.quadrant_fullsize_x as usize) << 1)
+            + player_quadrant_y as usize
+            + player_quadrant_x as usize
+    }
+
+    pub(crate) fn dung_replacement_tile_state(&self, index: usize) -> u16 {
+        self.dungeon_replacement_tiles[index]
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RoomBoundsState {
     y_bounds: [u16; ROOM_BOUND_COUNT],
@@ -1681,6 +1920,7 @@ pub(crate) struct WorldState {
     pub(crate) camera_boundaries: WorldCameraBoundariesState,
     pub(crate) palette_theme: WorldPaletteThemeState,
     pub(crate) region: WorldRegionState,
+    pub(crate) transient: WorldTransientState,
     pub(crate) overworld: OverworldState,
     pub(crate) room_bounds: RoomBoundsState,
 }
@@ -1693,6 +1933,7 @@ impl WorldState {
             camera_boundaries: WorldCameraBoundariesState::load_from_ram(ram),
             palette_theme: WorldPaletteThemeState::load_from_ram(ram),
             region: WorldRegionState::load_from_ram(ram),
+            transient: WorldTransientState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
             room_bounds: RoomBoundsState::load_from_ram(ram),
         }
@@ -1704,6 +1945,7 @@ impl WorldState {
         self.camera_boundaries.write_to_ram(ram);
         self.palette_theme.write_to_ram(ram);
         self.region.write_to_ram(ram);
+        self.transient.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
         self.room_bounds.write_to_ram(ram);
     }
@@ -2206,6 +2448,11 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn set_overlay_high(&mut self, value: u8) {
+        self.state.overlay_index = (self.state.overlay_index & 0x00ff) | (u16::from(value) << 8);
+        self.sync();
+    }
+
     pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
         self.state.previous_screen_index = value;
         self.sync();
@@ -2238,6 +2485,250 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
 
     pub(crate) fn ow_entrance_value(&self) -> u16 {
         self.state.overworld_entrance_value
+    }
+}
+
+pub(crate) struct NativeWorldTransientBridgeMut<'a> {
+    state: &'a mut WorldTransientState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWorldTransientBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut WorldTransientState, ram: &'a mut [u8]) -> Self {
+        *state = WorldTransientState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, WorldTransientState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
+        self.state.room_transitioning_flags = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
+        self.state.travel_bird_flag = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
+        self.state.tile_interaction_shared_flag = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
+        self.state.door_animation_step =
+            (self.state.door_animation_step & 0xff00) | u16::from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
+        self.state.door_animation_step = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
+        self.state.hud_floor_changed_timer = 0;
+        self.sync();
+    }
+
+    pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
+        self.state.cached_quadrant_fullsize_x = self.state.quadrant_fullsize_x;
+        self.state.cached_quadrant_fullsize_y = self.state.quadrant_fullsize_y;
+        self.sync();
+    }
+
+    pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
+        self.state.quadrant_fullsize_x = self.state.cached_quadrant_fullsize_x;
+        self.state.quadrant_fullsize_y = self.state.cached_quadrant_fullsize_y;
+        self.sync();
+    }
+
+    pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
+        self.state.quadrant_fullsize_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
+        self.state.quadrant_fullsize_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
+        self.state.quadrant_fullsize_x = 2;
+        self.state.quadrant_fullsize_y = 2;
+        self.sync();
+    }
+
+    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
+        self.state.quadrant_fullsize_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
+        self.state.quadrant_fullsize_y = value;
+        self.sync();
+    }
+
+    pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        vertical_mask: u8,
+        blast_wall_x_open: bool,
+        blast_wall_y_open: bool,
+    ) {
+        self.state.quadrant_fullsize_x = if blast_wall_x_open || layout_flags & horizontal_mask == 0
+        {
+            2
+        } else {
+            0
+        };
+        self.state.quadrant_fullsize_y = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
+            2
+        } else {
+            0
+        };
+        self.sync();
+    }
+
+    pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        blast_wall_x_open: bool,
+    ) {
+        self.state.quadrant_fullsize_x = if blast_wall_x_open || layout_flags & horizontal_mask == 0
+        {
+            2
+        } else {
+            0
+        };
+        self.sync();
+    }
+
+    pub(crate) fn apply_dungeon_layout_vertical_fullsize(
+        &mut self,
+        layout_flags: u8,
+        vertical_mask: u8,
+        blast_wall_y_open: bool,
+    ) {
+        self.state.quadrant_fullsize_y = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
+            2
+        } else {
+            0
+        };
+        self.sync();
+    }
+
+    pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
+        if reset_xy_flags as u8 != 0 {
+            self.state.quadrant_fullsize_x = reset_xy_flags as u8;
+        }
+        if (reset_xy_flags >> 8) as u8 != 0 {
+            self.state.quadrant_fullsize_y = (reset_xy_flags >> 8) as u8;
+        }
+        self.sync();
+    }
+
+    pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
+        self.state.quadrant_fullsize_x = 2;
+        self.sync();
+    }
+
+    pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
+        self.state.quadrant_fullsize_y = 2;
+        self.sync();
+    }
+
+    pub(crate) fn save_spexit_tm_copy(&mut self) {
+        self.state.special_exit_tilemap_layer_copy = self.state.tilemap_layer_copy;
+        self.sync();
+    }
+
+    pub(crate) fn restore_spexit_layer_masks(&mut self) {
+        self.state.tilemap_layer_copy = self.state.special_exit_tilemap_layer_copy;
+        self.sync();
+    }
+
+    pub(crate) fn save_exit_tm_copy(&mut self) {
+        self.state.exit_tilemap_layer_copy = self.state.tilemap_layer_copy;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_layer_masks(&mut self) {
+        self.state.tilemap_layer_copy = self.state.exit_tilemap_layer_copy;
+        self.sync();
+    }
+
+    pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
+        self.state.map_backup_subscreen_layer = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
+        self.state.map_backup_main_layer = value;
+        self.sync();
+    }
+
+    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
+        self.state.move_overlay_counter = self.state.move_overlay_counter.wrapping_add(1) & 3;
+        let value = self.state.move_overlay_counter;
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
+        self.state.overworld_hole_scan_step = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
+        self.state.overworld_peg_puzzle_progress = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
+        self.state.overworld_hole_tilemap_position = value as u8;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
+        self.state.overworld_bomb_tile_sweep_x = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
+        self.state.overworld_bomb_tile_sweep_y_end = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
+        self.state.big_key_door_message_triggered = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
+        self.state.savegame_master_sword_flags = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
+        self.state.dungeon_replacement_tiles[index] = value;
+        self.sync();
+    }
+
+    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
+        self.state.milestone_item_graphics_countdown =
+            self.state.milestone_item_graphics_countdown.wrapping_sub(1);
+        self.sync();
     }
 }
 

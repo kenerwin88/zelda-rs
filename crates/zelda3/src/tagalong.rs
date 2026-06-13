@@ -1789,7 +1789,7 @@ impl ZeldaState {
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
         if self.frame_state().main_module != 14 {
-            self.world_state_view_mut()
+            self.world_transient_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_view_mut().clear_module();
             self.set_submodule(2);

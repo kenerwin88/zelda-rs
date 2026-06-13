@@ -2486,7 +2486,7 @@ impl ZeldaState {
         if self.player_state_view().tile_coll_flag() & 2 == 0 {
             self.player_state_view_mut().clear_direction_lock_bits(2);
             self.player_state_view_mut().clear_doorway_state();
-            self.world_state_view_mut().set_room_transitioning_flags(0);
+            self.world_transient_mut().set_room_transitioning_flags(0);
             self.player_state_view_mut().set_force_move_any_direction(0);
         }
 
@@ -3005,7 +3005,7 @@ impl ZeldaState {
         if self.player_state_view().tile_coll_flag() & 2 == 0 {
             self.player_state_view_mut().clear_doorway_state();
             self.player_state_view_mut().clear_direction_lock_bits(2);
-            self.world_state_view_mut().set_room_transitioning_flags(0);
+            self.world_transient_mut().set_room_transitioning_flags(0);
             self.player_state_view_mut().set_force_move_any_direction(0);
         }
 
@@ -5203,7 +5203,7 @@ impl ZeldaState {
 
         if self.player_state_view().action_handler_timer() == 1 {
             self.tile_detect_main_handler(2);
-            if self.world_state_view().overworld_hole_tilemap_pos() != 0 {
+            if self.world_transient().overworld_hole_tilemap_pos() != 0 {
                 self.ancilla_sfx3_near(27);
                 self.ancilla_add_dug_up_flute(54, 0);
             }

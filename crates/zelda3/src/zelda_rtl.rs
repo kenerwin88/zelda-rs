@@ -87,11 +87,11 @@ use crate::game_state::{
     NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16LoadState,
-    OverworldMap16SourcePage, OverworldSpriteLoadedState, OverworldSpritePresenceState,
-    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
-    PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
+    NativeWorldTransientBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
     PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
     SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
@@ -104,7 +104,7 @@ use crate::game_state::{
     TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
     WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
     WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldRegionState,
-    WorldScrollState, WorldStateView, WorldStateViewMut,
+    WorldScrollState, WorldStateView, WorldStateViewMut, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2051,6 +2051,14 @@ impl ZeldaState {
 
     pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
         NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
+    }
+
+    pub(crate) fn world_transient(&self) -> WorldTransientState {
+        WorldTransientState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
+        NativeWorldTransientBridgeMut::new(&mut self.game_state.world.transient, &mut self.ram)
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {
@@ -5213,12 +5221,12 @@ impl ZeldaState {
             if !(self.dungeon_state_view().dungeon_dark_with_lantern()
                 && self.display_state().sub_screen_layers != 0)
             {
-                let qm = (self.world_state_view().quadrant_fullsize_x() >> 1) as usize;
+                let qm = (self.world_transient().quadrant_fullsize_x() >> 1) as usize;
                 let bg2x = self.world_scroll().bg2_x();
                 extra_left = bg2x.saturating_sub(self.room_bounds_view().x_bound(qm));
                 extra_right = self.room_bounds_view().x_bound(qm + 2).saturating_sub(bg2x);
             }
-            let qy = (self.world_state_view().quadrant_fullsize_y() >> 1) as usize;
+            let qy = (self.world_transient().quadrant_fullsize_y() >> 1) as usize;
             let bg2y = self.world_scroll().bg2_y();
             extra_bottom = self.room_bounds_view().y_bound(qy + 2).saturating_sub(bg2y);
         } else if module == 20 || module == 0 || module == 1 {
@@ -6610,9 +6618,9 @@ impl ZeldaState {
         let x_end = self.room_bounds_view().x_bound(2);
         self.dungeon_state_view_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        self.world_state_view_mut().cache_scroll_targets();
+        self.world_camera_boundaries_mut().cache_scroll_targets();
         self.ppu_scroll_copy_view_mut().cache_camera_scroll();
-        self.world_state_view_mut().cache_quadrant_fullsize_state();
+        self.world_transient_mut().cache_quadrant_fullsize_state();
         self.player_state_view_mut().cache_current_quadrants();
         self.player_state_view_mut().cache_facing();
         self.player_state_view_mut().cache_lower_level_states();
@@ -9497,9 +9505,7 @@ mod tests {
         let mut mirror = ZeldaState::new();
         mirror.player_state_view_mut().set_filtered_joypad_h(0x40);
         mirror.enhanced_features_view_mut().set_bits(8);
-        mirror
-            .world_state_view_mut()
-            .set_overworld_screen_word(0x40);
+        mirror.set_overworld_screen_word(0x40);
         set_link_test_word(&mut mirror, LINK_Y_COORD, 0x1234);
         set_link_test_word(&mut mirror, LINK_X_COORD, 0x5678);
         mirror.player_state_view_mut().set_actual_x_velocity(7);
@@ -9519,9 +9525,7 @@ mod tests {
 
         let mut crossing = ZeldaState::new();
         crossing.ram[LAST_LIGHT_VS_DARK_WORLD] = 0;
-        crossing
-            .world_state_view_mut()
-            .set_overworld_screen_word(0x40);
+        crossing.set_overworld_screen_word(0x40);
         let mut data = vec![0; 0x100];
         data[0x80] = 1;
         let mut ranges = vec![(0, 0); 164];

@@ -5545,9 +5545,7 @@ mod tests {
         assert_eq!(maiden_finished.sprite_slot_view(k).state(), 0);
 
         let mut old_man_room = fresh_state();
-        old_man_room
-            .world_state_view_mut()
-            .set_dungeon_room_index(0xe4);
+        old_man_room.set_dungeon_room_index(0xe4);
         old_man_room.sprite_prep_old_man_bounce(k);
         assert_eq!(old_man_room.sprite_slot_view(k).ignore_projectile(), 1);
         assert_eq!(old_man_room.sprite_slot_view(k).subtype2(), 2);
@@ -5599,18 +5597,14 @@ mod tests {
 
         let mut not_rescued = fresh_state();
         not_rescued.sprite_slot_view_mut(k).set_state(9);
-        not_rescued
-            .world_state_view_mut()
-            .set_dungeon_room_index(0x12);
+        not_rescued.set_dungeon_room_index(0x12);
         not_rescued.ram[SRAM_PROGRESS_FLAGS] = 0;
         not_rescued.sprite_prep_zelda_bounce(k);
         assert_eq!(not_rescued.sprite_slot_view(k).state(), 0);
 
         let mut follower_present = fresh_state();
         follower_present.sprite_slot_view_mut(k).set_state(9);
-        follower_present
-            .world_state_view_mut()
-            .set_dungeon_room_index(0x20);
+        follower_present.set_dungeon_room_index(0x20);
         follower_present.follower_state_view_mut().set_indicator(1);
         follower_present.sprite_prep_zelda_bounce(k);
         assert_eq!(follower_present.sprite_slot_view(k).subtype2(), 0);
@@ -6902,9 +6896,7 @@ mod tests {
         assert_eq!(bombos.sprite_slot_view(k).ai_state(), 3);
 
         let mut ether_only_on_bombos_screen = fresh_state();
-        ether_only_on_bombos_screen
-            .world_state_view_mut()
-            .set_overworld_screen(2);
+        ether_only_on_bombos_screen.set_overworld_screen(2);
         ether_only_on_bombos_screen
             .inventory_items_mut()
             .set_ether(1);

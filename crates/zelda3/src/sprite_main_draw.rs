@@ -16375,8 +16375,7 @@ impl ZeldaState {
         self.hud_refresh_icon();
         self.sprite_show_message_unconditional(0x004b);
         self.sprite_sfx_queue_sfx1_with_pan(k, 0x0d);
-        self.world_state_view_mut()
-            .clear_flag_overworld_area_changed();
+        self.world_region_mut().clear_flag_overworld_area_changed();
     }
 
     // -----------------------------------------------------------------------
@@ -17105,8 +17104,7 @@ impl ZeldaState {
                         self.maze_game_timer_view_mut().clear_elapsed();
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_a(value);
-                        self.world_state_view_mut()
-                            .clear_flag_overworld_area_changed();
+                        self.world_region_mut().clear_flag_overworld_area_changed();
                     }
                 } else {
                     self.sprite_show_message_on_contact(k, 0x00d0);

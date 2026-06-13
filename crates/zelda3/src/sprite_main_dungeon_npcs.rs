@@ -2530,8 +2530,7 @@ impl ZeldaState {
                     let e_idx = self.sprite_slot_view(k).e() as usize;
                     self.sprite_slot_view_mut(e_idx).set_ai_state(5);
                     self.sprite_slot_view_mut(k).set_ai_state(5);
-                    self.world_state_view_mut()
-                        .clear_flag_overworld_area_changed();
+                    self.world_region_mut().clear_flag_overworld_area_changed();
                     self.inventory_items_mut().set_sword_type(255);
                     self.save_progress_view_mut().or_progress_indicator_3(128);
                 }

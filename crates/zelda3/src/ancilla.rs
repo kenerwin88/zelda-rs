@@ -6709,7 +6709,7 @@ impl ZeldaState {
     }
 
     fn draw_duck(&mut self, k: usize, j: u8) {
-        self.world_state_view_mut()
+        self.world_transient_mut()
             .set_flag_travel_bird(TRAVEL_BIRD_DMA_TILE_OFFSETS[j as usize]);
 
         let (x, y) = self.ancilla_prep_oam_coord(k);
@@ -7486,8 +7486,8 @@ impl ZeldaState {
                 return;
             }
 
-            if self.world_state_view().milestone_item_gfx_swap_countdown() != 0 {
-                if self.world_state_view().milestone_item_gfx_swap_countdown() == 1 {
+            if self.world_transient().milestone_item_gfx_swap_countdown() != 0 {
+                if self.world_transient().milestone_item_gfx_swap_countdown() == 1 {
                     if self.ancilla_slot_view(k).item_to_link() == 0x20 {
                         self.system_signals_view_mut()
                             .set_ambient_sound_effect(0x0f);
@@ -7496,7 +7496,7 @@ impl ZeldaState {
                         self.DecodeAnimatedSpriteTile_variable(0x23);
                     }
                 }
-                self.world_state_view_mut()
+                self.world_transient_mut()
                     .decrement_milestone_item_gfx_swap_countdown();
                 return;
             }

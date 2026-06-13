@@ -2897,12 +2897,11 @@ impl ZeldaState {
             } else {
                 self.player_state_view().animation_step()
             };
-            self.world_state_view_mut()
-                .set_overlay_high(yv.wrapping_mul(4));
+            self.world_region_mut().set_overlay_high(yv.wrapping_mul(4));
             yv.wrapping_add(8) as usize
         } else {
             let timer = self.player_state_view().secondary_water_grass_timer();
-            self.world_state_view_mut()
+            self.world_region_mut()
                 .set_overlay_high(timer.wrapping_mul(4));
             5 + timer as usize
         };
