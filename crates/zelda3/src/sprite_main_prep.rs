@@ -2002,7 +2002,7 @@ impl ZeldaState {
             return;
         }
         let j = j as usize;
-        let tagalong = self.tagalong_slot_view(k);
+        let tagalong = self.tagalong_slot(k);
         let direction = tagalong.direction();
         let y = tagalong.y();
         let x = tagalong.x();
@@ -2879,12 +2879,12 @@ impl ZeldaState {
         self.sprite_set_x(
             j,
             info.r0_x
-                .wrapping_add_signed(i16::from(self.draw_scratch_position_view().x_low() as i8)),
+                .wrapping_add_signed(i16::from(self.draw_scratch_position().x_low() as i8)),
         );
         self.sprite_set_y(
             j,
             info.r2_y
-                .wrapping_add_signed(i16::from(self.draw_scratch_position_view().y_low() as i8)),
+                .wrapping_add_signed(i16::from(self.draw_scratch_position().y_low() as i8)),
         );
         self.sprite_apply_speed_towards_link(j, 0x20);
         self.sprite_slot_view_mut(j).set_flags2(0x3f);

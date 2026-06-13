@@ -102,17 +102,18 @@ pub(crate) use poly::{
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
 };
 pub(crate) use sprites::{
-    ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
-    FollowerRuntimeState, GarnishRuntimeState, MazeGameTimerView, NativeChainChompHistoryBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
+    ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
+    EtherOrbitState, FollowerRuntimeState, GarnishRuntimeState, MazeGameTimerState,
+    NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
+    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
+    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteState, SpriteSystemState, SpriteWorkspaceState, TagalongSlotView,
+    OverworldSpritePresenceState, SpriteDrawHitboxWorkState, SpriteState, SpriteSystemState,
+    SpriteWorkspaceState, TagalongSlotRead,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -145,10 +146,7 @@ use effects::QuakeBoltState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]
-use sprites::{
-    DualLayerTileCacheState, EnemyDamageSubclassTableState, FailedSpinSparkleSpawnState,
-    MazeGameTimerState, PrizeDropCycleState, SpriteDrawHitboxWorkState, TagalongTrailState,
-};
+use sprites::{FailedSpinSparkleSpawnState, PrizeDropCycleState, TagalongTrailState};
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, OverworldConfigTableState, OverworldEntranceState,

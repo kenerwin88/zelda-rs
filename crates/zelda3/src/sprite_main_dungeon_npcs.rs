@@ -1284,7 +1284,7 @@ impl ZeldaState {
             return;
         };
         let tag_idx = self.follower_state().data_index() as usize;
-        let layer_bits = self.tagalong_slot_view(tag_idx).direction();
+        let layer_bits = self.tagalong_slot(tag_idx).direction();
         self.sprite_slot_view_mut(k).set_direction(layer_bits);
         self.sprite_slot_view_mut(k).set_head_direction(layer_bits);
         let lx = self.player_state_view().x();

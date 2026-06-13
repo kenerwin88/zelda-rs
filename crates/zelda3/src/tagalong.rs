@@ -951,7 +951,7 @@ impl ZeldaState {
         let k = self.follower_state().data_index() as usize;
         let mut x = self.tagalong_x(k);
         let mut y = self.tagalong_y(k);
-        let z = self.tagalong_slot_view(k).z_signed() as i16 as u16;
+        let z = self.tagalong_slot(k).z_signed() as i16 as u16;
         y = y.wrapping_add(z).wrapping_add(12);
         x = x.wrapping_add(8);
         abs16(0x1568u16.wrapping_sub(y)) < 24 && abs16(0x1980u16.wrapping_sub(x)) < 24
@@ -1067,7 +1067,7 @@ impl ZeldaState {
             && self.follower_state().appearance_none_flag() == 0
             && self.follower_state().hookshot_interlock_is_clear()
             && self
-                .tagalong_slot_view(self.follower_state().data_index() as usize)
+                .tagalong_slot(self.follower_state().data_index() as usize)
                 .z_signed()
                 <= 0
             && self.player_state_view().filtered_joypad_l() & 0x80 != 0
@@ -1196,7 +1196,7 @@ impl ZeldaState {
             self.follower_state_mut().clear_hookshot_interlock();
         }
         let k = self.follower_state().data_index() as usize;
-        if self.tagalong_slot_view(k).is_above_ground() {
+        if self.tagalong_slot(k).is_above_ground() {
             if self.follower_state().tail_write_index() != k as u8 {
                 self.follower_state_mut()
                     .advance_data_index_wrapping_at_20();
@@ -1276,7 +1276,7 @@ impl ZeldaState {
             return;
         } else if self.follower_state().indicator() == 4 {
             let k = self.follower_state().data_index() as usize;
-            if self.tagalong_slot_view(k).is_above_ground()
+            if self.tagalong_slot(k).is_above_ground()
                 && self.follower_state().tail_write_index() != self.follower_state().data_index()
             {
                 self.follower_state_mut()
@@ -1460,7 +1460,7 @@ impl ZeldaState {
         if self.follower_state().appearance_none_flag() != 0 {
             return;
         }
-        let current_follower = self.tagalong_slot_view(self.follower_state().data_index() as usize);
+        let current_follower = self.tagalong_slot(self.follower_state().data_index() as usize);
         let priority = if current_follower.z() != 0 && !self.world_location_state().is_indoors() {
             0x20
         } else if self.frame_state().submodule == 14 {
@@ -1477,7 +1477,7 @@ impl ZeldaState {
         };
         let x = self.tagalong_x(k);
         let y = self.tagalong_y(k);
-        let a = self.tagalong_slot_view(k).layer_bits();
+        let a = self.tagalong_slot(k).layer_bits();
         self.follower_animate_movement_preserved(a, x, y);
     }
 
@@ -1704,7 +1704,7 @@ impl ZeldaState {
         let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6) else {
             return None;
         };
-        let layer = self.tagalong_slot_view(k).direction();
+        let layer = self.tagalong_slot(k).direction();
         let mut monke = self.sprite_slot_view_mut(j);
         monke.set_head_direction(layer);
         monke.set_direction(layer);
@@ -1738,11 +1738,11 @@ impl ZeldaState {
     }
 
     fn tagalong_x(&self, k: usize) -> u16 {
-        self.tagalong_slot_view(k).x()
+        self.tagalong_slot(k).x()
     }
 
     fn tagalong_y(&self, k: usize) -> u16 {
-        self.tagalong_slot_view(k).y()
+        self.tagalong_slot(k).y()
     }
 
     fn set_tagalong_x(&mut self, k: usize, x: u16) {
@@ -1929,7 +1929,7 @@ impl ZeldaState {
 
     fn OldMan_RevertToSprite(&mut self, k: usize) {
         if let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
-            let layer = self.tagalong_slot_view(k).direction();
+            let layer = self.tagalong_slot(k).direction();
             let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_direction(layer);
             old_man.set_head_direction(layer);

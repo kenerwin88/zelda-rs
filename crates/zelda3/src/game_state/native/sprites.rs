@@ -2344,12 +2344,12 @@ fn packed_slot_position(
         | (u16::from(high_bank.get(slot).copied().unwrap_or(0)) << 8)
 }
 
-pub(crate) struct TagalongSlotView<'a> {
+pub(crate) struct TagalongSlotRead<'a> {
     state: &'a TagalongTrailState,
     slot: usize,
 }
 
-impl<'a> TagalongSlotView<'a> {
+impl<'a> TagalongSlotRead<'a> {
     pub(crate) fn new(state: &'a TagalongTrailState, slot: usize) -> Self {
         Self { state, slot }
     }
@@ -2504,20 +2504,6 @@ impl EnemyDamageSubclassTableState {
     }
 }
 
-pub(crate) struct EnemyDamageSubclassTableView<'a> {
-    state: &'a EnemyDamageSubclassTableState,
-}
-
-impl<'a> EnemyDamageSubclassTableView<'a> {
-    pub(crate) fn new(state: &'a EnemyDamageSubclassTableState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn entry(&self, index: usize) -> u8 {
-        self.state.entry(index)
-    }
-}
-
 pub(crate) struct NativeEnemyDamageSubclassTableBridgeMut<'a> {
     state: &'a mut EnemyDamageSubclassTableState,
     ram: &'a mut [u8],
@@ -2608,28 +2594,6 @@ impl SpriteDrawHitboxWorkState {
     }
 }
 
-pub(crate) struct SpriteDrawWorkPositionView<'a> {
-    state: &'a SpriteDrawHitboxWorkState,
-}
-
-impl<'a> SpriteDrawWorkPositionView<'a> {
-    pub(crate) fn new(state: &'a SpriteDrawHitboxWorkState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn x_low(&self) -> u8 {
-        self.state.x_low()
-    }
-
-    pub(crate) fn y_low(&self) -> u8 {
-        self.state.y_low()
-    }
-
-    pub(crate) fn low_position_word(&self) -> u16 {
-        self.state.low_position_word()
-    }
-}
-
 pub(crate) struct NativeSpriteDrawWorkPositionBridgeMut<'a> {
     state: &'a mut SpriteDrawHitboxWorkState,
     ram: &'a mut [u8],
@@ -2680,24 +2644,6 @@ impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
             *self.state,
             SpriteDrawHitboxWorkState::load_from_ram(self.ram)
         );
-    }
-}
-
-pub(crate) struct SpriteHitboxWorkOffsetView<'a> {
-    state: &'a SpriteDrawHitboxWorkState,
-}
-
-impl<'a> SpriteHitboxWorkOffsetView<'a> {
-    pub(crate) fn new(state: &'a SpriteDrawHitboxWorkState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn x_high_offset(&self) -> u8 {
-        self.state.hitbox_x_high_offset()
-    }
-
-    pub(crate) fn y_low_offset(&self) -> u8 {
-        self.state.hitbox_y_low_offset()
     }
 }
 
@@ -2763,20 +2709,6 @@ impl DualLayerTileCacheState {
 
     pub(crate) fn tile_type(&self, slot: usize) -> u8 {
         self.tile_types.get(slot).copied().unwrap_or(0)
-    }
-}
-
-pub(crate) struct DualLayerTileCacheView<'a> {
-    state: &'a DualLayerTileCacheState,
-}
-
-impl<'a> DualLayerTileCacheView<'a> {
-    pub(crate) fn new(state: &'a DualLayerTileCacheState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn tile_type(&self, slot: usize) -> u8 {
-        self.state.tile_type(slot)
     }
 }
 
@@ -2902,28 +2834,6 @@ impl MazeGameTimerState {
 
     pub(crate) fn snapshot_low(&self) -> u16 {
         self.snapshot_low
-    }
-}
-
-pub(crate) struct MazeGameTimerView<'a> {
-    state: &'a MazeGameTimerState,
-}
-
-impl<'a> MazeGameTimerView<'a> {
-    pub(crate) fn new(state: &'a MazeGameTimerState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn elapsed_low(&self) -> u16 {
-        self.state.elapsed_low()
-    }
-
-    pub(crate) fn elapsed_high(&self) -> u16 {
-        self.state.elapsed_high()
-    }
-
-    pub(crate) fn snapshot_low(&self) -> u16 {
-        self.state.snapshot_low()
     }
 }
 

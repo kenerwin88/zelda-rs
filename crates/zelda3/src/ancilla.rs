@@ -2672,8 +2672,8 @@ impl ZeldaState {
         }
         self.follower_state_mut().set_appearance_none_flag(1);
         let j = self.follower_state().data_index() as usize;
-        let x = self.tagalong_slot_view(j).x();
-        let y = self.tagalong_slot_view(j).y();
+        let x = self.tagalong_slot(j).x();
+        let y = self.tagalong_slot(j).y();
         self.ancilla_set_xy(k, x, y.wrapping_add(4));
     }
 
@@ -4006,8 +4006,8 @@ impl ZeldaState {
             explosion.set_item_to_link(1);
         }
         let j = self.follower_state().data_index() as usize;
-        let y = self.tagalong_slot_view(j).y();
-        let x = self.tagalong_slot_view(j).x();
+        let y = self.tagalong_slot(j).y();
+        let x = self.tagalong_slot(j).x();
         self.ancilla_set_xy(k, x.wrapping_add(8), y.wrapping_add(16));
         k as i32
     }
@@ -10712,9 +10712,7 @@ impl ZeldaState {
         let damage_type = self.sprite_battle().damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
         let dmg = ENEMY_DAMAGES[damage_type * 8
-            | self
-                .enemy_damage_subclass_table_view()
-                .entry(enemy_damage_index) as usize];
+            | self.enemy_damage_subclass_table().entry(enemy_damage_index) as usize];
         self.sprite_give_damage_for_ancilla(k, dmg, a);
     }
 

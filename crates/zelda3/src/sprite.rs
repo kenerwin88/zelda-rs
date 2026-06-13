@@ -1147,18 +1147,18 @@ impl ZeldaState {
     //   hb->r6_spr_xsize = hb->r7_spr_ysize = (sprite_type[k] == 0x6a) ? 16 : 3;
     // }
     pub(super) fn sprite_do_hit_boxes_fast(&self, k: usize, hb: &mut SpriteHitBox) {
-        if self.hitbox_scratch_offset_view().x_high_offset() == 0x80 {
+        if self.hitbox_scratch_offset().hitbox_x_high_offset() == 0x80 {
             hb.r10_spr_xhi = 0x80;
             return;
         }
         let x = self
             .sprite_get_x(k)
-            .wrapping_add(self.hitbox_scratch_offset_view().x_high_offset() as i8 as i16 as u16);
+            .wrapping_add(self.hitbox_scratch_offset().hitbox_x_high_offset() as i8 as i16 as u16);
         hb.r4_spr_xlo = x as u8;
         hb.r10_spr_xhi = (x >> 8) as u8;
         let y = self
             .sprite_get_y(k)
-            .wrapping_add(self.hitbox_scratch_offset_view().y_low_offset() as i8 as i16 as u16);
+            .wrapping_add(self.hitbox_scratch_offset().hitbox_y_low_offset() as i8 as i16 as u16);
         hb.r5_spr_ylo = y as u8;
         hb.r11_spr_yhi = (y >> 8) as u8;
         let size = if self.sprite_slot_view(k).sprite_type() == 0x6a {
@@ -3566,9 +3566,7 @@ impl ZeldaState {
         let damage_type = self.sprite_battle().damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
         let dmg = ENEMY_CONTACT_DAMAGE_BY_TYPE[damage_type * 8
-            | self
-                .enemy_damage_subclass_table_view()
-                .entry(enemy_damage_index) as usize];
+            | self.enemy_damage_subclass_table().entry(enemy_damage_index) as usize];
         self.sprite_give_damage(k, dmg, a);
     }
 
@@ -4083,7 +4081,7 @@ impl ZeldaState {
         };
         let mut oam = self.oam_state().current_pointer_usize();
         let r12 = (self.sprite_slot_view(k).flags3() & 0x20) >> 3;
-        let scratch_position = self.draw_scratch_position_view();
+        let scratch_position = self.draw_scratch_position();
         let dungmap_x = scratch_position.x_low();
         let dungmap_y = scratch_position.y_low();
         let mut i = usize::from((self.sprite_slot_view(k).delay_main() & 0x1c) ^ 0x1c) + 3;
@@ -4199,7 +4197,7 @@ impl ZeldaState {
         };
         let mut oam = self.oam_state().current_pointer_usize();
         let mut j = usize::from(((self.sprite_slot_view(k).delay_main() >> 1) & !3) + 3).min(15);
-        let scratch_position = self.draw_scratch_position_view();
+        let scratch_position = self.draw_scratch_position();
         let base_x = scratch_position.x_low();
         let base_y = scratch_position.y_low();
         for _ in 0..4 {
@@ -7653,7 +7651,7 @@ impl ZeldaState {
                 }
             }
             0x0c => {
-                if self.dual_layer_tile_cache_view().tile_type(k) == 0x1c {
+                if self.dual_layer_tile_cache().tile_type(k) == 0x1c {
                     self.sprite_fall_adjust_position(k);
                     self.sprite_slot_view_mut(k).or_wall_collision(0x20);
                 }
@@ -9017,10 +9015,7 @@ mod tests {
         assert_eq!(ret.y, 0x2d);
         assert_eq!(ret.r4, 0);
         assert_eq!(ret.flags, 0x09);
-        assert_eq!(
-            visible.draw_scratch_position_view().low_position_word(),
-            0x2d20
-        );
+        assert_eq!(visible.draw_scratch_position().low_position_word(), 0x2d20);
         assert_eq!(visible.sprite_slot_view(k).pause(), 0);
 
         let mut out = fresh_state();

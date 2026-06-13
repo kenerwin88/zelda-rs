@@ -16388,7 +16388,7 @@ impl ZeldaState {
         self.oam_allocate_defer_to_player(k);
         let oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        let scratch = self.draw_scratch_position_view();
+        let scratch = self.draw_scratch_position();
         let x = scratch.x_low();
         let y = scratch.y_low();
 
@@ -17122,7 +17122,7 @@ impl ZeldaState {
         }
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                let elapsed = self.maze_game_timer_view().elapsed_low();
+                let elapsed = self.maze_game_timer().elapsed_low();
                 self.maze_game_timer_mut().capture_snapshot();
                 let mut t = elapsed % 6000;
                 let a = t / 600;
@@ -17150,7 +17150,7 @@ impl ZeldaState {
                     self.sprite_show_message_unconditional(0x00cf);
                     let value = 4;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                } else if self.maze_game_timer_view().snapshot_low() < 16 {
+                } else if self.maze_game_timer().snapshot_low() < 16 {
                     self.sprite_show_message_unconditional(0x00cd);
                     let dir = self.player_state_view().handler_state();
                     let value = dir;
@@ -26600,7 +26600,7 @@ impl ZeldaState {
             .set_current_extended_pointer(ext.wrapping_add(1));
         let oam = self.oam_state().current_pointer_usize();
         let base = usize::from(self.sprite_slot_view(k).direction()) * 5;
-        let scratch = self.draw_scratch_position_view();
+        let scratch = self.draw_scratch_position();
         let base_x = scratch.x_low();
         let base_y = scratch.y_low();
         let xv = base_x.wrapping_sub(r1);
@@ -27107,7 +27107,7 @@ mod tests {
         s.sprite_draw_beamos_eyeball(k, &info);
         assert_eq!(s.oam_state().current_pointer(), 0x800);
         assert_eq!(s.oam_state().current_extended_pointer(), 0xa20);
-        let scratch = s.draw_scratch_position_view();
+        let scratch = s.draw_scratch_position();
         assert_eq!(scratch.x_low(), 5);
         assert_eq!(scratch.y_low(), 0xfd);
     }

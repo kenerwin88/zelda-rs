@@ -34,19 +34,19 @@ use crate::game_state::{
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisState, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
+    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
     DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
     DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
     DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
     DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
     DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
     DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
     HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
     IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
     MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead,
     NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
@@ -109,15 +109,14 @@ use crate::game_state::{
     PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
     SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
     SkullWoodsFireSlotState, SkullWoodsFireState, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionState, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemState,
-    SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView,
-    SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState, TagalongSlotView,
-    TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
-    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldRegionState,
-    WorldScrollState, WorldTransientState,
+    SpecialExitPositionState, SpotlightHdmaState, SpriteBattleState, SpriteDrawHitboxWorkState,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState,
+    SystemSignalsState, TagalongSlotRead, TileDetectionState, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
+    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
+    WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4138,8 +4137,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn draw_scratch_position_view(&self) -> SpriteDrawWorkPositionView<'_> {
-        SpriteDrawWorkPositionView::new(&self.game_state.sprites.draw_hitbox_work)
+    pub(crate) fn draw_scratch_position(&self) -> &SpriteDrawHitboxWorkState {
+        &self.game_state.sprites.draw_hitbox_work
     }
 
     pub(crate) fn draw_scratch_position_mut(
@@ -4151,8 +4150,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn hitbox_scratch_offset_view(&self) -> SpriteHitboxWorkOffsetView<'_> {
-        SpriteHitboxWorkOffsetView::new(&self.game_state.sprites.draw_hitbox_work)
+    pub(crate) fn hitbox_scratch_offset(&self) -> &SpriteDrawHitboxWorkState {
+        &self.game_state.sprites.draw_hitbox_work
     }
 
     pub(crate) fn hitbox_scratch_offset_mut(
@@ -4257,8 +4256,8 @@ impl ZeldaState {
         CachedSpriteSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn tagalong_slot_view(&self, slot: usize) -> TagalongSlotView<'_> {
-        TagalongSlotView::new(&self.game_state.sprites.tagalong_trail, slot)
+    pub(crate) fn tagalong_slot(&self, slot: usize) -> TagalongSlotRead<'_> {
+        TagalongSlotRead::new(&self.game_state.sprites.tagalong_trail, slot)
     }
 
     pub(crate) fn tagalong_slot_mut(&mut self, slot: usize) -> NativeTagalongSlotBridgeMut<'_> {
@@ -4300,8 +4299,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn maze_game_timer_view(&self) -> MazeGameTimerView<'_> {
-        MazeGameTimerView::new(&self.game_state.sprites.maze_game_timer)
+    pub(crate) fn maze_game_timer(&self) -> &MazeGameTimerState {
+        &self.game_state.sprites.maze_game_timer
     }
 
     pub(crate) fn maze_game_timer_mut(&mut self) -> NativeMazeGameTimerBridgeMut<'_> {
@@ -4311,8 +4310,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn enemy_damage_subclass_table_view(&self) -> EnemyDamageSubclassTableView<'_> {
-        EnemyDamageSubclassTableView::new(&self.game_state.sprites.enemy_damage_subclasses)
+    pub(crate) fn enemy_damage_subclass_table(&self) -> &EnemyDamageSubclassTableState {
+        &self.game_state.sprites.enemy_damage_subclasses
     }
 
     pub(crate) fn enemy_damage_subclass_table_mut(
@@ -4339,8 +4338,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dual_layer_tile_cache_view(&self) -> DualLayerTileCacheView<'_> {
-        DualLayerTileCacheView::new(&self.game_state.sprites.dual_layer_tile_cache)
+    pub(crate) fn dual_layer_tile_cache(&self) -> &DualLayerTileCacheState {
+        &self.game_state.sprites.dual_layer_tile_cache
     }
 
     pub(crate) fn dual_layer_tile_cache_mut(&mut self) -> NativeDualLayerTileCacheBridgeMut<'_> {
