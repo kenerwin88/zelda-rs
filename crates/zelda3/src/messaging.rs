@@ -784,8 +784,8 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut()
             .set_mapbak_bg1_y_offset(darkening_or_lightening_screen);
         let palette = self.palette_buffer_view().aux_visible_slice().to_vec();
-        self.ppu_scroll_copy_view_mut().mapbak_palette_slice_mut()[..256]
-            .copy_from_slice(&palette[..palette.len().min(256)]);
+        self.ppu_scroll_copy_view_mut()
+            .copy_mapbak_palette_from(&palette[..palette.len().min(256)]);
         self.palette_buffer_view_mut()
             .clear_aux_visible_subpalettes();
         self.palette_filter_view_mut().set_countdown_word(0);
@@ -2801,8 +2801,7 @@ impl ZeldaState {
             .set_link_dma_graphics_index_word(0x0250);
         let palette = self.palette_buffer_view().main_full_slice().to_vec();
         self.ppu_scroll_copy_view_mut()
-            .mapbak_palette_slice_mut()
-            .copy_from_slice(&palette);
+            .copy_mapbak_palette_from(&palette);
         let bg1_x_offset = self.world_state_view().bg1_x_offset();
         let bg1_y_offset = self.world_state_view().bg1_y_offset();
         self.ppu_scroll_copy_view_mut()

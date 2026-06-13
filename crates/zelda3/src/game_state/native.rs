@@ -22,9 +22,9 @@ pub(crate) use display::{
     NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
     NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
-    NativePaletteFilterBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, PaletteBufferView, PaletteFilterState, TrinexxPaletteState,
-    WaterHdmaWindowState,
+    NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, PaletteBufferView,
+    PaletteFilterState, PpuScrollCopyState, TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
     DungeonHeaderState, DungeonScratchWordState, DungeonState, NativeDungeonHeaderBridgeMut,
@@ -5215,5 +5215,64 @@ mod tests {
 
         assert_eq!(timer.timer, 0x0040);
         assert_eq!(read_le_u16(&ram, SHARED_MESSAGE_TIMER), 0x0040);
+    }
+
+    #[test]
+    fn ppu_scroll_copy_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG1_H_SCROLL_COPY, 0x1234);
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0100);
+        write_le_u16(&mut ram, BG2_Y_SCROLL, 0x0200);
+        write_le_u16(&mut ram, MAPBAK_CGWSEL, 0xabcd);
+        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4].copy_from_slice(&[1, 2, 3, 4]);
+
+        let mut scroll = PpuScrollCopyState::load_from_ram(&ram);
+        assert_eq!(scroll.bg1_h_copy(), 0x1234);
+        assert_eq!(scroll.bg1_h_copy_low(), 0x34);
+        assert_eq!(scroll.bg2_h_copy2(), 0x0100);
+        assert_eq!(scroll.bg2_v_copy2(), 0x0200);
+        assert_eq!(scroll.mapbak_cgwsel_word(), 0xabcd);
+        assert_eq!(&scroll.mapbak_palette_slice()[..4], &[1, 2, 3, 4]);
+
+        scroll.add_bg2_h_copy2(0x10);
+        scroll.add_bg2_copy2_for_axis_signed(true, -1);
+        scroll.set_mapbak_cgwsel(0x55);
+        scroll.copy_mapbak_palette_from(&[9, 8, 7]);
+        scroll.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x0110);
+        assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x01ff);
+        assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0xab55);
+        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[9, 8, 7, 4]);
+    }
+
+    #[test]
+    fn native_ppu_scroll_copy_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0060);
+        write_le_u16(&mut ram, BG2_Y_SCROLL, 0x0070);
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW, 0x1001);
+        write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW, 0x2002);
+        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4].copy_from_slice(&[1, 2, 3, 4]);
+
+        let mut scroll = PpuScrollCopyState::default();
+        {
+            let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
+            bridge.cache_bg2_live_scroll();
+            bridge.cache_camera_scroll();
+            bridge.copy_bg2_live_to_bg1_live();
+            bridge.copy_mapbak_palette_from(&[5, 6, 7]);
+        }
+
+        assert_eq!(scroll.bg1_h_copy2(), 0x0060);
+        assert_eq!(scroll.bg1_v_copy2(), 0x0070);
+        assert_eq!(read_le_u16(&ram, BG1_X_SCROLL), 0x0060);
+        assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x0070);
+        assert_eq!(read_le_u16(&ram, BG2_H_SCROLL_COPY2_CACHED), 0x0060);
+        assert_eq!(read_le_u16(&ram, BG2_V_SCROLL_COPY2_CACHED), 0x0070);
+        assert_eq!(read_le_u16(&ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED), 0x1001);
+        assert_eq!(read_le_u16(&ram, CAMERA_X_COORD_SCROLL_LOW_CACHED), 0x2002);
+        assert_eq!(&scroll.mapbak_palette_slice()[..4], &[5, 6, 7, 4]);
+        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[5, 6, 7, 4]);
     }
 }

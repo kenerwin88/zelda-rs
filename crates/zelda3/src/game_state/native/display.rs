@@ -1064,6 +1064,834 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PpuScrollCopyState {
+    bg1_h_copy: u16,
+    bg1_v_copy: u16,
+    bg2_h_copy: u16,
+    bg2_v_copy: u16,
+    bg1_h_copy2: u16,
+    bg1_v_copy2: u16,
+    bg2_h_copy2: u16,
+    bg2_v_copy2: u16,
+    bg3_h_copy2: u16,
+    bg3_v_copy2: u16,
+    bg2_h_copy2_cached: u16,
+    bg2_v_copy2_cached: u16,
+    map_backup_bg1_h_copy2: u16,
+    map_backup_bg2_h_copy2: u16,
+    map_backup_bg1_v_copy2: u16,
+    map_backup_bg2_v_copy2: u16,
+    special_exit_bg2_h_copy2: u16,
+    special_exit_bg2_v_copy2: u16,
+    exit_bg2_h_copy2: u16,
+    exit_bg2_v_copy2: u16,
+    mode7_center_x: u16,
+    mode7_center_y: u16,
+    bg1_h_subpixel: u16,
+    bg1_v_subpixel: u16,
+    camera_y_scroll_cached: u16,
+    camera_x_scroll_cached: u16,
+    mapbak_tm: u16,
+    mapbak_ts: u8,
+    mapbak_main_tile_theme_index: u8,
+    mapbak_sprite_graphics_index: u8,
+    mapbak_aux_tile_theme_index: u8,
+    mapbak_bg1_x_offset: u16,
+    mapbak_bg1_y_offset: u16,
+    mapbak_cgwsel: u16,
+    mapbak_hdmaen: u8,
+    mapbak_palette: Vec<u8>,
+}
+
+const MAPBAK_PALETTE_BYTES: usize = 0x200;
+
+impl Default for PpuScrollCopyState {
+    fn default() -> Self {
+        Self {
+            bg1_h_copy: 0,
+            bg1_v_copy: 0,
+            bg2_h_copy: 0,
+            bg2_v_copy: 0,
+            bg1_h_copy2: 0,
+            bg1_v_copy2: 0,
+            bg2_h_copy2: 0,
+            bg2_v_copy2: 0,
+            bg3_h_copy2: 0,
+            bg3_v_copy2: 0,
+            bg2_h_copy2_cached: 0,
+            bg2_v_copy2_cached: 0,
+            map_backup_bg1_h_copy2: 0,
+            map_backup_bg2_h_copy2: 0,
+            map_backup_bg1_v_copy2: 0,
+            map_backup_bg2_v_copy2: 0,
+            special_exit_bg2_h_copy2: 0,
+            special_exit_bg2_v_copy2: 0,
+            exit_bg2_h_copy2: 0,
+            exit_bg2_v_copy2: 0,
+            mode7_center_x: 0,
+            mode7_center_y: 0,
+            bg1_h_subpixel: 0,
+            bg1_v_subpixel: 0,
+            camera_y_scroll_cached: 0,
+            camera_x_scroll_cached: 0,
+            mapbak_tm: 0,
+            mapbak_ts: 0,
+            mapbak_main_tile_theme_index: 0,
+            mapbak_sprite_graphics_index: 0,
+            mapbak_aux_tile_theme_index: 0,
+            mapbak_bg1_x_offset: 0,
+            mapbak_bg1_y_offset: 0,
+            mapbak_cgwsel: 0,
+            mapbak_hdmaen: 0,
+            mapbak_palette: vec![0; MAPBAK_PALETTE_BYTES],
+        }
+    }
+}
+
+impl PpuScrollCopyState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mapbak_palette = ram[MAPBAK_PALETTE..MAPBAK_PALETTE + MAPBAK_PALETTE_BYTES].to_vec();
+        Self {
+            bg1_h_copy: read_le_u16(ram, BG1_H_SCROLL_COPY),
+            bg1_v_copy: read_le_u16(ram, BG1_V_SCROLL_COPY),
+            bg2_h_copy: read_le_u16(ram, BG2_H_SCROLL_COPY),
+            bg2_v_copy: read_le_u16(ram, BG2_V_SCROLL_COPY),
+            bg1_h_copy2: read_le_u16(ram, BG1_X_SCROLL),
+            bg1_v_copy2: read_le_u16(ram, BG1_Y_SCROLL),
+            bg2_h_copy2: read_le_u16(ram, BG2_X_SCROLL),
+            bg2_v_copy2: read_le_u16(ram, BG2_Y_SCROLL),
+            bg3_h_copy2: read_le_u16(ram, BG3_H_SCROLL_COPY2),
+            bg3_v_copy2: read_le_u16(ram, BG3_V_SCROLL_COPY2),
+            bg2_h_copy2_cached: read_le_u16(ram, BG2_H_SCROLL_COPY2_CACHED),
+            bg2_v_copy2_cached: read_le_u16(ram, BG2_V_SCROLL_COPY2_CACHED),
+            map_backup_bg1_h_copy2: read_le_u16(ram, MAP_BACKUP_BG1_H_SCROLL_COPY2),
+            map_backup_bg2_h_copy2: read_le_u16(ram, MAP_BACKUP_BG2_H_SCROLL_COPY2),
+            map_backup_bg1_v_copy2: read_le_u16(ram, MAP_BACKUP_BG1_V_SCROLL_COPY2),
+            map_backup_bg2_v_copy2: read_le_u16(ram, MAP_BACKUP_BG2_V_SCROLL_COPY2),
+            special_exit_bg2_h_copy2: read_le_u16(ram, BG2_H_SCROLL_COPY2_SPECIAL_EXIT),
+            special_exit_bg2_v_copy2: read_le_u16(ram, BG2_V_SCROLL_COPY2_SPECIAL_EXIT),
+            exit_bg2_h_copy2: read_le_u16(ram, BG2_H_SCROLL_COPY2_EXIT),
+            exit_bg2_v_copy2: read_le_u16(ram, BG2_V_SCROLL_COPY2_EXIT),
+            mode7_center_x: read_le_u16(ram, MODE7_CENTER_X_COPY),
+            mode7_center_y: read_le_u16(ram, MODE7_CENTER_Y_COPY),
+            bg1_h_subpixel: read_le_u16(ram, BG1_H_SCROLL_SUBPIXEL),
+            bg1_v_subpixel: read_le_u16(ram, BG1_V_SCROLL_SUBPIXEL),
+            camera_y_scroll_cached: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
+            camera_x_scroll_cached: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_CACHED),
+            mapbak_tm: read_le_u16(ram, MAPBAK_TM),
+            mapbak_ts: ram_byte(ram, MAPBAK_TS),
+            mapbak_main_tile_theme_index: ram_byte(ram, MAPBAK_MAIN_TILE_THEME_INDEX),
+            mapbak_sprite_graphics_index: ram_byte(ram, MAPBAK_SPRITE_GRAPHICS_INDEX),
+            mapbak_aux_tile_theme_index: ram_byte(ram, MAPBAK_AUX_TILE_THEME_INDEX),
+            mapbak_bg1_x_offset: read_le_u16(ram, MAPBAK_BG1_X_OFFSET),
+            mapbak_bg1_y_offset: read_le_u16(ram, MAPBAK_BG1_Y_OFFSET),
+            mapbak_cgwsel: read_le_u16(ram, MAPBAK_CGWSEL),
+            mapbak_hdmaen: ram_byte(ram, MAPBAK_HDMAEN),
+            mapbak_palette,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, BG1_H_SCROLL_COPY, self.bg1_h_copy);
+        write_le_u16(ram, BG1_V_SCROLL_COPY, self.bg1_v_copy);
+        write_le_u16(ram, BG2_H_SCROLL_COPY, self.bg2_h_copy);
+        write_le_u16(ram, BG2_V_SCROLL_COPY, self.bg2_v_copy);
+        write_le_u16(ram, BG1_X_SCROLL, self.bg1_h_copy2);
+        write_le_u16(ram, BG1_Y_SCROLL, self.bg1_v_copy2);
+        write_le_u16(ram, BG2_X_SCROLL, self.bg2_h_copy2);
+        write_le_u16(ram, BG2_Y_SCROLL, self.bg2_v_copy2);
+        write_le_u16(ram, BG3_H_SCROLL_COPY2, self.bg3_h_copy2);
+        write_le_u16(ram, BG3_V_SCROLL_COPY2, self.bg3_v_copy2);
+        write_le_u16(ram, BG2_H_SCROLL_COPY2_CACHED, self.bg2_h_copy2_cached);
+        write_le_u16(ram, BG2_V_SCROLL_COPY2_CACHED, self.bg2_v_copy2_cached);
+        write_le_u16(
+            ram,
+            MAP_BACKUP_BG1_H_SCROLL_COPY2,
+            self.map_backup_bg1_h_copy2,
+        );
+        write_le_u16(
+            ram,
+            MAP_BACKUP_BG2_H_SCROLL_COPY2,
+            self.map_backup_bg2_h_copy2,
+        );
+        write_le_u16(
+            ram,
+            MAP_BACKUP_BG1_V_SCROLL_COPY2,
+            self.map_backup_bg1_v_copy2,
+        );
+        write_le_u16(
+            ram,
+            MAP_BACKUP_BG2_V_SCROLL_COPY2,
+            self.map_backup_bg2_v_copy2,
+        );
+        write_le_u16(
+            ram,
+            BG2_H_SCROLL_COPY2_SPECIAL_EXIT,
+            self.special_exit_bg2_h_copy2,
+        );
+        write_le_u16(
+            ram,
+            BG2_V_SCROLL_COPY2_SPECIAL_EXIT,
+            self.special_exit_bg2_v_copy2,
+        );
+        write_le_u16(ram, BG2_H_SCROLL_COPY2_EXIT, self.exit_bg2_h_copy2);
+        write_le_u16(ram, BG2_V_SCROLL_COPY2_EXIT, self.exit_bg2_v_copy2);
+        write_le_u16(ram, MODE7_CENTER_X_COPY, self.mode7_center_x);
+        write_le_u16(ram, MODE7_CENTER_Y_COPY, self.mode7_center_y);
+        write_le_u16(ram, BG1_H_SCROLL_SUBPIXEL, self.bg1_h_subpixel);
+        write_le_u16(ram, BG1_V_SCROLL_SUBPIXEL, self.bg1_v_subpixel);
+        write_le_u16(
+            ram,
+            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
+            self.camera_y_scroll_cached,
+        );
+        write_le_u16(
+            ram,
+            CAMERA_X_COORD_SCROLL_LOW_CACHED,
+            self.camera_x_scroll_cached,
+        );
+        write_le_u16(ram, MAPBAK_TM, self.mapbak_tm);
+        ram[MAPBAK_TS] = self.mapbak_ts;
+        ram[MAPBAK_MAIN_TILE_THEME_INDEX] = self.mapbak_main_tile_theme_index;
+        ram[MAPBAK_SPRITE_GRAPHICS_INDEX] = self.mapbak_sprite_graphics_index;
+        ram[MAPBAK_AUX_TILE_THEME_INDEX] = self.mapbak_aux_tile_theme_index;
+        write_le_u16(ram, MAPBAK_BG1_X_OFFSET, self.mapbak_bg1_x_offset);
+        write_le_u16(ram, MAPBAK_BG1_Y_OFFSET, self.mapbak_bg1_y_offset);
+        write_le_u16(ram, MAPBAK_CGWSEL, self.mapbak_cgwsel);
+        ram[MAPBAK_HDMAEN] = self.mapbak_hdmaen;
+        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + MAPBAK_PALETTE_BYTES].fill(0);
+        let len = self.mapbak_palette.len().min(MAPBAK_PALETTE_BYTES);
+        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&self.mapbak_palette[..len]);
+    }
+
+    pub(crate) fn bg2_h_copy2_offset() -> usize {
+        BG2_X_SCROLL
+    }
+
+    pub(crate) fn bg1_h_high(&self) -> u8 {
+        (self.bg1_h_copy >> 8) as u8
+    }
+
+    pub(crate) fn bg1_h_copy(&self) -> u16 {
+        self.bg1_h_copy
+    }
+
+    pub(crate) fn bg1_h_copy_low(&self) -> u8 {
+        self.bg1_h_copy as u8
+    }
+
+    pub(crate) fn bg1_v_high(&self) -> u8 {
+        (self.bg1_v_copy >> 8) as u8
+    }
+
+    pub(crate) fn bg1_v_copy(&self) -> u16 {
+        self.bg1_v_copy
+    }
+
+    pub(crate) fn bg1_v_copy_low(&self) -> u8 {
+        self.bg1_v_copy as u8
+    }
+
+    pub(crate) fn bg2_h_high(&self) -> u8 {
+        (self.bg2_h_copy >> 8) as u8
+    }
+
+    pub(crate) fn bg2_h_copy(&self) -> u16 {
+        self.bg2_h_copy
+    }
+
+    pub(crate) fn bg2_h_copy_low(&self) -> u8 {
+        self.bg2_h_copy as u8
+    }
+
+    pub(crate) fn bg2_v_high(&self) -> u8 {
+        (self.bg2_v_copy >> 8) as u8
+    }
+
+    pub(crate) fn bg2_v_copy(&self) -> u16 {
+        self.bg2_v_copy
+    }
+
+    pub(crate) fn bg2_v_copy_low(&self) -> u8 {
+        self.bg2_v_copy as u8
+    }
+
+    pub(crate) fn bg1_h_copy2(&self) -> u16 {
+        self.bg1_h_copy2
+    }
+
+    pub(crate) fn bg1_v_copy2(&self) -> u16 {
+        self.bg1_v_copy2
+    }
+
+    pub(crate) fn bg2_h_copy2(&self) -> u16 {
+        self.bg2_h_copy2
+    }
+
+    pub(crate) fn bg2_v_copy2(&self) -> u16 {
+        self.bg2_v_copy2
+    }
+
+    pub(crate) fn bg2_copy2_for_axis(&self, vertical: bool) -> u16 {
+        if vertical {
+            self.bg2_v_copy2()
+        } else {
+            self.bg2_h_copy2()
+        }
+    }
+
+    pub(crate) fn bg3_h_high(&self) -> u8 {
+        (self.bg3_h_copy2 >> 8) as u8
+    }
+
+    pub(crate) fn bg3_h_copy2(&self) -> u16 {
+        self.bg3_h_copy2
+    }
+
+    pub(crate) fn bg3_h_copy2_low(&self) -> u8 {
+        self.bg3_h_copy2 as u8
+    }
+
+    pub(crate) fn bg3_v_high(&self) -> u8 {
+        (self.bg3_v_copy2 >> 8) as u8
+    }
+
+    pub(crate) fn bg3_v_copy2(&self) -> u16 {
+        self.bg3_v_copy2
+    }
+
+    pub(crate) fn bg3_v_copy2_low(&self) -> u8 {
+        self.bg3_v_copy2 as u8
+    }
+
+    pub(crate) fn bg2_h_copy2_cached(&self) -> u16 {
+        self.bg2_h_copy2_cached
+    }
+
+    pub(crate) fn bg2_v_copy2_cached(&self) -> u16 {
+        self.bg2_v_copy2_cached
+    }
+
+    pub(crate) fn map_backup_bg1_h_copy2(&self) -> u16 {
+        self.map_backup_bg1_h_copy2
+    }
+
+    pub(crate) fn mapbak_tm(&self) -> u8 {
+        self.mapbak_tm as u8
+    }
+
+    pub(crate) fn map_backup_bg2_h_copy2(&self) -> u16 {
+        self.map_backup_bg2_h_copy2
+    }
+
+    pub(crate) fn map_backup_bg1_v_copy2(&self) -> u16 {
+        self.map_backup_bg1_v_copy2
+    }
+
+    pub(crate) fn map_backup_bg2_v_copy2(&self) -> u16 {
+        self.map_backup_bg2_v_copy2
+    }
+
+    pub(crate) fn special_exit_bg2_h_copy2(&self) -> u16 {
+        self.special_exit_bg2_h_copy2
+    }
+
+    pub(crate) fn special_exit_bg2_v_copy2(&self) -> u16 {
+        self.special_exit_bg2_v_copy2
+    }
+
+    pub(crate) fn exit_bg2_h_copy2(&self) -> u16 {
+        self.exit_bg2_h_copy2
+    }
+
+    pub(crate) fn exit_bg2_v_copy2(&self) -> u16 {
+        self.exit_bg2_v_copy2
+    }
+
+    pub(crate) fn mode7_center_x_high(&self) -> u8 {
+        (self.mode7_center_x >> 8) as u8
+    }
+
+    pub(crate) fn mode7_center_x(&self) -> u16 {
+        self.mode7_center_x
+    }
+
+    pub(crate) fn mode7_center_y_high(&self) -> u8 {
+        (self.mode7_center_y >> 8) as u8
+    }
+
+    pub(crate) fn mode7_center_y(&self) -> u16 {
+        self.mode7_center_y
+    }
+
+    pub(crate) fn bg1_h_subpixel(&self) -> u16 {
+        self.bg1_h_subpixel
+    }
+
+    pub(crate) fn bg1_v_subpixel(&self) -> u16 {
+        self.bg1_v_subpixel
+    }
+
+    pub(crate) fn mapbak_main_tile_theme_index(&self) -> u8 {
+        self.mapbak_main_tile_theme_index
+    }
+
+    pub(crate) fn mapbak_sprite_graphics_index(&self) -> u8 {
+        self.mapbak_sprite_graphics_index
+    }
+
+    pub(crate) fn mapbak_aux_tile_theme_index(&self) -> u8 {
+        self.mapbak_aux_tile_theme_index
+    }
+
+    pub(crate) fn mapbak_tm_word(&self) -> u16 {
+        self.mapbak_tm
+    }
+
+    pub(crate) fn mapbak_ts(&self) -> u8 {
+        self.mapbak_ts
+    }
+
+    pub(crate) fn mapbak_bg1_x_offset(&self) -> u16 {
+        self.mapbak_bg1_x_offset
+    }
+
+    pub(crate) fn mapbak_bg1_y_offset(&self) -> u16 {
+        self.mapbak_bg1_y_offset
+    }
+
+    pub(crate) fn mapbak_cgwsel(&self) -> u8 {
+        self.mapbak_cgwsel as u8
+    }
+
+    pub(crate) fn mapbak_cgwsel_word(&self) -> u16 {
+        self.mapbak_cgwsel
+    }
+
+    pub(crate) fn mapbak_hdmaen(&self) -> u8 {
+        self.mapbak_hdmaen
+    }
+
+    pub(crate) fn mapbak_palette_slice(&self) -> &[u8] {
+        &self.mapbak_palette
+    }
+
+    fn set_low_byte(word: &mut u16, value: u8) {
+        *word = (*word & 0xff00) | u16::from(value);
+    }
+
+    fn set_high_byte(word: &mut u16, value: u8) {
+        *word = (*word & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn add_low_byte(word: &mut u16, value: u8) {
+        Self::set_low_byte(word, (*word as u8).wrapping_add(value));
+    }
+
+    fn subtract_low_byte(word: &mut u16, value: u8) {
+        Self::set_low_byte(word, (*word as u8).wrapping_sub(value));
+    }
+
+    pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.mapbak_tm, value);
+    }
+
+    pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
+        self.mapbak_ts = value;
+    }
+
+    pub(crate) fn set_mapbak_tm_word(&mut self, value: u16) {
+        self.mapbak_tm = value;
+    }
+
+    pub(crate) fn set_bg1_h_high(&mut self, value: u8) {
+        Self::set_high_byte(&mut self.bg1_h_copy2, value);
+    }
+
+    pub(crate) fn set_bg1_h_copy(&mut self, value: u16) {
+        self.bg1_h_copy = value;
+    }
+
+    pub(crate) fn set_bg1_v_copy(&mut self, value: u16) {
+        self.bg1_v_copy = value;
+    }
+
+    pub(crate) fn set_bg2_h_copy(&mut self, value: u16) {
+        self.bg2_h_copy = value;
+    }
+
+    pub(crate) fn set_bg2_v_copy(&mut self, value: u16) {
+        self.bg2_v_copy = value;
+    }
+
+    pub(crate) fn set_bg1_h_copy_low(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.bg1_h_copy, value);
+    }
+
+    pub(crate) fn set_bg1_v_copy_low(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.bg1_v_copy, value);
+    }
+
+    pub(crate) fn set_bg2_h_copy_low(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.bg2_h_copy, value);
+    }
+
+    pub(crate) fn set_bg2_v_copy_low(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.bg2_v_copy, value);
+    }
+
+    pub(crate) fn set_bg1_h_copy2(&mut self, value: u16) {
+        self.bg1_h_copy2 = value;
+    }
+
+    pub(crate) fn set_bg1_v_copy2(&mut self, value: u16) {
+        self.bg1_v_copy2 = value;
+    }
+
+    pub(crate) fn set_bg2_h_copy2(&mut self, value: u16) {
+        self.bg2_h_copy2 = value;
+    }
+
+    pub(crate) fn set_bg2_v_copy2(&mut self, value: u16) {
+        self.bg2_v_copy2 = value;
+    }
+
+    pub(crate) fn set_bg3_h_copy2(&mut self, value: u16) {
+        self.bg3_h_copy2 = value;
+    }
+
+    pub(crate) fn set_bg3_v_copy2(&mut self, value: u16) {
+        self.bg3_v_copy2 = value;
+    }
+
+    pub(crate) fn set_bg3_v_copy2_low(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.bg3_v_copy2, value);
+    }
+
+    pub(crate) fn set_mode7_center_x(&mut self, value: u16) {
+        self.mode7_center_x = value;
+    }
+
+    pub(crate) fn set_mode7_center_y(&mut self, value: u16) {
+        self.mode7_center_y = value;
+    }
+
+    pub(crate) fn set_mode7_center(&mut self, x: u16, y: u16) {
+        self.set_mode7_center_x(x);
+        self.set_mode7_center_y(y);
+    }
+
+    pub(crate) fn set_bg1_h_live_and_copy(&mut self, value: u16) {
+        self.set_bg1_h_copy2(value);
+        self.set_bg1_h_copy(value);
+    }
+
+    pub(crate) fn set_bg1_v_live_and_copy(&mut self, value: u16) {
+        self.set_bg1_v_copy2(value);
+        self.set_bg1_v_copy(value);
+    }
+
+    pub(crate) fn set_bg2_h_live_and_copy(&mut self, value: u16) {
+        self.set_bg2_h_copy2(value);
+        self.set_bg2_h_copy(value);
+    }
+
+    pub(crate) fn set_bg2_v_live_and_copy(&mut self, value: u16) {
+        self.set_bg2_v_copy2(value);
+        self.set_bg2_v_copy(value);
+    }
+
+    pub(crate) fn set_bg1_bg2_h_live_and_copy(&mut self, value: u16) {
+        self.set_bg2_h_live_and_copy(value);
+        self.set_bg1_h_live_and_copy(value);
+    }
+
+    pub(crate) fn set_bg1_bg2_v_live_and_copy(&mut self, value: u16) {
+        self.set_bg2_v_live_and_copy(value);
+        self.set_bg1_v_live_and_copy(value);
+    }
+
+    pub(crate) fn set_bg1_bg2_live_and_copy(
+        &mut self,
+        bg2_h: u16,
+        bg2_v: u16,
+        bg1_h: u16,
+        bg1_v: u16,
+    ) {
+        self.set_bg2_h_live_and_copy(bg2_h);
+        self.set_bg2_v_live_and_copy(bg2_v);
+        self.set_bg1_h_live_and_copy(bg1_h);
+        self.set_bg1_v_live_and_copy(bg1_v);
+    }
+
+    pub(crate) fn set_bg2_h_copy2_cached(&mut self, value: u16) {
+        self.bg2_h_copy2_cached = value;
+    }
+
+    pub(crate) fn set_bg2_v_copy2_cached(&mut self, value: u16) {
+        self.bg2_v_copy2_cached = value;
+    }
+
+    pub(crate) fn cache_bg2_live_scroll(&mut self) {
+        self.bg2_h_copy2_cached = self.bg2_h_copy2;
+        self.bg2_v_copy2_cached = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn cache_camera_scroll(&mut self, camera_y: u16, camera_x: u16) {
+        self.camera_y_scroll_cached = camera_y;
+        self.camera_x_scroll_cached = camera_x;
+    }
+
+    pub(crate) fn save_special_exit_bg2_live_scroll(&mut self) {
+        self.special_exit_bg2_h_copy2 = self.bg2_h_copy2;
+        self.special_exit_bg2_v_copy2 = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn save_exit_bg2_live_scroll(&mut self) {
+        self.exit_bg2_h_copy2 = self.bg2_h_copy2;
+        self.exit_bg2_v_copy2 = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn restore_special_exit_bg2_scroll_to_all_layers(&mut self) {
+        self.set_all_layer_h_scrolls(self.special_exit_bg2_h_copy2);
+        self.set_all_layer_v_scrolls(self.special_exit_bg2_v_copy2);
+    }
+
+    pub(crate) fn restore_exit_bg2_scroll_to_all_layers(&mut self) {
+        self.set_all_layer_h_scrolls(self.exit_bg2_h_copy2);
+        self.set_all_layer_v_scrolls(self.exit_bg2_v_copy2);
+    }
+
+    pub(crate) fn set_all_layer_h_scrolls(&mut self, value: u16) {
+        self.set_bg2_h_copy2(value);
+        self.set_bg2_h_copy(value);
+        self.set_bg1_h_copy2(value);
+        self.set_bg1_h_copy(value);
+    }
+
+    pub(crate) fn set_all_layer_v_scrolls(&mut self, value: u16) {
+        self.set_bg2_v_copy2(value);
+        self.set_bg2_v_copy(value);
+        self.set_bg1_v_copy2(value);
+        self.set_bg1_v_copy(value);
+    }
+
+    pub(crate) fn set_map_backup_scrolls(
+        &mut self,
+        bg1_h: u16,
+        bg2_h: u16,
+        bg1_v: u16,
+        bg2_v: u16,
+    ) {
+        self.map_backup_bg1_h_copy2 = bg1_h;
+        self.map_backup_bg2_h_copy2 = bg2_h;
+        self.map_backup_bg1_v_copy2 = bg1_v;
+        self.map_backup_bg2_v_copy2 = bg2_v;
+    }
+
+    pub(crate) fn clear_bg3_h_copy2(&mut self) {
+        self.set_bg3_h_copy2(0);
+    }
+
+    pub(crate) fn clear_bg3_v_copy2(&mut self) {
+        self.set_bg3_v_copy2(0);
+    }
+
+    pub(crate) fn add_bg1_h_copy_low(&mut self, value: u8) {
+        Self::add_low_byte(&mut self.bg1_h_copy, value);
+    }
+
+    pub(crate) fn add_bg1_v_copy_low(&mut self, value: u8) {
+        Self::add_low_byte(&mut self.bg1_v_copy, value);
+    }
+
+    pub(crate) fn add_bg2_v_copy_low(&mut self, value: u8) {
+        Self::add_low_byte(&mut self.bg2_v_copy, value);
+    }
+
+    pub(crate) fn subtract_bg2_h_copy_low(&mut self, value: u8) {
+        Self::subtract_low_byte(&mut self.bg2_h_copy, value);
+    }
+
+    pub(crate) fn add_bg2_h_copy2_signed(&mut self, value: i8) {
+        self.bg2_h_copy2 = self.bg2_h_copy2.wrapping_add(value as i16 as u16);
+    }
+
+    pub(crate) fn add_bg2_v_copy2_signed(&mut self, value: i8) {
+        self.bg2_v_copy2 = self.bg2_v_copy2.wrapping_add(value as i16 as u16);
+    }
+
+    pub(crate) fn add_bg3_v_copy2_signed(&mut self, value: i8) {
+        self.bg3_v_copy2 = self.bg3_v_copy2.wrapping_add(value as i16 as u16);
+    }
+
+    fn add_subpixel_scroll(subpixel: &mut u16, scroll: &mut u16, value: u32) {
+        let current = u32::from(*subpixel) | (u32::from(*scroll) << 16);
+        let next = current.wrapping_add(value);
+        *subpixel = next as u16;
+        *scroll = (next >> 16) as u16;
+    }
+
+    fn subtract_subpixel_scroll(subpixel: &mut u16, scroll: &mut u16, value: u32) {
+        let current = u32::from(*subpixel) | (u32::from(*scroll) << 16);
+        let next = current.wrapping_sub(value);
+        *subpixel = next as u16;
+        *scroll = (next >> 16) as u16;
+    }
+
+    pub(crate) fn clear_bg1_scroll_subpixels(&mut self) {
+        self.bg1_h_subpixel = 0;
+        self.bg1_v_subpixel = 0;
+    }
+
+    pub(crate) fn add_bg1_h_live_subpixel(&mut self, subpixel: u16, scroll: u16) {
+        Self::add_subpixel_scroll(
+            &mut self.bg1_h_subpixel,
+            &mut self.bg1_h_copy2,
+            u32::from(subpixel) | (u32::from(scroll) << 16),
+        );
+    }
+
+    pub(crate) fn add_bg1_v_live_subpixel(&mut self, subpixel: u16, scroll: u16) {
+        Self::add_subpixel_scroll(
+            &mut self.bg1_v_subpixel,
+            &mut self.bg1_v_copy2,
+            u32::from(subpixel) | (u32::from(scroll) << 16),
+        );
+    }
+
+    pub(crate) fn subtract_bg1_v_live_subpixel(&mut self, value: u32) {
+        Self::subtract_subpixel_scroll(&mut self.bg1_v_subpixel, &mut self.bg1_v_copy2, value);
+    }
+
+    pub(crate) fn add_bg1_h_copy2_subpixel(&mut self, subpixel: u16, scroll: u16) {
+        self.add_bg1_h_live_subpixel(subpixel, scroll);
+    }
+
+    pub(crate) fn add_bg1_v_copy2_subpixel(&mut self, subpixel: u16, scroll: u16) {
+        self.add_bg1_v_live_subpixel(subpixel, scroll);
+    }
+
+    pub(crate) fn subtract_bg1_v_copy2_subpixel(&mut self, subpixel: u16, scroll: u16) {
+        Self::subtract_subpixel_scroll(
+            &mut self.bg1_v_subpixel,
+            &mut self.bg1_v_copy2,
+            u32::from(subpixel) | (u32::from(scroll) << 16),
+        );
+    }
+
+    pub(crate) fn set_bg1_h_subpixel(&mut self, value: u16) {
+        self.bg1_h_subpixel = value;
+    }
+
+    pub(crate) fn set_bg1_v_subpixel(&mut self, value: u16) {
+        self.bg1_v_subpixel = value;
+    }
+
+    pub(crate) fn step_bg2_h_copy2_toward_cached(&mut self) {
+        if self.bg2_h_copy2 != self.bg2_h_copy2_cached {
+            self.bg2_h_copy2 = if self.bg2_h_copy2 < self.bg2_h_copy2_cached {
+                self.bg2_h_copy2.wrapping_add(1)
+            } else {
+                self.bg2_h_copy2.wrapping_sub(1)
+            };
+        }
+    }
+
+    pub(crate) fn step_bg2_v_copy2_toward_cached(&mut self) {
+        if self.bg2_v_copy2 != self.bg2_v_copy2_cached {
+            self.bg2_v_copy2 = if self.bg2_v_copy2 < self.bg2_v_copy2_cached {
+                self.bg2_v_copy2.wrapping_add(1)
+            } else {
+                self.bg2_v_copy2.wrapping_sub(1)
+            };
+        }
+    }
+
+    pub(crate) fn add_bg2_h_copy2(&mut self, value: u16) {
+        self.bg2_h_copy2 = self.bg2_h_copy2.wrapping_add(value);
+    }
+
+    pub(crate) fn add_bg2_v_copy2(&mut self, value: u16) {
+        self.bg2_v_copy2 = self.bg2_v_copy2.wrapping_add(value);
+    }
+
+    pub(crate) fn add_bg2_copy2_for_axis_signed(&mut self, vertical: bool, value: i16) {
+        if vertical {
+            self.bg2_v_copy2 = self.bg2_v_copy2.wrapping_add_signed(value);
+        } else {
+            self.bg2_h_copy2 = self.bg2_h_copy2.wrapping_add_signed(value);
+        }
+    }
+
+    pub(crate) fn copy_bg1_live_to_ppu_copy(&mut self) {
+        self.bg1_h_copy = self.bg1_h_copy2;
+        self.bg1_v_copy = self.bg1_v_copy2;
+    }
+
+    pub(crate) fn copy_bg2_live_to_ppu_copy(&mut self) {
+        self.bg2_h_copy = self.bg2_h_copy2;
+        self.bg2_v_copy = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn copy_live_to_ppu_copy(&mut self) {
+        self.copy_bg1_live_to_ppu_copy();
+        self.copy_bg2_live_to_ppu_copy();
+    }
+
+    pub(crate) fn copy_bg2_live_to_bg1_live(&mut self) {
+        self.bg1_h_copy2 = self.bg2_h_copy2;
+        self.bg1_v_copy2 = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn copy_bg2_h_live_to_bg1_h_live(&mut self) {
+        self.bg1_h_copy2 = self.bg2_h_copy2;
+    }
+
+    pub(crate) fn copy_bg2_v_live_to_bg1_v_live(&mut self) {
+        self.bg1_v_copy2 = self.bg2_v_copy2;
+    }
+
+    pub(crate) fn set_mapbak_main_tile_theme_index(&mut self, value: u8) {
+        self.mapbak_main_tile_theme_index = value;
+    }
+
+    pub(crate) fn set_mapbak_sprite_graphics_index(&mut self, value: u8) {
+        self.mapbak_sprite_graphics_index = value;
+    }
+
+    pub(crate) fn set_mapbak_aux_tile_theme_index(&mut self, value: u8) {
+        self.mapbak_aux_tile_theme_index = value;
+    }
+
+    pub(crate) fn set_mapbak_bg1_x_offset(&mut self, value: u16) {
+        self.mapbak_bg1_x_offset = value;
+    }
+
+    pub(crate) fn set_mapbak_bg1_y_offset(&mut self, value: u16) {
+        self.mapbak_bg1_y_offset = value;
+    }
+
+    pub(crate) fn set_mapbak_cgwsel(&mut self, value: u8) {
+        Self::set_low_byte(&mut self.mapbak_cgwsel, value);
+    }
+
+    pub(crate) fn set_mapbak_cgwsel_word(&mut self, value: u16) {
+        self.mapbak_cgwsel = value;
+    }
+
+    pub(crate) fn set_mapbak_hdmaen(&mut self, value: u8) {
+        self.mapbak_hdmaen = value;
+    }
+
+    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
+        let len = palette.len().min(MAPBAK_PALETTE_BYTES);
+        self.mapbak_palette.resize(MAPBAK_PALETTE_BYTES, 0);
+        self.mapbak_palette[..len].copy_from_slice(&palette[..len]);
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DisplayState {
     pub(crate) screen_brightness: u8,
@@ -1118,6 +1946,7 @@ pub(crate) struct DisplayState {
     pub(crate) hud_inventory_order: HudInventoryOrderState,
     pub(crate) water_hdma_window: WaterHdmaWindowState,
     pub(crate) overworld_palette_backup: OverworldPaletteBackupState,
+    pub(crate) ppu_scroll_copy: PpuScrollCopyState,
 }
 
 impl DisplayState {
@@ -1175,6 +2004,7 @@ impl DisplayState {
             hud_inventory_order: HudInventoryOrderState::load_from_ram(ram),
             water_hdma_window: WaterHdmaWindowState::load_from_ram(ram),
             overworld_palette_backup: OverworldPaletteBackupState::load_from_ram(ram),
+            ppu_scroll_copy: PpuScrollCopyState::load_from_ram(ram),
         }
     }
 
@@ -1255,6 +2085,7 @@ impl DisplayState {
         self.hud_inventory_order.write_to_ram(ram);
         self.water_hdma_window.write_to_ram(ram);
         self.overworld_palette_backup.write_to_ram(ram);
+        self.ppu_scroll_copy.write_to_ram(ram);
     }
 
     pub(crate) fn nmi_update_is_latched(&self) -> bool {
@@ -2196,6 +3027,125 @@ impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
         self.backup.set_main_indoors_copy(value);
         self.ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = value;
         self.debug_assert_matches_ram();
+    }
+}
+
+macro_rules! ppu_scroll_bridge_methods {
+    ($(fn $name:ident($($arg:ident: $ty:ty),*);)*) => {
+        $(
+            pub(crate) fn $name(&mut self, $($arg: $ty),*) {
+                self.state.$name($($arg),*);
+                self.sync();
+            }
+        )*
+    };
+}
+
+pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
+    state: &'a mut PpuScrollCopyState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativePpuScrollCopyBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut PpuScrollCopyState, ram: &'a mut [u8]) -> Self {
+        *state = PpuScrollCopyState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, PpuScrollCopyState::load_from_ram(self.ram));
+    }
+
+    ppu_scroll_bridge_methods! {
+        fn set_mapbak_tm(value: u8);
+        fn set_mapbak_ts(value: u8);
+        fn set_mapbak_tm_word(value: u16);
+        fn set_bg1_h_high(value: u8);
+        fn set_bg1_h_copy(value: u16);
+        fn set_bg1_v_copy(value: u16);
+        fn set_bg2_h_copy(value: u16);
+        fn set_bg2_v_copy(value: u16);
+        fn set_bg1_h_copy_low(value: u8);
+        fn set_bg1_v_copy_low(value: u8);
+        fn set_bg2_h_copy_low(value: u8);
+        fn set_bg2_v_copy_low(value: u8);
+        fn set_bg1_h_copy2(value: u16);
+        fn set_bg1_v_copy2(value: u16);
+        fn set_bg2_h_copy2(value: u16);
+        fn set_bg2_v_copy2(value: u16);
+        fn set_bg3_h_copy2(value: u16);
+        fn set_bg3_v_copy2(value: u16);
+        fn set_bg3_v_copy2_low(value: u8);
+        fn set_mode7_center_x(value: u16);
+        fn set_mode7_center_y(value: u16);
+        fn set_mode7_center(x: u16, y: u16);
+        fn set_bg1_h_live_and_copy(value: u16);
+        fn set_bg1_v_live_and_copy(value: u16);
+        fn set_bg2_h_live_and_copy(value: u16);
+        fn set_bg2_v_live_and_copy(value: u16);
+        fn set_bg1_bg2_h_live_and_copy(value: u16);
+        fn set_bg1_bg2_v_live_and_copy(value: u16);
+        fn set_bg1_bg2_live_and_copy(bg2_h: u16, bg2_v: u16, bg1_h: u16, bg1_v: u16);
+        fn set_bg2_h_copy2_cached(value: u16);
+        fn set_bg2_v_copy2_cached(value: u16);
+        fn cache_bg2_live_scroll();
+        fn save_special_exit_bg2_live_scroll();
+        fn save_exit_bg2_live_scroll();
+        fn restore_special_exit_bg2_scroll_to_all_layers();
+        fn restore_exit_bg2_scroll_to_all_layers();
+        fn set_all_layer_h_scrolls(value: u16);
+        fn set_all_layer_v_scrolls(value: u16);
+        fn set_map_backup_scrolls(bg1_h: u16, bg2_h: u16, bg1_v: u16, bg2_v: u16);
+        fn clear_bg3_h_copy2();
+        fn clear_bg3_v_copy2();
+        fn add_bg1_h_copy_low(value: u8);
+        fn add_bg1_v_copy_low(value: u8);
+        fn add_bg2_v_copy_low(value: u8);
+        fn subtract_bg2_h_copy_low(value: u8);
+        fn add_bg2_h_copy2_signed(value: i8);
+        fn add_bg2_v_copy2_signed(value: i8);
+        fn add_bg3_v_copy2_signed(value: i8);
+        fn clear_bg1_scroll_subpixels();
+        fn add_bg1_h_live_subpixel(subpixel: u16, scroll: u16);
+        fn add_bg1_v_live_subpixel(subpixel: u16, scroll: u16);
+        fn subtract_bg1_v_live_subpixel(value: u32);
+        fn add_bg1_h_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn add_bg1_v_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn subtract_bg1_v_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn set_bg1_h_subpixel(value: u16);
+        fn set_bg1_v_subpixel(value: u16);
+        fn step_bg2_h_copy2_toward_cached();
+        fn step_bg2_v_copy2_toward_cached();
+        fn add_bg2_h_copy2(value: u16);
+        fn add_bg2_v_copy2(value: u16);
+        fn add_bg2_copy2_for_axis_signed(vertical: bool, value: i16);
+        fn copy_bg1_live_to_ppu_copy();
+        fn copy_bg2_live_to_ppu_copy();
+        fn copy_live_to_ppu_copy();
+        fn copy_bg2_live_to_bg1_live();
+        fn copy_bg2_h_live_to_bg1_h_live();
+        fn copy_bg2_v_live_to_bg1_v_live();
+        fn set_mapbak_main_tile_theme_index(value: u8);
+        fn set_mapbak_sprite_graphics_index(value: u8);
+        fn set_mapbak_aux_tile_theme_index(value: u8);
+        fn set_mapbak_bg1_x_offset(value: u16);
+        fn set_mapbak_bg1_y_offset(value: u16);
+        fn set_mapbak_cgwsel(value: u8);
+        fn set_mapbak_cgwsel_word(value: u16);
+        fn set_mapbak_hdmaen(value: u8);
+        fn copy_mapbak_palette_from(palette: &[u8]);
+    }
+
+    pub(crate) fn cache_camera_scroll(&mut self) {
+        let camera_y = read_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_LOW);
+        let camera_x = read_le_u16(self.ram, CAMERA_X_COORD_SCROLL_LOW);
+        self.state.cache_camera_scroll(camera_y, camera_x);
+        self.sync();
     }
 }
 
