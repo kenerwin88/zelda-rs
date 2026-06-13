@@ -2505,7 +2505,6 @@ pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
 
 impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2553,7 +2552,6 @@ pub(crate) struct NativeSkullWoodsFireSlotBridgeMut<'a> {
 
 impl<'a> NativeSkullWoodsFireSlotBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2699,7 +2697,6 @@ pub(crate) struct NativeBlastWallBridgeMut<'a> {
 
 impl<'a> NativeBlastWallBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2737,7 +2734,6 @@ pub(crate) struct NativeBlastWallExplosionBridgeMut<'a> {
 
 impl<'a> NativeBlastWallExplosionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2781,7 +2777,6 @@ pub(crate) struct NativeBlastWallFragmentBridgeMut<'a> {
 
 impl<'a> NativeBlastWallFragmentBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2814,7 +2809,6 @@ pub(crate) struct NativeBlastWallFireballBridgeMut<'a> {
 
 impl<'a> NativeBlastWallFireballBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = EntranceEffectState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
