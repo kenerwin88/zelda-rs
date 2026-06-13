@@ -1698,7 +1698,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.inventory_state_view().sword_type() >= 3 {
+        if self.inventory_items().sword_type() >= 3 {
             if self.sprite_return_if_recoiling(k) {
                 return;
             }
@@ -1920,9 +1920,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_from_link(k) != 0
-            && self.inventory_state_view().sword_type() < 2
-        {
+        if self.sprite_check_damage_from_link(k) != 0 && self.inventory_items().sword_type() < 2 {
             self.sprite_slot_view_mut(k).set_hit_timer(0);
             self.sprite_attempt_damage_to_link_plus_recoil(k);
             if self.player_state_view().blink_countdown() == 0 {

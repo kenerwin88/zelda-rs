@@ -2063,11 +2063,11 @@ impl ZeldaState {
                 return false;
             }
         }
-        ((self.inventory_state_view().sword_type().wrapping_add(1)) & 0xfe) != 0
+        ((self.inventory_items().sword_type().wrapping_add(1)) & 0xfe) != 0
     }
 
     pub(super) fn calculate_sword_hit_box(&mut self) {
-        let sword_type = self.inventory_state_view().sword_type();
+        let sword_type = self.inventory_items().sword_type();
         if sword_type == 0 || sword_type == 0xff {
             return;
         }
@@ -2489,7 +2489,7 @@ impl ZeldaState {
             }
         }
 
-        if self.inventory_state_view().shield_type() != 0
+        if self.inventory_items().shield_type() != 0
             && self.save_progress_view().progress_indicator() != 0
             && !self.link_oam_set_equipment_vram_offsets(r2, &mut sr)
         {
@@ -2754,7 +2754,7 @@ impl ZeldaState {
         if self.player_state_view().handler_state() | self.player_state_view().speed_setting() != 0 {
             return oam_pos;
         }
-        let sword_type = self.inventory_state_view().sword_type();
+        let sword_type = self.inventory_items().sword_type();
         if sword_type == 0
             || sword_type == 1
             || sword_type == 0xff
@@ -2885,7 +2885,7 @@ impl ZeldaState {
             }
         }
         let i = self.player_state_view().facing_mirror_index()
-            + kShieldTypeToOffs[self.inventory_state_view().shield_type() as usize] as usize;
+            + kShieldTypeToOffs[self.inventory_items().shield_type() as usize] as usize;
         oam_x = add_i8(oam_x, kOffsToShadowGivenDir_X[i]);
         oam_y = add_i8(oam_y, kOffsToShadowGivenDir_Y[i]);
         let oam_pos = ((kShadow_oam_indexes_1[r4loc] as u16

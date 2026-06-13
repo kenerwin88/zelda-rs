@@ -1275,12 +1275,12 @@ impl ZeldaState {
                             }
                         }
                         _ => {
-                            let value = self.inventory_state_view().shield_type();
+                            let value = self.inventory_items().shield_type();
                             self.sprite_slot_view_mut(k).set_subtype(value);
-                            if self.inventory_state_view().shield_type() != 0
-                                && self.inventory_state_view().shield_type() != 3
+                            if self.inventory_items().shield_type() != 0
+                                && self.inventory_items().shield_type() != 3
                             {
-                                self.inventory_state_view_mut().set_shield_type(0);
+                                self.inventory_items_mut().set_shield_type(0);
                             } else {
                                 self.sprite_slot_view_mut(k).set_g(0);
                             }

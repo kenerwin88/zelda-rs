@@ -1146,7 +1146,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 let close = self.flute_boy_check_if_player_close(k);
-                if self.inventory_state_view().flute() >= 2 || close {
+                if self.inventory_items().flute() >= 2 || close {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).increment_direction();
                     self.garnish_state_view_mut()
@@ -1204,7 +1204,7 @@ impl ZeldaState {
             return;
         }
         match self.sprite_slot_view(k).ai_state() {
-            0 => match self.inventory_state_view().flute() & 3 {
+            0 => match self.inventory_items().flute() & 3 {
                 0 => {
                     // supplicate
                     if (self.sprite_show_solicited_message_for_world(k, 0xe5) & 0x100) != 0 {

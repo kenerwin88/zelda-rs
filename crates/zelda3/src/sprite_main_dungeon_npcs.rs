@@ -1360,7 +1360,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).masked_or_flags2(0xf0, 0x2);
             self.sprite_slot_view_mut(k).set_flags4(3);
             let j: usize;
-            if self.inventory_state_view().sword_type() >= 2 {
+            if self.inventory_items().sword_type() >= 2 {
                 self.sprite_slot_view_mut(k).set_direction(4);
                 self.sprite_slot_view_mut(k).set_graphics(0);
                 j = 0;
@@ -2505,7 +2505,7 @@ impl ZeldaState {
             }
             2 => {
                 if self.multiselect_choice_view().value_word() == 0 {
-                    if self.inventory_state_view().sword_type() < 3 {
+                    if self.inventory_items().sword_type() < 3 {
                         self.sprite_show_message_unconditional(0xda);
                         self.sprite_slot_view_mut(k).set_ai_state(3);
                     } else {
@@ -2532,7 +2532,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(5);
                     self.world_state_view_mut()
                         .clear_flag_overworld_area_changed();
-                    self.inventory_state_view_mut().set_sword_type(255);
+                    self.inventory_items_mut().set_sword_type(255);
                     self.save_progress_view_mut().or_progress_indicator_3(128);
                 }
             }

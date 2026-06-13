@@ -1001,7 +1001,7 @@ impl ZeldaState {
             projectile.set_z(0);
             projectile.set_a(a_val);
         }
-        if a_val != 0 && self.inventory_state_view().shield_type() == 0 {
+        if a_val != 0 && self.inventory_items().shield_type() == 0 {
             self.sprite_slot_view_mut(j).and_flags5(!0x20);
         }
     }

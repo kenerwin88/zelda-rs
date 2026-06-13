@@ -646,7 +646,7 @@ impl ZeldaState {
                 ancilla.set_x_velocity(FIRE_ROD_XVEL[i] as u8);
                 ancilla.set_y_velocity(FIRE_ROD_YVEL[i] as u8);
             } else {
-                i += self.inventory_state_view().sword_type().wrapping_sub(2) as usize * 4;
+                i += self.inventory_items().sword_type().wrapping_sub(2) as usize * 4;
                 let mut ancilla = self.ancilla_slot_view_mut(j);
                 ancilla.set_x_velocity(FIRE_ROD_SPARK_X_VELOCITIES[i] as u8);
                 ancilla.set_y_velocity(FIRE_ROD_SPARK_Y_VELOCITIES[i] as u8);
@@ -1252,7 +1252,7 @@ impl ZeldaState {
         self.player_state_view_mut().set_auxiliary_state(1);
         self.player_state_view_mut().set_blink_countdown(58);
         if self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0 {
-            let armor = self.inventory_state_view().armor() as usize;
+            let armor = self.inventory_items().armor() as usize;
             self.player_state_view_mut()
                 .set_given_damage(BOMB_DMG_TO_LINK[armor]);
         }
@@ -2698,7 +2698,7 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_victory_spin(&mut self) {
-        if self.inventory_state_view().sword_type().wrapping_add(1) & 0xfe != 0 {
+        if self.inventory_items().sword_type().wrapping_add(1) & 0xfe != 0 {
             if let Some(k) = self.ancilla_add_ancilla(0x3b, 0) {
                 let mut spin = self.ancilla_slot_view_mut(k);
                 spin.set_item_to_link(0);
@@ -3754,7 +3754,7 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_l(value);
         self.minigame_state_view_mut()
             .set_flag_boomerang_in_place(1);
-        let mut j = self.inventory_state_view().boomerang().wrapping_sub(1) as usize;
+        let mut j = self.inventory_items().boomerang().wrapping_sub(1) as usize;
         let value = j as u8;
         self.ancilla_slot_view_mut(k).set_g(value);
         {
@@ -4420,9 +4420,7 @@ impl ZeldaState {
         }
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
-        if self.inventory_state_view().has_silver_arrows()
-            && self.frame_state().frame_counter & 1 == 0
-        {
+        if self.inventory_items().has_silver_arrows() && self.frame_state().frame_counter & 1 == 0 {
             self.ancilla_add_silver_arrow_sparkle(k);
         }
         let value = 255;
@@ -6874,7 +6872,7 @@ impl ZeldaState {
         if !sign16(x) && x >= 248 {
             self.ancilla_slot_view_mut(k).clear();
             self.set_submodule(0);
-            self.inventory_state_view_mut().set_flute(3);
+            self.inventory_items_mut().set_flute(3);
         }
     }
 
@@ -9943,7 +9941,7 @@ impl ZeldaState {
 
         let mut oam = self.oam_state_view().current_pointer_usize();
         let oam_org = oam;
-        let flags = if self.inventory_state_view().has_silver_arrows() {
+        let flags = if self.inventory_items().has_silver_arrows() {
             2
         } else {
             4
@@ -10725,7 +10723,7 @@ impl ZeldaState {
         ];
 
         let mut dmg = ANCILLA_DAMAGE[ty as usize];
-        if dmg == 6 && self.inventory_state_view().has_upgraded_bow() {
+        if dmg == 6 && self.inventory_items().has_upgraded_bow() {
             if self.sprite_slot_view(k).sprite_type() == 0xd7 {
                 let value = 32;
                 self.sprite_slot_view_mut(k).set_delay_aux4(value);
@@ -10958,7 +10956,7 @@ impl ZeldaState {
                 self.sprite_create_deflected_arrow(k);
                 return false;
             }
-            if !self.inventory_state_view().has_upgraded_bow() {
+            if !self.inventory_items().has_upgraded_bow() {
                 self.sprite_create_deflected_arrow(k);
             } else {
                 return_value = false;

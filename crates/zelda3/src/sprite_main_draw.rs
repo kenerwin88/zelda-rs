@@ -593,7 +593,7 @@ impl ZeldaState {
         if self.player_state_view().is_bunny_mirror()
             || self.player_state_view().sprite_damage_disable_timer() != 0
             || sign8(self.player_state_view().state_bits())
-            || self.inventory_state_view().shield_type() < 2
+            || self.inventory_items().shield_type() < 2
             || self.player_state_view().lower_level_state() != self.sprite_slot_view(k).floor()
         {
             return;
@@ -1187,7 +1187,7 @@ impl ZeldaState {
                         self.catfish_spawn_plop(k);
                     } else if j == 96 {
                         self.player_state_view_mut().clear_immobilized();
-                        let msg = if self.inventory_state_view().quake() != 0 {
+                        let msg = if self.inventory_items().quake() != 0 {
                             0x12b
                         } else {
                             0x12a
@@ -1196,7 +1196,7 @@ impl ZeldaState {
                         self.sprite_show_message_minimal_c();
                         return;
                     } else if j == 80 {
-                        if self.inventory_state_view().quake() != 0 {
+                        if self.inventory_items().quake() != 0 {
                             if self.get_random_number() & 1 != 0 {
                                 self.sprite_spawn_bomb(k);
                             } else {
@@ -8310,7 +8310,7 @@ impl ZeldaState {
         self.sprite_repel_dash();
 
         if self.follower_state_view().indicator() != 1
-            || self.inventory_state_view().torch() == 0
+            || self.inventory_items().torch() == 0
             || self.player_state_view().is_running()
             || self.sprite_slot_view(k).g() == 0x90
             || sign8(
@@ -9001,10 +9001,10 @@ impl ZeldaState {
         }
         let value = self.frame_state().frame_counter >> 5 & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let msg = if self.inventory_state_view().bottle(0) >= 2
-            || self.inventory_state_view().bottle(1) >= 2
-            || self.inventory_state_view().bottle(2) >= 2
-            || self.inventory_state_view().bottle(3) >= 2
+        let msg = if self.inventory_items().bottle(0) >= 2
+            || self.inventory_items().bottle(1) >= 2
+            || self.inventory_items().bottle(2) >= 2
+            || self.inventory_items().bottle(3) >= 2
             || !self.world_state_view().flag_overworld_area_changed()
         {
             0x4e
@@ -9110,7 +9110,7 @@ impl ZeldaState {
 
     fn medallion_tablet_activate(&mut self, k: usize, msg: &[u16; 2], bombos: bool) {
         if (self.player_state_view().filtered_joypad_h() & 0x80) != 0
-            && self.inventory_state_view().sword_type() == 2
+            && self.inventory_items().sword_type() == 2
         {
             return;
         }
@@ -9127,8 +9127,8 @@ impl ZeldaState {
             self.player_state_view_mut().clear_action_handler_timer();
             self.player_state_view_mut().set_position_mode(32);
             self.system_signals_view_mut().set_sound_effect_1(0);
-            if !sign8(self.inventory_state_view().sword_type())
-                && self.inventory_state_view().sword_type() >= 2
+            if !sign8(self.inventory_items().sword_type())
+                && self.inventory_items().sword_type() >= 2
             {
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 if bombos {
@@ -9890,13 +9890,13 @@ impl ZeldaState {
         let msg = if (self.save_progress_view().progress_flags() & 0x20) == 0 {
             self.save_progress_view_mut().or_progress_flags(0x20);
             0x125
-        } else if self.inventory_state_view().sword_type() >= 2 {
+        } else if self.inventory_items().sword_type() >= 2 {
             0x128
         } else if (self.player_resources_view().pendant_flags() & 7) == 7 {
             0x126
         } else if (self.player_resources_view().pendant_flags() & 2) != 0 {
             0x129
-        } else if self.inventory_state_view().book() != 0 {
+        } else if self.inventory_items().book() != 0 {
             0x127
         } else {
             self.save_progress_view_mut().or_progress_flags(0x20);
@@ -10923,7 +10923,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_deflection_bits(value);
             let value = 2;
             self.sprite_slot_view_mut(j).set_oam_flags(value);
-            let value = if self.inventory_state_view().shield_type() == 3 {
+            let value = if self.inventory_items().shield_type() == 3 {
                 0x20
             } else {
                 0
@@ -12282,7 +12282,7 @@ impl ZeldaState {
                 }
                 if self.sprite_slot_view(k).delay_main() == 16 {
                     let j = self.sprite_spawn_fire_phlegm(k);
-                    if j >= 0 && self.inventory_state_view().shield_type() != 3 {
+                    if j >= 0 && self.inventory_items().shield_type() != 3 {
                         let value = 0;
                         self.sprite_slot_view_mut(j as usize).set_flags5(value);
                     }
@@ -12572,8 +12572,7 @@ impl ZeldaState {
                     let j = self.sprite_find_empty_bottle();
                     if j >= 0 {
                         let value = 6;
-                        self.inventory_state_view_mut()
-                            .set_bottle(j as usize, value);
+                        self.inventory_items_mut().set_bottle(j as usize, value);
                         self.hud_refresh_icon();
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_state(value);
@@ -16299,7 +16298,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier(k);
         self.sprite_show_solicited_message(
             k,
-            if self.inventory_state_view().flippers() != 0 {
+            if self.inventory_items().flippers() != 0 {
                 0x0183
             } else {
                 0x0182
@@ -16335,7 +16334,7 @@ impl ZeldaState {
             return;
         }
         match self.sprite_slot_view(k).ai_state() {
-            0 => match self.inventory_state_view().mushroom() {
+            0 => match self.inventory_items().mushroom() {
                 0 => {
                     if self.save_progress_view().dungeon_info_word(0x109) & 0x80 != 0 {
                         self.sprite_show_solicited_message(k, 0x004b);
@@ -16369,7 +16368,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Witch_AcceptShroom(int k) {  // 85e4cf
     pub(super) fn witch_accept_shroom(&mut self, k: usize) {
-        self.inventory_state_view_mut().set_mushroom(0);
+        self.inventory_items_mut().set_mushroom(0);
         let dung_info = self.save_progress_view().dungeon_info_word(0x109) | 0x80;
         self.save_progress_view_mut()
             .set_dungeon_info_word(0x109, dung_info);
@@ -16496,7 +16495,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                if self.inventory_state_view().sword_type() < 2 {
+                if self.inventory_items().sword_type() < 2 {
                     if self.sprite_show_solicited_message(k, 0x002b) & 0x100 != 0 {
                         let value = 1;
                         self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -16744,7 +16743,7 @@ impl ZeldaState {
             self.sprite_show_solicited_message(k, 0x00a3);
             let value = 2;
             self.sprite_slot_view_mut(k).set_graphics(value);
-        } else if self.inventory_state_view().flute() < 2 {
+        } else if self.inventory_items().flute() < 2 {
             self.sprite_show_solicited_message(k, 0x00a1);
         } else if self.sprite_show_solicited_message(k, 0x00a4) & 0x100 == 0
             && self.save_progress_view().hud_current_item() == HUD_ITEM_FLUTE_DRAW
@@ -16932,7 +16931,7 @@ impl ZeldaState {
         let mut slots = [0u8; 2];
         let mut n = 0usize;
         if self.save_progress_view().map_icons_indicator() >= 3 {
-            let inventory = self.inventory_state_view();
+            let inventory = self.inventory_items();
             let resources = self.player_resources_view();
             if inventory.book() == 0 {
                 slots[n] = 2;
@@ -18276,9 +18275,7 @@ impl ZeldaState {
             let value = LOCAL_GRAPHICS[usize::from(self.sprite_slot_view(k).subtype2() >> 1) & 3];
             self.sprite_slot_view_mut(k).set_graphics(value);
         }
-        if self.sprite_slot_view(k).sprite_type() != 0x3e
-            || self.inventory_state_view().gloves() >= 1
-        {
+        if self.sprite_slot_view(k).sprite_type() != 0x3e || self.inventory_items().gloves() >= 1 {
             self.sprite_return_if_lifted_permissive(k);
         }
         if self.sprite_slot_view(k).state() != 9 {
@@ -19101,7 +19098,7 @@ impl ZeldaState {
         {
             let msg =
                 usize::from(self.player_state_view().x() as u8 >= self.sprite_slot_view(k).x_low())
-                    + usize::from(self.inventory_state_view().sword_type() >= 2) * 2;
+                    + usize::from(self.inventory_items().sword_type() >= 2) * 2;
             self.sprite_show_message_unconditional(MSG[msg]);
         }
         let value = self.frame_state().frame_counter >> 5 & 1;
@@ -23067,10 +23064,10 @@ impl ZeldaState {
                 {
                     return;
                 }
-                let bottles = self.inventory_state_view().bottle(0)
-                    | self.inventory_state_view().bottle(1)
-                    | self.inventory_state_view().bottle(2)
-                    | self.inventory_state_view().bottle(3);
+                let bottles = self.inventory_items().bottle(0)
+                    | self.inventory_items().bottle(1)
+                    | self.inventory_items().bottle(2)
+                    | self.inventory_items().bottle(3);
                 if bottles < 2 {
                     self.sprite_show_solicited_message(k, 0x104);
                 } else {
@@ -24835,11 +24832,11 @@ impl ZeldaState {
             return;
         }
         if self.world_location_state().overworld_screen_index() == 0x18 {
-            if self.inventory_state_view().flute() == 3 {
+            if self.inventory_items().flute() == 3 {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
             }
-        } else if (self.inventory_state_view().flute() & 2) != 0 {
+        } else if (self.inventory_items().flute() & 2) != 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         }
@@ -27209,13 +27206,13 @@ mod tests {
     fn witch_accept_shroom_sets_room_word_powder_bit() {
         let mut s = fresh_state();
         let k = 2;
-        s.inventory_state_view_mut().set_mushroom(1);
+        s.inventory_items_mut().set_mushroom(1);
         s.ram[SAVE_DUNG_INFO + 0x109] = 0;
         write_le_u16(&mut s.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x0002);
 
         s.witch_accept_shroom(k);
 
-        assert_eq!(s.inventory_state_view().mushroom(), 0);
+        assert_eq!(s.inventory_items().mushroom(), 0);
         assert_eq!(read_le_u16(&s.ram, SAVE_DUNG_INFO + 0x109 * 2), 0x0082);
         assert_eq!(s.ram[SAVE_DUNG_INFO + 0x109], 0);
     }

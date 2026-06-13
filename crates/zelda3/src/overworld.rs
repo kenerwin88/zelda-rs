@@ -404,7 +404,7 @@ impl ZeldaState {
             self.save_progress_view().progress_indicator(),
             self.world_state_view().savegame_has_master_sword_flags(),
             self.save_progress_view().dark_world_state(),
-            self.inventory_state_view().moon_pearl(),
+            self.inventory_items().moon_pearl(),
         );
 
         self.system_signals_view_mut().set_queued_music_control(xt);
@@ -454,7 +454,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_water_ripple_or_grass_state();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
-        if self.inventory_state_view().moon_pearl() == 0
+        if self.inventory_items().moon_pearl() == 0
             && self.save_progress_view().dark_world_state() != 0
         {
             self.player_state_view_mut().set_bunny_state(1);
@@ -1784,7 +1784,7 @@ impl ZeldaState {
     }
 
     pub(super) fn AdjustLinkBunnyStatus(&mut self) {
-        if self.inventory_state_view().moon_pearl() != 0 {
+        if self.inventory_items().moon_pearl() != 0 {
             self.ForceNonbunnyStatus();
         }
     }
@@ -2369,7 +2369,7 @@ impl ZeldaState {
         self.system_signals_view_mut()
             .set_ambient_sound_effect(music >> 4);
         if self.world_location_state().overworld_screen_index() >= 0x40
-            && self.inventory_state_view().moon_pearl() == 0
+            && self.inventory_items().moon_pearl() == 0
         {
             self.system_signals_view_mut().set_music_control(4);
         }
@@ -4227,7 +4227,7 @@ impl ZeldaState {
         self.world_state_view_mut()
             .set_overworld_area_index(new_area);
         if self.save_progress_view().dark_world_state() == 0
-            || self.inventory_state_view().moon_pearl() != 0
+            || self.inventory_items().moon_pearl() != 0
         {
             let music = self.overworld_config_table_view().music(new_area as usize);
             if music & 0xf0 == 0 {
@@ -4979,7 +4979,7 @@ impl ZeldaState {
         let mut y = 0xc0usize;
         if self.save_progress_view().progress_indicator() < 3 {
             y = 0x80;
-            if self.inventory_state_view().sword_type() < 2 {
+            if self.inventory_items().sword_type() < 2 {
                 r0 = 5;
                 y = 0x40;
                 if self.save_progress_view().progress_indicator() < 2 {

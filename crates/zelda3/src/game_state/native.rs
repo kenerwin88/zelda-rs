@@ -52,9 +52,10 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use inventory::{
-    DungeonKeySlotsView, InventoryState, MirrorWarpState, NativeDungeonKeySlotsBridgeMut,
-    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
-    PlayerResourcesState, SaveProgressState,
+    DungeonKeySlotsView, InventoryItemsState, InventoryState, MirrorWarpState,
+    NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut,
+    NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut, PlayerResourcesState,
+    SaveProgressState,
 };
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,

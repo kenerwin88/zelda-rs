@@ -41,7 +41,7 @@ use crate::game_state::{
     FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState, GarnishSlotView,
     GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeView,
     HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
-    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView, InventoryStateViewMut,
+    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
     MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
@@ -60,11 +60,11 @@ use crate::game_state::{
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
     NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
+    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -1871,12 +1871,16 @@ impl ZeldaState {
         PlayerTileAttributeView::new(&self.ram)
     }
 
-    pub(crate) fn inventory_state_view(&self) -> InventoryStateView<'_> {
-        InventoryStateView::new(&self.ram)
+    pub(crate) fn inventory_items(&self) -> InventoryItemsState {
+        InventoryItemsState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn inventory_state_view_mut(&mut self) -> InventoryStateViewMut<'_> {
-        InventoryStateViewMut::new(&mut self.ram)
+    pub(crate) fn item_memory_value(&self, item_memory_addr: usize) -> u8 {
+        self.ram.get(item_memory_addr).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn inventory_items_mut(&mut self) -> NativeInventoryItemsBridgeMut<'_> {
+        NativeInventoryItemsBridgeMut::new(&mut self.game_state.inventory.items, &mut self.ram)
     }
 
     pub(crate) fn player_resources_view(&self) -> PlayerResourcesState {

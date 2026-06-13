@@ -3425,7 +3425,7 @@ impl ZeldaState {
         let liftable_index = self
             .tile_detect_position_view()
             .liftable_action_index_primary() as usize;
-        if self.inventory_state_view().gloves() >= ACTION_FOR_GLOVES[liftable_index] {
+        if self.inventory_items().gloves() >= ACTION_FOR_GLOVES[liftable_index] {
             action = 1;
         }
 
@@ -4727,7 +4727,7 @@ impl ZeldaState {
         if let Some(&alternate) = RECEIVE_ITEM_ALTERNATES.get(item as usize) {
             if alternate != 0xff {
                 let ram_addr = player_memory_location_to_give_item_to(item);
-                if self.inventory_state_view().item_memory_value(ram_addr) != 0 {
+                if self.item_memory_value(ram_addr) != 0 {
                     item = alternate;
                 }
             }
@@ -5004,7 +5004,7 @@ impl ZeldaState {
         if btidx >= 4 {
             return;
         }
-        let bottle = self.inventory_state_view().bottle(btidx);
+        let bottle = self.inventory_items().bottle(btidx);
         if bottle == 0 {
             return;
         }
@@ -5018,7 +5018,7 @@ impl ZeldaState {
                 return;
             }
             let value = 2;
-            self.inventory_state_view_mut().set_bottle(btidx, value);
+            self.inventory_items_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
             self.set_submodule(4);
@@ -5032,7 +5032,7 @@ impl ZeldaState {
                 return;
             }
             let value = 2;
-            self.inventory_state_view_mut().set_bottle(btidx, value);
+            self.inventory_items_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
             self.set_submodule(8);
@@ -5049,7 +5049,7 @@ impl ZeldaState {
                 return;
             }
             let value = 2;
-            self.inventory_state_view_mut().set_bottle(btidx, value);
+            self.inventory_items_mut().set_bottle(btidx, value);
             self.player_state_view_mut().clear_item_in_hand();
             let main_module = self.frame_state().main_module;
             self.set_submodule(9);
@@ -5064,7 +5064,7 @@ impl ZeldaState {
                 return;
             }
             let value = 2;
-            self.inventory_state_view_mut().set_bottle(btidx, value);
+            self.inventory_items_mut().set_bottle(btidx, value);
             self.hud_rebuild();
         } else if bottle == 7 || bottle == 8 {
             if self.release_bee_from_bottle(btidx) == 0 {
@@ -5072,7 +5072,7 @@ impl ZeldaState {
                 return;
             }
             let value = 2;
-            self.inventory_state_view_mut().set_bottle(btidx, value);
+            self.inventory_items_mut().set_bottle(btidx, value);
             self.hud_rebuild();
         }
     }
@@ -5097,7 +5097,7 @@ impl ZeldaState {
         if self.player_state_view().doorway_state() != 0 || !self.check_y_button_press() {
             return;
         }
-        if self.inventory_state_view().torch() != 0 && self.link_check_magic_cost(6) {
+        if self.inventory_items().torch() != 0 && self.link_check_magic_cost(6) {
             self.ancilla_add_magic_powder(0x1a, 0);
             self.dungeon_light_torch();
             self.ancilla_add_lamp_flame(0x2f, 2);
@@ -5115,7 +5115,7 @@ impl ZeldaState {
             if self.player_state_view().doorway_state() != 0 || !self.check_y_button_press() {
                 return;
             }
-            if self.inventory_state_view().mushroom() != 2 {
+            if self.inventory_items().mushroom() != 2 {
                 self.ancilla_sfx2_near(60);
                 self.finish_powder_item();
                 return;
@@ -5162,9 +5162,9 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_shovel_and_flute(&mut self) {
-        if self.inventory_state_view().flute() == 1 {
+        if self.inventory_items().flute() == 1 {
             self.link_item_shovel();
-        } else if self.inventory_state_view().flute() != 0 {
+        } else if self.inventory_items().flute() != 0 {
             self.link_item_flute();
         }
     }
@@ -5257,7 +5257,7 @@ impl ZeldaState {
         if (0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x27) {
             return;
         }
-        if self.inventory_state_view().flute() == 2 {
+        if self.inventory_items().flute() == 2 {
             let screen = u16::from(self.world_location_state().overworld_screen_index());
             let y = self.player_state_view().y();
             let x = self.player_state_view().x();
@@ -5326,7 +5326,7 @@ impl ZeldaState {
 
         if item != self.player_state_view().current_item_active() {
             if self.player_state_view().current_item_active() == 8
-                && self.inventory_state_view().flute() & 2 != 0
+                && self.inventory_items().flute() & 2 != 0
             {
                 self.player_state_view_mut()
                     .clear_button_mask_b_y_bits(0x40);
@@ -6132,7 +6132,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_button_mask_b_y_bits(0x40);
 
-        let sword_ok = self.inventory_state_view().sword_type().wrapping_add(1) & !1 != 0;
+        let sword_ok = self.inventory_items().sword_type().wrapping_add(1) & !1 != 0;
         let blocked = self.player_state_view().doorway_state() != 0
             || self.player_state_view().is_menu_blocked()
             || self.dungeon_state_view().savegame_state_bits() & 0x8000 != 0
@@ -7601,7 +7601,7 @@ impl ZeldaState {
         self.ancilla_add_dash_dust(30, 0);
         self.player_state_view_mut()
             .clear_spin_attack_step_counter();
-        if self.inventory_state_view().sword_type().wrapping_add(1) & 0xfe != 0 {
+        if self.inventory_items().sword_type().wrapping_add(1) & 0xfe != 0 {
             self.tile_detect_main_handler(7);
         }
         if self.save_progress_view().progress_indicator() != 0 {
@@ -7695,7 +7695,7 @@ impl ZeldaState {
             .player_resources_view()
             .health_capacity()
             .wrapping_sub(4);
-        let sword = self.inventory_state_view().sword_type();
+        let sword = self.inventory_items().sword_type();
         if health < self.player_resources_view().current_health()
             && sword.wrapping_add(1) & 0xfe != 0
             && sword >= 2
@@ -7749,7 +7749,7 @@ impl ZeldaState {
             }
             self.player_state_view_mut()
                 .set_spin_attack_delay_timer(SPIN_ATTACK_DELAYS[frames as usize]);
-            let sword = self.inventory_state_view().sword_type();
+            let sword = self.inventory_items().sword_type();
             if frames == 5 {
                 if sword != 0 && sword != 1 && sword != 0xff {
                     self.ancilla_add_sword_swing_sparkle(0x26, 4);
@@ -7794,7 +7794,7 @@ impl ZeldaState {
                     && self.player_state_view().speed_setting() != 16
                 {
                     self.player_state_view_mut().set_speed_setting(12);
-                    if self.inventory_state_view().sword_type().wrapping_add(1) & !1 == 0 {
+                    if self.inventory_items().sword_type().wrapping_add(1) & !1 == 0 {
                         return;
                     }
                     if (0..5)
@@ -7839,7 +7839,7 @@ impl ZeldaState {
         {
             let mut frames = self.player_state_view().button_b_frames().wrapping_add(1);
             if frames == 13 {
-                if self.inventory_state_view().sword_type().wrapping_add(1) & !1 != 0
+                if self.inventory_items().sword_type().wrapping_add(1) & !1 != 0
                     && self.player_state_view().defense_flags() & 9 != 0
                 {
                     self.ancilla_add_wall_tap_spark(27, 1);

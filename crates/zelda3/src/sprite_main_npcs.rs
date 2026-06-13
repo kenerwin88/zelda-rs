@@ -165,7 +165,7 @@ impl ZeldaState {
                 .player_resources_view()
                 .equipped_bottle_index()
                 .wrapping_sub(1) as usize;
-            if self.inventory_state_view().bottle(bottle) == 8 {
+            if self.inventory_items().bottle(bottle) == 8 {
                 self.sprite_slot_view_mut(ju).set_head_direction(1);
             }
             self.initialize_spawned_bee(ju);
@@ -468,10 +468,10 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot_view(k).e() == 0 {
                     self.sprite_slot_view_mut(k).clear();
-                    let or_bottle = self.inventory_state_view().bottle(0)
-                        | self.inventory_state_view().bottle(1)
-                        | self.inventory_state_view().bottle(2)
-                        | self.inventory_state_view().bottle(3);
+                    let or_bottle = self.inventory_items().bottle(0)
+                        | self.inventory_items().bottle(1)
+                        | self.inventory_items().bottle(2)
+                        | self.inventory_items().bottle(3);
                     if (or_bottle & 8) == 0 {
                         self.gold_bee_spawn_self(k);
                     }
@@ -609,8 +609,7 @@ impl ZeldaState {
             let j = self.sprite_find_empty_bottle();
             if j >= 0 {
                 let value = 7u8.wrapping_add(self.sprite_slot_view(k).head_direction());
-                self.inventory_state_view_mut()
-                    .set_bottle(j as usize, value);
+                self.inventory_items_mut().set_bottle(j as usize, value);
                 self.hud_refresh_icon();
                 self.sprite_slot_view_mut(k).clear();
                 return;
@@ -630,7 +629,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_find_empty_bottle(&self) -> i32 {
         for i in 0..4 {
-            if self.inventory_state_view().bottle(i) == 2 {
+            if self.inventory_items().bottle(i) == 2 {
                 return i as i32;
             }
         }
@@ -1142,7 +1141,7 @@ mod tests {
         state
             .player_resources_view_mut()
             .set_equipped_bottle_index(1);
-        state.inventory_state_view_mut().set_bottle(0, 8);
+        state.inventory_items_mut().set_bottle(0, 8);
 
         let j = state.release_bee_from_bottle(0);
 
@@ -1361,15 +1360,15 @@ mod tests {
     fn sprite_find_empty_bottle_locates_value_two() {
         // Sprite_Find_EmptyBottle returns first slot whose value is 2.
         let mut state = fresh_state();
-        state.inventory_state_view_mut().set_bottle(0, 1);
-        state.inventory_state_view_mut().set_bottle(1, 1);
-        state.inventory_state_view_mut().set_bottle(2, 2);
-        state.inventory_state_view_mut().set_bottle(3, 2);
+        state.inventory_items_mut().set_bottle(0, 1);
+        state.inventory_items_mut().set_bottle(1, 1);
+        state.inventory_items_mut().set_bottle(2, 2);
+        state.inventory_items_mut().set_bottle(3, 2);
         assert_eq!(state.sprite_find_empty_bottle(), 2);
 
         // None empty → returns -1.
-        state.inventory_state_view_mut().set_bottle(2, 1);
-        state.inventory_state_view_mut().set_bottle(3, 1);
+        state.inventory_items_mut().set_bottle(2, 1);
+        state.inventory_items_mut().set_bottle(3, 1);
         assert_eq!(state.sprite_find_empty_bottle(), -1);
     }
 
@@ -1390,12 +1389,12 @@ mod tests {
             sprite.set_pause(0);
         }
         state.multiselect_choice_view_mut().set_value(0);
-        state.inventory_state_view_mut().set_bottle(0, 1);
-        state.inventory_state_view_mut().set_bottle(1, 2); // first empty
+        state.inventory_items_mut().set_bottle(0, 1);
+        state.inventory_items_mut().set_bottle(1, 2); // first empty
         state.sprite_slot_view_mut(k).set_head_direction(0);
 
         state.bee_put_in_bottle(k);
-        assert_eq!(state.inventory_state_view().bottle(1), 7);
+        assert_eq!(state.inventory_items().bottle(1), 7);
         assert_eq!(state.sprite_slot_view(k).state(), 0);
     }
 
@@ -1412,7 +1411,7 @@ mod tests {
         }
         state.multiselect_choice_view_mut().set_value(0);
         for i in 0..4 {
-            state.inventory_state_view_mut().set_bottle(i, 1);
+            state.inventory_items_mut().set_bottle(i, 1);
         }
 
         state.bee_put_in_bottle(k);

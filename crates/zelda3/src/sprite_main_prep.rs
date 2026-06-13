@@ -646,7 +646,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_mushroom(&mut self, k: usize) {
-        if self.inventory_state_view().mushroom() >= 2 {
+        if self.inventory_items().mushroom() >= 2 {
             self.sprite_slot_view_mut(k).set_state(0);
         } else {
             self.sprite_slot_view_mut(k).set_graphics(0);
@@ -665,7 +665,7 @@ impl ZeldaState {
 
     pub(super) fn magic_shop_assistant_spawn_powder(&mut self, k: usize) {
         if !self.world_state_view().flag_overworld_area_changed()
-            || self.inventory_state_view().mushroom() == 2
+            || self.inventory_items().mushroom() == 2
         {
             return;
         }
@@ -1502,7 +1502,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j_usize).set_flags4(0x14);
             self.sprite_slot_view_mut(j_usize).set_ignore_projectile(20);
             self.sprite_slot_view_mut(j_usize).set_bump_damage(37);
-            if self.inventory_state_view().shield_type() >= 3 {
+            if self.inventory_items().shield_type() >= 3 {
                 self.sprite_slot_view_mut(j_usize).set_flags5(0x20);
             }
         }
@@ -1765,7 +1765,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux4() != 0 {
             return;
         }
-        let msg = if self.inventory_state_view().moon_pearl() & 1 != 0 {
+        let msg = if self.inventory_items().moon_pearl() & 1 != 0 {
             0x15c
         } else {
             0x15b
@@ -1784,7 +1784,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux4() != 0 {
             return;
         }
-        let msg = if self.inventory_state_view().moon_pearl() & 1 != 0 {
+        let msg = if self.inventory_items().moon_pearl() & 1 != 0 {
             0x15e
         } else {
             0x15d
@@ -1957,7 +1957,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_deflection_bits(0x48);
             self.sprite_slot_view_mut(j).set_ignore_projectile(0x48);
             self.sprite_slot_view_mut(j).set_delay_main(5);
-            if self.inventory_state_view().shield_type() == 3 {
+            if self.inventory_items().shield_type() == 3 {
                 self.sprite_slot_view_mut(j).set_flags5(32);
             }
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
@@ -1977,7 +1977,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sasha_idle(&mut self, k: usize) {
-        let inventory = self.inventory_state_view();
+        let inventory = self.inventory_items();
         let resources = self.player_resources_view();
         if resources.pendant_flags() & 4 == 0 {
             if self.sprite_show_solicited_message(k, 0x32) & 0x100 != 0 {
@@ -2126,7 +2126,7 @@ impl ZeldaState {
                 let j = if self.save_progress_view().progress_indicator() >= 3 {
                     2
                 } else {
-                    self.inventory_state_view().moon_pearl() as usize
+                    self.inventory_items().moon_pearl() as usize
                 };
                 if self.sprite_show_solicited_message(k, OLD_MOUNTAIN_MAN_MSGS[j]) & 0x100 != 0 {
                     self.sprite_slot_view_mut(k).increment_ai_state();
@@ -2384,12 +2384,12 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(3);
                 let j = self.multiselect_choice_view().value() as usize;
                 self.sprite_slot_view_mut(k).set_c(j as u8);
-                let item = self.inventory_state_view().inventory_item(j);
+                let item = self.inventory_items().inventory_item(j);
                 let value = 0;
                 if j == 3 {
                     self.player_resources_view_mut().set_bombs(value);
                 } else {
-                    self.inventory_state_view_mut().set_inventory_item(j, value);
+                    self.inventory_items_mut().set_inventory_item(j, value);
                 }
                 let item_idx = if j == 3 || j == 32 { 1 } else { item };
                 let data_idx = WISH_POND_ITEM_DATA_OFFSETS[j]
@@ -2933,10 +2933,10 @@ impl ZeldaState {
     }
 
     pub(super) fn potion_cauldron_check_bottles(&mut self) -> bool {
-        (self.inventory_state_view().bottle(0)
-            | self.inventory_state_view().bottle(1)
-            | self.inventory_state_view().bottle(2)
-            | self.inventory_state_view().bottle(3))
+        (self.inventory_items().bottle(0)
+            | self.inventory_items().bottle(1)
+            | self.inventory_items().bottle(2)
+            | self.inventory_items().bottle(3))
             >= 2
     }
 
@@ -3247,7 +3247,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_haunted_grove_ostritch(&mut self, k: usize) {
-        if self.inventory_state_view().flute() >= 2 {
+        if self.inventory_items().flute() >= 2 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
@@ -3267,7 +3267,7 @@ impl ZeldaState {
 
         self.sprite_slot_view_mut(k).set_floor(2);
         if self.world_location_state().dungeon_room == 0x0107 {
-            if self.inventory_state_view().book() != 0 {
+            if self.inventory_items().book() != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
             } else {
                 self.DecodeAnimatedSpriteTile_variable(0x0e);
@@ -3635,7 +3635,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_sick_kid(&mut self, k: usize) {
-        if self.inventory_state_view().bug_net() != 0 {
+        if self.inventory_items().bug_net() != 0 {
             self.sprite_slot_view_mut(k).set_ai_state(3);
         }
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
@@ -3970,7 +3970,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_king_zora(&mut self, k: usize) {
-        if self.inventory_state_view().flippers() != 0 {
+        if self.inventory_items().flippers() != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         } else {
             self.sprite_slot_view_mut(k).increment_ignore_projectile();
@@ -4069,7 +4069,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
         let subtype2 = (self.save_progress_view().dark_world_state() >> 6) & 1;
         self.sprite_slot_view_mut(k).set_subtype2(subtype2);
-        let flute = self.inventory_state_view().flute();
+        let flute = self.inventory_items().flute();
         if self.sprite_slot_view(k).subtype2() != 0 {
             if self.save_progress_view().progress_indicator_3() & 8 != 0 || flute > 2 {
                 self.sprite_slot_view_mut(k).set_graphics(3);
@@ -4313,10 +4313,10 @@ impl ZeldaState {
     pub(super) fn sprite_prep_shield_pickup(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_nice_bee(&mut self, k: usize) {
-        let or_bottle = self.inventory_state_view().bottle(0)
-            | self.inventory_state_view().bottle(1)
-            | self.inventory_state_view().bottle(2)
-            | self.inventory_state_view().bottle(3);
+        let or_bottle = self.inventory_items().bottle(0)
+            | self.inventory_items().bottle(1)
+            | self.inventory_items().bottle(2)
+            | self.inventory_items().bottle(3);
         if or_bottle & 8 != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
@@ -4528,7 +4528,7 @@ impl ZeldaState {
             return;
         }
         if self.follower_state_view().indicator() == 0 {
-            if self.inventory_state_view().mirror() == 2 {
+            if self.inventory_items().mirror() == 2 {
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             self.follower_state_view_mut().set_indicator(4);
@@ -4553,7 +4553,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_zelda_bounce(&mut self, k: usize) {
-        if self.inventory_state_view().sword_type() >= 2 {
+        if self.inventory_items().sword_type() >= 2 {
             self.sprite_slot_view_mut(k).set_state(0);
             return;
         }
@@ -4592,11 +4592,11 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
         if self.world_location_state().overworld_screen_index() != 3 {
             self.sprite_slot_view_mut(k).add_x_low(8);
-            if self.inventory_state_view().bombos() != 0 {
+            if self.inventory_items().bombos() != 0 {
                 self.sprite_slot_view_mut(k).set_graphics(4);
                 self.sprite_slot_view_mut(k).set_ai_state(3);
             }
-        } else if self.inventory_state_view().ether() != 0 {
+        } else if self.inventory_items().ether() != 0 {
             self.sprite_slot_view_mut(k).set_graphics(4);
             self.sprite_slot_view_mut(k).set_ai_state(3);
         }
@@ -4714,7 +4714,7 @@ mod tests {
     fn flute_kid_prep_handles_light_and_dark_world_branches() {
         let mut light = fresh_state();
         let k = 6;
-        light.inventory_state_view_mut().set_flute(2);
+        light.inventory_items_mut().set_flute(2);
         light.sprite_slot_view_mut(k).set_state(9);
         light.sprite_prep_flute_kid(k);
         assert_eq!(light.sprite_slot_view(k).state(), 0);
@@ -4812,7 +4812,7 @@ mod tests {
         beam.sprite_set_x(k, 0x0200);
         beam.sprite_set_y(k, 0x0100);
         beam.sprite_slot_view_mut(k).set_direction(0);
-        beam.inventory_state_view_mut().set_shield_type(3);
+        beam.inventory_items_mut().set_shield_type(3);
         beam.laser_eye_fire_beam(k);
         assert_eq!(beam.sprite_slot_view(15).sprite_type(), 0x95);
         assert_eq!(beam.sprite_slot_view(15).graphics(), 0);
@@ -5330,14 +5330,14 @@ mod tests {
         assert_eq!(runner.sprite_slot_view(k).ignore_projectile(), 1);
 
         let mut mushroom = fresh_state();
-        mushroom.inventory_state_view_mut().set_mushroom(1);
+        mushroom.inventory_items_mut().set_mushroom(1);
         mushroom.sprite_slot_view_mut(k).set_graphics(7);
         mushroom.sprite_prep_mushroom(k);
         assert_eq!(mushroom.sprite_slot_view(k).graphics(), 0);
         assert_eq!(mushroom.sprite_slot_view(k).oam_flags() & 8, 8);
         assert_eq!(mushroom.sprite_slot_view(k).ignore_projectile(), 1);
 
-        mushroom.inventory_state_view_mut().set_mushroom(2);
+        mushroom.inventory_items_mut().set_mushroom(2);
         mushroom.sprite_slot_view_mut(k).set_state(9);
         mushroom.sprite_prep_mushroom(k);
         assert_eq!(mushroom.sprite_slot_view(k).state(), 0);
@@ -5351,7 +5351,7 @@ mod tests {
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
         s.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_PREP] = 1;
-        s.inventory_state_view_mut().set_mushroom(1);
+        s.inventory_items_mut().set_mushroom(1);
         write_le_u16(&mut s.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x80);
 
         s.sprite_prep_potion_shop(k);
@@ -5385,7 +5385,7 @@ mod tests {
         let mut skipped_powder = fresh_state();
         skipped_powder.sprite_slot_view_mut(k).set_state(9);
         skipped_powder.ram[FLAG_OVERWORLD_AREA_DID_CHANGE_PREP] = 0;
-        skipped_powder.inventory_state_view_mut().set_mushroom(1);
+        skipped_powder.inventory_items_mut().set_mushroom(1);
         write_le_u16(&mut skipped_powder.ram, SAVE_DUNG_INFO + 0x109 * 2, 0x80);
         skipped_powder.sprite_prep_potion_shop(k);
         assert_eq!(skipped_powder.sprite_slot_view(15).subtype2(), 2);
@@ -5554,7 +5554,7 @@ mod tests {
         assert_eq!(old_man_room.sprite_slot_view(k).subtype2(), 2);
 
         let mut old_man_mirror = fresh_state();
-        old_man_mirror.inventory_state_view_mut().set_mirror(2);
+        old_man_mirror.inventory_items_mut().set_mirror(2);
         old_man_mirror.sprite_slot_view_mut(k).set_state(9);
         old_man_mirror.sprite_prep_old_man_bounce(k);
         assert_eq!(old_man_mirror.sprite_slot_view(k).state(), 0);
@@ -5573,7 +5573,7 @@ mod tests {
         let k = 6;
 
         let mut has_sword = fresh_state();
-        has_sword.inventory_state_view_mut().set_sword_type(2);
+        has_sword.inventory_items_mut().set_sword_type(2);
         has_sword.sprite_slot_view_mut(k).set_state(9);
         has_sword.sprite_prep_zelda_bounce(k);
         assert_eq!(has_sword.sprite_slot_view(k).state(), 0);
@@ -6096,7 +6096,7 @@ mod tests {
         phlegm.sprite_set_y(k, 0x0060);
         phlegm.sprite_slot_view_mut(k).set_z(7);
         phlegm.sprite_slot_view_mut(k).set_direction(1);
-        phlegm.inventory_state_view_mut().set_shield_type(3);
+        phlegm.inventory_items_mut().set_shield_type(3);
         assert_eq!(phlegm.sprite_spawn_fire_phlegm(k), 15);
         assert_eq!(phlegm.sprite_slot_view(15).sprite_type(), 0xa5);
         assert_eq!(phlegm.sprite_get_x(15), 0x0038);
@@ -6325,7 +6325,7 @@ mod tests {
         assert_eq!(pink_msg.sprite_slot_view(k).y_velocity(), 0xcb);
         assert_eq!(pink_msg.sprite_slot_view(k).delay_aux4(), 64);
         pink_msg.sprite_slot_view_mut(k).set_delay_aux4(0);
-        pink_msg.inventory_state_view_mut().set_moon_pearl(1);
+        pink_msg.inventory_items_mut().set_moon_pearl(1);
         pink_msg.pink_ball_handle_message(k);
         assert_eq!(pink_msg.dialogue_message_index_view().value(), 0x15c);
 
@@ -6339,7 +6339,7 @@ mod tests {
         assert_eq!(bully_msg.sprite_slot_view(k).y_velocity(), 0xcb);
         assert_eq!(bully_msg.sprite_slot_view(k).delay_aux4(), 64);
         bully_msg.sprite_slot_view_mut(k).set_delay_aux4(0);
-        bully_msg.inventory_state_view_mut().set_moon_pearl(1);
+        bully_msg.inventory_items_mut().set_moon_pearl(1);
         bully_msg.bully_handle_message(k);
         assert_eq!(bully_msg.dialogue_message_index_view().value(), 0x15e);
 
@@ -6353,16 +6353,16 @@ mod tests {
         sasha.ram[SAVEGAME_MAP_ICONS_INDICATOR] = 3;
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x38);
-        sasha.inventory_state_view_mut().set_boots(1);
+        sasha.inventory_items_mut().set_boots(1);
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x37);
-        sasha.inventory_state_view_mut().set_ice_rod(1);
+        sasha.inventory_items_mut().set_ice_rod(1);
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x34);
         sasha.player_resources_view_mut().set_pendant_flags(7);
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x30);
-        sasha.inventory_state_view_mut().set_sword_type(2);
+        sasha.inventory_items_mut().set_sword_type(2);
         sasha.sasha_idle(k);
         assert_eq!(sasha.dialogue_message_index_view().value(), 0x31);
 
@@ -6516,7 +6516,7 @@ mod tests {
         assert!(logic.octoballoon_find());
 
         assert!(!logic.potion_cauldron_check_bottles());
-        logic.inventory_state_view_mut().set_bottle(2, 2);
+        logic.inventory_items_mut().set_bottle(2, 2);
         assert!(logic.potion_cauldron_check_bottles());
         logic.potion_cauldron_go_beep(k);
         assert_eq!(logic.system_signals_view().sound_effect_1() & 0x3f, 0x3c);
@@ -6894,7 +6894,7 @@ mod tests {
 
         let mut bombos = fresh_state();
         bombos.set_overworld_screen(2);
-        bombos.inventory_state_view_mut().set_bombos(1);
+        bombos.inventory_items_mut().set_bombos(1);
         bombos.sprite_slot_view_mut(k).set_x_low(0xf9);
         bombos.sprite_prep_medallion_table(k);
         assert_eq!(bombos.sprite_slot_view(k).ignore_projectile(), 1);
@@ -6907,7 +6907,7 @@ mod tests {
             .world_state_view_mut()
             .set_overworld_screen(2);
         ether_only_on_bombos_screen
-            .inventory_state_view_mut()
+            .inventory_items_mut()
             .set_ether(1);
         ether_only_on_bombos_screen.sprite_prep_medallion_table(k);
         assert_eq!(
@@ -6927,7 +6927,7 @@ mod tests {
 
         let mut ether = fresh_state();
         ether.set_overworld_screen(3);
-        ether.inventory_state_view_mut().set_ether(1);
+        ether.inventory_items_mut().set_ether(1);
         ether.sprite_slot_view_mut(k).set_x_low(0x20);
         ether.sprite_prep_medallion_table(k);
         assert_eq!(ether.sprite_slot_view(k).ignore_projectile(), 1);

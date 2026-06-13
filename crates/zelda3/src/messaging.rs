@@ -871,9 +871,9 @@ impl ZeldaState {
         self.clear_mosaic_direction();
         self.set_mosaic_copy(3);
         for i in 0..4 {
-            if self.inventory_state_view().bottle(i) == 6 {
+            if self.inventory_items().bottle(i) == 6 {
                 let value = 2;
-                self.inventory_state_view_mut().set_bottle(i, value);
+                self.inventory_items_mut().set_bottle(i, value);
                 self.messaging_state_view_mut().set_menu_animation_timer(12);
                 self.set_chr_halfslot_request(15);
                 self.Graphics_LoadChrHalfSlot();
@@ -979,7 +979,7 @@ impl ZeldaState {
         self.AdjustLinkBunnyStatus();
         if self.save_progress_view().progress_indicator() < 3 {
             self.save_progress_view_mut().set_dark_world_state(0);
-            if !self.inventory_state_view().has_moon_pearl() {
+            if !self.inventory_items().has_moon_pearl() {
                 self.ForceNonbunnyStatus();
             }
         }
@@ -3443,8 +3443,8 @@ impl ZeldaState {
                 x = 31;
             }
             if x != 15
-                && (self.inventory_state_view().inventory_item(x as usize) != 0
-                    || (x == 32 && self.inventory_state_view().inventory_item(x as usize + 1) != 0))
+                && (self.inventory_items().inventory_item(x as usize) != 0
+                    || (x == 32 && self.inventory_items().inventory_item(x as usize + 1) != 0))
             {
                 break;
             }
@@ -3461,8 +3461,8 @@ impl ZeldaState {
                 x = 0;
             }
             if x != 15
-                && (self.inventory_state_view().inventory_item(x as usize) != 0
-                    || (x == 32 && self.inventory_state_view().inventory_item(x as usize + 1) != 0))
+                && (self.inventory_items().inventory_item(x as usize) != 0
+                    || (x == 32 && self.inventory_items().inventory_item(x as usize + 1) != 0))
             {
                 break;
             }
@@ -3476,7 +3476,7 @@ impl ZeldaState {
         let variant = if item == 3 || item == 32 {
             1
         } else {
-            self.inventory_state_view().inventory_item(item as usize) as usize
+            self.inventory_items().inventory_item(item as usize) as usize
         };
         let p = self.hud_get_item_box_table(item)[variant];
         self.vwf_glyph_spacing_view_mut()
@@ -3785,7 +3785,7 @@ impl ZeldaState {
         self.player_state_view_mut().set_speed_setting(0);
         self.player_state_view_mut()
             .clear_transform_poof_need_and_temp_bunny_timer();
-        if self.inventory_state_view().has_moon_pearl() {
+        if self.inventory_items().has_moon_pearl() {
             self.player_state_view_mut().clear_bunny_body_state();
         }
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
@@ -3795,7 +3795,7 @@ impl ZeldaState {
         let sfx = 0x27 | self.link_calculate_sfx_pan();
         self.system_signals_view_mut().set_sound_effect_1(sfx);
         for i in 0..4 {
-            if self.inventory_state_view().bottle(i) == 6 {
+            if self.inventory_items().bottle(i) == 6 {
                 return;
             }
         }

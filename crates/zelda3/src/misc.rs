@@ -273,7 +273,7 @@ impl ZeldaState {
         if self.frame_state().submodule == 0 {
             self.set_overworld_map_state(0);
             self.system_signals_view_mut().set_ambient_sound_effect(5);
-            if !self.inventory_state_view().has_moon_pearl() {
+            if !self.inventory_items().has_moon_pearl() {
                 self.dialogue_message_index_view_mut().set_value(0x36);
                 self.main_show_text_message();
                 self.system_signals_view_mut().set_ambient_sound_effect(0);
@@ -308,7 +308,7 @@ impl ZeldaState {
         self.clear_core_update_disable_flag();
         self.set_main_module(9);
         self.world_state_view_mut().set_bg1_y_low(0);
-        let music = if self.inventory_state_view().has_moon_pearl() {
+        let music = if self.inventory_items().has_moon_pearl() {
             9
         } else {
             4
@@ -493,7 +493,7 @@ impl ZeldaState {
         {
             self.load_dungeon_room_rebuild_hud();
         } else {
-            let message = if self.inventory_state_view().mirror() == 2 {
+            let message = if self.inventory_items().mirror() == 2 {
                 0x0185
             } else {
                 0x0184
@@ -621,7 +621,7 @@ impl ZeldaState {
         if self.player_state_view().handler_state() != 0 {
             return;
         }
-        if self.inventory_state_view().sword_type().wrapping_add(1) & 0xfe != 0 {
+        if self.inventory_items().sword_type().wrapping_add(1) & 0xfe != 0 {
             self.system_signals_view_mut().set_sound_effect_1(0x2c);
         }
         self.player_state_view_mut().force_hold_sword_up();
@@ -733,7 +733,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .set_immobilized_flag(if item == 0x20 { 2 } else { 1 });
         if item == 0 {
-            self.inventory_state_view_mut().set_item_memory_value(
+            self.inventory_items_mut().set_item_memory_value(
                 memory_location_to_give_item_to_misc(4),
                 value_to_give_item_to_misc(0),
             );
@@ -742,7 +742,7 @@ impl ZeldaState {
         let value_addr = memory_location_to_give_item_to_misc(item);
         let value = value_to_give_item_to_misc(item);
         if (value as i8) >= 0 {
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .set_item_memory_value(value_addr, value);
         }
 
@@ -762,18 +762,18 @@ impl ZeldaState {
                 _ => 2,
             };
             let value = self
-                .inventory_state_view_mut()
+                .inventory_items_mut()
                 .or_item_memory_value(value_addr, bit);
             if value & 7 == 7 {
                 self.save_progress_view_mut().set_map_icons_indicator(4);
             }
             self.increment_overworld_map_state();
         } else if item == 0x22 {
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .set_item_memory_value_if_empty(value_addr, 1);
         } else if matches!(item, 0x25 | 0x32 | 0x33) {
             let mask = 0x8000u16 >> ((self.save_progress_view().palace_index_x2() >> 1) as u16);
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .or_item_memory_word(value_addr, mask);
         } else if item == 0x3e {
             if self.player_state_view().is_lifting_or_carrying() {
@@ -801,8 +801,8 @@ impl ZeldaState {
                 self.system_signals_view_mut().set_sound_effect_1(sfx);
             }
         } else if item == 0x29 {
-            if self.inventory_state_view().mushroom() != 2 {
-                self.inventory_state_view_mut()
+            if self.inventory_items().mushroom() != 2 {
+                self.inventory_items_mut()
                     .set_item_memory_value(value_addr, 1);
                 self.hud_refresh_icon();
             }
@@ -815,11 +815,11 @@ impl ZeldaState {
                 0x31 => 10,
                 _ => 1,
             };
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .add_item_memory_value_capped(value_addr, add, 99);
             self.hud_refresh_icon();
         } else if item == 0x17 {
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .increment_item_memory_value_mod4(value_addr);
             let sfx = 0x2d | self.link_calculate_sfx_pan();
             self.system_signals_view_mut().set_sound_effect_2(sfx);
@@ -921,7 +921,7 @@ impl ZeldaState {
 
         if let Some(j) = BOTTLE_LIST.iter().position(|&candidate| candidate == item) {
             if self
-                .inventory_state_view_mut()
+                .inventory_items_mut()
                 .fill_first_empty_bottle_with(j as u8 + 2)
             {
                 return;
@@ -930,7 +930,7 @@ impl ZeldaState {
 
         if let Some(j) = POTION_LIST.iter().position(|&candidate| candidate == item) {
             if self
-                .inventory_state_view_mut()
+                .inventory_items_mut()
                 .replace_first_empty_bottle_with(j as u8 + 3)
             {
                 return;

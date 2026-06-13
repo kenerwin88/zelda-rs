@@ -388,7 +388,7 @@ impl ZeldaState {
     }
 
     pub(super) fn load_actual_gear_palettes(&mut self) {
-        let inventory = self.inventory_state_view();
+        let inventory = self.inventory_items();
         self.load_gear_palettes(
             inventory.sword_type(),
             inventory.shield_type(),
@@ -406,8 +406,8 @@ impl ZeldaState {
 
     pub(super) fn load_gear_palettes_bunny(&mut self) {
         self.load_gear_palettes(
-            self.inventory_state_view().sword_type(),
-            self.inventory_state_view().shield_type(),
+            self.inventory_items().sword_type(),
+            self.inventory_items().shield_type(),
             3,
         );
     }
@@ -432,7 +432,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_update_gloves_color(&mut self) {
-        let gloves = self.inventory_state_view().gloves();
+        let gloves = self.inventory_items().gloves();
         if gloves != 0 {
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
             self.palette_buffer_view_mut().set_aux_color(0xfd, color);
@@ -819,7 +819,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sword(&mut self) {
-        let sword = self.inventory_state_view().sword_type();
+        let sword = self.inventory_items().sword_type();
         let sword_index = if (sword as i8) > 0 {
             sword.wrapping_sub(1) as usize
         } else {
@@ -830,7 +830,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_shield(&mut self) {
-        let shield = self.inventory_state_view().shield_type();
+        let shield = self.inventory_items().shield_type();
         let shield_index = if shield != 0 {
             shield.wrapping_sub(1) as usize
         } else {
@@ -959,7 +959,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_link_armor_and_gloves(&mut self) {
-        let armor = self.inventory_state_view().armor() as usize;
+        let armor = self.inventory_items().armor() as usize;
         let Some(palette) = self.asset_raw(81).map(Vec::from) else {
             return;
         };
@@ -1118,7 +1118,7 @@ impl ZeldaState {
         let tmp = self
             .graphics_scratch_mut()
             .primary_decompression_buffer(0x600);
-        let sword = self.inventory_state_view().sword_type() as usize;
+        let sword = self.inventory_items().sword_type() as usize;
         let src = SWORD_TYPE_TO_GFX_OFFS.get(sword).copied().unwrap_or(0);
         self.expand3_to_4_high_from_slice(0x9000, &tmp, src, 0, 12);
         self.expand3_to_4_high_from_slice(0x9180, &tmp, src + 0x180, 0, 12);
@@ -1134,7 +1134,7 @@ impl ZeldaState {
         );
         self.decomp_spr_to_ram(GraphicsDecompressionScratch::primary_buffer_offset(), 0x5e);
         let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
-        let shield = self.inventory_state_view().shield_type() as usize;
+        let shield = self.inventory_items().shield_type() as usize;
         let src = SHIELD_TYPE_TO_GFX_OFFS
             .get(shield)
             .copied()

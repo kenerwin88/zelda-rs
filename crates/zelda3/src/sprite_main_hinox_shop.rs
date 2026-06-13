@@ -451,7 +451,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.inventory_state_view().shield_type() != 0 {
+            if self.inventory_items().shield_type() != 0 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -497,7 +497,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.inventory_state_view().shield_type() >= 2 {
+            if self.inventory_items().shield_type() >= 2 {
                 self.sprite_show_message_unconditional(0x166);
                 self.shop_item_play_beep(k);
                 return;
@@ -797,7 +797,7 @@ impl ZeldaState {
     // in sprite_main_npcs.rs is not registered in zelda_rtl.rs.
     fn sprite_find_empty_bottle_for_hinox_shop(&self) -> i32 {
         for i in 0..4 {
-            if self.inventory_state_view().bottle(i) == 2 {
+            if self.inventory_items().bottle(i) == 2 {
                 return i as i32;
             }
         }

@@ -5961,7 +5961,7 @@ impl ZeldaState {
                 .enhanced_features_view()
                 .has(FEATURE_BREAK_POTS_WITH_SWORD_DUNGEON)
                 || self.player_state_view().button_b_frames() == 0
-                || self.inventory_state_view().sword_type() == 1)
+                || self.inventory_items().sword_type() == 1)
         {
             return 0;
         }

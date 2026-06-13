@@ -5,6 +5,9 @@ use crate::types::{read_le_u16, write_le_u16};
 const DUNGEON_KEY_SLOT_COUNT: usize = 16;
 const DEATH_COUNT_PALACE_SLOTS: usize = 14;
 const SAVE_DUNGEON_INFO_LEN: usize = 0x500;
+const INVENTORY_ITEM_SLOT_COUNT: usize = 28;
+const BOTTLE_SLOT_COUNT: usize = 4;
+const EQUIPPED_BUTTON_SLOT_COUNT: usize = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InventoryState {
@@ -12,6 +15,7 @@ pub(crate) struct InventoryState {
     pub(crate) player_resources: PlayerResourcesState,
     pub(crate) mirror_warp: MirrorWarpState,
     pub(crate) save_progress: SaveProgressState,
+    pub(crate) items: InventoryItemsState,
 }
 
 impl InventoryState {
@@ -21,6 +25,7 @@ impl InventoryState {
             player_resources: PlayerResourcesState::load_from_ram(ram),
             mirror_warp: MirrorWarpState::load_from_ram(ram),
             save_progress: SaveProgressState::load_from_ram(ram),
+            items: InventoryItemsState::load_from_ram(ram),
         }
     }
 
@@ -29,6 +34,368 @@ impl InventoryState {
         self.player_resources.write_to_ram(ram);
         self.mirror_warp.write_to_ram(ram);
         self.save_progress.write_to_ram(ram);
+        self.items.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InventoryItemsState {
+    item_slots: [u8; INVENTORY_ITEM_SLOT_COUNT],
+    bottles: [u8; BOTTLE_SLOT_COUNT],
+    equipped_button_items: [u8; EQUIPPED_BUTTON_SLOT_COUNT],
+}
+
+impl InventoryItemsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut item_slots = [0; INVENTORY_ITEM_SLOT_COUNT];
+        for (index, item) in item_slots.iter_mut().enumerate() {
+            *item = ram_byte(ram, LINK_ITEM_BOW + index);
+        }
+
+        let mut bottles = [0; BOTTLE_SLOT_COUNT];
+        for (index, bottle) in bottles.iter_mut().enumerate() {
+            *bottle = ram_byte(ram, LINK_BOTTLE_INFO + index);
+        }
+
+        Self {
+            item_slots,
+            bottles,
+            equipped_button_items: [
+                ram_byte(ram, HUD_CUR_ITEM),
+                ram_byte(ram, HUD_CUR_ITEM_X),
+                ram_byte(ram, HUD_CUR_ITEM_L),
+                ram_byte(ram, HUD_CUR_ITEM_R),
+            ],
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT]
+            .copy_from_slice(&self.item_slots);
+        ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT].copy_from_slice(&self.bottles);
+        ram[HUD_CUR_ITEM] = self.equipped_button_items[0];
+        ram[HUD_CUR_ITEM_X] = self.equipped_button_items[1];
+        ram[HUD_CUR_ITEM_L] = self.equipped_button_items[2];
+        ram[HUD_CUR_ITEM_R] = self.equipped_button_items[3];
+    }
+
+    pub(crate) fn inventory_item(&self, index: usize) -> u8 {
+        self.item_slots.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn has_inventory_item(&self, index: usize) -> bool {
+        self.inventory_item(index) != 0
+    }
+
+    pub(crate) fn bow(&self) -> u8 {
+        self.inventory_item(0)
+    }
+
+    pub(crate) fn has_silver_arrows(&self) -> bool {
+        self.bow() & 4 != 0
+    }
+
+    pub(crate) fn has_upgraded_bow(&self) -> bool {
+        self.bow() >= 3
+    }
+
+    pub(crate) fn boomerang(&self) -> u8 {
+        self.inventory_item(1)
+    }
+
+    pub(crate) fn hookshot(&self) -> u8 {
+        self.inventory_item(2)
+    }
+
+    pub(crate) fn mushroom(&self) -> u8 {
+        self.inventory_item(4)
+    }
+
+    pub(crate) fn fire_rod(&self) -> u8 {
+        self.inventory_item(5)
+    }
+
+    pub(crate) fn ice_rod(&self) -> u8 {
+        self.inventory_item(6)
+    }
+
+    pub(crate) fn bombos(&self) -> u8 {
+        self.inventory_item(7)
+    }
+
+    pub(crate) fn ether(&self) -> u8 {
+        self.inventory_item(8)
+    }
+
+    pub(crate) fn quake(&self) -> u8 {
+        self.inventory_item(9)
+    }
+
+    pub(crate) fn torch(&self) -> u8 {
+        self.inventory_item(10)
+    }
+
+    pub(crate) fn hammer(&self) -> u8 {
+        self.inventory_item(11)
+    }
+
+    pub(crate) fn flute(&self) -> u8 {
+        self.inventory_item(12)
+    }
+
+    pub(crate) fn bug_net(&self) -> u8 {
+        self.inventory_item(13)
+    }
+
+    pub(crate) fn book(&self) -> u8 {
+        self.inventory_item(14)
+    }
+
+    pub(crate) fn cane_somaria(&self) -> u8 {
+        self.inventory_item(15)
+    }
+
+    pub(crate) fn cane_byrna(&self) -> u8 {
+        self.inventory_item(17)
+    }
+
+    pub(crate) fn cape(&self) -> u8 {
+        self.inventory_item(18)
+    }
+
+    pub(crate) fn mirror(&self) -> u8 {
+        self.inventory_item(19)
+    }
+
+    pub(crate) fn gloves(&self) -> u8 {
+        self.inventory_item(20)
+    }
+
+    pub(crate) fn boots(&self) -> u8 {
+        self.inventory_item(21)
+    }
+
+    pub(crate) fn has_boots(&self) -> bool {
+        self.boots() != 0
+    }
+
+    pub(crate) fn flippers(&self) -> u8 {
+        self.inventory_item(22)
+    }
+
+    pub(crate) fn moon_pearl(&self) -> u8 {
+        self.inventory_item(23)
+    }
+
+    pub(crate) fn has_moon_pearl(&self) -> bool {
+        self.moon_pearl() != 0
+    }
+
+    pub(crate) fn sword_type(&self) -> u8 {
+        self.inventory_item(25)
+    }
+
+    pub(crate) fn shield_type(&self) -> u8 {
+        self.inventory_item(26)
+    }
+
+    pub(crate) fn armor(&self) -> u8 {
+        self.inventory_item(27)
+    }
+
+    pub(crate) fn bottle(&self, index: usize) -> u8 {
+        self.bottles.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn has_bottle(&self, index: usize) -> bool {
+        self.bottle(index) != 0
+    }
+
+    pub(crate) fn bottle_contents_or(&self) -> u8 {
+        self.bottles
+            .iter()
+            .copied()
+            .fold(0, |acc, bottle| acc | bottle)
+    }
+
+    pub(crate) fn has_bottle_at_least(&self, value: u8) -> bool {
+        self.bottles.iter().any(|bottle| *bottle >= value)
+    }
+
+    pub(crate) fn equipped_button_item(&self, button_index: usize) -> u8 {
+        self.equipped_button_items
+            .get(button_index)
+            .copied()
+            .unwrap_or_else(|| self.equipped_button_items[EQUIPPED_BUTTON_SLOT_COUNT - 1])
+    }
+
+    fn set_inventory_item(&mut self, index: usize, value: u8) {
+        if let Some(item) = self.item_slots.get_mut(index) {
+            *item = value;
+        }
+    }
+
+    fn set_bottle(&mut self, index: usize, value: u8) {
+        if let Some(bottle) = self.bottles.get_mut(index) {
+            *bottle = value;
+        }
+    }
+
+    fn set_equipped_button_item(&mut self, button_index: usize, value: u8) {
+        let index = button_index.min(EQUIPPED_BUTTON_SLOT_COUNT - 1);
+        self.equipped_button_items[index] = value;
+    }
+
+    fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
+        if let Some(bottle) = self.bottles.iter_mut().find(|bottle| **bottle < 2) {
+            *bottle = value;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn replace_first_empty_bottle_with(&mut self, value: u8) -> bool {
+        if let Some(bottle) = self.bottles.iter_mut().find(|bottle| **bottle == 2) {
+            *bottle = value;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub(crate) struct NativeInventoryItemsBridgeMut<'a> {
+    items: &'a mut InventoryItemsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeInventoryItemsBridgeMut<'a> {
+    pub(crate) fn new(items: &'a mut InventoryItemsState, ram: &'a mut [u8]) -> Self {
+        *items = InventoryItemsState::load_from_ram(ram);
+        Self { items, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.items, InventoryItemsState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_inventory_item(&mut self, index: usize, value: u8) {
+        self.items.set_inventory_item(index, value);
+        if index < INVENTORY_ITEM_SLOT_COUNT {
+            self.ram[LINK_ITEM_BOW + index] = value;
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_item_memory_value(&mut self, item_memory_addr: usize, value: u8) {
+        self.ram[item_memory_addr] = value;
+    }
+
+    pub(crate) fn or_item_memory_value(&mut self, item_memory_addr: usize, value: u8) -> u8 {
+        self.ram[item_memory_addr] |= value;
+        self.ram[item_memory_addr]
+    }
+
+    pub(crate) fn set_item_memory_value_if_empty(&mut self, item_memory_addr: usize, value: u8) {
+        if self.ram[item_memory_addr] == 0 {
+            self.ram[item_memory_addr] = value;
+        }
+    }
+
+    pub(crate) fn or_item_memory_word(&mut self, item_memory_addr: usize, value: u16) {
+        let next = read_le_u16(self.ram, item_memory_addr) | value;
+        write_le_u16(self.ram, item_memory_addr, next);
+    }
+
+    pub(crate) fn add_item_memory_value_capped(
+        &mut self,
+        item_memory_addr: usize,
+        add: u8,
+        cap: u8,
+    ) {
+        self.ram[item_memory_addr] = self.ram[item_memory_addr].saturating_add(add).min(cap);
+    }
+
+    pub(crate) fn increment_item_memory_value_mod4(&mut self, item_memory_addr: usize) {
+        self.ram[item_memory_addr] = self.ram[item_memory_addr].wrapping_add(1) & 3;
+    }
+
+    pub(crate) fn set_mushroom(&mut self, value: u8) {
+        self.set_inventory_item(4, value);
+    }
+
+    pub(crate) fn set_ice_rod(&mut self, value: u8) {
+        self.set_inventory_item(6, value);
+    }
+
+    pub(crate) fn set_bombos(&mut self, value: u8) {
+        self.set_inventory_item(7, value);
+    }
+
+    pub(crate) fn set_ether(&mut self, value: u8) {
+        self.set_inventory_item(8, value);
+    }
+
+    pub(crate) fn set_flute(&mut self, value: u8) {
+        self.set_inventory_item(12, value);
+    }
+
+    pub(crate) fn set_mirror(&mut self, value: u8) {
+        self.set_inventory_item(19, value);
+    }
+
+    pub(crate) fn set_boots(&mut self, value: u8) {
+        self.set_inventory_item(21, value);
+    }
+
+    pub(crate) fn set_moon_pearl(&mut self, value: u8) {
+        self.set_inventory_item(23, value);
+    }
+
+    pub(crate) fn set_sword_type(&mut self, value: u8) {
+        self.set_inventory_item(25, value);
+    }
+
+    pub(crate) fn set_shield_type(&mut self, value: u8) {
+        self.set_inventory_item(26, value);
+    }
+
+    pub(crate) fn set_bottle(&mut self, index: usize, value: u8) {
+        self.items.set_bottle(index, value);
+        if index < BOTTLE_SLOT_COUNT {
+            self.ram[LINK_BOTTLE_INFO + index] = value;
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_equipped_button_item(&mut self, button_index: usize, value: u8) {
+        self.items.set_equipped_button_item(button_index, value);
+        match button_index {
+            0 => self.ram[HUD_CUR_ITEM] = value,
+            1 => self.ram[HUD_CUR_ITEM_X] = value,
+            2 => self.ram[HUD_CUR_ITEM_L] = value,
+            _ => self.ram[HUD_CUR_ITEM_R] = value,
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
+        let filled = self.items.fill_first_empty_bottle_with(value);
+        if filled {
+            self.items.write_to_ram(self.ram);
+        }
+        self.debug_assert_matches_ram();
+        filled
+    }
+
+    pub(crate) fn replace_first_empty_bottle_with(&mut self, value: u8) -> bool {
+        let replaced = self.items.replace_first_empty_bottle_with(value);
+        if replaced {
+            self.items.write_to_ram(self.ram);
+        }
+        self.debug_assert_matches_ram();
+        replaced
     }
 }
 

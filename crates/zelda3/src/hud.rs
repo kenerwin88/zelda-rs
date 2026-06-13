@@ -231,7 +231,7 @@ impl ZeldaState {
     }
 
     pub(super) fn check_palace_item_posession(&self) -> u8 {
-        let inventory = self.inventory_state_view();
+        let inventory = self.inventory_items();
         match self.save_progress_view().palace_index_x2() >> 1 {
             2 => u8::from(inventory.bow() != 0),
             3 => u8::from(inventory.gloves() != 0),
@@ -469,9 +469,9 @@ impl ZeldaState {
             if self.player_resources_view().arrows() != max {
                 self.player_resources_view_mut().increment_arrows();
             }
-            let bow = self.inventory_state_view().bow();
+            let bow = self.inventory_items().bow();
             if bow != 0 && bow & 1 == 1 {
-                self.inventory_state_view_mut()
+                self.inventory_items_mut()
                     .set_inventory_item(0, bow.wrapping_add(1));
                 self.hud_refresh_icon();
             }
@@ -578,7 +578,7 @@ impl ZeldaState {
     }
 
     fn hud_have_any_items(&self) -> bool {
-        (0..20).any(|i| self.inventory_state_view().inventory_item(i) != 0)
+        (0..20).any(|i| self.inventory_items().inventory_item(i) != 0)
     }
 
     pub(super) fn hud_init(&mut self) {
@@ -591,7 +591,7 @@ impl ZeldaState {
 
         if self.hud_have_any_items() {
             let mut first_bottle = 0usize;
-            while first_bottle < 4 && self.inventory_state_view().bottle(first_bottle) == 0 {
+            while first_bottle < 4 && self.inventory_items().bottle(first_bottle) == 0 {
                 first_bottle += 1;
             }
             if first_bottle == 4 {
@@ -648,20 +648,18 @@ impl ZeldaState {
             return true;
         }
         if item == HUD_ITEM_FLUTE && USE_NEW_STYLE_INVENTORY {
-            return self.inventory_state_view().flute() >= 2;
+            return self.inventory_items().flute() >= 2;
         }
         if item == HUD_ITEM_SHOVEL && USE_NEW_STYLE_INVENTORY {
-            return self.inventory_state_view().flute() >= 1;
+            return self.inventory_items().flute() >= 1;
         }
         if item >= HUD_ITEM_BOTTLE_FIRST {
             return self
-                .inventory_state_view()
+                .inventory_items()
                 .bottle((item - HUD_ITEM_BOTTLE_FIRST) as usize)
                 != 0;
         }
-        self.inventory_state_view()
-            .inventory_item((item - 1) as usize)
-            != 0
+        self.inventory_items().inventory_item((item - 1) as usize) != 0
     }
 
     fn hud_equip_prev_item(&self, item: &mut u8, is_hud_cur_item: bool) {
@@ -767,7 +765,7 @@ impl ZeldaState {
             }
         } else if self.hud_state_view().prev_joypad_h() == 0 {
             let btn_index = self.get_current_item_button_index();
-            let mut item = self.inventory_state_view().equipped_button_item(btn_index);
+            let mut item = self.inventory_items().equipped_button_item(btn_index);
             let old_item = item;
             if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
@@ -778,7 +776,7 @@ impl ZeldaState {
             } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
                 self.hud_equip_next_item(&mut item, btn_index == 0);
             }
-            self.inventory_state_view_mut()
+            self.inventory_items_mut()
                 .set_equipped_button_item(btn_index, item);
             let jh = self.player_state_view().filtered_joypad_h();
             self.hud_state_view_mut().set_prev_joypad_h(jh);
@@ -938,14 +936,14 @@ impl ZeldaState {
             if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 loop {
                     val = val.wrapping_sub(1) & 3;
-                    if self.inventory_state_view().bottle(val as usize) != 0 {
+                    if self.inventory_items().bottle(val as usize) != 0 {
                         break;
                     }
                 }
             } else {
                 loop {
                     val = val.wrapping_add(1) & 3;
-                    if self.inventory_state_view().bottle(val as usize) != 0 {
+                    if self.inventory_items().bottle(val as usize) != 0 {
                         break;
                     }
                 }
@@ -1011,18 +1009,18 @@ impl ZeldaState {
         }
         if i >= HUD_ITEM_BOTTLE_FIRST {
             return HUD_ITEM_BOTTLE_GRAPHICS[self
-                .inventory_state_view()
+                .inventory_items()
                 .bottle((i - HUD_ITEM_BOTTLE_FIRST) as usize)
                 as usize];
         }
-        let mut item_val = self.inventory_state_view().inventory_item((i - 1) as usize) as usize;
+        let mut item_val = self.inventory_items().inventory_item((i - 1) as usize) as usize;
         if i == 4 {
             item_val = usize::from(item_val != 0);
         } else if i == HUD_ITEM_BOTTLE_LEGACY && !USE_NEW_STYLE_INVENTORY {
             item_val = if self.player_resources_view().equipped_bottle_index() != 0 {
                 let bottle_index =
                     self.player_resources_view().equipped_bottle_index() as usize - 1;
-                self.inventory_state_view().bottle(bottle_index) as usize
+                self.inventory_items().bottle(bottle_index) as usize
             } else {
                 0
             };
@@ -1146,26 +1144,26 @@ impl ZeldaState {
         self.hud_draw_item(
             0x1000,
             hudxy(8, 27),
-            &HUD_ITEM_GLOVES_GRAPHICS[self.inventory_state_view().gloves() as usize],
+            &HUD_ITEM_GLOVES_GRAPHICS[self.inventory_items().gloves() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(4, 27),
-            &HUD_ITEM_BOOTS_GRAPHICS[self.inventory_state_view().boots() as usize],
+            &HUD_ITEM_BOOTS_GRAPHICS[self.inventory_items().boots() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(12, 27),
-            &HUD_ITEM_FLIPPERS_GRAPHICS[self.inventory_state_view().flippers() as usize],
+            &HUD_ITEM_FLIPPERS_GRAPHICS[self.inventory_items().flippers() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(16, 27),
-            &HUD_ITEM_MOON_PEARL_GRAPHICS[self.inventory_state_view().moon_pearl() as usize],
+            &HUD_ITEM_MOON_PEARL_GRAPHICS[self.inventory_items().moon_pearl() as usize],
         );
-        if self.inventory_state_view().gloves() != 0 {
-            let src = &HUD_GLOVES_TEXT_TILES
-                [usize::from(self.inventory_state_view().gloves() != 1) * 10..];
+        if self.inventory_items().gloves() != 0 {
+            let src =
+                &HUD_GLOVES_TEXT_TILES[usize::from(self.inventory_items().gloves() != 1) * 10..];
             self.hud_draw_nx_n(0x1000, hudxy(4, 22), src, 5, 2);
         }
     }
@@ -1252,7 +1250,7 @@ impl ZeldaState {
     pub(super) fn hud_draw_selected_y_button_item(&mut self) {
         let dst_box = if USE_NEW_STYLE_INVENTORY { 1 } else { 0 };
         let btn_index = self.get_current_item_button_index();
-        let item = self.inventory_state_view().equipped_button_item(btn_index);
+        let item = self.inventory_items().equipped_button_item(btn_index);
         self.hud_draw_box(
             0x1000,
             21 + dst_box,
@@ -1280,23 +1278,23 @@ impl ZeldaState {
             && self.player_resources_view().equipped_bottle_index() != 0
         {
             let bottle_index = self.player_resources_view().equipped_bottle_index() as usize - 1;
-            let idx = (self.inventory_state_view().bottle(bottle_index) as usize - 1) * 16;
+            let idx = (self.inventory_items().bottle(bottle_index) as usize - 1) * 16;
             &HUD_BOTTLES_ITEM_TEXT[idx..idx + 16]
-        } else if item == 5 && self.inventory_state_view().mushroom() != 1 {
-            let idx = (self.inventory_state_view().mushroom() as usize - 2) * 16;
+        } else if item == 5 && self.inventory_items().mushroom() != 1 {
+            let idx = (self.inventory_items().mushroom() as usize - 2) * 16;
             &HUD_MUSHROOM_ITEM_TEXT[idx..idx + 16]
-        } else if item == 20 && self.inventory_state_view().mirror() != 1 {
-            let idx = (self.inventory_state_view().mirror() as usize - 2) * 16;
+        } else if item == 20 && self.inventory_items().mirror() != 1 {
+            let idx = (self.inventory_items().mirror() as usize - 2) * 16;
             &HUD_MIRROR_ITEM_TEXT[idx..idx + 16]
-        } else if item == 13 && self.inventory_state_view().flute() != 1 {
-            let idx = (self.inventory_state_view().flute() as usize - 2) * 16;
+        } else if item == 13 && self.inventory_items().flute() != 1 {
+            let idx = (self.inventory_items().flute() as usize - 2) * 16;
             &HUD_FLUTE_ITEM_TEXT[idx..idx + 16]
-        } else if item == 1 && self.inventory_state_view().bow() != 1 {
-            let idx = (self.inventory_state_view().bow() as usize - 2) * 16;
+        } else if item == 1 && self.inventory_items().bow() != 1 {
+            let idx = (self.inventory_items().bow() as usize - 2) * 16;
             &HUD_BOW_ITEM_TEXT[idx..idx + 16]
         } else if item >= HUD_ITEM_BOTTLE_FIRST && item <= HUD_ITEM_BOTTLE_LAST {
             let idx = (self
-                .inventory_state_view()
+                .inventory_items()
                 .bottle((item - HUD_ITEM_BOTTLE_FIRST) as usize) as usize
                 - 1)
                 * 16;
@@ -1341,21 +1339,21 @@ impl ZeldaState {
                 &HEART_PIECES[self.player_resources_view().heart_pieces() as usize],
             );
         }
-        let sword = if self.inventory_state_view().sword_type() == 0xff {
+        let sword = if self.inventory_items().sword_type() == 0xff {
             0
         } else {
-            self.inventory_state_view().sword_type() as usize
+            self.inventory_items().sword_type() as usize
         };
         self.hud_draw_item(0x1000, hudxy(22 + dst, 23), &HUD_ITEM_SWORD_GRAPHICS[sword]);
         self.hud_draw_item(
             0x1000,
             hudxy(25 + dst, 23),
-            &HUD_ITEM_SHIELD_GRAPHICS[self.inventory_state_view().shield_type() as usize],
+            &HUD_ITEM_SHIELD_GRAPHICS[self.inventory_items().shield_type() as usize],
         );
         self.hud_draw_item(
             0x1000,
             hudxy(28 + dst, 23),
-            &HUD_ITEM_ARMOR_GRAPHICS[self.inventory_state_view().armor() as usize],
+            &HUD_ITEM_ARMOR_GRAPHICS[self.inventory_items().armor() as usize],
         );
         const PALACE_ITEM: [ItemBoxGfx; 2] = [
             [0x28d6, 0x68d6, 0x28e6, 0x28e7],
@@ -1392,12 +1390,12 @@ impl ZeldaState {
             self.hud_draw_item(
                 0x1000,
                 hudxy(25 + dst, 13 + i * 4),
-                &HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_state_view().bottle(i) as usize],
+                &HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_items().bottle(i) as usize],
             );
         }
         let bottle_index =
             (self.player_resources_view().equipped_bottle_index() as usize).wrapping_sub(1);
-        let p = HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_state_view().bottle(bottle_index) as usize];
+        let p = HUD_ITEM_BOTTLE_GRAPHICS[self.inventory_items().bottle(bottle_index) as usize];
         self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[15], &p);
         if self.hud_state_view().flashing_circle_timer() & 0x10 != 0 {
             self.hud_draw_flashing_circle(0x1000, hudxy(25 + dst, 13 + bottle_index * 4) as i32, 7);
@@ -1458,7 +1456,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_restore_torch_background(&mut self) {
-        if self.inventory_state_view().torch() == 0
+        if self.inventory_items().torch() == 0
             || self.dungeon_state_view().wants_lights_out() == 0
             || self.hud_state_view().dungeon_dark_with_lantern()
             || self.dungeon_state_view().lit_torches() != 0
@@ -1616,16 +1614,16 @@ impl ZeldaState {
                 HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
             );
         }
-        let bow = self.inventory_state_view().bow();
+        let bow = self.inventory_items().bow();
         if bow != 0 {
             let has_arrows = self.player_resources_view().arrows() != 0;
             if bow >= 3 {
                 self.hud_buffer_set(hudxy(15, 0), 0x2486);
                 self.hud_buffer_set(hudxy(16, 0), 0x2487);
-                self.inventory_state_view_mut()
+                self.inventory_items_mut()
                     .set_inventory_item(0, if has_arrows { 4 } else { 3 });
             } else {
-                self.inventory_state_view_mut()
+                self.inventory_items_mut()
                     .set_inventory_item(0, if has_arrows { 2 } else { 1 });
             }
         }

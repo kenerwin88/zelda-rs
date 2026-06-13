@@ -3539,7 +3539,7 @@ impl ZeldaState {
         let item_in_hand_has_sword_mask = self.player_state_view().item_in_hand_has(10);
         let value = u8::from(is_running);
         self.sprite_slot_view_mut(k).set_draw_work_byte_1(value);
-        let mut a = self.inventory_state_view().sword_type().wrapping_sub(1);
+        let mut a = self.inventory_items().sword_type().wrapping_sub(1);
         if !is_running {
             a |= if sign8(self.player_state_view().button_b_frames()) {
                 4
@@ -5270,7 +5270,7 @@ impl ZeldaState {
             }
             14 => {
                 let shield = self.sprite_slot_view(k).subtype();
-                self.inventory_state_view_mut().set_shield_type(shield);
+                self.inventory_items_mut().set_shield_type(shield);
                 if self.enhanced_features_view().has(4096) {
                     self.Palette_Load_Shield();
                 }
@@ -5503,7 +5503,7 @@ impl ZeldaState {
                 self.sprite_slot_view(k).flags2(),
                 self.sprite_slot_view(k).flags4(),
                 self.sprite_slot_view(k).flags5(),
-                self.inventory_state_view().shield_type(),
+                self.inventory_items().shield_type(),
                 u8::from(self.player_state_view().is_bunny_mirror()),
                 self.player_state_view().state_bits(),
                 self.player_state_view().facing(),
@@ -5525,7 +5525,7 @@ impl ZeldaState {
         if !self.player_state_view().is_bunny_mirror()
             && !self.player_state_view().is_lifting_or_carrying()
             && (self.sprite_slot_view(k).flags5() & 0x20) != 0
-            && self.inventory_state_view().shield_type() != 0
+            && self.inventory_items().shield_type() != 0
         {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
@@ -5752,7 +5752,7 @@ impl ZeldaState {
         self.sprite_apply_recoil_to_link(k, 24);
         self.player_state_view_mut().set_auxiliary_state(1);
         let idx = 3 * usize::from(self.sprite_slot_view(k).bump_damage() & 0x0f)
-            + usize::from(self.inventory_state_view().armor());
+            + usize::from(self.inventory_items().armor());
         self.player_state_view_mut()
             .set_given_damage(PLAYER_DAMAGES[idx]);
         if self.sprite_slot_view(k).sprite_type() == 0x61 && self.sprite_slot_view(k).c() != 0 {
@@ -5769,7 +5769,7 @@ impl ZeldaState {
     pub(super) fn sprite_attempt_zap_damage(&mut self, k: usize) {
         let ty = self.sprite_slot_view(k).sprite_type();
         let electric = (ty == 0x7a
-            || (ty == 0x0d && self.inventory_state_view().sword_type() < 4)
+            || (ty == 0x0d && self.inventory_items().sword_type() < 4)
             || ((ty == 0x24 || ty == 0x23) && self.sprite_slot_view(k).delay_main() != 0))
             && self.sprite_slot_view(k).state() == 9;
         if electric {
