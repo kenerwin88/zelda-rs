@@ -79,11 +79,12 @@ pub(crate) use sprites::{
     ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
     MazeGameTimerView, NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
-    NativeOverworldSpritePresenceBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState, OverworldSpritePresenceState,
-    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteState, TagalongSlotView,
+    NativeFailedSpinSparkleSpawnBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
+    SpriteState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -115,8 +116,8 @@ use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, Multiselec
 use player::{PushedBlockState, SpecialExitPositionState, SwimAccelerationState};
 #[cfg(test)]
 use sprites::{
-    DualLayerTileCacheState, EnemyDamageSubclassTableState, MazeGameTimerState,
-    PrizeDropCycleState, SpriteDrawHitboxWorkState, TagalongTrailState,
+    DualLayerTileCacheState, EnemyDamageSubclassTableState, FailedSpinSparkleSpawnState,
+    MazeGameTimerState, PrizeDropCycleState, SpriteDrawHitboxWorkState, TagalongTrailState,
 };
 #[cfg(test)]
 use world::{
@@ -5430,5 +5431,29 @@ mod tests {
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 6), 0x4000);
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 8), 0x0bbb);
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 10), 0x0047);
+    }
+
+    #[test]
+    fn native_failed_spin_sparkle_spawn_bridge_dual_writes_spawn_record() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut spawn = FailedSpinSparkleSpawnState::default();
+        {
+            let mut bridge = NativeFailedSpinSparkleSpawnBridgeMut::new(&mut spawn, &mut ram);
+            bridge.write_failed_spin_sparkle(0x07, 0x1234, 0x5678);
+        }
+
+        assert_eq!(spawn.step(), 0x07);
+        assert_eq!(spawn.timer(), 4);
+        assert_eq!(spawn.aux_timer(), 3);
+        assert_eq!(spawn.x(), 0x1234);
+        assert_eq!(spawn.y(), 0x5678);
+        assert_eq!(ram[ANCILLA_ITEM_TO_LINK - 1], 0);
+        assert_eq!(ram[ANCILLA_STEP - 1], 0x07);
+        assert_eq!(ram[ANCILLA_TIMER - 1], 4);
+        assert_eq!(ram[ANCILLA_AUX_TIMER - 1], 3);
+        assert_eq!(ram[ANCILLA_X_LO - 1], 0x34);
+        assert_eq!(ram[ANCILLA_X_HI - 1], 0x12);
+        assert_eq!(ram[ANCILLA_Y_LO - 1], 0x78);
+        assert_eq!(ram[ANCILLA_Y_HI - 1], 0x56);
     }
 }

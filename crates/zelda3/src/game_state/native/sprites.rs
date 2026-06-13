@@ -1,12 +1,13 @@
 use crate::game_state::constants::{
-    CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X,
-    DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE,
-    ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y,
-    ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
-    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
-    PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI,
-    TAGALONG_Y_LO, TAGALONG_Z,
+    ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_X_HI,
+    ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y,
+    DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
+    ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X,
+    ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
+    HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
+    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERWORLD_SPRITE_PRESENCE,
+    OVERWORLD_SPRITE_WAS_LOADED, PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI,
+    TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -29,6 +30,7 @@ pub(crate) struct SpriteState {
     pub(crate) ether_orbit: EtherOrbitState,
     pub(crate) overworld_sprite_presence: OverworldSpritePresenceState,
     pub(crate) overworld_sprite_loaded: OverworldSpriteLoadedState,
+    pub(crate) failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState,
 }
 
 impl SpriteState {
@@ -44,6 +46,7 @@ impl SpriteState {
             ether_orbit: EtherOrbitState::load_from_ram(ram),
             overworld_sprite_presence: OverworldSpritePresenceState::load_from_ram(ram),
             overworld_sprite_loaded: OverworldSpriteLoadedState::load_from_ram(ram),
+            failed_spin_sparkle_spawn: FailedSpinSparkleSpawnState::load_from_ram(ram),
         }
     }
 
@@ -58,6 +61,97 @@ impl SpriteState {
         self.ether_orbit.write_to_ram(ram);
         self.overworld_sprite_presence.write_to_ram(ram);
         self.overworld_sprite_loaded.write_to_ram(ram);
+        self.failed_spin_sparkle_spawn.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FailedSpinSparkleSpawnState {
+    item_to_link: u8,
+    step: u8,
+    timer: u8,
+    aux_timer: u8,
+    x: u16,
+    y: u16,
+}
+
+impl FailedSpinSparkleSpawnState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            item_to_link: ram.get(ANCILLA_ITEM_TO_LINK - 1).copied().unwrap_or(0),
+            step: ram.get(ANCILLA_STEP - 1).copied().unwrap_or(0),
+            timer: ram.get(ANCILLA_TIMER - 1).copied().unwrap_or(0),
+            aux_timer: ram.get(ANCILLA_AUX_TIMER - 1).copied().unwrap_or(0),
+            x: u16::from(ram.get(ANCILLA_X_LO - 1).copied().unwrap_or(0))
+                | (u16::from(ram.get(ANCILLA_X_HI - 1).copied().unwrap_or(0)) << 8),
+            y: u16::from(ram.get(ANCILLA_Y_LO - 1).copied().unwrap_or(0))
+                | (u16::from(ram.get(ANCILLA_Y_HI - 1).copied().unwrap_or(0)) << 8),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[ANCILLA_ITEM_TO_LINK - 1] = self.item_to_link;
+        ram[ANCILLA_STEP - 1] = self.step;
+        ram[ANCILLA_TIMER - 1] = self.timer;
+        ram[ANCILLA_AUX_TIMER - 1] = self.aux_timer;
+        ram[ANCILLA_X_LO - 1] = self.x as u8;
+        ram[ANCILLA_X_HI - 1] = (self.x >> 8) as u8;
+        ram[ANCILLA_Y_LO - 1] = self.y as u8;
+        ram[ANCILLA_Y_HI - 1] = (self.y >> 8) as u8;
+    }
+
+    pub(crate) fn write_failed_spin_sparkle(&mut self, step: u8, x: u16, y: u16) {
+        self.item_to_link = 0;
+        self.step = step;
+        self.timer = 4;
+        self.aux_timer = 3;
+        self.x = x;
+        self.y = y;
+    }
+
+    pub(crate) fn step(&self) -> u8 {
+        self.step
+    }
+
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
+    }
+
+    pub(crate) fn aux_timer(&self) -> u8 {
+        self.aux_timer
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
+    }
+}
+
+pub(crate) struct NativeFailedSpinSparkleSpawnBridgeMut<'a> {
+    state: &'a mut FailedSpinSparkleSpawnState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeFailedSpinSparkleSpawnBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut FailedSpinSparkleSpawnState, ram: &'a mut [u8]) -> Self {
+        *state = FailedSpinSparkleSpawnState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            FailedSpinSparkleSpawnState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn write_failed_spin_sparkle(&mut self, step: u8, x: u16, y: u16) {
+        self.state.write_failed_spin_sparkle(step, x, y);
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 }
 

@@ -26,9 +26,9 @@ use crate::game_state::constants::{
     OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
 };
 use crate::game_state::{
-    AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, AncillaSpawnScratchViewMut,
-    ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
-    AttractStateView, AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
+    AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
+    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractStateView,
+    AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
     Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionView,
     BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
     BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
@@ -58,9 +58,9 @@ use crate::game_state::{
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeHudStateBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFrameStateBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroSceneBridgeMut,
+    NativeIntroSwordBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
     NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
@@ -4024,8 +4024,13 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn ancilla_spawn_scratch_view_mut(&mut self) -> AncillaSpawnScratchViewMut<'_> {
-        AncillaSpawnScratchViewMut::new(&mut self.ram)
+    pub(crate) fn ancilla_spawn_scratch_view_mut(
+        &mut self,
+    ) -> NativeFailedSpinSparkleSpawnBridgeMut<'_> {
+        NativeFailedSpinSparkleSpawnBridgeMut::new(
+            &mut self.game_state.sprites.failed_spin_sparkle_spawn,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn maze_game_timer_view(&self) -> MazeGameTimerView<'_> {
