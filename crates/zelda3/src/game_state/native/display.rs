@@ -2506,7 +2506,6 @@ pub(crate) struct NativeAttractVramDestinationBridgeMut<'a> {
 
 impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 
@@ -2530,7 +2529,11 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
     pub(crate) fn set_page_offset(&mut self, value: u8) {
         self.display.attract_vram_destination_address =
             (self.display.attract_vram_destination_address & 0xff00) | u16::from(value);
-        self.ram[ATTRACT_VRAM_DST] = value;
+        write_le_u16(
+            self.ram,
+            ATTRACT_VRAM_DST,
+            self.display.attract_vram_destination_address,
+        );
         self.debug_assert_matches_ram();
     }
 
@@ -3065,7 +3068,6 @@ pub(crate) struct NativeVramUploadBufferBridgeMut<'a> {
 
 impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 

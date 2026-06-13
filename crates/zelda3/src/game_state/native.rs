@@ -5062,7 +5062,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x0160);
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativeAttractVramDestinationBridgeMut::new(&mut display, &mut ram);
             bridge.set_page_offset(0x70);
@@ -5076,6 +5076,25 @@ mod tests {
         assert_eq!(display.attract_vram_destination_address, 0x0068);
         assert!(display.attract_vram_destination_high_is_clear());
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn native_attract_vram_destination_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x01aa);
+        let mut display = DisplayState {
+            attract_vram_destination_address: 0x0200,
+            ..DisplayState::default()
+        };
+
+        {
+            let mut bridge = NativeAttractVramDestinationBridgeMut::new(&mut display, &mut ram);
+            bridge.set_page_offset(0x34);
+            assert_eq!(bridge.decrement_address(), 0x0233);
+        }
+
+        assert_eq!(display.attract_vram_destination_address, 0x0233);
+        assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0233);
     }
 
     #[test]
@@ -6214,7 +6233,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
 
-        let mut display = DisplayState::default();
+        let mut display = DisplayState::load_from_ram(&ram);
         {
             let mut bridge = NativeVramUploadBufferBridgeMut::new(&mut display, &mut ram);
             bridge.advance_offset_by(0x20);
@@ -6265,6 +6284,25 @@ mod tests {
         assert_eq!(read_le_u16(&ram, 0x2122), 0x0100);
         assert_eq!(read_le_u16(&ram, 0x2124), 0x2000);
         assert_eq!(read_le_u16(&ram, 0x2130), 0xffff);
+    }
+
+    #[test]
+    fn native_vram_upload_buffer_bridge_projects_native_cursor_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
+        let mut display = DisplayState {
+            vram_upload_cursor: 0x1200,
+            ..DisplayState::default()
+        };
+
+        {
+            let mut bridge = NativeVramUploadBufferBridgeMut::new(&mut display, &mut ram);
+            assert_eq!(bridge.advance_offset_by(0x30), 0x1230);
+            bridge.clear_offset();
+        }
+
+        assert_eq!(display.vram_upload_cursor, 0);
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0);
     }
 
     #[test]
