@@ -3006,8 +3006,9 @@ impl ZeldaState {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
                     self.sprite_manually_set_death_flag_uw(k);
-                    let bits = self.dungeon_state_view().savegame_state_bits() | 0x4000;
-                    self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+                    let bits = self.dungeon_savegame_state().savegame_state_bits() | 0x4000;
+                    self.dungeon_savegame_state_mut()
+                        .set_savegame_state_bits(bits);
                 }
             }
             _ => {}
@@ -12304,7 +12305,8 @@ impl ZeldaState {
     // void Sprite_E4_SmallKey(int k) {  // 86d032
     pub(super) fn sprite_e4_small_key(&mut self, k: usize) {
         let idx = usize::from(self.sprite_slot_view(k).die_action());
-        if (self.dungeon_state_view().savegame_state_bits() & (ABSORB_BIG_KEY_MASKS_DRAW[idx] << 8))
+        if (self.dungeon_savegame_state().savegame_state_bits()
+            & (ABSORB_BIG_KEY_MASKS_DRAW[idx] << 8))
             != 0
         {
             let value = 0;
@@ -12369,8 +12371,9 @@ impl ZeldaState {
         if self.sprite_slot_view(k).a() != 0 {
             self.player_state_view_mut().set_item_receipt_method(2);
             self.link_receive_item(0x3e, 0);
-            let bits = self.dungeon_state_view().savegame_state_bits() | 0x8000;
-            self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+            let bits = self.dungeon_savegame_state().savegame_state_bits() | 0x8000;
+            self.dungeon_savegame_state_mut()
+                .set_savegame_state_bits(bits);
             return;
         }
         self.link_cancel_dash();
@@ -18081,9 +18084,10 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.dungeon_state_view().savegame_state_bits() & 0x4000 == 0 {
-                    let bits = self.dungeon_state_view().savegame_state_bits() | 0x4000;
-                    self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+                if self.dungeon_savegame_state().savegame_state_bits() & 0x4000 == 0 {
+                    let bits = self.dungeon_savegame_state().savegame_state_bits() | 0x4000;
+                    self.dungeon_savegame_state_mut()
+                        .set_savegame_state_bits(bits);
                     let value = 2;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     self.shop_item_handle_receipt(k, 0x46);
@@ -20435,13 +20439,14 @@ impl ZeldaState {
                 self.player_resources_view_mut().increment_keys();
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
-                let bits = self.dungeon_state_view().savegame_state_bits()
+                let bits = self.dungeon_savegame_state().savegame_state_bits()
                     | if self.sprite_slot_view(k).die_action() != 0 {
                         0x2000
                     } else {
                         0x4000
                     };
-                self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+                self.dungeon_savegame_state_mut()
+                    .set_savegame_state_bits(bits);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x2f);
             }
             _ => {}

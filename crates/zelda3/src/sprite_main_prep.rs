@@ -518,7 +518,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_cutscene_agahnim(&mut self, k: usize) {
-        if self.dungeon_state_view().savegame_state_bits() & 0x4000 != 0 {
+        if self.dungeon_savegame_state().savegame_state_bits() & 0x4000 != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         } else {
             self.cutscene_agahnim_spawn_zelda_on_altar(k);
@@ -3275,7 +3275,8 @@ impl ZeldaState {
             let j = self.sprite_battle_view().item_drop_counter();
             self.sprite_battle_view_mut().increment_item_drop_counter();
             self.sprite_slot_view_mut(k).set_die_action(j);
-            if self.dungeon_state_view().savegame_state_bits() & DASH_ITEM_MASK[j as usize] != 0 {
+            if self.dungeon_savegame_state().savegame_state_bits() & DASH_ITEM_MASK[j as usize] != 0
+            {
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             self.sprite_slot_view_mut(k).increment_graphics();
@@ -4459,7 +4460,7 @@ impl ZeldaState {
         } else {
             let j = self.sprite_slot_view(k).x_high() & 1;
             let mask = if j != 0 { 0x2000 } else { 0x4000 };
-            if self.dungeon_state_view().savegame_state_bits() & mask != 0 {
+            if self.dungeon_savegame_state().savegame_state_bits() & mask != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
             }
         }
@@ -4476,8 +4477,9 @@ impl ZeldaState {
             } else {
                 0x4000
             };
-            let bits = self.dungeon_state_view().savegame_state_bits() | mask;
-            self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+            let bits = self.dungeon_savegame_state().savegame_state_bits() | mask;
+            self.dungeon_savegame_state_mut()
+                .set_savegame_state_bits(bits);
         }
     }
 
@@ -4612,7 +4614,7 @@ impl ZeldaState {
     }
 
     fn sprite_return_if_boss_finished(&mut self, k: usize) -> bool {
-        if self.dungeon_state_view().savegame_state_bits() & 0x8000 != 0 {
+        if self.dungeon_savegame_state().savegame_state_bits() & 0x8000 != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
             return true;
         }
@@ -4949,7 +4951,8 @@ mod tests {
         assert_eq!(s.sprite_slot_view(k).ignore_projectile(), 1);
 
         s.sprite_slot_view_mut(k).set_state(9);
-        s.dungeon_state_view_mut().set_savegame_state_bits(0x8000);
+        s.dungeon_savegame_state_mut()
+            .set_savegame_state_bits(0x8000);
         s.sprite_prep_mini_vitreous(k);
         assert_eq!(s.sprite_slot_view(k).state(), 0);
 
@@ -5471,14 +5474,20 @@ mod tests {
             .dungeon_state_view_mut()
             .set_savegame_state_bits(0x0001);
         dungeon.heart_upgrade_set_obtained_flag(k);
-        assert_eq!(dungeon.dungeon_state_view().savegame_state_bits(), 0x4001);
+        assert_eq!(
+            dungeon.dungeon_savegame_state().savegame_state_bits(),
+            0x4001
+        );
 
         dungeon.sprite_slot_view_mut(k).set_x_high(1);
         dungeon
             .dungeon_state_view_mut()
             .set_savegame_state_bits(0x0002);
         dungeon.heart_upgrade_set_obtained_flag(k);
-        assert_eq!(dungeon.dungeon_state_view().savegame_state_bits(), 0x2002);
+        assert_eq!(
+            dungeon.dungeon_savegame_state().savegame_state_bits(),
+            0x2002
+        );
 
         let mut untouched = fresh_state();
         untouched.sprite_slot_view_mut(k).set_state(9);

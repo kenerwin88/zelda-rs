@@ -210,7 +210,8 @@ impl ZeldaState {
         self.player_state_view_mut().set_handler_state(20);
         self.world_scroll_mut().set_bg1_x_offset(0);
         self.world_scroll_mut().set_bg1_y_offset(0);
-        self.dungeon_state_view_mut().clear_savegame_state_bits();
+        self.dungeon_savegame_state_mut()
+            .clear_savegame_state_bits();
         self.player_state_view_mut().clear_movement_velocity();
         self.palette_buffer_view_mut().set_main_color(0, 0x7fff);
         self.palette_buffer_view_mut().set_main_color(32, 0x7fff);

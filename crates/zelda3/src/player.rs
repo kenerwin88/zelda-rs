@@ -6135,7 +6135,7 @@ impl ZeldaState {
         let sword_ok = self.inventory_items().sword_type().wrapping_add(1) & !1 != 0;
         let blocked = self.player_state_view().doorway_state() != 0
             || self.player_state_view().is_menu_blocked()
-            || self.dungeon_state_view().savegame_state_bits() & 0x8000 != 0
+            || self.dungeon_savegame_state().savegame_state_bits() & 0x8000 != 0
             || !sword_ok
             || (self.follower_state_view().dropped() != 0
                 && self.follower_state_view().indicator() == 13);

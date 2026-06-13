@@ -463,7 +463,7 @@ impl ZeldaState {
             }
             0x0d => {
                 if !self.player_state_view().is_menu_blocked()
-                    && self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0
+                    && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_view_mut().or_spike_floor_and_triggers((bits << 4) as u8);
                 }
@@ -551,7 +551,7 @@ impl ZeldaState {
             }
             0x44 => {
                 if !self.player_state_view().is_menu_blocked()
-                    && self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0
+                    && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_view_mut().or_spike_cactus_tiles(bits as u8);
                 } else {

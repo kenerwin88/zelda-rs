@@ -35,13 +35,13 @@ use crate::game_state::{
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonHeaderState, DungeonKeySlotsView,
-    DungeonMapDisplayState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
-    DungeonStateView, DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState,
-    EndingCreditState, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState,
-    FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState, GarnishSlotView,
-    GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeView,
-    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
-    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
+    DungeonMapDisplayState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
     MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
@@ -54,17 +54,18 @@ use crate::game_state::{
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeDungeonEntranceBackupBridgeMut,
     NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut, NativeDungeonTorchBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
-    NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView,
-    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonSecretBridgeMut, NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut,
+    NativeEndingCreditBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
+    NativeEnhancedFeaturesBridgeMut, NativeEtherOrbitBridgeMut,
+    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
+    NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut, NativeGraphicsScratchBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroSceneBridgeMut,
+    NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
@@ -3207,6 +3208,17 @@ impl ZeldaState {
 
     pub(crate) fn dungeon_torch_mut(&mut self) -> NativeDungeonTorchBridgeMut<'_> {
         NativeDungeonTorchBridgeMut::new(&mut self.game_state.dungeon.torch, &mut self.ram)
+    }
+
+    pub(crate) fn dungeon_savegame_state(&self) -> DungeonSavegameState {
+        DungeonSavegameState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_savegame_state_mut(&mut self) -> NativeDungeonSavegameBridgeMut<'_> {
+        NativeDungeonSavegameBridgeMut::new(
+            &mut self.game_state.dungeon.savegame_state,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dungeon_map_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {

@@ -693,7 +693,8 @@ impl ZeldaState {
             5 => {
                 self.increment_screen_brightness();
                 if self.display_state().screen_brightness == 15 {
-                    self.dungeon_state_view_mut().clear_savegame_state_bits();
+                    self.dungeon_savegame_state_mut()
+                        .clear_savegame_state_bits();
                     self.clear_modal_pause_flag();
                     self.Sprite_SpawnBatCrashCutscene();
                     self.player_state_view_mut().set_facing(2);

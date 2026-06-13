@@ -939,7 +939,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_prep_blind_prepare_battle(&mut self, k: usize) {
-        let dung_state = self.dungeon_state_view().savegame_state_bits();
+        let dung_state = self.dungeon_savegame_state().savegame_state_bits();
         if self.follower_state_view().indicator() != 6 && (dung_state & 0x2000) != 0 {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_delay_aux2(96);
@@ -1810,7 +1810,8 @@ mod tests {
     fn prep_blind_sets_battle_fields_when_unlocked() {
         let mut s = fresh_state();
         s.follower_state_view_mut().set_indicator(0);
-        s.dungeon_state_view_mut().set_savegame_state_bits(0x2000);
+        s.dungeon_savegame_state_mut()
+            .set_savegame_state_bits(0x2000);
         // Mark our slot active and clear other slots.
         s.sprite_prep_blind_prepare_battle(3);
         let sprite = s.sprite_slot_view(3);

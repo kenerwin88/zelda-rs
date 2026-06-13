@@ -467,7 +467,8 @@ impl ZeldaState {
         self.player_state_view_mut().clear_lower_level_states();
         self.increment_submodule();
         self.system_signals_view_mut().increment_hud_update_flag();
-        self.dungeon_state_view_mut().clear_savegame_state_bits();
+        self.dungeon_savegame_state_mut()
+            .clear_savegame_state_bits();
         self.LoadOWMusicIfNeeded();
     }
 

@@ -1004,8 +1004,9 @@ impl ZeldaState {
             self.ganon_bat_draw(k);
             if self.sprite_slot_view(k).pause() != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
-                let bits = self.dungeon_state_view().savegame_state_bits() | 0x8000;
-                self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+                let bits = self.dungeon_savegame_state().savegame_state_bits() | 0x8000;
+                self.dungeon_savegame_state_mut()
+                    .set_savegame_state_bits(bits);
             }
             if self.sprite_return_if_inactive(k) {
                 return;

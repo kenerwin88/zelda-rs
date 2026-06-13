@@ -1,9 +1,10 @@
 use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
-    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA, GANON_TORCH_COUNT,
-    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX,
-    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
+    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA,
+    DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
+    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
+    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -18,6 +19,7 @@ pub(crate) struct DungeonState {
     pub(crate) scratch_word: DungeonScratchWordState,
     pub(crate) entrance_backup: DungeonEntranceBackupState,
     pub(crate) torch: DungeonTorchState,
+    pub(crate) savegame_state: DungeonSavegameState,
 }
 
 impl DungeonState {
@@ -27,6 +29,7 @@ impl DungeonState {
             scratch_word: DungeonScratchWordState::load_from_ram(ram),
             entrance_backup: DungeonEntranceBackupState::load_from_ram(ram),
             torch: DungeonTorchState::load_from_ram(ram),
+            savegame_state: DungeonSavegameState::load_from_ram(ram),
         }
     }
 
@@ -35,6 +38,45 @@ impl DungeonState {
         self.scratch_word.write_to_ram(ram);
         self.entrance_backup.write_to_ram(ram);
         self.torch.write_to_ram(ram);
+        self.savegame_state.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonSavegameState {
+    state_bits: u16,
+}
+
+impl DungeonSavegameState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            state_bits: read_le_u16(ram, DUNG_SAVEGAME_STATE_BITS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNG_SAVEGAME_STATE_BITS, self.state_bits);
+    }
+
+    pub(crate) fn savegame_state_bits(&self) -> u16 {
+        self.state_bits
+    }
+
+    pub(crate) fn has_savegame_state_bits(&self, mask: u16) -> bool {
+        self.state_bits & mask != 0
+    }
+
+    fn set_savegame_state_bits(&mut self, value: u16) {
+        self.state_bits = value;
+    }
+
+    fn clear_savegame_state_bits(&mut self) {
+        self.state_bits = 0;
+    }
+
+    fn or_savegame_state_bits(&mut self, mask: u16) -> u16 {
+        self.state_bits |= mask;
+        self.state_bits
     }
 }
 
@@ -497,6 +539,43 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
         let next = self.scratch.increment_secondary_low();
         self.sync();
         next
+    }
+}
+
+pub(crate) struct NativeDungeonSavegameBridgeMut<'a> {
+    state: &'a mut DungeonSavegameState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonSavegameBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonSavegameState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonSavegameState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonSavegameState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_savegame_state_bits(&mut self, value: u16) {
+        self.state.set_savegame_state_bits(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_savegame_state_bits(&mut self) {
+        self.state.clear_savegame_state_bits();
+        self.sync();
+    }
+
+    pub(crate) fn or_savegame_state_bits(&mut self, mask: u16) -> u16 {
+        let value = self.state.or_savegame_state_bits(mask);
+        self.sync();
+        value
     }
 }
 

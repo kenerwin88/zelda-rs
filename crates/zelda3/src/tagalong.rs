@@ -1723,7 +1723,8 @@ impl ZeldaState {
         maiden.set_graphics(21);
         maiden.set_direction(2);
         maiden.set_ignore_projectile(2);
-        self.dungeon_state_view_mut().or_savegame_state_bits(0x2000);
+        self.dungeon_savegame_state_mut()
+            .or_savegame_state_bits(0x2000);
         self.follower_state_view_mut().clear_kiki_anim_counter();
     }
 

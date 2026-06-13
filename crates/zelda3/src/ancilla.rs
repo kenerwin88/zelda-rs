@@ -1251,7 +1251,7 @@ impl ZeldaState {
             .set_incapacitated_timer(BOMB_DMG_DELAY[j]);
         self.player_state_view_mut().set_auxiliary_state(1);
         self.player_state_view_mut().set_blink_countdown(58);
-        if self.dungeon_state_view().savegame_state_bits() & 0x8000 == 0 {
+        if self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0 {
             let armor = self.inventory_items().armor() as usize;
             self.player_state_view_mut()
                 .set_given_damage(BOMB_DMG_TO_LINK[armor]);
@@ -7475,7 +7475,7 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() != 0x10
             && self.ancilla_slot_view(k).item_to_link() != 0x0f
         {
-            let dung_savegame_state_bits = self.dungeon_state_view().savegame_state_bits();
+            let dung_savegame_state_bits = self.dungeon_savegame_state().savegame_state_bits();
             if dung_savegame_state_bits & 0x4000 != 0 {
                 let value = 0;
                 self.ancilla_slot_view_mut(k).set_ancilla_type(value);

@@ -5281,8 +5281,9 @@ impl ZeldaState {
         let value = self.sprite_slot_view(k).subtype();
         self.sprite_slot_view_mut(k).set_n(value);
         let idx = usize::from(self.sprite_slot_view(k).die_action());
-        let bits = self.dungeon_state_view().savegame_state_bits() | absorb_big_key[idx];
-        self.dungeon_state_view_mut().set_savegame_state_bits(bits);
+        let bits = self.dungeon_savegame_state().savegame_state_bits() | absorb_big_key[idx];
+        self.dungeon_savegame_state_mut()
+            .set_savegame_state_bits(bits);
         self.sprite_manually_set_death_flag_uw(k);
     }
 

@@ -29,9 +29,9 @@ pub(crate) use display::{
     TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
-    DungeonHeaderState, DungeonScratchWordState, DungeonState, DungeonTorchState,
-    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonTorchBridgeMut,
+    DungeonHeaderState, DungeonSavegameState, DungeonScratchWordState, DungeonState,
+    DungeonTorchState, NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
