@@ -38,22 +38,22 @@ use crate::game_state::{
     DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderState,
     DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState,
     DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
-    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EndingScratchView,
-    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState,
-    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
-    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
-    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
-    NativeChainChompHistoryBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
-    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitState, FollowerStateView, FollowerStateViewMut, FrameState,
+    GameState, GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
+    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
@@ -3157,12 +3157,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn ending_scratch_view(&self) -> EndingScratchView<'_> {
-        EndingScratchView::new(&self.ram)
+    pub(crate) fn ending_scratch_view(&self) -> DungeonScratchWordState {
+        DungeonScratchWordState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn ending_scratch_view_mut(&mut self) -> EndingScratchViewMut<'_> {
-        EndingScratchViewMut::new(&mut self.ram)
+    pub(crate) fn ending_scratch_view_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
+        NativeDungeonScratchWordBridgeMut::new(
+            &mut self.game_state.dungeon.scratch_word,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn save_load_scratch_view(&self) -> &SaveLoadTransferState {

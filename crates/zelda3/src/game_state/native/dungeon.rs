@@ -121,6 +121,22 @@ impl DungeonScratchWordState {
         self.r16 as u8
     }
 
+    pub(crate) fn primary_word(&self) -> u16 {
+        self.r16
+    }
+
+    pub(crate) fn secondary_word(&self) -> u16 {
+        self.r18
+    }
+
+    pub(crate) fn primary_low(&self) -> u8 {
+        self.r16 as u8
+    }
+
+    pub(crate) fn secondary_low(&self) -> u8 {
+        self.r18 as u8
+    }
+
     pub(crate) fn decrement_high(&mut self) -> u8 {
         let next = self.high().wrapping_sub(1);
         self.r16 = (self.r16 & 0x00ff) | (u16::from(next) << 8);
@@ -156,6 +172,34 @@ impl DungeonScratchWordState {
 
     pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {
         self.r16 = (self.r16 & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_primary_word(&mut self, value: u16) {
+        self.r16 = value;
+    }
+
+    pub(crate) fn set_secondary_word(&mut self, value: u16) {
+        self.r18 = value;
+    }
+
+    pub(crate) fn clear_primary_word(&mut self) {
+        self.set_primary_word(0);
+    }
+
+    pub(crate) fn set_primary_low(&mut self, value: u8) {
+        self.r16 = (self.r16 & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn decrement_primary_low(&mut self) -> u8 {
+        let next = self.primary_low().wrapping_sub(1);
+        self.set_primary_low(next);
+        next
+    }
+
+    pub(crate) fn increment_secondary_low(&mut self) -> u8 {
+        let next = self.secondary_low().wrapping_add(1);
+        self.r18 = (self.r18 & 0xff00) | u16::from(next);
+        next
     }
 }
 
@@ -222,6 +266,38 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
     pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {
         self.scratch.set_minigame_previous_chest_choice(value);
         self.sync();
+    }
+
+    pub(crate) fn set_primary_word(&mut self, value: u16) {
+        self.scratch.set_primary_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_secondary_word(&mut self, value: u16) {
+        self.scratch.set_secondary_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_primary_word(&mut self) {
+        self.scratch.clear_primary_word();
+        self.sync();
+    }
+
+    pub(crate) fn set_primary_low(&mut self, value: u8) {
+        self.scratch.set_primary_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_primary_low(&mut self) -> u8 {
+        let next = self.scratch.decrement_primary_low();
+        self.sync();
+        next
+    }
+
+    pub(crate) fn increment_secondary_low(&mut self) -> u8 {
+        let next = self.scratch.increment_secondary_low();
+        self.sync();
+        next
     }
 }
 

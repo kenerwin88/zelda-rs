@@ -704,15 +704,22 @@ mod tests {
         assert_eq!(scratch.high(), 0x12);
         assert_eq!(scratch.word(), 0x1201);
         assert_eq!(scratch.minigame_previous_chest_choice(), 1);
+        assert_eq!(scratch.primary_word(), 0x1201);
+        assert_eq!(scratch.secondary_word(), 0x3456);
+        assert_eq!(scratch.primary_low(), 1);
+        assert_eq!(scratch.secondary_low(), 0x56);
 
         assert_eq!(scratch.decrement_high(), 0x11);
         assert_eq!(scratch.decrement_ganon_door_bounce_low(), 0);
         scratch.set_liftable_tile_probe_position(0x789a, 0xbcde);
         scratch.set_minigame_previous_chest_choice(0xef);
+        scratch.set_primary_low(0x34);
+        assert_eq!(scratch.decrement_primary_low(), 0x33);
+        assert_eq!(scratch.increment_secondary_low(), 0xdf);
         scratch.write_to_ram(&mut ram);
 
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x78ef);
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0xbcde);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_PRIMARY), 0x7833);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_SECONDARY), 0xbcdf);
     }
 
     #[test]
@@ -731,12 +738,21 @@ mod tests {
             bridge.set_liftable_tile_probe_position(0x1234, 0x5678);
             bridge.clear_word();
             bridge.set_word(0xabcd);
+            bridge.set_primary_word(0x1234);
+            bridge.set_secondary_word(0x5678);
+            bridge.clear_primary_word();
+            bridge.set_primary_low(2);
+            assert_eq!(bridge.decrement_primary_low(), 1);
+            assert_eq!(bridge.increment_secondary_low(), 0x79);
         }
 
-        assert_eq!(scratch.word(), 0xabcd);
-        assert_eq!(scratch.high(), 0xab);
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0xabcd);
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x5678);
+        assert_eq!(scratch.word(), 1);
+        assert_eq!(scratch.primary_word(), 1);
+        assert_eq!(scratch.secondary_word(), 0x5679);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 1);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_PRIMARY), 1);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x5679);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_SECONDARY), 0x5679);
     }
 
     #[test]
