@@ -17,7 +17,7 @@ impl ZeldaState {
             & world.overworld_offset_mask_y())
             << 3)
             | (x.wrapping_sub(world.overworld_offset_base_x()) & world.overworld_offset_mask_x());
-        let map16 = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
+        let map16 = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
         let mut attr = self.asset_u8(163, (map8 & 0x01ff) as usize);

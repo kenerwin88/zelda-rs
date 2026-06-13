@@ -37,20 +37,20 @@ use crate::game_state::{
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
     DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState,
     DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomLoadState,
-    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonStateView,
-    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
-    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
-    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
-    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
+    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
+    DungeonStairMovementState, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -60,11 +60,11 @@ use crate::game_state::{
     NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
-    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomTrackingBridgeMut,
-    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
-    NativeDungeonSecretBridgeMut, NativeDungeonStairListsBridgeMut,
-    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
+    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomTilemapBridgeMut,
+    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
+    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
+    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
+    NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
@@ -3320,6 +3320,17 @@ impl ZeldaState {
     pub(crate) fn dungeon_environment_mut(&mut self) -> NativeDungeonEnvironmentBridgeMut<'_> {
         NativeDungeonEnvironmentBridgeMut::new(
             &mut self.game_state.dungeon.environment,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_room_tilemaps(&self) -> DungeonRoomTilemapState {
+        DungeonRoomTilemapState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
+        NativeDungeonRoomTilemapBridgeMut::new(
+            &mut self.game_state.dungeon.room_tilemaps,
             &mut self.ram,
         )
     }
@@ -6700,7 +6711,7 @@ impl ZeldaState {
         let attr = if loc < 0x8000 { 0x27 } else { 0x00 };
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (i, &tile_pos) in positions.iter().enumerate() {
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile(tile_pos as usize, src[i]);
             self.dungeon_state_view_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
@@ -8151,7 +8162,7 @@ mod tests {
         write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_Y, 0x1f);
         write_le_u16(&mut state.ram, OVERWORLD_OFFSET_BASE_X, 3);
         write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_X, 0x3f);
-        state.dungeon_state_view_mut().set_bg2_tile(32, 5);
+        state.dungeon_room_tilemaps_mut().set_bg2_tile(32, 5);
 
         let mut data = vec![0; 0x100];
         write_le_u16(&mut data, (5 * 4 + 2) * 2, 0x4007);
@@ -9908,7 +9919,7 @@ mod tests {
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_Y, 0x1f);
         write_le_u16(&mut state.ram, OVERWORLD_OFFSET_MASK_X, 0x3f);
-        state.dungeon_state_view_mut().set_bg2_tile(16, 7);
+        state.dungeon_room_tilemaps_mut().set_bg2_tile(16, 7);
 
         let mut data = vec![0; 0x100];
         write_le_u16(&mut data, 7 * 4 * 2, 3);

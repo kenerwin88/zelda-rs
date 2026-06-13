@@ -3332,9 +3332,9 @@ impl ZeldaState {
         let dst = self.display_state().current_vram_upload_data_address();
         self.write_vram_upload_absolute_word(dst + 4, 0x190f);
         self.write_vram_upload_absolute_word(dst + 10, 0x190f);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile(pos as usize, 0x190f);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile((pos + 64) as usize, 0x190f);
         let attr = u16::from(self.player_tile_attributes().attr_for_tile(0x190f)) * 0x0101;
         let vram0 = self.Dungeon_MapVramAddr(pos);
@@ -3470,7 +3470,7 @@ impl ZeldaState {
         }
         let (pos, x, y) = self.overworld_get_link_map16_coords_result();
         self.player_state_view_mut().set_y(bak);
-        let a = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
+        let a = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
         match a {
             0x226 => Some((self.smash_rock_pile_from_lift_impl(a, pos, 0, x, y), x, y)),
             0x227 => Some((self.smash_rock_pile_from_lift_impl(a, pos, 1, x, y), x, y)),
@@ -3513,7 +3513,7 @@ impl ZeldaState {
         if secret != 0 {
             tile = secret;
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, tile);
         self.overworld_memorize_map16_change_for_smash(pos, tile);
         self.overworld_draw_map16_for_smash(pos, tile);
@@ -3693,7 +3693,7 @@ impl ZeldaState {
     }
 
     fn overworld_draw_map16_persist_for_smash(&mut self, pos: u16, value: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, value);
         self.overworld_draw_map16_for_smash(pos, value);
     }

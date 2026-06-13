@@ -26794,7 +26794,7 @@ impl ZeldaState {
     }
 
     fn overworld_draw_map16_persist_for_draw(&mut self, pos: u16, value: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, value);
         self.overworld_draw_map16_for_draw(pos, value);
     }

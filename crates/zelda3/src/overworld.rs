@@ -348,12 +348,12 @@ impl ZeldaState {
             return;
         }
         let word0 = if pos < 0x2000 {
-            self.dungeon_state_view().bg2_tile_by_byte_pos(pos)
+            self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos)
         } else {
             0xffff
         };
         let word1 = if pos < 0x1ffe {
-            self.dungeon_state_view()
+            self.dungeon_room_tilemaps()
                 .bg2_tile(((pos >> 1) + 1) as usize)
         } else {
             0xffff
@@ -1164,7 +1164,7 @@ impl ZeldaState {
                 & self.world_scroll().overworld_offset_mask_x(),
         );
 
-        let mut x = self.dungeon_state_view().bg2_tile_by_byte_pos(pos) as usize * 4;
+        let mut x = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos) as usize * 4;
         let map16_to_map8 = self
             .asset_raw(70)
             .expect("Overworld_UseEntrance missing kMap16ToMap8 asset")
@@ -1180,7 +1180,7 @@ impl ZeldaState {
             }
             if a != 0x0149 && a != 0x0169 {
                 x = self
-                    .dungeon_state_view()
+                    .dungeon_room_tilemaps()
                     .bg2_tile(((pos >> 1) + 1) as usize) as usize
                     * 4;
                 a = read_word_from_slice(&map16_to_map8, x * 2) & 0x41ff;
@@ -1970,7 +1970,7 @@ impl ZeldaState {
         let pos = ((y.wrapping_sub(ws.overworld_offset_base_y()) & ws.overworld_offset_mask_y())
             .wrapping_mul(8))
         .wrapping_add(x.wrapping_sub(ws.overworld_offset_base_x()) & ws.overworld_offset_mask_x());
-        let attr = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
+        let attr = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
         let mut yv = 0u16;
         let mut reveal = false;
 
@@ -2038,7 +2038,7 @@ impl ZeldaState {
             if secret != 0 {
                 yv = secret;
             }
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, yv);
             self.Overworld_Memorize_Map16_Change(pos, yv);
             self.overworld_draw_map16(pos, yv);
@@ -2091,7 +2091,7 @@ impl ZeldaState {
     pub(super) fn Overworld_HandleLiftableTiles(&mut self, pt_arg: &mut Point16U) -> u8 {
         let pos = self.overworld_get_link_map16_coords(pt_arg);
         let pt = *pt_arg;
-        let a = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
+        let a = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
         if matches!(a, 0x36d | 0x23b) {
             return self.smash_rock_pile_from_lift(a, pos, 0, pt);
         }
@@ -3207,7 +3207,7 @@ impl ZeldaState {
     }
 
     fn overworld_bg2_word(&self, word_index: usize) -> u16 {
-        self.dungeon_state_view().bg2_tile(word_index)
+        self.dungeon_room_tilemaps().bg2_tile(word_index)
     }
 
     fn overworld_map16_to_map8_word(&self, map8: &[u8], map16: u16, quarter: usize) -> u16 {
@@ -3854,7 +3854,7 @@ impl ZeldaState {
     pub(super) fn SomeTileMapChange(&mut self) {
         self.Overworld_DecompressAndDrawAllQuadrants();
         for i in 0..64 {
-            self.dungeon_state_view_mut().set_bg1_tile(i, 0x0dc4);
+            self.dungeon_room_tilemaps_mut().set_bg1_tile(i, 0x0dc4);
         }
         self.Overworld_HandleOverlaysAndBombDoors();
         self.increment_submodule();
@@ -3872,25 +3872,25 @@ impl ZeldaState {
     pub(super) fn Overworld_DrawQuadrantsAndOverlays(&mut self) {
         self.Overworld_DecompressAndDrawAllQuadrants();
         for i in 0..64 {
-            self.dungeon_state_view_mut().set_bg1_tile(i, 0x0dc4);
+            self.dungeon_room_tilemaps_mut().set_bg1_tile(i, 0x0dc4);
         }
         let mut pos = self.world_region().ow_entrance_value();
         self.replay_trace_door_overlay("draw-before-entrance", pos & 0x1fff);
         if pos != 0 && pos != 0xffff {
             if pos < 0x8000 {
-                self.dungeon_state_view_mut()
+                self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos, 0x0da4);
                 self.Overworld_Memorize_Map16_Change(pos, 0x0da4);
-                self.dungeon_state_view_mut()
+                self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0da6);
                 self.Overworld_Memorize_Map16_Change(pos.wrapping_add(2), 0x0da6);
                 self.replay_trace_door_overlay("draw-normal-door", pos);
             } else {
                 pos &= 0x1fff;
-                self.dungeon_state_view_mut()
+                self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos, 0x0db4);
                 self.Overworld_Memorize_Map16_Change(pos, 0x0db4);
-                self.dungeon_state_view_mut()
+                self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0db5);
                 self.Overworld_Memorize_Map16_Change(pos.wrapping_add(2), 0x0db5);
                 self.replay_trace_door_overlay("draw-open-door", pos);
@@ -3913,7 +3913,7 @@ impl ZeldaState {
             let memorized_tiles = self.memorized_tile_view();
             let pos = memorized_tiles.entry_addr(i);
             let value = memorized_tiles.entry_value(i);
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, value);
         }
     }
@@ -4644,7 +4644,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_ReadTileAttribute(&self, x: u16, y: u16) -> u8 {
         let t = self.overworld_bg2_byte_pos(x, y) as usize;
-        let tile = self.dungeon_state_view().bg2_tile_by_byte_pos(t as u16) as usize;
+        let tile = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(t as u16) as usize;
         self.asset_raw(164)
             .expect("Overworld_ReadTileAttribute missing kSomeTileAttr asset")[tile]
     }
@@ -4993,7 +4993,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_Func2F(&mut self) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(0x0720 as u16, 0x0212);
         self.Overworld_Memorize_Map16_Change(0x0720, 0x0212);
         self.overworld_draw_map16(0x0720, 0x0212);
@@ -5033,7 +5033,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_AlterTileHardcore(&mut self, pos: u16, value: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, value);
         self.overworld_draw_map16(pos, value);
     }
@@ -5128,7 +5128,7 @@ impl ZeldaState {
         let xc = self.player_state_view().x().wrapping_add(8) >> 3;
         let yc = self.player_state_view().y().wrapping_add(12);
         let pos = self.overworld_bg2_byte_pos(xc, yc);
-        let map16 = self.dungeon_state_view().bg2_tile_by_byte_pos(pos) as usize * 4;
+        let map16 = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos) as usize * 4;
         let map8 = self
             .asset_raw(70)
             .expect("Overworld_GetMap16OfLink_Mult8 missing kMap16ToMap8 asset");
@@ -5375,7 +5375,7 @@ impl ZeldaState {
     }
 
     fn overworld_draw_map16_persist(&mut self, pos: u16, value: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, value);
         self.overworld_draw_map16(pos, value);
     }
@@ -5424,7 +5424,7 @@ impl ZeldaState {
         let pos = self.overworld_bg2_byte_pos(x >> 3, y);
 
         if self.follower_state_view().indicator() != 13 {
-            let a = self.dungeon_state_view().bg2_tile_by_byte_pos(pos);
+            let a = self.dungeon_room_tilemaps().bg2_tile_by_byte_pos(pos);
             let (k, j) = if a == 0x0036 {
                 (2, 0x0dc7)
             } else if a == 0x072a {
@@ -5439,7 +5439,7 @@ impl ZeldaState {
             if a == 0 {
                 a = j;
             }
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, a);
             self.overworld_memorize_map16_change_for_smash(pos, a);
             self.overworld_draw_map16_for_smash(pos, a);
@@ -5454,12 +5454,12 @@ impl ZeldaState {
     fn overworld_bomb_tile_label_a(&mut self, pos: u16) {
         let a = self.overworld_reveal_secret_for_smash(pos);
         if a == 0x0db4 {
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, a);
             self.overworld_memorize_map16_change_for_smash(pos, a);
             self.overworld_draw_map16_for_smash(pos, a);
 
-            self.dungeon_state_view_mut()
+            self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0db5);
             self.overworld_memorize_map16_change_for_smash(pos, 0x0db5);
             self.overworld_draw_map16_for_smash(pos.wrapping_add(2), 0x0db5);
@@ -5473,9 +5473,9 @@ impl ZeldaState {
     pub(super) fn Overworld_HandleOverlaysAndBombDoors(&mut self) {
         let screen = u16::from(self.world_location_state().overworld_screen_index()) as usize;
         if screen == 0x33 {
-            self.dungeon_state_view_mut().set_bg2_tile(340, 0x020f);
+            self.dungeon_room_tilemaps_mut().set_bg2_tile(340, 0x020f);
         } else if screen == 0x2f {
-            self.dungeon_state_view_mut().set_bg2_tile(1497, 0x020f);
+            self.dungeon_room_tilemaps_mut().set_bg2_tile(1497, 0x020f);
         }
 
         let screen_byte = self.world_location_state().overworld_screen_index() as usize;
@@ -5487,8 +5487,9 @@ impl ZeldaState {
         if self.overworld_event_info_view().event_info(screen_byte) & 2 != 0 {
             let pos = (SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN[screen] >> 1) as usize;
             self.replay_trace_door_overlay("secondary-before", (pos << 1) as u16);
-            self.dungeon_state_view_mut().set_bg2_tile(pos, 0x0db4);
-            self.dungeon_state_view_mut().set_bg2_tile(pos + 1, 0x0db5);
+            self.dungeon_room_tilemaps_mut().set_bg2_tile(pos, 0x0db4);
+            self.dungeon_room_tilemaps_mut()
+                .set_bg2_tile(pos + 1, 0x0db5);
             self.replay_trace_door_overlay("secondary-after", (pos << 1) as u16);
         }
     }
@@ -5794,7 +5795,7 @@ impl ZeldaState {
     }
 
     fn write_bg2_xy(&mut self, x: usize, y: usize, value: u16) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_tilemaps_mut()
             .set_bg2_tile(y * 64 + x, value);
     }
 }

@@ -6,7 +6,7 @@ use crate::game_state::constants::{
     DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR,
-    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_DOOR_IDX,
+    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_BG1, DUNG_BG2, DUNG_CUR_DOOR_IDX,
     DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD,
     DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT,
     DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR,
@@ -14,8 +14,8 @@ use crate::game_state::constants::{
     DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
     DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
     DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
-    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LOADE_BGOFFS_H_COPY,
-    DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
+    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LINE_PTRS_ROW0,
+    DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
     DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
     DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
     DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1,
@@ -50,6 +50,8 @@ const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
+const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
+const DUNGEON_DRAW_LINE_POINTER_BYTES: usize = 33;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
@@ -73,6 +75,15 @@ const DUNG_STAIRS_TABLE_1: usize = 0x06b8;
 const DUNG_STAIRS_TABLE_2: usize = 0x06ec;
 const DUNGEON_DOOR_DEBRIS_X: usize = 0x0728;
 
+const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
+    0, 0x20, 0x7e, 2, 0x20, 0x7e, 4, 0x20, 0x7e, 6, 0x20, 0x7e, 0x80, 0x20, 0x7e, 0x82, 0x20, 0x7e,
+    0x84, 0x20, 0x7e, 0x86, 0x20, 0x7e, 0, 0x21, 0x7e, 0x80, 0x21, 0x7e, 0, 0x22, 0x7e,
+];
+const DUNGEON_DRAW_OBJECT_OFFSETS_BG2: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
+    0, 0x40, 0x7e, 2, 0x40, 0x7e, 4, 0x40, 0x7e, 6, 0x40, 0x7e, 0x80, 0x40, 0x7e, 0x82, 0x40, 0x7e,
+    0x84, 0x40, 0x7e, 0x86, 0x40, 0x7e, 0, 0x41, 0x7e, 0x80, 0x41, 0x7e, 0, 0x42, 0x7e,
+];
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonState {
     pub(crate) header: DungeonHeaderState,
@@ -89,6 +100,7 @@ pub(crate) struct DungeonState {
     pub(crate) doors: DungeonDoorState,
     pub(crate) room_load: DungeonRoomLoadState,
     pub(crate) environment: DungeonEnvironmentState,
+    pub(crate) room_tilemaps: DungeonRoomTilemapState,
 }
 
 impl DungeonState {
@@ -108,6 +120,7 @@ impl DungeonState {
             doors: DungeonDoorState::load_from_ram(ram),
             room_load: DungeonRoomLoadState::load_from_ram(ram),
             environment: DungeonEnvironmentState::load_from_ram(ram),
+            room_tilemaps: DungeonRoomTilemapState::load_from_ram(ram),
         }
     }
 
@@ -118,6 +131,171 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomTilemapState {
+    bg1_tiles: Vec<u16>,
+    bg2_tiles: Vec<u16>,
+    line_pointer_bytes: Vec<u8>,
+}
+
+impl Default for DungeonRoomTilemapState {
+    fn default() -> Self {
+        Self {
+            bg1_tiles: vec![0; DUNGEON_ROOM_TILEMAP_WORDS],
+            bg2_tiles: vec![0; DUNGEON_ROOM_TILEMAP_WORDS],
+            line_pointer_bytes: vec![0; DUNGEON_DRAW_LINE_POINTER_BYTES],
+        }
+    }
+}
+
+impl DungeonRoomTilemapState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for index in 0..DUNGEON_ROOM_TILEMAP_WORDS {
+            state.bg1_tiles[index] = read_le_u16(ram, DUNG_BG1 + index * 2);
+            state.bg2_tiles[index] = read_le_u16(ram, DUNG_BG2 + index * 2);
+        }
+        for (index, byte) in state.line_pointer_bytes.iter_mut().enumerate() {
+            *byte = ram.get(DUNG_LINE_PTRS_ROW0 + index).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for (index, tile) in self.bg1_tiles.iter().enumerate() {
+            write_le_u16(ram, DUNG_BG1 + index * 2, *tile);
+        }
+        for (index, tile) in self.bg2_tiles.iter().enumerate() {
+            write_le_u16(ram, DUNG_BG2 + index * 2, *tile);
+        }
+        for (index, byte) in self.line_pointer_bytes.iter().enumerate() {
+            ram[DUNG_LINE_PTRS_ROW0 + index] = *byte;
+        }
+    }
+
+    pub(crate) fn bg1_tilemap_base(&self) -> usize {
+        DUNG_BG1
+    }
+
+    pub(crate) fn bg2_tilemap_base(&self) -> usize {
+        DUNG_BG2
+    }
+
+    pub(crate) fn bg1_tile(&self, index: usize) -> u16 {
+        self.bg1_tiles.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn bg2_tile(&self, index: usize) -> u16 {
+        self.bg2_tiles.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn bg1_tile_by_byte_pos(&self, pos: u16) -> u16 {
+        self.bg1_tile((pos >> 1) as usize)
+    }
+
+    pub(crate) fn bg2_tile_by_byte_pos(&self, pos: u16) -> u16 {
+        self.bg2_tile((pos >> 1) as usize)
+    }
+
+    pub(crate) fn line_pointer_row0(&self, index: usize) -> u16 {
+        self.line_pointer_word(index * 2)
+    }
+
+    pub(crate) fn first_line_pointer_row0(&self) -> u16 {
+        self.line_pointer_row0(0)
+    }
+
+    pub(crate) fn room_tilemap_word(&self, base: usize, dsto: u16) -> u16 {
+        let index = dsto as usize;
+        match base {
+            DUNG_BG1 => self.bg1_tile(index),
+            DUNG_BG2 => self.bg2_tile(index),
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn room_tilemap_word_by_byte_offset(&self, base: usize, byte_offset: usize) -> u16 {
+        let index = byte_offset >> 1;
+        match base {
+            DUNG_BG1 => self.bg1_tile(index),
+            DUNG_BG2 => self.bg2_tile(index),
+            _ => 0,
+        }
+    }
+
+    fn line_pointer_word(&self, byte_offset: usize) -> u16 {
+        let lo = self
+            .line_pointer_bytes
+            .get(byte_offset)
+            .copied()
+            .unwrap_or(0);
+        let hi = self
+            .line_pointer_bytes
+            .get(byte_offset + 1)
+            .copied()
+            .unwrap_or(0);
+        u16::from(lo) | (u16::from(hi) << 8)
+    }
+
+    fn set_bg1_tile(&mut self, index: usize, value: u16) {
+        if let Some(tile) = self.bg1_tiles.get_mut(index) {
+            *tile = value;
+        }
+    }
+
+    fn set_bg2_tile(&mut self, index: usize, value: u16) {
+        if let Some(tile) = self.bg2_tiles.get_mut(index) {
+            *tile = value;
+        }
+    }
+
+    fn set_bg1_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
+        self.set_bg1_tile((pos >> 1) as usize, value);
+    }
+
+    fn set_bg2_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
+        self.set_bg2_tile((pos >> 1) as usize, value);
+    }
+
+    fn set_room_tilemap_word(&mut self, base: usize, dsto: u16, value: u16) {
+        match base {
+            DUNG_BG1 => self.set_bg1_tile(dsto as usize, value),
+            DUNG_BG2 => self.set_bg2_tile(dsto as usize, value),
+            _ => {}
+        }
+    }
+
+    fn set_room_tilemap_word_by_byte_offset(
+        &mut self,
+        base: usize,
+        byte_offset: usize,
+        value: u16,
+    ) {
+        self.set_room_tilemap_word(base, (byte_offset >> 1) as u16, value);
+    }
+
+    fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
+        let offset = index * 2;
+        if offset + 1 < self.line_pointer_bytes.len() {
+            self.line_pointer_bytes[offset] = value as u8;
+            self.line_pointer_bytes[offset + 1] = (value >> 8) as u8;
+        }
+    }
+
+    fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
+        let len = offsets.len().min(self.line_pointer_bytes.len());
+        self.line_pointer_bytes[..len].copy_from_slice(&offsets[..len]);
+    }
+
+    fn copy_bg2_draw_line_offsets(&mut self) {
+        self.copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG2);
+    }
+
+    fn copy_bg1_draw_line_offsets(&mut self) {
+        self.copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
     }
 }
 
@@ -3273,6 +3451,102 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
 
     pub(crate) fn clear_movable_block_was_pushed(&mut self) {
         self.state.clear_movable_block_was_pushed();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomTilemapBridgeMut<'a> {
+    state: &'a mut DungeonRoomTilemapState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomTilemapState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomTilemapState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomTilemapState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_bg1_tile(&mut self, index: usize, value: u16) {
+        self.state.set_bg1_tile(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_tile(&mut self, index: usize, value: u16) {
+        self.state.set_bg2_tile(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg1_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
+        self.state.set_bg1_tile_by_byte_pos(pos, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
+        self.state.set_bg2_tile_by_byte_pos(pos, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_tilemap_word(&mut self, base: usize, dsto: u16, value: u16) {
+        match base {
+            DUNG_BG1 | DUNG_BG2 => {
+                self.state.set_room_tilemap_word(base, dsto, value);
+                self.sync();
+            }
+            _ => {
+                write_le_u16(self.ram, base + dsto as usize * 2, value);
+                *self.state = DungeonRoomTilemapState::load_from_ram(self.ram);
+            }
+        }
+    }
+
+    pub(crate) fn set_room_tilemap_word_by_byte_offset(
+        &mut self,
+        base: usize,
+        byte_offset: usize,
+        value: u16,
+    ) {
+        match base {
+            DUNG_BG1 | DUNG_BG2 => {
+                self.state
+                    .set_room_tilemap_word_by_byte_offset(base, byte_offset, value);
+                self.sync();
+            }
+            _ => {
+                write_le_u16(self.ram, base + byte_offset, value);
+                *self.state = DungeonRoomTilemapState::load_from_ram(self.ram);
+            }
+        }
+    }
+
+    pub(crate) fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
+        self.state.set_line_pointer_row0(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
+        self.state.copy_line_pointer_bytes(offsets);
+        self.sync();
+    }
+
+    pub(crate) fn copy_bg2_draw_line_offsets(&mut self) {
+        self.state.copy_bg2_draw_line_offsets();
+        self.sync();
+    }
+
+    pub(crate) fn copy_bg1_draw_line_offsets(&mut self) {
+        self.state.copy_bg1_draw_line_offsets();
         self.sync();
     }
 }
