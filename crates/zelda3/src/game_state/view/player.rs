@@ -3943,17 +3943,3 @@ impl<'a> TileDetectPositionViewMut<'a> {
         self.ram[SCRATCH_0 + 1] = high;
     }
 }
-
-pub(crate) struct PlayerTileAttributeView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> PlayerTileAttributeView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn attr_for_tile(&self, tile: usize) -> u8 {
-        byte(self.ram, ATTRIBUTES_FOR_TILE_PLAYER + (tile & 0x03ff))
-    }
-}

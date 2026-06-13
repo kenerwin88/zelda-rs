@@ -79,8 +79,8 @@ pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
 pub(crate) use player::{
     Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeTileDetectionBridgeMut, PlayerState, PushedBlockView, SpecialExitPositionView,
-    SwimAccelerationView, TileDetectionState,
+    NativeTileDetectionBridgeMut, PlayerState, PlayerTileAttributeTableState, PushedBlockView,
+    SpecialExitPositionView, SwimAccelerationView, TileDetectionState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,

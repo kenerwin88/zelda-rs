@@ -89,7 +89,7 @@ use crate::game_state::{
     OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyStateView, PolyStateViewMut,
     PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState,
     SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
@@ -1867,8 +1867,8 @@ impl ZeldaState {
         NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
-    pub(crate) fn player_tile_attribute_view(&self) -> PlayerTileAttributeView<'_> {
-        PlayerTileAttributeView::new(&self.ram)
+    pub(crate) fn player_tile_attributes(&self) -> PlayerTileAttributeTableState {
+        PlayerTileAttributeTableState::load_from_ram(&self.ram)
     }
 
     pub(crate) fn inventory_items(&self) -> InventoryItemsState {
