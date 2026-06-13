@@ -52,8 +52,8 @@ impl ZeldaState {
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let detect_y = link_y.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16);
         self.tile_detect_position_mut().set_y(detect_y);
         let y = detect_y & mask;
@@ -78,8 +78,8 @@ impl ZeldaState {
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x =
             (link_x.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16) & mask) >> 3;
         let y0 =
@@ -101,8 +101,8 @@ impl ZeldaState {
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let y = link_y.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16) & mask;
         let x0 =
             (link_x.wrapping_add(TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS[direction] as u16) & mask) >> 3;
@@ -119,8 +119,8 @@ impl ZeldaState {
         self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x = (link_x.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16)
             & mask)
             >> 3;
@@ -134,8 +134,8 @@ impl ZeldaState {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[0] as u16) & mask) >> 3;
         let x1 =
             (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[0] as u16) & mask) >> 3;
@@ -151,20 +151,20 @@ impl ZeldaState {
     pub(super) fn hookshot_check_tile_collision(&mut self, k: i32) {
         let k = k as usize;
         let bak0 = self.world_location_state().dungeon_room_index();
-        let bak1 = self.player_state_view().lower_level_state();
-        if self.ancilla_slot_view(k).work_byte_1() != 0 {
+        let bak1 = self.player_state().lower_level_state();
+        if self.ancilla_slot(k).work_byte_1() != 0 {
             if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
                 self.increment_dungeon_room_index_by(0x10);
             }
-            self.player_state_view_mut().set_lower_level_state(bak1 ^ 1);
+            self.player_state_mut().set_lower_level_state(bak1 ^ 1);
         }
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
-        let dir = self.ancilla_slot_view(k).direction() as i32;
+        let dir = self.ancilla_slot(k).direction() as i32;
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         if self.dungeon_room_load().header_collision() == 2 {
-            self.player_state_view_mut().set_lower_level_state(1);
+            self.player_state_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
                 x.wrapping_add(self.world_scroll().bg1_x())
                     .wrapping_sub(self.world_scroll().bg2_x()),
@@ -172,10 +172,10 @@ impl ZeldaState {
                     .wrapping_sub(self.world_scroll().bg2_y()),
                 dir,
             );
-            self.player_state_view_mut().set_lower_level_state(0);
+            self.player_state_mut().set_lower_level_state(0);
         }
         self.hookshot_check_single_layer_tile_collision(x, y, dir);
-        self.player_state_view_mut().set_lower_level_state(bak1);
+        self.player_state_mut().set_lower_level_state(bak1);
         self.set_dungeon_room_index(bak0);
     }
 
@@ -193,13 +193,13 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_nudging_in_a_door(&mut self, speed: i8) {
-        let y = if self.player_state_view().last_direction_moved_towards() & 2 != 0 {
-            if (self.player_state_view().y() as u8) < 0x80 {
+        let y = if self.player_state().last_direction_moved_towards() & 2 != 0 {
+            if (self.player_state().y() as u8) < 0x80 {
                 1
             } else {
                 0
             }
-        } else if (self.player_state_view().x() as u8) < 0x80 {
+        } else if (self.player_state().x() as u8) < 0x80 {
             3
         } else {
             2
@@ -209,8 +209,8 @@ impl ZeldaState {
         const DETECT_Y: [i8; 4] = [8, 23, 16, 16];
         const DETECT_X: [i8; 4] = [8, 8, 0, 15];
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(DETECT_X[y] as i16 as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(DETECT_Y[y] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
@@ -225,13 +225,13 @@ impl ZeldaState {
         {
             return;
         }
-        if self.player_state_view().last_direction_moved_towards() & 2 != 0 {
-            let y = self.player_state_view().y();
-            self.player_state_view_mut()
+        if self.player_state().last_direction_moved_towards() & 2 != 0 {
+            let y = self.player_state().y();
+            self.player_state_mut()
                 .set_y(y.wrapping_sub(speed as i16 as u16));
         } else {
-            let x = self.player_state_view().x();
-            self.player_state_view_mut()
+            let x = self.player_state().x();
+            self.player_state_mut()
                 .set_x(x.wrapping_sub(speed as i16 as u16));
         }
     }
@@ -240,8 +240,8 @@ impl ZeldaState {
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(2) & mask) >> 3;
         let x1 = (link_x.wrapping_add(13) & mask) >> 3;
         let y0 = link_y.wrapping_add(10) & mask;
@@ -260,8 +260,8 @@ impl ZeldaState {
         const DOORWAY_DETECT_Y: [i8; 4] = [-1, 24, 16, 16];
         let o = dw.wrapping_sub(1) as usize * 2;
         let mask = self.tile_detect_position().location_calc_mask();
-        let link_y = self.player_state_view().y();
-        let link_x = self.player_state_view().x();
+        let link_y = self.player_state().y();
+        let link_x = self.player_state().x();
         let x0 = (link_x.wrapping_add(DOORWAY_DETECT_X[o] as i16 as u16) & mask) >> 3;
         let x1 = (link_x.wrapping_add(DOORWAY_DETECT_X[o + 1] as i16 as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(DOORWAY_DETECT_Y[o] as i16 as u16) & mask;
@@ -316,21 +316,21 @@ impl ZeldaState {
         let normal_before = self.tile_detect_position().normal_tiles();
         let pit_before = self.tile_detect_position().pit_tile();
         let diag_before = self.tile_detect_position().diag_state();
-        let below_before = self.player_state_view().tile_below();
+        let below_before = self.player_state().tile_below();
         let tile = if is_indoors {
-            self.player_state_view_mut().clear_force_move_high_byte();
+            self.player_state_mut().clear_force_move_high_byte();
             offset = ((y & !7) as usize) * 8
                 + (x as usize & 63)
-                + if self.player_state_view().lower_level_state() != 0 {
+                + if self.player_state().lower_level_state() != 0 {
                     0x1000
                 } else {
                     0
                 };
             let mut tile = self.dungeon_bg2_attributes().bg2_attr(offset);
-            if self.player_state_view().cheat_walk_through_walls() != 0 {
+            if self.player_state().cheat_walk_through_walls() != 0 {
                 tile = 0;
             }
-            self.player_state_view_mut().set_tile_below(tile);
+            self.player_state_mut().set_tile_below(tile);
             tile
         } else {
             self.overworld_get_tile_attribute_at_location(x, y)
@@ -344,13 +344,13 @@ impl ZeldaState {
                 y,
                 bits,
                 self.world_location_state().indoor_flag,
-                self.player_state_view().lower_level_state(),
+                self.player_state().lower_level_state(),
                 offset,
                 tile,
-                self.player_state_view().x(),
-                self.player_state_view().y(),
-                self.player_state_view().speed_setting(),
-                self.player_state_view().speed_modifier(),
+                self.player_state().x(),
+                self.player_state().y(),
+                self.player_state().speed_setting(),
+                self.player_state().speed_modifier(),
                 r14_before,
                 self.tile_detect_position().collision_bits(),
                 r12_before,
@@ -364,14 +364,14 @@ impl ZeldaState {
                 diag_before,
                 self.tile_detect_position().diag_state(),
                 below_before,
-                self.player_state_view().tile_below(),
+                self.player_state().tile_below(),
             );
         }
     }
 
     #[rustfmt::skip]
     pub(super) fn tile_detect_execute_inner(&mut self, mut tile: u8, offs: u16, bits: u16, is_indoors: bool) {
-        if self.player_state_view().cheat_walk_through_walls() != 0 {
+        if self.player_state().cheat_walk_through_walls() != 0 {
             tile = 0;
         }
         let offset = offs as usize;
@@ -451,7 +451,7 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_moving_floor_tiles(moving_floor);
             }
             0x0d => {
-                if !self.player_state_view().is_menu_blocked()
+                if !self.player_state().is_menu_blocked()
                     && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_mut().or_spike_floor_and_triggers((bits << 4) as u8);
@@ -496,7 +496,7 @@ impl ZeldaState {
                 self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x20 | 0xb0..=0xbd => {
-                if !self.player_state_view().has_somaria_platform_state() {
+                if !self.player_state().has_somaria_platform_state() {
                     self.tile_detect_position_mut().or_pit_tile(bits as u8);
                 }
             }
@@ -539,7 +539,7 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_thick_grass(grass);
             }
             0x44 => {
-                if !self.player_state_view().is_menu_blocked()
+                if !self.player_state().is_menu_blocked()
                     && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
                     self.tile_detect_position_mut().or_spike_cactus_tiles(bits as u8);

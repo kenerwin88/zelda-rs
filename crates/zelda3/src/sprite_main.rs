@@ -16,7 +16,7 @@ impl ZeldaState {
         };
         let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.guard_animate_head(k, 0, &poc);
-        let sprite = self.sprite_slot_view(k);
+        let sprite = self.sprite_slot(k);
         let direction = sprite.direction() as usize;
         let flags3 = sprite.flags3();
         self.guard_animate_body(k, SOLDIER_DRAW2_OAM_IDX[direction] >> 2, &poc);
@@ -31,7 +31,7 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_head(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
-        let sprite = self.sprite_slot_view(k);
+        let sprite = self.sprite_slot(k);
         let dir = sprite.head_direction() as usize;
         let graphics = sprite.graphics() as usize;
         self.set_sprite_main_guard_oam(
@@ -45,7 +45,7 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_body(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet) {
-        let sprite = self.sprite_slot_view(k);
+        let sprite = self.sprite_slot(k);
         let g = sprite.graphics() as usize * 4;
         let sprite_type = sprite.sprite_type();
         let oam_base = (self.oam_state().current_pointer_usize() - OAM_BUF) / 4;
@@ -79,7 +79,7 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_weapon(&mut self, k: usize, poc: &PrepOamCoordsRet) {
-        let sprite = self.sprite_slot_view(k);
+        let sprite = self.sprite_slot(k);
         let oam_idx = SOLDIER_DRAW3_OAM_IDX[sprite.direction() as usize] >> 2;
         let g = sprite.graphics() as usize * 2;
         let sprite_type = sprite.sprite_type();
@@ -155,8 +155,8 @@ mod tests {
             s.ram[base + 2] = 0xee;
         }
         let k = 0;
-        s.sprite_slot_view_mut(k).set_sprite_type(0x46);
-        s.sprite_slot_view_mut(k).set_graphics(graphics as u8);
+        s.sprite_slot_mut(k).set_sprite_type(0x46);
+        s.sprite_slot_mut(k).set_graphics(graphics as u8);
 
         s.guard_animate_body(
             k,

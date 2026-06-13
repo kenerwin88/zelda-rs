@@ -820,19 +820,19 @@ impl ZeldaState {
         let r0 = reversed as u8;
         let r1 = (reversed >> 8) as u8;
 
-        let last2_l = self.player_state_view().joypad1l_last2();
+        let last2_l = self.player_state().joypad1l_last2();
         let filtered_joypad_l = (r0 ^ last2_l) & r0;
-        self.player_state_view_mut().set_joypad1l_last(r0);
-        self.player_state_view_mut()
+        self.player_state_mut().set_joypad1l_last(r0);
+        self.player_state_mut()
             .set_filtered_joypad_l(filtered_joypad_l);
-        self.player_state_view_mut().set_joypad1l_last2(r0);
+        self.player_state_mut().set_joypad1l_last2(r0);
 
-        let last2_h = self.player_state_view().joypad1h_last2();
+        let last2_h = self.player_state().joypad1h_last2();
         let filtered_joypad_h = (r1 ^ last2_h) & r1;
-        self.player_state_view_mut().set_joypad1h_last(r1);
-        self.player_state_view_mut()
+        self.player_state_mut().set_joypad1h_last(r1);
+        self.player_state_mut()
             .set_filtered_joypad_h(filtered_joypad_h);
-        self.player_state_view_mut().set_joypad1h_last2(r1);
+        self.player_state_mut().set_joypad1h_last2(r1);
     }
 }
 

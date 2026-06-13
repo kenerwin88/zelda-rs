@@ -919,11 +919,11 @@ impl ZeldaState {
             let j = self.follower_state().tail_write_index() as usize;
             let x = self.tagalong_x(j);
             let y = self.tagalong_y(j);
-            self.ancilla_slot_view_mut(k).set_x(x);
-            self.ancilla_slot_view_mut(k).set_y(y);
+            self.ancilla_slot_mut(k).set_x(x);
+            self.ancilla_slot_mut(k).set_y(y);
 
             let pt = self.Ancilla_ProjectSpeedTowardsPlayer(k, 24);
-            let mut ancilla = self.ancilla_slot_view_mut(k);
+            let mut ancilla = self.ancilla_slot_mut(k);
             ancilla.set_x_velocity(pt.x);
             ancilla.set_y_velocity(pt.y);
             self.Ancilla_MoveY(k);
@@ -1048,7 +1048,7 @@ impl ZeldaState {
             }
         } else if self.follower_state().indicator() == 13 {
             if self.tagalong_link_state().auxiliary_state() == 2
-                || self.player_state_view().near_pit_state_is(2)
+                || self.player_state().near_pit_state_is(2)
             {
                 self.follower_drop();
                 return;
@@ -1070,7 +1070,7 @@ impl ZeldaState {
                 .tagalong_slot(self.follower_state().data_index() as usize)
                 .z_signed()
                 <= 0
-            && self.player_state_view().filtered_joypad_l() & 0x80 != 0
+            && self.player_state().filtered_joypad_l() & 0x80 != 0
     }
 
     fn follower_drop(&mut self) {
@@ -1112,10 +1112,10 @@ impl ZeldaState {
             if link.is_swimming() {
                 layerbits |= 0x20;
             } else {
-                if link.is_hookshot() && self.player_state_view().has_hookshot_interlock() {
+                if link.is_hookshot() && self.player_state().has_hookshot_interlock() {
                     layerbits |= 0x10;
                 }
-                let surface_effect = self.player_state_view().water_ripple_or_grass_state();
+                let surface_effect = self.player_state().water_ripple_or_grass_state();
                 if surface_effect != 0 {
                     layerbits |= if surface_effect == 1 { 0x80 } else { 0x40 };
                 }
@@ -1141,7 +1141,7 @@ impl ZeldaState {
         self.follower_handle_trigger();
         if self.follower_state().indicator() == 10
             && self.tagalong_link_state().has_auxiliary_state()
-            && self.player_state_view().blink_countdown() != 0
+            && self.player_state().blink_countdown() != 0
         {
             let k = if self.follower_state().data_index().wrapping_add(1) == 20 {
                 0
@@ -1172,7 +1172,7 @@ impl ZeldaState {
         }
         if self.follower_state().hookshot_interlock_is_clear() {
             if self.tagalong_link_state().is_hookshot()
-                && self.player_state_view().has_hookshot_interlock()
+                && self.player_state().has_hookshot_interlock()
             {
                 self.follower_state_mut().set_hookshot_interlock();
                 self.advance_follower_tail();
@@ -1677,13 +1677,13 @@ impl ZeldaState {
 
     pub(super) fn blind_spawn_from_maiden(&mut self, x: u16, y: u16) {
         let k = 0;
-        let mut maiden = self.sprite_slot_view_mut(k);
+        let mut maiden = self.sprite_slot_mut(k);
         maiden.set_state(9);
         maiden.set_sprite_type(206);
         self.Tagalong_Sprite_SetX(k, x);
         self.Tagalong_Sprite_SetY(k, y.wrapping_sub(16));
         self.SpritePrep_LoadProperties(k);
-        let mut maiden = self.sprite_slot_view_mut(k);
+        let mut maiden = self.sprite_slot_mut(k);
         maiden.set_delay_aux2(192);
         maiden.set_graphics(21);
         maiden.set_direction(2);
@@ -1695,7 +1695,7 @@ impl ZeldaState {
 
     pub(super) fn kiki_revert_to_sprite(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            self.sprite_slot_view_mut(j).set_subtype2(1);
+            self.sprite_slot_mut(j).set_subtype2(1);
         }
         self.follower_state_mut().set_indicator(0);
     }
@@ -1705,7 +1705,7 @@ impl ZeldaState {
             return None;
         };
         let layer = self.tagalong_slot(k).direction();
-        let mut monke = self.sprite_slot_view_mut(j);
+        let mut monke = self.sprite_slot_mut(j);
         monke.set_head_direction(layer);
         monke.set_direction(layer);
         let x = self.tagalong_x(k);
@@ -1713,7 +1713,7 @@ impl ZeldaState {
         self.Tagalong_Sprite_SetX(j, x.wrapping_add(2));
         self.Tagalong_Sprite_SetY(j, y.wrapping_add(2));
         let floor = self.tagalong_link_state().floor();
-        let mut monke = self.sprite_slot_view_mut(j);
+        let mut monke = self.sprite_slot_mut(j);
         monke.set_floor(floor);
         monke.set_ignore_projectile(1);
         monke.set_floor(2);
@@ -1723,13 +1723,13 @@ impl ZeldaState {
 
     pub(super) fn kiki_spawn_handler_a(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            self.sprite_slot_view_mut(j).set_subtype2(2);
+            self.sprite_slot_mut(j).set_subtype2(2);
         }
     }
 
     pub(super) fn kiki_spawn_handler_b(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            let mut monke = self.sprite_slot_view_mut(j);
+            let mut monke = self.sprite_slot_mut(j);
             monke.set_z(1);
             monke.set_z_velocity(16);
             monke.set_subtype2(3);
@@ -1765,25 +1765,25 @@ impl ZeldaState {
     }
 
     fn Ancilla_GetX(&self, k: usize) -> u16 {
-        self.ancilla_slot_view(k).x()
+        self.ancilla_slot(k).x()
     }
 
     fn Ancilla_GetY(&self, k: usize) -> u16 {
-        self.ancilla_slot_view(k).y()
+        self.ancilla_slot(k).y()
     }
 
     fn Ancilla_SetXY(&mut self, k: usize, x: u16, y: u16) {
-        let mut ancilla = self.ancilla_slot_view_mut(k);
+        let mut ancilla = self.ancilla_slot_mut(k);
         ancilla.set_x(x);
         ancilla.set_y(y);
     }
 
     fn Ancilla_MoveX(&mut self, k: usize) {
-        self.ancilla_slot_view_mut(k).move_x();
+        self.ancilla_slot_mut(k).move_x();
     }
 
     fn Ancilla_MoveY(&mut self, k: usize) {
-        self.ancilla_slot_view_mut(k).move_y();
+        self.ancilla_slot_mut(k).move_y();
     }
 
     fn Ancilla_ProjectSpeedTowardsPlayer(&self, k: usize, vel: u8) -> ProjectSpeedRet {
@@ -1853,7 +1853,7 @@ impl ZeldaState {
 
     fn AncillaAdd_SuperBombExplosion(&mut self, a: u8, y: u8) -> Option<usize> {
         let k = self.ancilla_add_simple(a, y)?;
-        let mut explosion = self.ancilla_slot_view_mut(k);
+        let mut explosion = self.ancilla_slot_mut(k);
         explosion.set_r(0);
         explosion.set_step(0);
         explosion.set_work_byte_25(0);
@@ -1868,19 +1868,19 @@ impl ZeldaState {
     }
 
     fn Tagalong_Sprite_GetX(&self, k: usize) -> u16 {
-        self.sprite_slot_view(k).x()
+        self.sprite_slot(k).x()
     }
 
     fn Tagalong_Sprite_GetY(&self, k: usize) -> u16 {
-        self.sprite_slot_view(k).y()
+        self.sprite_slot(k).y()
     }
 
     fn Tagalong_Sprite_SetX(&mut self, k: usize, x: u16) {
-        self.sprite_slot_view_mut(k).set_x(x);
+        self.sprite_slot_mut(k).set_x(x);
     }
 
     fn Tagalong_Sprite_SetY(&mut self, k: usize, y: u16) {
-        self.sprite_slot_view_mut(k).set_y(y);
+        self.sprite_slot_mut(k).set_y(y);
     }
 
     fn set_sprite_room_marker_word(&mut self, k: usize, value: u16) {
@@ -1892,11 +1892,9 @@ impl ZeldaState {
         k: usize,
         sprite: u8,
     ) -> Option<(usize, SpriteSpawnInfo)> {
-        let j = (0..16)
-            .rev()
-            .find(|&j| self.sprite_slot_view(j).state() == 0)?;
+        let j = (0..16).rev().find(|&j| self.sprite_slot(j).state() == 0)?;
         {
-            let mut spawned = self.sprite_slot_view_mut(j);
+            let mut spawned = self.sprite_slot_mut(j);
             spawned.set_state(9);
             spawned.set_sprite_type(sprite);
         }
@@ -1904,12 +1902,12 @@ impl ZeldaState {
         if !self.world_location_state().is_indoors() {
             self.set_sprite_room_marker_word(j, 0xffff);
         } else {
-            self.sprite_slot_view_mut(j).set_n(0xff);
+            self.sprite_slot_mut(j).set_n(0xff);
         }
-        let source = self.sprite_slot_view(k);
+        let source = self.sprite_slot(k);
         let floor = source.floor();
         let direction = source.direction();
-        let mut spawned = self.sprite_slot_view_mut(j);
+        let mut spawned = self.sprite_slot_mut(j);
         spawned.set_floor(floor);
         spawned.set_direction(direction);
         spawned.set_die_action(0);
@@ -1930,13 +1928,13 @@ impl ZeldaState {
     fn OldMan_RevertToSprite(&mut self, k: usize) {
         if let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
             let layer = self.tagalong_slot(k).direction();
-            let mut old_man = self.sprite_slot_view_mut(j);
+            let mut old_man = self.sprite_slot_mut(j);
             old_man.set_direction(layer);
             old_man.set_head_direction(layer);
             self.Tagalong_Sprite_SetY(j, self.tagalong_y(k).wrapping_add(2));
             self.Tagalong_Sprite_SetX(j, self.tagalong_x(k).wrapping_add(2));
             let floor = self.tagalong_link_state().floor();
-            let mut old_man = self.sprite_slot_view_mut(j);
+            let mut old_man = self.sprite_slot_mut(j);
             old_man.set_floor(floor);
             old_man.set_ignore_projectile(1);
             old_man.set_subtype2(1);

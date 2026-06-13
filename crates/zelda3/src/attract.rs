@@ -73,7 +73,7 @@ impl ZeldaState {
             && state != 0
             && state != 2
             && state != 6
-            && self.player_state_view().filtered_joypad_h() & 0x90 != 0
+            && self.player_state().filtered_joypad_h() & 0x90 != 0
         {
             self.attract_scene_mut().set_state(9);
             state = 9;
@@ -385,9 +385,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_in_sequence(&mut self) {
         if self.display_state().screen_brightness != 15 {
-            if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
-                self.player_state_view_mut().set_speed_setting(1);
+                self.player_state_mut().set_speed_setting(1);
             }
         } else {
             self.attract_scene_mut().increment_state();
@@ -396,9 +396,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_out_sequence(&mut self) {
         if self.display_state().screen_brightness != 0 {
-            if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.decrement_screen_brightness();
-                self.player_state_view_mut().set_speed_setting(1);
+                self.player_state_mut().set_speed_setting(1);
             }
         } else {
             self.enable_force_blank();
@@ -504,9 +504,9 @@ impl ZeldaState {
     pub(super) fn attract_show_timed_text_message(&mut self) {
         let bg2_vofs2 = self.world_scroll().bg2_y();
         self.attract_scene_mut().set_bg2_vofs_backup(bg2_vofs2);
-        self.player_state_view_mut().set_joypad1l_last(0);
-        self.player_state_view_mut().set_filtered_joypad_l(0);
-        self.player_state_view_mut().set_filtered_joypad_h(0);
+        self.player_state_mut().set_joypad1l_last(0);
+        self.player_state_mut().set_filtered_joypad_l(0);
+        self.player_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
         let priority = self.oam_state().priority_word();
         if priority != 0 {
@@ -921,9 +921,9 @@ impl ZeldaState {
 
     pub(super) fn attract_fade_in_step(&mut self) {
         if self.display_state().screen_brightness != 15 {
-            if (self.player_state_view_mut().decrement_speed_setting() as i8) < 0 {
+            if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
-                self.player_state_view_mut().set_speed_setting(1);
+                self.player_state_mut().set_speed_setting(1);
             }
         } else {
             self.attract_scene_mut().increment_fade_in_done_flag();
@@ -1122,9 +1122,9 @@ impl ZeldaState {
         const SIMULATE_SOLDIER_GFX: [u8; 4] = [11, 4, 0, 7];
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
-        self.sprite_slot_view_mut(k).set_z(0);
+        self.sprite_slot_mut(k).set_z(0);
         self.sprite_get_16_bit_coords(k);
-        let mut soldier = self.sprite_slot_view_mut(k);
+        let mut soldier = self.sprite_slot_mut(k);
         soldier.set_direction(dir);
         soldier.set_head_direction(dir);
         soldier.set_graphics(SIMULATE_SOLDIER_GFX[dir as usize].wrapping_add(gfx));
@@ -1152,14 +1152,14 @@ impl ZeldaState {
         y_offset: u8,
     ) {
         let y = self
-            .sprite_slot_view(k)
+            .sprite_slot(k)
             .y()
             .wrapping_add(y_offset as u16)
             .wrapping_sub(self.world_scroll().bg2_y());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
-        let oam_offs = (self.sprite_slot_view(k).flags2() & 0x1f) as usize;
+        let oam_offs = (self.sprite_slot(k).flags2() & 0x1f) as usize;
         self.set_guard_oam(oam_offs, poc.0, y, 0x6c, (poc.2 & 0x30) | 8, 2);
     }
 
@@ -1183,9 +1183,9 @@ impl ZeldaState {
             self.attract_scene_mut().advance_next_legend_gfx();
         }
 
-        self.player_state_view_mut().set_joypad1l_last(0);
-        self.player_state_view_mut().set_filtered_joypad_l(0);
-        self.player_state_view_mut().set_filtered_joypad_h(0);
+        self.player_state_mut().set_joypad1l_last(0);
+        self.player_state_mut().set_filtered_joypad_l(0);
+        self.player_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
 
         let legend_ctr = self.attract_scene_mut().decrement_legend_ctr();

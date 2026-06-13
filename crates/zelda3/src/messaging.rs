@@ -349,8 +349,7 @@ impl ZeldaState {
     }
 
     fn finish_potion_refill(&mut self) {
-        self.player_state_view_mut()
-            .clear_button_mask_b_y_bits(0x40);
+        self.player_state_mut().clear_button_mask_b_y_bits(0x40);
         self.system_signals_mut().increment_hud_update_flag();
         self.set_submodule(0);
         let saved_module = self.frame_state().saved_module_for_menu;
@@ -425,7 +424,7 @@ impl ZeldaState {
 
     pub(super) fn DesertPrayer_BuildIrisHDMATable(&mut self) {
         let r14 = self
-            .player_state_view()
+            .player_state()
             .y()
             .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_add(12);
@@ -440,7 +439,7 @@ impl ZeldaState {
         let spotlight_y_upper = spotlight_y_lower.wrapping_add(u16::from(radius) * 2);
         self.spotlight_hdma_mut().set_y_upper(spotlight_y_upper);
         let spotlight_x_center = self
-            .player_state_view()
+            .player_state()
             .x()
             .wrapping_sub(self.world_scroll().bg2_x())
             .wrapping_add(8);
@@ -518,8 +517,7 @@ impl ZeldaState {
             return;
         }
         if self.spotlight_hdma().window_state_byte() != 1
-            && (self.player_state_view().filtered_joypad_h()
-                | self.player_state_view().filtered_joypad_l())
+            && (self.player_state().filtered_joypad_h() | self.player_state().filtered_joypad_l())
                 & 0xc0
                 != 0
         {
@@ -534,10 +532,10 @@ impl ZeldaState {
                 self.system_signals_mut().set_music_control(0xf3);
                 self.system_signals_mut().set_ambient_sound_effect(0);
                 self.clear_modal_pause_flag();
-                self.player_state_view_mut().set_y_button_action_step(0);
-                self.player_state_view_mut().set_button_mask_b_y(0);
-                self.player_state_view_mut().clear_state_bits();
-                self.player_state_view_mut().clear_direction_lock_bits(1);
+                self.player_state_mut().set_y_button_action_step(0);
+                self.player_state_mut().set_button_mask_b_y(0);
+                self.player_state_mut().clear_state_bits();
+                self.player_state_mut().clear_direction_lock_bits(1);
                 self.set_subsubmodule(0);
                 self.set_submodule(0);
                 let saved_module = self.frame_state().saved_module_for_menu;
@@ -549,19 +547,12 @@ impl ZeldaState {
         }
 
         const PRAYING_SCENE_DELAYS: [u8; 5] = [22, 22, 22, 64, 1];
-        if (self
-            .player_state_view_mut()
-            .decrement_spin_attack_delay_timer() as i8)
-            .is_negative()
-        {
-            let i = self
-                .player_state_view()
-                .y_button_action_step()
-                .wrapping_add(1);
+        if (self.player_state_mut().decrement_spin_attack_delay_timer() as i8).is_negative() {
+            let i = self.player_state().y_button_action_step().wrapping_add(1);
             if i != 4 {
-                self.player_state_view_mut().set_y_button_action_step(i);
+                self.player_state_mut().set_y_button_action_step(i);
             }
-            self.player_state_view_mut()
+            self.player_state_mut()
                 .set_spin_attack_delay_timer(PRAYING_SCENE_DELAYS[i as usize]);
         }
     }
@@ -637,7 +628,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Animate_GAMEOVER_Letters(&mut self) {
-        match self.ancilla_slot_view(0).ancilla_type() {
+        match self.ancilla_slot(0).ancilla_type() {
             0 => self.increment_submodule(),
             1 => self.GameOverText_SweepLeft(),
             2 => self.GameOverText_UnfurlRight(),
@@ -652,17 +643,17 @@ impl ZeldaState {
 
         let mut k = self.minigame_state().flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        self.ancilla_slot_view_mut(k).set_x_velocity(0x80);
+        self.ancilla_slot_mut(k).set_x_velocity(0x80);
         self.ancilla_move_x(k);
         if self.ancilla_get_x(k) < u16::from(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]) {
-            self.ancilla_slot_view_mut(k)
+            self.ancilla_slot_mut(k)
                 .set_x_low(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]);
             k += 1;
             self.minigame_state_mut()
                 .set_flag_boomerang_in_place(k as u8);
             if k == 8 {
                 self.minigame_state_mut().set_flag_boomerang_in_place(7);
-                self.ancilla_slot_view_mut(0).increment_ancilla_type();
+                self.ancilla_slot_mut(0).increment_ancilla_type();
                 self.messaging_state_mut().clear_game_over_letter_cursor();
                 self.system_signals_mut().set_sound_effect_2(38);
                 self.GameOverText_Draw();
@@ -671,9 +662,9 @@ impl ZeldaState {
         }
         if k == 7 {
             let mut j = 6i32;
-            let x = self.ancilla_slot_view(k).x_low();
+            let x = self.ancilla_slot(k).x_low();
             while j != i32::from(self.messaging_state().game_over_letter_cursor()) {
-                self.ancilla_slot_view_mut(j as usize).set_x_low(x);
+                self.ancilla_slot_mut(j as usize).set_x_low(x);
                 j -= 1;
             }
             let hookshot = self.messaging_state().game_over_letter_cursor() as usize;
@@ -691,17 +682,17 @@ impl ZeldaState {
 
         let mut k = self.minigame_state().flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        self.ancilla_slot_view_mut(k).set_x_velocity(0x60);
+        self.ancilla_slot_mut(k).set_x_velocity(0x60);
         self.ancilla_move_x(k);
         let j = self.messaging_state().game_over_letter_cursor() as usize;
-        if self.ancilla_slot_view(k).x() >= u16::from(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]) {
-            self.ancilla_slot_view_mut(j)
+        if self.ancilla_slot(k).x() >= u16::from(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]) {
+            self.ancilla_slot_mut(j)
                 .set_x_low(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]);
             self.messaging_state_mut()
                 .increment_game_over_letter_cursor();
             if self.messaging_state().game_over_letter_cursor() == 8 {
                 self.increment_submodule();
-                self.ancilla_slot_view_mut(0).increment_ancilla_type();
+                self.ancilla_slot_mut(0).increment_ancilla_type();
                 self.GameOverText_Draw();
                 return;
             }
@@ -709,9 +700,9 @@ impl ZeldaState {
         let end = i32::from(self.messaging_state().game_over_letter_cursor()).wrapping_sub(1);
         k = self.minigame_state().flag_boomerang_in_place() as usize;
         let mut j = k as i32;
-        let x = self.ancilla_slot_view(k).x_low();
+        let x = self.ancilla_slot(k).x_low();
         loop {
-            self.ancilla_slot_view_mut(j as usize).set_x_low(x);
+            self.ancilla_slot_mut(j as usize).set_x_low(x);
             j -= 1;
             if j == end {
                 break;
@@ -764,9 +755,9 @@ impl ZeldaState {
         self.system_signals_mut().set_music_control(0xf1);
         self.system_signals_mut().set_ambient_sound_effect(5);
         self.set_overworld_map_state(5);
-        self.player_state_view_mut().clear_conveyor_belt_state();
-        self.player_state_view_mut().set_layer_collision_flags(0);
-        self.player_state_view_mut().clear_cape_mode();
+        self.player_state_mut().clear_conveyor_belt_state();
+        self.player_state_mut().set_layer_collision_flags(0);
+        self.player_state_mut().clear_cape_mode();
         let palette_filter_countdown = self.palette_filter().countdown_word();
         let darkening_or_lightening_screen =
             self.palette_filter().darkening_or_lightening_screen_word();
@@ -916,7 +907,7 @@ impl ZeldaState {
         self.GameOver_AnimateChoiceFairy();
         self.Animate_GAMEOVER_Letters();
 
-        if self.player_state_view().filtered_joypad_h() & 0x20 != 0 {
+        if self.player_state().filtered_joypad_h() & 0x20 != 0 {
             self.increment_subsubmodule();
             if self.frame_state().subsubmodule >= 3 {
                 self.set_subsubmodule(0);
@@ -927,8 +918,8 @@ impl ZeldaState {
             self.messaging_state_mut().decrement_menu_animation_timer();
             if self.messaging_state().menu_animation_timer() == 0 {
                 self.messaging_state_mut().set_menu_animation_timer(1);
-                if self.player_state_view().joypad1h_last() & 12 != 0 {
-                    if self.player_state_view().joypad1h_last() & 4 != 0 {
+                if self.player_state().joypad1h_last() & 12 != 0 {
+                    if self.player_state().joypad1h_last() & 4 != 0 {
                         self.increment_subsubmodule();
                         if self.frame_state().subsubmodule >= 3 {
                             self.set_subsubmodule(0);
@@ -945,8 +936,8 @@ impl ZeldaState {
             }
         }
 
-        if ((self.player_state_view().filtered_joypad_l() & 0xc0)
-            | self.player_state_view().filtered_joypad_h())
+        if ((self.player_state().filtered_joypad_l() & 0xc0)
+            | self.player_state().filtered_joypad_h())
             & 0xd0
             == 0
         {
@@ -1129,7 +1120,7 @@ impl ZeldaState {
         let saved_module = self.frame_state().saved_module_for_menu;
         self.set_main_module(saved_module);
         self.set_submodule(0);
-        self.player_state_view_mut().set_blink_countdown(144);
+        self.player_state_mut().set_blink_countdown(144);
         let music = self.system_signals().death_backup_current_music();
         self.system_signals_mut().set_music_control(music);
         let ambient = self.system_signals().death_backup_ambient_sound();
@@ -1167,12 +1158,11 @@ impl ZeldaState {
 
     pub(super) fn FluteMenu_HandleSelection(&mut self) {
         if self.messaging_state().menu_animation_timer() == 0 {
-            if (self.player_state_view().joypad1l_last() | self.player_state_view().joypad1h_last())
-                & 0xc0
+            if (self.player_state().joypad1l_last() | self.player_state().joypad1h_last()) & 0xc0
                 != 0
             {
                 if self.enhanced_features().has(FEATURE_CANCEL_BIRD_TRAVEL) {
-                    let joypad = self.player_state_view().joypad1l_last();
+                    let joypad = self.player_state().joypad1l_last();
                     self.messaging_state_mut().set_menu_animation_timer(joypad);
                 }
                 self.increment_overworld_map_state();
@@ -1182,11 +1172,11 @@ impl ZeldaState {
             self.messaging_state_mut().decrement_menu_animation_timer();
         }
 
-        if self.player_state_view().filtered_joypad_h() & 10 != 0 {
+        if self.player_state().filtered_joypad_h() & 10 != 0 {
             self.decrement_birdtravel_status();
             self.system_signals_mut().set_sound_effect_2(32);
         }
-        if self.player_state_view().filtered_joypad_h() & 5 != 0 {
+        if self.player_state().filtered_joypad_h() & 5 != 0 {
             self.increment_birdtravel_status();
             self.system_signals_mut().set_sound_effect_2(32);
         }
@@ -1337,7 +1327,7 @@ impl ZeldaState {
         let cgwsel_cgadsub = self.palette_filter().color_window_and_math_word();
         self.ppu_scroll_copy_mut()
             .set_mapbak_cgwsel_word(cgwsel_cgadsub);
-        self.player_state_view_mut()
+        self.player_state_mut()
             .set_link_dma_graphics_index_word(0x01fc);
         if self.world_location_state().overworld_screen_index() < 0x80 {
             self.special_exit_position_mut().store_from_player();
@@ -1383,9 +1373,9 @@ impl ZeldaState {
 
     pub(super) fn DidPressButtonForMap(&self) -> bool {
         if self.world_transient().hud_cur_item_x() != 0 {
-            self.player_state_view().filtered_joypad_h() & 0x20 != 0
+            self.player_state().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.player_state_view().filtered_joypad_l() & 0x40 != 0
+            self.player_state().filtered_joypad_l() & 0x40 != 0
         }
     }
 
@@ -1412,8 +1402,7 @@ impl ZeldaState {
                 .wrapping_sub(1);
             self.dungeon_room_load_mut()
                 .set_draw_width_indicator(draw_width);
-        } else if self.player_state_view().filtered_joypad_l() & 0x30 != 0
-            || self.DidPressButtonForMap()
+        } else if self.player_state().filtered_joypad_l() & 0x30 != 0 || self.DidPressButtonForMap()
         {
             self.system_signals_mut().set_sound_effect_2(36);
             self.dungeon_room_load_mut().set_draw_width_indicator(8);
@@ -1447,7 +1436,7 @@ impl ZeldaState {
         }
 
         if self.overworld_map_flags() != 0 {
-            let k = ((self.player_state_view().joypad1h_last() & 12) >> 1) as usize;
+            let k = ((self.player_state().joypad1h_last() & 12) >> 1) as usize;
             let bg1vofs = self.world_scroll().bg1_y();
             if bg1vofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 let next = bg1vofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16);
@@ -1455,7 +1444,7 @@ impl ZeldaState {
                 self.ppu_scroll_copy_mut()
                     .set_mode7_center_y(next.wrapping_add(0x100));
             }
-            let k = ((self.player_state_view().joypad1h_last() & 3) * 2 + 1) as usize;
+            let k = ((self.player_state().joypad1h_last() & 3) * 2 + 1) as usize;
             let bg1hofs = self.world_scroll().bg1_x();
             if bg1hofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 self.ppu_scroll_copy_mut()
@@ -2216,7 +2205,7 @@ impl ZeldaState {
 
         let marker_x = u16::from(xcoord)
             .wrapping_add(0x90)
-            .wrapping_add((self.player_state_view().x() & 0x01e0) >> 5);
+            .wrapping_add((self.player_state().x() & 0x01e0) >> 5);
         self.dungeon_map_scratch_mut()
             .set_dungmap_player_marker_x(marker_x);
         self.dungeon_map_scratch_mut()
@@ -2225,7 +2214,7 @@ impl ZeldaState {
         let idx = usize::from((self.dungeon_map_scratch().dungmap_idx() >> 1) & 1);
         let marker_y = u16::from(ycoord)
             .wrapping_add(DUNGEON_MAP_MARKER_Y_BASES[idx])
-            .wrapping_add((self.player_state_view().y() & 0x01e0) >> 5);
+            .wrapping_add((self.player_state().y() & 0x01e0) >> 5);
         self.dungeon_map_scratch_mut()
             .set_dungmap_player_marker_y(marker_y);
 
@@ -2278,9 +2267,9 @@ impl ZeldaState {
 
     fn WantExitDungeonMap(&self) -> bool {
         if self.world_transient().hud_cur_item_x() != 0 {
-            self.player_state_view().filtered_joypad_h() & 0x20 != 0
+            self.player_state().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.player_state_view().filtered_joypad_l() & 0x40 != 0
+            self.player_state().filtered_joypad_l() & 0x40 != 0
         }
     }
 
@@ -2300,14 +2289,14 @@ impl ZeldaState {
         let r3 = (t5 & 0x0f) as u8;
         if r2.wrapping_add(r3) < 3
             || self.dungeon_map_scratch().dungmap_floor_scroll_step() != 0
-            || (self.player_state_view().joypad1h_last() & 0x0c) == 0
+            || (self.player_state().joypad1h_last() & 0x0c) == 0
         {
             return;
         }
 
         self.dungeon_map_mut().clear_current_floor_high();
         let mut scroll_draw_offset = self.dungeon_map_scratch().scroll_draw_offset();
-        if (self.player_state_view().joypad1h_last() & 8) != 0 {
+        if (self.player_state().joypad1h_last() & 8) != 0 {
             if r2.wrapping_sub(1) == self.dungeon_map_scratch().dungmap_cur_floor_byte() {
                 return;
             }
@@ -2332,7 +2321,7 @@ impl ZeldaState {
         self.DungeonMap_DrawDungeonLayout(scroll_draw_offset as i32);
         self.dungeon_map_scratch_mut()
             .increment_dungmap_floor_scroll_step();
-        let joypad_h = self.player_state_view().joypad1h_last();
+        let joypad_h = self.player_state().joypad1h_last();
         self.dungeon_map_scratch_mut()
             .set_scroll_input(u16::from(joypad_h));
         let x = usize::from((joypad_h >> 3) & 1);
@@ -2740,7 +2729,7 @@ impl ZeldaState {
         self.palette_filter_mut().set_fixed_color_red(0x20);
         self.palette_filter_mut().set_fixed_color_green(0x40);
         self.palette_filter_mut().set_fixed_color_blue(0x80);
-        self.player_state_view_mut()
+        self.player_state_mut()
             .set_link_dma_graphics_index_word(0x0250);
         let palette = self.palette_buffer().main_full_slice().to_vec();
         self.ppu_scroll_copy_mut()
@@ -2821,9 +2810,9 @@ impl ZeldaState {
     pub(super) fn Death_InitializeGameOverLetters(&mut self) {
         self.minigame_state_mut().set_flag_boomerang_in_place(0);
         for i in 0..8 {
-            self.ancilla_slot_view_mut(i).set_x(0xb0);
+            self.ancilla_slot_mut(i).set_x(0xb0);
         }
-        self.ancilla_slot_view_mut(0).set_ancilla_type(1);
+        self.ancilla_slot_mut(0).set_ancilla_type(1);
         self.messaging_state_mut().set_game_over_letter_cursor(6);
     }
 
@@ -2839,8 +2828,7 @@ impl ZeldaState {
         }
 
         self.palette_buffer_mut().set_bg_tile_animation_countdown(7);
-        self.player_state_view_mut()
-            .reset_link_dma_animation_cycle(7);
+        self.player_state_mut().reset_link_dma_animation_cycle(7);
         self.set_message_dma_destination_address(0x6040);
         self.set_message_dma_tile_base(0x4841);
         self.set_message_dma_tile_limit(0x007f);
@@ -3159,7 +3147,7 @@ impl ZeldaState {
                     command_done = true;
                 }
                 TEXT_CMD_WAIT => {
-                    let wait = if self.player_state_view().joypad1l_last() & 0x80 != 0 {
+                    let wait = if self.player_state().joypad1l_last() & 0x80 != 0 {
                         1
                     } else {
                         self.messaging_state().text_wait_countdown()
@@ -3205,8 +3193,8 @@ impl ZeldaState {
                         if self.messaging_state().text_wait_countdown2() == 1 {
                             self.system_signals_mut().set_sound_effect_2(36);
                         }
-                    } else if (self.player_state_view().filtered_joypad_h()
-                        | self.player_state_view().filtered_joypad_l())
+                    } else if (self.player_state().filtered_joypad_h()
+                        | self.player_state().filtered_joypad_l())
                         & if cmd == TEXT_CMD_WAITKEY { 0xc0 } else { 0xff }
                         != 0
                     {
@@ -3341,16 +3329,16 @@ impl ZeldaState {
             if self.messaging_state().text_wait_countdown2() == 1 {
                 self.RenderText_FindYItem_Next();
             }
-        } else if (self.player_state_view().filtered_joypad_h()
-            | self.player_state_view().filtered_joypad_l())
+        } else if (self.player_state().filtered_joypad_h()
+            | self.player_state().filtered_joypad_l())
             & 0xc0
             != 0
         {
             self.messaging_state_mut().set_text_render_state(4);
         } else {
-            if self.player_state_view().filtered_joypad_h() & 5 != 0 {
+            if self.player_state().filtered_joypad_h() & 5 != 0 {
                 self.multiselect_choice_mut().increment_value();
-            } else if self.player_state_view().filtered_joypad_h() & 10 != 0 {
+            } else if self.player_state().filtered_joypad_h() & 10 != 0 {
                 self.multiselect_choice_mut().decrement_value();
                 self.RenderText_FindYItem_Previous();
                 self.RenderText_Refresh();
@@ -3425,15 +3413,15 @@ impl ZeldaState {
             if self.messaging_state().text_wait_countdown2() == 1 {
                 self.system_signals_mut().set_sound_effect_2(36);
             }
-        } else if (self.player_state_view().filtered_joypad_h()
-            | self.player_state_view().filtered_joypad_l())
+        } else if (self.player_state().filtered_joypad_h()
+            | self.player_state().filtered_joypad_l())
             & 0xc0
             != 0
         {
             self.system_signals_mut().set_sound_effect_1(43);
             self.messaging_state_mut().set_text_render_state(4);
-        } else if self.player_state_view().filtered_joypad_h() & 12 != 0 {
-            let t = if self.player_state_view().filtered_joypad_h() & 8 != 0 {
+        } else if self.player_state().filtered_joypad_h() & 12 != 0 {
+            let t = if self.player_state().filtered_joypad_h() & 8 != 0 {
                 0
             } else {
                 1
@@ -3458,8 +3446,8 @@ impl ZeldaState {
             }
             return;
         }
-        let y = (self.player_state_view().filtered_joypad_l() & 0xc0)
-            | self.player_state_view().filtered_joypad_h();
+        let y = (self.player_state().filtered_joypad_l() & 0xc0)
+            | self.player_state().filtered_joypad_h();
         if y & 0xd0 != 0 {
             self.system_signals_mut().set_sound_effect_1(43);
             self.messaging_state_mut().set_text_render_state(4);
@@ -3493,8 +3481,8 @@ impl ZeldaState {
             }
             return;
         }
-        let y = (self.player_state_view().filtered_joypad_l() & 0xc0)
-            | self.player_state_view().filtered_joypad_h();
+        let y = (self.player_state().filtered_joypad_l() & 0xc0)
+            | self.player_state().filtered_joypad_h();
         if y & 0xd0 != 0 {
             self.system_signals_mut().set_sound_effect_1(43);
             self.messaging_state_mut().set_text_render_state(4);
@@ -3551,7 +3539,7 @@ impl ZeldaState {
 
     pub(super) fn RenderText_SetDefaultWindowPosition(&mut self) {
         let y = self
-            .player_state_view()
+            .player_state()
             .y()
             .wrapping_sub(self.world_scroll().bg2_y());
         let flag = usize::from(y < 0x78);
@@ -3644,10 +3632,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_PlayerSwoon(&mut self) {
-        let mut k = self.player_state_view().item_action_step_var() as usize;
-        self.player_state_view_mut()
-            .decrement_y_button_action_timer();
-        if (self.player_state_view().y_button_action_timer() as i8) < 0 {
+        let mut k = self.player_state().item_action_step_var() as usize;
+        self.player_state_mut().decrement_y_button_action_timer();
+        if (self.player_state().y_button_action_timer() as i8) < 0 {
             k += 1;
             if k == 15 {
                 return;
@@ -3655,60 +3642,58 @@ impl ZeldaState {
             if k == 14 {
                 self.increment_submodule();
             }
-            self.player_state_view_mut()
-                .set_item_action_step_var(k as u8);
-            self.player_state_view_mut()
+            self.player_state_mut().set_item_action_step_var(k as u8);
+            self.player_state_mut()
                 .set_y_button_action_step(DEATH_ANIM_CTR0[k]);
-            self.player_state_view_mut()
+            self.player_state_mut()
                 .set_y_button_action_timer(DEATH_ANIM_CTR1[k]);
         }
-        if k != 13 || self.player_state_view().visibility_status() == 12 {
+        if k != 13 || self.player_state().visibility_status() == 12 {
             return;
         }
         let y = (self
-            .player_state_view()
+            .player_state()
             .y()
             .wrapping_add(16)
             .wrapping_sub(self.world_scroll().bg2_y())) as u8;
         let x = (self
-            .player_state_view()
+            .player_state()
             .x()
             .wrapping_add(7)
             .wrapping_sub(self.world_scroll().bg2_x())) as u8;
-        let flags = DEATH_SPR_FLAGS[self.player_state_view().lower_level_state() as usize & 1] | 2;
+        let flags = DEATH_SPR_FLAGS[self.player_state().lower_level_state() as usize & 1] | 2;
         self.set_oam_plain(0x74, x, y, 0xaa, flags, 2);
     }
 
     pub(super) fn Death_PrepFaint(&mut self) {
-        self.player_state_view_mut().set_facing(2);
-        self.player_state_view_mut().set_faint_animation_active(1);
-        self.player_state_view_mut().clear_item_action_step_var();
-        self.player_state_view_mut().set_y_button_action_step(0);
-        self.player_state_view_mut().set_y_button_action_timer(5);
+        self.player_state_mut().set_facing(2);
+        self.player_state_mut().set_faint_animation_active(1);
+        self.player_state_mut().clear_item_action_step_var();
+        self.player_state_mut().set_y_button_action_step(0);
+        self.player_state_mut().set_y_button_action_timer(5);
         {
             let mut resources = self.player_resources_mut();
             resources.set_heart_filler(0);
             resources.set_current_health(0);
         }
         self.link_reset_properties_c();
-        self.player_state_view_mut().clear_somaria_platform_state();
-        self.player_state_view_mut()
-            .clear_water_ripple_or_grass_state();
-        self.player_state_view_mut().clear_bunny_mirror();
-        self.player_state_view_mut().clear_defense_flags();
-        self.player_state_view_mut().clear_ancilla_pickup_flag();
-        self.player_state_view_mut().clear_auxiliary_state();
-        self.player_state_view_mut().set_incapacitated_timer(0);
+        self.player_state_mut().clear_somaria_platform_state();
+        self.player_state_mut().clear_water_ripple_or_grass_state();
+        self.player_state_mut().clear_bunny_mirror();
+        self.player_state_mut().clear_defense_flags();
+        self.player_state_mut().clear_ancilla_pickup_flag();
+        self.player_state_mut().clear_auxiliary_state();
+        self.player_state_mut().set_incapacitated_timer(0);
         {
-            let mut player = self.player_state_view_mut();
+            let mut player = self.player_state_mut();
             player.clear_given_damage();
             player.clear_transforming();
         }
-        self.player_state_view_mut().set_speed_setting(0);
-        self.player_state_view_mut()
+        self.player_state_mut().set_speed_setting(0);
+        self.player_state_mut()
             .clear_transform_poof_need_and_temp_bunny_timer();
         if self.inventory_items().has_moon_pearl() {
-            self.player_state_view_mut().clear_bunny_body_state();
+            self.player_state_mut().clear_bunny_body_state();
         }
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
@@ -3772,9 +3757,9 @@ impl ZeldaState {
 
     pub(super) fn did_press_button_for_map(&self) -> bool {
         if self.world_transient().hud_cur_item_x() != 0 {
-            self.player_state_view().filtered_joypad_h() & 0x20 != 0
+            self.player_state().filtered_joypad_h() & 0x20 != 0
         } else {
-            self.player_state_view().filtered_joypad_l() & 0x40 != 0
+            self.player_state().filtered_joypad_l() & 0x40 != 0
         }
     }
 }

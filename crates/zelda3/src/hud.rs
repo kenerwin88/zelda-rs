@@ -474,7 +474,7 @@ impl ZeldaState {
         }
 
         let cap_idx = (self.player_resources().health_capacity() >> 3) as usize;
-        if !self.player_state_view().is_immobilized()
+        if !self.player_state().is_immobilized()
             && self.player_resources().heart_filler() == 0
             && self.player_resources().current_health() < MAX_HEALTH_BY_CAPACITY_LEVEL[cap_idx]
         {
@@ -628,7 +628,7 @@ impl ZeldaState {
                 4
             };
             self.set_overworld_map_state(overworld_map_state);
-        } else if self.player_state_view().filtered_joypad_h() != 0 {
+        } else if self.player_state().filtered_joypad_h() != 0 {
             self.set_overworld_map_state(5);
         }
     }
@@ -701,11 +701,11 @@ impl ZeldaState {
 
     pub(super) fn get_current_item_button_index(&self) -> usize {
         if self.enhanced_features().has(FEATURE_SWITCH_LR) {
-            if self.player_state_view().joypad1l_last() & JOYPAD_LOW_X != 0 {
+            if self.player_state().joypad1l_last() & JOYPAD_LOW_X != 0 {
                 1
-            } else if self.player_state_view().joypad1l_last() & JOYPAD_LOW_L != 0 {
+            } else if self.player_state().joypad1l_last() & JOYPAD_LOW_L != 0 {
                 2
-            } else if self.player_state_view().joypad1l_last() & JOYPAD_LOW_R != 0 {
+            } else if self.player_state().joypad1l_last() & JOYPAD_LOW_R != 0 {
                 3
             } else {
                 0
@@ -718,17 +718,17 @@ impl ZeldaState {
     pub(super) fn hud_normal_menu(&mut self) {
         let tc = self.hud_state().flashing_circle_timer().wrapping_add(1);
         self.hud_state_mut().set_flashing_circle_timer(tc);
-        if self.player_state_view().joypad1h_last() == 0 {
+        if self.player_state().joypad1h_last() == 0 {
             self.hud_state_mut().clear_prev_joypad_h();
         }
 
-        if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
+        if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.set_overworld_map_state(5);
             self.system_signals_mut().set_sound_effect_2(18);
             return;
         }
 
-        if self.player_state_view().joypad1h_last() & JOYPAD_HIGH_SELECT != 0
+        if self.player_state().joypad1h_last() & JOYPAD_HIGH_SELECT != 0
             && self.save_progress().progress_indicator() != 0
         {
             self.ppu_scroll_copy_mut().set_bg3_v_copy2(0xfff8);
@@ -737,35 +737,35 @@ impl ZeldaState {
             return;
         }
 
-        if self.player_state_view().joypad1h_last() & JOYPAD_HIGH_Y != 0
-            && self.player_state_view().joypad1l_last() & JOYPAD_LOW_X == 0
+        if self.player_state().joypad1h_last() & JOYPAD_HIGH_Y != 0
+            && self.player_state().joypad1l_last() & JOYPAD_LOW_X == 0
             && self.enhanced_features().has(FEATURE_SWITCH_LR)
         {
-            if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_reorder_item(if USE_NEW_STYLE_INVENTORY { -6 } else { -5 });
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
                 self.hud_reorder_item(if USE_NEW_STYLE_INVENTORY { 6 } else { 5 });
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
                 self.hud_reorder_item(-1);
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
                 self.hud_reorder_item(1);
             }
         } else if self.hud_state().prev_joypad_h() == 0 {
             let btn_index = self.get_current_item_button_index();
             let mut item = self.inventory_items().equipped_button_item(btn_index);
             let old_item = item;
-            if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_DOWN != 0 {
                 self.hud_equip_item_below(&mut item);
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
                 self.hud_equip_prev_item(&mut item, btn_index == 0);
-            } else if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
+            } else if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_RIGHT != 0 {
                 self.hud_equip_next_item(&mut item, btn_index == 0);
             }
             self.inventory_items_mut()
                 .set_equipped_button_item(btn_index, item);
-            let jh = self.player_state_view().filtered_joypad_h();
+            let jh = self.player_state().filtered_joypad_h();
             self.hud_state_mut().set_prev_joypad_h(jh);
             if item != old_item {
                 self.hud_state_mut().set_flashing_circle_timer(16);
@@ -806,7 +806,7 @@ impl ZeldaState {
         }
         assert!(self.save_progress().hud_current_item() < 25);
         let ciy = self.hud_lookup_inventory_item(self.save_progress().hud_current_item());
-        self.player_state_view_mut().set_current_item_y(ciy); // writes CURRENT_ITEM_Y (0x303)
+        self.player_state_mut().set_current_item_y(ciy); // writes CURRENT_ITEM_Y (0x303)
     }
 
     pub(super) fn hud_close_menu(&mut self) {
@@ -823,13 +823,11 @@ impl ZeldaState {
         if self.frame_state().submodule != 0 {
             self.hud_restore_torch_background();
         }
-        if self.player_state_view().current_item_y() != 5
-            && self.player_state_view().current_item_y() != 6
-        {
+        if self.player_state().current_item_y() != 5 && self.player_state().current_item_y() != 6 {
             self.hud_state_mut().set_equipment_menu_exit_state(2);
-            self.player_state_view_mut().clear_item_debug_value_1();
+            self.player_state_mut().clear_item_debug_value_1();
         } else {
-            assert!(self.player_state_view().item_debug_value_1() == 0);
+            assert!(self.player_state().item_debug_value_1() == 0);
             self.hud_state_mut().set_equipment_menu_exit_state(0);
         }
     }
@@ -886,15 +884,14 @@ impl ZeldaState {
     pub(super) fn hud_bottle_menu(&mut self) {
         let tc = self.hud_state().flashing_circle_timer().wrapping_add(1);
         self.hud_state_mut().set_flashing_circle_timer(tc);
-        if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
+        if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_START != 0 {
             self.system_signals_mut().set_sound_effect_2(18);
             self.set_overworld_map_state(5);
-        } else if self.player_state_view().filtered_joypad_h()
-            & (JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT)
+        } else if self.player_state().filtered_joypad_h() & (JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT)
             != 0
         {
             let mut item = self.save_progress().hud_current_item();
-            if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
+            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_LEFT != 0 {
                 self.hud_equip_prev_item(&mut item, true);
             } else {
                 self.hud_equip_next_item(&mut item, true);
@@ -909,14 +906,14 @@ impl ZeldaState {
             return;
         }
         self.hud_draw_bottle_menu_update();
-        if self.player_state_view().filtered_joypad_h() & (JOYPAD_HIGH_DOWN | JOYPAD_HIGH_UP) != 0 {
+        if self.player_state().filtered_joypad_h() & (JOYPAD_HIGH_DOWN | JOYPAD_HIGH_UP) != 0 {
             let old_val = self
                 .player_resources()
                 .equipped_bottle_index()
                 .wrapping_sub(1)
                 & 3;
             let mut val = old_val;
-            if self.player_state_view().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
+            if self.player_state().filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 loop {
                     val = val.wrapping_sub(1) & 3;
                     if self.inventory_items().bottle(val as usize) != 0 {
@@ -1483,11 +1480,11 @@ impl ZeldaState {
         if !self.enhanced_features().has(FEATURE_SWITCH_LR) {
             return;
         }
-        let direction = if self.player_state_view().filtered_joypad_l() & JOYPAD_LOW_L != 0
+        let direction = if self.player_state().filtered_joypad_l() & JOYPAD_LOW_L != 0
             && self.save_progress().hud_current_item_slot(2) == 0
         {
             self.save_progress().hud_current_item_slot(3) != 0
-        } else if self.player_state_view().filtered_joypad_l() & JOYPAD_LOW_R != 0
+        } else if self.player_state().filtered_joypad_l() & JOYPAD_LOW_R != 0
             && self.save_progress().hud_current_item_slot(3) == 0
         {
             true

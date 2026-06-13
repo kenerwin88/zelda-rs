@@ -307,8 +307,8 @@ impl ZeldaState {
         self.file_select_draw_fairy(0x1c, y);
         self.set_bg_vram_load_mode(1);
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
             self.system_signals_mut().set_sound_effect_2(0x20);
@@ -381,7 +381,7 @@ impl ZeldaState {
         const FLAGS2: [u8; 3] = [0x32, 0x36, 0x3a];
         const FLAGS3: [u8; 3] = [0x30, 0x34, 0x38];
 
-        self.player_state_view_mut()
+        self.player_state_mut()
             .set_link_dma_graphics_index_word(0x116 * 2);
         let sram_base = k * 0x500;
         let oam = OAM_IDX[k] / 4;
@@ -517,8 +517,8 @@ impl ZeldaState {
         self.file_select_draw_fairy(0x1c, FAERIE_Y[self.select_file_scratch().cursor_usize()]);
 
         let mut k = self.select_file_scratch().cursor();
-        if self.player_state_view().filtered_joypad_h() & 0x2c != 0 {
-            k = if self.player_state_view().filtered_joypad_h() & 0x24 != 0 {
+        if self.player_state().filtered_joypad_h() & 0x2c != 0 {
+            k = if self.player_state().filtered_joypad_h() & 0x24 != 0 {
                 k.wrapping_add(1)
             } else {
                 k.wrapping_sub(1)
@@ -527,8 +527,8 @@ impl ZeldaState {
             self.system_signals_mut().set_sound_effect_2(0x20);
         }
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xd0;
         if a != 0 {
             self.system_signals_mut().set_sound_effect_1(0x2c);
@@ -647,8 +647,8 @@ impl ZeldaState {
         let r16 = self.select_file_scratch().cursor_usize();
         self.file_select_draw_fairy(FAERIE_X[r16], FAERIE_Y[r16]);
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
             let mut k = self.select_file_scratch().cursor();
@@ -759,8 +759,8 @@ impl ZeldaState {
         let r16 = self.select_file_scratch().cursor_usize();
         self.file_select_draw_fairy(FAERIE_X[r16], FAERIE_Y[r16]);
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
             let mut k = self.select_file_scratch().cursor();
@@ -801,8 +801,8 @@ impl ZeldaState {
         const FAERIE_Y: [u8; 2] = [0xaf, 0xbf];
         self.file_select_draw_fairy(0x1c, FAERIE_Y[self.select_file_scratch().cursor_usize()]);
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
             self.system_signals_mut().set_sound_effect_2(0x20);
@@ -914,8 +914,8 @@ impl ZeldaState {
         self.file_select_draw_fairy(FAERIE_X[r16], FAERIE_Y[r16]);
 
         let mut k = self.select_file_scratch().cursor();
-        if self.player_state_view().filtered_joypad_h() & 0x2c != 0 {
-            if self.player_state_view().filtered_joypad_h() & 0x24 == 0 {
+        if self.player_state().filtered_joypad_h() & 0x2c != 0 {
+            if self.player_state().filtered_joypad_h() & 0x24 == 0 {
                 loop {
                     k = k.wrapping_sub(1);
                     if k & 0x80 != 0 {
@@ -941,8 +941,8 @@ impl ZeldaState {
         }
         self.select_file_scratch_mut().set_cursor(k);
 
-        let a = (self.player_state_view().filtered_joypad_l() & 0xc0
-            | self.player_state_view().filtered_joypad_h())
+        let a = (self.player_state().filtered_joypad_l() & 0xc0
+            | self.player_state().filtered_joypad_h())
             & 0xd0;
         if a != 0 {
             self.system_signals_mut().set_sound_effect_1(0x2c);
@@ -1042,7 +1042,7 @@ impl ZeldaState {
             let target =
                 NAME_PLAYER_VRAM_SETUP_WORDS[self.select_file_scratch().name_column_usize()];
             if target == self.select_file_scratch().name_scroll_x() {
-                let step = if self.player_state_view().joypad1h_last() & 3 != 0 {
+                let step = if self.player_state().joypad1h_last() & 3 != 0 {
                     0x30
                 } else {
                     0
@@ -1103,9 +1103,9 @@ impl ZeldaState {
             return;
         }
 
-        if self.player_state_view().filtered_joypad_h() & 0x10 == 0 {
-            if (self.player_state_view().filtered_joypad_h() & 0xc0
-                | self.player_state_view().filtered_joypad_l() & 0xc0)
+        if self.player_state().filtered_joypad_h() & 0x10 == 0 {
+            if (self.player_state().filtered_joypad_h() & 0xc0
+                | self.player_state().filtered_joypad_l() & 0xc0)
                 == 0
             {
                 return;
@@ -1178,7 +1178,7 @@ impl ZeldaState {
         const NAME_ENTRY_X_SCROLL_WORDS: [u8; 14] = [
             0x01, 0x00, 0xff, 0x00, 0x20, 0x00, 0xff, 0x00, 0x00, 0x00, 0x1f, 0x00, 0x83, 0x93,
         ];
-        let a = self.player_state_view().joypad1h_last() & 3;
+        let a = self.player_state().joypad1h_last() & 3;
         if a != 0 {
             let k = a.wrapping_sub(1);
             let table_index = k as usize * 2;
@@ -1200,7 +1200,7 @@ impl ZeldaState {
     pub(super) fn name_file_check_for_scroll_input_y(&mut self) {
         const NAME_ENTRY_Y_SCROLL_STEPS: [u8; 8] = [0x01, 0xff, 0x04, 0xff, 0x00, 0x03, 0x00, 0x00];
 
-        let mut a = self.player_state_view().joypad1h_last() & 0x0c;
+        let mut a = self.player_state().joypad1h_last() & 0x0c;
         if a != 0 {
             let row = self.select_file_scratch().name_row();
             if ((a << 1) | row) == 0x10 || ((a << 2) | row) == 0x13 {
@@ -1252,7 +1252,7 @@ mod tests {
     fn name_entry_vertical_scroll_down_from_top_row_matches_c() {
         let mut state = ZeldaState::new();
         state.select_file_scratch_mut().set_name_row(0);
-        state.player_state_view_mut().set_joypad1h_last(0x04);
+        state.player_state_mut().set_joypad1h_last(0x04);
 
         state.name_file_check_for_scroll_input_y();
 
@@ -1266,10 +1266,10 @@ mod tests {
         let mut state = ZeldaState::new();
         state.select_file_scratch_mut().set_name_row(0);
         state.select_file_scratch_mut().set_name_cursor_y(0x83);
-        state.player_state_view_mut().set_joypad1h_last(0x04);
+        state.player_state_mut().set_joypad1h_last(0x04);
 
         state.name_file_check_for_scroll_input_y();
-        state.player_state_view_mut().set_joypad1h_last(0);
+        state.player_state_mut().set_joypad1h_last(0);
 
         for _ in 0..9 {
             state.name_file_do_the_naming();

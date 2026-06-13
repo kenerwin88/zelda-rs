@@ -66,7 +66,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_79_bee(&mut self, k: usize) {
-        match self.sprite_slot_view(k).ai_state() {
+        match self.sprite_slot(k).ai_state() {
             0 => self.bee_dormant_hive(k),
             1 => self.bee_main(k),
             2 => self.bee_put_in_bottle(k),
@@ -82,10 +82,10 @@ impl ZeldaState {
     //     SpawnBeeFromHive(k);
     // }
     pub(super) fn bee_dormant_hive(&mut self, k: usize) {
-        if self.sprite_slot_view(k).e() != 0 {
+        if self.sprite_slot(k).e() != 0 {
             return;
         }
-        self.sprite_slot_view_mut(k).clear();
+        self.sprite_slot_mut(k).clear();
         for _ in (0..=11).rev() {
             self.spawn_bee_from_hive(k);
         }
@@ -122,7 +122,7 @@ impl ZeldaState {
             BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
         let y_velocity =
             BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
-        let mut sprite = self.sprite_slot_view_mut(k);
+        let mut sprite = self.sprite_slot_mut(k);
         sprite.set_ai_state(1);
         sprite.set_delay_main(delay);
         sprite.set_a(delay);
@@ -157,23 +157,23 @@ impl ZeldaState {
         let j = self.sprite_spawn_dynamically(x_value, 0xb2, &mut info);
         if j >= 0 {
             let ju = j as usize;
-            let floor = self.player_state_view().lower_level_state();
-            self.sprite_slot_view_mut(ju).set_floor(floor);
-            self.sprite_set_x(ju, self.player_state_view().x().wrapping_add(8));
-            self.sprite_set_y(ju, self.player_state_view().y().wrapping_add(16));
+            let floor = self.player_state().lower_level_state();
+            self.sprite_slot_mut(ju).set_floor(floor);
+            self.sprite_set_x(ju, self.player_state().x().wrapping_add(8));
+            self.sprite_set_y(ju, self.player_state().y().wrapping_add(16));
             let bottle = self
                 .player_resources()
                 .equipped_bottle_index()
                 .wrapping_sub(1) as usize;
             if self.inventory_items().bottle(bottle) == 8 {
-                self.sprite_slot_view_mut(ju).set_head_direction(1);
+                self.sprite_slot_mut(ju).set_head_direction(1);
             }
             self.initialize_spawned_bee(ju);
             let x_velocity =
                 BEE_RELEASE_VELOCITY_CHOICES[(self.get_random_number() & 7) as usize] as u8;
             let y_velocity =
                 BEE_RELEASE_VELOCITY_CHOICES[(self.get_random_number() & 7) as usize] as u8;
-            let mut sprite = self.sprite_slot_view_mut(ju);
+            let mut sprite = self.sprite_slot_mut(ju);
             sprite.set_x_velocity(x_velocity);
             sprite.set_y_velocity(y_velocity);
             sprite.set_delay_main(64);
@@ -227,42 +227,42 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        if self.sprite_slot_view(k).head_direction() != 0 {
+        if self.sprite_slot(k).head_direction() != 0 {
             self.sprite_spawn_sparkle_garnish_for_npcs(k);
         }
         self.bee_bzzt(k);
         self.sprite_move_xy(k);
         let graphics = (((k as u8) ^ self.frame_state().frame_counter) >> 1) & 1;
-        self.sprite_slot_view_mut(k).set_graphics(graphics);
-        if self.sprite_slot_view(k).delay_aux4() == 0 {
+        self.sprite_slot_mut(k).set_graphics(graphics);
+        if self.sprite_slot(k).delay_aux4() == 0 {
             self.sprite_check_damage_to_link_for_npcs(k);
             if (self.sprite_check_damage_from_link_for_npcs(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0
             {
                 self.sprite_show_message_unconditional(0xc8);
-                self.sprite_slot_view_mut(k).set_ai_state(2);
+                self.sprite_slot_mut(k).set_ai_state(2);
                 return;
             }
         }
 
-        if self.frame_state().frame_counter == 0 && self.sprite_slot_view(k).a() != 16 {
-            let a = self.sprite_slot_view(k).a().wrapping_sub(8);
-            self.sprite_slot_view_mut(k).set_a(a);
+        if self.frame_state().frame_counter == 0 && self.sprite_slot(k).a() != 16 {
+            let a = self.sprite_slot(k).a().wrapping_sub(8);
+            self.sprite_slot_mut(k).set_a(a);
         }
 
-        if self.sprite_slot_view(k).delay_main() == 0 {
+        if self.sprite_slot(k).delay_main() == 0 {
             let x = self
-                .player_state_view()
+                .player_state()
                 .x()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let y = self
-                .player_state_view()
+                .player_state()
                 .y()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let pt = self.sprite_project_speed_towards_location(k, x, y, 20);
-            let oam_flags = self.sprite_slot_view(k).oam_flags();
-            let delay = (k as u8).wrapping_add(self.sprite_slot_view(k).a());
-            let mut sprite = self.sprite_slot_view_mut(k);
+            let oam_flags = self.sprite_slot(k).oam_flags();
+            let delay = (k as u8).wrapping_add(self.sprite_slot(k).a());
+            let mut sprite = self.sprite_slot_mut(k);
             sprite.set_y_velocity(pt.y);
             sprite.set_x_velocity(pt.x);
             sprite.set_oam_flags((oam_flags & !0x40) | if (pt.x as i8) < 0 { 0 } else { 0x40 });
@@ -277,11 +277,11 @@ impl ZeldaState {
     //                           (((frame_counter >> 4 & 3) + 1) << 1);
     // }
     pub(super) fn bee_handle_z(&mut self, k: usize) {
-        self.sprite_slot_view_mut(k).set_z(16);
-        if self.sprite_slot_view(k).head_direction() != 0 {
+        self.sprite_slot_mut(k).set_z(16);
+        if self.sprite_slot(k).head_direction() != 0 {
             let palette = (((self.frame_state().frame_counter >> 4) & 3).wrapping_add(1)) << 1;
-            let oam_flags = self.sprite_slot_view(k).oam_flags();
-            self.sprite_slot_view_mut(k)
+            let oam_flags = self.sprite_slot(k).oam_flags();
+            self.sprite_slot_mut(k)
                 .set_oam_flags((oam_flags & 0xf1) | palette);
         }
     }
@@ -305,7 +305,7 @@ impl ZeldaState {
     //   sprite_B[k]++;
     // }
     pub(super) fn player_bee_hone_in_on_target(&mut self, j: usize, k: usize) {
-        let target = self.sprite_slot_view(j);
+        let target = self.sprite_slot(j);
         if target.sprite_type() != 0x88 && (target.flags() & 2) != 0 {
             return;
         }
@@ -318,22 +318,21 @@ impl ZeldaState {
         {
             return;
         }
-        if self.sprite_slot_view(j).sprite_type() == 0x75 {
-            self.sprite_slot_view_mut(j)
-                .set_e((k as u8).wrapping_add(1));
+        if self.sprite_slot(j).sprite_type() == 0x75 {
+            self.sprite_slot_mut(j).set_e((k as u8).wrapping_add(1));
             return;
         }
         self.ancilla_check_damage_to_sprite_preset(j, 1);
-        let source = self.sprite_slot_view(k);
+        let source = self.sprite_slot(k);
         let x_recoil = source.x_velocity().wrapping_shl(1);
         let y_recoil = source.y_velocity().wrapping_shl(1);
         {
-            let mut target = self.sprite_slot_view_mut(j);
+            let mut target = self.sprite_slot_mut(j);
             target.set_f(15);
             target.set_x_recoil(x_recoil);
             target.set_y_recoil(y_recoil);
         }
-        self.sprite_slot_view_mut(k).increment_b();
+        self.sprite_slot_mut(k).increment_b();
     }
 
     // bool PlayerBee_FindTarget(int k, Point16U *pt) {  // sprite_main.c:24145
@@ -363,8 +362,8 @@ impl ZeldaState {
         let mut j: usize = (k * 4) & 0xf;
         loop {
             // C `continue` body — evaluate filter; if it passes, return.
-            let source = self.sprite_slot_view(k);
-            let target = self.sprite_slot_view(j);
+            let source = self.sprite_slot(k);
+            let target = self.sprite_slot(j);
             let skip = j == k || target.state() < 9 || target.pause() != 0;
             let inner_skip = if !skip {
                 if target.flags2() & 0x80 == 0 {
@@ -402,7 +401,7 @@ impl ZeldaState {
     pub(super) fn bee_handle_interactions(&mut self, k: usize) {
         let dmi = self.dialogue_message_index().value();
         if self.frame_state().submodule == 2 && (dmi == 0xc8 || dmi == 0xca) {
-            self.sprite_slot_view_mut(k).set_delay_aux4(40);
+            self.sprite_slot_mut(k).set_delay_aux4(40);
         }
     }
 
@@ -464,10 +463,10 @@ impl ZeldaState {
     pub(super) fn sprite_b2_player_bee(&mut self, k: usize) {
         const GOOD_BEE_HEAD_ANIM_LIMITS: [u8; 2] = [0x0a, 0x14];
 
-        match self.sprite_slot_view(k).ai_state() {
+        match self.sprite_slot(k).ai_state() {
             0 => {
-                if self.sprite_slot_view(k).e() == 0 {
-                    self.sprite_slot_view_mut(k).clear();
+                if self.sprite_slot(k).e() == 0 {
+                    self.sprite_slot_mut(k).clear();
                     let or_bottle = self.inventory_items().bottle(0)
                         | self.inventory_items().bottle(1)
                         | self.inventory_items().bottle(2)
@@ -478,7 +477,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                self.sprite_slot_view_mut(k).set_ignore_projectile(1);
+                self.sprite_slot_mut(k).set_ignore_projectile(1);
                 self.bee_handle_z(k);
                 self.sprite_draw_single_small_for_npcs(k);
                 self.bee_handle_interactions(k);
@@ -488,17 +487,17 @@ impl ZeldaState {
                 self.bee_bzzt(k);
                 self.sprite_move_xy(k);
                 let graphics = (((k as u8) ^ self.frame_state().frame_counter) >> 1) & 1;
-                self.sprite_slot_view_mut(k).set_graphics(graphics);
-                if self.sprite_slot_view(k).head_direction() != 0 {
+                self.sprite_slot_mut(k).set_graphics(graphics);
+                if self.sprite_slot(k).head_direction() != 0 {
                     self.sprite_spawn_sparkle_garnish_for_npcs(k);
                 }
-                let sprite = self.sprite_slot_view(k);
+                let sprite = self.sprite_slot(k);
                 let head = (sprite.head_direction() & 1) as usize;
                 if sprite.b() >= GOOD_BEE_HEAD_ANIM_LIMITS[head] {
-                    self.sprite_slot_view_mut(k).set_deflection_bits(64);
+                    self.sprite_slot_mut(k).set_deflection_bits(64);
                     return;
                 }
-                if self.sprite_slot_view(k).delay_aux4() != 0 {
+                if self.sprite_slot(k).delay_aux4() != 0 {
                     return;
                 }
                 if (self.sprite_check_damage_from_link_for_npcs(k)
@@ -506,7 +505,7 @@ impl ZeldaState {
                     != 0
                 {
                     self.sprite_show_message_unconditional(0xc8);
-                    self.sprite_slot_view_mut(k).increment_ai_state();
+                    self.sprite_slot_mut(k).increment_ai_state();
                     return;
                 }
                 if (((k as u8) ^ self.frame_state().frame_counter) & 3) != 0 {
@@ -515,11 +514,11 @@ impl ZeldaState {
                 let mut pt2 = Point16U { x: 0, y: 0 };
                 if !self.player_bee_find_target(k, &mut pt2) {
                     pt2.x = self
-                        .player_state_view()
+                        .player_state()
                         .x()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                     pt2.y = self
-                        .player_state_view()
+                        .player_state()
                         .y()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                 }
@@ -527,8 +526,8 @@ impl ZeldaState {
                     return;
                 }
                 let pt = self.sprite_project_speed_towards_location(k, pt2.x, pt2.y, 32);
-                let oam_flags = self.sprite_slot_view(k).oam_flags();
-                let mut sprite = self.sprite_slot_view_mut(k);
+                let oam_flags = self.sprite_slot(k).oam_flags();
+                let mut sprite = self.sprite_slot_mut(k);
                 sprite.set_x_velocity(pt.x);
                 sprite.set_y_velocity(pt.y);
                 sprite.set_oam_flags((oam_flags & !0x40) | if (pt.x as i8) < 0 { 0 } else { 0x40 });
@@ -562,7 +561,7 @@ impl ZeldaState {
                 BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
             let y_velocity =
                 BEE_SPAWN_INITIAL_VELOCITIES[(self.get_random_number() & 7) as usize] as u8;
-            let mut sprite = self.sprite_slot_view_mut(ju);
+            let mut sprite = self.sprite_slot_mut(ju);
             sprite.set_ai_state(1);
             sprite.set_delay_main(64);
             sprite.set_a(64);
@@ -608,15 +607,15 @@ impl ZeldaState {
         if self.multiselect_choice().value() == 0 {
             let j = self.sprite_find_empty_bottle();
             if j >= 0 {
-                let value = 7u8.wrapping_add(self.sprite_slot_view(k).head_direction());
+                let value = 7u8.wrapping_add(self.sprite_slot(k).head_direction());
                 self.inventory_items_mut().set_bottle(j as usize, value);
                 self.hud_refresh_icon();
-                self.sprite_slot_view_mut(k).clear();
+                self.sprite_slot_mut(k).clear();
                 return;
             }
             self.sprite_show_message_unconditional(0xca);
         }
-        let mut sprite = self.sprite_slot_view_mut(k);
+        let mut sprite = self.sprite_slot_mut(k);
         sprite.set_delay_aux4(64);
         sprite.set_ai_state(1);
     }
@@ -700,7 +699,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_bottle_vendor(&mut self, k: usize) {
         let draw_state = self.bottle_vendor_draw(k);
-        self.sprite_slot_view_mut(k).set_a(draw_state);
+        self.sprite_slot_mut(k).set_a(draw_state);
         if self.sprite_return_if_inactive_npcs(k) {
             return;
         }
@@ -710,21 +709,21 @@ impl ZeldaState {
             return;
         }
         if self.get_random_number() == 0 {
-            let mut sprite = self.sprite_slot_view_mut(k);
+            let mut sprite = self.sprite_slot_mut(k);
             sprite.set_delay_main(20);
             sprite.set_graphics(1);
-        } else if self.sprite_slot_view(k).delay_main() == 0 {
-            self.sprite_slot_view_mut(k).set_graphics(0);
+        } else if self.sprite_slot(k).delay_main() == 0 {
+            self.sprite_slot_mut(k).set_graphics(0);
         }
-        match self.sprite_slot_view(k).ai_state() {
+        match self.sprite_slot(k).ai_state() {
             0 => {
-                let sprite = self.sprite_slot_view(k);
+                let sprite = self.sprite_slot(k);
                 if sprite.a() == 0 && sprite.e() != 0 {
-                    self.sprite_slot_view_mut(k).set_ai_state(3);
+                    self.sprite_slot_mut(k).set_ai_state(3);
                 } else if (self.save_progress().progress_indicator_3() & 2) != 0 {
                     self.sprite_show_solicited_message(k, 0xd4);
                 } else if (self.sprite_show_solicited_message(k, 0xd1) & 0x100) != 0 {
-                    self.sprite_slot_view_mut(k).set_ai_state(1);
+                    self.sprite_slot_mut(k).set_ai_state(1);
                 }
             }
             1 => {
@@ -732,38 +731,38 @@ impl ZeldaState {
                     && self.player_resources().rupees_goal() >= 100
                 {
                     self.sprite_show_message_unconditional(0xd2);
-                    self.sprite_slot_view_mut(k).set_ai_state(2);
+                    self.sprite_slot_mut(k).set_ai_state(2);
                 } else {
                     self.sprite_show_message_unconditional(0xd3);
-                    self.sprite_slot_view_mut(k).set_ai_state(0);
+                    self.sprite_slot_mut(k).set_ai_state(0);
                 }
             }
             2 => {
-                self.player_state_view_mut().set_item_receipt_method(0);
+                self.player_state_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x16, 0);
                 self.save_progress_mut().or_progress_indicator_3(2);
                 let rupees = self.player_resources().rupees_goal().wrapping_sub(100);
                 self.player_resources_mut().set_rupees_goal(rupees);
-                self.sprite_slot_view_mut(k).set_ai_state(0);
+                self.sprite_slot_mut(k).set_ai_state(0);
             }
             3 => {
-                if (self.sprite_slot_view(k).e() as i8) >= 0 {
+                if (self.sprite_slot(k).e() as i8) >= 0 {
                     self.sprite_show_message_unconditional(0xd5);
                 } else {
                     self.sprite_show_message_unconditional(0xd6);
                 }
-                self.sprite_slot_view_mut(k).set_ai_state(4);
+                self.sprite_slot_mut(k).set_ai_state(4);
             }
             4 => {
-                let j = self.sprite_slot_view(k).e();
+                let j = self.sprite_slot(k).e();
                 if (j as i8) >= 0 {
-                    self.sprite_slot_view_mut(j as usize - 1).clear();
+                    self.sprite_slot_mut(j as usize - 1).clear();
                     self.bottle_merchant_buy_bee(k);
                 } else {
-                    self.sprite_slot_view_mut((j & 0x0f) as usize).clear();
+                    self.sprite_slot_mut((j & 0x0f) as usize).clear();
                     self.bottle_merchant_buy_fish(k);
                 }
-                let mut sprite = self.sprite_slot_view_mut(k);
+                let mut sprite = self.sprite_slot_mut(k);
                 sprite.set_e(0);
                 sprite.set_ai_state(0);
             }
@@ -790,7 +789,7 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
+        let base = (self.sprite_slot(k).graphics() as usize) * 2;
         self.sprite_draw_multiple_player_deferred(
             k,
             &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
@@ -819,9 +818,9 @@ impl ZeldaState {
     // }
     pub(super) fn bottle_merchant_detect_fish(&mut self, k: usize) {
         for i in (0..=15usize).rev() {
-            let sprite = self.sprite_slot_view(i);
+            let sprite = self.sprite_slot(i);
             if sprite.state() != 0 && sprite.sprite_type() == 0xd2 {
-                let vendor = self.sprite_slot_view(k);
+                let vendor = self.sprite_slot(k);
                 let mut hb = SpriteHitBox {
                     r0_xlo: vendor.x_low(),
                     r8_xhi: vendor.x_high(),
@@ -838,7 +837,7 @@ impl ZeldaState {
                 };
                 self.sprite_setup_hit_box(i, &mut hb);
                 if self.check_if_hit_boxes_overlap(&hb) {
-                    self.sprite_slot_view_mut(k).set_e(0x80 | i as u8);
+                    self.sprite_slot_mut(k).set_e(0x80 | i as u8);
                 }
                 return;
             }
@@ -944,7 +943,7 @@ impl ZeldaState {
         yvel: i8,
     ) {
         self.sprite_set_spawned_coordinates(j, info);
-        let mut sprite = self.sprite_slot_view_mut(j);
+        let mut sprite = self.sprite_slot_mut(j);
         sprite.add_x_low(4);
         sprite.set_stunned(0xff);
         sprite.set_x_velocity(xvel as u8);
@@ -1070,14 +1069,14 @@ mod tests {
     fn make_link_idle(state: &mut ZeldaState) {
         state.clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
-        state.player_state_view_mut().clear_auxiliary_state();
-        state.player_state_view_mut().clear_item_hold_pose();
-        state.player_state_view_mut().clear_state_bits();
+        state.player_state_mut().clear_auxiliary_state();
+        state.player_state_mut().clear_item_hold_pose();
+        state.player_state_mut().clear_state_bits();
         for slot in 0..5 {
-            state.ancilla_slot_view_mut(slot).clear();
+            state.ancilla_slot_mut(slot).clear();
         }
-        state.player_state_view_mut().set_x(0x1000);
-        state.player_state_view_mut().set_y(0x1000);
+        state.player_state_mut().set_x(0x1000);
+        state.player_state_mut().set_y(0x1000);
     }
 
     #[test]
@@ -1088,12 +1087,12 @@ mod tests {
         let k = 3;
         state.set_frame_counter(0x20); // (0x20 >> 4) & 3 == 2 → palette = (2+1)<<1 = 6
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_head_direction(1);
             sprite.set_oam_flags(0xff);
         }
         state.bee_handle_z(k);
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.oam_flags(), (0xff & 0xf1) | 6);
     }
@@ -1104,12 +1103,12 @@ mod tests {
         let k = 5;
         state.set_frame_counter(0xff);
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_head_direction(0);
             sprite.set_oam_flags(0xaa);
         }
         state.bee_handle_z(k);
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.oam_flags(), 0xaa);
     }
@@ -1121,7 +1120,7 @@ mod tests {
 
         state.initialize_spawned_bee(k);
 
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.ai_state(), 1);
         assert_eq!(sprite.delay_main(), 255);
         assert_eq!(sprite.a(), 255);
@@ -1133,9 +1132,9 @@ mod tests {
     #[test]
     fn release_bee_from_bottle_spawns_at_link_and_marks_good_bee() {
         let mut state = fresh_state();
-        state.player_state_view_mut().set_x(0x120);
-        state.player_state_view_mut().set_y(0x230);
-        state.player_state_view_mut().mark_lower_level();
+        state.player_state_mut().set_x(0x120);
+        state.player_state_mut().set_y(0x230);
+        state.player_state_mut().mark_lower_level();
         state.player_resources_mut().set_equipped_bottle_index(1);
         state.inventory_items_mut().set_bottle(0, 8);
 
@@ -1143,7 +1142,7 @@ mod tests {
 
         assert_eq!(j, 15);
         let ju = j as usize;
-        let sprite = state.sprite_slot_view(ju);
+        let sprite = state.sprite_slot(ju);
         assert_eq!(sprite.sprite_type(), 0xb2);
         assert_eq!(sprite.floor(), 1);
         assert_eq!(state.sprite_get_x(ju), 0x128);
@@ -1158,15 +1157,15 @@ mod tests {
         let mut state = fresh_state();
         let k = 0;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_ai_state(0);
             sprite.set_state(9);
         }
         state.sprite_79_bee(k);
 
-        assert_eq!(state.sprite_slot_view(k).state(), 0);
-        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0x79);
-        assert_eq!(state.sprite_slot_view(15).ai_state(), 1);
+        assert_eq!(state.sprite_slot(k).state(), 0);
+        assert_eq!(state.sprite_slot(15).sprite_type(), 0x79);
+        assert_eq!(state.sprite_slot(15).ai_state(), 1);
     }
 
     #[test]
@@ -1174,7 +1173,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 4;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
             sprite.set_a(64);
@@ -1182,12 +1181,12 @@ mod tests {
             sprite.set_delay_main(0);
         }
         state.set_frame_counter(4);
-        state.player_state_view_mut().set_x(0x120);
-        state.player_state_view_mut().set_y(0x220);
+        state.player_state_mut().set_x(0x120);
+        state.player_state_mut().set_y(0x220);
 
         state.bee_main(k);
 
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.graphics(), 0);
         assert_eq!(sprite.delay_main(), 68);
@@ -1199,7 +1198,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 3;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_ai_state(1);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
@@ -1209,7 +1208,7 @@ mod tests {
 
         state.sprite_b2_player_bee(k);
 
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.ignore_projectile(), 1);
         assert_eq!(sprite.deflection_bits(), 64);
     }
@@ -1224,14 +1223,14 @@ mod tests {
         state.sprite_set_x(fish, 0x40);
         state.sprite_set_y(fish, 0x50);
         {
-            let mut sprite = state.sprite_slot_view_mut(fish);
+            let mut sprite = state.sprite_slot_mut(fish);
             sprite.set_state(9);
             sprite.set_sprite_type(0xd2);
         }
 
         state.bottle_merchant_detect_fish(vendor);
 
-        assert_eq!(state.sprite_slot_view(vendor).e(), 0x80 | fish as u8);
+        assert_eq!(state.sprite_slot(vendor).e(), 0x80 | fish as u8);
     }
 
     #[test]
@@ -1244,7 +1243,7 @@ mod tests {
         state.bottle_merchant_buy_bee(k);
 
         for j in 11..=15 {
-            let sprite = state.sprite_slot_view(j);
+            let sprite = state.sprite_slot(j);
             assert_eq!(sprite.sprite_type(), 0xdb);
             assert_eq!(sprite.stunned(), 0xff);
             assert_eq!(sprite.z_velocity(), 32);
@@ -1262,12 +1261,12 @@ mod tests {
 
         state.bottle_merchant_buy_fish(k);
 
-        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
-        assert_eq!(state.sprite_slot_view(14).sprite_type(), 0xe2);
-        assert_eq!(state.sprite_slot_view(13).sprite_type(), 0xde);
-        assert_eq!(state.sprite_slot_view(12).sprite_type(), 0xe0);
-        assert_eq!(state.sprite_slot_view(11).sprite_type(), 0xdb);
-        assert_eq!(state.sprite_slot_view(11).delay_aux4(), 32);
+        assert_eq!(state.sprite_slot(15).sprite_type(), 0xd9);
+        assert_eq!(state.sprite_slot(14).sprite_type(), 0xe2);
+        assert_eq!(state.sprite_slot(13).sprite_type(), 0xde);
+        assert_eq!(state.sprite_slot(12).sprite_type(), 0xe0);
+        assert_eq!(state.sprite_slot(11).sprite_type(), 0xdb);
+        assert_eq!(state.sprite_slot(11).delay_aux4(), 32);
         assert_eq!(state.temp_counter().value(), 0xff);
     }
 
@@ -1276,7 +1275,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
             sprite.set_ai_state(0);
@@ -1286,7 +1285,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot_view(k).ai_state(), 3);
+        assert_eq!(state.sprite_slot(k).ai_state(), 3);
     }
 
     #[test]
@@ -1294,7 +1293,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
             sprite.set_ai_state(1);
@@ -1305,7 +1304,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot_view(k).ai_state(), 2);
+        assert_eq!(state.sprite_slot(k).ai_state(), 2);
         assert_eq!(state.dialogue_message_index().value(), 0xd2);
     }
 
@@ -1314,7 +1313,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
             sprite.set_ai_state(2);
@@ -1324,7 +1323,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
+        assert_eq!(state.sprite_slot(k).ai_state(), 0);
         assert_eq!(state.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2, 2);
         assert_eq!(state.player_resources().rupees_goal(), 50);
     }
@@ -1335,21 +1334,21 @@ mod tests {
         let k = 2;
         let fish = 5;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
             sprite.set_ai_state(4);
             sprite.set_e(0x80 | fish as u8);
         }
-        state.sprite_slot_view_mut(fish).set_state(9);
+        state.sprite_slot_mut(fish).set_state(9);
         make_link_idle(&mut state);
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot_view(fish).state(), 0);
-        assert_eq!(state.sprite_slot_view(k).e(), 0);
-        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
-        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
+        assert_eq!(state.sprite_slot(fish).state(), 0);
+        assert_eq!(state.sprite_slot(k).e(), 0);
+        assert_eq!(state.sprite_slot(k).ai_state(), 0);
+        assert_eq!(state.sprite_slot(15).sprite_type(), 0xd9);
     }
 
     #[test]
@@ -1376,22 +1375,22 @@ mod tests {
         let mut state = fresh_state();
         // Make Sprite_ReturnIfInactive(k) return false: state=9, no flags.
         let k = 1;
-        state.sprite_slot_view_mut(k).set_state(9);
+        state.sprite_slot_mut(k).set_state(9);
         state.clear_modal_pause_flag();
         state.ram[SUBMODULE_INDEX] = 0;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_deflection_bits(0x80);
             sprite.set_pause(0);
         }
         state.multiselect_choice_mut().set_value(0);
         state.inventory_items_mut().set_bottle(0, 1);
         state.inventory_items_mut().set_bottle(1, 2); // first empty
-        state.sprite_slot_view_mut(k).set_head_direction(0);
+        state.sprite_slot_mut(k).set_head_direction(0);
 
         state.bee_put_in_bottle(k);
         assert_eq!(state.inventory_items().bottle(1), 7);
-        assert_eq!(state.sprite_slot_view(k).state(), 0);
+        assert_eq!(state.sprite_slot(k).state(), 0);
     }
 
     #[test]
@@ -1401,7 +1400,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 2;
         {
-            let mut sprite = state.sprite_slot_view_mut(k);
+            let mut sprite = state.sprite_slot_mut(k);
             sprite.set_state(9);
             sprite.set_deflection_bits(0x80);
         }
@@ -1413,7 +1412,7 @@ mod tests {
         state.bee_put_in_bottle(k);
         // delay and ai_state are written unconditionally after the bottle
         // check fails.
-        let sprite = state.sprite_slot_view(k);
+        let sprite = state.sprite_slot(k);
         assert_eq!(sprite.delay_aux4(), 64);
         assert_eq!(sprite.ai_state(), 1);
         // Sprite_ShowMessageUnconditional(0xca) wrote dialogue index and
@@ -1430,30 +1429,30 @@ mod tests {
         let k = 2;
         let j = 5;
         {
-            let mut target = state.sprite_slot_view_mut(j);
+            let mut target = state.sprite_slot_mut(j);
             target.set_sprite_type(0x10);
             target.set_flags(0); // bit 1 clear
         }
         // x=y=0; cur_x=0,cur_y=0 → (0-0+16)=16<24 ✓; (0-0-8)=0xfff8 huge — fails.
         // Set Sprite_GetX/Y to large so the deltas pass.
-        state.sprite_slot_view_mut(j).set_x(0x10);
-        state.sprite_slot_view_mut(j).set_y(0x10);
+        state.sprite_slot_mut(j).set_x(0x10);
+        state.sprite_slot_mut(j).set_y(0x10);
         state.sprite_workspace_mut().set_current_sprite_x(0x10);
         state.sprite_workspace_mut().set_current_sprite_y(0x18);
         // cur_x - x + 16 = 0 + 16 = 16  (<24 ✓)
         // cur_y - y - 8  = 8         (<24 ✓)
         {
-            let mut source = state.sprite_slot_view_mut(k);
+            let mut source = state.sprite_slot_mut(k);
             source.set_x_velocity(3);
             source.set_y_velocity(2);
             source.set_b(7);
         }
 
         state.player_bee_hone_in_on_target(j, k);
-        let target = state.sprite_slot_view(j);
+        let target = state.sprite_slot(j);
         assert_eq!(target.f(), 15);
         assert_eq!(target.x_recoil(), 6);
         assert_eq!(target.y_recoil(), 4);
-        assert_eq!(state.sprite_slot_view(k).b(), 8);
+        assert_eq!(state.sprite_slot(k).b(), 8);
     }
 }

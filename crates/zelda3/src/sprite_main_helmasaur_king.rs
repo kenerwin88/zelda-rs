@@ -34,13 +34,13 @@ impl ZeldaState {
     //   HelmasaurKing_Reinitialize(k);
     // }
     pub(super) fn helmasaur_king_initialize(&mut self, k: usize) {
-        self.overlord_slot_view_mut(7).set_gen1(0x30);
-        self.overlord_slot_view_mut(5).set_gen1(0x80);
-        self.overlord_slot_view_mut(6).set_gen1(0);
-        self.overlord_slot_view_mut(0).set_gen2(0);
-        self.overlord_slot_view_mut(3).set_gen2(0);
-        self.overlord_slot_view_mut(1).set_gen2(0);
-        self.overlord_slot_view_mut(2).set_gen2(0);
+        self.overlord_slot_mut(7).set_gen1(0x30);
+        self.overlord_slot_mut(5).set_gen1(0x80);
+        self.overlord_slot_mut(6).set_gen1(0);
+        self.overlord_slot_mut(0).set_gen2(0);
+        self.overlord_slot_mut(3).set_gen2(0);
+        self.overlord_slot_mut(1).set_gen2(0);
+        self.overlord_slot_mut(2).set_gen2(0);
         self.helmasaur_king_reinitialize(k);
     }
 
@@ -51,10 +51,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_reinitialize(&mut self, k: usize) {
-        let t = self.sprite_slot_view(k).subtype2() as usize;
+        let t = self.sprite_slot(k).subtype2() as usize;
         for i in (0..=3usize).rev() {
             let idx = (t.wrapping_add(i.wrapping_mul(8))) & 0x1f;
-            self.overlord_slot_view_mut(i)
+            self.overlord_slot_mut(i)
                 .set_x_low(HELMASAUR_MASK_X_OFFSETS[idx]);
         }
     }
@@ -68,22 +68,21 @@ impl ZeldaState {
         const XVEL0: [i8; 8] = [-12, -12, -4, 0, 4, 12, 12, 0];
         const YVEL0: [i8; 8] = [0, 4, 12, 12, 12, 4, 0, 12];
 
-        if sign8(self.sprite_slot_view(k).c()) {
-            if self.sprite_slot_view(k).delay_main() == 1 {
-                self.sprite_slot_view_mut(k).clear();
+        if sign8(self.sprite_slot(k).c()) {
+            if self.sprite_slot(k).delay_main() == 1 {
+                self.sprite_slot_mut(k).clear();
             }
             self.sprite_draw_single_large(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            if ((self.frame_state().frame_counter & 7) | self.sprite_slot_view(k).delay_aux1()) == 0
-            {
-                self.sprite_slot_view_mut(k).xor_oam_flags(0x40);
+            if ((self.frame_state().frame_counter & 7) | self.sprite_slot(k).delay_aux1()) == 0 {
+                self.sprite_slot_mut(k).xor_oam_flags(0x40);
             }
             self.sprite_move_xyz(k);
-            self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-            if sign8(self.sprite_slot_view(k).z()) {
-                let mut sprite = self.sprite_slot_view_mut(k);
+            self.sprite_slot_mut(k).subtract_z_velocity(2);
+            if sign8(self.sprite_slot(k).z()) {
+                let mut sprite = self.sprite_slot_mut(k);
                 sprite.set_z(0);
                 sprite.set_delay_main(12);
                 sprite.set_z_velocity(24);
@@ -92,33 +91,33 @@ impl ZeldaState {
             return;
         }
 
-        if self.sprite_slot_view(k).c() < 3 {
-            let mut sprite = self.sprite_slot_view_mut(k);
+        if self.sprite_slot(k).c() < 3 {
+            let mut sprite = self.sprite_slot_mut(k);
             sprite.clear_object_priority_bits(0x0e);
             sprite.set_flags(0x0a);
         } else {
-            let mut sprite = self.sprite_slot_view_mut(k);
+            let mut sprite = self.sprite_slot_mut(k);
             sprite.set_flags4(0x1f);
             sprite.set_flags(2);
         }
         self.helmasaur_king_draw(k);
-        if self.sprite_slot_view(k).state() == 6 {
-            let t = self.sprite_slot_view(k).delay_main();
+        if self.sprite_slot(k).state() == 6 {
+            let t = self.sprite_slot(k).delay_main();
             if t == 0 {
                 self.sprite_schedule_boss_for_death(k);
                 return;
             }
-            self.sprite_slot_view_mut(k).set_hit_timer(t | 0xf0);
-            let j = self.overlord_slot_view(3).gen2();
+            self.sprite_slot_mut(k).set_hit_timer(t | 0xf0);
+            let j = self.overlord_slot(3).gen2();
             if t < 128 && (t & 7) == 0 && j != 0x10 {
-                self.overlord_slot_view_mut(3).add_gen2(1);
+                self.overlord_slot_mut(3).add_gen2(1);
                 let j = j as usize;
                 let x = self
                     .sprite_get_x(k)
-                    .wrapping_add(self.overlord_slot_view(5 + j).x_low() as i8 as i16 as u16);
+                    .wrapping_add(self.overlord_slot(5 + j).x_low() as i8 as i16 as u16);
                 let y = self
                     .sprite_get_y(k)
-                    .wrapping_add(self.overlord_slot_view(5 + j).y_low() as i8 as i16 as u16);
+                    .wrapping_add(self.overlord_slot(5 + j).y_low() as i8 as i16 as u16);
                 self.sprite_workspace_mut().set_current_sprite_x(x);
                 self.sprite_workspace_mut().set_current_sprite_y(y);
                 self.sprite_make_boss_explosion(k);
@@ -130,51 +129,50 @@ impl ZeldaState {
             return;
         }
 
-        let t = HELMASAUR_MASK_DAMAGE_STAGE_BY_HEALTH
-            [(self.sprite_slot_view(k).health() >> 2) as usize];
-        self.sprite_slot_view_mut(k).set_c(t);
+        let t = HELMASAUR_MASK_DAMAGE_STAGE_BY_HEALTH[(self.sprite_slot(k).health() >> 2) as usize];
+        self.sprite_slot_mut(k).set_c(t);
         if t == 3 {
-            if t != self.sprite_slot_view(k).e() {
-                self.sprite_slot_view_mut(k).set_hit_timer(0);
+            if t != self.sprite_slot(k).e() {
+                self.sprite_slot_mut(k).set_hit_timer(0);
                 self.helmasaur_king_explode_mask(k);
             }
-        } else if t != self.sprite_slot_view(k).e() {
+        } else if t != self.sprite_slot(k).e() {
             self.helmasaur_king_chip_away_at_mask(k);
         }
-        let c = self.sprite_slot_view(k).c();
-        self.sprite_slot_view_mut(k).set_e(c);
+        let c = self.sprite_slot(k).c();
+        self.sprite_slot_mut(k).set_e(c);
 
         self.sprite_check_damage_from_link(k);
         self.helmasaur_king_swing_tail(k);
         self.helmasaur_king_attempt_damage(k);
         self.helmasaur_king_check_mask_damage_from_hammer(k);
 
-        if self.sprite_slot_view(k).delay_aux1() == 0 {
-            if self.sprite_slot_view(k).delay_aux2() != 0 {
-                if self.sprite_slot_view(k).delay_aux2() == 0x40 {
+        if self.sprite_slot(k).delay_aux1() == 0 {
+            if self.sprite_slot(k).delay_aux2() != 0 {
+                if self.sprite_slot(k).delay_aux2() == 0x40 {
                     self.helmasaur_king_spit_fireball(k);
-                    if self.sprite_slot_view(k).c() >= 3 {
+                    if self.sprite_slot(k).c() >= 3 {
                         self.helmasaur_king_begin_anim_clock(k);
                     }
                 }
                 return;
             }
         } else {
-            if self.sprite_slot_view(k).delay_aux1() == 96 {
+            if self.sprite_slot(k).delay_aux1() == 96 {
                 self.helmasaur_king_begin_anim_clock(k);
             }
             return;
         }
 
-        match self.sprite_slot_view(k).ai_state() {
+        match self.sprite_slot(k).ai_state() {
             0 => {
-                let sprite = self.sprite_slot_view(k);
+                let sprite = self.sprite_slot(k);
                 if (sprite.hit_timer() != 0 || sprite.delay_main() == 0)
                     && !self.helmasaur_king_maybe_fireball(k)
                 {
                     let j = (self.get_random_number() & 7) as usize;
-                    let damaged_mask = self.sprite_slot_view(k).c() >= 3;
-                    let mut sprite = self.sprite_slot_view_mut(k);
+                    let damaged_mask = self.sprite_slot(k).c() >= 3;
+                    let mut sprite = self.sprite_slot_mut(k);
                     sprite.set_x_velocity(XVEL0[j] as u8);
                     sprite.set_y_velocity(YVEL0[j] as u8);
                     sprite.set_delay_main(64);
@@ -188,19 +186,19 @@ impl ZeldaState {
             }
             1 => {
                 self.helmasaur_king_handle_movement(k);
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    let mut sprite = self.sprite_slot_view_mut(k);
+                if self.sprite_slot(k).delay_main() == 0 {
+                    let mut sprite = self.sprite_slot_mut(k);
                     sprite.set_delay_main(32);
                     sprite.increment_ai_state();
                 }
             }
             2 => {
-                let sprite = self.sprite_slot_view(k);
+                let sprite = self.sprite_slot(k);
                 if (sprite.hit_timer() != 0 || sprite.delay_main() == 0)
                     && !self.helmasaur_king_maybe_fireball(k)
                 {
-                    let damaged_mask = self.sprite_slot_view(k).e() >= 3;
-                    let mut sprite = self.sprite_slot_view_mut(k);
+                    let damaged_mask = self.sprite_slot(k).e() >= 3;
+                    let mut sprite = self.sprite_slot_mut(k);
                     sprite.set_delay_main(64);
                     if damaged_mask {
                         sprite.halve_delay_main();
@@ -212,8 +210,8 @@ impl ZeldaState {
             }
             3 => {
                 self.helmasaur_king_handle_movement(k);
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    let mut sprite = self.sprite_slot_view_mut(k);
+                if self.sprite_slot(k).delay_main() == 0 {
+                    let mut sprite = self.sprite_slot_mut(k);
                     sprite.set_ai_state(0);
                     sprite.set_delay_main(64);
                 }
@@ -223,8 +221,8 @@ impl ZeldaState {
     }
 
     fn helmasaur_king_begin_anim_clock(&mut self, k: usize) {
-        if self.sprite_slot_view(k).anim_clock() == 0 {
-            let mut sprite = self.sprite_slot_view_mut(k);
+        if self.sprite_slot(k).anim_clock() == 0 {
+            let mut sprite = self.sprite_slot_mut(k);
             sprite.increment_anim_clock();
             sprite.set_delay_aux3(32);
         }
@@ -241,10 +239,10 @@ impl ZeldaState {
     pub(super) fn helmasaur_king_handle_movement(&mut self, k: usize) {
         let mut n: i32 = 1
             + i32::from((self.frame_state().frame_counter & 3) == 0)
-            + i32::from(self.sprite_slot_view(k).c() >= 3);
+            + i32::from(self.sprite_slot(k).c() >= 3);
         loop {
-            self.sprite_slot_view_mut(k).increment_subtype2();
-            if (self.sprite_slot_view(k).subtype2() & 15) == 0 {
+            self.sprite_slot_mut(k).increment_subtype2();
+            if (self.sprite_slot(k).subtype2() & 15) == 0 {
                 self.system_signals_mut().set_sound_effect_1(0x21);
             }
             n -= 1;
@@ -268,16 +266,16 @@ impl ZeldaState {
     //   return true;
     // }
     pub(super) fn helmasaur_king_maybe_fireball(&mut self, k: usize) -> bool {
-        self.sprite_slot_view_mut(k).increment_subtype();
-        if self.sprite_slot_view(k).subtype() != 4 {
+        self.sprite_slot_mut(k).increment_subtype();
+        if self.sprite_slot(k).subtype() != 4 {
             return false;
         }
-        self.sprite_slot_view_mut(k).set_subtype(0);
+        self.sprite_slot_mut(k).set_subtype(0);
         if (self.get_random_number() & 1) != 0 {
-            self.sprite_slot_view_mut(k).set_delay_aux2(127);
+            self.sprite_slot_mut(k).set_delay_aux2(127);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2a);
         } else {
-            self.sprite_slot_view_mut(k).set_delay_aux1(160);
+            self.sprite_slot_mut(k).set_delay_aux1(160);
         }
         true
     }
@@ -311,7 +309,7 @@ impl ZeldaState {
         const DELAY: [u8; 6] = [32, 80, 128, 32, 80, 128];
 
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
-        self.sprite_slot_view_mut(k).clear();
+        self.sprite_slot_mut(k).clear();
         let random = self.get_random_number();
         self.sprite_workspace_mut().set_shared_scratch_a(random);
         for i in (0..=2usize).rev() {
@@ -321,7 +319,7 @@ impl ZeldaState {
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
                 let delay = DELAY[((self.sprite_workspace().shared_scratch_a() & 3) as usize) + i];
-                let mut sprite = self.sprite_slot_view_mut(j);
+                let mut sprite = self.sprite_slot_mut(j);
                 sprite.set_x_velocity(LOCAL_X_VELOCITIES[i] as u8);
                 sprite.set_y_velocity(LOCAL_Y_VELOCITIES[i] as u8);
                 sprite.set_ai_state(3);
@@ -357,14 +355,14 @@ impl ZeldaState {
         const LOCAL_Y_VELOCITIES: [i8; 4] = [-32, 32, -32, 32];
 
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
-        self.sprite_slot_view_mut(k).clear();
+        self.sprite_slot_mut(k).clear();
         for i in (0..=3usize).rev() {
             let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0x70, &mut info);
             if j >= 0 {
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
-                let mut sprite = self.sprite_slot_view_mut(j);
+                let mut sprite = self.sprite_slot_mut(j);
                 sprite.set_x_velocity(LOCAL_X_VELOCITIES[i] as u8);
                 sprite.set_y_velocity(LOCAL_Y_VELOCITIES[i] as u8);
                 sprite.set_ai_state(4);
@@ -414,58 +412,56 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_swing_tail(&mut self, k: usize) {
-        self.overlord_slot_view_mut(4).add_x_low(1);
+        self.overlord_slot_mut(4).add_x_low(1);
         self.helmasaur_king_reinitialize(k);
-        let mask: u8 = if self.sprite_slot_view(k).anim_clock() != 0 {
+        let mask: u8 = if self.sprite_slot(k).anim_clock() != 0 {
             0
         } else {
             1
         };
         if (self.frame_state().frame_counter & mask) == 0 {
-            let j = (self.sprite_slot_view(k).direction() & 1) as usize;
+            let j = (self.sprite_slot(k).direction() & 1) as usize;
             // overlord_gen2[0] += j ? -1 : 1
             let delta: u8 = if j != 0 { 0xffu8 } else { 1u8 };
-            self.overlord_slot_view_mut(0).add_gen2(delta);
-            if self.overlord_slot_view(0).gen2() == HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS[j] as u8
-            {
-                self.sprite_slot_view_mut(k).increment_direction();
+            self.overlord_slot_mut(0).add_gen2(delta);
+            if self.overlord_slot(0).gen2() == HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS[j] as u8 {
+                self.sprite_slot_mut(k).increment_direction();
             }
             // WORD(overlord_gen1[5]) += (int8)overlord_gen2[0]
-            let delta_w = (self.overlord_slot_view(0).gen2() as i8) as i16 as u16;
-            self.overlord_slot_view_mut(5).add_gen1_word(delta_w);
+            let delta_w = (self.overlord_slot(0).gen2() as i8) as i16 as u16;
+            self.overlord_slot_mut(5).add_gen1_word(delta_w);
         }
-        if self.sprite_slot_view(k).anim_clock() == 0 {
+        if self.sprite_slot(k).anim_clock() == 0 {
             return;
         }
-        if self.overlord_slot_view(0).gen2() == 0 {
+        if self.overlord_slot(0).gen2() == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x6);
         }
 
-        if self.sprite_slot_view(k).anim_clock() == 2 {
-            let j = self.sprite_slot_view(k).head_direction();
+        if self.sprite_slot(k).anim_clock() == 2 {
+            let j = self.sprite_slot(k).head_direction();
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            self.overlord_slot_view_mut(1).add_gen2_word(dw);
+            self.overlord_slot_mut(1).add_gen2_word(dw);
             let cmp = if j != 0 { (-124i8) as u8 } else { 124u8 };
-            if self.overlord_slot_view(1).gen2() == cmp {
-                self.sprite_slot_view_mut(k).set_anim_clock(3);
+            if self.overlord_slot(1).gen2() == cmp {
+                self.sprite_slot_mut(k).set_anim_clock(3);
             }
-            self.overlord_slot_view_mut(7).add_gen1(3);
-        } else if self.sprite_slot_view(k).anim_clock() == 3 {
-            let j = self.sprite_slot_view(k).head_direction() ^ 1;
+            self.overlord_slot_mut(7).add_gen1(3);
+        } else if self.sprite_slot(k).anim_clock() == 3 {
+            let j = self.sprite_slot(k).head_direction() ^ 1;
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            self.overlord_slot_view_mut(1).add_gen2_word(dw);
-            if self.overlord_slot_view(1).gen2() == 0 {
-                self.sprite_slot_view_mut(k).set_anim_clock(0);
+            self.overlord_slot_mut(1).add_gen2_word(dw);
+            if self.overlord_slot(1).gen2() == 0 {
+                self.sprite_slot_mut(k).set_anim_clock(0);
             }
-            self.overlord_slot_view_mut(7).subtract_gen1(3);
+            self.overlord_slot_mut(7).subtract_gen1(3);
         } else {
-            if (self.overlord_slot_view(0).gen2() | self.sprite_slot_view(k).delay_aux3()) == 0 {
-                let head_direction = self.overlord_slot_view(6).gen1() & 1;
-                self.sprite_slot_view_mut(k)
-                    .set_head_direction(head_direction);
+            if (self.overlord_slot(0).gen2() | self.sprite_slot(k).delay_aux3()) == 0 {
+                let head_direction = self.overlord_slot(6).gen1() & 1;
+                self.sprite_slot_mut(k).set_head_direction(head_direction);
                 let dir = self.sprite_is_right_of_link(k).a ^ 1;
-                if dir == self.sprite_slot_view(k).head_direction() {
-                    self.sprite_slot_view_mut(k).set_anim_clock(2);
+                if dir == self.sprite_slot(k).head_direction() {
+                    self.sprite_slot_mut(k).set_anim_clock(2);
                     let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
                     self.system_signals_mut().set_sound_effect_2(sfx);
                 }
@@ -498,9 +494,9 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_check_mask_damage_from_hammer(&mut self, k: usize) {
-        if self.sprite_slot_view(k).c() >= 3
-            || !self.player_state_view().item_in_hand_has(10)
-            || self.player_state_view().has_disabled_oam_offsets()
+        if self.sprite_slot(k).c() >= 3
+            || !self.player_state().item_in_hand_has(10)
+            || self.player_state().has_disabled_oam_offsets()
         {
             return;
         }
@@ -519,15 +515,15 @@ impl ZeldaState {
             r7_spr_ysize: 0,
         };
         self.player_setup_action_hit_box_for_helmasaur_king(&mut hb);
-        let bak = self.sprite_slot_view(k).y_low();
-        self.sprite_slot_view_mut(k).add_y_low(8);
+        let bak = self.sprite_slot(k).y_low();
+        self.sprite_slot_mut(k).add_y_low(8);
         self.sprite_setup_hit_box(k, &mut hb);
-        self.sprite_slot_view_mut(k).set_y_low(bak);
+        self.sprite_slot_mut(k).set_y_low(bak);
         if self.check_if_hit_boxes_overlap(&hb) {
-            self.sprite_slot_view_mut(k).decrement_health();
+            self.sprite_slot_mut(k).decrement_health();
             self.system_signals_mut().set_sound_effect_2(0x21);
             let pt = self.sprite_project_speed_towards_link(k, 0x30);
-            let mut player = self.player_state_view_mut();
+            let mut player = self.player_state_mut();
             player.set_actual_velocity_xy(pt.x, pt.y);
             player.set_incapacitated_timer(8);
             if self.garnish_state().repulsespark_timer() == 0 {
@@ -550,8 +546,8 @@ impl ZeldaState {
         if (self.frame_state().frame_counter & 7) != 0 {
             return;
         }
-        let link_x = self.player_state_view().x();
-        let link_y = self.player_state_view().y();
+        let link_x = self.player_state().x();
+        let link_y = self.player_state().y();
         let cur_x = self.sprite_workspace().current_sprite_x();
         let cur_y = self.sprite_workspace().current_sprite_y();
         if link_x.wrapping_sub(cur_x).wrapping_add(36) < 72
@@ -567,7 +563,7 @@ impl ZeldaState {
     //   SpriteSfx_QueueSfx2WithPan(k, 0x1f);
     // }
     pub(super) fn helmasaur_king_chip_away_at_mask(&mut self, k: usize) {
-        let counter = self.sprite_slot_view(k).c().wrapping_add(7);
+        let counter = self.sprite_slot(k).c().wrapping_add(7);
         self.temp_counter_mut().set(counter);
         self.helmasaur_king_spawn_mask_debris(k);
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
@@ -584,7 +580,7 @@ impl ZeldaState {
     // }
     pub(super) fn helmasaur_king_explode_mask(&mut self, k: usize) {
         for j in 1..16 {
-            self.sprite_slot_view_mut(j).clear();
+            self.sprite_slot_mut(j).clear();
         }
         self.temp_counter_mut().set(7);
         loop {
@@ -640,7 +636,7 @@ impl ZeldaState {
             self.sprite_set_x(j, r0_x.wrapping_add(MASK_DEBRIS_X_OFFSETS[i] as i16 as u16));
             self.sprite_set_y(j, r2_y.wrapping_add(MASK_DEBRIS_Y_OFFSETS[i] as i16 as u16));
             let tmp_counter = self.temp_counter().value();
-            let mut sprite = self.sprite_slot_view_mut(j);
+            let mut sprite = self.sprite_slot_mut(j);
             sprite.set_z(MASK_DEBRIS_Z_OFFSETS[i] as u8);
             sprite.set_x_velocity(MASK_DEBRIS_X_VELOCITIES[i] as u8);
             sprite.set_y_velocity(MASK_DEBRIS_Y_VELOCITIES[i] as u8);
@@ -669,7 +665,7 @@ impl ZeldaState {
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_helmasaur_king(k, 0x70) {
             self.sprite_set_spawned_coordinates_for_helmasaur_king(j, r0_x, r2_y);
             self.sprite_set_y(j, r2_y.wrapping_add(28));
-            let mut sprite = self.sprite_slot_view_mut(j);
+            let mut sprite = self.sprite_slot_mut(j);
             sprite.set_delay_main(32);
             sprite.set_ignore_projectile(32);
         }
@@ -704,7 +700,7 @@ impl ZeldaState {
 
     // void Sprite_ScheduleBossForDeath(int k) {  // sprite_main.c:18047
     pub(super) fn sprite_schedule_boss_for_death(&mut self, k: usize) {
-        let mut sprite = self.sprite_slot_view_mut(k);
+        let mut sprite = self.sprite_slot_mut(k);
         sprite.set_state(4);
         sprite.set_a(0);
         sprite.set_delay_main(224);
@@ -726,14 +722,14 @@ impl ZeldaState {
         let j = j as usize;
         self.set_chr_halfslot_request(11);
         {
-            let mut sprite = self.sprite_slot_view_mut(j);
+            let mut sprite = self.sprite_slot_mut(j);
             sprite.set_state(4);
             sprite.set_flags2(3);
             sprite.set_oam_flags(12);
         }
         self.sprite_set_x(j, self.sprite_workspace().current_sprite_x());
         self.sprite_set_y(j, self.sprite_workspace().current_sprite_y());
-        let mut sprite = self.sprite_slot_view_mut(j);
+        let mut sprite = self.sprite_slot_mut(j);
         sprite.set_delay_main(31);
         sprite.set_a(31);
         sprite.set_floor(2);
@@ -852,7 +848,7 @@ mod tests {
         let mut s = fresh_state();
         // Use subtype2 = 1 so we exercise both arms of the modulo wrap.
         let k = 4;
-        s.sprite_slot_view_mut(k).set_subtype2(1);
+        s.sprite_slot_mut(k).set_subtype2(1);
         s.helmasaur_king_initialize(k);
         assert_eq!(s.ram[OVERLORD_GEN1 + 7], 0x30);
         assert_eq!(s.ram[OVERLORD_GEN1 + 5], 0x80);
@@ -863,10 +859,10 @@ mod tests {
         assert_eq!(s.ram[OVERLORD_GEN2 + 3], 0);
         // Reinitialize with t=1: overlord_x_lo[i] = kHelmasaur_Tab0[1 + i*8 & 0x1f].
         // i=0 -> idx=1 -> 1; i=1 -> idx=9 -> 8; i=2 -> idx=17 -> 8; i=3 -> idx=25 -> 7.
-        assert_eq!(s.overlord_slot_view(0).x_low(), 1);
-        assert_eq!(s.overlord_slot_view(1).x_low(), 8);
-        assert_eq!(s.overlord_slot_view(2).x_low(), 8);
-        assert_eq!(s.overlord_slot_view(3).x_low(), 7);
+        assert_eq!(s.overlord_slot(0).x_low(), 1);
+        assert_eq!(s.overlord_slot(1).x_low(), 8);
+        assert_eq!(s.overlord_slot(2).x_low(), 8);
+        assert_eq!(s.overlord_slot(3).x_low(), 7);
     }
 
     #[test]
@@ -876,11 +872,11 @@ mod tests {
         let mut s = fresh_state();
         let k = 2;
         s.set_frame_counter(0);
-        s.sprite_slot_view_mut(k).set_c(4);
+        s.sprite_slot_mut(k).set_c(4);
         // Subtype2 starts so that one increment lands on a multiple-of-16 boundary.
-        s.sprite_slot_view_mut(k).set_subtype2(14); // +3 -> 17, which has &15 == 1 (no sfx); but +2 -> 16 hits sfx
+        s.sprite_slot_mut(k).set_subtype2(14); // +3 -> 17, which has &15 == 1 (no sfx); but +2 -> 16 hits sfx
         s.helmasaur_king_handle_movement(k);
-        assert_eq!(s.sprite_slot_view(k).subtype2(), 14u8.wrapping_add(3));
+        assert_eq!(s.sprite_slot(k).subtype2(), 14u8.wrapping_add(3));
         // sound_effect_1 should have fired on the increment that produced 16.
         assert_eq!(s.system_signals().sound_effect_1(), 0x21);
     }
@@ -891,15 +887,15 @@ mod tests {
         let mut s = fresh_state();
         let k = 0;
         // Pre-seed subtype to 3 so the next call is the 4-trigger.
-        s.sprite_slot_view_mut(k).set_subtype(3);
+        s.sprite_slot_mut(k).set_subtype(3);
         // Drive get_random_number deterministically: feed RNG bytes so the
         // first call returns an odd value (the "delay_aux2 = 127" branch).
         // The RNG is hidden — set the resulting state directly afterwards.
         let _ = s.helmasaur_king_maybe_fireball(k);
         // After increment the subtype was 4, then reset to 0.
-        assert_eq!(s.sprite_slot_view(k).subtype(), 0);
+        assert_eq!(s.sprite_slot(k).subtype(), 0);
         // One of the two branches must have armed a delay.
-        let sprite = s.sprite_slot_view(k);
+        let sprite = s.sprite_slot(k);
         assert!(
             sprite.delay_aux2() == 127 || sprite.delay_aux1() == 160,
             "expected one of the two fireball delays to be armed",
@@ -910,9 +906,9 @@ mod tests {
     fn maybe_fireball_returns_false_when_subtype_not_four() {
         let mut s = fresh_state();
         let k = 1;
-        s.sprite_slot_view_mut(k).set_subtype(0);
+        s.sprite_slot_mut(k).set_subtype(0);
         assert_eq!(s.helmasaur_king_maybe_fireball(k), false);
-        let sprite = s.sprite_slot_view(k);
+        let sprite = s.sprite_slot(k);
         assert_eq!(sprite.subtype(), 1);
         assert_eq!(sprite.delay_aux1(), 0);
         assert_eq!(sprite.delay_aux2(), 0);
@@ -922,12 +918,12 @@ mod tests {
     fn helmasaur_fireball_quad_split_spawns_four_projectiles() {
         let mut s = fresh_state();
         let k = 2;
-        s.sprite_slot_view_mut(k).set_state(9);
+        s.sprite_slot_mut(k).set_state(9);
         s.sprite_set_x(k, 0x0120);
         s.sprite_set_y(k, 0x0340);
-        s.sprite_slot_view_mut(k).set_z(7);
+        s.sprite_slot_mut(k).set_z(7);
         s.helmasaur_fireball_quad_split(k);
-        assert_eq!(s.sprite_slot_view(k).state(), 0);
+        assert_eq!(s.sprite_slot(k).state(), 0);
         assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x36);
         assert_eq!(s.temp_counter().value(), 0xff);
 
@@ -938,7 +934,7 @@ mod tests {
             (12, 32, -32),
         ];
         for (slot, xvel, yvel) in expected {
-            let sprite = s.sprite_slot_view(slot);
+            let sprite = s.sprite_slot(slot);
             assert_eq!(sprite.sprite_type(), 0x70);
             assert_eq!(s.sprite_get_x(slot), 0x0120);
             assert_eq!(s.sprite_get_y(slot), 0x0340);
@@ -954,12 +950,12 @@ mod tests {
     fn helmasaur_fireball_tri_split_spawns_three_projectiles_with_delays() {
         let mut s = fresh_state();
         let k = 3;
-        s.sprite_slot_view_mut(k).set_state(9);
+        s.sprite_slot_mut(k).set_state(9);
         s.sprite_set_x(k, 0x0040);
         s.sprite_set_y(k, 0x0060);
-        s.sprite_slot_view_mut(k).set_z(5);
+        s.sprite_slot_mut(k).set_z(5);
         s.helmasaur_fireball_tri_split(k);
-        assert_eq!(s.sprite_slot_view(k).state(), 0);
+        assert_eq!(s.sprite_slot(k).state(), 0);
         assert_eq!(s.system_signals().sound_effect_2() & 0x3f, 0x36);
         assert_eq!(s.temp_counter().value(), 0xff);
         let delay_base = (s.sprite_workspace().shared_scratch_a() & 3) as usize;
@@ -971,7 +967,7 @@ mod tests {
             (13, 0, -32, 0),
         ];
         for (slot, xvel, yvel, i) in expected {
-            let sprite = s.sprite_slot_view(slot);
+            let sprite = s.sprite_slot(slot);
             assert_eq!(sprite.sprite_type(), 0x70);
             assert_eq!(s.sprite_get_x(slot), 0x0040);
             assert_eq!(s.sprite_get_y(slot), 0x0060);
@@ -992,14 +988,14 @@ mod tests {
         // SpawnMaskDebris is invoked which reads tmp_counter as an index.
         let mut s = fresh_state();
         let k = 3;
-        s.sprite_slot_view_mut(k).set_c(2); // -> tmp_counter = 9
-                                            // Pre-clear sprite slot 15 (the spawn shim picks highest free slot).
+        s.sprite_slot_mut(k).set_c(2); // -> tmp_counter = 9
+                                       // Pre-clear sprite slot 15 (the spawn shim picks highest free slot).
         s.helmasaur_king_chip_away_at_mask(k);
         assert_eq!(s.temp_counter().value(), 9);
         // SpawnMaskDebris should have allocated slot 15 (state==9) and
         // populated the mask tables at index 9.
         let j = 15;
-        let sprite = s.sprite_slot_view(j);
+        let sprite = s.sprite_slot(j);
         assert_eq!(sprite.state(), 9);
         // MASK_DEBRIS_X_OFFSETS[9] = 16, MASK_DEBRIS_Y_OFFSETS[9] = 24, MASK_DEBRIS_Z_OFFSETS[9] = 13
         assert_eq!(sprite.z(), 13);
@@ -1016,7 +1012,7 @@ mod tests {
         let mut s = fresh_state();
         // Slot 0 is preserved (the boss itself); slots 1..15 should be cleared.
         for j in 0..16 {
-            s.sprite_slot_view_mut(j).set_state(9);
+            s.sprite_slot_mut(j).set_state(9);
         }
         s.helmasaur_king_explode_mask(0);
         for j in 1..16 {

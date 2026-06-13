@@ -1561,7 +1561,7 @@ impl ZeldaState {
             if k != 18 {
                 tilebytes = 0x46;
                 if k == 2 {
-                    self.player_state_view_mut().clear_custom_spell_animation();
+                    self.player_state_mut().clear_custom_spell_animation();
                 }
             }
         }
@@ -3252,7 +3252,7 @@ impl ZeldaState {
         const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
 
         let r14 = self
-            .player_state_view()
+            .player_state()
             .y()
             .wrapping_sub(self.world_scroll().bg2_y())
             .wrapping_add(12);
@@ -3262,7 +3262,7 @@ impl ZeldaState {
         self.spotlight_hdma_mut()
             .set_y_upper(r14.wrapping_add(radius));
         let x_center = self
-            .player_state_view()
+            .player_state()
             .x()
             .wrapping_sub(self.world_scroll().bg2_x())
             .wrapping_add(8);
