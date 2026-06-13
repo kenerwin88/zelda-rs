@@ -79,13 +79,13 @@ fn value_to_give_item_to_misc(item: u8) -> u8 {
 impl ZeldaState {
     #[track_caller]
     pub(super) fn get_random_number(&mut self) -> u8 {
-        let before = self.world_state_view().rng_seed();
+        let before = self.world_region().rng_seed();
         let mut t = self
             .world_state_view()
             .rng_seed()
             .wrapping_add(self.frame_state().frame_counter);
         t = if t & 1 != 0 { t >> 1 } else { (t >> 1) ^ 0xb8 };
-        self.world_state_view_mut().set_rng_seed(t);
+        self.world_region_mut().set_rng_seed(t);
         let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
         let trace_frame_matches = std::env::var("ZELDA3_TRACE_RNG_FRAME")
             .ok()
@@ -1277,7 +1277,7 @@ impl ZeldaState {
         self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
 
         if self.decrement_word(BG_TILE_ANIMATION_COUNTDOWN) == 0 {
-            let overlay = self.world_state_view().overlay_index() as u16;
+            let overlay = self.world_region().overlay_index() as u16;
             let countdown = if overlay == 0xb5 || overlay == 0xbc {
                 0x17
             } else {

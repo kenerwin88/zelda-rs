@@ -1601,7 +1601,7 @@ impl ZeldaState {
 
         if self.overworld_event_info_view().event_info(0x5b) & 0x20 == 0
             && (((self.save_progress_view().map_icons_indicator() >= 6) as u8
-                ^ self.world_state_view().is_in_dark_world() as u8)
+                ^ self.world_region().is_in_dark_world() as u8)
                 & 1)
                 == 0
         {
@@ -2916,7 +2916,7 @@ impl ZeldaState {
         self.save_progress_view_mut().request_post_message_refresh();
         self.set_main_module(5);
         self.set_submodule(0);
-        self.world_state_view_mut().set_which_entrance(0);
+        self.world_region_mut().set_which_entrance(0);
         self.clear_core_update_disable_flag();
         self.palette_buffer_view_mut().set_hud_palette(0);
     }

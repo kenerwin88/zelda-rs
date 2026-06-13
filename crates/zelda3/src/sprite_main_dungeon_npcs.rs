@@ -2542,7 +2542,7 @@ impl ZeldaState {
                     self.sprite_show_message_unconditional(0xe4);
                     self.sprite_slot_view_mut(k).set_delay_aux1(96);
                     self.sprite_slot_view_mut(k).increment_c();
-                } else if self.world_state_view().flag_overworld_area_changed() {
+                } else if self.world_region().flag_overworld_area_changed() {
                     if (self.sprite_show_solicited_message_for_dn(k, 0xde) & 0x100) != 0 {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                         self.sprite_slot_view_mut(k).set_graphics(4);

@@ -1462,6 +1462,121 @@ impl OverworldState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldRegionState {
+    pub(crate) current_area_of_player: u16,
+    pub(crate) overworld_area_index: u16,
+    pub(crate) special_exit_area_index: u16,
+    pub(crate) exit_area_index: u16,
+    pub(crate) previous_screen_index: u16,
+    pub(crate) overlay_index: u16,
+    pub(crate) rng_seed: u8,
+    pub(crate) dark_world_region_index: u8,
+    pub(crate) area_changed_flag: u8,
+    pub(crate) entrance_id: u16,
+    pub(crate) overworld_entrance_value: u16,
+}
+
+impl WorldRegionState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            current_area_of_player: read_le_u16(ram, CURRENT_AREA_OF_PLAYER),
+            overworld_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX),
+            special_exit_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX_SPEXIT),
+            exit_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX_EXIT),
+            previous_screen_index: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_PREV),
+            overlay_index: read_le_u16(ram, OVERLAY_INDEX),
+            rng_seed: ram_byte(ram, RNG_SEED),
+            dark_world_region_index: ram_byte(ram, IS_IN_DARK_WORLD_FLAG),
+            area_changed_flag: ram_byte(ram, FLAG_OVERWORLD_AREA_CHANGED),
+            entrance_id: read_le_u16(ram, WHICH_ENTRANCE),
+            overworld_entrance_value: read_le_u16(ram, OW_ENTRANCE_VALUE),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, CURRENT_AREA_OF_PLAYER, self.current_area_of_player);
+        write_le_u16(ram, OVERWORLD_AREA_INDEX, self.overworld_area_index);
+        write_le_u16(
+            ram,
+            OVERWORLD_AREA_INDEX_SPEXIT,
+            self.special_exit_area_index,
+        );
+        write_le_u16(ram, OVERWORLD_AREA_INDEX_EXIT, self.exit_area_index);
+        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_PREV, self.previous_screen_index);
+        write_le_u16(ram, OVERLAY_INDEX, self.overlay_index);
+        ram[RNG_SEED] = self.rng_seed;
+        ram[IS_IN_DARK_WORLD_FLAG] = self.dark_world_region_index;
+        ram[FLAG_OVERWORLD_AREA_CHANGED] = self.area_changed_flag;
+        write_le_u16(ram, WHICH_ENTRANCE, self.entrance_id);
+        write_le_u16(ram, OW_ENTRANCE_VALUE, self.overworld_entrance_value);
+    }
+
+    pub(crate) fn current_area_of_player(&self) -> u8 {
+        self.current_area_of_player as u8
+    }
+
+    pub(crate) fn current_area_of_player_word(&self) -> u16 {
+        self.current_area_of_player
+    }
+
+    pub(crate) fn overworld_area(&self) -> u16 {
+        self.overworld_area_index
+    }
+
+    pub(crate) fn overworld_area_low(&self) -> u8 {
+        self.overworld_area_index as u8
+    }
+
+    pub(crate) fn overworld_area_index(&self) -> u16 {
+        self.overworld_area_index
+    }
+
+    pub(crate) fn overworld_area_index_word(&self) -> u16 {
+        self.overworld_area_index
+    }
+
+    pub(crate) fn spexit_area_index(&self) -> u16 {
+        self.special_exit_area_index
+    }
+
+    pub(crate) fn prev_screen_index_word(&self) -> u16 {
+        self.previous_screen_index
+    }
+
+    pub(crate) fn prev_screen_index_byte(&self) -> u8 {
+        self.previous_screen_index as u8
+    }
+
+    pub(crate) fn overlay_index(&self) -> u8 {
+        self.overlay_index as u8
+    }
+
+    pub(crate) fn rng_seed(&self) -> u8 {
+        self.rng_seed
+    }
+
+    pub(crate) fn dark_world_region_index(&self) -> u8 {
+        self.dark_world_region_index
+    }
+
+    pub(crate) fn is_in_dark_world(&self) -> bool {
+        self.dark_world_region_index != 0
+    }
+
+    pub(crate) fn flag_overworld_area_changed(&self) -> bool {
+        self.area_changed_flag != 0
+    }
+
+    pub(crate) fn which_entrance(&self) -> u16 {
+        self.entrance_id
+    }
+
+    pub(crate) fn ow_entrance_value(&self) -> u16 {
+        self.overworld_entrance_value
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RoomBoundsState {
     y_bounds: [u16; ROOM_BOUND_COUNT],
@@ -1565,6 +1680,7 @@ pub(crate) struct WorldState {
     pub(crate) scroll: WorldScrollState,
     pub(crate) camera_boundaries: WorldCameraBoundariesState,
     pub(crate) palette_theme: WorldPaletteThemeState,
+    pub(crate) region: WorldRegionState,
     pub(crate) overworld: OverworldState,
     pub(crate) room_bounds: RoomBoundsState,
 }
@@ -1576,6 +1692,7 @@ impl WorldState {
             scroll: WorldScrollState::load_from_ram(ram),
             camera_boundaries: WorldCameraBoundariesState::load_from_ram(ram),
             palette_theme: WorldPaletteThemeState::load_from_ram(ram),
+            region: WorldRegionState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
             room_bounds: RoomBoundsState::load_from_ram(ram),
         }
@@ -1586,6 +1703,7 @@ impl WorldState {
         self.scroll.write_to_ram(ram);
         self.camera_boundaries.write_to_ram(ram);
         self.palette_theme.write_to_ram(ram);
+        self.region.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
         self.room_bounds.write_to_ram(ram);
     }
@@ -2009,6 +2127,117 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         self.state.camera_y_hi = self.state.camera_y_low.wrapping_sub(2);
         self.state.camera_x_hi = self.state.camera_x_low.wrapping_sub(2);
         self.sync();
+    }
+}
+
+pub(crate) struct NativeWorldRegionBridgeMut<'a> {
+    state: &'a mut WorldRegionState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWorldRegionBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut WorldRegionState, ram: &'a mut [u8]) -> Self {
+        *state = WorldRegionState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, WorldRegionState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_rng_seed(&mut self, value: u8) {
+        self.state.rng_seed = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
+        self.state.dark_world_region_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_which_entrance(&mut self, value: u16) {
+        self.state.entrance_id = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
+        self.state.entrance_id = (self.state.entrance_id & 0xff00) | u16::from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
+        self.state.overworld_area_index =
+            (self.state.overworld_area_index & 0xff00) | u16::from(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
+        self.state.overworld_area_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
+        self.state.current_area_of_player = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
+        self.state.area_changed_flag = value;
+        self.sync();
+    }
+
+    pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
+        self.state.area_changed_flag = 0;
+        self.sync();
+    }
+
+    pub(crate) fn clear_overlay_index_word(&mut self) {
+        self.state.overlay_index = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
+        self.state.overlay_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
+        self.state.previous_screen_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn save_spexit_area_index(&mut self) {
+        self.state.special_exit_area_index = self.state.overworld_area_index;
+        self.sync();
+    }
+
+    pub(crate) fn restore_spexit_area_index(&mut self) {
+        self.state.overworld_area_index = self.state.special_exit_area_index;
+        self.sync();
+    }
+
+    pub(crate) fn save_exit_area_index(&mut self) {
+        self.state.exit_area_index = self.state.overworld_area_index;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_area_index(&mut self) {
+        self.state.overworld_area_index = self.state.exit_area_index;
+        self.sync();
+    }
+
+    pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
+        self.state.overworld_entrance_value = value;
+        self.sync();
+    }
+
+    pub(crate) fn ow_entrance_value(&self) -> u16 {
+        self.state.overworld_entrance_value
     }
 }
 

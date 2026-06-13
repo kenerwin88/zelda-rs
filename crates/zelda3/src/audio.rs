@@ -231,7 +231,7 @@ impl ZeldaState {
         }
         match MSU_DELUXE_TRACK_ROUTE[track as usize] {
             1 => {
-                let area = self.world_state_view().overworld_area_index() as usize & 0xff;
+                let area = self.world_region().overworld_area_index() as usize & 0xff;
                 if area < MSU_DELUXE_OVERWORLD_TRACKS.len() {
                     MSU_DELUXE_OVERWORLD_TRACKS[area]
                 } else {
@@ -239,7 +239,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                let entrance = self.world_state_view().which_entrance() as usize;
+                let entrance = self.world_region().which_entrance() as usize;
                 if entrance >= MSU_DELUXE_ENTRANCE_TRACKS.len()
                     || MSU_DELUXE_ENTRANCE_TRACKS[entrance] == 242
                 {
@@ -283,7 +283,7 @@ impl ZeldaState {
             .unwrap_or(0);
         let mp = &self.audio.msu_player;
         if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
-            let entrance = self.world_state_view().which_entrance() as usize;
+            let entrance = self.world_region().which_entrance() as usize;
             if rv == 242
                 && entrance < MSU_DELUXE_ENTRANCE_TRACKS.len()
                 && MSU_DELUXE_ENTRANCE_TRACKS[entrance] != 242

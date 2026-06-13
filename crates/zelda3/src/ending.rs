@@ -1437,7 +1437,7 @@ impl ZeldaState {
     fn init_ending_sprites_overworld(&mut self, scene: usize) {
         let idx = ENDING_SCENE_SPRITE_RANGES[scene];
         let num = ENDING_SCENE_SPRITE_RANGES[scene + 1] - idx;
-        let area = self.world_state_view().overworld_area_index();
+        let area = self.world_region().overworld_area_index();
         let base_x = area.wrapping_shl(9) & 0x0f00;
         let base_y = area.wrapping_shl(6) & 0x0e00;
         for k in (0..num).rev() {
@@ -2344,7 +2344,7 @@ impl ZeldaState {
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = y_vel as i16 as u16;
             self.set_overworld_vertical_scroll_delta(r4);
-            let oi = self.world_state_view().overlay_index();
+            let oi = self.world_region().overlay_index();
             if oi != 0x97 && oi != 0x9d {
                 let subp;
                 if oi == 0xb5 || oi == 0xbe {
@@ -2382,7 +2382,7 @@ impl ZeldaState {
                 .set_overworld_scroll_counter_for_axis(other_axis, 0u16.wrapping_sub(value));
             let mut r4 = x_vel as i16 as u16;
             self.set_overworld_horizontal_scroll_delta(r4);
-            let oi = self.world_state_view().overlay_index();
+            let oi = self.world_region().overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let subp;
                 if oi == 0x95 || oi == 0x9e {
@@ -2396,7 +2396,7 @@ impl ZeldaState {
                     .add_bg1_h_copy2_subpixel(subp, r4);
             }
         }
-        if self.world_state_view().overlay_index() == 0x9c {
+        if self.world_region().overlay_index() == 0x9c {
             self.ppu_scroll_copy_view_mut()
                 .subtract_bg1_v_copy2_subpixel(0x2000, 0);
             let bg1v = self
@@ -2406,8 +2406,8 @@ impl ZeldaState {
             self.world_scroll_mut().set_bg1_y(bg1v);
             self.ppu_scroll_copy_view_mut()
                 .copy_bg2_h_live_to_bg1_h_live();
-        } else if self.world_state_view().overlay_index() == 0x97
-            || self.world_state_view().overlay_index() == 0x9d
+        } else if self.world_region().overlay_index() == 0x97
+            || self.world_region().overlay_index() == 0x9d
         {
             self.ppu_scroll_copy_view_mut()
                 .add_bg1_v_copy2_subpixel(0x2000, 0);

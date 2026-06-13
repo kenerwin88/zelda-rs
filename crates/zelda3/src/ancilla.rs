@@ -1834,7 +1834,7 @@ impl ZeldaState {
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
         if self.world_location_state().is_outdoors() {
-            let area = (self.world_state_view().current_area_of_player() >> 1) as usize;
+            let area = (self.world_region().current_area_of_player() >> 1) as usize;
             let bound = self.overworld_right_bottom_scroll_bound();
             if self.ancilla_slot_view(k).direction() & 2 == 0 {
                 let t = y.wrapping_sub(ANCILLA_OVERWORLD_AREA_BASE_Y[area]);

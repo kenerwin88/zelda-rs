@@ -1450,7 +1450,7 @@ impl ZeldaState {
                     self.sprite_slot_view(k).direction(),
                     self.sprite_slot_view(k).c(),
                     self.sprite_slot_view(k).delay_main(),
-                    self.world_state_view().rng_seed(),
+                    self.world_region().rng_seed(),
                 );
             }
         }
@@ -1545,7 +1545,7 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let old_delay = self.sprite_slot_view(k).delay_main();
-                    let rng_before = self.world_state_view().rng_seed();
+                    let rng_before = self.world_region().rng_seed();
                     let rng = self.get_random_number();
                     self.sprite_slot_view_mut(k)
                         .set_delay_main(STALFOS_HOP_DELAYS[usize::from(rng & 3)]);
@@ -1603,7 +1603,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_main(32);
                 }
                 let old_head = self.sprite_slot_view(k).head_direction();
-                let rng_before = self.world_state_view().rng_seed();
+                let rng_before = self.world_region().rng_seed();
                 let rng = self.get_random_number();
                 let rng_bit = rng & 1;
                 let value = ZAZAK_ALT_DIRECTIONS
@@ -1645,7 +1645,7 @@ impl ZeldaState {
                             self.sprite_slot_view(k).direction(),
                             self.sprite_slot_view(k).c(),
                             self.sprite_slot_view(k).delay_main(),
-                            self.world_state_view().rng_seed(),
+                            self.world_region().rng_seed(),
                         );
                     }
                     self.sprite_slot_view_mut(k).set_delay_main(24);

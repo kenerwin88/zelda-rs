@@ -473,14 +473,14 @@ impl ZeldaState {
         }
 
         let j = ((self.dungeon_secret_scratch_view().overworld_subst_counter() & 7)
-            + if self.world_state_view().is_in_dark_world() {
+            + if self.world_region().is_in_dark_world() {
                 8
             } else {
                 0
             }) as usize;
         self.dungeon_secret_scratch_view_mut()
             .increment_overworld_subst_counter();
-        let area = (self.world_state_view().overworld_area_low() & 0x3f) as usize;
+        let area = (self.world_region().overworld_area_low() & 0x3f) as usize;
         if SECRET_SUBSTITUTION_ITEMS[area] & SECRET_SUBSTITUTION_VERTICAL_OFFSETS[j] == 0 {
             self.dungeon_secret_scratch_view_mut()
                 .set_pending_kind(SECRET_SUBSTITUTION_HORIZONTAL_OFFSETS[j]);
@@ -572,7 +572,7 @@ impl ZeldaState {
         let value = if self.world_location_state().is_indoors() {
             self.dungeon_state_view().room_index2_word() as u8
         } else {
-            self.world_state_view().overworld_area() as u8
+            self.world_region().overworld_area() as u8
         };
         self.sprite_slot_view_mut(k).set_room(value);
 
@@ -1396,7 +1396,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_initialize_slots(&mut self) {
-        let area = self.world_state_view().overworld_area_low();
+        let area = self.world_region().overworld_area_low();
         for k in (0..=15usize).rev() {
             let st = self.sprite_slot_view(k).state();
             let ty = self.sprite_slot_view(k).sprite_type();
@@ -1563,8 +1563,8 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_load_sprites(&mut self) {
-        let area = self.world_state_view().overworld_area();
-        let area_lo = self.world_state_view().overworld_area_low() as usize;
+        let area = self.world_region().overworld_area();
+        let area_lo = self.world_region().overworld_area_low() as usize;
         self.garnish_state_view_mut()
             .set_sprcoll_x_base((area & 7) << 9);
         self.garnish_state_view_mut()
@@ -1762,7 +1762,7 @@ impl ZeldaState {
             self.overlord_slot_view_mut(k)
                 .set_y(u16::from(y_low) | (u16::from(y_high) << 8));
             self.overlord_slot_view_mut(k).set_floor(0);
-            let area = self.world_state_view().overworld_area_low();
+            let area = self.world_region().overworld_area_low();
             self.overlord_slot_view_mut(k).set_spawned_area(area);
             self.overlord_slot_view_mut(k).set_gen2(0);
             self.overlord_slot_view_mut(k).set_gen1(0);
@@ -1983,7 +1983,7 @@ impl ZeldaState {
         t = (((x as u16) << 4) & 0x01ff)
             + ((self.sprite_workspace_view().room_origin_x_high() as u16) << 8);
         self.overlord_slot_view_mut(k).set_x(t);
-        let area = self.world_state_view().overworld_area_low();
+        let area = self.world_region().overworld_area_low();
         self.overlord_slot_view_mut(k).set_spawned_area(area);
         self.overlord_slot_view_mut(k).set_gen2(0);
         self.overlord_slot_view_mut(k).set_gen1(0);
@@ -3193,8 +3193,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_hit_timer31(&mut self, k: usize) {
-        if self.sprite_slot_view(k).sprite_type() != 0x7a
-            || self.world_state_view().is_in_dark_world()
+        if self.sprite_slot_view(k).sprite_type() != 0x7a || self.world_region().is_in_dark_world()
         {
             return;
         }
@@ -3955,7 +3954,7 @@ impl ZeldaState {
 
         if type_ == 0x45
             && self.save_progress_view().progress_indicator() == 2
-            && self.world_state_view().overworld_area_low() == 0x18
+            && self.world_region().overworld_area_low() == 0x18
         {
             self.system_signals_view_mut().set_music_control(7);
         }
@@ -4748,7 +4747,7 @@ impl ZeldaState {
         const SPRITE_HELD_Z: [u8; 16] =
             [13, 14, 15, 16, 0, 10, 22, 16, 8, 11, 14, 16, 8, 11, 14, 16];
 
-        let value = self.world_state_view().overworld_area_low();
+        let value = self.world_region().overworld_area_low();
         self.sprite_slot_view_mut(k).set_room(value);
         if self.sprite_slot_view(k).draw_work_byte_3() != 3 {
             if self.sprite_slot_view(k).delay_main() == 0 {
@@ -5061,7 +5060,7 @@ impl ZeldaState {
             eprintln!(
                 "R stunned-before fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.frame_state().frame_counter,
-                self.world_state_view().rng_seed(),
+                self.world_region().rng_seed(),
                 k,
                 self.sprite_slot_view(k).sprite_type(),
                 self.sprite_slot_view(k).state(),
@@ -5079,7 +5078,7 @@ impl ZeldaState {
             eprintln!(
                 "R stunned-after-active fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.frame_state().frame_counter,
-                self.world_state_view().rng_seed(),
+                self.world_region().rng_seed(),
                 k,
                 self.sprite_slot_view(k).sprite_type(),
                 self.sprite_slot_view(k).state(),
@@ -6283,7 +6282,7 @@ impl ZeldaState {
         ];
 
         if self.world_location_state().is_outdoors() {
-            let before_rng = self.world_state_view().rng_seed();
+            let before_rng = self.world_region().rng_seed();
             let roll = self.get_random_number();
             if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
@@ -6570,7 +6569,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(value);
             let value = 9;
             self.sprite_slot_view_mut(k).set_ignore_projectile(value);
-            if !self.world_state_view().is_in_dark_world() {
+            if !self.world_region().is_in_dark_world() {
                 let value = 10;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
                 let value = 255;
@@ -7989,7 +7988,7 @@ impl ZeldaState {
             eprintln!(
                 "R garnish-spawn fc=0x{:02x} rng=0x{:02x} room=0x{:04x} k={} type=0x{:02x} state=0x{:02x} delay=0x{:02x} xarg=0x{:04x} yarg=0x{:04x} limit={} slot={} sx=0x{:04x} sy=0x{:04x} z=0x{:02x} r12=0x{:04x} r14=0x{:04x}",
                 self.frame_state().frame_counter,
-                self.world_state_view().rng_seed(),
+                self.world_region().rng_seed(),
                 self.world_location_state().dungeon_room,
                 k,
                 self.sprite_slot_view(k).sprite_type(),

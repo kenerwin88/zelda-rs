@@ -3041,7 +3041,7 @@ impl ZeldaState {
 
         if k == 0 {
             self.sprite_slot_view_mut(k).add_subtype(1);
-            if self.world_state_view().is_in_dark_world() {
+            if self.world_region().is_in_dark_world() {
                 self.sprite_slot_view_mut(k).and_subtype(3);
             }
         }
@@ -3240,7 +3240,7 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                let value = START_STATE[usize::from(self.world_state_view().is_in_dark_world())];
+                let value = START_STATE[usize::from(self.world_region().is_in_dark_world())];
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
             1 => {
@@ -3272,7 +3272,7 @@ impl ZeldaState {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x27);
                 }
                 if delay >= 239 || delay < 16 {
-                    let filter_k = if self.world_state_view().is_in_dark_world() {
+                    let filter_k = if self.world_region().is_in_dark_world() {
                         k
                     } else {
                         2
@@ -8708,7 +8708,7 @@ impl ZeldaState {
             }
             2 => {
                 if self.sprite_slot_view(k).delay_main() == 0
-                    && !(self.world_state_view().is_in_dark_world()
+                    && !(self.world_region().is_in_dark_world()
                         && self.sprite_slot_view(k).a() != 0)
                 {
                     self.sprite_slot_view_mut(k).add_ai_state(1);
@@ -9004,7 +9004,7 @@ impl ZeldaState {
             || self.inventory_items().bottle(1) >= 2
             || self.inventory_items().bottle(2) >= 2
             || self.inventory_items().bottle(3) >= 2
-            || !self.world_state_view().flag_overworld_area_changed()
+            || !self.world_region().flag_overworld_area_changed()
         {
             0x4e
         } else {
@@ -17145,7 +17145,7 @@ impl ZeldaState {
         self.sprite_behave_as_barrier(k);
         let value = self.frame_state().frame_counter >> 3 & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
-        if self.world_state_view().flag_overworld_area_changed() {
+        if self.world_region().flag_overworld_area_changed() {
             self.sprite_show_message_on_contact(k, 0x00d0);
             return;
         }
@@ -17984,7 +17984,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Shopkeeper_StandardClerk(int k) {  // 9eef12
     pub(super) fn shopkeeper_standard_clerk(&mut self, k: usize) {
-        if self.world_state_view().is_in_dark_world() {
+        if self.world_region().is_in_dark_world() {
             self.oam_allocate_defer_to_player(k);
             self.sprite_draw_single_large(k);
             if self.sprite_return_if_inactive(k) {
@@ -18004,7 +18004,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_graphics(value);
         }
         self.sprite_behave_as_barrier(k);
-        let msg = if !self.world_state_view().is_in_dark_world() {
+        let msg = if !self.world_region().is_in_dark_world() {
             0x0165
         } else {
             0x015f
@@ -18417,7 +18417,7 @@ impl ZeldaState {
                 let t = self
                     .world_location_state()
                     .indoor_flag
-                    .wrapping_add(self.world_state_view().dark_world_region_index());
+                    .wrapping_add(self.world_region().dark_world_region_index());
                 let j = usize::from(self.sprite_slot_view(k).c());
                 let charnum = THROWABLE_SCENERY_CHARS[j + if t >= 2 { 6 } else { 0 }];
                 self.oam_state_view_mut().set_entry_char(oam, charnum);
@@ -22957,7 +22957,7 @@ impl ZeldaState {
                 if (self.frame_state().frame_counter & 1) == 0 {
                     j = usize::from(
                         (self.sprite_slot_view(k).anim_clock() & 1)
-                            + self.world_state_view().dark_world_region_index() * 2,
+                            + self.world_region().dark_world_region_index() * 2,
                     );
                     let value = self
                         .sprite_slot_view(k)
@@ -23293,7 +23293,7 @@ impl ZeldaState {
         let _ = self.sprite_check_tile_collision(k);
         if self.sprite_slot_view(k).ai_state() != 0 {
             if self.sprite_slot_view(k).delay_main() == 0 {
-                if !self.world_state_view().is_in_dark_world() {
+                if !self.world_region().is_in_dark_world() {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x17);
                 }
                 let value = 0;

@@ -428,7 +428,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_rat(&mut self, k: usize) {
         const BUMP_DAMAGE: [u8; 2] = [0, 5];
         const HEALTH: [u8; 2] = [2, 8];
-        let j = self.world_state_view().dark_world_region_index() as usize;
+        let j = self.world_region().dark_world_region_index() as usize;
         self.sprite_slot_view_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_view_mut(k).set_health(HEALTH[j]);
     }
@@ -437,7 +437,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [0x80, 0x85];
         const HEALTH: [u8; 2] = [1, 4];
         const FLAGS5: [u8; 2] = [0, 7];
-        let j = self.world_state_view().dark_world_region_index() as usize;
+        let j = self.world_region().dark_world_region_index() as usize;
         self.sprite_slot_view_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_view_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_view_mut(k).set_flags5(FLAGS5[j]);
@@ -447,7 +447,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [1, 5];
         const HEALTH: [u8; 2] = [4, 8];
         const FLAGS5: [u8; 2] = [1, 7];
-        let j = self.world_state_view().dark_world_region_index() as usize;
+        let j = self.world_region().dark_world_region_index() as usize;
         self.sprite_slot_view_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_view_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_view_mut(k).set_flags5(FLAGS5[j]);
@@ -555,7 +555,7 @@ impl ZeldaState {
         const BUMP_DAMAGE: [u8; 2] = [0x81, 0x88];
         const HEALTH: [u8; 2] = [4, 8];
         const FLAGS5: [u8; 2] = [6, 2];
-        let j = self.world_state_view().dark_world_region_index() as usize;
+        let j = self.world_region().dark_world_region_index() as usize;
         self.sprite_slot_view_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         self.sprite_slot_view_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_view_mut(k).set_flags5(FLAGS5[j]);
@@ -664,7 +664,7 @@ impl ZeldaState {
     }
 
     pub(super) fn magic_shop_assistant_spawn_powder(&mut self, k: usize) {
-        if !self.world_state_view().flag_overworld_area_changed()
+        if !self.world_region().flag_overworld_area_changed()
             || self.inventory_items().mushroom() == 2
         {
             return;
@@ -3981,7 +3981,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_octorok(&mut self, k: usize) {
         const BUMP_DAMAGE: [u8; 2] = [3, 5];
         const HEALTH: [u8; 2] = [2, 4];
-        let j = self.world_state_view().dark_world_region_index() as usize;
+        let j = self.world_region().dark_world_region_index() as usize;
         self.sprite_slot_view_mut(k).set_health(HEALTH[j]);
         self.sprite_slot_view_mut(k).set_bump_damage(BUMP_DAMAGE[j]);
         let delay_main = self.get_random_number() & 127;
@@ -4237,7 +4237,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(0);
         self.sprite_slot_view_mut(k).set_direction(3);
         self.sprite_prep_move_down_8px_right8px(k);
-        let oam_flags = OAM_FLAGS[self.world_state_view().dark_world_region_index() as usize];
+        let oam_flags = OAM_FLAGS[self.world_region().dark_world_region_index() as usize];
         self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
     }
 

@@ -108,11 +108,11 @@ pub(crate) use world::{
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
     NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
-    NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldScrollBridgeMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
-    OverworldMap16SourcePage, OverworldMap16State, RoomBoundsState, WeatherVaneState,
-    WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldScrollState,
-    WorldState,
+    NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
+    NativeWorldScrollBridgeMut, OverworldConfigTableView, OverworldEventInfoState,
+    OverworldMap16Decode, OverworldMap16SourcePage, OverworldMap16State, RoomBoundsState,
+    WeatherVaneState, WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState,
+    WorldRegionState, WorldScrollState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 

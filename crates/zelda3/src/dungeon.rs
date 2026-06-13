@@ -334,7 +334,7 @@ const DUNG_PAL_INFOS: [DungPalInfo; 41] = [
 
 impl ZeldaState {
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {
-        self.world_state_view_mut().set_which_entrance_byte(room);
+        self.world_region_mut().set_which_entrance_byte(room);
         self.Dungeon_LoadEntrance();
         self.dungeon_state_view_mut().clear_lit_torches();
         self.dungeon_state_view_mut()
@@ -436,7 +436,7 @@ impl ZeldaState {
             self.set_overworld_screen(0);
             self.dungeon_entrance_backup_view_mut()
                 .clear_overworld_screen_high();
-            self.world_state_view_mut().clear_overlay_index_word();
+            self.world_region_mut().clear_overlay_index_word();
             self.dungeon_entrance_backup_view_mut().clear_overlay_high();
         }
         self.world_scroll_mut().set_bg1_y_offset(0);
@@ -462,7 +462,7 @@ impl ZeldaState {
             }
             self.dungeon_state_view_mut().clear_restart_check_flag();
         } else {
-            let i = self.world_state_view().which_entrance() as usize;
+            let i = self.world_region().which_entrance() as usize;
             let room = self.dungeon_load_entrance_fields(i, &ENTRANCE_DATA_ASSETS);
             self.dungeon_state_view_mut()
                 .set_big_rock_starting_address(0);
@@ -9567,7 +9567,7 @@ impl ZeldaState {
         match self.frame_state().subsubmodule {
             0 => {
                 let entrance_music = self.asset_raw(27).expect("missing entrance music asset")
-                    [self.world_state_view().which_entrance() as usize];
+                    [self.world_region().which_entrance() as usize];
                 if entrance_music != 3 || self.save_progress_view().progress_indicator() >= 2 {
                     self.system_signals_view_mut().set_music_control(0xf1);
                 }
