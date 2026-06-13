@@ -22,9 +22,10 @@ pub(crate) use display::{
     NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
     NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
-    NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, PaletteBufferView,
-    PaletteFilterState, PpuScrollCopyState, TrinexxPaletteState, WaterHdmaWindowState,
+    NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    PaletteBufferView, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
+    TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
     DungeonHeaderState, DungeonScratchWordState, DungeonState,
@@ -3754,9 +3755,9 @@ mod tests {
         write_le_u16(&mut ram, SPOTLIGHT_Y_UPPER, 0x1111);
         write_le_u16(&mut ram, SPOTLIGHT_WINDOW_Y_BUFFER, 0x2210);
 
-        let mut water = WaterHdmaWindowState::default();
+        let mut display = DisplayState::default();
         {
-            let mut bridge = NativeWaterHdmaWindowBridgeMut::new(&mut water, &mut ram);
+            let mut bridge = NativeWaterHdmaWindowBridgeMut::new(&mut display, &mut ram);
             bridge.set_window_x(0x0220);
             bridge.set_window_y(0x0240);
             bridge.set_window_x_radius(0x0048);
@@ -3769,13 +3770,18 @@ mod tests {
             assert_eq!(bridge.advance_watergate_window_y_radius(), 0x51);
         }
 
-        assert_eq!(water.window_x(), 0x0220);
-        assert_eq!(water.window_y(), 0x0240);
-        assert_eq!(water.window_y_radius(), 0x0251);
-        assert_eq!(water.window_x_radius(), 0x0048);
-        assert_eq!(water.watergate_spotlight_y_upper(), 0x0058);
-        assert_eq!(water.watergate_pointer(), 0x08);
-        assert_eq!(water.watergate_tilemap_pos_x2(), 0x0880);
+        assert_eq!(display.water_hdma_window.window_x(), 0x0220);
+        assert_eq!(display.water_hdma_window.window_y(), 0x0240);
+        assert_eq!(display.water_hdma_window.window_y_radius(), 0x0251);
+        assert_eq!(display.water_hdma_window.window_x_radius(), 0x0048);
+        assert_eq!(
+            display.water_hdma_window.watergate_spotlight_y_upper(),
+            0x0058
+        );
+        assert_eq!(display.water_hdma_window.watergate_pointer(), 0x08);
+        assert_eq!(display.water_hdma_window.watergate_tilemap_pos_x2(), 0x0880);
+        assert_eq!(display.spotlight_hdma.y_upper(), 0x0058);
+        assert_eq!(display.spotlight_hdma.window_y_buffer_byte(), 0x11);
         assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X), 0x0220);
         assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y), 0x0240);
         assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x0251);
@@ -3785,6 +3791,44 @@ mod tests {
         assert_eq!(read_le_u16(&ram, WATERGATE_POS), 0x0880);
         assert_eq!(ram[SPOTLIGHT_Y_UPPER], 0x58);
         assert_eq!(ram[SPOTLIGHT_WINDOW_Y_BUFFER], 0x11);
+    }
+
+    #[test]
+    fn native_spotlight_hdma_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SPOTLIGHT_Y_LOWER, 0x0010);
+        write_le_u16(&mut ram, SPOTLIGHT_Y_UPPER, 0x0020);
+        write_le_u16(&mut ram, SPOTLIGHT_WINDOW_RADIUS, 0x1234);
+        write_le_u16(&mut ram, SPOTLIGHT_WINDOW_STATE, 0x5678);
+        write_le_u16(&mut ram, SPOTLIGHT_WINDOW_Y_BUFFER, 0x9abc);
+        write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC + 6, 0xbeef);
+
+        let mut spotlight = SpotlightHdmaState::default();
+        {
+            let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
+            bridge.set_y_lower(0x0030);
+            bridge.set_y_upper(0x0040);
+            bridge.set_window_radius_byte(0x80);
+            bridge.shr_window_radius_byte(1);
+            bridge.add_window_radius_byte(0x10);
+            bridge.set_window_state_byte(0x02);
+            assert_eq!(bridge.decrement_window_y_buffer(), 0x9abb);
+            bridge.set_hdma_table_dynamic_entry(3, 0xcafe);
+            bridge.clear_hdma_table_dynamic_range(3, 1);
+        }
+
+        assert_eq!(spotlight.y_lower(), 0x0030);
+        assert_eq!(spotlight.y_upper(), 0x0040);
+        assert_eq!(spotlight.window_radius(), 0x1250);
+        assert_eq!(spotlight.window_state(), 0x5602);
+        assert_eq!(spotlight.window_y_buffer(), 0x9abb);
+        assert_eq!(spotlight.hdma_table_dynamic_entry(3), 0);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_Y_LOWER), 0x0030);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_Y_UPPER), 0x0040);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_RADIUS), 0x1250);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_STATE), 0x5602);
+        assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_Y_BUFFER), 0x9abb);
+        assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC + 6), 0);
     }
 
     #[test]

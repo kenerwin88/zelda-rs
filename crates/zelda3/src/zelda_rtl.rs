@@ -74,7 +74,8 @@ use crate::game_state::{
     NativeQuakeSpellBridgeMut, NativeRamBridgeView, NativeRamBridgeViewMut,
     NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
     NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
@@ -90,15 +91,15 @@ use crate::game_state::{
     QuakeSpellState, RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressState,
     ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
     SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
-    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
-    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
-    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
-    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TileDetectPositionView,
-    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
-    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
-    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldStateView,
+    SpecialExitPositionView, SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView,
+    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
+    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
+    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
+    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
+    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
+    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
+    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
+    WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4221,12 +4222,15 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    pub(crate) fn spotlight_hdma_view(&self) -> SpotlightHdmaView<'_> {
-        SpotlightHdmaView::new(&self.ram)
+    pub(crate) fn spotlight_hdma_view(&self) -> SpotlightHdmaState {
+        SpotlightHdmaState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn spotlight_hdma_view_mut(&mut self) -> SpotlightHdmaViewMut<'_> {
-        SpotlightHdmaViewMut::new(&mut self.ram)
+    pub(crate) fn spotlight_hdma_view_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
+        NativeSpotlightHdmaBridgeMut::new(
+            &mut self.game_state.display.spotlight_hdma,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn water_hdma_window_view(&self) -> &WaterHdmaWindowState {
@@ -4234,10 +4238,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn water_hdma_window_view_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
-        NativeWaterHdmaWindowBridgeMut::new(
-            &mut self.game_state.display.water_hdma_window,
-            &mut self.ram,
-        )
+        NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn overworld_palette_backup_view_mut(
