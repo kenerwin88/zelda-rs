@@ -1824,7 +1824,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn ppu_scroll_copy(&self) -> PpuScrollCopyState {
-        PpuScrollCopyState::load_from_ram(&self.ram)
+        self.game_state.display.ppu_scroll_copy.clone()
     }
 
     pub(crate) fn ppu_scroll_copy_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
@@ -3772,7 +3772,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn poly_runtime(&self) -> PolyRuntimeState {
-        PolyRuntimeState::load_from_ram(&self.ram)
+        self.game_state.poly.runtime
     }
 
     pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
@@ -3780,7 +3780,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn poly_projected_vertex(&self) -> PolyProjectedVerticesState {
-        PolyProjectedVerticesState::load_from_ram(&self.ram)
+        self.game_state.poly.projected_vertices.clone()
     }
 
     pub(crate) fn poly_projected_vertex_mut(&mut self) -> NativePolyProjectedVerticesBridgeMut<'_> {
@@ -3791,7 +3791,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn poly_face_coords(&self) -> PolyFaceCoordsState {
-        PolyFaceCoordsState::load_from_ram(&self.ram)
+        self.game_state.poly.face_coords.clone()
     }
 
     pub(crate) fn poly_face_coords_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
@@ -3799,7 +3799,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn poly_raster_edge(&self) -> PolyRasterEdgeState {
-        PolyRasterEdgeState::load_from_ram(&self.ram)
+        self.game_state.poly.raster_edge
     }
 
     pub(crate) fn poly_raster_edge_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
@@ -4580,7 +4580,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn spotlight_hdma(&self) -> SpotlightHdmaState {
-        SpotlightHdmaState::load_from_ram(&self.ram)
+        self.game_state.display.spotlight_hdma.clone()
     }
 
     pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
