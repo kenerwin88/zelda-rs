@@ -9,7 +9,6 @@ fn copy_word(ram: &mut [u8], dst: usize, src: usize) {
 
 use crate::game_state::constants::*;
 
-mod attract;
 mod dungeon;
 mod effects;
 mod player;
@@ -18,7 +17,6 @@ mod raw;
 mod sprites;
 mod world;
 
-pub(crate) use attract::*;
 pub(crate) use dungeon::*;
 pub(crate) use effects::*;
 pub(crate) use player::*;

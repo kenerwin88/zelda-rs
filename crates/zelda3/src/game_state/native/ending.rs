@@ -1,6 +1,261 @@
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
+fn read_byte(ram: &[u8], offset: usize) -> u8 {
+    ram.get(offset).copied().unwrap_or(0)
+}
+
+fn read_word(ram: &[u8], offset: usize) -> u16 {
+    if offset + 1 < ram.len() {
+        read_le_u16(ram, offset)
+    } else {
+        0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AttractSceneState {
+    pub(crate) state_word: u16,
+    pub(crate) sequence: u8,
+    pub(crate) scene_timer: u8,
+    pub(crate) scene_substep: u8,
+    pub(crate) x_base: u16,
+    pub(crate) y_base: u8,
+    pub(crate) story_text_pointer: u16,
+    pub(crate) oam_index: u8,
+    pub(crate) maiden_warp_step: u8,
+    pub(crate) intro_step_index: u8,
+    pub(crate) intro_step_timer: u8,
+    pub(crate) intro_frame_counter: u8,
+    pub(crate) intro_did_run_step: u8,
+    pub(crate) intro_palette_flash_count: u8,
+    pub(crate) legend_flag: u8,
+    pub(crate) next_legend_gfx: u8,
+    pub(crate) bg2_vofs_backup: u16,
+    pub(crate) throne_fade_timer: u8,
+    pub(crate) prison_zelda_y_base: u8,
+    pub(crate) anim_step_counter: u8,
+    pub(crate) soldier_anim_step: u8,
+    pub(crate) prison_soldier_x_lo: u8,
+    pub(crate) scene_frame_counter: u8,
+    pub(crate) scene_done_flag: u8,
+    pub(crate) legend_ctr: u16,
+    pub(crate) fade_in_complete_flag: u8,
+    pub(crate) fade_in_done_flag: u8,
+    pub(crate) substep_delay_counter: u8,
+    pub(crate) maiden_warp_timer_a: u8,
+    pub(crate) maiden_warp_timer_b: u8,
+    pub(crate) mode7_zoom_timer: u8,
+}
+
+impl AttractSceneState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            state_word: read_word(ram, ATTRACT_STATE),
+            sequence: read_byte(ram, ATTRACT_SEQUENCE),
+            scene_timer: read_byte(ram, ATTRACT_SCENE_TIMER),
+            scene_substep: read_byte(ram, ATTRACT_SCENE_SUBSTEP),
+            x_base: read_word(ram, ATTRACT_X_BASE),
+            y_base: read_byte(ram, ATTRACT_Y_BASE),
+            story_text_pointer: read_word(ram, ATTRACT_STORY_TEXT_POINTER),
+            oam_index: read_byte(ram, ATTRACT_OAM_IDX),
+            maiden_warp_step: read_byte(ram, ATTRACT_MAIDEN_WARP_STEP),
+            intro_step_index: read_byte(ram, INTRO_STEP_INDEX),
+            intro_step_timer: read_byte(ram, INTRO_STEP_TIMER),
+            intro_frame_counter: read_byte(ram, INTRO_FRAME_CTR),
+            intro_did_run_step: read_byte(ram, INTRO_DID_RUN_STEP),
+            intro_palette_flash_count: read_byte(ram, INTRO_TIMES_PAL_FLASH),
+            legend_flag: read_byte(ram, ATTRACT_LEGEND_FLAG),
+            next_legend_gfx: read_byte(ram, ATTRACT_NEXT_LEGEND_GFX),
+            bg2_vofs_backup: read_word(ram, ATTRACT_BG2_VOFS_BACKUP),
+            throne_fade_timer: read_byte(ram, ATTRACT_THRONE_FADE_TIMER),
+            prison_zelda_y_base: read_byte(ram, ATTRACT_PRISON_ZELDA_Y_BASE),
+            anim_step_counter: read_byte(ram, ATTRACT_ANIM_STEP_COUNTER),
+            soldier_anim_step: read_byte(ram, ATTRACT_SOLDIER_ANIM_STEP),
+            prison_soldier_x_lo: read_byte(ram, ATTRACT_PRISON_SOLDIER_X_LO),
+            scene_frame_counter: read_byte(ram, ATTRACT_SCENE_FRAME_COUNTER),
+            scene_done_flag: read_byte(ram, ATTRACT_SCENE_DONE_FLAG),
+            legend_ctr: read_word(ram, ATTRACT_LEGEND_CTR),
+            fade_in_complete_flag: read_byte(ram, ATTRACT_FADE_IN_COMPLETE_FLAG),
+            fade_in_done_flag: read_byte(ram, ATTRACT_FADE_IN_DONE_FLAG),
+            substep_delay_counter: read_byte(ram, ATTRACT_SUBSTEP_DELAY_COUNTER),
+            maiden_warp_timer_a: read_byte(ram, ATTRACT_MAIDEN_WARP_TIMER_A),
+            maiden_warp_timer_b: read_byte(ram, ATTRACT_MAIDEN_WARP_TIMER_B),
+            mode7_zoom_timer: read_byte(ram, TIMER_FOR_MODE7_ZOOM),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, ATTRACT_STATE, self.state_word);
+        ram[ATTRACT_SEQUENCE] = self.sequence;
+        ram[ATTRACT_SCENE_TIMER] = self.scene_timer;
+        ram[ATTRACT_SCENE_SUBSTEP] = self.scene_substep;
+        write_le_u16(ram, ATTRACT_X_BASE, self.x_base);
+        ram[ATTRACT_Y_BASE] = self.y_base;
+        write_le_u16(ram, ATTRACT_STORY_TEXT_POINTER, self.story_text_pointer);
+        ram[ATTRACT_OAM_IDX] = self.oam_index;
+        ram[ATTRACT_MAIDEN_WARP_STEP] = self.maiden_warp_step;
+        ram[INTRO_STEP_INDEX] = self.intro_step_index;
+        ram[INTRO_STEP_TIMER] = self.intro_step_timer;
+        ram[INTRO_FRAME_CTR] = self.intro_frame_counter;
+        ram[INTRO_DID_RUN_STEP] = self.intro_did_run_step;
+        ram[INTRO_TIMES_PAL_FLASH] = self.intro_palette_flash_count;
+        ram[ATTRACT_LEGEND_FLAG] = self.legend_flag;
+        ram[ATTRACT_NEXT_LEGEND_GFX] = self.next_legend_gfx;
+        write_le_u16(ram, ATTRACT_BG2_VOFS_BACKUP, self.bg2_vofs_backup);
+        ram[ATTRACT_THRONE_FADE_TIMER] = self.throne_fade_timer;
+        ram[ATTRACT_PRISON_ZELDA_Y_BASE] = self.prison_zelda_y_base;
+        ram[ATTRACT_ANIM_STEP_COUNTER] = self.anim_step_counter;
+        ram[ATTRACT_SOLDIER_ANIM_STEP] = self.soldier_anim_step;
+        ram[ATTRACT_PRISON_SOLDIER_X_LO] = self.prison_soldier_x_lo;
+        ram[ATTRACT_SCENE_FRAME_COUNTER] = self.scene_frame_counter;
+        ram[ATTRACT_SCENE_DONE_FLAG] = self.scene_done_flag;
+        write_le_u16(ram, ATTRACT_LEGEND_CTR, self.legend_ctr);
+        ram[ATTRACT_FADE_IN_COMPLETE_FLAG] = self.fade_in_complete_flag;
+        ram[ATTRACT_FADE_IN_DONE_FLAG] = self.fade_in_done_flag;
+        ram[ATTRACT_SUBSTEP_DELAY_COUNTER] = self.substep_delay_counter;
+        ram[ATTRACT_MAIDEN_WARP_TIMER_A] = self.maiden_warp_timer_a;
+        ram[ATTRACT_MAIDEN_WARP_TIMER_B] = self.maiden_warp_timer_b;
+        ram[TIMER_FOR_MODE7_ZOOM] = self.mode7_zoom_timer;
+    }
+
+    pub(crate) fn state(&self) -> u8 {
+        self.state_word as u8
+    }
+
+    pub(crate) fn state_word(&self) -> u16 {
+        self.state_word
+    }
+
+    pub(crate) fn sequence(&self) -> u8 {
+        self.sequence
+    }
+
+    pub(crate) fn scene_timer(&self) -> u8 {
+        self.scene_timer
+    }
+
+    pub(crate) fn scene_substep(&self) -> u8 {
+        self.scene_substep
+    }
+
+    pub(crate) fn x_base(&self) -> u8 {
+        self.x_base as u8
+    }
+
+    pub(crate) fn x_base_word(&self) -> u16 {
+        self.x_base
+    }
+
+    pub(crate) fn x_base_high(&self) -> u8 {
+        (self.x_base >> 8) as u8
+    }
+
+    pub(crate) fn y_base(&self) -> u8 {
+        self.y_base
+    }
+
+    pub(crate) fn oam_index(&self) -> u8 {
+        self.oam_index
+    }
+
+    pub(crate) fn maiden_warp_step(&self) -> u8 {
+        self.maiden_warp_step
+    }
+
+    pub(crate) fn intro_step_index(&self) -> u8 {
+        self.intro_step_index
+    }
+
+    pub(crate) fn intro_step_timer(&self) -> u8 {
+        self.intro_step_timer
+    }
+
+    pub(crate) fn intro_frame_counter(&self) -> u8 {
+        self.intro_frame_counter
+    }
+
+    pub(crate) fn intro_did_run_step(&self) -> u8 {
+        self.intro_did_run_step
+    }
+
+    pub(crate) fn intro_palette_flash_count(&self) -> u8 {
+        self.intro_palette_flash_count
+    }
+
+    pub(crate) fn legend_flag(&self) -> u8 {
+        self.legend_flag
+    }
+
+    pub(crate) fn next_legend_gfx(&self) -> u8 {
+        self.next_legend_gfx
+    }
+
+    pub(crate) fn next_legend_image(&self) -> u8 {
+        self.next_legend_gfx >> 1
+    }
+
+    pub(crate) fn bg2_vofs_backup(&self) -> u16 {
+        self.bg2_vofs_backup
+    }
+
+    pub(crate) fn throne_fade_timer(&self) -> u8 {
+        self.throne_fade_timer
+    }
+
+    pub(crate) fn prison_zelda_y_base(&self) -> u8 {
+        self.prison_zelda_y_base
+    }
+
+    pub(crate) fn anim_step_counter(&self) -> u8 {
+        self.anim_step_counter
+    }
+
+    pub(crate) fn soldier_anim_step(&self) -> u8 {
+        self.soldier_anim_step
+    }
+
+    pub(crate) fn prison_soldier_x_lo(&self) -> u8 {
+        self.prison_soldier_x_lo
+    }
+
+    pub(crate) fn scene_frame_counter(&self) -> u8 {
+        self.scene_frame_counter
+    }
+
+    pub(crate) fn scene_done_flag(&self) -> u8 {
+        self.scene_done_flag
+    }
+
+    pub(crate) fn legend_ctr(&self) -> u16 {
+        self.legend_ctr
+    }
+
+    pub(crate) fn fade_in_complete_flag(&self) -> u8 {
+        self.fade_in_complete_flag
+    }
+
+    pub(crate) fn fade_in_done_flag(&self) -> u8 {
+        self.fade_in_done_flag
+    }
+
+    pub(crate) fn substep_delay_counter(&self) -> u8 {
+        self.substep_delay_counter
+    }
+
+    pub(crate) fn maiden_warp_timer_a(&self) -> u8 {
+        self.maiden_warp_timer_a
+    }
+
+    pub(crate) fn maiden_warp_timer_b(&self) -> u8 {
+        self.maiden_warp_timer_b
+    }
+
+    pub(crate) fn mode7_zoom_timer(&self) -> u8 {
+        self.mode7_zoom_timer
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct IntroSceneState {
     pub(crate) triangle_motion_pause: u8,
@@ -113,6 +368,7 @@ impl EndingCreditState {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EndingState {
+    pub(crate) attract_scene: AttractSceneState,
     pub(crate) intro_scene: IntroSceneState,
     pub(crate) credits: EndingCreditState,
 }
@@ -120,14 +376,407 @@ pub(crate) struct EndingState {
 impl EndingState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
+            attract_scene: AttractSceneState::load_from_ram(ram),
             intro_scene: IntroSceneState::load_from_ram(ram),
             credits: EndingCreditState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.attract_scene.write_to_ram(ram);
         self.intro_scene.write_to_ram(ram);
         self.credits.write_to_ram(ram);
+    }
+}
+
+pub(crate) struct NativeAttractSceneBridgeMut<'a> {
+    attract_scene: &'a mut AttractSceneState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeAttractSceneBridgeMut<'a> {
+    pub(crate) fn new(attract_scene: &'a mut AttractSceneState, ram: &'a mut [u8]) -> Self {
+        *attract_scene = AttractSceneState::load_from_ram(ram);
+        Self { attract_scene, ram }
+    }
+
+    fn sync_from_ram(&mut self) {
+        *self.attract_scene = AttractSceneState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.attract_scene,
+            AttractSceneState::load_from_ram(self.ram)
+        );
+    }
+
+    fn write_byte(&mut self, offset: usize, value: u8) -> u8 {
+        self.ram[offset] = value;
+        self.sync_from_ram();
+        value
+    }
+
+    fn write_word(&mut self, offset: usize, value: u16) -> u16 {
+        write_le_u16(self.ram, offset, value);
+        self.sync_from_ram();
+        value
+    }
+
+    pub(crate) fn set_state(&mut self, value: u8) {
+        self.write_byte(ATTRACT_STATE, value);
+    }
+
+    pub(crate) fn set_state_word(&mut self, value: u16) {
+        self.write_word(ATTRACT_STATE, value);
+    }
+
+    pub(crate) fn increment_state(&mut self) -> u8 {
+        self.write_byte(ATTRACT_STATE, self.attract_scene.state().wrapping_add(1))
+    }
+
+    pub(crate) fn add_state(&mut self, value: u8) -> u8 {
+        self.write_byte(
+            ATTRACT_STATE,
+            self.attract_scene.state().wrapping_add(value),
+        )
+    }
+
+    pub(crate) fn subtract_state(&mut self, value: u8) -> u8 {
+        self.write_byte(
+            ATTRACT_STATE,
+            self.attract_scene.state().wrapping_sub(value),
+        )
+    }
+
+    pub(crate) fn set_sequence(&mut self, value: u8) {
+        self.write_byte(ATTRACT_SEQUENCE, value);
+    }
+
+    pub(crate) fn increment_sequence(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_SEQUENCE,
+            self.attract_scene.sequence.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn set_scene_timer(&mut self, value: u8) {
+        self.write_byte(ATTRACT_SCENE_TIMER, value);
+    }
+
+    pub(crate) fn decrement_scene_timer(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_SCENE_TIMER,
+            self.attract_scene.scene_timer.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_scene_substep(&mut self, value: u8) {
+        self.write_byte(ATTRACT_SCENE_SUBSTEP, value);
+    }
+
+    pub(crate) fn increment_scene_substep(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_SCENE_SUBSTEP,
+            self.attract_scene.scene_substep.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn set_x_base(&mut self, value: u8) {
+        self.write_byte(ATTRACT_X_BASE, value);
+    }
+
+    pub(crate) fn set_x_base_high(&mut self, value: u8) {
+        self.write_byte(ATTRACT_X_BASE_HI, value);
+    }
+
+    pub(crate) fn set_y_base(&mut self, value: u8) {
+        self.write_byte(ATTRACT_Y_BASE, value);
+    }
+
+    pub(crate) fn set_story_text_pointer(&mut self, value: u16) {
+        self.write_word(ATTRACT_STORY_TEXT_POINTER, value);
+    }
+
+    pub(crate) fn set_oam_index(&mut self, value: u8) {
+        self.write_byte(ATTRACT_OAM_IDX, value);
+    }
+
+    pub(crate) fn advance_oam_index_by(&mut self, value: u8) -> u8 {
+        self.write_byte(
+            ATTRACT_OAM_IDX,
+            self.attract_scene.oam_index.wrapping_add(value),
+        )
+    }
+
+    pub(crate) fn set_maiden_warp_step(&mut self, value: u8) {
+        self.write_byte(ATTRACT_MAIDEN_WARP_STEP, value);
+    }
+
+    pub(crate) fn increment_maiden_warp_step(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_MAIDEN_WARP_STEP,
+            self.attract_scene.maiden_warp_step.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn decrement_maiden_warp_step(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_MAIDEN_WARP_STEP,
+            self.attract_scene.maiden_warp_step.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_intro_step_index(&mut self, value: u8) {
+        self.write_byte(INTRO_STEP_INDEX, value);
+    }
+
+    pub(crate) fn clear_intro_step_state_block(&mut self) {
+        self.ram[INTRO_STEP_INDEX..INTRO_STEP_INDEX + 7 * 16].fill(0);
+        self.sync_from_ram();
+    }
+
+    pub(crate) fn increment_intro_step_index(&mut self) -> u8 {
+        self.write_byte(
+            INTRO_STEP_INDEX,
+            self.attract_scene.intro_step_index.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn set_intro_step_timer(&mut self, value: u8) {
+        self.write_byte(INTRO_STEP_TIMER, value);
+    }
+
+    pub(crate) fn increment_intro_step_timer(&mut self) -> u8 {
+        self.write_byte(
+            INTRO_STEP_TIMER,
+            self.attract_scene.intro_step_timer.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn decrement_intro_step_timer(&mut self) -> u8 {
+        self.write_byte(
+            INTRO_STEP_TIMER,
+            self.attract_scene.intro_step_timer.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn increment_intro_frame_counter(&mut self) -> u8 {
+        self.write_byte(
+            INTRO_FRAME_CTR,
+            self.attract_scene.intro_frame_counter.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn set_intro_did_run_step(&mut self, value: u8) {
+        self.write_byte(INTRO_DID_RUN_STEP, value);
+    }
+
+    pub(crate) fn clear_intro_did_run_step(&mut self) {
+        self.write_byte(INTRO_DID_RUN_STEP, 0);
+    }
+
+    pub(crate) fn mark_intro_did_run_step(&mut self) {
+        self.write_byte(INTRO_DID_RUN_STEP, 1);
+    }
+
+    pub(crate) fn set_intro_palette_flash_count(&mut self, value: u8) {
+        self.write_byte(INTRO_TIMES_PAL_FLASH, value);
+    }
+
+    pub(crate) fn clear_intro_palette_flash_count(&mut self) {
+        self.write_byte(INTRO_TIMES_PAL_FLASH, 0);
+    }
+
+    pub(crate) fn decrement_intro_palette_flash_count(&mut self) -> u8 {
+        self.write_byte(
+            INTRO_TIMES_PAL_FLASH,
+            self.attract_scene.intro_palette_flash_count.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn increment_legend_flag(&mut self) {
+        self.write_byte(
+            ATTRACT_LEGEND_FLAG,
+            self.attract_scene.legend_flag.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn clear_legend_flag(&mut self) {
+        self.write_byte(ATTRACT_LEGEND_FLAG, 0);
+    }
+
+    pub(crate) fn clear_next_legend_gfx(&mut self) {
+        self.write_byte(ATTRACT_NEXT_LEGEND_GFX, 0);
+    }
+
+    pub(crate) fn advance_next_legend_gfx(&mut self) {
+        self.write_byte(
+            ATTRACT_NEXT_LEGEND_GFX,
+            self.attract_scene.next_legend_gfx.wrapping_add(2),
+        );
+    }
+
+    pub(crate) fn set_bg2_vofs_backup(&mut self, value: u16) {
+        self.write_word(ATTRACT_BG2_VOFS_BACKUP, value);
+    }
+
+    pub(crate) fn set_throne_fade_timer(&mut self, value: u8) {
+        self.write_byte(ATTRACT_THRONE_FADE_TIMER, value);
+    }
+
+    pub(crate) fn decrement_throne_fade_timer(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_THRONE_FADE_TIMER,
+            self.attract_scene.throne_fade_timer.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_prison_zelda_y_base(&mut self, value: u8) {
+        self.write_byte(ATTRACT_PRISON_ZELDA_Y_BASE, value);
+    }
+
+    pub(crate) fn decrement_prison_zelda_y_base(&mut self) {
+        self.write_byte(
+            ATTRACT_PRISON_ZELDA_Y_BASE,
+            self.attract_scene.prison_zelda_y_base.wrapping_sub(1),
+        );
+    }
+
+    pub(crate) fn set_anim_step_counter(&mut self, value: u8) {
+        self.write_byte(ATTRACT_ANIM_STEP_COUNTER, value);
+    }
+
+    pub(crate) fn decrement_anim_step_counter(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_ANIM_STEP_COUNTER,
+            self.attract_scene.anim_step_counter.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn increment_anim_step_counter(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_ANIM_STEP_COUNTER,
+            self.attract_scene.anim_step_counter.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn set_soldier_anim_step(&mut self, value: u8) {
+        self.write_byte(ATTRACT_SOLDIER_ANIM_STEP, value);
+    }
+
+    pub(crate) fn increment_soldier_anim_step(&mut self) {
+        self.write_byte(
+            ATTRACT_SOLDIER_ANIM_STEP,
+            self.attract_scene.soldier_anim_step.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn set_prison_soldier_x_lo(&mut self, value: u8) {
+        self.write_byte(ATTRACT_PRISON_SOLDIER_X_LO, value);
+    }
+
+    pub(crate) fn set_scene_frame_counter(&mut self, value: u8) {
+        self.write_byte(ATTRACT_SCENE_FRAME_COUNTER, value);
+    }
+
+    pub(crate) fn increment_scene_frame_counter(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_SCENE_FRAME_COUNTER,
+            self.attract_scene.scene_frame_counter.wrapping_add(1),
+        )
+    }
+
+    pub(crate) fn decrement_scene_frame_counter(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_SCENE_FRAME_COUNTER,
+            self.attract_scene.scene_frame_counter.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn increment_scene_done_flag(&mut self) {
+        self.write_byte(
+            ATTRACT_SCENE_DONE_FLAG,
+            self.attract_scene.scene_done_flag.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn set_legend_ctr(&mut self, value: u16) {
+        self.write_word(ATTRACT_LEGEND_CTR, value);
+    }
+
+    pub(crate) fn decrement_legend_ctr(&mut self) -> u16 {
+        self.write_word(
+            ATTRACT_LEGEND_CTR,
+            self.attract_scene.legend_ctr.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_fade_in_complete_flag(&mut self, value: u8) {
+        self.write_byte(ATTRACT_FADE_IN_COMPLETE_FLAG, value);
+    }
+
+    pub(crate) fn increment_fade_in_complete_flag(&mut self) {
+        self.write_byte(
+            ATTRACT_FADE_IN_COMPLETE_FLAG,
+            self.attract_scene.fade_in_complete_flag.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn clear_fade_in_done_flag(&mut self) {
+        self.write_byte(ATTRACT_FADE_IN_DONE_FLAG, 0);
+    }
+
+    pub(crate) fn increment_fade_in_done_flag(&mut self) {
+        self.write_byte(
+            ATTRACT_FADE_IN_DONE_FLAG,
+            self.attract_scene.fade_in_done_flag.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn clear_substep_delay_counter(&mut self) {
+        self.write_byte(ATTRACT_SUBSTEP_DELAY_COUNTER, 0);
+    }
+
+    pub(crate) fn increment_substep_delay_counter(&mut self) {
+        self.write_byte(
+            ATTRACT_SUBSTEP_DELAY_COUNTER,
+            self.attract_scene.substep_delay_counter.wrapping_add(1),
+        );
+    }
+
+    pub(crate) fn set_maiden_warp_timer_a(&mut self, value: u8) {
+        self.write_byte(ATTRACT_MAIDEN_WARP_TIMER_A, value);
+    }
+
+    pub(crate) fn decrement_maiden_warp_timer_a(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_MAIDEN_WARP_TIMER_A,
+            self.attract_scene.maiden_warp_timer_a.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_maiden_warp_timer_b(&mut self, value: u8) {
+        self.write_byte(ATTRACT_MAIDEN_WARP_TIMER_B, value);
+    }
+
+    pub(crate) fn decrement_maiden_warp_timer_b(&mut self) -> u8 {
+        self.write_byte(
+            ATTRACT_MAIDEN_WARP_TIMER_B,
+            self.attract_scene.maiden_warp_timer_b.wrapping_sub(1),
+        )
+    }
+
+    pub(crate) fn set_mode7_zoom_timer(&mut self, value: u8) {
+        self.write_byte(TIMER_FOR_MODE7_ZOOM, value);
+    }
+
+    pub(crate) fn decrement_mode7_zoom_timer(&mut self) {
+        self.write_byte(
+            TIMER_FOR_MODE7_ZOOM,
+            self.attract_scene.mode7_zoom_timer.wrapping_sub(1),
+        );
     }
 }
 

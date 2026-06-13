@@ -621,7 +621,7 @@ impl ZeldaState {
             self.palette_filter_view_mut()
                 .set_darkening_or_lightening_screen_word(mode);
             if mode != 0 {
-                self.attract_state_view_mut().increment_legend_flag();
+                self.attract_scene_mut().increment_legend_flag();
             }
         } else {
             self.palette_filter_view_mut().set_countdown_word(countdown);
@@ -3203,13 +3203,13 @@ impl ZeldaState {
     }
 
     pub(super) fn HandleScreenFlash(&mut self) {
-        let j = self.attract_state_view().intro_palette_flash_count();
+        let j = self.attract_scene().intro_palette_flash_count();
         if j == 0 || self.frame_state().submodule != 0 {
             return;
         }
-        self.attract_state_view_mut()
+        self.attract_scene_mut()
             .decrement_intro_palette_flash_count();
-        if self.attract_state_view().intro_palette_flash_count() == 0 {
+        if self.attract_scene().intro_palette_flash_count() == 0 {
             self.palette_restore_bg_and_hud();
             return;
         }
@@ -3228,13 +3228,13 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn handle_screen_flash(&mut self) {
-        let flash = self.attract_state_view().intro_palette_flash_count();
+        let flash = self.attract_scene().intro_palette_flash_count();
         if flash == 0 || self.frame_state().submodule != 0 {
             return;
         }
-        self.attract_state_view_mut()
+        self.attract_scene_mut()
             .set_intro_palette_flash_count(flash.wrapping_sub(1));
-        if self.attract_state_view().intro_palette_flash_count() == 0 {
+        if self.attract_scene().intro_palette_flash_count() == 0 {
             self.palette_restore_bg_and_hud();
             return;
         }

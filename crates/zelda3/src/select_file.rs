@@ -996,7 +996,7 @@ impl ZeldaState {
         self.ppu_scroll_copy_view_mut().set_bg3_h_copy2(0);
 
         let offs = self.select_file_scratch_view().cursor_usize() * 0x500;
-        self.attract_state_view_mut().set_legend_ctr(offs as u16);
+        self.attract_scene_mut().set_legend_ctr(offs as u16);
         self.sram[offs..offs + 0x500].fill(0);
         for i in 0..6 {
             write_le_u16(&mut self.sram, offs + KSRM_OFFS_NAME + i * 2, 0x00a9);
@@ -1142,7 +1142,7 @@ impl ZeldaState {
                 return;
             } else if t != 0x6f {
                 let name_slot = self.select_file_scratch_view().name_slot_usize();
-                let p = name_slot * 2 + self.attract_state_view().legend_ctr() as usize;
+                let p = name_slot * 2 + self.attract_scene().legend_ctr() as usize;
                 let chr = ((t as u16 & 0xfff0) * 2) + (t as u16 & 0x0f);
                 write_le_u16(&mut self.sram, p + KSRM_OFFS_NAME, chr);
                 self.name_file_draw_selected_character(name_slot, chr);
@@ -1152,7 +1152,7 @@ impl ZeldaState {
             }
         }
 
-        let name_base = self.attract_state_view().legend_ctr() as usize;
+        let name_base = self.attract_scene().legend_ctr() as usize;
         if (0..6).all(|i| read_le_u16(&self.sram, name_base + KSRM_OFFS_NAME + i * 2) == 0x00a9) {
             self.system_signals_view_mut().set_sound_effect_1(0x3c);
             return;

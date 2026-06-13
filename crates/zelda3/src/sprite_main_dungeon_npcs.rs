@@ -575,9 +575,9 @@ impl ZeldaState {
             self.crystal_maiden_draw(k);
         }
         self.activate_nmi_thread();
-        if self.attract_state_view().intro_did_run_step() == 0 {
+        if self.attract_scene().intro_did_run_step() == 0 {
             self.crystal_maiden_run_cutscene(k);
-            self.attract_state_view_mut().mark_intro_did_run_step();
+            self.attract_scene_mut().mark_intro_did_run_step();
         }
     }
 

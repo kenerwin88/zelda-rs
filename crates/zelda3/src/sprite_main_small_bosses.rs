@@ -1306,8 +1306,7 @@ impl ZeldaState {
                 .wrapping_add((t_full >> 16) as u16) as u8;
             self.sprite_slot_view_mut(j).set_y_low(y_low);
             self.sprite_slot_view_mut(j).set_delay_main(2);
-            self.attract_state_view_mut()
-                .set_intro_palette_flash_count(32);
+            self.attract_scene_mut().set_intro_palette_flash_count(32);
         }
     }
 

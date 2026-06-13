@@ -2950,8 +2950,7 @@ impl ZeldaState {
                     let value = 80;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else if delay == 120 {
-                    self.attract_state_view_mut()
-                        .set_intro_palette_flash_count(120);
+                    self.attract_scene_mut().set_intro_palette_flash_count(120);
                 } else if delay < 128 && (delay & 3) == 0 {
                     self.system_signals_view_mut().set_sound_effect_2(0x2b);
                     if self.sprite_slot_view(k).subtype2() != 14 {

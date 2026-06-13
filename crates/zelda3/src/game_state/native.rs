@@ -45,8 +45,8 @@ pub(crate) use effects::{
     SkullWoodsFireState, TowerSealState,
 };
 pub(crate) use ending::{
-    EndingCreditState, EndingState, IntroSceneState, NativeEndingCreditBridgeMut,
-    NativeIntroSceneBridgeMut,
+    AttractSceneState, EndingCreditState, EndingState, IntroSceneState,
+    NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut, NativeIntroSceneBridgeMut,
 };
 pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
@@ -223,12 +223,12 @@ impl GameState {
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
+        self.ending.write_to_ram(ram);
         self.messaging.write_to_ram(ram);
         self.world.write_to_ram(ram);
         self.poly.write_to_ram(ram);
         self.display.write_to_ram(ram);
         self.effects.write_to_ram(ram);
-        self.ending.write_to_ram(ram);
         self.oam.write_to_ram(ram);
     }
 }

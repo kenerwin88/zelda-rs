@@ -1501,8 +1501,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut().clear_trap_trigger_latch();
         self.dungeon_state_view_mut()
             .set_activate_bomb_trap_overlord(0);
-        self.attract_state_view_mut()
-            .clear_intro_palette_flash_count();
+        self.attract_scene_mut().clear_intro_palette_flash_count();
         self.sprite_workspace_view_mut().set_reset_scratch_a(0);
         self.sprite_workspace_view_mut().set_reset_scratch_b(0);
         self.player_state_view_mut().clear_menu_block();

@@ -2287,8 +2287,7 @@ impl ZeldaState {
                         .set_magic_consumption_level(1);
                     self.hud_refresh_icon();
                 } else if self.sprite_slot_view(k).delay_aux1() == 0x10 {
-                    self.attract_state_view_mut()
-                        .set_intro_palette_flash_count(0x10);
+                    self.attract_scene_mut().set_intro_palette_flash_count(0x10);
                 }
             }
             4 => {

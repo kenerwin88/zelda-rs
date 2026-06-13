@@ -27,12 +27,12 @@ use crate::game_state::constants::{
 };
 use crate::game_state::{
     AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
-    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractStateView,
-    AttractStateViewMut, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
-    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
-    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastView,
-    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
-    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
+    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractSceneState,
+    BeamosLaserHistoryView, BeamosLaserHistoryViewMut, Bg1MovementAccumulatorState,
+    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
+    BlastWallFragmentSlotState, BlastWallState, BombosBlastView, BombosBlastViewMut,
+    BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState, CachedSpriteSlotView,
+    CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonHeaderState, DungeonKeySlotsView,
     DungeonMapDisplayState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
@@ -45,9 +45,9 @@ use crate::game_state::{
     LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
     MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
     MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -1823,12 +1823,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn attract_state_view(&self) -> AttractStateView<'_> {
-        AttractStateView::new(&self.ram)
+    pub(crate) fn attract_scene(&self) -> AttractSceneState {
+        AttractSceneState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn attract_state_view_mut(&mut self) -> AttractStateViewMut<'_> {
-        AttractStateViewMut::new(&mut self.ram)
+    pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
+        NativeAttractSceneBridgeMut::new(&mut self.game_state.ending.attract_scene, &mut self.ram)
     }
 
     pub(crate) fn dialogue_message_index_view(&self) -> &DialogueMessageIndexState {
@@ -5785,8 +5785,8 @@ impl ZeldaState {
             let carry = if self.display_state().nmi_thread_active {
                 if use_bsnes_poly_scheduler {
                     let previous_counter = self.bsnes_poly_scheduler_counter;
-                    let step_waiting = self.attract_state_view().intro_step_index() == 1
-                        && self.attract_state_view().intro_did_run_step() != 0;
+                    let step_waiting = self.attract_scene().intro_step_index() == 1
+                        && self.attract_scene().intro_did_run_step() != 0;
                     let first_frame_boundary_hold = step_waiting
                         && !self.bsnes_intro_step_carry_phase_active
                         && previous_counter == 0;
@@ -5803,7 +5803,7 @@ impl ZeldaState {
                     }
                     self.bsnes_poly_scheduler_counter =
                         self.bsnes_poly_scheduler_counter.wrapping_add(virq);
-                    self.attract_state_view().intro_did_run_step() != 0
+                    self.attract_scene().intro_did_run_step() != 0
                 } else {
                     let carry = Self::increment_crystal_countdown(
                         self.native_ram_bridge_view_mut()
@@ -6157,11 +6157,11 @@ impl ZeldaState {
     }
 
     fn zelda_run_poly_loop(&mut self) {
-        let can_run_poly = self.attract_state_view().intro_did_run_step() != 0
+        let can_run_poly = self.attract_scene().intro_did_run_step() != 0
             && !self.display_state().has_pending_polyhedral_update();
         if can_run_poly {
             self.poly_run_frame();
-            self.attract_state_view_mut().clear_intro_did_run_step();
+            self.attract_scene_mut().clear_intro_did_run_step();
             self.request_polyhedral_nmi_update();
         }
     }
@@ -7260,7 +7260,7 @@ mod tests {
     #[test]
     fn triforce_poly_step0_falls_through_once_like_c() {
         let mut state = ZeldaState::new();
-        state.attract_state_view_mut().set_intro_step_index(0);
+        state.attract_scene_mut().set_intro_step_index(0);
         state.poly_runtime_mut().set_config1(10);
         state.ram[SUBSUBMODULE_INDEX] = 8;
         state.poly_runtime_mut().set_angle_a(7);
@@ -7269,13 +7269,13 @@ mod tests {
         state.triforce_room_handle_poly();
 
         assert_eq!(state.poly_runtime().config1(), 8);
-        assert_eq!(state.attract_state_view().intro_step_index(), 0);
+        assert_eq!(state.attract_scene().intro_step_index(), 0);
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 8);
         assert_eq!(state.poly_runtime().angle_a(), 8);
         assert_eq!(state.poly_runtime().angle_b(), 13);
-        assert_eq!(state.attract_state_view().intro_did_run_step(), 1);
+        assert_eq!(state.attract_scene().intro_did_run_step(), 1);
         assert_eq!(state.ram[0x1e02], 0);
-        assert_eq!(state.attract_state_view().intro_frame_counter(), 1);
+        assert_eq!(state.attract_scene().intro_frame_counter(), 1);
     }
 
     #[test]
