@@ -312,7 +312,7 @@ impl ZeldaState {
             .clear_spike_floor_and_triggers();
         self.tile_detect_position_view_mut().clear_dashable_tiles();
         self.tile_detect_position_view_mut().clear_misc_tiles();
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_moving_floor_check_flags();
     }
 
@@ -645,16 +645,16 @@ impl ZeldaState {
                 self.tile_detect_position_view_mut().or_spike_cactus_tiles((bits << 4) as u8);
             }
             0x68 => {
-                self.dungeon_state_view_mut().or_moving_floor_check_flags(bits);
+                self.dungeon_environment_mut().or_moving_floor_check_flags(bits);
             }
             0x69 => {
-                self.dungeon_state_view_mut().or_moving_floor_check_flags(bits << 4);
+                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 4);
             }
             0x6a => {
-                self.dungeon_state_view_mut().or_moving_floor_check_flags(bits << 8);
+                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 8);
             }
             0x6b => {
-                self.dungeon_state_view_mut().or_moving_floor_check_flags(bits << 12);
+                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 12);
             }
             0x70..=0x7f => {
                 if bits & 2 != 0 {

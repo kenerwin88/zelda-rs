@@ -4209,7 +4209,7 @@ impl ZeldaState {
     pub(super) fn sprite_prep_crystal_switch(&mut self, k: usize) {
         const CRYSTAL_SWITCH_PAL: [u8; 2] = [2, 4];
         let oam_flags = CRYSTAL_SWITCH_PAL
-            [(self.dungeon_state_view().orange_blue_barrier_state() & 1) as usize];
+            [(self.dungeon_environment().orange_blue_barrier_state() & 1) as usize];
         self.sprite_slot_view_mut(k).or_oam_flags(oam_flags);
     }
 

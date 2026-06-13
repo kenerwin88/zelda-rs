@@ -1678,7 +1678,7 @@ impl ZeldaState {
     }
 
     pub(super) fn RecoverPegGFXFromMapping(&mut self) {
-        if self.dungeon_state_view().orange_blue_barrier_state() != 0 {
+        if self.dungeon_environment().orange_blue_barrier_state() != 0 {
             self.Dungeon_UpdatePegGFXBuffer(0x180, 0);
         } else {
             self.Dungeon_UpdatePegGFXBuffer(0, 0x180);
@@ -2793,7 +2793,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_16_UpdatePegs_Step1(&mut self) {
-        if self.dungeon_state_view().orange_blue_barrier_state() != 0 {
+        if self.dungeon_environment().orange_blue_barrier_state() != 0 {
             self.Dungeon_UpdatePegGFXBuffer(0x80, 0x100);
         } else {
             self.Dungeon_UpdatePegGFXBuffer(0x100, 0x80);
@@ -2801,7 +2801,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_16_UpdatePegs_Step2(&mut self) {
-        if self.dungeon_state_view().orange_blue_barrier_state() != 0 {
+        if self.dungeon_environment().orange_blue_barrier_state() != 0 {
             self.Dungeon_UpdatePegGFXBuffer(0x100, 0x80);
         } else {
             self.Dungeon_UpdatePegGFXBuffer(0x80, 0x100);

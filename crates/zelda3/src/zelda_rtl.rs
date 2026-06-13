@@ -35,27 +35,29 @@ use crate::game_state::{
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
-    DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState,
-    DungeonObjectTrackingState, DungeonRoomLoadState, DungeonRoomTrackingState,
-    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
-    DungeonStairListsState, DungeonStairMovementState, DungeonStateView, DungeonStateViewMut,
-    DungeonTorchState, EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState,
+    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomLoadState,
+    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
+    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
+    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
+    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
-    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
+    NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
     NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomTrackingBridgeMut,
@@ -3309,6 +3311,17 @@ impl ZeldaState {
 
     pub(crate) fn dungeon_room_load_mut(&mut self) -> NativeDungeonRoomLoadBridgeMut<'_> {
         NativeDungeonRoomLoadBridgeMut::new(&mut self.game_state.dungeon.room_load, &mut self.ram)
+    }
+
+    pub(crate) fn dungeon_environment(&self) -> DungeonEnvironmentState {
+        DungeonEnvironmentState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_environment_mut(&mut self) -> NativeDungeonEnvironmentBridgeMut<'_> {
+        NativeDungeonEnvironmentBridgeMut::new(
+            &mut self.game_state.dungeon.environment,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dungeon_map_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {

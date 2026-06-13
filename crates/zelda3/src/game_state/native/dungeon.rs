@@ -1,29 +1,34 @@
 use crate::game_state::constants::{
-    AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, CHANGEABLE_DUNGEON_OBJECT_INDEX,
-    COMPOSITE_OF_LAYOUT_AND_QUADRANT, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON,
-    DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
-    DUNGEON_DOOR_DIRECTION, DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY,
-    DUNGEON_HEADER_COLLISION_2_MIRROR, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE,
-    DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS,
-    DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
-    DUNGEON_WORK_R18, DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR,
-    DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
-    DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED,
-    DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR, DUNG_DRAW_WIDTH_INDICATOR,
-    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES,
-    DUNG_HDR_BG2_PROPERTIES_BACKUP, DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2,
-    DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
-    DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LOADE_BGOFFS_H_COPY, DUNG_LOADE_BGOFFS_V_COPY,
-    DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
-    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
-    DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
-    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
-    DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT,
+    AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, BLOCK_TRAP_CHECK_FLAG,
+    CHANGEABLE_DUNGEON_OBJECT_INDEX, COMPOSITE_OF_LAYOUT_AND_QUADRANT,
+    DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
+    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
+    DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_COLLISION_2_MIRROR,
+    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
+    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR,
+    DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_DOOR_IDX,
+    DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED, DUNG_CUR_QUADRANT_UPLOAD,
+    DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED, DUNG_DOOR_OPENED_INCL_ADJACENT,
+    DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS, DUNG_DRAW_HEIGHT_INDICATOR,
+    DUNG_DRAW_WIDTH_INDICATOR, DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED, DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
+    DUNG_FLAG_STATECHANGE_WATERPUZZLE, DUNG_FLAG_TRAPDOORS_DOWN, DUNG_FLOOR_MOVE_FLAGS,
+    DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_HDR_BG2_PROPERTIES, DUNG_HDR_BG2_PROPERTIES_BACKUP,
+    DUNG_HDR_COLLISION, DUNG_HDR_COLLISION_2, DUNG_INDEX_OF_TORCHES, DUNG_INDEX_OF_TORCHES_START,
+    DUNG_INTER_STAIRCASES, DUNG_LAYOUT_AND_STARTING_QUADRANT, DUNG_LOADE_BGOFFS_H_COPY,
+    DUNG_LOADE_BGOFFS_V_COPY, DUNG_LOAD_PTR_OFFS, DUNG_MISC_OBJS_INDEX,
+    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1,
+    DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS,
+    DUNG_OVERLAY_TO_LOAD, DUNG_QUADRANTS_VISITED, DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT,
     DUNG_WANT_LIGHTS_OUT_COPY, DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT,
-    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX,
+    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
+    MOVING_FLOOR_BG_CHECK_FLAGS, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
     OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
-    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
+    SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
+    WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
+    WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
+    WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -83,6 +88,7 @@ pub(crate) struct DungeonState {
     pub(crate) object_tracking: DungeonObjectTrackingState,
     pub(crate) doors: DungeonDoorState,
     pub(crate) room_load: DungeonRoomLoadState,
+    pub(crate) environment: DungeonEnvironmentState,
 }
 
 impl DungeonState {
@@ -101,6 +107,7 @@ impl DungeonState {
             object_tracking: DungeonObjectTrackingState::load_from_ram(ram),
             doors: DungeonDoorState::load_from_ram(ram),
             room_load: DungeonRoomLoadState::load_from_ram(ram),
+            environment: DungeonEnvironmentState::load_from_ram(ram),
         }
     }
 
@@ -111,6 +118,237 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonEnvironmentState {
+    water_transition_counter: u8,
+    water_hdma_y_radius: u16,
+    water_hdma_x_radius: u16,
+    water_hdma_y_target: u16,
+    water_hdma_y_radius_alt: u16,
+    water_window_x: u16,
+    water_window_y: u16,
+    water_puzzle_state_changed: u8,
+    trapdoors_down: u16,
+    somaria_block_switch_counter: u8,
+    somaria_block_bg_check_flag: u8,
+    orange_blue_barrier_state: u8,
+    moving_floor_check_flags: u16,
+    movable_block_was_pushed: u8,
+    block_trap_related_tile: u16,
+}
+
+impl DungeonEnvironmentState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            water_transition_counter: ram.get(TURN_ON_OFF_WATER_CTR).copied().unwrap_or(0),
+            water_hdma_y_radius: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS),
+            water_hdma_x_radius: read_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS),
+            water_hdma_y_target: read_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET),
+            water_hdma_y_radius_alt: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT),
+            water_window_x: read_le_u16(ram, WATER_HDMA_WINDOW_X),
+            water_window_y: read_le_u16(ram, WATER_HDMA_WINDOW_Y),
+            water_puzzle_state_changed: ram
+                .get(DUNG_FLAG_STATECHANGE_WATERPUZZLE)
+                .copied()
+                .unwrap_or(0),
+            trapdoors_down: read_le_u16(ram, DUNG_FLAG_TRAPDOORS_DOWN),
+            somaria_block_switch_counter: ram
+                .get(DUNG_FLAG_SOMARIA_BLOCK_SWITCH)
+                .copied()
+                .unwrap_or(0),
+            somaria_block_bg_check_flag: ram.get(SOMARIA_BLOCK_BG_CHECK_FLAG).copied().unwrap_or(0),
+            orange_blue_barrier_state: ram.get(ORANGE_BLUE_BARRIER_STATE).copied().unwrap_or(0),
+            moving_floor_check_flags: read_le_u16(ram, MOVING_FLOOR_BG_CHECK_FLAGS),
+            movable_block_was_pushed: ram
+                .get(DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED)
+                .copied()
+                .unwrap_or(0),
+            block_trap_related_tile: read_le_u16(ram, BLOCK_TRAP_CHECK_FLAG),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TURN_ON_OFF_WATER_CTR] = self.water_transition_counter;
+        write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.water_hdma_y_radius);
+        write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.water_hdma_x_radius);
+        write_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET, self.water_hdma_y_target);
+        write_le_u16(
+            ram,
+            WATER_HDMA_WINDOW_Y_RADIUS_ALT,
+            self.water_hdma_y_radius_alt,
+        );
+        write_le_u16(ram, WATER_HDMA_WINDOW_X, self.water_window_x);
+        write_le_u16(ram, WATER_HDMA_WINDOW_Y, self.water_window_y);
+        ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = self.water_puzzle_state_changed;
+        write_le_u16(ram, DUNG_FLAG_TRAPDOORS_DOWN, self.trapdoors_down);
+        ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] = self.somaria_block_switch_counter;
+        ram[SOMARIA_BLOCK_BG_CHECK_FLAG] = self.somaria_block_bg_check_flag;
+        ram[ORANGE_BLUE_BARRIER_STATE] = self.orange_blue_barrier_state;
+        write_le_u16(
+            ram,
+            MOVING_FLOOR_BG_CHECK_FLAGS,
+            self.moving_floor_check_flags,
+        );
+        ram[DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED] = self.movable_block_was_pushed;
+        write_le_u16(ram, BLOCK_TRAP_CHECK_FLAG, self.block_trap_related_tile);
+    }
+
+    pub(crate) fn water_transition_counter(&self) -> u8 {
+        self.water_transition_counter
+    }
+
+    pub(crate) fn water_hdma_y_radius(&self) -> u16 {
+        self.water_hdma_y_radius
+    }
+
+    pub(crate) fn water_hdma_x_radius(&self) -> u16 {
+        self.water_hdma_x_radius
+    }
+
+    pub(crate) fn water_hdma_y_target(&self) -> u16 {
+        self.water_hdma_y_target
+    }
+
+    pub(crate) fn water_hdma_y_radius_alt(&self) -> u16 {
+        self.water_hdma_y_radius_alt
+    }
+
+    pub(crate) fn water_puzzle_state_changed(&self) -> u8 {
+        self.water_puzzle_state_changed
+    }
+
+    pub(crate) fn trapdoors_down(&self) -> u16 {
+        self.trapdoors_down
+    }
+
+    pub(crate) fn trapdoors_down_low(&self) -> u8 {
+        self.trapdoors_down as u8
+    }
+
+    pub(crate) fn somaria_block_switch_counter(&self) -> u8 {
+        self.somaria_block_switch_counter
+    }
+
+    pub(crate) fn orange_blue_barrier_state(&self) -> u8 {
+        self.orange_blue_barrier_state
+    }
+
+    pub(crate) fn moving_floor_check_flags(&self) -> u16 {
+        self.moving_floor_check_flags
+    }
+
+    pub(crate) fn movable_block_was_pushed(&self) -> u8 {
+        self.movable_block_was_pushed
+    }
+
+    pub(crate) fn movable_block_was_not_pushed_flag(&self) -> u8 {
+        self.movable_block_was_pushed ^ 1
+    }
+
+    pub(crate) fn block_trap_related_tile(&self) -> u16 {
+        self.block_trap_related_tile
+    }
+
+    fn set_water_transition_counter(&mut self, value: u8) {
+        self.water_transition_counter = value;
+    }
+
+    fn increment_water_transition_counter(&mut self) -> u8 {
+        self.water_transition_counter = self.water_transition_counter.wrapping_add(1);
+        self.water_transition_counter
+    }
+
+    fn decrement_water_transition_counter(&mut self) -> u8 {
+        self.water_transition_counter = self.water_transition_counter.wrapping_sub(1);
+        self.water_transition_counter
+    }
+
+    fn set_water_hdma_y_radius(&mut self, value: u16) {
+        self.water_hdma_y_radius = value;
+    }
+
+    fn set_water_hdma_x_radius(&mut self, value: u16) {
+        self.water_hdma_x_radius = value;
+    }
+
+    fn set_water_hdma_y_target(&mut self, value: u16) {
+        self.water_hdma_y_target = value;
+    }
+
+    fn set_water_hdma_y_radius_alt(&mut self, value: u16) {
+        self.water_hdma_y_radius_alt = value;
+    }
+
+    fn set_water_window_position(&mut self, x: u16, y: u16) {
+        self.water_window_x = x;
+        self.water_window_y = y;
+    }
+
+    fn clear_water_puzzle_state_changed(&mut self) {
+        self.water_puzzle_state_changed = 0;
+    }
+
+    fn set_water_puzzle_state_changed(&mut self, value: u8) {
+        self.water_puzzle_state_changed = value;
+    }
+
+    fn increment_water_puzzle_state_changed(&mut self) -> u8 {
+        self.water_puzzle_state_changed = self.water_puzzle_state_changed.wrapping_add(1);
+        self.water_puzzle_state_changed
+    }
+
+    fn set_trapdoors_down(&mut self, value: u16) {
+        self.trapdoors_down = value;
+    }
+
+    fn clear_trapdoors_down(&mut self) {
+        self.trapdoors_down = 0;
+    }
+
+    fn set_trapdoors_down_low(&mut self, value: u8) {
+        self.trapdoors_down = (self.trapdoors_down & 0xff00) | u16::from(value);
+    }
+
+    fn increment_trapdoors_down_low(&mut self) -> u8 {
+        let value = self.trapdoors_down_low().wrapping_add(1);
+        self.set_trapdoors_down_low(value);
+        value
+    }
+
+    fn clear_somaria_block_switch_counter(&mut self) {
+        self.somaria_block_switch_counter = 0;
+    }
+
+    fn increment_somaria_block_switch_counter(&mut self) {
+        self.somaria_block_switch_counter = self.somaria_block_switch_counter.wrapping_add(1);
+    }
+
+    fn increment_somaria_block_bg_check_flag(&mut self) {
+        self.somaria_block_bg_check_flag = self.somaria_block_bg_check_flag.wrapping_add(1);
+    }
+
+    fn clear_orange_blue_barrier_state(&mut self) {
+        self.orange_blue_barrier_state = 0;
+    }
+
+    fn toggle_orange_blue_barrier_state(&mut self) {
+        self.orange_blue_barrier_state ^= 1;
+    }
+
+    fn clear_moving_floor_check_flags(&mut self) {
+        self.moving_floor_check_flags = 0;
+    }
+
+    fn or_moving_floor_check_flags(&mut self, bits: u16) -> u16 {
+        self.moving_floor_check_flags |= bits;
+        self.moving_floor_check_flags
+    }
+
+    fn clear_movable_block_was_pushed(&mut self) {
+        self.movable_block_was_pushed = 0;
     }
 }
 
@@ -2891,6 +3129,150 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
 
     pub(crate) fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
         self.state.set_loading_bg_offsets(horizontal, vertical);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonEnvironmentBridgeMut<'a> {
+    state: &'a mut DungeonEnvironmentState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonEnvironmentState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonEnvironmentState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonEnvironmentState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_water_transition_counter(&mut self, value: u8) {
+        self.state.set_water_transition_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_water_transition_counter(&mut self) -> u8 {
+        let value = self.state.increment_water_transition_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_water_transition_counter(&mut self) -> u8 {
+        let value = self.state.decrement_water_transition_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_water_hdma_y_radius(&mut self, value: u16) {
+        self.state.set_water_hdma_y_radius(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_water_hdma_x_radius(&mut self, value: u16) {
+        self.state.set_water_hdma_x_radius(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_water_hdma_y_target(&mut self, value: u16) {
+        self.state.set_water_hdma_y_target(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_water_hdma_y_radius_alt(&mut self, value: u16) {
+        self.state.set_water_hdma_y_radius_alt(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_water_window_position(&mut self, x: u16, y: u16) {
+        self.state.set_water_window_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn clear_water_puzzle_state_changed(&mut self) {
+        self.state.clear_water_puzzle_state_changed();
+        self.sync();
+    }
+
+    pub(crate) fn set_water_puzzle_state_changed(&mut self, value: u8) {
+        self.state.set_water_puzzle_state_changed(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_water_puzzle_state_changed(&mut self) -> u8 {
+        let value = self.state.increment_water_puzzle_state_changed();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_trapdoors_down(&mut self, value: u16) {
+        self.state.set_trapdoors_down(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_trapdoors_down(&mut self) {
+        self.state.clear_trapdoors_down();
+        self.sync();
+    }
+
+    pub(crate) fn set_trapdoors_down_low(&mut self, value: u8) {
+        self.state.set_trapdoors_down_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_trapdoors_down_low(&mut self) -> u8 {
+        let value = self.state.increment_trapdoors_down_low();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn clear_somaria_block_switch_counter(&mut self) {
+        self.state.clear_somaria_block_switch_counter();
+        self.sync();
+    }
+
+    pub(crate) fn increment_somaria_block_switch_counter(&mut self) {
+        self.state.increment_somaria_block_switch_counter();
+        self.sync();
+    }
+
+    pub(crate) fn increment_somaria_block_bg_check_flag(&mut self) {
+        self.state.increment_somaria_block_bg_check_flag();
+        self.sync();
+    }
+
+    pub(crate) fn clear_orange_blue_barrier_state(&mut self) {
+        self.state.clear_orange_blue_barrier_state();
+        self.sync();
+    }
+
+    pub(crate) fn toggle_orange_blue_barrier_state(&mut self) {
+        self.state.toggle_orange_blue_barrier_state();
+        self.sync();
+    }
+
+    pub(crate) fn clear_moving_floor_check_flags(&mut self) {
+        self.state.clear_moving_floor_check_flags();
+        self.sync();
+    }
+
+    pub(crate) fn or_moving_floor_check_flags(&mut self, bits: u16) -> u16 {
+        let flags = self.state.or_moving_floor_check_flags(bits);
+        self.sync();
+        flags
+    }
+
+    pub(crate) fn clear_movable_block_was_pushed(&mut self) {
+        self.state.clear_movable_block_was_pushed();
         self.sync();
     }
 }

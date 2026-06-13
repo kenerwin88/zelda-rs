@@ -3084,7 +3084,7 @@ impl ZeldaState {
             self.ancilla_sfx3_near(10);
         }
 
-        let moving_floor_flags = self.dungeon_state_view().moving_floor_check_flags();
+        let moving_floor_flags = self.dungeon_environment().moving_floor_check_flags();
         if moving_floor_flags & 0x22 != 0 {
             self.player_state_view_mut()
                 .set_conveyor_belt_state(if moving_floor_flags & 0x20 != 0 { 2 } else { 1 });

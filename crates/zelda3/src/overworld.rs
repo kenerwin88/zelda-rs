@@ -1841,7 +1841,7 @@ impl ZeldaState {
         self.link_reset_state_after_damaging_pit();
         self.follower_state_view_mut().set_appearance_none_flag(0);
         self.follower_initialize();
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
         self.set_overworld_map_state(0);
         self.set_subsubmodule(0);

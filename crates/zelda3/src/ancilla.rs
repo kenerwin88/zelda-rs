@@ -4047,7 +4047,7 @@ impl ZeldaState {
             self.ancilla_add_exploding_somaria_block(j);
             let value = 0;
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-            self.dungeon_state_view_mut()
+            self.dungeon_environment_mut()
                 .clear_somaria_block_switch_counter();
             if self.player_state_view().speed_setting() == 0x12 {
                 self.player_state_view_mut().clear_defense_flags();
@@ -4142,7 +4142,7 @@ impl ZeldaState {
             if self.ancilla_slot_view(i).ancilla_type() == 0x3e {
                 y = i as u8;
             } else if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
-                self.dungeon_state_view_mut()
+                self.dungeon_environment_mut()
                     .clear_somaria_block_switch_counter();
                 if self.player_state_view().defense_flags() & 0x80 != 0 {
                     self.player_state_view_mut().clear_defense_flags();
@@ -5757,18 +5757,18 @@ impl ZeldaState {
                         && (self.ancilla_slot_view(k).z() == 0
                             || self.ancilla_slot_view(k).z() == 0xff)
                     {
-                        self.dungeon_state_view_mut()
+                        self.dungeon_environment_mut()
                             .increment_somaria_block_switch_counter();
                     }
                 } else if self.player_state_view().ancilla_pickup_flag() == k as u8 + 1 {
-                    self.dungeon_state_view_mut()
+                    self.dungeon_environment_mut()
                         .clear_somaria_block_switch_counter();
                 }
             }
         } else if self.world_location_state().is_indoors()
             && self.player_state_view().ancilla_pickup_flag() == k as u8 + 1
         {
-            self.dungeon_state_view_mut()
+            self.dungeon_environment_mut()
                 .clear_somaria_block_switch_counter();
         }
 
@@ -9118,7 +9118,7 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_r(value);
         let value = 0;
         self.ancilla_slot_view_mut(k).set_object_priority(value);
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_somaria_block_switch_counter();
         self.set_sound_effect_2_with_ancilla_pan(k, 1);
     }
@@ -10378,7 +10378,7 @@ impl ZeldaState {
         }
 
         if self.somarian_block_check_empty(oam_org) {
-            self.dungeon_state_view_mut()
+            self.dungeon_environment_mut()
                 .clear_somaria_block_switch_counter();
             self.ancilla_slot_view_mut(k).set_ancilla_type(0);
             if k + 1 == self.player_state_view().ancilla_pickup_flag() as usize {
@@ -10393,7 +10393,7 @@ impl ZeldaState {
     fn somaria_block_check_for_switch(&mut self, k: usize) -> bool {
         const SOMARIAN_BLOCK_CHECK_COVER_X: [i8; 4] = [0, 0, -4, 4];
         const SOMARIAN_BLOCK_CHECK_COVER_Y: [i8; 4] = [-4, 4, 0, 0];
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_somaria_block_switch_counter();
         let value = 0;
         self.ancilla_slot_view_mut(k).set_work_byte_24(value);
@@ -10423,7 +10423,7 @@ impl ZeldaState {
             self.player_state_view_mut().clear_defense_flags();
             self.player_state_view_mut().set_speed_setting(0);
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_somaria_block_switch_counter();
         {
             let mut block = self.ancilla_slot_view_mut(k);

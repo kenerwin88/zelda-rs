@@ -8098,10 +8098,10 @@ impl ZeldaState {
             return;
         }
         self.statue_block_sprites(k);
-        self.dungeon_state_view_mut()
+        self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
         if self.statue_check_for_switch(k) {
-            self.dungeon_state_view_mut()
+            self.dungeon_environment_mut()
                 .set_water_puzzle_state_changed(1);
         }
         self.sprite_move_xy(k);
@@ -9177,7 +9177,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 if j == 11 {
                     self.system_signals_view_mut().set_sound_effect_2(0x1b);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_environment_mut()
                         .set_water_puzzle_state_changed(1);
                 }
                 let value = UP_PULL_ANIMATION_DELAYS[usize::from(j - 2)];
@@ -9260,7 +9260,7 @@ impl ZeldaState {
                             .set_activate_bomb_trap_overlord(1);
                         self.system_signals_view_mut().set_sound_effect_1(0x3c);
                     } else {
-                        self.dungeon_state_view_mut()
+                        self.dungeon_environment_mut()
                             .set_water_puzzle_state_changed(1);
                         self.system_signals_view_mut().set_sound_effect_2(0x1b);
                     }
@@ -23006,7 +23006,7 @@ impl ZeldaState {
 
         let value = (self.sprite_slot_view(k).oam_flags() & !0x0e)
             | CRYSTAL_SWITCH_PAL
-                [usize::from(self.dungeon_state_view().orange_blue_barrier_state() & 1)];
+                [usize::from(self.dungeon_environment().orange_blue_barrier_state() & 1)];
 
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.oam_allocate_defer_to_player(k);
@@ -23038,7 +23038,7 @@ impl ZeldaState {
             let value = old.wrapping_sub(1);
             self.sprite_slot_view_mut(k).set_f(value);
             if old == 11 {
-                self.dungeon_state_view_mut()
+                self.dungeon_environment_mut()
                     .toggle_orange_blue_barrier_state();
                 self.set_submodule(22);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
@@ -23140,7 +23140,7 @@ impl ZeldaState {
                     if j == 10 {
                         let value = 2;
                         self.sprite_slot_view_mut(k).set_ai_state(value);
-                        self.dungeon_state_view_mut()
+                        self.dungeon_environment_mut()
                             .increment_water_puzzle_state_changed();
                         self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
                     } else {
@@ -23257,7 +23257,7 @@ impl ZeldaState {
             if self.sprite_direction_to_face_link(k, None) == 2
                 && self.sprite_slot_view(k).draw_work_byte_2() == 9
             {
-                self.dungeon_state_view_mut()
+                self.dungeon_environment_mut()
                     .increment_water_puzzle_state_changed();
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_b(value);

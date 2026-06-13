@@ -1169,7 +1169,8 @@ impl ZeldaState {
             let y = self.tagalong_y(k);
             self.follower_state_view_mut().set_indicator(0);
             self.blind_spawn_from_maiden(x, y);
-            self.dungeon_state_view_mut().increment_trapdoors_down_low();
+            self.dungeon_environment_mut()
+                .increment_trapdoors_down_low();
             self.dungeon_doors_mut().clear_current_door_pos();
             self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
