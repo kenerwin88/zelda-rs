@@ -43,6 +43,7 @@ const MOLDORM_HISTORY_SLOTS: usize = 128;
 const SWAMOLA_TARGET_SLOTS: usize = 6;
 const SWAMOLA_HISTORY_SLOTS: usize = 192;
 const BEAMOS_LASER_HISTORY_SLOTS: usize = 128;
+const LANMOLA_SEGMENT_MOTION_SLOTS: usize = 192;
 const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
 const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
 const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
@@ -1326,6 +1327,8 @@ pub(crate) struct SpriteHistoryScratchState {
     swamola_history_y: Vec<u16>,
     beamos_laser_x: Vec<u16>,
     beamos_laser_y: Vec<u16>,
+    lanmola_z_offsets: Vec<u8>,
+    lanmola_directions: Vec<u8>,
 }
 
 impl SpriteHistoryScratchState {
@@ -1379,6 +1382,16 @@ impl SpriteHistoryScratchState {
                 BEAMOS_LASER_HISTORY_Y_HI,
                 BEAMOS_LASER_HISTORY_SLOTS,
             ),
+            lanmola_z_offsets: read_byte_bank(
+                ram,
+                BEAMOS_LASER_HISTORY_X_HI,
+                LANMOLA_SEGMENT_MOTION_SLOTS,
+            ),
+            lanmola_directions: read_byte_bank(
+                ram,
+                BEAMOS_LASER_HISTORY_Y_HI,
+                LANMOLA_SEGMENT_MOTION_SLOTS,
+            ),
         }
     }
 
@@ -1400,19 +1413,75 @@ impl SpriteHistoryScratchState {
 
     pub(crate) fn lanmola_segment_motion(&self, slot: usize) -> LanmolaSegmentMotionState {
         LanmolaSegmentMotionState {
-            z_offset: self
-                .beamos_laser_x
-                .get(slot)
-                .copied()
-                .unwrap_or(0)
-                .to_be_bytes()[0],
-            direction: self
-                .beamos_laser_y
-                .get(slot)
-                .copied()
-                .unwrap_or(0)
-                .to_be_bytes()[0],
+            z_offset: self.lanmola_z_offsets.get(slot).copied().unwrap_or(0),
+            direction: self.lanmola_directions.get(slot).copied().unwrap_or(0),
         }
+    }
+
+    fn set_moldorm_position(&mut self, slot: usize, x: u16, y: u16) {
+        set_history_position(&mut self.moldorm_x, &mut self.moldorm_y, slot, x, y);
+    }
+
+    fn set_moldorm_low_position(&mut self, slot: usize, x_low: u8, y_low: u8) {
+        set_history_low_position(&mut self.moldorm_x, &mut self.moldorm_y, slot, x_low, y_low);
+    }
+
+    fn set_swamola_target_position(&mut self, slot: usize, x: u16, y: u16) {
+        set_history_position(
+            &mut self.swamola_target_x,
+            &mut self.swamola_target_y,
+            slot,
+            x,
+            y,
+        );
+    }
+
+    fn set_swamola_target_x_low(&mut self, slot: usize, value: u8) {
+        set_word_low_byte(&mut self.swamola_target_x, slot, value);
+    }
+
+    fn set_swamola_target_y_low(&mut self, slot: usize, value: u8) {
+        set_word_low_byte(&mut self.swamola_target_y, slot, value);
+    }
+
+    fn set_swamola_history_position(&mut self, slot: usize, x: u16, y: u16) {
+        set_history_position(
+            &mut self.swamola_history_x,
+            &mut self.swamola_history_y,
+            slot,
+            x,
+            y,
+        );
+    }
+
+    fn set_beamos_laser_position(&mut self, slot: usize, x: u16, y: u16) {
+        set_history_position(
+            &mut self.beamos_laser_x,
+            &mut self.beamos_laser_y,
+            slot,
+            x,
+            y,
+        );
+        if let Some(value) = self.lanmola_z_offsets.get_mut(slot) {
+            *value = (x >> 8) as u8;
+        }
+        if let Some(value) = self.lanmola_directions.get_mut(slot) {
+            *value = (y >> 8) as u8;
+        }
+    }
+
+    fn set_lanmola_z_offset(&mut self, slot: usize, value: u8) {
+        if let Some(z_offset) = self.lanmola_z_offsets.get_mut(slot) {
+            *z_offset = value;
+        }
+        set_word_high_byte(&mut self.beamos_laser_x, slot, value);
+    }
+
+    fn set_lanmola_direction(&mut self, slot: usize, value: u8) {
+        if let Some(direction) = self.lanmola_directions.get_mut(slot) {
+            *direction = value;
+        }
+        set_word_high_byte(&mut self.beamos_laser_y, slot, value);
     }
 }
 
@@ -1463,6 +1532,32 @@ fn history_position(xs: &[u16], ys: &[u16], slot: usize) -> HistoryPositionState
     }
 }
 
+fn set_history_position(xs: &mut [u16], ys: &mut [u16], slot: usize, x: u16, y: u16) {
+    if let Some(value) = xs.get_mut(slot) {
+        *value = x;
+    }
+    if let Some(value) = ys.get_mut(slot) {
+        *value = y;
+    }
+}
+
+fn set_history_low_position(xs: &mut [u16], ys: &mut [u16], slot: usize, x_low: u8, y_low: u8) {
+    set_word_low_byte(xs, slot, x_low);
+    set_word_low_byte(ys, slot, y_low);
+}
+
+fn set_word_low_byte(values: &mut [u16], slot: usize, low: u8) {
+    if let Some(value) = values.get_mut(slot) {
+        *value = (*value & 0xff00) | u16::from(low);
+    }
+}
+
+fn set_word_high_byte(values: &mut [u16], slot: usize, high: u8) {
+    if let Some(value) = values.get_mut(slot) {
+        *value = (*value & 0x00ff) | (u16::from(high) << 8);
+    }
+}
+
 pub(crate) struct NativeMoldormHistoryBridgeMut<'a> {
     state: &'a mut SpriteHistoryScratchState,
     ram: &'a mut [u8],
@@ -1475,36 +1570,43 @@ impl<'a> NativeMoldormHistoryBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = SpriteHistoryScratchState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+    fn sync(&mut self) {
+        let position = self.state.moldorm_history(self.slot);
         write_split_u16(
             self.ram,
             MOLDORM_HISTORY_X_LO,
             MOLDORM_HISTORY_X_HI,
             self.slot,
-            x,
+            position.x(),
         );
         write_split_u16(
             self.ram,
             MOLDORM_HISTORY_Y_LO,
             MOLDORM_HISTORY_Y_HI,
             self.slot,
-            y,
+            position.y(),
         );
-        self.reload();
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.moldorm_history(self.slot),
+            SpriteHistoryScratchState::load_from_ram(self.ram).moldorm_history(self.slot)
+        );
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_moldorm_position(self.slot, x, y);
+        self.sync();
     }
 
     pub(crate) fn set_low_position(&mut self, x_low: u8, y_low: u8) {
-        self.ram[MOLDORM_HISTORY_X_LO + self.slot] = x_low;
-        self.ram[MOLDORM_HISTORY_Y_LO + self.slot] = y_low;
-        self.reload();
+        self.state.set_moldorm_low_position(self.slot, x_low, y_low);
+        self.sync();
     }
 }
 
@@ -1520,40 +1622,48 @@ impl<'a> NativeSwamolaTargetBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = SpriteHistoryScratchState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+    fn sync(&mut self) {
+        let position = self.state.swamola_target(self.slot);
         write_split_u16(
             self.ram,
             SWAMOLA_TARGET_X_LO,
             SWAMOLA_TARGET_X_HI,
             self.slot,
-            x,
+            position.x(),
         );
         write_split_u16(
             self.ram,
             SWAMOLA_TARGET_Y_LO,
             SWAMOLA_TARGET_Y_HI,
             self.slot,
-            y,
+            position.y(),
         );
-        self.reload();
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.swamola_target(self.slot),
+            SpriteHistoryScratchState::load_from_ram(self.ram).swamola_target(self.slot)
+        );
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_swamola_target_position(self.slot, x, y);
+        self.sync();
     }
 
     pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.ram[SWAMOLA_TARGET_X_LO + self.slot] = value;
-        self.reload();
+        self.state.set_swamola_target_x_low(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.ram[SWAMOLA_TARGET_Y_LO + self.slot] = value;
-        self.reload();
+        self.state.set_swamola_target_y_low(self.slot, value);
+        self.sync();
     }
 }
 
@@ -1569,26 +1679,38 @@ impl<'a> NativeSwamolaHistoryBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = SpriteHistoryScratchState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+    fn sync(&mut self) {
+        let position = self.state.swamola_history(self.slot);
         write_split_u16(
             self.ram,
             SWAMOLA_HISTORY_X_LO,
             SWAMOLA_HISTORY_X_HI,
             self.slot,
-            x,
+            position.x(),
         );
         write_split_u16(
             self.ram,
             SWAMOLA_HISTORY_Y_LO,
             SWAMOLA_HISTORY_Y_HI,
             self.slot,
-            y,
+            position.y(),
         );
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.swamola_history(self.slot),
+            SpriteHistoryScratchState::load_from_ram(self.ram).swamola_history(self.slot)
+        );
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_swamola_history_position(self.slot, x, y);
+        self.sync();
     }
 }
 
@@ -1604,26 +1726,38 @@ impl<'a> NativeBeamosLaserHistoryBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = SpriteHistoryScratchState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+    fn sync(&mut self) {
+        let position = self.state.beamos_laser_history(self.slot);
         write_split_u16(
             self.ram,
             BEAMOS_LASER_HISTORY_X_LO,
             BEAMOS_LASER_HISTORY_X_HI,
             self.slot,
-            x,
+            position.x(),
         );
         write_split_u16(
             self.ram,
             BEAMOS_LASER_HISTORY_Y_LO,
             BEAMOS_LASER_HISTORY_Y_HI,
             self.slot,
-            y,
+            position.y(),
         );
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.beamos_laser_history(self.slot),
+            SpriteHistoryScratchState::load_from_ram(self.ram).beamos_laser_history(self.slot)
+        );
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state.set_beamos_laser_position(self.slot, x, y);
+        self.sync();
     }
 }
 
@@ -1639,18 +1773,31 @@ impl<'a> NativeLanmolaSegmentMotionBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = SpriteHistoryScratchState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
+    fn sync(&mut self) {
+        let motion = self.state.lanmola_segment_motion(self.slot);
+        self.ram[BEAMOS_LASER_HISTORY_X_HI + self.slot] = motion.z_offset();
+        self.ram[BEAMOS_LASER_HISTORY_Y_HI + self.slot] = motion.direction();
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            self.state.lanmola_segment_motion(self.slot),
+            SpriteHistoryScratchState::load_from_ram(self.ram).lanmola_segment_motion(self.slot)
+        );
+    }
+
     pub(crate) fn set_z_offset(&mut self, value: u8) {
-        self.ram[BEAMOS_LASER_HISTORY_X_HI + self.slot] = value;
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+        self.state.set_lanmola_z_offset(self.slot, value);
+        self.sync();
     }
 
     pub(crate) fn set_direction(&mut self, value: u8) {
-        self.ram[BEAMOS_LASER_HISTORY_Y_HI + self.slot] = value;
-        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+        self.state.set_lanmola_direction(self.slot, value);
+        self.sync();
     }
 }
 
@@ -2859,6 +3006,14 @@ fn read_split_word_bank(ram: &[u8], low_base: usize, high_base: usize, len: usiz
     let mut bank = Vec::with_capacity(len);
     for slot in 0..len {
         bank.push(read_split_u16(ram, low_base, high_base, slot));
+    }
+    bank
+}
+
+fn read_byte_bank(ram: &[u8], base: usize, len: usize) -> Vec<u8> {
+    let mut bank = Vec::with_capacity(len);
+    for slot in 0..len {
+        bank.push(ram.get(base + slot).copied().unwrap_or(0));
     }
     bank
 }

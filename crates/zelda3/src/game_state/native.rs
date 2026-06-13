@@ -2663,6 +2663,61 @@ mod tests {
     }
 
     #[test]
+    fn native_sprite_history_bridges_project_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MOLDORM_HISTORY_X_LO + 7] = 0xff;
+        ram[MOLDORM_HISTORY_Y_LO + 7] = 0xee;
+        ram[SWAMOLA_TARGET_X_LO + 2] = 0xdd;
+        ram[BEAMOS_LASER_HISTORY_X_HI + 9] = 0xcc;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[MOLDORM_HISTORY_X_LO + 7] = 0x34;
+        native_ram[MOLDORM_HISTORY_X_HI + 7] = 0x12;
+        native_ram[MOLDORM_HISTORY_Y_LO + 7] = 0x78;
+        native_ram[MOLDORM_HISTORY_Y_HI + 7] = 0x56;
+        native_ram[SWAMOLA_TARGET_X_LO + 2] = 0x45;
+        native_ram[SWAMOLA_TARGET_X_HI + 2] = 0x23;
+        native_ram[SWAMOLA_TARGET_Y_LO + 2] = 0x89;
+        native_ram[SWAMOLA_TARGET_Y_HI + 2] = 0x67;
+        native_ram[BEAMOS_LASER_HISTORY_X_LO + 9] = 0x67;
+        native_ram[BEAMOS_LASER_HISTORY_X_HI + 9] = 0x45;
+        native_ram[BEAMOS_LASER_HISTORY_Y_LO + 9] = 0xab;
+        native_ram[BEAMOS_LASER_HISTORY_Y_HI + 9] = 0x89;
+        let mut effects = EffectState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge =
+                NativeMoldormHistoryBridgeMut::new(&mut effects.sprite_histories, &mut ram, 7);
+            bridge.set_low_position(0xaa, 0xbb);
+        }
+        {
+            let mut bridge =
+                NativeSwamolaTargetBridgeMut::new(&mut effects.sprite_histories, &mut ram, 2);
+            bridge.set_x_low(0xef);
+        }
+        {
+            let mut bridge = NativeLanmolaSegmentMotionBridgeMut::new(
+                &mut effects.sprite_histories,
+                &mut ram,
+                9,
+            );
+            bridge.set_z_offset(0x55);
+        }
+
+        assert_eq!(effects.sprite_histories.moldorm_history(7).x(), 0x12aa);
+        assert_eq!(effects.sprite_histories.moldorm_history(7).y(), 0x56bb);
+        assert_eq!(effects.sprite_histories.swamola_target(2).x(), 0x23ef);
+        assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x5567);
+        assert_eq!(ram[MOLDORM_HISTORY_X_LO + 7], 0xaa);
+        assert_eq!(ram[MOLDORM_HISTORY_X_HI + 7], 0x12);
+        assert_eq!(ram[MOLDORM_HISTORY_Y_LO + 7], 0xbb);
+        assert_eq!(ram[MOLDORM_HISTORY_Y_HI + 7], 0x56);
+        assert_eq!(ram[SWAMOLA_TARGET_X_LO + 2], 0xef);
+        assert_eq!(ram[SWAMOLA_TARGET_X_HI + 2], 0x23);
+        assert_eq!(ram[BEAMOS_LASER_HISTORY_X_HI + 9], 0x55);
+    }
+
+    #[test]
     fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut state = SpriteState::load_from_ram(&ram);
