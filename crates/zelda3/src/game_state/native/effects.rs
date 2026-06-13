@@ -86,6 +86,8 @@ impl EffectState {
         self.quake_bolts.write_to_ram(ram);
         self.bombos_spell.write_to_ram(ram);
         self.tower_seal.write_to_ram(ram);
+        self.happiness_pond_rupees.write_to_ram(ram);
+        self.weather_vane_debris.write_to_ram(ram);
         self.entrance_effects.write_to_ram(ram);
         self.digging_game_prize.write_to_ram(ram);
     }
@@ -916,11 +918,83 @@ impl HappinessPondRupeesState {
         state
     }
 
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for slot in 0..HAPPINESS_POND_RUPEE_SLOTS {
+            ram[HAPPINESS_POND_ACTIVE + slot] = self.active[slot];
+            ram[HAPPINESS_POND_Y_LO + slot] = self.y_low[slot];
+            ram[HAPPINESS_POND_Y_HI + slot] = self.y_high[slot];
+            ram[HAPPINESS_POND_X_LO + slot] = self.x_low[slot];
+            ram[HAPPINESS_POND_X_HI + slot] = self.x_high[slot];
+            ram[HAPPINESS_POND_Z + slot] = self.z[slot];
+            ram[HAPPINESS_POND_Y_VEL + slot] = self.y_velocity[slot];
+            ram[HAPPINESS_POND_X_VEL + slot] = self.x_velocity[slot];
+            ram[HAPPINESS_POND_Z_VEL + slot] = self.z_velocity[slot];
+            ram[HAPPINESS_POND_Y_SUBPIXEL + slot] = self.y_subpixel[slot];
+            ram[HAPPINESS_POND_X_SUBPIXEL + slot] = self.x_subpixel[slot];
+            ram[HAPPINESS_POND_Z_SUBPIXEL + slot] = self.z_subpixel[slot];
+            ram[HAPPINESS_POND_ITEM_TO_LINK + slot] = self.item_to_link[slot];
+            ram[HAPPINESS_POND_TIMER + slot] = self.timer[slot];
+            ram[HAPPINESS_POND_STEP + slot] = self.step[slot];
+        }
+    }
+
     pub(crate) fn rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
         HappinessPondRupeeSlotState {
             active: self.active.get(slot).copied().unwrap_or(0),
             snapshot: self.snapshot(slot),
         }
+    }
+
+    fn clear(&mut self, slot: usize) {
+        if let Some(active) = self.active.get_mut(slot) {
+            *active = 0;
+        }
+    }
+
+    fn initialize(
+        &mut self,
+        slot: usize,
+        x: u16,
+        y: u16,
+        x_velocity: u8,
+        y_velocity: u8,
+        z_velocity: u8,
+    ) {
+        if slot >= HAPPINESS_POND_RUPEE_SLOTS {
+            return;
+        }
+        self.active[slot] = 1;
+        self.z_velocity[slot] = z_velocity;
+        self.y_velocity[slot] = y_velocity;
+        self.x_velocity[slot] = x_velocity;
+        self.z[slot] = 0;
+        self.step[slot] = 0;
+        self.timer[slot] = 16;
+        self.item_to_link[slot] = 53;
+        self.x_low[slot] = x as u8;
+        self.x_high[slot] = (x >> 8) as u8;
+        self.y_low[slot] = y as u8;
+        self.y_high[slot] = (y >> 8) as u8;
+    }
+
+    fn store_snapshot(&mut self, slot: usize, state: HappinessPondRupeeSnapshot) {
+        if slot >= HAPPINESS_POND_RUPEE_SLOTS {
+            return;
+        }
+        self.y_low[slot] = state.y_low;
+        self.y_high[slot] = state.y_high;
+        self.x_low[slot] = state.x_low;
+        self.x_high[slot] = state.x_high;
+        self.z[slot] = state.z;
+        self.y_velocity[slot] = state.y_velocity;
+        self.x_velocity[slot] = state.x_velocity;
+        self.z_velocity[slot] = state.z_velocity;
+        self.y_subpixel[slot] = state.y_subpixel;
+        self.x_subpixel[slot] = state.x_subpixel;
+        self.z_subpixel[slot] = state.z_subpixel;
+        self.item_to_link[slot] = state.item_to_link;
+        self.timer[slot] = state.timer;
+        self.step[slot] = state.step;
     }
 
     fn snapshot(&self, slot: usize) -> HappinessPondRupeeSnapshot {
@@ -993,17 +1067,24 @@ impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = HappinessPondRupeesState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = HappinessPondRupeesState::load_from_ram(self.ram);
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            HappinessPondRupeesState::load_from_ram(self.ram)
+        );
     }
 
     pub(crate) fn clear(&mut self) {
-        self.ram[HAPPINESS_POND_ACTIVE + self.slot] = 0;
-        self.reload();
+        self.state.clear(self.slot);
+        self.sync();
     }
 
     pub(crate) fn initialize(
@@ -1014,37 +1095,14 @@ impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
         y_velocity: u8,
         z_velocity: u8,
     ) {
-        self.ram[HAPPINESS_POND_ACTIVE + self.slot] = 1;
-        self.ram[HAPPINESS_POND_Z_VEL + self.slot] = z_velocity;
-        self.ram[HAPPINESS_POND_Y_VEL + self.slot] = y_velocity;
-        self.ram[HAPPINESS_POND_X_VEL + self.slot] = x_velocity;
-        self.ram[HAPPINESS_POND_Z + self.slot] = 0;
-        self.ram[HAPPINESS_POND_STEP + self.slot] = 0;
-        self.ram[HAPPINESS_POND_TIMER + self.slot] = 16;
-        self.ram[HAPPINESS_POND_ITEM_TO_LINK + self.slot] = 53;
-        self.ram[HAPPINESS_POND_X_LO + self.slot] = x as u8;
-        self.ram[HAPPINESS_POND_X_HI + self.slot] = (x >> 8) as u8;
-        self.ram[HAPPINESS_POND_Y_LO + self.slot] = y as u8;
-        self.ram[HAPPINESS_POND_Y_HI + self.slot] = (y >> 8) as u8;
-        self.reload();
+        self.state
+            .initialize(self.slot, x, y, x_velocity, y_velocity, z_velocity);
+        self.sync();
     }
 
     pub(crate) fn store_snapshot(&mut self, state: HappinessPondRupeeSnapshot) {
-        self.ram[HAPPINESS_POND_Y_LO + self.slot] = state.y_low;
-        self.ram[HAPPINESS_POND_Y_HI + self.slot] = state.y_high;
-        self.ram[HAPPINESS_POND_X_LO + self.slot] = state.x_low;
-        self.ram[HAPPINESS_POND_X_HI + self.slot] = state.x_high;
-        self.ram[HAPPINESS_POND_Z + self.slot] = state.z;
-        self.ram[HAPPINESS_POND_Y_VEL + self.slot] = state.y_velocity;
-        self.ram[HAPPINESS_POND_X_VEL + self.slot] = state.x_velocity;
-        self.ram[HAPPINESS_POND_Z_VEL + self.slot] = state.z_velocity;
-        self.ram[HAPPINESS_POND_Y_SUBPIXEL + self.slot] = state.y_subpixel;
-        self.ram[HAPPINESS_POND_X_SUBPIXEL + self.slot] = state.x_subpixel;
-        self.ram[HAPPINESS_POND_Z_SUBPIXEL + self.slot] = state.z_subpixel;
-        self.ram[HAPPINESS_POND_ITEM_TO_LINK + self.slot] = state.item_to_link;
-        self.ram[HAPPINESS_POND_TIMER + self.slot] = state.timer;
-        self.ram[HAPPINESS_POND_STEP + self.slot] = state.step;
-        self.reload();
+        self.state.store_snapshot(self.slot, state);
+        self.sync();
     }
 }
 
@@ -1077,10 +1135,83 @@ impl WeatherVaneDebrisState {
         state
     }
 
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for slot in 0..WEATHER_VANE_DEBRIS_SLOTS {
+            write_split_u16(ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, slot, self.y[slot]);
+            write_split_u16(ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, slot, self.x[slot]);
+            ram[WEATHERVANE_Z + slot] = self.z[slot];
+            ram[WEATHERVANE_Y_VELOCITY + slot] = self.y_velocity[slot];
+            ram[WEATHERVANE_X_VELOCITY + slot] = self.x_velocity[slot];
+            ram[WEATHERVANE_Z_VELOCITY + slot] = self.z_velocity[slot];
+            ram[WEATHERVANE_ANIM_TIMER + slot] = self.animation_timer[slot];
+            ram[WEATHERVANE_DRAW_STATE + slot] = self.draw_state[slot];
+        }
+    }
+
     pub(crate) fn debris(&self, slot: usize) -> WeatherVaneDebrisSlotState {
         WeatherVaneDebrisSlotState {
             snapshot: self.snapshot(slot),
         }
+    }
+
+    fn initialize(
+        &mut self,
+        slot: usize,
+        x: u16,
+        y: u16,
+        x_velocity: u8,
+        y_velocity: u8,
+        z_velocity: u8,
+        z: u8,
+        draw_state: u8,
+    ) {
+        if slot >= WEATHER_VANE_DEBRIS_SLOTS {
+            return;
+        }
+        self.y_velocity[slot] = y_velocity;
+        self.x_velocity[slot] = x_velocity;
+        self.z_velocity[slot] = z_velocity;
+        self.y[slot] = y;
+        self.x[slot] = x;
+        self.z[slot] = z;
+        self.animation_timer[slot] = 1;
+        self.draw_state[slot] = draw_state;
+    }
+
+    fn tick_animation(&mut self, slot: usize) -> u8 {
+        if slot >= WEATHER_VANE_DEBRIS_SLOTS {
+            return 0;
+        }
+        let timer = self.animation_timer[slot].wrapping_sub(1);
+        self.animation_timer[slot] = timer;
+        if (timer as i8).is_negative() {
+            self.animation_timer[slot] = 1;
+            self.draw_state[slot] ^= 1;
+        }
+        self.draw_state[slot]
+    }
+
+    fn tick_z_velocity(&mut self, slot: usize) -> u8 {
+        if slot >= WEATHER_VANE_DEBRIS_SLOTS {
+            return 0;
+        }
+        self.z_velocity[slot] = self.z_velocity[slot].wrapping_sub(1);
+        self.z_velocity[slot]
+    }
+
+    fn mark_finished_if_landed(&mut self, slot: usize, z: u8) {
+        if slot < WEATHER_VANE_DEBRIS_SLOTS && z >= 0xf0 {
+            self.draw_state[slot] = 0xff;
+        }
+    }
+
+    fn save_position(&mut self, slot: usize, x: u16, y: u16, z: u8) {
+        if slot >= WEATHER_VANE_DEBRIS_SLOTS {
+            return;
+        }
+        self.y[slot] = y;
+        self.x[slot] = x;
+        self.z[slot] = z;
     }
 
     fn snapshot(&self, slot: usize) -> WeatherVaneDebrisSnapshot {
@@ -1134,12 +1265,16 @@ impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
-        *state = WeatherVaneDebrisState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
-    fn reload(&mut self) {
-        *self.state = WeatherVaneDebrisState::load_from_ram(self.ram);
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, WeatherVaneDebrisState::load_from_ram(self.ram));
     }
 
     pub(crate) fn initialize(
@@ -1152,48 +1287,32 @@ impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
         z: u8,
         draw_state: u8,
     ) {
-        self.ram[WEATHERVANE_Y_VELOCITY + self.slot] = y_velocity;
-        self.ram[WEATHERVANE_X_VELOCITY + self.slot] = x_velocity;
-        self.ram[WEATHERVANE_Z_VELOCITY + self.slot] = z_velocity;
-        write_split_u16(self.ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, self.slot, y);
-        write_split_u16(self.ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, self.slot, x);
-        self.ram[WEATHERVANE_Z + self.slot] = z;
-        self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = 1;
-        self.ram[WEATHERVANE_DRAW_STATE + self.slot] = draw_state;
-        self.reload();
+        self.state.initialize(
+            self.slot, x, y, x_velocity, y_velocity, z_velocity, z, draw_state,
+        );
+        self.sync();
     }
 
     pub(crate) fn tick_animation(&mut self) -> u8 {
-        let timer = self.ram[WEATHERVANE_ANIM_TIMER + self.slot].wrapping_sub(1);
-        self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = timer;
-        if (timer as i8).is_negative() {
-            self.ram[WEATHERVANE_ANIM_TIMER + self.slot] = 1;
-            self.ram[WEATHERVANE_DRAW_STATE + self.slot] ^= 1;
-        }
-        let draw_state = self.ram[WEATHERVANE_DRAW_STATE + self.slot];
-        self.reload();
+        let draw_state = self.state.tick_animation(self.slot);
+        self.sync();
         draw_state
     }
 
     pub(crate) fn tick_z_velocity(&mut self) -> u8 {
-        let z_velocity = self.ram[WEATHERVANE_Z_VELOCITY + self.slot].wrapping_sub(1);
-        self.ram[WEATHERVANE_Z_VELOCITY + self.slot] = z_velocity;
-        self.reload();
+        let z_velocity = self.state.tick_z_velocity(self.slot);
+        self.sync();
         z_velocity
     }
 
     pub(crate) fn mark_finished_if_landed(&mut self, z: u8) {
-        if z >= 0xf0 {
-            self.ram[WEATHERVANE_DRAW_STATE + self.slot] = 0xff;
-            self.reload();
-        }
+        self.state.mark_finished_if_landed(self.slot, z);
+        self.sync();
     }
 
     pub(crate) fn save_position(&mut self, x: u16, y: u16, z: u8) {
-        write_split_u16(self.ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, self.slot, y);
-        write_split_u16(self.ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, self.slot, x);
-        self.ram[WEATHERVANE_Z + self.slot] = z;
-        self.reload();
+        self.state.save_position(self.slot, x, y, z);
+        self.sync();
     }
 }
 

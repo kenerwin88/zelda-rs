@@ -2462,6 +2462,40 @@ mod tests {
     }
 
     #[test]
+    fn native_happiness_pond_rupee_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[HAPPINESS_POND_ACTIVE + 4] = 0xff;
+        ram[HAPPINESS_POND_X_LO + 4] = 0xee;
+        ram[HAPPINESS_POND_TIMER + 4] = 0xdd;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[HAPPINESS_POND_ACTIVE + 4] = 1;
+        native_ram[HAPPINESS_POND_X_LO + 4] = 0x34;
+        native_ram[HAPPINESS_POND_X_HI + 4] = 0x12;
+        native_ram[HAPPINESS_POND_TIMER + 4] = 8;
+        let mut effects = EffectState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeHappinessPondRupeeBridgeMut::new(
+                &mut effects.happiness_pond_rupees,
+                &mut ram,
+                4,
+            );
+            bridge.clear();
+        }
+
+        let rupee = effects.happiness_pond_rupees.rupee(4);
+        assert!(!rupee.is_active());
+        assert_eq!(rupee.snapshot().x_low, 0x34);
+        assert_eq!(rupee.snapshot().x_high, 0x12);
+        assert_eq!(rupee.snapshot().timer, 7);
+        assert_eq!(ram[HAPPINESS_POND_ACTIVE + 4], 0);
+        assert_eq!(ram[HAPPINESS_POND_X_LO + 4], 0x34);
+        assert_eq!(ram[HAPPINESS_POND_X_HI + 4], 0x12);
+        assert_eq!(ram[HAPPINESS_POND_TIMER + 4], 8);
+    }
+
+    #[test]
     fn native_weather_vane_debris_bridge_updates_transient_slots() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut effects = EffectState::load_from_ram(&ram);
@@ -2521,6 +2555,45 @@ mod tests {
         assert_eq!(ram[WEATHERVANE_Z + 3], 0x45);
         assert_eq!(ram[WEATHERVANE_Z_VELOCITY + 3], 0xdd);
         assert_eq!(ram[WEATHERVANE_DRAW_STATE + 3], 0xff);
+    }
+
+    #[test]
+    fn native_weather_vane_debris_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[WEATHERVANE_X_LO + 3] = 0xff;
+        ram[WEATHERVANE_X_HI + 3] = 0xee;
+        ram[WEATHERVANE_DRAW_STATE + 3] = 0xdd;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[WEATHERVANE_X_LO + 3] = 0x34;
+        native_ram[WEATHERVANE_X_HI + 3] = 0x12;
+        native_ram[WEATHERVANE_Y_LO + 3] = 0x78;
+        native_ram[WEATHERVANE_Y_HI + 3] = 0x56;
+        native_ram[WEATHERVANE_Z + 3] = 0x21;
+        native_ram[WEATHERVANE_ANIM_TIMER + 3] = 1;
+        native_ram[WEATHERVANE_DRAW_STATE + 3] = 1;
+        let mut effects = EffectState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeWeatherVaneDebrisBridgeMut::new(
+                &mut effects.weather_vane_debris,
+                &mut ram,
+                3,
+            );
+            assert_eq!(bridge.tick_animation(), 1);
+        }
+
+        let debris = effects.weather_vane_debris.debris(3).snapshot();
+        assert_eq!(debris.x, 0x1234);
+        assert_eq!(debris.y, 0x5678);
+        assert_eq!(debris.z, 0x21);
+        assert_eq!(debris.draw_state, 1);
+        assert_eq!(ram[WEATHERVANE_X_LO + 3], 0x34);
+        assert_eq!(ram[WEATHERVANE_X_HI + 3], 0x12);
+        assert_eq!(ram[WEATHERVANE_Y_LO + 3], 0x78);
+        assert_eq!(ram[WEATHERVANE_Y_HI + 3], 0x56);
+        assert_eq!(ram[WEATHERVANE_Z + 3], 0x21);
+        assert_eq!(ram[WEATHERVANE_DRAW_STATE + 3], 1);
     }
 
     #[test]
