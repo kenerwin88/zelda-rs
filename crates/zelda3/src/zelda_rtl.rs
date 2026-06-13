@@ -26,31 +26,32 @@ use crate::game_state::constants::{
     OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
 };
 use crate::game_state::{
+    armos_knight_home_position_from_ram, arrghus_puff_home_position_from_ram,
     loaded_room_data_word, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
-    ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView, AttractSceneState,
-    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
-    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastState,
-    BombosFireColumnState, BombosSpellState, CachedSpriteRead, ChainChompHistoryState,
-    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState,
-    DisplayState, DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState,
-    DungeonDoorState, DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState,
-    DungeonMapDisplayState, DungeonMovableBlockState, DungeonMovingFloorState,
-    DungeonObjectTrackingState, DungeonRoomDoorSetupState, DungeonRoomEffectsState,
-    DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState, DungeonRoomRuntimeState,
-    DungeonRoomTilemapState, DungeonRoomTrackingState, DungeonSavegameState,
-    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
-    DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
-    EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
-    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
-    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
-    HistoryPositionState, HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState,
-    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot,
-    MazeGameTimerState, MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState,
-    MinigameState, MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    AttractSceneState, Bg1MovementAccumulatorState, BirdTravelDestinationState,
+    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
+    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
+    BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState, DecodedMessageTextState,
+    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
+    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
+    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
+    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
+    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
+    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
+    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
+    HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState, IntroSwordState,
+    InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot, MazeGameTimerState,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
+    NativeArmosKnightHomePositionBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -4298,16 +4299,23 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn arrghus_puff_home_view(&self, puff_slot: usize) -> ArrghusPuffHomeView<'_> {
-        ArrghusPuffHomeView::new(&self.ram, puff_slot)
+    pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
+        arrghus_puff_home_position_from_ram(&self.ram, puff_slot)
     }
 
-    pub(crate) fn armos_knight_home_view(&self, slot: usize) -> ArmosKnightHomeView<'_> {
-        ArmosKnightHomeView::new(&self.ram, slot)
+    pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
+        armos_knight_home_position_from_ram(&self.ram, slot)
     }
 
-    pub(crate) fn armos_knight_home_view_mut(&mut self, slot: usize) -> ArmosKnightHomeViewMut<'_> {
-        ArmosKnightHomeViewMut::new(&mut self.ram, slot)
+    pub(crate) fn armos_knight_home_position_mut(
+        &mut self,
+        slot: usize,
+    ) -> NativeArmosKnightHomePositionBridgeMut<'_> {
+        NativeArmosKnightHomePositionBridgeMut::new(
+            &mut self.game_state.sprites.boss_home_positions,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn alt_sprite_slot_mut(&mut self, slot: usize) -> NativeCachedSpriteBridgeMut<'_> {

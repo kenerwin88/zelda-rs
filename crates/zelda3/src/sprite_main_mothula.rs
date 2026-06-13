@@ -3169,7 +3169,7 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let home = self.arrghus_puff_home_view(k);
+            let home = self.arrghus_puff_home_position(k);
             let x_low = home.x_low();
             let x_high = home.x_high();
             let y_low = home.y_low();
@@ -3183,7 +3183,7 @@ impl ZeldaState {
 
         self.sprite_check_damage_from_link(k);
         if (((k as u8) ^ self.frame_state().frame_counter) & 3) == 0 {
-            let home = self.arrghus_puff_home_view(k);
+            let home = self.arrghus_puff_home_position(k);
             let x = home.x();
             let y = home.y();
             let x_low = home.x_low();
@@ -4796,7 +4796,7 @@ impl ZeldaState {
         } else {
             self.sprite_check_damage_to_and_from_link(k);
             if self.sprite_slot_view(k).ai_state() == 0 {
-                let home = self.armos_knight_home_view(k);
+                let home = self.armos_knight_home_position(k);
                 let x = home.x();
                 let y = home.y();
                 let pt = self.sprite_project_speed_towards_location(k, x, y, 16);
@@ -4814,7 +4814,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                 }
             } else {
-                let home = self.armos_knight_home_view(k);
+                let home = self.armos_knight_home_position(k);
                 let x_low = home.x_low();
                 let x_high = home.x_high();
                 let y_low = home.y_low();

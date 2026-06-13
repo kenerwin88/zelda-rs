@@ -1959,7 +1959,7 @@ impl ZeldaState {
         const Y: [i8; 2] = [-20, -20];
 
         let j = self.sprite_slot_view(0).direction() as usize;
-        let home = self.armos_knight_home_view(k);
+        let home = self.armos_knight_home_position(k);
         let x = home.x();
         let y = home.y();
         self.sprite_set_x(k, x.wrapping_add_signed(i16::from(X[j])));
@@ -4342,7 +4342,7 @@ impl ZeldaState {
             self.overlord_slot_view_mut(3).set_x_low(0);
             self.arrghus_handle_puffs(0);
         }
-        let puff_home = self.arrghus_puff_home_view(k);
+        let puff_home = self.arrghus_puff_home_position(k);
         let x_low = puff_home.x_low();
         let x_high = puff_home.x_high();
         let y_low = puff_home.y_low();
@@ -4406,7 +4406,7 @@ impl ZeldaState {
 
             let tx = (sprite_x + sin_val) as u16;
             let ty = (sprite_y + cos_val - 0x10) as u16;
-            self.armos_knight_home_view_mut(i).set_position(tx, ty);
+            self.armos_knight_home_position_mut(i).set_position(tx, ty);
         }
         self.temp_counter_mut().set(13);
     }

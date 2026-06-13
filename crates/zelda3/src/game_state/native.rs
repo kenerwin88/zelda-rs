@@ -110,12 +110,14 @@ pub(crate) use poly::{
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
 };
 pub(crate) use sprites::{
+    armos_knight_home_position_from_ram, arrghus_puff_home_position_from_ram, BossHomePositionRead,
     CachedSpriteRead, ChainChompHistoryState, DualLayerTileCacheState,
     EnemyDamageSubclassTableState, EtherOrbitState, FollowerRuntimeState, GarnishRuntimeState,
-    MazeGameTimerState, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
+    MazeGameTimerState, NativeArmosKnightHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
+    NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
+    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
+    NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
     NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
@@ -2225,6 +2227,40 @@ mod tests {
         }
         assert_eq!(state.cached_sprites.slot(0x1a).type_byte(), 0x40);
         assert_eq!(ram[ALT_SPRITE_TYPE + 0x1a], 0x40);
+    }
+
+    #[test]
+    fn native_boss_home_positions_load_and_update_overlord_scratch() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let puff_slot = 5;
+        let puff_overlord_slot = puff_slot + 7;
+        ram[OVERLORD_X_LO + puff_overlord_slot] = 0x34;
+        ram[OVERLORD_Y_LO + puff_overlord_slot] = 0x12;
+        ram[OVERLORD_GEN1 + puff_overlord_slot] = 0x78;
+        ram[OVERLORD_GEN3 + puff_overlord_slot] = 0x56;
+
+        let mut state = SpriteState::load_from_ram(&ram);
+        let puff_home = state
+            .boss_home_positions
+            .arrghus_puff_home_position(puff_slot);
+        assert_eq!(puff_home.x(), 0x1234);
+        assert_eq!(puff_home.y(), 0x5678);
+
+        {
+            let mut home = NativeArmosKnightHomePositionBridgeMut::new(
+                &mut state.boss_home_positions,
+                &mut ram,
+                3,
+            );
+            home.set_position(0x9abc, 0xdef0);
+        }
+        let armos_home = state.boss_home_positions.armos_knight_home_position(3);
+        assert_eq!(armos_home.x(), 0x9abc);
+        assert_eq!(armos_home.y(), 0xdef0);
+        assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
+        assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
+        assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
+        assert_eq!(ram[OVERLORD_FLOOR + 3], 0xde);
     }
 
     #[test]

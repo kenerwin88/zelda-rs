@@ -13,20 +13,22 @@ use crate::game_state::constants::{
     FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX,
     GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
     MAIN_TILE_THEME_INDEX, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO, MISC_SPRITES_GRAPHICS_INDEX, OVERWORLD_BOULDER_TRAP_COUNT,
-    OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
-    PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER,
-    REPULSESPARK_X_LO, REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE,
-    SPRCOLL_Y_SIZE, SPRITE_ALERT_FLAG, SPRITE_CHR_HALFSLOT_STATE, SPRITE_DRAW_PRIORITY_OVERRIDE,
-    SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT,
-    SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE,
-    SPRITE_LOAD_BLOCK_STATE, SPRITE_OAM_PREP_X, SPRITE_OAM_PREP_Y, SPRITE_PICKUP_SLOT_CACHE,
-    SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B, SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI,
-    SPRITE_SHARED_WORK_A, SPRITE_STATE, SPRITE_TILETYPE, SPRITE_WHERE_IN_ROOM, SPRITE_Y_LO,
-    SPR_RANGED_BASED_TOGGLER, TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG,
-    TAGALONG_DATA_INDEX, TAGALONG_EVENT_FLAGS, TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS,
-    TAGALONG_SHARED_STATE_A, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO,
-    TAGALONG_Z, TIMER_TAGALONG_REACQUIRE, ZELDA_RESCUE_CUTSCENE_STATE,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, MISC_SPRITES_GRAPHICS_INDEX, OVERLORD_FLOOR, OVERLORD_GEN1,
+    OVERLORD_GEN2, OVERLORD_GEN3, OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO,
+    OVERWORLD_BOULDER_TRAP_COUNT, OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE,
+    OVERWORLD_SPRITE_WAS_LOADED, PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY,
+    REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER, REPULSESPARK_X_LO, REPULSESPARK_Y_LO,
+    SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE, SPRCOLL_Y_SIZE, SPRITE_ALERT_FLAG,
+    SPRITE_CHR_HALFSLOT_STATE, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_GFX_SUBSET_0,
+    SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT,
+    SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE, SPRITE_LOAD_BLOCK_STATE, SPRITE_OAM_PREP_X,
+    SPRITE_OAM_PREP_Y, SPRITE_PICKUP_SLOT_CACHE, SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B,
+    SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI, SPRITE_SHARED_WORK_A, SPRITE_STATE,
+    SPRITE_TILETYPE, SPRITE_WHERE_IN_ROOM, SPRITE_Y_LO, SPR_RANGED_BASED_TOGGLER,
+    TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG, TAGALONG_DATA_INDEX,
+    TAGALONG_EVENT_FLAGS, TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS, TAGALONG_SHARED_STATE_A,
+    TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
+    TIMER_TAGALONG_REACQUIRE, ZELDA_RESCUE_CUTSCENE_STATE,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -40,6 +42,7 @@ const SPRITE_GRAPHICS_SUBSET_COUNT: usize = 4;
 const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
 const CACHED_SPRITE_SLOT_COUNT: usize = 0x1b;
+const BOSS_HOME_POSITION_COUNT: usize = 0x1b;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -59,6 +62,7 @@ pub(crate) struct SpriteState {
     pub(crate) garnish_runtime: GarnishRuntimeState,
     pub(crate) follower_runtime: FollowerRuntimeState,
     pub(crate) cached_sprites: CachedSpritesState,
+    pub(crate) boss_home_positions: BossHomePositionsState,
 }
 
 impl SpriteState {
@@ -80,6 +84,7 @@ impl SpriteState {
             garnish_runtime: GarnishRuntimeState::load_from_ram(ram),
             follower_runtime: FollowerRuntimeState::load_from_ram(ram),
             cached_sprites: CachedSpritesState::load_from_ram(ram),
+            boss_home_positions: BossHomePositionsState::load_from_ram(ram),
         }
     }
 
@@ -99,6 +104,166 @@ impl SpriteState {
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
         self.garnish_runtime.write_to_ram(ram);
         self.follower_runtime.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct BossHomePosition {
+    x_low: u8,
+    x_high: u8,
+    y_low: u8,
+    y_high: u8,
+}
+
+impl BossHomePosition {
+    fn x(&self) -> u16 {
+        u16::from(self.x_low) | (u16::from(self.x_high) << 8)
+    }
+
+    fn y(&self) -> u16 {
+        u16::from(self.y_low) | (u16::from(self.y_high) << 8)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BossHomePositionsState {
+    arrghus_puff_home_positions: [BossHomePosition; BOSS_HOME_POSITION_COUNT],
+    armos_knight_home_positions: [BossHomePosition; BOSS_HOME_POSITION_COUNT],
+}
+
+impl BossHomePositionsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..BOSS_HOME_POSITION_COUNT {
+            let puff_overlord_slot = slot + 7;
+            state.arrghus_puff_home_positions[slot] = BossHomePosition {
+                x_low: ram
+                    .get(OVERLORD_X_LO + puff_overlord_slot)
+                    .copied()
+                    .unwrap_or(0),
+                x_high: ram
+                    .get(OVERLORD_Y_LO + puff_overlord_slot)
+                    .copied()
+                    .unwrap_or(0),
+                y_low: ram
+                    .get(OVERLORD_GEN1 + puff_overlord_slot)
+                    .copied()
+                    .unwrap_or(0),
+                y_high: ram
+                    .get(OVERLORD_GEN3 + puff_overlord_slot)
+                    .copied()
+                    .unwrap_or(0),
+            };
+            state.armos_knight_home_positions[slot] = BossHomePosition {
+                x_low: ram.get(OVERLORD_X_HI + slot).copied().unwrap_or(0),
+                x_high: ram.get(OVERLORD_Y_HI + slot).copied().unwrap_or(0),
+                y_low: ram.get(OVERLORD_GEN2 + slot).copied().unwrap_or(0),
+                y_high: ram.get(OVERLORD_FLOOR + slot).copied().unwrap_or(0),
+            };
+        }
+        state
+    }
+
+    pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
+        BossHomePositionRead {
+            position: self
+                .arrghus_puff_home_positions
+                .get(puff_slot)
+                .copied()
+                .unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
+        BossHomePositionRead {
+            position: self
+                .armos_knight_home_positions
+                .get(slot)
+                .copied()
+                .unwrap_or_default(),
+        }
+    }
+}
+
+pub(crate) fn arrghus_puff_home_position_from_ram(
+    ram: &[u8],
+    puff_slot: usize,
+) -> BossHomePositionRead {
+    let overlord_slot = puff_slot + 7;
+    BossHomePositionRead {
+        position: BossHomePosition {
+            x_low: ram.get(OVERLORD_X_LO + overlord_slot).copied().unwrap_or(0),
+            x_high: ram.get(OVERLORD_Y_LO + overlord_slot).copied().unwrap_or(0),
+            y_low: ram.get(OVERLORD_GEN1 + overlord_slot).copied().unwrap_or(0),
+            y_high: ram.get(OVERLORD_GEN3 + overlord_slot).copied().unwrap_or(0),
+        },
+    }
+}
+
+pub(crate) fn armos_knight_home_position_from_ram(ram: &[u8], slot: usize) -> BossHomePositionRead {
+    BossHomePositionRead {
+        position: BossHomePosition {
+            x_low: ram.get(OVERLORD_X_HI + slot).copied().unwrap_or(0),
+            x_high: ram.get(OVERLORD_Y_HI + slot).copied().unwrap_or(0),
+            y_low: ram.get(OVERLORD_GEN2 + slot).copied().unwrap_or(0),
+            y_high: ram.get(OVERLORD_FLOOR + slot).copied().unwrap_or(0),
+        },
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BossHomePositionRead {
+    position: BossHomePosition,
+}
+
+impl BossHomePositionRead {
+    pub(crate) fn x(&self) -> u16 {
+        self.position.x()
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.position.y()
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.position.x_low
+    }
+
+    pub(crate) fn x_high(&self) -> u8 {
+        self.position.x_high
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.position.y_low
+    }
+
+    pub(crate) fn y_high(&self) -> u8 {
+        self.position.y_high
+    }
+}
+
+pub(crate) struct NativeArmosKnightHomePositionBridgeMut<'a> {
+    state: &'a mut BossHomePositionsState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeArmosKnightHomePositionBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut BossHomePositionsState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = BossHomePositionsState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.ram[OVERLORD_X_HI + self.slot] = x as u8;
+        self.ram[OVERLORD_Y_HI + self.slot] = (x >> 8) as u8;
+        self.ram[OVERLORD_GEN2 + self.slot] = y as u8;
+        self.ram[OVERLORD_FLOOR + self.slot] = (y >> 8) as u8;
+        *self.state = BossHomePositionsState::load_from_ram(self.ram);
     }
 }
 
