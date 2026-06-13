@@ -200,7 +200,6 @@ pub(crate) struct NativeSystemSignalsBridgeMut<'a> {
 
 impl<'a> NativeSystemSignalsBridgeMut<'a> {
     pub(crate) fn new(system_signals: &'a mut SystemSignalsState, ram: &'a mut [u8]) -> Self {
-        *system_signals = SystemSignalsState::load_from_ram(ram);
         Self {
             system_signals,
             ram,

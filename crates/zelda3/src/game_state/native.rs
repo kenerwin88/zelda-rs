@@ -428,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn native_system_signals_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_system_signals_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[CURRENT_MUSIC_CONTROL] = 0x12;
         ram[SOUND_EFFECT_AMBIENT] = 0x05;
@@ -438,7 +438,7 @@ mod tests {
         ram[FLAG_UPDATE_HUD_IN_NMI] = 1;
         ram[GAME_OVER_CHECK_FLAG] = 7;
 
-        let mut system_signals = SystemSignalsState::default();
+        let mut system_signals = SystemSignalsState::load_from_ram(&ram);
         {
             let mut bridge = NativeSystemSignalsBridgeMut::new(&mut system_signals, &mut ram);
             assert!(bridge.queue_sound_effect_1_if_empty(0x2d));
