@@ -68,12 +68,13 @@ pub(crate) use player::{
     SwimAccelerationView,
 };
 pub(crate) use sprites::{
-    ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView,
+    ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView, EtherOrbitState,
     MazeGameTimerView, NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeEnemyDamageSubclassTableBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
-    NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteState, TagalongSlotView,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
+    NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
+    SpriteState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -1293,6 +1294,77 @@ mod tests {
         assert_eq!(history.y(0x80), 0);
         assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_X), 0x1111);
         assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_Y), 0x2222);
+    }
+
+    #[test]
+    fn ether_orbit_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[ETHER_ANGLE + 2] = 0x3f;
+        ram[ETHER_RADIUS] = 0x20;
+        write_le_u16(&mut ram, ETHER_BEAM_Y, 0x1234);
+        write_le_u16(&mut ram, ETHER_BEAM_TOP_BUCKET, 0xabcd);
+        write_le_u16(&mut ram, ETHER_ORBIT_X, 0x4567);
+        write_le_u16(&mut ram, ETHER_ORBIT_Y, 0x89ab);
+        ram[ETHER_SPIN_COUNTDOWN] = 1;
+        write_le_u16(&mut ram, ETHER_ORB_X, 0xdef0);
+        write_le_u16(&mut ram, ETHER_ORB_Y, 0x1357);
+
+        let mut orbit = EtherOrbitState::load_from_ram(&ram);
+        assert_eq!(orbit.angle(2), 0x3f);
+        assert_eq!(orbit.radius(), 0x20);
+        assert_eq!(orbit.beam_y(), 0x1234);
+        assert_eq!(orbit.beam_top_bucket(), 0xcd);
+        assert_eq!(orbit.orbit_x(), 0x4567);
+        assert_eq!(orbit.swordbeam_temp_y(), 0x89ab);
+        assert_eq!(orbit.orb_x(), 0xdef0);
+        assert_eq!(orbit.orb_y(), 0x1357);
+        orbit.advance_angle(2);
+        orbit.set_beam_top_bucket(0x55);
+        orbit.set_swordbeam_temp(0x1111, 0x2222);
+        orbit.write_to_ram(&mut ram);
+
+        assert_eq!(ram[ETHER_ANGLE + 2], 0);
+        assert_eq!(read_le_u16(&ram, ETHER_BEAM_TOP_BUCKET), 0xab55);
+        assert_eq!(read_le_u16(&ram, ETHER_ORBIT_X), 0x1111);
+        assert_eq!(read_le_u16(&ram, ETHER_ORBIT_Y), 0x2222);
+    }
+
+    #[test]
+    fn native_ether_orbit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ETHER_BEAM_TOP_BUCKET, 0x1200);
+        ram[ETHER_SPIN_COUNTDOWN] = 0;
+
+        let mut orbit = EtherOrbitState::default();
+        {
+            let mut bridge = NativeEtherOrbitBridgeMut::new(&mut orbit, &mut ram);
+            bridge.set_angle(0, 0x3f);
+            assert_eq!(bridge.advance_angle(0), 0);
+            bridge.set_radius(0x40);
+            assert_eq!(bridge.tick_spin_countdown(), 0xff);
+            bridge.set_spin_countdown(3);
+            bridge.set_beam_top_bucket(0x34);
+            bridge.initialize_beam_adjusted_y(0x5678);
+            bridge.set_beam_y(0x9abc);
+            bridge.set_orbit_position(0x1111, 0x2222);
+            bridge.set_orb_position(0x3333, 0x4444);
+        }
+
+        assert_eq!(orbit.angle(0), 0);
+        assert_eq!(orbit.radius(), 0x40);
+        assert_eq!(orbit.beam_top_bucket(), 0x78);
+        assert_eq!(orbit.beam_y(), 0x9abc);
+        assert_eq!(orbit.orbit_x(), 0x1111);
+        assert_eq!(orbit.orb_y(), 0x4444);
+        assert_eq!(ram[ETHER_ANGLE], 0);
+        assert_eq!(ram[ETHER_RADIUS], 0x40);
+        assert_eq!(ram[ETHER_SPIN_COUNTDOWN], 3);
+        assert_eq!(read_le_u16(&ram, ETHER_BEAM_TOP_BUCKET), 0x5678);
+        assert_eq!(read_le_u16(&ram, ETHER_BEAM_Y), 0x9abc);
+        assert_eq!(read_le_u16(&ram, ETHER_ORBIT_X), 0x1111);
+        assert_eq!(read_le_u16(&ram, ETHER_ORBIT_Y), 0x2222);
+        assert_eq!(read_le_u16(&ram, ETHER_ORB_X), 0x3333);
+        assert_eq!(read_le_u16(&ram, ETHER_ORB_Y), 0x4444);
     }
 
     #[test]

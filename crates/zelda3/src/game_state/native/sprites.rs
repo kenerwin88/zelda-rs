@@ -1,7 +1,9 @@
 use crate::game_state::constants::{
     CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X,
-    DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, HITBOX_WORK_X_OFFSET,
-    HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE,
+    ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y,
+    ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
+    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
     MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI,
     TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
 };
@@ -10,6 +12,7 @@ use crate::types::{read_le_u16, write_le_u16};
 const SPRITE_SLOT_COUNT: usize = 16;
 const TAGALONG_SLOT_COUNT: usize = 20;
 const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
+const ETHER_ANGLE_COUNT: usize = 8;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -21,6 +24,7 @@ pub(crate) struct SpriteState {
     pub(crate) enemy_damage_subclasses: EnemyDamageSubclassTableState,
     pub(crate) tagalong_trail: TagalongTrailState,
     pub(crate) chain_chomp_history: ChainChompHistoryState,
+    pub(crate) ether_orbit: EtherOrbitState,
 }
 
 impl SpriteState {
@@ -33,6 +37,7 @@ impl SpriteState {
             enemy_damage_subclasses: EnemyDamageSubclassTableState::load_from_ram(ram),
             tagalong_trail: TagalongTrailState::load_from_ram(ram),
             chain_chomp_history: ChainChompHistoryState::load_from_ram(ram),
+            ether_orbit: EtherOrbitState::load_from_ram(ram),
         }
     }
 
@@ -44,6 +49,222 @@ impl SpriteState {
         self.enemy_damage_subclasses.write_to_ram(ram);
         self.tagalong_trail.write_to_ram(ram);
         self.chain_chomp_history.write_to_ram(ram);
+        self.ether_orbit.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EtherOrbitState {
+    angles: [u8; ETHER_ANGLE_COUNT],
+    radius: u8,
+    beam_y: u16,
+    beam_adjusted_y: u16,
+    orbit_x: u16,
+    orbit_y: u16,
+    spin_countdown: u8,
+    orb_x: u16,
+    orb_y: u16,
+}
+
+impl EtherOrbitState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut angles = [0; ETHER_ANGLE_COUNT];
+        for (slot, angle) in angles.iter_mut().enumerate() {
+            *angle = ram.get(ETHER_ANGLE + slot).copied().unwrap_or(0);
+        }
+
+        Self {
+            angles,
+            radius: ram.get(ETHER_RADIUS).copied().unwrap_or(0),
+            beam_y: read_le_u16(ram, ETHER_BEAM_Y),
+            beam_adjusted_y: read_le_u16(ram, ETHER_BEAM_TOP_BUCKET),
+            orbit_x: read_le_u16(ram, ETHER_ORBIT_X),
+            orbit_y: read_le_u16(ram, ETHER_ORBIT_Y),
+            spin_countdown: ram.get(ETHER_SPIN_COUNTDOWN).copied().unwrap_or(0),
+            orb_x: read_le_u16(ram, ETHER_ORB_X),
+            orb_y: read_le_u16(ram, ETHER_ORB_Y),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[ETHER_ANGLE..ETHER_ANGLE + ETHER_ANGLE_COUNT].copy_from_slice(&self.angles);
+        ram[ETHER_RADIUS] = self.radius;
+        write_le_u16(ram, ETHER_BEAM_Y, self.beam_y);
+        write_le_u16(ram, ETHER_BEAM_TOP_BUCKET, self.beam_adjusted_y);
+        write_le_u16(ram, ETHER_ORBIT_X, self.orbit_x);
+        write_le_u16(ram, ETHER_ORBIT_Y, self.orbit_y);
+        ram[ETHER_SPIN_COUNTDOWN] = self.spin_countdown;
+        write_le_u16(ram, ETHER_ORB_Y, self.orb_y);
+        write_le_u16(ram, ETHER_ORB_X, self.orb_x);
+    }
+
+    pub(crate) fn angle(&self, slot: usize) -> u8 {
+        self.angles.get(slot).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn radius(&self) -> u8 {
+        self.radius
+    }
+
+    pub(crate) fn beam_top_bucket(&self) -> u8 {
+        self.beam_adjusted_y as u8
+    }
+
+    pub(crate) fn beam_y(&self) -> u16 {
+        self.beam_y
+    }
+
+    pub(crate) fn orbit_x(&self) -> u16 {
+        self.orbit_x
+    }
+
+    pub(crate) fn orbit_y(&self) -> u16 {
+        self.orbit_y
+    }
+
+    pub(crate) fn swordbeam_temp_x(&self) -> u16 {
+        self.orbit_x()
+    }
+
+    pub(crate) fn swordbeam_temp_y(&self) -> u16 {
+        self.orbit_y()
+    }
+
+    pub(crate) fn orb_x(&self) -> u16 {
+        self.orb_x
+    }
+
+    pub(crate) fn orb_y(&self) -> u16 {
+        self.orb_y
+    }
+
+    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
+        if let Some(angle) = self.angles.get_mut(slot) {
+            *angle = value;
+        }
+    }
+
+    pub(crate) fn advance_angle(&mut self, slot: usize) -> u8 {
+        let next = self.angle(slot).wrapping_add(1) & 0x3f;
+        self.set_angle(slot, next);
+        next
+    }
+
+    pub(crate) fn set_radius(&mut self, value: u8) {
+        self.radius = value;
+    }
+
+    pub(crate) fn tick_spin_countdown(&mut self) -> u8 {
+        self.spin_countdown = self.spin_countdown.wrapping_sub(1);
+        self.spin_countdown
+    }
+
+    pub(crate) fn set_spin_countdown(&mut self, value: u8) {
+        self.spin_countdown = value;
+    }
+
+    pub(crate) fn set_beam_top_bucket(&mut self, value: u8) {
+        self.beam_adjusted_y = (self.beam_adjusted_y & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn initialize_beam_adjusted_y(&mut self, value: u16) {
+        self.beam_adjusted_y = value;
+    }
+
+    pub(crate) fn set_orb_position(&mut self, x: u16, y: u16) {
+        self.orb_x = x;
+        self.orb_y = y;
+    }
+
+    pub(crate) fn set_orbit_position(&mut self, x: u16, y: u16) {
+        self.orbit_x = x;
+        self.orbit_y = y;
+    }
+
+    pub(crate) fn set_swordbeam_temp(&mut self, x: u16, y: u16) {
+        self.set_orbit_position(x, y);
+    }
+
+    pub(crate) fn set_beam_y(&mut self, value: u16) {
+        self.beam_y = value;
+    }
+}
+
+pub(crate) struct NativeEtherOrbitBridgeMut<'a> {
+    orbit: &'a mut EtherOrbitState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeEtherOrbitBridgeMut<'a> {
+    pub(crate) fn new(orbit: &'a mut EtherOrbitState, ram: &'a mut [u8]) -> Self {
+        *orbit = EtherOrbitState::load_from_ram(ram);
+        Self { orbit, ram }
+    }
+
+    fn sync(&mut self) {
+        self.orbit.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.orbit, EtherOrbitState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
+        self.orbit.set_angle(slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn advance_angle(&mut self, slot: usize) -> u8 {
+        let next = self.orbit.advance_angle(slot);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_radius(&mut self, value: u8) {
+        self.orbit.set_radius(value);
+        self.sync();
+    }
+
+    pub(crate) fn tick_spin_countdown(&mut self) -> u8 {
+        let value = self.orbit.tick_spin_countdown();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_spin_countdown(&mut self, value: u8) {
+        self.orbit.set_spin_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_beam_top_bucket(&mut self, value: u8) {
+        self.orbit.set_beam_top_bucket(value);
+        self.sync();
+    }
+
+    pub(crate) fn initialize_beam_adjusted_y(&mut self, value: u16) {
+        self.orbit.initialize_beam_adjusted_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_orb_position(&mut self, x: u16, y: u16) {
+        self.orbit.set_orb_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_orbit_position(&mut self, x: u16, y: u16) {
+        self.orbit.set_orbit_position(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_swordbeam_temp(&mut self, x: u16, y: u16) {
+        self.orbit.set_swordbeam_temp(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn set_beam_y(&mut self, value: u16) {
+        self.orbit.set_beam_y(value);
+        self.sync();
     }
 }
 
