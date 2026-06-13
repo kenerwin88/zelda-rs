@@ -41,7 +41,8 @@ pub(crate) use frame::{
 };
 pub(crate) use inventory::{
     DungeonKeySlotsView, InventoryState, MirrorWarpState, NativeDungeonKeySlotsBridgeMut,
-    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, PlayerResourcesState,
+    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
+    PlayerResourcesState, SaveProgressState,
 };
 pub(crate) use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
@@ -2000,6 +2001,128 @@ mod tests {
         assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0066);
         assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 0);
         assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 1);
+    }
+
+    #[test]
+    fn save_progress_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[CUR_PALACE_INDEX_X2] = 10;
+        ram[SRAM_PROGRESS_INDICATOR] = 2;
+        ram[SRAM_PROGRESS_FLAGS] = 0x40;
+        ram[SAVEGAME_MAP_ICONS_INDICATOR] = 7;
+        ram[WHICH_STARTING_POINT] = 3;
+        ram[SRAM_PROGRESS_INDICATOR_3] = 0x20;
+        ram[SAVEGAME_IS_DARKWORLD] = 0x40;
+        ram[HUD_CUR_ITEM] = 1;
+        ram[HUD_CUR_ITEM_X] = 2;
+        ram[HUD_CUR_ITEM_L] = 3;
+        ram[HUD_CUR_ITEM_R] = 4;
+        write_le_u16(&mut ram, SAVE_DUNG_INFO + 0x109 * 2, 0x0080);
+        write_le_u16(&mut ram, DEATHS_PER_PALACE + 4 * 2, 0x0012);
+        write_le_u16(&mut ram, PENDING_DEATH_SAVE_COUNTER, 0x0034);
+        write_le_u16(&mut ram, TOTAL_DEATH_SAVE_COUNTER, 0xffff);
+        ram[HUD_POST_MESSAGE_REFRESH_FLAG] = 0x80;
+
+        let mut progress = SaveProgressState::load_from_ram(&ram);
+        assert_eq!(progress.palace_index_x2(), 10);
+        assert_eq!(progress.palace_index(), 5);
+        assert_eq!(progress.progress_indicator_word(), 0x4002);
+        assert!(progress.progress_flags_has(0x40));
+        assert_eq!(progress.map_icons_indicator(), 7);
+        assert_eq!(progress.dark_world_bit6(), 1);
+        assert_eq!(progress.hud_current_item(), 1);
+        assert_eq!(progress.hud_current_item_slot(3), 4);
+        assert_eq!(progress.dungeon_info_word(0x109), 0x0080);
+        assert_eq!(progress.death_count_for_palace(4), 0x0012);
+        assert_eq!(progress.pending_death_save_counter(), 0x0034);
+        assert!(progress.total_death_save_counter_is_uninitialized());
+        assert_eq!(progress.which_starting_point(), 3);
+        assert_eq!(progress.progress_indicator_3(), 0x20);
+
+        progress.xor_palace_index_x2(2);
+        progress.or_progress_flags(1);
+        progress.clear_progress_indicator_3_bits(0x20);
+        progress.xor_dark_world_state(0x40);
+        progress.set_hud_current_item_slot(2, 9);
+        progress.or_dungeon_info_word(0x109, 0x0100);
+        progress.set_dungeon_info_checksum(0x5a5a);
+        progress.increment_pending_death_save_counter();
+        progress.set_total_death_save_counter(0x0045);
+        progress.write_to_ram(&mut ram);
+
+        assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
+        assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x41);
+        assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0);
+        assert_eq!(ram[SAVEGAME_IS_DARKWORLD], 0);
+        assert_eq!(ram[HUD_CUR_ITEM_L], 9);
+        assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 0x109 * 2), 0x0180);
+        assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 0x4fe), 0x5a5a);
+        assert_eq!(read_le_u16(&ram, PENDING_DEATH_SAVE_COUNTER), 0x0035);
+        assert_eq!(read_le_u16(&ram, TOTAL_DEATH_SAVE_COUNTER), 0x0045);
+    }
+
+    #[test]
+    fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SRAM_PROGRESS_FLAGS] = 0x10;
+        ram[SRAM_PROGRESS_INDICATOR_3] = 0xff;
+        ram[HUD_CUR_ITEM] = 1;
+        write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
+
+        let mut progress = SaveProgressState::default();
+        {
+            let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
+            bridge.set_palace_index_x2(0xff);
+            bridge.xor_palace_index_x2(1);
+            bridge.set_which_starting_point(5);
+            bridge.set_progress_indicator(3);
+            bridge.or_progress_flags(0x20);
+            bridge.set_progress_flags(0x22);
+            bridge.or_progress_indicator_3(0x01);
+            bridge.clear_progress_indicator_3_bits(0xf0);
+            bridge.set_map_icons_indicator(6);
+            bridge.set_dark_world_state(0x40);
+            bridge.xor_dark_world_state(0x40);
+            bridge.set_hud_current_item(2);
+            bridge.set_hud_current_item_slot(3, 7);
+            bridge.set_death_count_for_palace(1, 0x0044);
+            assert_eq!(bridge.increment_pending_death_save_counter(), 1);
+            bridge.clear_pending_death_save_counter();
+            bridge.set_total_death_save_counter(0x0055);
+            bridge.request_post_message_refresh();
+            assert_eq!(bridge.or_dungeon_info_word(1, 0x0100), 0x0101);
+            bridge.set_dungeon_info_checksum(0x1234);
+            bridge.clear_post_message_refresh_flag();
+        }
+
+        assert_eq!(progress.palace_index_x2(), 0xfe);
+        assert_eq!(progress.which_starting_point(), 5);
+        assert_eq!(progress.progress_indicator(), 3);
+        assert_eq!(progress.progress_flags(), 0x22);
+        assert_eq!(progress.progress_indicator_3(), 0x0f);
+        assert_eq!(progress.map_icons_indicator(), 6);
+        assert_eq!(progress.dark_world_state(), 0);
+        assert_eq!(progress.hud_current_item(), 2);
+        assert_eq!(progress.hud_current_item_slot(3), 7);
+        assert_eq!(progress.death_count_for_palace(1), 0x0044);
+        assert_eq!(progress.pending_death_save_counter(), 0);
+        assert_eq!(progress.total_death_save_counter(), 0x0055);
+        assert_eq!(progress.dungeon_info_word(1), 0x0101);
+        assert_eq!(ram[CUR_PALACE_INDEX_X2], 0xfe);
+        assert_eq!(ram[WHICH_STARTING_POINT], 5);
+        assert_eq!(ram[SRAM_PROGRESS_INDICATOR], 3);
+        assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x22);
+        assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0x0f);
+        assert_eq!(ram[SAVEGAME_MAP_ICONS_INDICATOR], 6);
+        assert_eq!(ram[SAVEGAME_IS_DARKWORLD], 0);
+        assert_eq!(ram[HUD_CUR_ITEM], 2);
+        assert_eq!(ram[HUD_CUR_ITEM_R], 7);
+        assert_eq!(read_le_u16(&ram, DEATHS_PER_PALACE + 2), 0x0044);
+        assert_eq!(read_le_u16(&ram, PENDING_DEATH_SAVE_COUNTER), 0);
+        assert_eq!(read_le_u16(&ram, TOTAL_DEATH_SAVE_COUNTER), 0x0055);
+        assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
+        assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 0x4fe), 0x1234);
+        assert_eq!(ram[HUD_POST_MESSAGE_REFRESH_FLAG], 0);
     }
 
     #[test]

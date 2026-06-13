@@ -69,7 +69,7 @@ use crate::game_state::{
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
     NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeSpellBridgeMut,
     NativeRamBridgeView, NativeRamBridgeViewMut, NativeSaveLoadTransferBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
@@ -85,11 +85,11 @@ use crate::game_state::{
     PolyFaceCoordsViewMut, PolyProjectedVertexView, PolyProjectedVertexViewMut, PolyRasterEdgeView,
     PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
     PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellState,
-    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressView,
-    SaveProgressViewMut, ScratchCounterState, ScratchWordView, ScratchWordViewMut,
-    SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView,
-    SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
+    RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressState,
+    ScratchCounterState, ScratchWordView, ScratchWordViewMut, SelectFileMenuState,
+    SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView, SkullWoodsFireViewMut,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
+    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
     SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
     SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
@@ -3089,12 +3089,15 @@ impl ZeldaState {
         DungeonStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn save_progress_view(&self) -> SaveProgressView<'_> {
-        SaveProgressView::new(&self.ram)
+    pub(crate) fn save_progress_view(&self) -> SaveProgressState {
+        SaveProgressState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn save_progress_view_mut(&mut self) -> SaveProgressViewMut<'_> {
-        SaveProgressViewMut::new(&mut self.ram)
+    pub(crate) fn save_progress_view_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
+        NativeSaveProgressBridgeMut::new(
+            &mut self.game_state.inventory.save_progress,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn mirror_warp_scratch_view(&self) -> &MirrorWarpState {

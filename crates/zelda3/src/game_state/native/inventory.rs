@@ -3,12 +3,15 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_KEY_SLOT_COUNT: usize = 16;
+const DEATH_COUNT_PALACE_SLOTS: usize = 14;
+const SAVE_DUNGEON_INFO_LEN: usize = 0x500;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InventoryState {
     pub(crate) dungeon_key_slots: DungeonKeySlotsState,
     pub(crate) player_resources: PlayerResourcesState,
     pub(crate) mirror_warp: MirrorWarpState,
+    pub(crate) save_progress: SaveProgressState,
 }
 
 impl InventoryState {
@@ -17,6 +20,7 @@ impl InventoryState {
             dungeon_key_slots: DungeonKeySlotsState::load_from_ram(ram),
             player_resources: PlayerResourcesState::load_from_ram(ram),
             mirror_warp: MirrorWarpState::load_from_ram(ram),
+            save_progress: SaveProgressState::load_from_ram(ram),
         }
     }
 
@@ -24,6 +28,7 @@ impl InventoryState {
         self.dungeon_key_slots.write_to_ram(ram);
         self.player_resources.write_to_ram(ram);
         self.mirror_warp.write_to_ram(ram);
+        self.save_progress.write_to_ram(ram);
     }
 }
 
@@ -250,6 +255,465 @@ impl<'a> NativeMirrorWarpBridgeMut<'a> {
         let value = self.mirror_warp.decrement_animation_counter();
         self.sync();
         value
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SaveProgressState {
+    palace_index_x2: u8,
+    hud_current_items: [u8; 4],
+    dungeon_info: Vec<u8>,
+    post_message_refresh_flag: u8,
+}
+
+impl Default for SaveProgressState {
+    fn default() -> Self {
+        Self {
+            palace_index_x2: 0,
+            hud_current_items: [0; 4],
+            dungeon_info: vec![0; SAVE_DUNGEON_INFO_LEN],
+            post_message_refresh_flag: 0,
+        }
+    }
+}
+
+impl SaveProgressState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut dungeon_info = vec![0; SAVE_DUNGEON_INFO_LEN];
+        if let Some(source) = ram.get(SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_DUNGEON_INFO_LEN) {
+            dungeon_info.copy_from_slice(source);
+        }
+
+        Self {
+            palace_index_x2: ram_byte(ram, CUR_PALACE_INDEX_X2),
+            hud_current_items: [
+                ram_byte(ram, HUD_CUR_ITEM),
+                ram_byte(ram, HUD_CUR_ITEM_X),
+                ram_byte(ram, HUD_CUR_ITEM_L),
+                ram_byte(ram, HUD_CUR_ITEM_R),
+            ],
+            dungeon_info,
+            post_message_refresh_flag: ram_byte(ram, HUD_POST_MESSAGE_REFRESH_FLAG),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_DUNGEON_INFO_LEN]
+            .copy_from_slice(&self.dungeon_info);
+        ram[CUR_PALACE_INDEX_X2] = self.palace_index_x2;
+        ram[HUD_CUR_ITEM] = self.hud_current_items[0];
+        ram[HUD_CUR_ITEM_X] = self.hud_current_items[1];
+        ram[HUD_CUR_ITEM_L] = self.hud_current_items[2];
+        ram[HUD_CUR_ITEM_R] = self.hud_current_items[3];
+        ram[HUD_POST_MESSAGE_REFRESH_FLAG] = self.post_message_refresh_flag;
+    }
+
+    fn save_offset(address: usize) -> usize {
+        address - SAVE_DUNG_INFO
+    }
+
+    fn save_byte(&self, address: usize) -> u8 {
+        self.dungeon_info
+            .get(Self::save_offset(address))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn set_save_byte(&mut self, address: usize, value: u8) {
+        if let Some(byte) = self.dungeon_info.get_mut(Self::save_offset(address)) {
+            *byte = value;
+        }
+    }
+
+    fn save_word(&self, address: usize) -> u16 {
+        let offset = Self::save_offset(address);
+        if offset + 1 < self.dungeon_info.len() {
+            u16::from(self.dungeon_info[offset]) | (u16::from(self.dungeon_info[offset + 1]) << 8)
+        } else {
+            0
+        }
+    }
+
+    fn set_save_word(&mut self, address: usize, value: u16) {
+        let offset = Self::save_offset(address);
+        if offset + 1 < self.dungeon_info.len() {
+            self.dungeon_info[offset] = value as u8;
+            self.dungeon_info[offset + 1] = (value >> 8) as u8;
+        }
+    }
+
+    pub(crate) fn palace_index_x2(&self) -> u8 {
+        self.palace_index_x2
+    }
+
+    pub(crate) fn palace_index_x2_word(&self) -> u16 {
+        u16::from(self.palace_index_x2)
+    }
+
+    pub(crate) fn palace_index(&self) -> usize {
+        usize::from(self.palace_index_x2() >> 1)
+    }
+
+    pub(crate) fn progress_indicator(&self) -> u8 {
+        self.save_byte(SRAM_PROGRESS_INDICATOR)
+    }
+
+    pub(crate) fn progress_indicator_word(&self) -> u16 {
+        self.save_word(SRAM_PROGRESS_INDICATOR)
+    }
+
+    pub(crate) fn progress_flags(&self) -> u8 {
+        self.save_byte(SRAM_PROGRESS_FLAGS)
+    }
+
+    pub(crate) fn progress_flags_has(&self, mask: u8) -> bool {
+        self.progress_flags() & mask != 0
+    }
+
+    pub(crate) fn map_icons_indicator(&self) -> u8 {
+        self.save_byte(SAVEGAME_MAP_ICONS_INDICATOR)
+    }
+
+    pub(crate) fn dark_world_state(&self) -> u8 {
+        self.save_byte(SAVEGAME_IS_DARKWORLD)
+    }
+
+    pub(crate) fn is_dark_world(&self) -> bool {
+        self.dark_world_state() != 0
+    }
+
+    pub(crate) fn dark_world_bit6(&self) -> u8 {
+        (self.dark_world_state() >> 6) & 1
+    }
+
+    pub(crate) fn hud_current_item(&self) -> u8 {
+        self.hud_current_item_slot(0)
+    }
+
+    pub(crate) fn hud_current_item_slot(&self, slot: usize) -> u8 {
+        self.hud_current_items
+            .get(slot)
+            .copied()
+            .unwrap_or(self.hud_current_items[0])
+    }
+
+    pub(crate) fn dungeon_info_word(&self, room: usize) -> u16 {
+        let offset = room * 2;
+        if offset + 1 < self.dungeon_info.len() {
+            u16::from(self.dungeon_info[offset]) | (u16::from(self.dungeon_info[offset + 1]) << 8)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn death_count_for_palace(&self, palace: usize) -> u16 {
+        if palace < DEATH_COUNT_PALACE_SLOTS {
+            self.save_word(DEATHS_PER_PALACE + palace * 2)
+        } else {
+            0
+        }
+    }
+
+    pub(crate) fn pending_death_save_counter(&self) -> u16 {
+        self.save_word(PENDING_DEATH_SAVE_COUNTER)
+    }
+
+    pub(crate) fn total_death_save_counter(&self) -> u16 {
+        self.save_word(TOTAL_DEATH_SAVE_COUNTER)
+    }
+
+    pub(crate) fn total_death_save_counter_is_uninitialized(&self) -> bool {
+        self.total_death_save_counter() == 0xffff
+    }
+
+    pub(crate) fn dungeon_info_slice(&self) -> &[u8] {
+        &self.dungeon_info
+    }
+
+    pub(crate) fn which_starting_point(&self) -> u8 {
+        self.save_byte(WHICH_STARTING_POINT)
+    }
+
+    pub(crate) fn progress_indicator_3(&self) -> u8 {
+        self.save_byte(SRAM_PROGRESS_INDICATOR_3)
+    }
+
+    pub(crate) fn set_palace_index_x2(&mut self, value: u8) {
+        self.palace_index_x2 = value;
+    }
+
+    pub(crate) fn set_which_starting_point(&mut self, value: u8) {
+        self.set_save_byte(WHICH_STARTING_POINT, value);
+    }
+
+    pub(crate) fn xor_palace_index_x2(&mut self, value: u8) {
+        self.palace_index_x2 ^= value;
+    }
+
+    pub(crate) fn set_progress_indicator(&mut self, value: u8) {
+        self.set_save_byte(SRAM_PROGRESS_INDICATOR, value);
+    }
+
+    pub(crate) fn or_progress_flags(&mut self, value: u8) {
+        self.set_save_byte(SRAM_PROGRESS_FLAGS, self.progress_flags() | value);
+    }
+
+    pub(crate) fn or_progress_indicator_3(&mut self, bits: u8) {
+        self.set_save_byte(
+            SRAM_PROGRESS_INDICATOR_3,
+            self.progress_indicator_3() | bits,
+        );
+    }
+
+    pub(crate) fn clear_progress_indicator_3_bits(&mut self, bits: u8) {
+        self.set_save_byte(
+            SRAM_PROGRESS_INDICATOR_3,
+            self.progress_indicator_3() & !bits,
+        );
+    }
+
+    pub(crate) fn xor_progress_flags(&mut self, value: u8) {
+        self.set_save_byte(SRAM_PROGRESS_FLAGS, self.progress_flags() ^ value);
+    }
+
+    pub(crate) fn set_progress_flags(&mut self, value: u8) {
+        self.set_save_byte(SRAM_PROGRESS_FLAGS, value);
+    }
+
+    pub(crate) fn set_map_icons_indicator(&mut self, value: u8) {
+        self.set_save_byte(SAVEGAME_MAP_ICONS_INDICATOR, value);
+    }
+
+    pub(crate) fn set_dark_world_state(&mut self, value: u8) {
+        self.set_save_byte(SAVEGAME_IS_DARKWORLD, value);
+    }
+
+    pub(crate) fn xor_dark_world_state(&mut self, value: u8) {
+        self.set_save_byte(SAVEGAME_IS_DARKWORLD, self.dark_world_state() ^ value);
+    }
+
+    pub(crate) fn set_hud_current_item(&mut self, value: u8) {
+        self.set_hud_current_item_slot(0, value);
+    }
+
+    pub(crate) fn set_hud_current_item_slot(&mut self, slot: usize, value: u8) {
+        let slot = slot.min(self.hud_current_items.len() - 1);
+        self.hud_current_items[slot] = value;
+    }
+
+    pub(crate) fn set_death_count_for_palace(&mut self, palace: usize, value: u16) {
+        if palace < DEATH_COUNT_PALACE_SLOTS {
+            self.set_save_word(DEATHS_PER_PALACE + palace * 2, value);
+        }
+    }
+
+    pub(crate) fn increment_pending_death_save_counter(&mut self) -> u16 {
+        let deaths = self.pending_death_save_counter().wrapping_add(1);
+        self.set_save_word(PENDING_DEATH_SAVE_COUNTER, deaths);
+        deaths
+    }
+
+    pub(crate) fn clear_pending_death_save_counter(&mut self) {
+        self.set_save_word(PENDING_DEATH_SAVE_COUNTER, 0);
+    }
+
+    pub(crate) fn set_total_death_save_counter(&mut self, value: u16) {
+        self.set_save_word(TOTAL_DEATH_SAVE_COUNTER, value);
+    }
+
+    pub(crate) fn clear_post_message_refresh_flag(&mut self) {
+        self.post_message_refresh_flag = 0;
+    }
+
+    pub(crate) fn request_post_message_refresh(&mut self) {
+        self.post_message_refresh_flag = 0x80;
+    }
+
+    pub(crate) fn clear_dungeon_info(&mut self) {
+        self.dungeon_info.fill(0);
+    }
+
+    pub(crate) fn copy_dungeon_info_from(&mut self, source: &[u8]) {
+        self.dungeon_info.copy_from_slice(source);
+    }
+
+    pub(crate) fn set_dungeon_info_word(&mut self, room: usize, value: u16) {
+        let offset = room * 2;
+        if offset + 1 < self.dungeon_info.len() {
+            self.dungeon_info[offset] = value as u8;
+            self.dungeon_info[offset + 1] = (value >> 8) as u8;
+        }
+    }
+
+    pub(crate) fn or_dungeon_info_word(&mut self, room: usize, value: u16) -> u16 {
+        let word = self.dungeon_info_word(room) | value;
+        self.set_dungeon_info_word(room, word);
+        word
+    }
+
+    pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
+        self.set_dungeon_info_word(0x27f, value);
+    }
+
+    pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
+        let mut checksum = 0x5a5au16;
+        for i in (0..0x4fe).step_by(2) {
+            let word = u16::from(self.dungeon_info[i]) | (u16::from(self.dungeon_info[i + 1]) << 8);
+            checksum = checksum.wrapping_sub(word);
+        }
+        checksum
+    }
+}
+
+pub(crate) struct NativeSaveProgressBridgeMut<'a> {
+    state: &'a mut SaveProgressState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeSaveProgressBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut SaveProgressState, ram: &'a mut [u8]) -> Self {
+        *state = SaveProgressState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, SaveProgressState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_palace_index_x2(&mut self, value: u8) {
+        self.state.set_palace_index_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_which_starting_point(&mut self, value: u8) {
+        self.state.set_which_starting_point(value);
+        self.sync();
+    }
+
+    pub(crate) fn xor_palace_index_x2(&mut self, value: u8) {
+        self.state.xor_palace_index_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_progress_indicator(&mut self, value: u8) {
+        self.state.set_progress_indicator(value);
+        self.sync();
+    }
+
+    pub(crate) fn or_progress_flags(&mut self, value: u8) {
+        self.state.or_progress_flags(value);
+        self.sync();
+    }
+
+    pub(crate) fn or_progress_indicator_3(&mut self, bits: u8) {
+        self.state.or_progress_indicator_3(bits);
+        self.sync();
+    }
+
+    pub(crate) fn clear_progress_indicator_3_bits(&mut self, bits: u8) {
+        self.state.clear_progress_indicator_3_bits(bits);
+        self.sync();
+    }
+
+    pub(crate) fn xor_progress_flags(&mut self, value: u8) {
+        self.state.xor_progress_flags(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_progress_flags(&mut self, value: u8) {
+        self.state.set_progress_flags(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_map_icons_indicator(&mut self, value: u8) {
+        self.state.set_map_icons_indicator(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_dark_world_state(&mut self, value: u8) {
+        self.state.set_dark_world_state(value);
+        self.sync();
+    }
+
+    pub(crate) fn xor_dark_world_state(&mut self, value: u8) {
+        self.state.xor_dark_world_state(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_hud_current_item(&mut self, value: u8) {
+        self.state.set_hud_current_item(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_hud_current_item_slot(&mut self, slot: usize, value: u8) {
+        self.state.set_hud_current_item_slot(slot, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_death_count_for_palace(&mut self, palace: usize, value: u16) {
+        self.state.set_death_count_for_palace(palace, value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_pending_death_save_counter(&mut self) -> u16 {
+        let deaths = self.state.increment_pending_death_save_counter();
+        self.sync();
+        deaths
+    }
+
+    pub(crate) fn clear_pending_death_save_counter(&mut self) {
+        self.state.clear_pending_death_save_counter();
+        self.sync();
+    }
+
+    pub(crate) fn set_total_death_save_counter(&mut self, value: u16) {
+        self.state.set_total_death_save_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_post_message_refresh_flag(&mut self) {
+        self.state.clear_post_message_refresh_flag();
+        self.sync();
+    }
+
+    pub(crate) fn request_post_message_refresh(&mut self) {
+        self.state.request_post_message_refresh();
+        self.sync();
+    }
+
+    pub(crate) fn clear_dungeon_info(&mut self) {
+        self.state.clear_dungeon_info();
+        self.sync();
+    }
+
+    pub(crate) fn copy_dungeon_info_from(&mut self, source: &[u8]) {
+        self.state.copy_dungeon_info_from(source);
+        self.sync();
+    }
+
+    pub(crate) fn set_dungeon_info_word(&mut self, room: usize, value: u16) {
+        self.state.set_dungeon_info_word(room, value);
+        self.sync();
+    }
+
+    pub(crate) fn or_dungeon_info_word(&mut self, room: usize, value: u16) -> u16 {
+        let word = self.state.or_dungeon_info_word(room, value);
+        self.sync();
+        word
+    }
+
+    pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
+        self.state.set_dungeon_info_checksum(value);
+        self.sync();
+    }
+
+    pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
+        self.state.compute_dungeon_info_checksum()
     }
 }
 
