@@ -49,7 +49,7 @@ pub(crate) use dungeon::{
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
+    BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisState,
     EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut,
     NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
@@ -66,7 +66,7 @@ pub(crate) use frame::{
     FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
 };
 pub(crate) use inventory::{
-    DungeonKeySlotsView, InventoryItemsState, InventoryState, MirrorWarpState,
+    DungeonKeySlotsState, InventoryItemsState, InventoryState, MirrorWarpState,
     NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut,
     NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut, PlayerResourcesState,
     SaveProgressState,
@@ -139,13 +139,9 @@ use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState};
 #[cfg(test)]
 use dungeon::DungeonEntranceBackupState;
 #[cfg(test)]
-use effects::DoorDebrisState;
-#[cfg(test)]
 use effects::EntranceEffectState;
 #[cfg(test)]
 use effects::QuakeBoltState;
-#[cfg(test)]
-use inventory::DungeonKeySlotsState;
 #[cfg(test)]
 use messaging::{DialoguePointerTableState, DialogueSourceOffsetState, MultiselectChoiceState};
 #[cfg(test)]

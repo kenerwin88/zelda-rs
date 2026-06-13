@@ -1509,36 +1509,6 @@ fn word_from_bank(bank: [u8; DOOR_DEBRIS_BANK_LEN], slot: usize) -> u16 {
     read_le_u16(&bytes, slot * 2)
 }
 
-pub(crate) struct DoorDebrisView<'a> {
-    state: &'a DoorDebrisState,
-}
-
-impl<'a> DoorDebrisView<'a> {
-    pub(crate) fn new(state: &'a DoorDebrisState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn x(&self, slot: usize) -> u8 {
-        self.state.x(slot)
-    }
-
-    pub(crate) fn y(&self, slot: usize) -> u8 {
-        self.state.y(slot)
-    }
-
-    pub(crate) fn direction(&self, slot: usize) -> u8 {
-        self.state.direction(slot)
-    }
-
-    pub(crate) fn x_word(&self, slot: usize) -> u16 {
-        self.state.x_word(slot)
-    }
-
-    pub(crate) fn y_word(&self, slot: usize) -> u16 {
-        self.state.y_word(slot)
-    }
-}
-
 pub(crate) struct NativeDoorDebrisBridgeMut<'a> {
     state: &'a mut DoorDebrisState,
     ram: &'a mut [u8],

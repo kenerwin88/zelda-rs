@@ -1423,7 +1423,7 @@ impl ZeldaState {
                 self.ancilla_get_y(k),
                 k as u8,
             );
-            if self.door_debris_view().x_word(k) != 0 {
+            if self.door_debris().x_word(k) != 0 {
                 self.ancilla_slot_view_mut(k).set_step(1);
             }
         }
@@ -2273,15 +2273,15 @@ impl ZeldaState {
         self.ancilla_prep_adjusted_oam_coord(k);
         let mut oam = self.oam_state().current_pointer_usize();
         let y = self
-            .door_debris_view()
+            .door_debris()
             .y_word(k)
             .wrapping_sub(self.world_scroll().bg2_y());
         let x = self
-            .door_debris_view()
+            .door_debris()
             .x_word(k)
             .wrapping_sub(self.world_scroll().bg2_x());
         let j = self.ancilla_slot_view(k).work_byte_25() as usize
-            + self.door_debris_view().direction(k) as usize * 4;
+            + self.door_debris().direction(k) as usize * 4;
 
         for i in 0..2 {
             let t = j * 2 + i;

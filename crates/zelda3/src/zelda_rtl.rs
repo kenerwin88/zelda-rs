@@ -34,8 +34,8 @@ use crate::game_state::{
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
-    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState,
+    DoorDebrisState, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
+    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
     DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
     DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
     DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
@@ -3185,8 +3185,8 @@ impl ZeldaState {
         NativeDungeonHeaderBridgeMut::new(&mut self.game_state.dungeon.header, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_key_slots_view(&self) -> DungeonKeySlotsView<'_> {
-        DungeonKeySlotsView::new(&self.game_state.inventory.dungeon_key_slots)
+    pub(crate) fn dungeon_key_slots(&self) -> &DungeonKeySlotsState {
+        &self.game_state.inventory.dungeon_key_slots
     }
 
     pub(crate) fn dungeon_key_slots_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
@@ -4119,8 +4119,8 @@ impl ZeldaState {
         LanmolaSegmentMotionViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn door_debris_view(&self) -> DoorDebrisView<'_> {
-        DoorDebrisView::new(&self.game_state.effects.door_debris)
+    pub(crate) fn door_debris(&self) -> &DoorDebrisState {
+        &self.game_state.effects.door_debris
     }
 
     pub(crate) fn door_debris_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {

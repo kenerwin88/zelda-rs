@@ -1113,24 +1113,6 @@ impl DungeonKeySlotsState {
     }
 }
 
-pub(crate) struct DungeonKeySlotsView<'a> {
-    state: &'a DungeonKeySlotsState,
-}
-
-impl<'a> DungeonKeySlotsView<'a> {
-    pub(crate) fn new(state: &'a DungeonKeySlotsState) -> Self {
-        Self { state }
-    }
-
-    pub(crate) fn keys_earned(&self, palace_index_x2: u8) -> u8 {
-        self.state.keys_earned(palace_index_x2)
-    }
-
-    pub(crate) fn keys_earned_slot(&self, slot: usize) -> u8 {
-        self.state.keys_earned_slot(slot)
-    }
-}
-
 pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
     state: &'a mut DungeonKeySlotsState,
     ram: &'a mut [u8],

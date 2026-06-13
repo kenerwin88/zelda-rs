@@ -8046,8 +8046,8 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_ancilla_type(0);
         self.player_state_view_mut().clear_hookshot_grave_latch();
         self.player_state_view_mut().and_defense_flags(!4);
-        let debris_y = self.door_debris_view().y(k);
-        let debris_x = self.door_debris_view().x(k);
+        let debris_y = self.door_debris().y(k);
+        let debris_x = self.door_debris().x(k);
         self.tile_detect_position_mut()
             .set_interaction_scratch_y_bytes(debris_y, debris_x);
         let big_rock = self.tile_detect_position().interaction_scratch_y();

@@ -550,7 +550,7 @@ impl ZeldaState {
         let d = self.save_progress().palace_index_x2_word();
         let keys = if d != 0x00ff {
             let index = if d == 2 { 0 } else { (d >> 1) as usize };
-            self.dungeon_key_slots_view().keys_earned_slot(index)
+            self.dungeon_key_slots().keys_earned_slot(index)
         } else {
             0xff
         };

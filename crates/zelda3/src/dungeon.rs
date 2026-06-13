@@ -9593,7 +9593,7 @@ impl ZeldaState {
         let dung = self.save_progress().palace_index_x2();
         let keys = if dung != 0xff {
             let palace_index_x2 = if dung == 2 { 0 } else { dung };
-            self.dungeon_key_slots_view().keys_earned(palace_index_x2)
+            self.dungeon_key_slots().keys_earned(palace_index_x2)
         } else {
             0xff
         };
