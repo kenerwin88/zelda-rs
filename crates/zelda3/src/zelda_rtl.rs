@@ -80,27 +80,26 @@ use crate::game_state::{
     NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTowerSealBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
-    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
-    OverworldEventInfoState, OverworldMap16DecodeView, OverworldMap16DecodeViewMut,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsState,
-    PolyProjectedVerticesState, PolyRasterEdgeState, PolyStateView, PolyStateViewMut,
-    PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState,
-    SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
-    SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaState,
-    SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView,
-    SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
+    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
+    NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16DecodeView,
+    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
+    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
+    PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
+    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState,
+    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
+    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
+    SkullWoodsFireState, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
+    SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
+    SpriteSlotView, SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    SystemSignalsState, TagalongSlotView, TileDetectionState, TowerSealOrbitView,
+    TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
+    TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
+    WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1803,12 +1802,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn tile_detect_position_view(&self) -> TileDetectPositionView<'_> {
-        TileDetectPositionView::new(&self.ram)
+    pub(crate) fn tile_detect_position_view(&self) -> TileDetectionState {
+        TileDetectionState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn tile_detect_position_view_mut(&mut self) -> TileDetectPositionViewMut<'_> {
-        TileDetectPositionViewMut::new(&mut self.ram)
+    pub(crate) fn tile_detect_position_view_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
+        NativeTileDetectionBridgeMut::new(&mut self.game_state.player.tile_detection, &mut self.ram)
     }
 
     pub(crate) fn ppu_scroll_copy_view(&self) -> PpuScrollCopyState {
