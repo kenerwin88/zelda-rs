@@ -103,11 +103,13 @@ pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, OverworldConfigTableView, OverworldEventInfoState,
-    OverworldMap16State, RoomBoundsState, WeatherVaneState, WorldLocationState, WorldState,
+    NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldLocationBridgeMut,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldMap16SourcePage, OverworldMap16State, RoomBoundsState, WeatherVaneState,
+    WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 

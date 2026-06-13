@@ -3650,7 +3650,7 @@ impl ZeldaState {
                 while len != 0 {
                     let value = src[src_pos];
                     src_pos += 1;
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .write_decompressed_byte(dst, value);
                     dst += 1;
                     len -= 1;
@@ -3661,7 +3661,7 @@ impl ZeldaState {
                 src_pos += 2;
                 let mut offs = (hi << 8) | lo;
                 while len != 0 {
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .copy_decompressed_byte(dst_org, dst, offs);
                     dst += 1;
                     offs += 1;
@@ -3671,7 +3671,7 @@ impl ZeldaState {
                 let value = src[src_pos];
                 src_pos += 1;
                 while len != 0 {
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .write_decompressed_byte(dst, value);
                     dst += 1;
                     len -= 1;
@@ -3681,14 +3681,14 @@ impl ZeldaState {
                 let hi = src[src_pos + 1];
                 src_pos += 2;
                 while len != 0 {
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .write_decompressed_byte(dst, lo);
                     dst += 1;
                     len -= 1;
                     if len == 0 {
                         break;
                     }
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .write_decompressed_byte(dst, hi);
                     dst += 1;
                     len -= 1;
@@ -3697,7 +3697,7 @@ impl ZeldaState {
                 let mut value = src[src_pos];
                 src_pos += 1;
                 while len != 0 {
-                    self.overworld_map16_decode_view_mut()
+                    self.overworld_map16_decode_mut()
                         .write_decompressed_byte(dst, value);
                     dst += 1;
                     value = value.wrapping_add(1);
@@ -3718,21 +3718,20 @@ impl ZeldaState {
     pub(super) fn Overworld_DecompressAndDrawOneQuadrant(&mut self, mut dst: usize, screen: i32) {
         let hibytes = self.GetOverworldHibytes(screen);
         self.Decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes);
-        self.overworld_map16_decode_view_mut()
+        self.overworld_map16_decode_mut()
             .copy_scratch_to_source_words_high(256);
 
         let lobytes = self.GetOverworldLobytes(screen);
         self.Decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes);
-        self.overworld_map16_decode_view_mut()
+        self.overworld_map16_decode_mut()
             .copy_scratch_to_source_words_low(256);
 
-        self.overworld_map16_decode_view_mut()
-            .set_decode_last(0xffff);
+        self.overworld_map16_decode_mut().set_decode_last(0xffff);
         let mut src_offset = 0usize;
         for _ in 0..16 {
             for _ in 0..16 {
                 let input = self
-                    .overworld_map16_decode_view()
+                    .overworld_map16_decode()
                     .source_word(src_offset)
                     .wrapping_mul(2);
                 src_offset += 2;
@@ -3744,16 +3743,15 @@ impl ZeldaState {
     }
 
     fn fill_map16_decode_block(&mut self, dst: usize, table: &[u8], x: usize) {
-        self.overworld_map16_decode_view_mut()
+        self.overworld_map16_decode_mut()
             .decode_block_fill(dst, table, x);
     }
 
     pub(super) fn Overworld_ParseMap32Definition(&mut self, dst: usize, input: u16) {
         let a = input & !7;
-        if a != self.overworld_map16_decode_view().decode_last() {
-            self.overworld_map16_decode_view_mut().set_decode_last(a);
-            self.overworld_map16_decode_view_mut()
-                .set_decode_tmp(a >> 1);
+        if a != self.overworld_map16_decode().decode_last() {
+            self.overworld_map16_decode_mut().set_decode_last(a);
+            self.overworld_map16_decode_mut().set_decode_tmp(a >> 1);
             let x = (a >> 1) as usize + (a >> 2) as usize;
             let map0 = self
                 .asset_raw(60)
@@ -3778,7 +3776,7 @@ impl ZeldaState {
         }
 
         let idx = (input & 7) as usize;
-        self.overworld_map16_decode_view_mut()
+        self.overworld_map16_decode_mut()
             .write_decoded_map32_to_bg2_tilemap(dst, idx);
     }
 
@@ -3815,7 +3813,7 @@ impl ZeldaState {
         let mut xr = self.overworld_map16_dst_off() as usize & 0x1f;
         for _ in 0..32 {
             let value = self
-                .overworld_map16_decode_view()
+                .overworld_map16_decode()
                 .source_page_word(source_page, yr);
             self.world_state_view_mut()
                 .set_dung_replacement_tile_state(xr, value);
@@ -5257,8 +5255,7 @@ impl ZeldaState {
             .asset_raw(56)
             .expect("decompress_enemy_damage_subclasses missing kEnemyDamageData asset")
             .to_vec();
-        self.overworld_map16_decode_view_mut()
-            .copy_source_from(&data);
+        self.overworld_map16_decode_mut().copy_source_from(&data);
         self.enemy_damage_subclass_table_view_mut()
             .load_from_packed_nibbles(&data);
     }

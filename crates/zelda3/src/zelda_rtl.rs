@@ -66,36 +66,37 @@ use crate::game_state::{
     NativeMultiselectChoiceBridgeMut, NativeMultiselectChoiceView, NativeOamStateBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
-    NativeOverworldSpritePresenceBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
-    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
-    NativePolyRasterEdgeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeRamBridgeView, NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut,
-    NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut,
-    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
+    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
+    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
+    NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut,
+    NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut, NativeRamBridgeView,
+    NativeRamBridgeViewMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
     NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
     NativeWorldLocationBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
-    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16DecodeView,
-    OverworldMap16DecodeViewMut, OverworldMap16LoadState, OverworldMap16SourcePage,
-    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferView,
-    PaletteFilterState, PlayerResourcesState, PlayerStateView, PlayerStateViewMut,
-    PlayerTileAttributeView, PolyFaceCoordsState, PolyProjectedVerticesState, PolyRasterEdgeState,
-    PolyStateView, PolyStateViewMut, PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState,
-    QuakeSpellState, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
-    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
-    SkullWoodsFireState, SmallOverworldMap16ScrollBackupState, SpecialExitPositionView,
-    SpotlightHdmaState, SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteSlotView, SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
+    OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
+    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeView, PolyFaceCoordsState,
+    PolyProjectedVerticesState, PolyRasterEdgeState, PolyStateView, PolyStateViewMut,
+    PpuScrollCopyState, PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState,
+    SaveLoadTransferState, SaveProgressState, ScratchCounterState, SelectFileMenuState,
+    SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaState,
+    SpriteBattleState, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView,
+    SpriteSlotViewMut, SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView,
     SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
     SystemSignalsState, TagalongSlotView, TileDetectionState, TowerSealOrbitView,
     TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
@@ -3412,12 +3413,12 @@ impl ZeldaState {
         NativeGraphicsScratchBridgeMut::new(&mut self.ram)
     }
 
-    pub(crate) fn overworld_map16_decode_view(&self) -> OverworldMap16DecodeView<'_> {
-        OverworldMap16DecodeView::new(&self.ram)
+    pub(crate) fn overworld_map16_decode(&self) -> OverworldMap16Decode<'_> {
+        OverworldMap16Decode::new(&self.ram)
     }
 
-    pub(crate) fn overworld_map16_decode_view_mut(&mut self) -> OverworldMap16DecodeViewMut<'_> {
-        OverworldMap16DecodeViewMut::new(&mut self.ram)
+    pub(crate) fn overworld_map16_decode_mut(&mut self) -> NativeOverworldMap16DecodeBridgeMut<'_> {
+        NativeOverworldMap16DecodeBridgeMut::new(&mut self.ram)
     }
 
     pub(crate) fn room_bounds_view(&self) -> RoomBoundsState {
