@@ -562,9 +562,9 @@ impl ZeldaState {
     }
 
     pub(super) fn init_load_default_tile_attr(&mut self) {
-        self.dungeon_state_view_mut()
+        self.dungeon_room_parser_mut()
             .copy_default_tile_attrs_head(&DUNGEON_DEFAULT_ATTR[..0x140]);
-        self.dungeon_state_view_mut()
+        self.dungeon_room_parser_mut()
             .copy_default_tile_attrs_tail(&DUNGEON_DEFAULT_ATTR[0x140..0x180]);
     }
 

@@ -37,20 +37,21 @@ use crate::game_state::{
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
     DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState,
     DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomEffectsState,
-    DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomTilemapState, DungeonRoomTrackingState,
-    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
-    DungeonStairListsState, DungeonStairMovementState, DungeonStateView, DungeonStateViewMut,
-    DungeonTorchState, EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
-    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState, DungeonRoomTilemapState,
+    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonStateView,
+    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
+    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
+    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
+    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -61,11 +62,12 @@ use crate::game_state::{
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
     NativeDungeonRoomEffectsBridgeMut, NativeDungeonRoomItemBridgeMut,
-    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomTilemapBridgeMut,
-    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
-    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
-    NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
+    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomParserBridgeMut,
+    NativeDungeonRoomTilemapBridgeMut, NativeDungeonRoomTrackingBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonSecretBridgeMut, NativeDungeonStairListsBridgeMut,
+    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
@@ -3355,6 +3357,17 @@ impl ZeldaState {
     pub(crate) fn dungeon_room_effects_mut(&mut self) -> NativeDungeonRoomEffectsBridgeMut<'_> {
         NativeDungeonRoomEffectsBridgeMut::new(
             &mut self.game_state.dungeon.room_effects,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_room_parser(&self) -> DungeonRoomParserState {
+        DungeonRoomParserState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_room_parser_mut(&mut self) -> NativeDungeonRoomParserBridgeMut<'_> {
+        NativeDungeonRoomParserBridgeMut::new(
+            &mut self.game_state.dungeon.room_parser,
             &mut self.ram,
         )
     }

@@ -23,16 +23,18 @@ use crate::game_state::constants::{
     DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
     DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
     DUNG_NUM_LIT_TORCHES, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
-    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD,
-    DUNG_QUADRANTS_VISITED, DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2,
-    DUNG_SAVEGAME_STATE_BITS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
-    DUNG_WHICH_KEY_X2_DUNGEON, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
-    MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
-    MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
-    MOVING_WALL_TORCH_UPDATE_FLAG, MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE,
-    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS,
-    OVERWORLD_MAP_STATE, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
-    REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
+    DUNG_NUM_TOGGLE_FLOOR, DUNG_NUM_TOGGLE_PALACE, DUNG_OBJECT_POS_IN_OBJDATA,
+    DUNG_OBJECT_TILEMAP_POS, DUNG_OVERLAY_TO_LOAD, DUNG_QUADRANTS_VISITED,
+    DUNG_REPLACEMENT_TILE_DST_POS_X2, DUNG_REPLACEMENT_TILE_SRC_POS_X2, DUNG_SAVEGAME_STATE_BITS,
+    DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
+    DUNG_WHICH_KEY_X2_DUNGEON, FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT,
+    HDR_DUNGEON_DARK_WITH_LANTERN, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
+    MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
+    MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
+    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
+    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
+    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
+    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
     WATER_HDMA_WINDOW_X, WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y,
     WATER_HDMA_WINDOW_Y_RADIUS, WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET,
@@ -58,6 +60,9 @@ const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
 const MOVING_WALL_REPLACEMENT_WORDS: usize = 64;
+const DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT: usize = 16;
+const DUNGEON_ROOM_TOGGLE_SLOT_COUNT: usize = 8;
+const DUNGEON_POT_REVEAL_ROOM_COUNT: usize = 0x140;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_TILEMAP_WORDS: usize = (DUNG_BG1 - DUNG_BG2) / 2;
@@ -82,6 +87,9 @@ const DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a2;
 const DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a4;
 const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a6;
 const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a8;
+const DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL: usize = 0x0432;
+const STAR_SHAPED_SWITCHES_TILE_LOCAL: usize = 0x06a0;
+const POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL: usize = 0x0f580;
 const DUNG_STAIRS_TABLE_1: usize = 0x06b8;
 const DUNG_STAIRS_TABLE_2: usize = 0x06ec;
 const DUNGEON_DOOR_DEBRIS_X: usize = 0x0728;
@@ -114,6 +122,7 @@ pub(crate) struct DungeonState {
     pub(crate) room_tilemaps: DungeonRoomTilemapState,
     pub(crate) room_items: DungeonRoomItemState,
     pub(crate) room_effects: DungeonRoomEffectsState,
+    pub(crate) room_parser: DungeonRoomParserState,
 }
 
 impl DungeonState {
@@ -136,6 +145,7 @@ impl DungeonState {
             room_tilemaps: DungeonRoomTilemapState::load_from_ram(ram),
             room_items: DungeonRoomItemState::load_from_ram(ram),
             room_effects: DungeonRoomEffectsState::load_from_ram(ram),
+            room_parser: DungeonRoomParserState::load_from_ram(ram),
         }
     }
 
@@ -1634,6 +1644,224 @@ impl DungeonStairMovementState {
 
     fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
         self.in_room_kind = value;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonRoomParserState {
+    star_switch_count_x2: u16,
+    star_switch_tilemap_positions: [u16; DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT],
+    toggle_floor_count_x2: u16,
+    toggle_palace_count_x2: u16,
+    toggle_floor_positions: [u16; DUNGEON_ROOM_TOGGLE_SLOT_COUNT],
+    toggle_palace_positions: [u16; DUNGEON_ROOM_TOGGLE_SLOT_COUNT],
+    floor_1_filler_tiles: u16,
+    floor_2_filler_tiles: u16,
+    room_layout_and_starting_quadrant: u16,
+    pot_reveal_masks: Vec<u16>,
+    tile_attributes: Vec<u8>,
+}
+
+impl Default for DungeonRoomParserState {
+    fn default() -> Self {
+        Self {
+            star_switch_count_x2: 0,
+            star_switch_tilemap_positions: [0; DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT],
+            toggle_floor_count_x2: 0,
+            toggle_palace_count_x2: 0,
+            toggle_floor_positions: [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT],
+            toggle_palace_positions: [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT],
+            floor_1_filler_tiles: 0,
+            floor_2_filler_tiles: 0,
+            room_layout_and_starting_quadrant: 0,
+            pot_reveal_masks: vec![0; DUNGEON_POT_REVEAL_ROOM_COUNT],
+            tile_attributes: vec![0; 0x400],
+        }
+    }
+}
+
+impl DungeonRoomParserState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut star_switch_tilemap_positions = [0; DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT];
+        for (index, pos) in star_switch_tilemap_positions.iter_mut().enumerate() {
+            *pos = read_le_u16(ram, STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2);
+        }
+
+        let mut toggle_floor_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
+        let mut toggle_palace_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
+        for index in 0..DUNGEON_ROOM_TOGGLE_SLOT_COUNT {
+            toggle_floor_positions[index] = read_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2);
+            toggle_palace_positions[index] = read_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2);
+        }
+
+        let mut pot_reveal_masks = vec![0; DUNGEON_POT_REVEAL_ROOM_COUNT];
+        for (room, mask) in pot_reveal_masks.iter_mut().enumerate() {
+            *mask = read_le_u16(ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2);
+        }
+
+        let mut tile_attributes = vec![0; 0x400];
+        let available = ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER);
+        let len = tile_attributes.len().min(available);
+        tile_attributes[..len]
+            .copy_from_slice(&ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len]);
+
+        Self {
+            star_switch_count_x2: read_le_u16(ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL),
+            star_switch_tilemap_positions,
+            toggle_floor_count_x2: read_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR),
+            toggle_palace_count_x2: read_le_u16(ram, DUNG_NUM_TOGGLE_PALACE),
+            toggle_floor_positions,
+            toggle_palace_positions,
+            floor_1_filler_tiles: read_le_u16(ram, FLOOR_1_FILLER_TILES),
+            floor_2_filler_tiles: read_le_u16(ram, FLOOR_2_FILLER_TILES),
+            room_layout_and_starting_quadrant: read_le_u16(ram, DUNG_LAYOUT_AND_STARTING_QUADRANT),
+            pot_reveal_masks,
+            tile_attributes,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(
+            ram,
+            DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL,
+            self.star_switch_count_x2,
+        );
+        for (index, &pos) in self.star_switch_tilemap_positions.iter().enumerate() {
+            write_le_u16(ram, STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2, pos);
+        }
+        write_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR, self.toggle_floor_count_x2);
+        write_le_u16(ram, DUNG_NUM_TOGGLE_PALACE, self.toggle_palace_count_x2);
+        for (index, &pos) in self.toggle_floor_positions.iter().enumerate() {
+            write_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2, pos);
+        }
+        for (index, &pos) in self.toggle_palace_positions.iter().enumerate() {
+            write_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2, pos);
+        }
+        write_le_u16(ram, FLOOR_1_FILLER_TILES, self.floor_1_filler_tiles);
+        write_le_u16(ram, FLOOR_2_FILLER_TILES, self.floor_2_filler_tiles);
+        write_le_u16(
+            ram,
+            DUNG_LAYOUT_AND_STARTING_QUADRANT,
+            self.room_layout_and_starting_quadrant,
+        );
+        for (room, &mask) in self.pot_reveal_masks.iter().enumerate() {
+            write_le_u16(ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2, mask);
+        }
+        let len = self
+            .tile_attributes
+            .len()
+            .min(ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER));
+        ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len]
+            .copy_from_slice(&self.tile_attributes[..len]);
+    }
+
+    pub(crate) fn pots_revealed_in_room(&self, room: usize) -> u16 {
+        self.pot_reveal_masks.get(room).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn toggle_floor_count_x2(&self) -> u16 {
+        self.toggle_floor_count_x2
+    }
+
+    pub(crate) fn toggle_palace_count_x2(&self) -> u16 {
+        self.toggle_palace_count_x2
+    }
+
+    pub(crate) fn toggle_floor_pos(&self, index: usize) -> u16 {
+        self.toggle_floor_positions.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn toggle_palace_pos(&self, index: usize) -> u16 {
+        self.toggle_palace_positions
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn star_switch_count_x2(&self) -> u16 {
+        self.star_switch_count_x2
+    }
+
+    pub(crate) fn star_switch_tilemap_pos(&self, offset_x2: usize) -> u16 {
+        self.star_switch_tilemap_positions
+            .get(offset_x2 >> 1)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn floor_1_filler_tile_source(&self) -> usize {
+        usize::from(self.floor_1_filler_tiles)
+    }
+
+    pub(crate) fn floor_2_filler_tile_source(&self) -> usize {
+        usize::from(self.floor_2_filler_tiles)
+    }
+
+    fn append_star_switch_tile(&mut self, tilemap_pos: u16) -> usize {
+        let index = usize::from(self.star_switch_count_x2) >> 1;
+        self.star_switch_count_x2 = self.star_switch_count_x2.wrapping_add(2);
+        if let Some(pos) = self.star_switch_tilemap_positions.get_mut(index) {
+            *pos = tilemap_pos;
+        }
+        index
+    }
+
+    fn mark_pot_revealed_in_room(&mut self, room: usize, mask: u16) -> u16 {
+        let Some(revealed) = self.pot_reveal_masks.get_mut(room) else {
+            return 0;
+        };
+        *revealed |= mask;
+        *revealed
+    }
+
+    fn append_toggle_palace_pos(&mut self, pos: u16) -> usize {
+        let index = usize::from(self.toggle_palace_count_x2 >> 1);
+        if let Some(slot) = self.toggle_palace_positions.get_mut(index) {
+            *slot = pos;
+        }
+        self.toggle_palace_count_x2 = self.toggle_palace_count_x2.wrapping_add(2);
+        index
+    }
+
+    fn append_toggle_floor_pos(&mut self, pos: u16) -> usize {
+        let index = usize::from(self.toggle_floor_count_x2 >> 1);
+        if let Some(slot) = self.toggle_floor_positions.get_mut(index) {
+            *slot = pos;
+        }
+        self.toggle_floor_count_x2 = self.toggle_floor_count_x2.wrapping_add(2);
+        index
+    }
+
+    fn copy_custom_tile_attrs(&mut self, attrs: &[u8]) {
+        self.tile_attributes[0x140..0x1c0].copy_from_slice(attrs);
+    }
+
+    fn copy_default_tile_attrs_tail(&mut self, attrs: &[u8]) {
+        self.tile_attributes[0x1c0..0x200].copy_from_slice(attrs);
+    }
+
+    fn copy_default_tile_attrs_head(&mut self, data: &[u8]) {
+        self.tile_attributes[..0x140].copy_from_slice(&data[..0x140]);
+    }
+
+    fn set_floor_1_filler_high(&mut self, value: u8) {
+        self.floor_1_filler_tiles = (self.floor_1_filler_tiles & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn set_floor_2_filler_high(&mut self, value: u8) {
+        self.floor_2_filler_tiles = (self.floor_2_filler_tiles & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn set_floor_1_filler_low(&mut self, value: u8) {
+        self.floor_1_filler_tiles = (self.floor_1_filler_tiles & 0xff00) | u16::from(value);
+    }
+
+    fn set_floor_2_filler_low(&mut self, value: u8) {
+        self.floor_2_filler_tiles = (self.floor_2_filler_tiles & 0xff00) | u16::from(value);
+    }
+
+    fn set_room_layout_and_starting_quadrant(&mut self, value: u16) {
+        self.room_layout_and_starting_quadrant = value;
     }
 }
 
@@ -4257,6 +4485,99 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 
     pub(crate) fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
         self.state.set_activate_bomb_trap_overlord(value);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonRoomParserBridgeMut<'a> {
+    state: &'a mut DungeonRoomParserState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonRoomParserState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonRoomParserState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonRoomParserState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn append_star_switch_tile(&mut self, tilemap_pos: u16) -> usize {
+        let index = self.state.append_star_switch_tile(tilemap_pos);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn clear_room_parser_words(&mut self, offsets: &[usize]) {
+        for &offset in offsets {
+            write_le_u16(self.ram, offset, 0);
+        }
+        *self.state = DungeonRoomParserState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn mark_pot_revealed_in_room(&mut self, room: usize, mask: u16) -> u16 {
+        let revealed = self.state.mark_pot_revealed_in_room(room, mask);
+        self.sync();
+        revealed
+    }
+
+    pub(crate) fn append_toggle_palace_pos(&mut self, pos: u16) -> usize {
+        let index = self.state.append_toggle_palace_pos(pos);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn append_toggle_floor_pos(&mut self, pos: u16) -> usize {
+        let index = self.state.append_toggle_floor_pos(pos);
+        self.sync();
+        index
+    }
+
+    pub(crate) fn copy_custom_tile_attrs(&mut self, attrs: &[u8]) {
+        self.state.copy_custom_tile_attrs(attrs);
+        self.sync();
+    }
+
+    pub(crate) fn copy_default_tile_attrs_tail(&mut self, attrs: &[u8]) {
+        self.state.copy_default_tile_attrs_tail(attrs);
+        self.sync();
+    }
+
+    pub(crate) fn copy_default_tile_attrs_head(&mut self, data: &[u8]) {
+        self.state.copy_default_tile_attrs_head(data);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_1_filler_high(&mut self, value: u8) {
+        self.state.set_floor_1_filler_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_2_filler_high(&mut self, value: u8) {
+        self.state.set_floor_2_filler_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_1_filler_low(&mut self, value: u8) {
+        self.state.set_floor_1_filler_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_2_filler_low(&mut self, value: u8) {
+        self.state.set_floor_2_filler_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_room_layout_and_starting_quadrant(&mut self, value: u16) {
+        self.state.set_room_layout_and_starting_quadrant(value);
         self.sync();
     }
 }
