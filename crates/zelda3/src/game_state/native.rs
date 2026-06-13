@@ -5869,7 +5869,24 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, DIALOGUE_MESSAGE_INDEX, 0x0123);
 
-        let mut message_index = DialogueMessageIndexState::default();
+        let mut message_index = DialogueMessageIndexState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeDialogueMessageIndexBridgeMut::new(&mut message_index, &mut ram);
+            bridge.set_value(0x0140);
+        }
+
+        assert_eq!(message_index.value(), 0x0140);
+        assert_eq!(read_le_u16(&ram, DIALOGUE_MESSAGE_INDEX), 0x0140);
+    }
+
+    #[test]
+    fn native_dialogue_message_index_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DIALOGUE_MESSAGE_INDEX, 0xffff);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, DIALOGUE_MESSAGE_INDEX, 0x0123);
+        let mut message_index = DialogueMessageIndexState::load_from_ram(&native_ram);
+
         {
             let mut bridge = NativeDialogueMessageIndexBridgeMut::new(&mut message_index, &mut ram);
             bridge.set_value(0x0140);
@@ -5930,7 +5947,7 @@ mod tests {
         ram[SELECT_FILE_NAME_CURSOR_Y] = 0x80;
         ram[SELECT_FILE_NAME_SCROLL_X_STEP] = 0xfe;
 
-        let mut menu = SelectFileMenuState::default();
+        let mut menu = SelectFileMenuState::load_from_ram(&ram);
         {
             let mut bridge = NativeSelectFileMenuBridgeMut::new(&mut menu, &mut ram);
             assert_eq!(bridge.increment_cursor(), 0);
@@ -5967,6 +5984,27 @@ mod tests {
     }
 
     #[test]
+    fn native_select_file_menu_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SELECT_FILE_CURSOR_WORK] = 0xff;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[SELECT_FILE_CURSOR_WORK] = 2;
+        native_ram[SELECT_FILE_NAME_CURSOR_Y] = 0x80;
+        let mut menu = SelectFileMenuState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeSelectFileMenuBridgeMut::new(&mut menu, &mut ram);
+            assert_eq!(bridge.increment_cursor(), 3);
+            assert!(bridge.step_name_cursor_y_toward(0x84));
+        }
+
+        assert_eq!(menu.cursor(), 3);
+        assert_eq!(menu.name_cursor_y(), 0x82);
+        assert_eq!(ram[SELECT_FILE_CURSOR_WORK], 3);
+        assert_eq!(ram[SELECT_FILE_NAME_CURSOR_Y], 0x82);
+    }
+
+    #[test]
     fn multiselect_choice_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, MULTISELECT_CHOICE, 0x0204);
@@ -5997,7 +6035,7 @@ mod tests {
         write_le_u16(&mut ram, MULTISELECT_CHOICE, 0x0204);
         ram[MULTISELECT_CHOICE_BACKUP] = 0x07;
 
-        let mut choice = MultiselectChoiceState::default();
+        let mut choice = MultiselectChoiceState::load_from_ram(&ram);
         {
             let mut bridge = NativeMultiselectChoiceBridgeMut::new(&mut choice, &mut ram);
             bridge.increment_value();
@@ -6016,6 +6054,30 @@ mod tests {
         assert_eq!(choice.backup(), 0x05);
         assert_eq!(read_le_u16(&ram, MULTISELECT_CHOICE), 0x0204);
         assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 0x05);
+    }
+
+    #[test]
+    fn native_multiselect_choice_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[MULTISELECT_CHOICE] = 0xff;
+        ram[MULTISELECT_CHOICE_BACKUP] = 0xee;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[MULTISELECT_CHOICE] = 4;
+        native_ram[MULTISELECT_CHOICE_BACKUP] = 7;
+        let mut choice = MultiselectChoiceState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeMultiselectChoiceBridgeMut::new(&mut choice, &mut ram);
+            bridge.increment_value();
+            bridge.save_backup();
+            bridge.set_value(1);
+            bridge.restore_backup();
+        }
+
+        assert_eq!(choice.value(), 5);
+        assert_eq!(choice.backup(), 5);
+        assert_eq!(ram[MULTISELECT_CHOICE], 5);
+        assert_eq!(ram[MULTISELECT_CHOICE_BACKUP], 5);
     }
 
     #[test]
@@ -6043,7 +6105,7 @@ mod tests {
         ram[DIALOGUE_NUMBER_LO] = 0x12;
         ram[DIALOGUE_NUMBER_HI] = 0x34;
 
-        let mut number = DialogueNumberState::default();
+        let mut number = DialogueNumberState::load_from_ram(&ram);
         {
             let mut bridge = NativeDialogueNumberBridgeMut::new(&mut number, &mut ram);
             bridge.set_low_pair(0x56);
@@ -6055,6 +6117,27 @@ mod tests {
         assert_eq!(number.packed_digits(1), 0xbc);
         assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x9a);
         assert_eq!(ram[DIALOGUE_NUMBER_HI], 0xbc);
+    }
+
+    #[test]
+    fn native_dialogue_number_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_NUMBER_LO] = 0xff;
+        ram[DIALOGUE_NUMBER_HI] = 0xee;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[DIALOGUE_NUMBER_LO] = 0x12;
+        native_ram[DIALOGUE_NUMBER_HI] = 0x34;
+        let mut number = DialogueNumberState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDialogueNumberBridgeMut::new(&mut number, &mut ram);
+            bridge.set_low_pair(0x56);
+        }
+
+        assert_eq!(number.packed_digits(0), 0x56);
+        assert_eq!(number.packed_digits(1), 0x34);
+        assert_eq!(ram[DIALOGUE_NUMBER_LO], 0x56);
+        assert_eq!(ram[DIALOGUE_NUMBER_HI], 0x34);
     }
 
     #[test]
@@ -6082,7 +6165,7 @@ mod tests {
         ram[DIALOGUE_MSG_SRC_OFFS + 1] = 0xbb;
         ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0xff;
 
-        let mut source_offset = DialogueSourceOffsetState::default();
+        let mut source_offset = DialogueSourceOffsetState::load_from_ram(&ram);
         {
             let mut bridge = NativeDialogueSourceOffsetBridgeMut::new(&mut source_offset, &mut ram);
             assert_eq!(bridge.increment_bank_offset_low_nibble(), 0);
@@ -6093,6 +6176,23 @@ mod tests {
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS], 0xaa);
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 1], 0xbb);
         assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 1);
+    }
+
+    #[test]
+    fn native_dialogue_source_offset_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0xff;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[DIALOGUE_MSG_SRC_OFFS + 2] = 0x0e;
+        let mut source_offset = DialogueSourceOffsetState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeDialogueSourceOffsetBridgeMut::new(&mut source_offset, &mut ram);
+            assert_eq!(bridge.increment_bank_offset_low_nibble(), 0x0f);
+        }
+
+        assert_eq!(source_offset.bank_offset_low_nibble(), 0x0f);
+        assert_eq!(ram[DIALOGUE_MSG_SRC_OFFS + 2], 0x0f);
     }
 
     #[test]
@@ -6199,7 +6299,7 @@ mod tests {
         write_le_u16(&mut ram, MESSAGING_RENDER_BUFFER + 2, 0x1111);
         ram[MESSAGING_RENDER_BUFFER + 6] = 0xf0;
 
-        let mut render_buffer = MessagingRenderBufferState::default();
+        let mut render_buffer = MessagingRenderBufferState::load_from_ram(&ram);
         {
             let mut bridge =
                 NativeMessagingRenderBufferBridgeMut::new(&mut render_buffer, &mut ram);
@@ -6221,6 +6321,27 @@ mod tests {
         assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 4), 0x3333);
         assert_eq!(ram[MESSAGING_RENDER_BUFFER + 6], 0x0f);
         assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 8), 0x4444);
+    }
+
+    #[test]
+    fn native_messaging_render_buffer_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MESSAGING_RENDER_BUFFER + 2, 0xffff);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, MESSAGING_RENDER_BUFFER + 2, 0x1111);
+        native_ram[MESSAGING_RENDER_BUFFER + 6] = 0xf0;
+        let mut render_buffer = MessagingRenderBufferState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge =
+                NativeMessagingRenderBufferBridgeMut::new(&mut render_buffer, &mut ram);
+            bridge.xor_mask(6, 0x0f);
+        }
+
+        assert_eq!(render_buffer.word(1), 0x1111);
+        assert_eq!(render_buffer.word_at_byte_offset(6), 0x00ff);
+        assert_eq!(read_le_u16(&ram, MESSAGING_RENDER_BUFFER + 2), 0x1111);
+        assert_eq!(ram[MESSAGING_RENDER_BUFFER + 6], 0xff);
     }
 
     #[test]
@@ -6268,7 +6389,7 @@ mod tests {
         write_le_u16(&mut ram, VWF_CURLINE, 2);
         write_le_u16(&mut ram, VWF_LINE_PTR, 0x02a0);
 
-        let mut vwf = VwfRenderState::default();
+        let mut vwf = VwfRenderState::load_from_ram(&ram);
         {
             let mut bridge = NativeVwfRenderBridgeMut::new(&mut vwf, &mut ram);
             bridge.set_next_glyph_advance_prefix_sum(2, 0x18);
@@ -6294,6 +6415,28 @@ mod tests {
         assert_eq!(read_le_u16(&ram, VWF_CURLINE), 4);
         assert_eq!(read_le_u16(&ram, VWF_LINE_PTR), 0x0540);
         assert_eq!(read_le_u16(&ram, VWF_TILE_BUFFER + 0x0ec), 0xabcd);
+    }
+
+    #[test]
+    fn native_vwf_render_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, VWF_GLYPH_CURSOR, 0xffff);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[VWF_ARR + 2] = 0x10;
+        write_le_u16(&mut native_ram, VWF_GLYPH_CURSOR, 0x0002);
+        write_le_u16(&mut native_ram, VWF_CURLINE, 4);
+        let mut vwf = VwfRenderState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeVwfRenderBridgeMut::new(&mut vwf, &mut ram);
+            assert_eq!(bridge.increment_glyph_cursor(), 3);
+        }
+
+        assert_eq!(vwf.glyph_cursor(), 3);
+        assert_eq!(vwf.current_line(), 4);
+        assert_eq!(read_le_u16(&ram, VWF_GLYPH_CURSOR), 3);
+        assert_eq!(read_le_u16(&ram, VWF_CURLINE), 4);
+        assert_eq!(ram[VWF_ARR + 2], 0x10);
     }
 
     #[test]
@@ -7062,7 +7205,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, SHARED_MESSAGE_TIMER, 0x0000);
 
-        let mut timer = SharedMessageTimerState::default();
+        let mut timer = SharedMessageTimerState::load_from_ram(&ram);
         {
             let mut bridge = NativeSharedMessageTimerBridgeMut::new(&mut timer, &mut ram);
             assert_eq!(bridge.tick(), 0xffff);
@@ -7073,6 +7216,23 @@ mod tests {
 
         assert_eq!(timer.timer, 0x0040);
         assert_eq!(read_le_u16(&ram, SHARED_MESSAGE_TIMER), 0x0040);
+    }
+
+    #[test]
+    fn native_shared_message_timer_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SHARED_MESSAGE_TIMER, 0xffff);
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, SHARED_MESSAGE_TIMER, 0x0002);
+        let mut timer = SharedMessageTimerState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeSharedMessageTimerBridgeMut::new(&mut timer, &mut ram);
+            assert_eq!(bridge.tick(), 1);
+        }
+
+        assert_eq!(timer.timer, 1);
+        assert_eq!(read_le_u16(&ram, SHARED_MESSAGE_TIMER), 1);
     }
 
     #[test]

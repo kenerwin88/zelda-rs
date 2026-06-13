@@ -991,7 +991,6 @@ pub(crate) struct NativeSelectFileMenuBridgeMut<'a> {
 
 impl<'a> NativeSelectFileMenuBridgeMut<'a> {
     pub(crate) fn new(menu: &'a mut SelectFileMenuState, ram: &'a mut [u8]) -> Self {
-        *menu = SelectFileMenuState::load_from_ram(ram);
         Self { menu, ram }
     }
 
@@ -1205,8 +1204,12 @@ pub(crate) struct NativeDialogueMessageIndexBridgeMut<'a> {
 
 impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
     pub(crate) fn new(message_index: &'a mut DialogueMessageIndexState, ram: &'a mut [u8]) -> Self {
-        *message_index = DialogueMessageIndexState::load_from_ram(ram);
         Self { message_index, ram }
+    }
+
+    fn sync(&mut self) {
+        self.message_index.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1218,8 +1221,7 @@ impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
 
     pub(crate) fn set_value(&mut self, value: u16) {
         self.message_index.set_value(value);
-        write_le_u16(self.ram, DIALOGUE_MESSAGE_INDEX, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1230,8 +1232,12 @@ pub(crate) struct NativeMultiselectChoiceBridgeMut<'a> {
 
 impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
     pub(crate) fn new(choice: &'a mut MultiselectChoiceState, ram: &'a mut [u8]) -> Self {
-        *choice = MultiselectChoiceState::load_from_ram(ram);
         Self { choice, ram }
+    }
+
+    fn sync(&mut self) {
+        self.choice.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1243,32 +1249,27 @@ impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
 
     pub(crate) fn set_value(&mut self, value: u8) {
         self.choice.set_value(value);
-        self.ram[MULTISELECT_CHOICE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_value(&mut self) {
         self.choice.increment_value();
-        self.ram[MULTISELECT_CHOICE] = self.ram[MULTISELECT_CHOICE].wrapping_add(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_value(&mut self) {
         self.choice.decrement_value();
-        self.ram[MULTISELECT_CHOICE] = self.ram[MULTISELECT_CHOICE].wrapping_sub(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn restore_backup(&mut self) {
         self.choice.restore_backup();
-        self.ram[MULTISELECT_CHOICE] = self.ram[MULTISELECT_CHOICE_BACKUP];
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn save_backup(&mut self) {
         self.choice.save_backup();
-        self.ram[MULTISELECT_CHOICE_BACKUP] = self.ram[MULTISELECT_CHOICE];
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1279,8 +1280,12 @@ pub(crate) struct NativeDialogueNumberBridgeMut<'a> {
 
 impl<'a> NativeDialogueNumberBridgeMut<'a> {
     pub(crate) fn new(number: &'a mut DialogueNumberState, ram: &'a mut [u8]) -> Self {
-        *number = DialogueNumberState::load_from_ram(ram);
         Self { number, ram }
+    }
+
+    fn sync(&mut self) {
+        self.number.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1289,21 +1294,17 @@ impl<'a> NativeDialogueNumberBridgeMut<'a> {
 
     pub(crate) fn set_packed_digits(&mut self, low_pair: u8, high_pair: u8) {
         self.number.set_packed_digits(low_pair, high_pair);
-        self.ram[DIALOGUE_NUMBER_LO] = low_pair;
-        self.ram[DIALOGUE_NUMBER_HI] = high_pair;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_low_pair(&mut self, value: u8) {
         self.number.set_low_pair(value);
-        self.ram[DIALOGUE_NUMBER_LO] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_high_pair(&mut self, value: u8) {
         self.number.set_high_pair(value);
-        self.ram[DIALOGUE_NUMBER_HI] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1314,8 +1315,12 @@ pub(crate) struct NativeDialogueSourceOffsetBridgeMut<'a> {
 
 impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
     pub(crate) fn new(source_offset: &'a mut DialogueSourceOffsetState, ram: &'a mut [u8]) -> Self {
-        *source_offset = DialogueSourceOffsetState::load_from_ram(ram);
         Self { source_offset, ram }
+    }
+
+    fn sync(&mut self) {
+        self.source_offset.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1327,8 +1332,7 @@ impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
 
     pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
         let next = self.source_offset.increment_bank_offset_low_nibble();
-        self.ram[DIALOGUE_MSG_SRC_OFFS + 2] = next;
-        self.debug_assert_matches_ram();
+        self.sync();
         next
     }
 }
@@ -1613,8 +1617,12 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
         render_buffer: &'a mut MessagingRenderBufferState,
         ram: &'a mut [u8],
     ) -> Self {
-        *render_buffer = MessagingRenderBufferState::load_from_ram(ram);
         Self { render_buffer, ram }
+    }
+
+    fn sync(&mut self) {
+        self.render_buffer.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1626,46 +1634,34 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
 
     pub(crate) fn xor_mask(&mut self, offset: usize, mask: u8) {
         self.render_buffer.xor_mask(offset, mask);
-        self.ram[MESSAGING_RENDER_BUFFER + offset] ^= mask;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
         self.render_buffer.clear_mask(offset, mask);
-        self.ram[MESSAGING_RENDER_BUFFER + offset] &= !mask;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_word(&mut self, index: usize, value: u16) {
         self.render_buffer.set_word(index, value);
-        write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + index * 2, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
         self.render_buffer
             .set_word_at_byte_offset(byte_offset, value);
-        write_le_u16(self.ram, MESSAGING_RENDER_BUFFER + byte_offset, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_range(&mut self, byte_count: usize) {
         self.render_buffer.clear_range(byte_count);
-        self.ram[MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + byte_count].fill(0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
         self.render_buffer
             .fill_word_range(start_index, count, value);
-        for i in 0..count {
-            write_le_u16(
-                self.ram,
-                MESSAGING_RENDER_BUFFER + (start_index + i) * 2,
-                value,
-            );
-        }
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1676,8 +1672,12 @@ pub(crate) struct NativeVwfRenderBridgeMut<'a> {
 
 impl<'a> NativeVwfRenderBridgeMut<'a> {
     pub(crate) fn new(vwf_render: &'a mut VwfRenderState, ram: &'a mut [u8]) -> Self {
-        *vwf_render = VwfRenderState::load_from_ram(ram);
         Self { vwf_render, ram }
+    }
+
+    fn sync(&mut self) {
+        self.vwf_render.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1687,58 +1687,49 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
     pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
         self.vwf_render
             .set_next_glyph_advance_prefix_sum(index, value);
-        self.ram[VWF_ARR + index + 1] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_glyph_cursor(&mut self, value: u16) {
         self.vwf_render.set_glyph_cursor(value);
-        write_le_u16(self.ram, VWF_GLYPH_CURSOR, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_glyph_cursor(&mut self) {
         self.vwf_render.clear_glyph_cursor();
-        write_le_u16(self.ram, VWF_GLYPH_CURSOR, 0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_glyph_cursor(&mut self) -> u16 {
         let value = self.vwf_render.increment_glyph_cursor();
-        write_le_u16(self.ram, VWF_GLYPH_CURSOR, value);
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn request_next_line(&mut self, value: u16) {
         self.vwf_render.request_next_line(value);
-        write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_next_line_request(&mut self) {
         self.vwf_render.clear_next_line_request();
-        write_le_u16(self.ram, VWF_FLAG_NEXT_LINE, 0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_current_line(&mut self, value: u16) {
         self.vwf_render.set_current_line(value);
-        write_le_u16(self.ram, VWF_CURLINE, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_line_render_offset(&mut self, value: u16) {
         self.vwf_render.set_line_render_offset(value);
-        write_le_u16(self.ram, VWF_LINE_PTR, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
         self.vwf_render
             .set_tile_word_at_byte_offset(byte_offset, value);
-        write_le_u16(self.ram, VWF_TILE_BUFFER + byte_offset, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1749,8 +1740,12 @@ pub(crate) struct NativeSharedMessageTimerBridgeMut<'a> {
 
 impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
     pub(crate) fn new(timer: &'a mut SharedMessageTimerState, ram: &'a mut [u8]) -> Self {
-        *timer = SharedMessageTimerState::load_from_ram(ram);
         Self { timer, ram }
+    }
+
+    fn sync(&mut self) {
+        self.timer.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1762,20 +1757,17 @@ impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
 
     pub(crate) fn start(&mut self, value: u16) {
         self.timer.timer = value;
-        write_le_u16(self.ram, SHARED_MESSAGE_TIMER, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear(&mut self) {
         self.timer.clear();
-        write_le_u16(self.ram, SHARED_MESSAGE_TIMER, 0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn tick(&mut self) -> u16 {
         let value = self.timer.tick();
-        write_le_u16(self.ram, SHARED_MESSAGE_TIMER, value);
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 }
