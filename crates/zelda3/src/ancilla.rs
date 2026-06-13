@@ -3116,19 +3116,19 @@ impl ZeldaState {
             return;
         };
         for i in 0..10 {
-            self.bombos_fire_column_view_mut(i).set_phase(0);
-            self.bombos_fire_column_view_mut(i).set_timer(3);
+            self.bombos_fire_column_mut(i).set_phase(0);
+            self.bombos_fire_column_mut(i).set_timer(3);
         }
         for i in 0..8 {
-            self.bombos_blast_view_mut(i).set_phase(0);
-            self.bombos_blast_view_mut(i).set_timer(3);
+            self.bombos_blast_mut(i).set_phase(0);
+            self.bombos_blast_mut(i).set_timer(3);
         }
         self.bombos_spell_scratch_mut().set_mode(0);
         self.bombos_spell_scratch_mut()
             .set_blast_release_locked(false);
         self.bombos_spell_scratch_mut()
             .set_blast_release_countdown(0x80);
-        self.bombos_fire_column_view_mut(0).set_radial_angle(0x10);
+        self.bombos_fire_column_mut(0).set_radial_angle(0x10);
         self.set_chr_halfslot_request(11);
         self.player_state_view_mut()
             .set_custom_spell_animation_active();
@@ -3158,8 +3158,8 @@ impl ZeldaState {
             self.bombos_spell_scratch_mut()
                 .set_fire_column_seed_position(i, bombos_x_coord2, bombos_y_coord2);
             self.bombos_spell_scratch_mut().set_fire_column_radius(16);
-            let arp = self
-                .ancilla_get_radial_projection(self.bombos_fire_column_view(i).radial_angle(), 16);
+            let arp =
+                self.ancilla_get_radial_projection(self.bombos_fire_column(i).radial_angle(), 16);
             let x = (if arp.r6 != 0 {
                 -(arp.r4 as i32)
             } else {
@@ -3170,7 +3170,7 @@ impl ZeldaState {
             } else {
                 arp.r0 as i32
             }) + i32::from(bombos_y_coord2);
-            self.bombos_fire_column_view_mut(i)
+            self.bombos_fire_column_mut(i)
                 .set_position(x as u16, y as u16);
         }
     }
@@ -3215,18 +3215,18 @@ impl ZeldaState {
         let mut i = sb as i32;
         loop {
             let ui = i as usize;
-            if self.bombos_fire_column_view(ui).phase() != 13 {
-                let timer = self.bombos_fire_column_view_mut(ui).tick_timer();
+            if self.bombos_fire_column(ui).phase() != 13 {
+                let timer = self.bombos_fire_column_mut(ui).tick_timer();
                 if sign8(timer) {
-                    self.bombos_fire_column_view_mut(ui).set_timer(3);
-                    let phase = self.bombos_fire_column_view_mut(ui).advance_phase();
+                    self.bombos_fire_column_mut(ui).set_timer(3);
+                    let phase = self.bombos_fire_column_mut(ui).advance_phase();
                     if phase != 13 {
                         if phase == 2 && sa == 0 {
                             let j = if sb == 9 {
                                 let mut found: Option<usize> = None;
                                 for candidate in (0..=9).rev() {
-                                    if self.bombos_fire_column_view(candidate).phase() == 13 {
-                                        self.bombos_fire_column_view_mut(candidate).set_phase(0);
+                                    if self.bombos_fire_column(candidate).phase() == 13 {
+                                        self.bombos_fire_column_mut(candidate).set_phase(0);
                                         found = Some(candidate);
                                         break;
                                     }
@@ -3243,8 +3243,7 @@ impl ZeldaState {
                             let radius = self
                                 .bombos_spell_scratch_mut()
                                 .grow_fire_column_radius(3, 207);
-                            let angle =
-                                self.bombos_fire_column_view_mut(0).add_radial_angle(6) & 0x3f;
+                            let angle = self.bombos_fire_column_mut(0).add_radial_angle(6) & 0x3f;
                             let arp = self.ancilla_get_radial_projection(angle, radius);
                             let x =
                                 (if arp.r6 != 0 {
@@ -3258,7 +3257,7 @@ impl ZeldaState {
                                 } else {
                                     arp.r0 as i32
                                 }) + i32::from(self.bombos_spell_scratch().fire_column_seed_y(0));
-                            self.bombos_fire_column_view_mut(j)
+                            self.bombos_fire_column_mut(j)
                                 .set_position(x as u16, y as u16);
 
                             let t = (x as u16)
@@ -3286,7 +3285,7 @@ impl ZeldaState {
                 break;
             }
         }
-        if self.bombos_fire_column_view(0).radial_angle() >= 0x80 {
+        if self.bombos_fire_column(0).radial_angle() >= 0x80 {
             self.bombos_spell_scratch_mut().set_mode(1);
         }
         self.ancilla_slot_view_mut(k).set_step(sb);
@@ -3296,12 +3295,12 @@ impl ZeldaState {
         let mut k = self.ancilla_slot_view(kk).step() as i32;
         loop {
             let uk = k as usize;
-            let timer = self.bombos_fire_column_view_mut(uk).tick_timer();
+            let timer = self.bombos_fire_column_mut(uk).tick_timer();
             if sign8(timer) {
-                self.bombos_fire_column_view_mut(uk).set_timer(3);
-                let phase = self.bombos_fire_column_view_mut(uk).advance_phase();
+                self.bombos_fire_column_mut(uk).set_timer(3);
+                let phase = self.bombos_fire_column_mut(uk).advance_phase();
                 if phase >= 13 {
-                    self.bombos_fire_column_view_mut(uk).set_phase(13);
+                    self.bombos_fire_column_mut(uk).set_phase(13);
                 }
             }
             self.ancilla_draw_bombos_fire_column(uk);
@@ -3311,7 +3310,7 @@ impl ZeldaState {
             }
         }
         for k in (0..=9).rev() {
-            if self.bombos_fire_column_view(k).phase() != 13 {
+            if self.bombos_fire_column(k).phase() != 13 {
                 return;
             }
         }
@@ -3325,24 +3324,24 @@ impl ZeldaState {
         let mut sb = k;
         while k >= 0 {
             let uk = k as usize;
-            if self.bombos_blast_view(uk).phase() != 8 {
-                let timer = self.bombos_blast_view_mut(uk).tick_timer();
+            if self.bombos_blast(uk).phase() != 8 {
+                let timer = self.bombos_blast_mut(uk).tick_timer();
                 if sign8(timer) {
-                    self.bombos_blast_view_mut(uk).set_timer(3);
-                    let phase = self.bombos_blast_view_mut(uk).advance_phase();
+                    self.bombos_blast_mut(uk).set_timer(3);
+                    let phase = self.bombos_blast_mut(uk).advance_phase();
                     if phase == 1 && !self.bombos_spell_scratch().blast_release_locked() {
                         let mut j = sb;
                         if j != 15 {
                             sb += 1;
                             j = sb;
                         } else {
-                            while j >= 0 && self.bombos_blast_view(j as usize).phase() != 8 {
+                            while j >= 0 && self.bombos_blast(j as usize).phase() != 8 {
                                 j -= 1;
                             }
                         }
                         let uj = j as usize;
-                        self.bombos_blast_view_mut(uj).set_phase(0);
-                        self.bombos_blast_view_mut(uj).set_timer(3);
+                        self.bombos_blast_mut(uj).set_phase(0);
+                        self.bombos_blast_mut(uj).set_timer(3);
 
                         let idx = (self.frame_state().frame_counter & 0x3f) as usize;
                         let y = u16::from(BOMBOS_BLAST_POSITION_TABLE[idx]);
@@ -3366,7 +3365,7 @@ impl ZeldaState {
         }
 
         for j in (0..=15).rev() {
-            if self.bombos_blast_view(j).phase() != 8 {
+            if self.bombos_blast(j).phase() != 8 {
                 self.ancilla_slot_view_mut(kk).set_step(sb as u8);
                 if self
                     .bombos_spell_scratch_mut()
@@ -6453,15 +6452,15 @@ impl ZeldaState {
         self.ancilla_allocate_oam_from_region_a_or_d_or_f(kk, 0x10);
         let mut oam = self.oam_state().current_pointer_usize();
         for _ in 0..1 {
-            let mut k = self.bombos_fire_column_view(kk).phase() as usize;
+            let mut k = self.bombos_fire_column(kk).phase() as usize;
             if k == 13 {
                 continue;
             }
             k = k * 3 + 2;
             for _ in 0..3 {
                 if BOMBOS_SPELL_FIRE_COLUMN_CHAR[k] != 0xff {
-                    let x = self.bombos_fire_column_view(kk).x();
-                    let y = self.bombos_fire_column_view(kk).y();
+                    let x = self.bombos_fire_column(kk).x();
+                    let y = self.bombos_fire_column(kk).y();
                     self.ancilla_set_oam(
                         oam,
                         x.wrapping_add(BOMBOS_SPELL_FIRE_COLUMN_X[k] as i16 as u16)
@@ -6502,14 +6501,14 @@ impl ZeldaState {
 
         let x = self.bombos_spell_scratch().blast_x(k);
         let y = self.bombos_spell_scratch().blast_y(k);
-        if self.bombos_blast_view(k).phase() == 8 {
+        if self.bombos_blast(k).phase() == 8 {
             return;
         }
 
         self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, 0x10);
         let mut oam = self.oam_state().current_pointer_usize();
 
-        let mut t = self.bombos_blast_view(k).phase() as usize * 4 + 3;
+        let mut t = self.bombos_blast(k).phase() as usize * 4 + 3;
         for _ in 0..4 {
             if BOMBOS_SPELL_DRAW_BLAST_CHAR[t] != 0xff {
                 self.ancilla_set_oam(

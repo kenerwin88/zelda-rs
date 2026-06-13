@@ -49,15 +49,16 @@ pub(crate) use dungeon::{
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisState,
-    EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
-    NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
-    NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut, NativeQuakeBoltBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState,
-    TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
+    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
+    DiggingGamePrizeState, DoorDebrisState, EffectAngleScratchState, EffectState,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
+    NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut, NativeTowerSealBridgeMut,
+    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, QuakeBoltSlotState,
+    QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState, TowerSealOrbitState,
+    TowerSealSparkleState, TowerSealState,
 };
 pub(crate) use ending::{
     AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
@@ -1883,6 +1884,50 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BOMBOS_FIRE_COLUMN_SEED_Y), 0x5678);
         assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_X + 30), 0x9abc);
         assert_eq!(read_le_u16(&ram, BOMBOS_BLAST_Y + 30), 0xdef0);
+    }
+
+    #[test]
+    fn native_bombos_slot_bridges_preserve_overlapping_fire_column_layout() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[BOMBOS_FIRE_COLUMN_TIMER + 3] = 1;
+        ram[BOMBOS_FIRE_COLUMN_PHASE + 3] = 0xfe;
+        ram[BOMBOS_BLAST_TIMER + 7] = 1;
+        ram[BOMBOS_BLAST_PHASE + 7] = 0xfe;
+
+        let mut bombos = BombosSpellState::default();
+        {
+            let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 3);
+            assert_eq!(column.tick_timer(), 0);
+            assert_eq!(column.advance_phase(), 0xff);
+            column.set_position(0x1234, 0x56cc);
+        }
+        assert_eq!(bombos.fire_column(3).timer(), 0);
+        assert_eq!(bombos.fire_column(3).phase(), 0xff);
+        assert_eq!(bombos.fire_column(3).x(), 0x1234);
+        assert_eq!(bombos.fire_column(3).y(), 0x56cc);
+
+        {
+            let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 7);
+            column.set_radial_angle(0x77);
+        }
+        assert_eq!(bombos.fire_column(3).y(), 0x5677);
+        assert_eq!(bombos.fire_column(7).radial_angle(), 0x77);
+
+        {
+            let mut blast = NativeBombosBlastBridgeMut::new(&mut bombos, &mut ram, 7);
+            assert_eq!(blast.tick_timer(), 0);
+            assert_eq!(blast.advance_phase(), 0xff);
+        }
+        assert_eq!(bombos.blast(7).phase(), 0xff);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_TIMER + 3], 0);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_PHASE + 3], 0xff);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_X_LO + 3], 0x34);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_X_HI + 3], 0x12);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_Y_LO + 3], 0x77);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_Y_HI + 3], 0x56);
+        assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + 7], 0x77);
+        assert_eq!(ram[BOMBOS_BLAST_TIMER + 7], 0);
+        assert_eq!(ram[BOMBOS_BLAST_PHASE + 7], 0xff);
     }
 
     #[test]

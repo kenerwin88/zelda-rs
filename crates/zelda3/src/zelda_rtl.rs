@@ -30,29 +30,30 @@ use crate::game_state::{
     ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
     AttractSceneState, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
     Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
-    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastView,
-    BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
-    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
-    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
-    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
-    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
-    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
-    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
-    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateRead,
-    IntroActorRead, IntroSceneState, IntroSwordState, InventoryItemsState,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead,
-    NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastState,
+    BombosFireColumnState, BombosSpellState, CachedSpriteSlotView, CachedSpriteSlotViewMut,
+    ChainChompHistoryState, DecodedMessageTextState, DialogueMessageIndexState,
+    DialogueNumberState, DiggingGamePrizeState, DisplayState, DoorDebrisState,
+    DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState,
+    DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState, DungeonMovableBlockState,
+    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomDoorSetupState,
+    DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState,
+    DungeonRoomRuntimeState, DungeonRoomTilemapState, DungeonRoomTrackingState,
+    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
+    DungeonStairListsState, DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState,
+    EndingCreditState, EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState,
+    FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState, GarnishSlotView,
+    GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeView,
+    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateRead, IntroActorRead,
+    IntroSceneState, IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState, MemorizedTileState,
+    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
     NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
-    NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
+    NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
@@ -3847,23 +3848,31 @@ impl ZeldaState {
         NativeQuakeSpellBridgeMut::new(&mut self.game_state.effects.quake_spell, &mut self.ram)
     }
 
-    pub(crate) fn bombos_fire_column_view(&self, slot: usize) -> BombosFireColumnView<'_> {
-        BombosFireColumnView::new(&self.ram, slot)
+    pub(crate) fn bombos_fire_column(&self, slot: usize) -> BombosFireColumnState {
+        self.game_state.effects.bombos_spell.fire_column(slot)
     }
 
-    pub(crate) fn bombos_fire_column_view_mut(
+    pub(crate) fn bombos_fire_column_mut(
         &mut self,
         slot: usize,
-    ) -> BombosFireColumnViewMut<'_> {
-        BombosFireColumnViewMut::new(&mut self.ram, slot)
+    ) -> NativeBombosFireColumnBridgeMut<'_> {
+        NativeBombosFireColumnBridgeMut::new(
+            &mut self.game_state.effects.bombos_spell,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn bombos_blast_view(&self, slot: usize) -> BombosBlastView<'_> {
-        BombosBlastView::new(&self.ram, slot)
+    pub(crate) fn bombos_blast(&self, slot: usize) -> BombosBlastState {
+        self.game_state.effects.bombos_spell.blast(slot)
     }
 
-    pub(crate) fn bombos_blast_view_mut(&mut self, slot: usize) -> BombosBlastViewMut<'_> {
-        BombosBlastViewMut::new(&mut self.ram, slot)
+    pub(crate) fn bombos_blast_mut(&mut self, slot: usize) -> NativeBombosBlastBridgeMut<'_> {
+        NativeBombosBlastBridgeMut::new(
+            &mut self.game_state.effects.bombos_spell,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn bombos_spell_scratch(&self) -> &BombosSpellState {

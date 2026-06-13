@@ -1,23 +1,26 @@
 use crate::game_state::constants::{
     BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION, BLAST_WALL_ENTRY_STATE,
     BLAST_WALL_EXPLOSION_PHASE, BLAST_WALL_EXPLOSION_TIMER, BLAST_WALL_FIREBALL_TIMER,
-    BLAST_WALL_FRAGMENT_X, BLAST_WALL_FRAGMENT_Y, BLAST_WALL_SECONDARY_STATE,
-    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_X, BOMBOS_BLAST_Y,
-    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_MODE,
-    DIGGING_GAME_PRIZE_ATTEMPTS, DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X,
-    DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER,
-    QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y,
-    SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X,
-    SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_BASE_SPARKLE_X_HI,
-    TOWER_SEAL_BASE_SPARKLE_X_LO, TOWER_SEAL_BASE_SPARKLE_Y_HI, TOWER_SEAL_BASE_SPARKLE_Y_LO,
-    TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE, TOWER_SEAL_RING_RADIUS,
-    TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER, TOWER_SEAL_SPARKLE_X_HI,
-    TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI, TOWER_SEAL_SPARKLE_Y_LO,
-    TOWER_SEAL_WAIT_COUNTDOWN,
+    BLAST_WALL_FRAGMENT_X, BLAST_WALL_FRAGMENT_Y, BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_PHASE,
+    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_TIMER,
+    BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_PHASE, BOMBOS_FIRE_COLUMN_RADIAL_ANGLE,
+    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y,
+    BOMBOS_FIRE_COLUMN_TIMER, BOMBOS_FIRE_COLUMN_X_HI, BOMBOS_FIRE_COLUMN_X_LO,
+    BOMBOS_FIRE_COLUMN_Y_HI, BOMBOS_FIRE_COLUMN_Y_LO, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
+    DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
+    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X,
+    QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X,
+    SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y,
+    SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_BASE_SPARKLE_X_HI, TOWER_SEAL_BASE_SPARKLE_X_LO,
+    TOWER_SEAL_BASE_SPARKLE_Y_HI, TOWER_SEAL_BASE_SPARKLE_Y_LO, TOWER_SEAL_CENTER_X,
+    TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE, TOWER_SEAL_RING_RADIUS, TOWER_SEAL_SPARKLE_PHASE,
+    TOWER_SEAL_SPARKLE_TIMER, TOWER_SEAL_SPARKLE_X_HI, TOWER_SEAL_SPARKLE_X_LO,
+    TOWER_SEAL_SPARKLE_Y_HI, TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
+const BOMBOS_FIRE_COLUMN_SLOTS: usize = 16;
 const BOMBOS_FIRE_COLUMN_SEED_SLOTS: usize = 4;
 const BOMBOS_BLAST_SLOTS: usize = 16;
 const QUAKE_BOLT_SLOTS: usize = 5;
@@ -431,6 +434,13 @@ pub(crate) struct BombosSpellState {
     fire_column_radius: u8,
     blast_release_locked: u8,
     blast_release_countdown: u8,
+    fire_column_timers: [u8; BOMBOS_FIRE_COLUMN_SLOTS],
+    fire_column_phases: [u8; BOMBOS_FIRE_COLUMN_SLOTS],
+    fire_column_radial_angles: [u8; BOMBOS_FIRE_COLUMN_SLOTS],
+    fire_column_x: [u16; BOMBOS_FIRE_COLUMN_SLOTS],
+    fire_column_y: [u16; BOMBOS_FIRE_COLUMN_SLOTS],
+    blast_phases: [u8; BOMBOS_BLAST_SLOTS],
+    blast_timers: [u8; BOMBOS_BLAST_SLOTS],
     fire_column_seed_x: [u16; BOMBOS_FIRE_COLUMN_SEED_SLOTS],
     fire_column_seed_y: [u16; BOMBOS_FIRE_COLUMN_SEED_SLOTS],
     blast_x: [u16; BOMBOS_BLAST_SLOTS],
@@ -439,7 +449,7 @@ pub(crate) struct BombosSpellState {
 
 impl BombosSpellState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        Self {
+        let mut state = Self {
             mode: ram.get(BOMBOS_MODE).copied().unwrap_or(0),
             fire_column_radius: ram.get(BOMBOS_FIRE_COLUMN_RADIUS).copied().unwrap_or(0),
             blast_release_locked: ram.get(BOMBOS_BLAST_RELEASE_LOCKED).copied().unwrap_or(0),
@@ -457,7 +467,31 @@ impl BombosSpellState {
             ),
             blast_x: read_word_bank::<BOMBOS_BLAST_SLOTS>(ram, BOMBOS_BLAST_X),
             blast_y: read_word_bank::<BOMBOS_BLAST_SLOTS>(ram, BOMBOS_BLAST_Y),
+            ..Self::default()
+        };
+        for slot in 0..BOMBOS_FIRE_COLUMN_SLOTS {
+            state.fire_column_timers[slot] = ram
+                .get(BOMBOS_FIRE_COLUMN_TIMER + slot)
+                .copied()
+                .unwrap_or(0);
+            state.fire_column_phases[slot] = ram
+                .get(BOMBOS_FIRE_COLUMN_PHASE + slot)
+                .copied()
+                .unwrap_or(0);
+            state.fire_column_radial_angles[slot] = ram
+                .get(BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + slot)
+                .copied()
+                .unwrap_or(0);
+            state.fire_column_x[slot] =
+                read_split_u16(ram, BOMBOS_FIRE_COLUMN_X_LO, BOMBOS_FIRE_COLUMN_X_HI, slot);
+            state.fire_column_y[slot] =
+                read_split_u16(ram, BOMBOS_FIRE_COLUMN_Y_LO, BOMBOS_FIRE_COLUMN_Y_HI, slot);
         }
+        for slot in 0..BOMBOS_BLAST_SLOTS {
+            state.blast_phases[slot] = ram.get(BOMBOS_BLAST_PHASE + slot).copied().unwrap_or(0);
+            state.blast_timers[slot] = ram.get(BOMBOS_BLAST_TIMER + slot).copied().unwrap_or(0);
+        }
+        state
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
@@ -481,6 +515,26 @@ impl BombosSpellState {
 
     pub(crate) fn blast_release_locked(&self) -> bool {
         self.blast_release_locked != 0
+    }
+
+    pub(crate) fn fire_column(&self, slot: usize) -> BombosFireColumnState {
+        BombosFireColumnState {
+            timer: self.fire_column_timers.get(slot).copied().unwrap_or(0),
+            phase: self.fire_column_phases.get(slot).copied().unwrap_or(0),
+            radial_angle: self
+                .fire_column_radial_angles
+                .get(slot)
+                .copied()
+                .unwrap_or(0),
+            x: self.fire_column_x.get(slot).copied().unwrap_or(0),
+            y: self.fire_column_y.get(slot).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn blast(&self, slot: usize) -> BombosBlastState {
+        BombosBlastState {
+            phase: self.blast_phases.get(slot).copied().unwrap_or(0),
+        }
     }
 
     pub(crate) fn fire_column_seed_x(&self, slot: usize) -> u16 {
@@ -546,6 +600,48 @@ impl BombosSpellState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BombosFireColumnState {
+    timer: u8,
+    phase: u8,
+    radial_angle: u8,
+    x: u16,
+    y: u16,
+}
+
+impl BombosFireColumnState {
+    pub(crate) fn timer(&self) -> u8 {
+        self.timer
+    }
+
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+
+    pub(crate) fn radial_angle(&self) -> u8 {
+        self.radial_angle
+    }
+
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BombosBlastState {
+    phase: u8,
+}
+
+impl BombosBlastState {
+    pub(crate) fn phase(&self) -> u8 {
+        self.phase
+    }
+}
+
 pub(crate) struct NativeBombosSpellBridgeMut<'a> {
     state: &'a mut BombosSpellState,
     ram: &'a mut [u8],
@@ -606,6 +702,143 @@ impl<'a> NativeBombosSpellBridgeMut<'a> {
     pub(crate) fn set_blast_position(&mut self, slot: usize, x: u16, y: u16) {
         self.state.set_blast_position(slot, x, y);
         self.sync();
+    }
+}
+
+pub(crate) struct NativeBombosFireColumnBridgeMut<'a> {
+    state: &'a mut BombosSpellState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBombosFireColumnBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = BombosSpellState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = BombosSpellState::load_from_ram(self.ram);
+    }
+
+    fn write_byte_and_reload(&mut self, offset: usize, value: u8) {
+        self.ram[offset + self.slot] = value;
+        self.reload();
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_TIMER, value);
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let value = self
+            .ram
+            .get(BOMBOS_FIRE_COLUMN_TIMER + self.slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_timer(value);
+        value
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_PHASE, value);
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let value = self
+            .ram
+            .get(BOMBOS_FIRE_COLUMN_PHASE + self.slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(1);
+        self.set_phase(value);
+        value
+    }
+
+    pub(crate) fn add_radial_angle(&mut self, value: u8) -> u8 {
+        let angle = self
+            .ram
+            .get(BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + self.slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(value);
+        self.set_radial_angle(angle);
+        angle
+    }
+
+    pub(crate) fn set_radial_angle(&mut self, value: u8) {
+        self.write_byte_and_reload(BOMBOS_FIRE_COLUMN_RADIAL_ANGLE, value);
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        write_split_u16(
+            self.ram,
+            BOMBOS_FIRE_COLUMN_X_LO,
+            BOMBOS_FIRE_COLUMN_X_HI,
+            self.slot,
+            x,
+        );
+        write_split_u16(
+            self.ram,
+            BOMBOS_FIRE_COLUMN_Y_LO,
+            BOMBOS_FIRE_COLUMN_Y_HI,
+            self.slot,
+            y,
+        );
+        self.reload();
+    }
+}
+
+pub(crate) struct NativeBombosBlastBridgeMut<'a> {
+    state: &'a mut BombosSpellState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBombosBlastBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
+        *state = BombosSpellState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = BombosSpellState::load_from_ram(self.ram);
+    }
+
+    fn write_byte_and_reload(&mut self, offset: usize, value: u8) {
+        self.ram[offset + self.slot] = value;
+        self.reload();
+    }
+
+    pub(crate) fn set_phase(&mut self, value: u8) {
+        self.write_byte_and_reload(BOMBOS_BLAST_PHASE, value);
+    }
+
+    pub(crate) fn advance_phase(&mut self) -> u8 {
+        let value = self
+            .ram
+            .get(BOMBOS_BLAST_PHASE + self.slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_add(1);
+        self.set_phase(value);
+        value
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.write_byte_and_reload(BOMBOS_BLAST_TIMER, value);
+    }
+
+    pub(crate) fn tick_timer(&mut self) -> u8 {
+        let value = self
+            .ram
+            .get(BOMBOS_BLAST_TIMER + self.slot)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        self.set_timer(value);
+        value
     }
 }
 
