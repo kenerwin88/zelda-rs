@@ -3023,6 +3023,135 @@ mod tests {
     }
 
     #[test]
+    fn world_palette_theme_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[LAST_LIGHT_VS_DARK_WORLD] = 0x01;
+        ram[AUX_BG_SUBSET_0] = 0x02;
+        ram[AUX_BG_SUBSET_0 + 1] = 0x03;
+        ram[AUX_BG_SUBSET_0 + 2] = 0x04;
+        ram[AUX_BG_SUBSET_0 + 3] = 0x05;
+        ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = 0x06;
+        ram[OVERWORLD_PALETTE_MODE] = 0x07;
+        ram[PALETTE_MAIN_INDOORS] = 0x08;
+        ram[PALETTE_MAIN_INDOORS_COPY] = 0x09;
+        ram[PALETTE_SWAP_FLAG] = 0x0a;
+        ram[PALETTE_SP0L] = 0x0b;
+        ram[PALETTE_SP5L] = 0x0c;
+        ram[PALETTE_SP6L] = 0x0d;
+        ram[PALETTE_SP6R_INDOORS] = 0x0e;
+        ram[HUD_PALETTE] = 0x0f;
+        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = 0x10;
+        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = 0x11;
+        ram[MISC_SPRITES_GRAPHICS_INDEX] = 0x12;
+        ram[OVERWORLD_TILE_THEME_INDEX] = 0x13;
+        ram[MAIN_TILE_THEME_INDEX] = 0x14;
+        ram[AUX_TILE_THEME_INDEX] = 0x15;
+        ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX] = 0x16;
+        ram[MAIN_TILE_THEME_INDEX_SPEXIT] = 0x17;
+        ram[AUX_TILE_THEME_INDEX_SPEXIT] = 0x18;
+        ram[OVERWORLD_TILE_THEME_INDEX_EXIT] = 0x19;
+        ram[MAIN_TILE_THEME_INDEX_EXIT] = 0x1a;
+        ram[AUX_TILE_THEME_INDEX_EXIT] = 0x1b;
+
+        let theme = WorldPaletteThemeState::load_from_ram(&ram);
+        assert_eq!(theme.last_light_vs_dark_world(), 0x01);
+        assert_eq!(theme.aux_bg_subset(0), 0x02);
+        assert_eq!(theme.aux_bg_subset(3), 0x05);
+        assert_eq!(theme.overworld_palette_aux1_hi(), 0x06);
+        assert_eq!(theme.overworld_palette_mode(), 0x07);
+        assert_eq!(theme.palette_main_indoors(), 0x08);
+        assert_eq!(theme.palette_main_indoors_copy(), 0x09);
+        assert_eq!(theme.palette_swap_flag(), 0x0a);
+        assert_eq!(theme.palette_sp0l(), 0x0b);
+        assert_eq!(theme.palette_sp5l(), 0x0c);
+        assert_eq!(theme.palette_sp6l(), 0x0d);
+        assert_eq!(theme.palette_sp6r_indoors(), 0x0e);
+        assert_eq!(theme.hud_palette(), 0x0f);
+        assert_eq!(theme.overworld_palette_aux2_hi(), 0x10);
+        assert_eq!(theme.overworld_palette_aux3_lo(), 0x11);
+        assert_eq!(theme.misc_sprites_graphics_index(), 0x12);
+        assert_eq!(theme.main_tile_theme_index(), 0x14);
+        assert_eq!(theme.aux_tile_theme_index(), 0x15);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        theme.write_to_ram(&mut projected);
+        assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), theme);
+    }
+
+    #[test]
+    fn native_world_palette_theme_bridge_dual_writes_changes_from_native_state() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut theme = WorldPaletteThemeState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
+            bridge.set_last_light_vs_dark_world(0x40);
+            bridge.set_aux_bg_subset(2, 0x22);
+            bridge.set_overworld_palette_aux1_hi(0x33);
+            bridge.set_hud_palette(0x44);
+            bridge.set_overworld_tile_theme_index(0x55);
+            bridge.set_main_tile_theme_index(0x66);
+            bridge.set_aux_tile_theme_index(0x77);
+            bridge.set_misc_sprites_graphics_index(0x88);
+            bridge.set_palette_sp6r_indoors(0x99);
+            bridge.save_special_exit_tile_themes();
+        }
+
+        assert_eq!(theme.last_light_vs_dark_world(), 0x40);
+        assert_eq!(theme.aux_bg_subset(2), 0x22);
+        assert_eq!(theme.overworld_palette_aux1_hi(), 0x33);
+        assert_eq!(theme.hud_palette(), 0x44);
+        assert_eq!(theme.main_tile_theme_index(), 0x66);
+        assert_eq!(theme.aux_tile_theme_index(), 0x77);
+        assert_eq!(theme.misc_sprites_graphics_index(), 0x88);
+        assert_eq!(theme.palette_sp6r_indoors(), 0x99);
+        assert_eq!(WorldPaletteThemeState::load_from_ram(&ram), theme);
+        assert_eq!(ram[LAST_LIGHT_VS_DARK_WORLD], 0x40);
+        assert_eq!(ram[AUX_BG_SUBSET_0 + 2], 0x22);
+        assert_eq!(ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI], 0x33);
+        assert_eq!(ram[HUD_PALETTE], 0x44);
+        assert_eq!(ram[OVERWORLD_TILE_THEME_INDEX], 0x55);
+        assert_eq!(ram[MAIN_TILE_THEME_INDEX], 0x66);
+        assert_eq!(ram[AUX_TILE_THEME_INDEX], 0x77);
+        assert_eq!(ram[MISC_SPRITES_GRAPHICS_INDEX], 0x88);
+        assert_eq!(ram[PALETTE_SP6R_INDOORS], 0x99);
+        assert_eq!(ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX], 0x55);
+        assert_eq!(ram[MAIN_TILE_THEME_INDEX_SPEXIT], 0x66);
+        assert_eq!(ram[AUX_TILE_THEME_INDEX_SPEXIT], 0x77);
+    }
+
+    #[test]
+    fn native_world_palette_theme_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut theme = WorldPaletteThemeState::default();
+        {
+            let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
+            bridge.set_last_light_vs_dark_world(0x40);
+            bridge.set_aux_bg_subset(1, 0x12);
+            bridge.set_overworld_palette_aux1_hi(0x34);
+            bridge.set_hud_palette(0x56);
+            bridge.set_overworld_tile_theme_index(0x78);
+        }
+
+        ram[LAST_LIGHT_VS_DARK_WORLD] = 0xaa;
+        ram[AUX_BG_SUBSET_0 + 1] = 0xbb;
+        ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = 0xcc;
+        ram[HUD_PALETTE] = 0xdd;
+        ram[OVERWORLD_TILE_THEME_INDEX] = 0xee;
+
+        {
+            let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
+            bridge.set_main_tile_theme_index(0x9a);
+        }
+
+        assert_eq!(theme.last_light_vs_dark_world(), 0x40);
+        assert_eq!(theme.aux_bg_subset(1), 0x12);
+        assert_eq!(theme.overworld_palette_aux1_hi(), 0x34);
+        assert_eq!(theme.hud_palette(), 0x56);
+        assert_eq!(theme.main_tile_theme_index(), 0x9a);
+        assert_eq!(WorldPaletteThemeState::load_from_ram(&ram), theme);
+    }
+
+    #[test]
     fn world_scroll_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, BG1_X_SCROLL, 0x0101);

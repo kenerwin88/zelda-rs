@@ -2041,7 +2041,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_palette_theme(&self) -> WorldPaletteThemeState {
-        WorldPaletteThemeState::load_from_ram(&self.ram)
+        self.game_state.world.palette_theme
     }
 
     pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {

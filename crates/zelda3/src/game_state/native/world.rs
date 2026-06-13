@@ -1986,7 +1986,6 @@ pub(crate) struct NativeWorldPaletteThemeBridgeMut<'a> {
 
 impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut WorldPaletteThemeState, ram: &'a mut [u8]) -> Self {
-        *state = WorldPaletteThemeState::load_from_ram(ram);
         Self { state, ram }
     }
 
