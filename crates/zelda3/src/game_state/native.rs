@@ -51,14 +51,15 @@ pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
     BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
     DiggingGamePrizeState, DoorDebrisState, EffectAngleScratchState, EffectState,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut, NativeTowerSealBridgeMut,
-    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, QuakeBoltSlotState,
-    QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState, TowerSealOrbitState,
-    TowerSealSparkleState, TowerSealState,
+    NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
+    QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
 };
 pub(crate) use ending::{
     AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
@@ -1928,6 +1929,93 @@ mod tests {
         assert_eq!(ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + 7], 0x77);
         assert_eq!(ram[BOMBOS_BLAST_TIMER + 7], 0);
         assert_eq!(ram[BOMBOS_BLAST_PHASE + 7], 0xff);
+    }
+
+    #[test]
+    fn native_happiness_pond_rupee_bridge_loads_and_stores_snapshots() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut effects = EffectState::load_from_ram(&ram);
+
+        {
+            let mut bridge = NativeHappinessPondRupeeBridgeMut::new(
+                &mut effects.happiness_pond_rupees,
+                &mut ram,
+                4,
+            );
+            bridge.initialize(0x1234, 0x5678, 0x9a, 0xbc, 0xde);
+        }
+
+        let rupee = effects.happiness_pond_rupees.rupee(4);
+        assert!(rupee.is_active());
+        assert_eq!(rupee.step(), 0);
+        let snapshot = rupee.snapshot();
+        assert_eq!(snapshot.x_low, 0x34);
+        assert_eq!(snapshot.x_high, 0x12);
+        assert_eq!(snapshot.y_low, 0x78);
+        assert_eq!(snapshot.y_high, 0x56);
+        assert_eq!(snapshot.x_velocity, 0x9a);
+        assert_eq!(snapshot.y_velocity, 0xbc);
+        assert_eq!(snapshot.z_velocity, 0xde);
+        assert_eq!(snapshot.item_to_link, 53);
+        assert_eq!(snapshot.timer, 15);
+
+        let stored = HappinessPondRupeeSnapshot {
+            y_low: 1,
+            y_high: 2,
+            x_low: 3,
+            x_high: 4,
+            z: 5,
+            y_velocity: 6,
+            x_velocity: 7,
+            z_velocity: 8,
+            y_subpixel: 9,
+            x_subpixel: 10,
+            z_subpixel: 11,
+            item_to_link: 12,
+            timer: 13,
+            step: 14,
+        };
+        {
+            let mut bridge = NativeHappinessPondRupeeBridgeMut::new(
+                &mut effects.happiness_pond_rupees,
+                &mut ram,
+                4,
+            );
+            bridge.store_snapshot(stored);
+        }
+        let expected_snapshot = HappinessPondRupeeSnapshot {
+            timer: 12,
+            ..stored
+        };
+        assert_eq!(
+            effects.happiness_pond_rupees.rupee(4).snapshot(),
+            expected_snapshot
+        );
+        assert_eq!(ram[HAPPINESS_POND_Y_LO + 4], 1);
+        assert_eq!(ram[HAPPINESS_POND_Y_HI + 4], 2);
+        assert_eq!(ram[HAPPINESS_POND_X_LO + 4], 3);
+        assert_eq!(ram[HAPPINESS_POND_X_HI + 4], 4);
+        assert_eq!(ram[HAPPINESS_POND_Z + 4], 5);
+        assert_eq!(ram[HAPPINESS_POND_Y_VEL + 4], 6);
+        assert_eq!(ram[HAPPINESS_POND_X_VEL + 4], 7);
+        assert_eq!(ram[HAPPINESS_POND_Z_VEL + 4], 8);
+        assert_eq!(ram[HAPPINESS_POND_Y_SUBPIXEL + 4], 9);
+        assert_eq!(ram[HAPPINESS_POND_X_SUBPIXEL + 4], 10);
+        assert_eq!(ram[HAPPINESS_POND_Z_SUBPIXEL + 4], 11);
+        assert_eq!(ram[HAPPINESS_POND_ITEM_TO_LINK + 4], 12);
+        assert_eq!(ram[HAPPINESS_POND_TIMER + 4], 13);
+        assert_eq!(ram[HAPPINESS_POND_STEP + 4], 14);
+
+        {
+            let mut bridge = NativeHappinessPondRupeeBridgeMut::new(
+                &mut effects.happiness_pond_rupees,
+                &mut ram,
+                4,
+            );
+            bridge.clear();
+        }
+        assert!(!effects.happiness_pond_rupees.rupee(4).is_active());
+        assert_eq!(ram[HAPPINESS_POND_ACTIVE + 4], 0);
     }
 
     #[test]

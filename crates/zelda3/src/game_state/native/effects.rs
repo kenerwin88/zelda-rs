@@ -8,14 +8,18 @@ use crate::game_state::constants::{
     BOMBOS_FIRE_COLUMN_TIMER, BOMBOS_FIRE_COLUMN_X_HI, BOMBOS_FIRE_COLUMN_X_LO,
     BOMBOS_FIRE_COLUMN_Y_HI, BOMBOS_FIRE_COLUMN_Y_LO, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
     DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
-    EFFECT_ANGLE_WORK, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X,
-    QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X,
-    SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y,
-    SKULL_WOODS_FIRE_STARTED, TOWER_SEAL_BASE_SPARKLE_X_HI, TOWER_SEAL_BASE_SPARKLE_X_LO,
-    TOWER_SEAL_BASE_SPARKLE_Y_HI, TOWER_SEAL_BASE_SPARKLE_Y_LO, TOWER_SEAL_CENTER_X,
-    TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE, TOWER_SEAL_RING_RADIUS, TOWER_SEAL_SPARKLE_PHASE,
-    TOWER_SEAL_SPARKLE_TIMER, TOWER_SEAL_SPARKLE_X_HI, TOWER_SEAL_SPARKLE_X_LO,
-    TOWER_SEAL_SPARKLE_Y_HI, TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN,
+    EFFECT_ANGLE_WORK, HAPPINESS_POND_ACTIVE, HAPPINESS_POND_ITEM_TO_LINK, HAPPINESS_POND_STEP,
+    HAPPINESS_POND_TIMER, HAPPINESS_POND_X_HI, HAPPINESS_POND_X_LO, HAPPINESS_POND_X_SUBPIXEL,
+    HAPPINESS_POND_X_VEL, HAPPINESS_POND_Y_HI, HAPPINESS_POND_Y_LO, HAPPINESS_POND_Y_SUBPIXEL,
+    HAPPINESS_POND_Y_VEL, HAPPINESS_POND_Z, HAPPINESS_POND_Z_SUBPIXEL, HAPPINESS_POND_Z_VEL,
+    QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y,
+    QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
+    SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
+    TOWER_SEAL_BASE_SPARKLE_X_HI, TOWER_SEAL_BASE_SPARKLE_X_LO, TOWER_SEAL_BASE_SPARKLE_Y_HI,
+    TOWER_SEAL_BASE_SPARKLE_Y_LO, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE,
+    TOWER_SEAL_RING_RADIUS, TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER,
+    TOWER_SEAL_SPARKLE_X_HI, TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI,
+    TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -26,6 +30,7 @@ const BOMBOS_BLAST_SLOTS: usize = 16;
 const QUAKE_BOLT_SLOTS: usize = 5;
 const TOWER_SEAL_ORBIT_SLOTS: usize = 8;
 const TOWER_SEAL_SPARKLE_SLOTS: usize = 24;
+const HAPPINESS_POND_RUPEE_SLOTS: usize = 10;
 const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
 const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
 const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
@@ -38,6 +43,7 @@ pub(crate) struct EffectState {
     pub(crate) quake_bolts: QuakeBoltState,
     pub(crate) bombos_spell: BombosSpellState,
     pub(crate) tower_seal: TowerSealState,
+    pub(crate) happiness_pond_rupees: HappinessPondRupeesState,
     pub(crate) entrance_effects: EntranceEffectState,
     pub(crate) digging_game_prize: DiggingGamePrizeState,
 }
@@ -51,6 +57,7 @@ impl EffectState {
             quake_bolts: QuakeBoltState::load_from_ram(ram),
             bombos_spell: BombosSpellState::load_from_ram(ram),
             tower_seal: TowerSealState::load_from_ram(ram),
+            happiness_pond_rupees: HappinessPondRupeesState::load_from_ram(ram),
             entrance_effects: EntranceEffectState::load_from_ram(ram),
             digging_game_prize: DiggingGamePrizeState::load_from_ram(ram),
         }
@@ -839,6 +846,192 @@ impl<'a> NativeBombosBlastBridgeMut<'a> {
             .wrapping_sub(1);
         self.set_timer(value);
         value
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HappinessPondRupeesState {
+    active: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    y_low: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    y_high: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    x_low: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    x_high: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    z: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    y_velocity: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    x_velocity: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    z_velocity: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    y_subpixel: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    x_subpixel: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    z_subpixel: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    item_to_link: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    timer: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+    step: [u8; HAPPINESS_POND_RUPEE_SLOTS],
+}
+
+impl HappinessPondRupeesState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut state = Self::default();
+        for slot in 0..HAPPINESS_POND_RUPEE_SLOTS {
+            state.active[slot] = ram.get(HAPPINESS_POND_ACTIVE + slot).copied().unwrap_or(0);
+            state.y_low[slot] = ram.get(HAPPINESS_POND_Y_LO + slot).copied().unwrap_or(0);
+            state.y_high[slot] = ram.get(HAPPINESS_POND_Y_HI + slot).copied().unwrap_or(0);
+            state.x_low[slot] = ram.get(HAPPINESS_POND_X_LO + slot).copied().unwrap_or(0);
+            state.x_high[slot] = ram.get(HAPPINESS_POND_X_HI + slot).copied().unwrap_or(0);
+            state.z[slot] = ram.get(HAPPINESS_POND_Z + slot).copied().unwrap_or(0);
+            state.y_velocity[slot] = ram.get(HAPPINESS_POND_Y_VEL + slot).copied().unwrap_or(0);
+            state.x_velocity[slot] = ram.get(HAPPINESS_POND_X_VEL + slot).copied().unwrap_or(0);
+            state.z_velocity[slot] = ram.get(HAPPINESS_POND_Z_VEL + slot).copied().unwrap_or(0);
+            state.y_subpixel[slot] = ram
+                .get(HAPPINESS_POND_Y_SUBPIXEL + slot)
+                .copied()
+                .unwrap_or(0);
+            state.x_subpixel[slot] = ram
+                .get(HAPPINESS_POND_X_SUBPIXEL + slot)
+                .copied()
+                .unwrap_or(0);
+            state.z_subpixel[slot] = ram
+                .get(HAPPINESS_POND_Z_SUBPIXEL + slot)
+                .copied()
+                .unwrap_or(0);
+            state.item_to_link[slot] = ram
+                .get(HAPPINESS_POND_ITEM_TO_LINK + slot)
+                .copied()
+                .unwrap_or(0);
+            state.timer[slot] = ram.get(HAPPINESS_POND_TIMER + slot).copied().unwrap_or(0);
+            state.step[slot] = ram.get(HAPPINESS_POND_STEP + slot).copied().unwrap_or(0);
+        }
+        state
+    }
+
+    pub(crate) fn rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
+        HappinessPondRupeeSlotState {
+            active: self.active.get(slot).copied().unwrap_or(0),
+            snapshot: self.snapshot(slot),
+        }
+    }
+
+    fn snapshot(&self, slot: usize) -> HappinessPondRupeeSnapshot {
+        HappinessPondRupeeSnapshot {
+            y_low: self.y_low.get(slot).copied().unwrap_or(0),
+            y_high: self.y_high.get(slot).copied().unwrap_or(0),
+            x_low: self.x_low.get(slot).copied().unwrap_or(0),
+            x_high: self.x_high.get(slot).copied().unwrap_or(0),
+            z: self.z.get(slot).copied().unwrap_or(0),
+            y_velocity: self.y_velocity.get(slot).copied().unwrap_or(0),
+            x_velocity: self.x_velocity.get(slot).copied().unwrap_or(0),
+            z_velocity: self.z_velocity.get(slot).copied().unwrap_or(0),
+            y_subpixel: self.y_subpixel.get(slot).copied().unwrap_or(0),
+            x_subpixel: self.x_subpixel.get(slot).copied().unwrap_or(0),
+            z_subpixel: self.z_subpixel.get(slot).copied().unwrap_or(0),
+            item_to_link: self.item_to_link.get(slot).copied().unwrap_or(0),
+            timer: self.timer.get(slot).copied().unwrap_or(0).saturating_sub(1),
+            step: self.step.get(slot).copied().unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HappinessPondRupeeSlotState {
+    active: u8,
+    snapshot: HappinessPondRupeeSnapshot,
+}
+
+impl HappinessPondRupeeSlotState {
+    pub(crate) fn is_active(&self) -> bool {
+        self.active != 0
+    }
+
+    pub(crate) fn step(&self) -> u8 {
+        self.snapshot.step
+    }
+
+    pub(crate) fn snapshot(&self) -> HappinessPondRupeeSnapshot {
+        self.snapshot
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HappinessPondRupeeSnapshot {
+    pub(crate) y_low: u8,
+    pub(crate) y_high: u8,
+    pub(crate) x_low: u8,
+    pub(crate) x_high: u8,
+    pub(crate) z: u8,
+    pub(crate) y_velocity: u8,
+    pub(crate) x_velocity: u8,
+    pub(crate) z_velocity: u8,
+    pub(crate) y_subpixel: u8,
+    pub(crate) x_subpixel: u8,
+    pub(crate) z_subpixel: u8,
+    pub(crate) item_to_link: u8,
+    pub(crate) timer: u8,
+    pub(crate) step: u8,
+}
+
+pub(crate) struct NativeHappinessPondRupeeBridgeMut<'a> {
+    state: &'a mut HappinessPondRupeesState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut HappinessPondRupeesState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = HappinessPondRupeesState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = HappinessPondRupeesState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.ram[HAPPINESS_POND_ACTIVE + self.slot] = 0;
+        self.reload();
+    }
+
+    pub(crate) fn initialize(
+        &mut self,
+        x: u16,
+        y: u16,
+        x_velocity: u8,
+        y_velocity: u8,
+        z_velocity: u8,
+    ) {
+        self.ram[HAPPINESS_POND_ACTIVE + self.slot] = 1;
+        self.ram[HAPPINESS_POND_Z_VEL + self.slot] = z_velocity;
+        self.ram[HAPPINESS_POND_Y_VEL + self.slot] = y_velocity;
+        self.ram[HAPPINESS_POND_X_VEL + self.slot] = x_velocity;
+        self.ram[HAPPINESS_POND_Z + self.slot] = 0;
+        self.ram[HAPPINESS_POND_STEP + self.slot] = 0;
+        self.ram[HAPPINESS_POND_TIMER + self.slot] = 16;
+        self.ram[HAPPINESS_POND_ITEM_TO_LINK + self.slot] = 53;
+        self.ram[HAPPINESS_POND_X_LO + self.slot] = x as u8;
+        self.ram[HAPPINESS_POND_X_HI + self.slot] = (x >> 8) as u8;
+        self.ram[HAPPINESS_POND_Y_LO + self.slot] = y as u8;
+        self.ram[HAPPINESS_POND_Y_HI + self.slot] = (y >> 8) as u8;
+        self.reload();
+    }
+
+    pub(crate) fn store_snapshot(&mut self, state: HappinessPondRupeeSnapshot) {
+        self.ram[HAPPINESS_POND_Y_LO + self.slot] = state.y_low;
+        self.ram[HAPPINESS_POND_Y_HI + self.slot] = state.y_high;
+        self.ram[HAPPINESS_POND_X_LO + self.slot] = state.x_low;
+        self.ram[HAPPINESS_POND_X_HI + self.slot] = state.x_high;
+        self.ram[HAPPINESS_POND_Z + self.slot] = state.z;
+        self.ram[HAPPINESS_POND_Y_VEL + self.slot] = state.y_velocity;
+        self.ram[HAPPINESS_POND_X_VEL + self.slot] = state.x_velocity;
+        self.ram[HAPPINESS_POND_Z_VEL + self.slot] = state.z_velocity;
+        self.ram[HAPPINESS_POND_Y_SUBPIXEL + self.slot] = state.y_subpixel;
+        self.ram[HAPPINESS_POND_X_SUBPIXEL + self.slot] = state.x_subpixel;
+        self.ram[HAPPINESS_POND_Z_SUBPIXEL + self.slot] = state.z_subpixel;
+        self.ram[HAPPINESS_POND_ITEM_TO_LINK + self.slot] = state.item_to_link;
+        self.ram[HAPPINESS_POND_TIMER + self.slot] = state.timer;
+        self.ram[HAPPINESS_POND_STEP + self.slot] = state.step;
+        self.reload();
     }
 }
 

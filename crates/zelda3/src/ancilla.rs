@@ -3592,7 +3592,7 @@ impl ZeldaState {
         self.player_state_view_mut().enter_item_hold_pose();
 
         for i in 0..10 {
-            self.happiness_pond_rupee_view_mut(i).clear();
+            self.happiness_pond_rupee_mut(i).clear();
         }
 
         const HAPPINESS_POND_START: [i8; 4] = [0, 4, 4, 9];
@@ -3607,7 +3607,7 @@ impl ZeldaState {
         loop {
             let x = self.player_state_view().x().wrapping_add(4);
             let y = self.player_state_view().y().wrapping_sub(12);
-            self.happiness_pond_rupee_view_mut(k).initialize(
+            self.happiness_pond_rupee_mut(k).initialize(
                 x,
                 y,
                 HAPPINESS_POND_XVEL[j as usize] as u8,
@@ -7574,15 +7574,15 @@ impl ZeldaState {
         player.set_picking_throw_state(2);
         player.clear_state_bits();
         for i in (0..=9).rev() {
-            if self.happiness_pond_rupee_view(i).is_active() {
+            if self.happiness_pond_rupee(i).is_active() {
                 self.hapiness_pond_rupees_execute_rupee(k, i);
-                if self.happiness_pond_rupee_view(i).step() == 2 {
-                    self.happiness_pond_rupee_view_mut(i).clear();
+                if self.happiness_pond_rupee(i).step() == 2 {
+                    self.happiness_pond_rupee_mut(i).clear();
                 }
             }
         }
         for i in (0..=9).rev() {
-            if self.happiness_pond_rupee_view(i).is_active() {
+            if self.happiness_pond_rupee(i).is_active() {
                 return;
             }
         }
@@ -7646,7 +7646,7 @@ impl ZeldaState {
     }
 
     fn hapiness_pond_rupees_get_state(&mut self, j: usize, k: usize) {
-        let pond = self.happiness_pond_rupee_view(k).snapshot();
+        let pond = self.happiness_pond_rupee(k).snapshot();
         let mut ancilla = self.ancilla_slot_view_mut(j);
         ancilla.set_y_low(pond.y_low);
         ancilla.set_y_high(pond.y_high);
@@ -7666,7 +7666,7 @@ impl ZeldaState {
 
     fn hapiness_pond_rupees_save_state(&mut self, k: usize, j: usize) {
         let ancilla = self.ancilla_slot_view(j);
-        let snapshot = crate::game_state::HappinessPondRupeeState {
+        let snapshot = HappinessPondRupeeSnapshot {
             y_low: ancilla.y_low(),
             y_high: ancilla.y_high(),
             x_low: ancilla.x_low(),
@@ -7682,8 +7682,7 @@ impl ZeldaState {
             timer: ancilla.timer(),
             step: ancilla.step(),
         };
-        self.happiness_pond_rupee_view_mut(k)
-            .store_snapshot(snapshot);
+        self.happiness_pond_rupee_mut(k).store_snapshot(snapshot);
     }
 
     fn ancilla3_c_spin_attack_charge_sparkle(&mut self, k: usize) {

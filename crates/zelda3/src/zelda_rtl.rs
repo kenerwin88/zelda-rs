@@ -43,8 +43,8 @@ use crate::game_state::{
     DungeonStairListsState, DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState,
     EndingCreditState, EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState,
     FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState, GarnishSlotView,
-    GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeView,
-    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateRead, IntroActorRead,
+    GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
+    HappinessPondRupeeSnapshot, HudInventoryOrderState, HudStateRead, IntroActorRead,
     IntroSceneState, IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView,
     LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState, MemorizedTileState,
     MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
@@ -73,9 +73,10 @@ use crate::game_state::{
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
-    NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
-    NativeInventoryItemsBridgeMut, NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeGraphicsScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroActorBridgeMut,
+    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
@@ -4012,15 +4013,19 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn happiness_pond_rupee_view(&self, slot: usize) -> HappinessPondRupeeView<'_> {
-        HappinessPondRupeeView::new(&self.ram, slot)
+    pub(crate) fn happiness_pond_rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
+        self.game_state.effects.happiness_pond_rupees.rupee(slot)
     }
 
-    pub(crate) fn happiness_pond_rupee_view_mut(
+    pub(crate) fn happiness_pond_rupee_mut(
         &mut self,
         slot: usize,
-    ) -> HappinessPondRupeeViewMut<'_> {
-        HappinessPondRupeeViewMut::new(&mut self.ram, slot)
+    ) -> NativeHappinessPondRupeeBridgeMut<'_> {
+        NativeHappinessPondRupeeBridgeMut::new(
+            &mut self.game_state.effects.happiness_pond_rupees,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn weather_vane_state(&self) -> WeatherVaneState {
