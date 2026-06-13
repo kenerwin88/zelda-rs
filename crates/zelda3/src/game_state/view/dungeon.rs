@@ -2033,46 +2033,6 @@ impl<'a> DungeonEntranceBackupViewMut<'a> {
     }
 }
 
-pub(crate) struct DungeonHeaderView<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> DungeonHeaderView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn travel_destination(&self, index: usize) -> u8 {
-        byte(self.ram, DUNGEON_HEADER_TRAVEL_DESTINATIONS + index)
-    }
-
-    pub(crate) fn hole_teleporter_plane(&self, index: usize) -> u8 {
-        byte(self.ram, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + index)
-    }
-
-    pub(crate) fn staircase_plane(&self, index: usize) -> u8 {
-        byte(self.ram, DUNGEON_HEADER_STAIRCASE_PLANE + index)
-    }
-}
-
-pub(crate) struct DungeonHeaderViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DungeonHeaderViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_hole_teleporter_planes(&mut self, packed: u8, extra: u8) {
-        self.ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE] = packed & 3;
-        self.ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 1] = (packed >> 2) & 3;
-        self.ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 2] = (packed >> 4) & 3;
-        self.ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 3] = (packed >> 6) & 3;
-        self.ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 4] = extra & 3;
-    }
-}
-
 pub(crate) struct DungeonTorchView<'a> {
     ram: &'a [u8],
 }

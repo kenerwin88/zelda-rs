@@ -5,6 +5,7 @@
 //! projected to or loaded from WRAM during the transition.
 
 mod display;
+mod dungeon;
 mod effects;
 mod ending;
 mod frame;
@@ -25,6 +26,7 @@ pub(crate) use display::{
     NativeWaterHdmaWindowBridgeMut, PaletteBufferView, PaletteFilterState, TrinexxPaletteState,
     WaterHdmaWindowState,
 };
+pub(crate) use dungeon::{DungeonHeaderState, DungeonState, NativeDungeonHeaderBridgeMut};
 pub(crate) use effects::{
     BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
     EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
@@ -133,6 +135,7 @@ pub(crate) struct GameState {
     pub(crate) dungeon_secret: DungeonSecretState,
     pub(crate) save_load_transfer: SaveLoadTransferState,
     pub(crate) dungeon_map_display: DungeonMapDisplayState,
+    pub(crate) dungeon: DungeonState,
     pub(crate) sprites: SpriteState,
     pub(crate) player: PlayerState,
     pub(crate) inventory: InventoryState,
@@ -159,6 +162,7 @@ impl GameState {
             dungeon_secret: DungeonSecretState::load_from_ram(ram),
             save_load_transfer: SaveLoadTransferState::load_from_ram(ram),
             dungeon_map_display: DungeonMapDisplayState::load_from_ram(ram),
+            dungeon: DungeonState::load_from_ram(ram),
             sprites: SpriteState::load_from_ram(ram),
             player: PlayerState::load_from_ram(ram),
             inventory: InventoryState::load_from_ram(ram),
@@ -184,6 +188,7 @@ impl GameState {
         self.dungeon_secret.write_to_ram(ram);
         self.save_load_transfer.write_to_ram(ram);
         self.dungeon_map_display.write_to_ram(ram);
+        self.dungeon.write_to_ram(ram);
         self.sprites.write_to_ram(ram);
         self.player.write_to_ram(ram);
         self.inventory.write_to_ram(ram);
@@ -627,6 +632,63 @@ mod tests {
 
         assert_eq!(display.current_floor(), 0x0034);
         assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
+    }
+
+    #[test]
+    fn dungeon_header_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS] = 0x12;
+        ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS + 4] = 0x34;
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE] = 1;
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 1] = 2;
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 2] = 3;
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 3] = 0;
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 4] = 1;
+
+        let mut header = DungeonHeaderState::load_from_ram(&ram);
+        assert_eq!(header.travel_destination(0), 0x12);
+        assert_eq!(header.travel_destination(4), 0x34);
+        assert_eq!(header.hole_teleporter_plane(0), 1);
+        assert_eq!(header.hole_teleporter_plane(4), 1);
+        assert_eq!(header.staircase_plane(0), 2);
+        assert_eq!(header.staircase_plane(3), 1);
+
+        header.set_hole_teleporter_planes(0b11_10_01_00, 0b101);
+        header.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE], 0);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 1], 1);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 2], 2);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 3], 3);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 4], 1);
+        assert_eq!(ram[DUNGEON_HEADER_STAIRCASE_PLANE], 1);
+        assert_eq!(ram[DUNGEON_HEADER_STAIRCASE_PLANE + 3], 1);
+        assert_eq!(ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS], 0x12);
+        assert_eq!(ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS + 4], 0x34);
+    }
+
+    #[test]
+    fn native_dungeon_header_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE] = 3;
+
+        let mut header = DungeonHeaderState::default();
+        {
+            let mut bridge = NativeDungeonHeaderBridgeMut::new(&mut header, &mut ram);
+            bridge.set_hole_teleporter_planes(0b00_11_10_01, 2);
+        }
+
+        assert_eq!(header.hole_teleporter_plane(0), 1);
+        assert_eq!(header.hole_teleporter_plane(1), 2);
+        assert_eq!(header.hole_teleporter_plane(2), 3);
+        assert_eq!(header.hole_teleporter_plane(3), 0);
+        assert_eq!(header.hole_teleporter_plane(4), 2);
+        assert_eq!(header.staircase_plane(0), 2);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE], 1);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 1], 2);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 2], 3);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 3], 0);
+        assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 4], 2);
     }
 
     #[test]
