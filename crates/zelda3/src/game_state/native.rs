@@ -2856,7 +2856,7 @@ mod tests {
         let mut ram = vec![0; WRAM_SIZE];
         ram[TOWER_SEAL_WAIT_COUNTDOWN] = 1;
 
-        let mut tower = TowerSealState::default();
+        let mut tower = TowerSealState::load_from_ram(&ram);
         {
             let mut bridge = NativeTowerSealBridgeMut::new(&mut tower, &mut ram);
             bridge.set_ring_radius(48);
@@ -2875,12 +2875,39 @@ mod tests {
     }
 
     #[test]
+    fn native_tower_seal_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TOWER_SEAL_RING_RADIUS] = 0xff;
+        ram[TOWER_SEAL_WAIT_COUNTDOWN] = 0xee;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[TOWER_SEAL_RING_RADIUS] = 12;
+        native_ram[TOWER_SEAL_WAIT_COUNTDOWN] = 3;
+        write_le_u16(&mut native_ram, TOWER_SEAL_CENTER_X, 0x1234);
+        write_le_u16(&mut native_ram, TOWER_SEAL_CENTER_Y, 0x5678);
+        let mut tower = TowerSealState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeTowerSealBridgeMut::new(&mut tower, &mut ram);
+            assert_eq!(bridge.tick_wait_countdown(), 2);
+        }
+
+        assert_eq!(tower.ring_radius(), 12);
+        assert_eq!(tower.center_x(), 0x1234);
+        assert_eq!(tower.center_y(), 0x5678);
+        assert_eq!(ram[TOWER_SEAL_RING_RADIUS], 12);
+        assert_eq!(ram[TOWER_SEAL_WAIT_COUNTDOWN], 2);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_X), 0x1234);
+        assert_eq!(read_le_u16(&ram, TOWER_SEAL_CENTER_Y), 0x5678);
+    }
+
+    #[test]
     fn native_tower_seal_slot_bridges_sync_transient_orbits_and_sparkles() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0x3f;
         ram[TOWER_SEAL_SPARKLE_TIMER + 5] = 1;
 
-        let mut tower = TowerSealState::default();
+        let mut tower = TowerSealState::load_from_ram(&ram);
         {
             let mut orbit = NativeTowerSealOrbitBridgeMut::new(&mut tower, &mut ram, 2);
             assert_eq!(orbit.advance_angle_mod64(), 0);
@@ -2910,6 +2937,43 @@ mod tests {
         assert_eq!(ram[TOWER_SEAL_SPARKLE_X_HI + 5], 0x9a);
         assert_eq!(ram[TOWER_SEAL_SPARKLE_Y_LO + 5], 0xf0);
         assert_eq!(ram[TOWER_SEAL_SPARKLE_Y_HI + 5], 0xde);
+    }
+
+    #[test]
+    fn native_tower_seal_slot_bridges_project_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0xff;
+        ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 0xee;
+
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0x3f;
+        native_ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 7;
+        native_ram[TOWER_SEAL_SPARKLE_TIMER + 5] = 2;
+        native_ram[TOWER_SEAL_BASE_SPARKLE_X_LO + 2] = 0x34;
+        native_ram[TOWER_SEAL_BASE_SPARKLE_X_HI + 2] = 0x12;
+        native_ram[TOWER_SEAL_BASE_SPARKLE_Y_LO + 2] = 0x78;
+        native_ram[TOWER_SEAL_BASE_SPARKLE_Y_HI + 2] = 0x56;
+        let mut tower = TowerSealState::load_from_ram(&native_ram);
+
+        {
+            let mut orbit = NativeTowerSealOrbitBridgeMut::new(&mut tower, &mut ram, 2);
+            assert_eq!(orbit.advance_angle_mod64(), 0);
+        }
+        {
+            let mut sparkle = NativeTowerSealSparkleBridgeMut::new(&mut tower, &mut ram, 5);
+            assert_eq!(sparkle.tick_timer(), 1);
+            assert_eq!(sparkle.base_sparkle_position(2), (0x1234, 0x5678));
+        }
+
+        assert_eq!(tower.orbit(2).angle(), 0);
+        assert_eq!(tower.sparkle(5).phase(), 7);
+        assert_eq!(ram[TOWER_SEAL_ORBIT_ANGLE + 2], 0);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_PHASE + 5], 7);
+        assert_eq!(ram[TOWER_SEAL_SPARKLE_TIMER + 5], 1);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_X_LO + 2], 0x34);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_X_HI + 2], 0x12);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_Y_LO + 2], 0x78);
+        assert_eq!(ram[TOWER_SEAL_BASE_SPARKLE_Y_HI + 2], 0x56);
     }
 
     #[test]

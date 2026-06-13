@@ -2064,7 +2064,6 @@ pub(crate) struct NativeTowerSealBridgeMut<'a> {
 
 impl<'a> NativeTowerSealBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8]) -> Self {
-        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2107,7 +2106,6 @@ pub(crate) struct NativeTowerSealOrbitBridgeMut<'a> {
 
 impl<'a> NativeTowerSealOrbitBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2145,7 +2143,6 @@ pub(crate) struct NativeTowerSealSparkleBridgeMut<'a> {
 
 impl<'a> NativeTowerSealSparkleBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
