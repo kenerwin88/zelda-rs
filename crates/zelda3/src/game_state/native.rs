@@ -30,9 +30,10 @@ pub(crate) use display::{
 };
 pub(crate) use dungeon::{
     DungeonBg2AttributeState, DungeonHeaderState, DungeonSavegameState, DungeonScratchWordState,
-    DungeonState, DungeonTorchState, NativeDungeonBg2AttributeBridgeMut,
+    DungeonStairListsState, DungeonState, DungeonTorchState, NativeDungeonBg2AttributeBridgeMut,
     NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut, NativeDungeonTorchBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonStairListsBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,

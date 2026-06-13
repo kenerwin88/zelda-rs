@@ -2,11 +2,15 @@ use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
-    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA,
-    DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
-    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
-    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
+    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
+    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
+    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX,
+    MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
+    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
 };
+use crate::game_state::DungeonStairList;
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
@@ -15,6 +19,27 @@ const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
+const DUNGEON_STAIR_LIST_COUNT: usize = 21;
+const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
+    (DUNG_STAIRS_TABLE_1 - DUNG_INTER_STAIRCASES) / 2;
+const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_STAIRS_TABLE_2 - DUNG_STAIRS_TABLE_1) / 2;
+const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_TABLE_2) / 2;
+
+const DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL: usize = 0x0438;
+const DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL: usize = 0x043a;
+const DUNG_NUM_INROOM_SOUTHDOWN_STAIRS_LOCAL: usize = 0x043e;
+const DUNG_NUM_WATER_LADDERS_LOCAL: usize = 0x0446;
+const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_LOCAL: usize = 0x047e;
+const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_LOCAL: usize = 0x0480;
+const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2_LOCAL: usize = 0x0482;
+const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2_LOCAL: usize = 0x0484;
+const DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a2;
+const DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a4;
+const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a6;
+const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL: usize = 0x04a8;
+const DUNG_STAIRS_TABLE_1: usize = 0x06b8;
+const DUNG_STAIRS_TABLE_2: usize = 0x06ec;
+const DUNGEON_DOOR_DEBRIS_X: usize = 0x0728;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonState {
@@ -24,6 +49,7 @@ pub(crate) struct DungeonState {
     pub(crate) torch: DungeonTorchState,
     pub(crate) savegame_state: DungeonSavegameState,
     pub(crate) bg2_attributes: DungeonBg2AttributeState,
+    pub(crate) stair_lists: DungeonStairListsState,
 }
 
 impl DungeonState {
@@ -35,6 +61,7 @@ impl DungeonState {
             torch: DungeonTorchState::load_from_ram(ram),
             savegame_state: DungeonSavegameState::load_from_ram(ram),
             bg2_attributes: DungeonBg2AttributeState::load_from_ram(ram),
+            stair_lists: DungeonStairListsState::load_from_ram(ram),
         }
     }
 
@@ -45,6 +72,252 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonStairListsState {
+    counters: [u16; DUNGEON_STAIR_LIST_COUNT],
+    inter_staircases: [u16; DUNGEON_INTER_STAIRCASE_TABLE_WORDS],
+    stairs_table_1: [u16; DUNGEON_STAIR_TABLE_1_WORDS],
+    stairs_table_2: [u16; DUNGEON_STAIR_TABLE_2_WORDS],
+}
+
+impl DungeonStairListsState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut counters = [0; DUNGEON_STAIR_LIST_COUNT];
+        for list in ALL_DUNGEON_STAIR_LISTS {
+            counters[stair_list_index(list)] = read_le_u16(ram, stair_list_counter_address(list));
+        }
+
+        let mut inter_staircases = [0; DUNGEON_INTER_STAIRCASE_TABLE_WORDS];
+        for (index, position) in inter_staircases.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_INTER_STAIRCASES + index * 2);
+        }
+
+        let mut stairs_table_1 = [0; DUNGEON_STAIR_TABLE_1_WORDS];
+        for (index, position) in stairs_table_1.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_STAIRS_TABLE_1 + index * 2);
+        }
+
+        let mut stairs_table_2 = [0; DUNGEON_STAIR_TABLE_2_WORDS];
+        for (index, position) in stairs_table_2.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_STAIRS_TABLE_2 + index * 2);
+        }
+
+        Self {
+            counters,
+            inter_staircases,
+            stairs_table_1,
+            stairs_table_2,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for list in ALL_DUNGEON_STAIR_LISTS {
+            write_le_u16(
+                ram,
+                stair_list_counter_address(list),
+                self.stair_list_count(list),
+            );
+        }
+
+        for (index, position) in self.inter_staircases.iter().enumerate() {
+            write_le_u16(ram, DUNG_INTER_STAIRCASES + index * 2, *position);
+        }
+
+        for (index, position) in self.stairs_table_1.iter().enumerate() {
+            write_le_u16(ram, DUNG_STAIRS_TABLE_1 + index * 2, *position);
+        }
+
+        for (index, position) in self.stairs_table_2.iter().enumerate() {
+            write_le_u16(ram, DUNG_STAIRS_TABLE_2 + index * 2, *position);
+        }
+    }
+
+    pub(crate) fn stair_list_count(&self, list: DungeonStairList) -> u16 {
+        self.counters[stair_list_index(list)]
+    }
+
+    pub(crate) fn stair_list_tilemap_pos(&self, list: DungeonStairList, offset_x2: u16) -> u16 {
+        let index = usize::from(offset_x2 >> 1);
+        match stair_list_table(list) {
+            DungeonStairTilemapTable::Stairs1 => {
+                self.stairs_table_1.get(index).copied().unwrap_or(0)
+            }
+            DungeonStairTilemapTable::Stairs2 => {
+                self.stairs_table_2.get(index).copied().unwrap_or(0)
+            }
+        }
+    }
+
+    pub(crate) fn inter_staircase_pos(&self, index: usize) -> u16 {
+        self.inter_staircases.get(index).copied().unwrap_or(0)
+    }
+
+    fn set_stair_list_count(&mut self, list: DungeonStairList, value: u16) {
+        self.counters[stair_list_index(list)] = value;
+    }
+
+    fn sync_stair_list_counts(&mut self, lists: &[DungeonStairList], value: u16) {
+        for &list in lists {
+            self.set_stair_list_count(list, value);
+        }
+    }
+
+    fn append_interroom_staircase(&mut self, list: DungeonStairList, tilemap_pos: u16) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        if let Some(position) = self.inter_staircases.get_mut(index) {
+            *position = tilemap_pos;
+        }
+        self.stair_list_count(list).wrapping_add(2)
+    }
+
+    fn append_bg1_stair_table_position(&mut self, list: DungeonStairList, tilemap_pos: u16) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        if let Some(position) = self.stairs_table_1.get_mut(index) {
+            *position = tilemap_pos;
+        }
+        let next = self.stair_list_count(list).wrapping_add(2);
+        self.set_stair_list_count(list, next);
+        next
+    }
+
+    fn append_stair_table_position(&mut self, list: DungeonStairList, tilemap_pos: u16) -> u16 {
+        let index = usize::from(self.stair_list_count(list)) >> 1;
+        match stair_list_table(list) {
+            DungeonStairTilemapTable::Stairs1 => {
+                if let Some(position) = self.stairs_table_1.get_mut(index) {
+                    *position = tilemap_pos;
+                }
+            }
+            DungeonStairTilemapTable::Stairs2 => {
+                if let Some(position) = self.stairs_table_2.get_mut(index) {
+                    *position = tilemap_pos;
+                }
+            }
+        }
+        let next = self.stair_list_count(list).wrapping_add(2);
+        self.set_stair_list_count(list, next);
+        next
+    }
+
+    fn promote_water_stairs_to_active(&mut self) {
+        let north_stairs = self.stair_list_count(DungeonStairList::InRoomUpNorthWater);
+        let active_ladders = self.stair_list_count(DungeonStairList::ActivatedWaterLadders);
+        let south_stairs = self.stair_list_count(DungeonStairList::InRoomUpSouthWater);
+        self.set_stair_list_count(DungeonStairList::InterPseudoUpNorth, north_stairs);
+        self.set_stair_list_count(DungeonStairList::WaterSideStepSwitch, active_ladders);
+        self.set_stair_list_count(DungeonStairList::ActivatedWaterLadders, 0);
+        self.set_stair_list_count(DungeonStairList::InRoomUpNorthWater, 0);
+        self.set_stair_list_count(DungeonStairList::WetStairs, south_stairs);
+        self.set_stair_list_count(DungeonStairList::InRoomUpSouthWater, 0);
+    }
+
+    fn set_inter_staircase_pos(&mut self, index: usize, value: u16) {
+        if let Some(position) = self.inter_staircases.get_mut(index) {
+            *position = value;
+        }
+    }
+}
+
+const ALL_DUNGEON_STAIR_LISTS: [DungeonStairList; DUNGEON_STAIR_LIST_COUNT] = [
+    DungeonStairList::InterRoomUpNorth,
+    DungeonStairList::InterRoomSouthDown,
+    DungeonStairList::InRoomUpNorth,
+    DungeonStairList::InRoomSouthDown,
+    DungeonStairList::InterPseudoUpNorth,
+    DungeonStairList::InRoomUpNorthWater,
+    DungeonStairList::ActivatedWaterLadders,
+    DungeonStairList::WetStairs,
+    DungeonStairList::InRoomUpSouthWater,
+    DungeonStairList::Stairs1,
+    DungeonStairList::Stairs2,
+    DungeonStairList::WaterLadders,
+    DungeonStairList::WaterSideStepSwitch,
+    DungeonStairList::WallUpNorthSpiral,
+    DungeonStairList::WallDownNorthSpiral,
+    DungeonStairList::WallUpNorthSpiralBg1,
+    DungeonStairList::WallDownNorthSpiralBg1,
+    DungeonStairList::InterRoomUpNorthStraight,
+    DungeonStairList::InterRoomUpSouthStraight,
+    DungeonStairList::InterRoomDownNorthStraight,
+    DungeonStairList::InterRoomDownSouthStraight,
+];
+
+#[derive(Clone, Copy)]
+enum DungeonStairTilemapTable {
+    Stairs1,
+    Stairs2,
+}
+
+fn stair_list_index(list: DungeonStairList) -> usize {
+    match list {
+        DungeonStairList::InterRoomUpNorth => 0,
+        DungeonStairList::InterRoomSouthDown => 1,
+        DungeonStairList::InRoomUpNorth => 2,
+        DungeonStairList::InRoomSouthDown => 3,
+        DungeonStairList::InterPseudoUpNorth => 4,
+        DungeonStairList::InRoomUpNorthWater => 5,
+        DungeonStairList::ActivatedWaterLadders => 6,
+        DungeonStairList::WetStairs => 7,
+        DungeonStairList::InRoomUpSouthWater => 8,
+        DungeonStairList::Stairs1 => 9,
+        DungeonStairList::Stairs2 => 10,
+        DungeonStairList::WaterLadders => 11,
+        DungeonStairList::WaterSideStepSwitch => 12,
+        DungeonStairList::WallUpNorthSpiral => 13,
+        DungeonStairList::WallDownNorthSpiral => 14,
+        DungeonStairList::WallUpNorthSpiralBg1 => 15,
+        DungeonStairList::WallDownNorthSpiralBg1 => 16,
+        DungeonStairList::InterRoomUpNorthStraight => 17,
+        DungeonStairList::InterRoomUpSouthStraight => 18,
+        DungeonStairList::InterRoomDownNorthStraight => 19,
+        DungeonStairList::InterRoomDownSouthStraight => 20,
+    }
+}
+
+fn stair_list_counter_address(list: DungeonStairList) -> usize {
+    match list {
+        DungeonStairList::InterRoomUpNorth => DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS_LOCAL,
+        DungeonStairList::InterRoomSouthDown => DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS_LOCAL,
+        DungeonStairList::InRoomUpNorth => DUNG_NUM_INROOM_UPNORTH_STAIRS,
+        DungeonStairList::InRoomSouthDown => DUNG_NUM_INROOM_SOUTHDOWN_STAIRS_LOCAL,
+        DungeonStairList::InterPseudoUpNorth => DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS,
+        DungeonStairList::InRoomUpNorthWater => DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
+        DungeonStairList::ActivatedWaterLadders => DUNG_NUM_ACTIVATED_WATER_LADDERS,
+        DungeonStairList::WetStairs => DUNG_NUM_STAIRS_WET,
+        DungeonStairList::InRoomUpSouthWater => DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
+        DungeonStairList::Stairs1 => DUNG_NUM_STAIRS_1,
+        DungeonStairList::Stairs2 => DUNG_NUM_STAIRS_2,
+        DungeonStairList::WaterLadders => DUNG_NUM_WATER_LADDERS_LOCAL,
+        DungeonStairList::WaterSideStepSwitch => WATER_SIDE_STEP_SWITCH,
+        DungeonStairList::WallUpNorthSpiral => DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_LOCAL,
+        DungeonStairList::WallDownNorthSpiral => DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_LOCAL,
+        DungeonStairList::WallUpNorthSpiralBg1 => DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2_LOCAL,
+        DungeonStairList::WallDownNorthSpiralBg1 => DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2_LOCAL,
+        DungeonStairList::InterRoomUpNorthStraight => {
+            DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS_LOCAL
+        }
+        DungeonStairList::InterRoomUpSouthStraight => {
+            DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS_LOCAL
+        }
+        DungeonStairList::InterRoomDownNorthStraight => {
+            DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS_LOCAL
+        }
+        DungeonStairList::InterRoomDownSouthStraight => {
+            DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS_LOCAL
+        }
+    }
+}
+
+fn stair_list_table(list: DungeonStairList) -> DungeonStairTilemapTable {
+    match list {
+        DungeonStairList::WetStairs
+        | DungeonStairList::InRoomUpSouthWater
+        | DungeonStairList::Stairs1
+        | DungeonStairList::Stairs2 => DungeonStairTilemapTable::Stairs2,
+        _ => DungeonStairTilemapTable::Stairs1,
     }
 }
 
@@ -724,6 +997,79 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
 
     pub(crate) fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
         self.state.fill_bg2_attr_range(start, len, value);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonStairListsBridgeMut<'a> {
+    state: &'a mut DungeonStairListsState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonStairListsBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonStairListsState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonStairListsState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonStairListsState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_stair_list_count(&mut self, list: DungeonStairList, value: u16) {
+        self.state.set_stair_list_count(list, value);
+        self.sync();
+    }
+
+    pub(crate) fn sync_stair_list_counts(&mut self, lists: &[DungeonStairList], value: u16) {
+        self.state.sync_stair_list_counts(lists, value);
+        self.sync();
+    }
+
+    pub(crate) fn append_interroom_staircase(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let next = self.state.append_interroom_staircase(list, tilemap_pos);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn append_bg1_stair_table_position(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let next = self
+            .state
+            .append_bg1_stair_table_position(list, tilemap_pos);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn append_stair_table_position(
+        &mut self,
+        list: DungeonStairList,
+        tilemap_pos: u16,
+    ) -> u16 {
+        let next = self.state.append_stair_table_position(list, tilemap_pos);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn promote_water_stairs_to_active(&mut self) {
+        self.state.promote_water_stairs_to_active();
+        self.sync();
+    }
+
+    pub(crate) fn set_inter_staircase_pos(&mut self, index: usize, value: u16) {
+        self.state.set_inter_staircase_pos(index, value);
         self.sync();
     }
 }

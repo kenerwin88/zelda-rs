@@ -2472,25 +2472,25 @@ impl ZeldaState {
             0x18 => self.RoomDraw_CellLock(dsto),
             0x19 => self.RoomDraw_Chest(dsto),
             0x1b => {
-                self.dungeon_state_view_mut()
+                self.dungeon_stair_lists_mut()
                     .append_stair_table_position(DungeonStairList::Stairs1, dsto);
                 self.Object_DrawNx4_BothBgs(4, src, dsto);
             }
             0x1c => {
-                self.dungeon_state_view_mut()
+                self.dungeon_stair_lists_mut()
                     .append_stair_table_position(DungeonStairList::Stairs2, dsto);
                 self.Object_DrawNx4_BothBgs(4, src, dsto);
             }
             0x1d => {
-                self.dungeon_state_view_mut()
+                self.dungeon_stair_lists_mut()
                     .append_stair_table_position(DungeonStairList::WetStairs, dsto);
                 self.RoomDraw_4x4(src, dsto);
             }
             0x1e => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomUpNorthStraight, dsto);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::InterRoomUpNorthStraight,
                         DungeonStairList::InterRoomUpSouthStraight,
@@ -2506,9 +2506,9 @@ impl ZeldaState {
             }
             0x1f => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomDownNorthStraight, dsto);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::InterRoomDownNorthStraight,
                         DungeonStairList::InterRoomDownSouthStraight,
@@ -2519,9 +2519,9 @@ impl ZeldaState {
             }
             0x20 => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomUpSouthStraight, dsto);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::InterRoomUpSouthStraight,
                         DungeonStairList::InterRoomSouthDown,
@@ -2536,9 +2536,9 @@ impl ZeldaState {
             }
             0x21 => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomDownSouthStraight, dsto);
-                self.dungeon_state_view_mut()
+                self.dungeon_stair_lists_mut()
                     .set_stair_list_count(DungeonStairList::InterRoomDownSouthStraight, next);
                 self.RoomDraw_Object_Nx4(4, src, dsto);
             }
@@ -2595,18 +2595,18 @@ impl ZeldaState {
                     let room = self.world_location_state().dungeon_room as usize;
                     if self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0 {
                         self.dungeon_state_view_mut().clear_bg2_properties();
-                        self.dungeon_state_view_mut()
+                        self.dungeon_stair_lists_mut()
                             .append_stair_table_position(DungeonStairList::WetStairs, dsto);
                     } else {
                         self.palette_filter_view_mut().set_color_window_selection(2);
                         self.palette_filter_view_mut().set_color_math_control(0x62);
-                        self.dungeon_state_view_mut().append_stair_table_position(
+                        self.dungeon_stair_lists_mut().append_stair_table_position(
                             DungeonStairList::InRoomUpSouthWater,
                             dsto,
                         );
                     }
                 } else {
-                    self.dungeon_state_view_mut()
+                    self.dungeon_stair_lists_mut()
                         .append_stair_table_position(DungeonStairList::InRoomUpSouthWater, dsto);
                 }
                 self.RoomDraw_4x4(src, dsto);
@@ -2742,9 +2742,9 @@ impl ZeldaState {
             0x2d => {
                 let plane = self.room_plane_offset();
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomUpNorth, dsto | plane);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::InterRoomUpNorth,
                         DungeonStairList::WallUpNorthSpiral,
@@ -2764,9 +2764,9 @@ impl ZeldaState {
             0x2e | 0x2f => {
                 let plane = self.room_plane_offset();
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_interroom_staircase(DungeonStairList::InterRoomSouthDown, dsto | plane);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::InterRoomSouthDown,
                         DungeonStairList::WallDownNorthSpiral,
@@ -2781,9 +2781,9 @@ impl ZeldaState {
             0x08..=0x0f => self.RoomData_DrawObject_nx4_both_bgs(src, dsto, 4),
             0x31 => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_bg1_stair_table_position(DungeonStairList::InRoomSouthDown, dsto);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WaterLadders,
                         DungeonStairList::WaterSideStepSwitch,
@@ -2794,9 +2794,9 @@ impl ZeldaState {
             }
             0x32 => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_bg1_stair_table_position(DungeonStairList::InterPseudoUpNorth, dsto);
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WaterLadders,
                         DungeonStairList::WaterSideStepSwitch,
@@ -2812,12 +2812,12 @@ impl ZeldaState {
                 {
                     self.dungeon_state_view_mut().clear_bg2_properties();
                     let next = self
-                        .dungeon_state_view_mut()
+                        .dungeon_stair_lists_mut()
                         .append_bg1_stair_table_position(
                             DungeonStairList::InterPseudoUpNorth,
                             dsto,
                         );
-                    self.dungeon_state_view_mut().sync_stair_list_counts(
+                    self.dungeon_stair_lists_mut().sync_stair_list_counts(
                         &[
                             DungeonStairList::WaterLadders,
                             DungeonStairList::WaterSideStepSwitch,
@@ -2827,12 +2827,12 @@ impl ZeldaState {
                     self.RoomDraw_4x4(0x10c8, dsto);
                 } else {
                     let next = self
-                        .dungeon_state_view_mut()
+                        .dungeon_stair_lists_mut()
                         .append_bg1_stair_table_position(
                             DungeonStairList::InRoomUpNorthWater,
                             dsto,
                         );
-                    self.dungeon_state_view_mut()
+                    self.dungeon_stair_lists_mut()
                         .set_stair_list_count(DungeonStairList::ActivatedWaterLadders, next);
                     self.RoomDraw_4x4(0x10c8, dsto);
                 }
@@ -2843,13 +2843,13 @@ impl ZeldaState {
                     && self.save_progress_view().dungeon_info_word(room) & 0x0100 == 0
                 {
                     let next = self
-                        .dungeon_state_view_mut()
+                        .dungeon_stair_lists_mut()
                         .append_bg1_stair_table_position(DungeonStairList::WaterLadders, dsto);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_stair_lists_mut()
                         .set_stair_list_count(DungeonStairList::WaterSideStepSwitch, next);
                     self.Object_Draw_4x2_BothBgs(0x1108, dsto);
                 } else {
-                    self.dungeon_state_view_mut()
+                    self.dungeon_stair_lists_mut()
                         .append_bg1_stair_table_position(
                             DungeonStairList::ActivatedWaterLadders,
                             dsto,
@@ -2860,9 +2860,9 @@ impl ZeldaState {
             }
             0x36 => {
                 let next = self
-                    .dungeon_state_view_mut()
+                    .dungeon_stair_lists_mut()
                     .append_bg1_stair_table_position(DungeonStairList::WaterLadders, dsto);
-                self.dungeon_state_view_mut()
+                self.dungeon_stair_lists_mut()
                     .set_stair_list_count(DungeonStairList::WaterSideStepSwitch, next);
                 self.Object_Draw_4x2_BothBgs(0x1108, dsto);
             }
@@ -2889,11 +2889,11 @@ impl ZeldaState {
             }
             0x38 => {
                 let plane = self.room_plane_offset();
-                let next = self.dungeon_state_view_mut().append_interroom_staircase(
+                let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallUpNorthSpiral,
                     dsto.wrapping_sub(0x40) | plane,
                 );
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WallUpNorthSpiral,
                         DungeonStairList::WallUpNorthSpiralBg1,
@@ -2915,11 +2915,11 @@ impl ZeldaState {
             }
             0x39 => {
                 let plane = self.room_plane_offset();
-                let next = self.dungeon_state_view_mut().append_interroom_staircase(
+                let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallDownNorthSpiral,
                     dsto.wrapping_sub(0x40) | plane,
                 );
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WallDownNorthSpiral,
                         DungeonStairList::WallDownNorthSpiralBg1,
@@ -2936,11 +2936,11 @@ impl ZeldaState {
             }
             0x3a => {
                 let plane = self.room_plane_offset();
-                let next = self.dungeon_state_view_mut().append_interroom_staircase(
+                let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallUpNorthSpiralBg1,
                     dsto.wrapping_sub(0x40) | plane,
                 );
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WallUpNorthSpiralBg1,
                         DungeonStairList::InterRoomUpNorthStraight,
@@ -2961,11 +2961,11 @@ impl ZeldaState {
             }
             0x3b => {
                 let plane = self.room_plane_offset();
-                let next = self.dungeon_state_view_mut().append_interroom_staircase(
+                let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallDownNorthSpiralBg1,
                     dsto.wrapping_sub(0x40) | plane,
                 );
-                self.dungeon_state_view_mut().sync_stair_list_counts(
+                self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WallDownNorthSpiralBg1,
                         DungeonStairList::InterRoomDownNorthStraight,
@@ -4366,10 +4366,10 @@ impl ZeldaState {
         };
         let plane = self.room_plane_offset();
         let next = self
-            .dungeon_state_view_mut()
+            .dungeon_stair_lists_mut()
             .append_interroom_staircase(stair_list, dsto | plane);
         if from_upnorth {
-            self.dungeon_state_view_mut().sync_stair_list_counts(
+            self.dungeon_stair_lists_mut().sync_stair_list_counts(
                 &[
                     DungeonStairList::InterRoomUpNorthStraight,
                     DungeonStairList::InterRoomUpSouthStraight,
@@ -4382,7 +4382,7 @@ impl ZeldaState {
                 next,
             );
         } else {
-            self.dungeon_state_view_mut().sync_stair_list_counts(
+            self.dungeon_stair_lists_mut().sync_stair_list_counts(
                 &[
                     DungeonStairList::InterRoomDownNorthStraight,
                     DungeonStairList::InterRoomDownSouthStraight,
@@ -4417,10 +4417,10 @@ impl ZeldaState {
         };
         let plane = self.room_plane_offset();
         let next = self
-            .dungeon_state_view_mut()
+            .dungeon_stair_lists_mut()
             .append_interroom_staircase(stair_list, dsto | plane);
         if from_upsouth {
-            self.dungeon_state_view_mut().sync_stair_list_counts(
+            self.dungeon_stair_lists_mut().sync_stair_list_counts(
                 &[
                     DungeonStairList::InterRoomUpSouthStraight,
                     DungeonStairList::InterRoomSouthDown,
@@ -4432,7 +4432,7 @@ impl ZeldaState {
                 next,
             );
         } else {
-            self.dungeon_state_view_mut()
+            self.dungeon_stair_lists_mut()
                 .set_stair_list_count(DungeonStairList::InterRoomDownSouthStraight, next);
         }
 
@@ -7094,11 +7094,11 @@ impl ZeldaState {
         let mut j = 0;
         while j
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InRoomUpNorthWater)
         {
             let dsto = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorthWater, j);
             self.write_attr2(dsto as usize + xy(1, 1), 0x1d1d);
             self.write_attr2(dsto as usize + xy(1, 2), 0x1d1d);
@@ -7108,11 +7108,11 @@ impl ZeldaState {
         let mut j = 0;
         while j
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InRoomUpSouthWater)
         {
             let dsto = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_tilemap_pos(DungeonStairList::InRoomUpSouthWater, j);
             self.write_attr2(dsto as usize + xy(1, 1), 0x1d1d);
             self.write_attr2(dsto as usize + xy(1, 2), 0x1d1d);
@@ -7129,11 +7129,11 @@ impl ZeldaState {
         let mut j = 0;
         while j
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterPseudoUpNorth)
         {
             let dsto = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_tilemap_pos(DungeonStairList::InterPseudoUpNorth, j)
                 as usize;
             self.write_attr2(dsto, 0x0003);
@@ -7154,11 +7154,11 @@ impl ZeldaState {
         let mut j = 0;
         while j
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WetStairs)
         {
             let dsto = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_tilemap_pos(DungeonStairList::WetStairs, j)
                 as usize;
             self.write_attr2(dsto + xy(0, 3), 0x0003);
@@ -7791,7 +7791,7 @@ impl ZeldaState {
         let mut attr = 0x3030u16;
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpNorth) as usize
         {
             i += 2;
@@ -7799,11 +7799,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallUpNorthSpiral) as usize
         {
             let pos = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5e5e);
             self.write_attr2(pos + xy(1, 1), attr);
@@ -7814,11 +7814,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallUpNorthSpiralBg1) as usize
         {
             let pos = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5f5f);
             self.write_attr2(pos + xy(1, 1), attr);
@@ -7829,7 +7829,7 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpNorthStraight)
                 as usize
         {
@@ -7838,7 +7838,7 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpSouthStraight)
                 as usize
         {
@@ -7850,7 +7850,7 @@ impl ZeldaState {
 
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomSouthDown) as usize
         {
             i += 2;
@@ -7858,11 +7858,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallDownNorthSpiral) as usize
         {
             let pos = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5e5e);
             self.write_attr2(pos + xy(1, 1), attr);
@@ -7873,11 +7873,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallDownNorthSpiralBg1) as usize
         {
             let pos = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5f5f);
             self.write_attr2(pos + xy(1, 1), attr);
@@ -7968,37 +7968,37 @@ impl ZeldaState {
                 "dungeon-attr-state room=0x{:04x} star=0x{:04x} inter={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} in1={:04x},{:04x},{:04x},{:04x},{:04x},{:04x} misc=0x{:04x} torch=0x{:04x} chest=0x{:04x} big=0x{:04x} in2={:04x},{:04x},{:04x},{:04x} table1={:04x},{:04x},{:04x},{:04x} table2={:04x},{:04x},{:04x},{:04x} obj={:04x},{:04x},{:04x},{:04x}",
                 self.world_location_state().dungeon_room,
                 self.dungeon_state_view().star_switch_count_x2(),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomUpNorth),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WallUpNorthSpiral),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WallUpNorthSpiralBg1),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomUpNorthStraight),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomUpSouthStraight),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomSouthDown),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WallDownNorthSpiral),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WallDownNorthSpiralBg1),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterRoomDownNorthStraight),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomUpNorth),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomSouthDown),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::ActivatedWaterLadders),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterRoomUpNorth),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WallUpNorthSpiral),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WallUpNorthSpiralBg1),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterRoomUpNorthStraight),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterRoomUpSouthStraight),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterRoomSouthDown),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WallDownNorthSpiral),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WallDownNorthSpiralBg1),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterRoomDownNorthStraight),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorth),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomSouthDown),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterPseudoUpNorth),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WaterSideStepSwitch),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorthWater),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::ActivatedWaterLadders),
                 self.dungeon_state_view().misc_object_index(),
                 self.dungeon_state_view().torch_index(),
                 self.dungeon_state_view().num_chests_x2(),
                 self.dungeon_state_view().num_big_key_locks_x2(),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::Stairs1),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::Stairs2),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::WetStairs),
-                self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomUpSouthWater),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 2),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 4),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 6),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::Stairs1, 2),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::Stairs1, 4),
-                self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::Stairs1, 6),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs1),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs2),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::WetStairs),
+                self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpSouthWater),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 2),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 4),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 6),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 2),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 4),
+                self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 6),
                 self.dungeon_state_view().object_tilemap_pos(0),
                 self.dungeon_state_view().object_tilemap_pos(1),
                 self.dungeon_state_view().object_tilemap_pos(2),
@@ -8017,11 +8017,11 @@ impl ZeldaState {
         let mut attr = 0x3030u16;
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpNorth) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 2), 0);
             self.write_attr2(j + xy(1, 0), 0x2626);
@@ -8031,11 +8031,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallUpNorthSpiral) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x5e5e);
             self.write_attr2(j + xy(1, 2), 0x5e5e);
@@ -8046,11 +8046,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallUpNorthSpiralBg1) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x5f5f);
             self.write_attr2(j + xy(1, 2), 0x5f5f);
@@ -8061,12 +8061,12 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpNorthStraight)
                 as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x3838);
             self.write_attr2(j + xy(1, 2), 0);
@@ -8077,12 +8077,12 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomUpSouthStraight)
                 as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0);
             self.write_attr2(j + xy(1, 1), 0);
@@ -8094,11 +8094,11 @@ impl ZeldaState {
         attr = (attr & 0x0707) | 0x3434;
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomSouthDown) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 2), attr);
             self.write_attr2(j + xy(1, 3), 0x2626);
@@ -8107,11 +8107,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallDownNorthSpiral) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x5e5e);
             self.write_attr2(j + xy(1, 1), attr);
@@ -8122,11 +8122,11 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::WallDownNorthSpiralBg1) as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x5f5f);
             self.write_attr2(j + xy(1, 1), attr);
@@ -8137,12 +8137,12 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomDownNorthStraight)
                 as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0x3838);
             self.write_attr2(j + xy(1, 1), attr);
@@ -8153,12 +8153,12 @@ impl ZeldaState {
         }
         while i
             != self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InterRoomDownSouthStraight)
                 as usize
         {
             let j = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .inter_staircase_pos((i >> 1) as usize) as usize;
             self.write_attr2(j + xy(1, 0), 0);
             self.write_attr2(j + xy(1, 1), 0);
@@ -8171,20 +8171,20 @@ impl ZeldaState {
         i = 0;
         let mut stair_type = 0u16;
         let mut iend = self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::InRoomUpNorth) as usize;
         attr = 0x1f1f;
         if iend == 0 {
             stair_type = 1;
             attr = 0x1e1e;
             iend = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::InRoomSouthDown) as usize;
             if iend == 0 {
                 stair_type = 2;
                 attr = 0x1d1d;
                 iend = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::InterPseudoUpNorth)
                     as usize;
             }
@@ -8194,7 +8194,7 @@ impl ZeldaState {
                 .set_kind_of_in_room_staircase_word(stair_type);
             while i != iend {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
                 self.write_attr2(j + xy(0, 0), 0x0002);
@@ -8213,19 +8213,19 @@ impl ZeldaState {
             }
         }
         if i != self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::WaterSideStepSwitch) as usize
         {
             self.dungeon_state_view_mut()
                 .set_kind_of_in_room_staircase_word(2);
             while i
                 != self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::WaterSideStepSwitch)
                     as usize
             {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
                 self.write_attr2(j + xy(0, 0), 0x0a03);
@@ -8239,19 +8239,19 @@ impl ZeldaState {
         }
         i = 0;
         if i != self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::InRoomUpNorthWater) as usize
         {
             self.dungeon_state_view_mut()
                 .set_kind_of_in_room_staircase_word(2);
             while i
                 != self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::InRoomUpNorthWater)
                     as usize
             {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
                 self.write_attr2(j + xy(0, 0), 0x0003);
@@ -8264,19 +8264,19 @@ impl ZeldaState {
             }
         }
         if i != self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::ActivatedWaterLadders) as usize
         {
             self.dungeon_state_view_mut()
                 .set_kind_of_in_room_staircase_word(2);
             while i
                 != self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::ActivatedWaterLadders)
                     as usize
             {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
                 self.write_attr2(j + xy(0, 0), 0x0003);
@@ -8355,20 +8355,20 @@ impl ZeldaState {
         i = 0;
         let mut stair_type = 0u16;
         let mut iend = self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::Stairs1) as usize;
         attr = 0x3f3f;
         if iend == 0 {
             stair_type = 1;
             attr = 0x3e3e;
             iend = self
-                .dungeon_state_view()
+                .dungeon_stair_lists()
                 .stair_list_count(DungeonStairList::Stairs2) as usize;
             if iend == 0 {
                 stair_type = 2;
                 attr = 0x3d3d;
                 iend = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::WetStairs) as usize;
             }
         }
@@ -8377,7 +8377,7 @@ impl ZeldaState {
                 .set_kind_of_in_room_staircase_word(stair_type);
             while i != iend {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::Stairs1, i as u16)
                     as usize;
                 self.write_attr1(j + xy(0, 0), 0x0002);
@@ -8397,7 +8397,7 @@ impl ZeldaState {
         }
 
         if self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .stair_list_count(DungeonStairList::InRoomUpSouthWater)
             != 0
         {
@@ -8406,12 +8406,12 @@ impl ZeldaState {
             i = 0;
             while i
                 != self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_count(DungeonStairList::InRoomUpSouthWater)
                     as usize
             {
                 let j = self
-                    .dungeon_state_view()
+                    .dungeon_stair_lists()
                     .stair_list_tilemap_pos(DungeonStairList::Stairs1, i as u16)
                     as usize;
                 self.write_attr1(j + xy(0, 3), 0x0a03);
@@ -8689,20 +8689,20 @@ impl ZeldaState {
                     attr,
                     base,
                     self.ram.len(),
-                    self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                    self.dungeon_state_view().stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
-                    self.dungeon_state_view().inter_staircase_pos(0),
+                    self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
+                    self.dungeon_stair_lists().stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
+                    self.dungeon_stair_lists().inter_staircase_pos(0),
                     self.dungeon_state_view().misc_object_index(),
                     self.dungeon_state_view().num_chests_x2(),
                     self.dungeon_state_view().num_big_key_locks_x2(),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomUpNorth),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomSouthDown),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::ActivatedWaterLadders),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::Stairs1),
-                    self.dungeon_state_view().stair_list_count(DungeonStairList::Stairs2),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorth),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomSouthDown),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::InterPseudoUpNorth),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::WaterSideStepSwitch),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::InRoomUpNorthWater),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::ActivatedWaterLadders),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs1),
+                    self.dungeon_stair_lists().stair_list_count(DungeonStairList::Stairs2),
                 );
             }
             return;
@@ -10465,7 +10465,7 @@ impl ZeldaState {
     pub(super) fn SpiralStairs_MakeNearbyWallsHighPriority_Entering(&mut self) {
         let index = (self.dungeon_state_view().staircase_index() & 3) as usize;
         let pos = self
-            .dungeon_state_view()
+            .dungeon_stair_lists()
             .inter_staircase_pos(index)
             .wrapping_sub(4);
         self.dungeon_state_view_mut()
@@ -10496,7 +10496,7 @@ impl ZeldaState {
         let mut x = 0usize;
         let mut p;
         loop {
-            p = self.dungeon_state_view().inter_staircase_pos(x);
+            p = self.dungeon_stair_lists().inter_staircase_pos(x);
             if (p.wrapping_mul(2) & 0x007f) == lf {
                 break;
             }
@@ -12187,7 +12187,7 @@ mod tests {
             0xf0,
         );
         state
-            .dungeon_state_view_mut()
+            .dungeon_stair_lists_mut()
             .set_inter_staircase_pos(0, pos as u16);
 
         write_le_u16(&mut state.ram, DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS, 0);
