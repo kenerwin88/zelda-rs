@@ -1,7 +1,8 @@
 use crate::game_state::constants::{
     DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
-    DUNGEON_HEADER_TRAVEL_DESTINATIONS,
+    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_WORK_R16, DUNGEON_WORK_R18,
 };
+use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
 const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
@@ -9,17 +10,20 @@ const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonState {
     pub(crate) header: DungeonHeaderState,
+    pub(crate) scratch_word: DungeonScratchWordState,
 }
 
 impl DungeonState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             header: DungeonHeaderState::load_from_ram(ram),
+            scratch_word: DungeonScratchWordState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.header.write_to_ram(ram);
+        self.scratch_word.write_to_ram(ram);
     }
 }
 
@@ -83,6 +87,141 @@ impl DungeonHeaderState {
         self.plane_scratch[2] = (packed >> 4) & 3;
         self.plane_scratch[3] = (packed >> 6) & 3;
         self.plane_scratch[4] = extra & 3;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonScratchWordState {
+    r16: u16,
+    r18: u16,
+}
+
+impl DungeonScratchWordState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            r16: read_le_u16(ram, DUNGEON_WORK_R16),
+            r18: read_le_u16(ram, DUNGEON_WORK_R18),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_WORK_R16, self.r16);
+        write_le_u16(ram, DUNGEON_WORK_R18, self.r18);
+    }
+
+    pub(crate) fn high(&self) -> u8 {
+        (self.r16 >> 8) as u8
+    }
+
+    pub(crate) fn word(&self) -> u16 {
+        self.r16
+    }
+
+    pub(crate) fn minigame_previous_chest_choice(&self) -> u8 {
+        self.r16 as u8
+    }
+
+    pub(crate) fn decrement_high(&mut self) -> u8 {
+        let next = self.high().wrapping_sub(1);
+        self.r16 = (self.r16 & 0x00ff) | (u16::from(next) << 8);
+        next
+    }
+
+    pub(crate) fn set_word(&mut self, value: u16) {
+        self.r16 = value;
+    }
+
+    pub(crate) fn clear_word(&mut self) {
+        self.set_word(0);
+    }
+
+    pub(crate) fn set_liftable_tile_probe_position(&mut self, y: u16, x: u16) {
+        self.r16 = y;
+        self.r18 = x;
+    }
+
+    pub(crate) fn set_ganon_door_bounce_countdown(&mut self, value: u16) {
+        self.set_word(value);
+    }
+
+    pub(crate) fn decrement_ganon_door_bounce_low(&mut self) -> u8 {
+        let next = (self.r16 as u8).wrapping_sub(1);
+        self.r16 = (self.r16 & 0xff00) | u16::from(next);
+        next
+    }
+
+    pub(crate) fn clear_module_transition_counter(&mut self) {
+        self.r16 = (self.r16 & 0xff00) | 0;
+    }
+
+    pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {
+        self.r16 = (self.r16 & 0xff00) | u16::from(value);
+    }
+}
+
+pub(crate) struct NativeDungeonScratchWordBridgeMut<'a> {
+    scratch: &'a mut DungeonScratchWordState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
+    pub(crate) fn new(scratch: &'a mut DungeonScratchWordState, ram: &'a mut [u8]) -> Self {
+        *scratch = DungeonScratchWordState::load_from_ram(ram);
+        Self { scratch, ram }
+    }
+
+    fn sync(&mut self) {
+        self.scratch.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.scratch,
+            DungeonScratchWordState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn decrement_high(&mut self) -> u8 {
+        let next = self.scratch.decrement_high();
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_word(&mut self, value: u16) {
+        self.scratch.set_word(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_word(&mut self) {
+        self.scratch.clear_word();
+        self.sync();
+    }
+
+    pub(crate) fn set_liftable_tile_probe_position(&mut self, y: u16, x: u16) {
+        self.scratch.set_liftable_tile_probe_position(y, x);
+        self.sync();
+    }
+
+    pub(crate) fn set_ganon_door_bounce_countdown(&mut self, value: u16) {
+        self.scratch.set_ganon_door_bounce_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_ganon_door_bounce_low(&mut self) -> u8 {
+        let next = self.scratch.decrement_ganon_door_bounce_low();
+        self.sync();
+        next
+    }
+
+    pub(crate) fn clear_module_transition_counter(&mut self) {
+        self.scratch.clear_module_transition_counter();
+        self.sync();
+    }
+
+    pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {
+        self.scratch.set_minigame_previous_chest_choice(value);
+        self.sync();
     }
 }
 

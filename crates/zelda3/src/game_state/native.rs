@@ -26,7 +26,10 @@ pub(crate) use display::{
     NativeWaterHdmaWindowBridgeMut, PaletteBufferView, PaletteFilterState, TrinexxPaletteState,
     WaterHdmaWindowState,
 };
-pub(crate) use dungeon::{DungeonHeaderState, DungeonState, NativeDungeonHeaderBridgeMut};
+pub(crate) use dungeon::{
+    DungeonHeaderState, DungeonScratchWordState, DungeonState, NativeDungeonHeaderBridgeMut,
+    NativeDungeonScratchWordBridgeMut,
+};
 pub(crate) use effects::{
     BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisView,
     EffectAngleScratchState, EffectState, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
@@ -689,6 +692,51 @@ mod tests {
         assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 2], 3);
         assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 3], 0);
         assert_eq!(ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + 4], 2);
+    }
+
+    #[test]
+    fn dungeon_scratch_word_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_WORK_R16, 0x1201);
+        write_le_u16(&mut ram, DUNGEON_WORK_R18, 0x3456);
+
+        let mut scratch = DungeonScratchWordState::load_from_ram(&ram);
+        assert_eq!(scratch.high(), 0x12);
+        assert_eq!(scratch.word(), 0x1201);
+        assert_eq!(scratch.minigame_previous_chest_choice(), 1);
+
+        assert_eq!(scratch.decrement_high(), 0x11);
+        assert_eq!(scratch.decrement_ganon_door_bounce_low(), 0);
+        scratch.set_liftable_tile_probe_position(0x789a, 0xbcde);
+        scratch.set_minigame_previous_chest_choice(0xef);
+        scratch.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x78ef);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0xbcde);
+    }
+
+    #[test]
+    fn native_dungeon_scratch_word_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, DUNGEON_WORK_R16, 0x0201);
+
+        let mut scratch = DungeonScratchWordState::default();
+        {
+            let mut bridge = NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram);
+            assert_eq!(bridge.decrement_high(), 1);
+            bridge.set_ganon_door_bounce_countdown(0x0002);
+            assert_eq!(bridge.decrement_ganon_door_bounce_low(), 1);
+            bridge.clear_module_transition_counter();
+            bridge.set_minigame_previous_chest_choice(7);
+            bridge.set_liftable_tile_probe_position(0x1234, 0x5678);
+            bridge.clear_word();
+            bridge.set_word(0xabcd);
+        }
+
+        assert_eq!(scratch.word(), 0xabcd);
+        assert_eq!(scratch.high(), 0xab);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0xabcd);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x5678);
     }
 
     #[test]

@@ -36,24 +36,25 @@ use crate::game_state::{
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderState,
-    DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonSecretState,
-    DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
-    EffectAngleScratchState, EndingCreditState, EndingScratchView, EndingScratchViewMut,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerStateView,
-    FollowerStateViewMut, FrameState, GameState, GarnishSlotView, GarnishSlotViewMut,
-    GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView,
-    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
-    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
+    DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState,
+    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
+    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EndingScratchView,
+    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState,
+    FollowerStateView, FollowerStateViewMut, FrameState, GameState, GarnishSlotView,
+    GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView,
+    InventoryStateViewMut, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
+    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
+    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
+    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut,
+    NativeChainChompHistoryBridgeMut, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
+    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut,
@@ -86,18 +87,17 @@ use crate::game_state::{
     PolyRasterEdgeViewMut, PolyStateView, PolyStateViewMut, PpuScrollCopyView,
     PpuScrollCopyViewMut, PushedBlockView, QuakeBoltView, QuakeBoltViewMut, QuakeSpellState,
     RoomBoundsView, RoomBoundsViewMut, SaveLoadTransferState, SaveProgressState,
-    ScratchCounterState, ScratchWordView, ScratchWordViewMut, SelectFileMenuState,
-    SharedMessageTimerState, SkullWoodsFireState, SkullWoodsFireView, SkullWoodsFireViewMut,
-    SmallOverworldMap16ScrollBackupState, SpecialExitPositionView, SpotlightHdmaView,
-    SpotlightHdmaViewMut, SpriteBattleState, SpriteDrawWorkPositionView,
-    SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut, SpriteSystemView,
-    SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut, SwamolaHistoryView,
-    SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationView,
-    SystemSignalsState, TagalongSlotView, TileDetectPositionView, TileDetectPositionViewMut,
-    TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut,
-    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState,
-    WorldStateView,
+    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireState,
+    SkullWoodsFireView, SkullWoodsFireViewMut, SmallOverworldMap16ScrollBackupState,
+    SpecialExitPositionView, SpotlightHdmaView, SpotlightHdmaViewMut, SpriteBattleState,
+    SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView, SpriteSlotView, SpriteSlotViewMut,
+    SpriteSystemView, SpriteSystemViewMut, SpriteWorkspaceView, SpriteWorkspaceViewMut,
+    SwamolaHistoryView, SwamolaHistoryViewMut, SwamolaTargetView, SwamolaTargetViewMut,
+    SwimAccelerationView, SystemSignalsState, TagalongSlotView, TileDetectPositionView,
+    TileDetectPositionViewMut, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
+    TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
+    WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
+    WorldLocationState, WorldStateView,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3146,12 +3146,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn scratch_word_view(&self) -> ScratchWordView<'_> {
-        ScratchWordView::new(&self.ram)
+    pub(crate) fn scratch_word_view(&self) -> DungeonScratchWordState {
+        DungeonScratchWordState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn scratch_word_view_mut(&mut self) -> ScratchWordViewMut<'_> {
-        ScratchWordViewMut::new(&mut self.ram)
+    pub(crate) fn scratch_word_view_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
+        NativeDungeonScratchWordBridgeMut::new(
+            &mut self.game_state.dungeon.scratch_word,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn ending_scratch_view(&self) -> EndingScratchView<'_> {
