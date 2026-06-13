@@ -100,6 +100,7 @@ use crate::game_state::{
     TowerSealOrbitViewMut, TowerSealSparkleView, TowerSealSparkleViewMut, TowerSealState,
     TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisView,
     WeatherVaneDebrisViewMut, WeatherVaneState, WorldLocationState, WorldStateView,
+    WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1964,8 +1965,8 @@ impl ZeldaState {
         self.frame_state_bridge_mut().increment_modal_pause_flag()
     }
 
-    pub(crate) fn world_location_state(&self) -> &WorldLocationState {
-        &self.game_state.world.location
+    pub(crate) fn world_location_state(&self) -> WorldLocationState {
+        WorldLocationState::load_from_ram(&self.ram)
     }
 
     fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
@@ -3085,8 +3086,8 @@ impl ZeldaState {
         WorldStateView::new(&self.ram)
     }
 
-    pub(crate) fn world_state_view_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
-        self.world_location_bridge_mut()
+    pub(crate) fn world_state_view_mut(&mut self) -> WorldStateViewMut<'_> {
+        WorldStateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn dungeon_state_view(&self) -> DungeonStateView<'_> {
