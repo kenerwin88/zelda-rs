@@ -501,8 +501,8 @@ impl ZeldaState {
     //   if (y) drag_player_y += sign16(y) ? -1 : 1;
     // }
     pub(super) fn somaria_platform_drag_link(&mut self, _k: usize) {
-        let cur_x = self.sprite_workspace_view().current_sprite_x();
-        let cur_y = self.sprite_workspace_view().current_sprite_y();
+        let cur_x = self.sprite_workspace().current_sprite_x();
+        let cur_y = self.sprite_workspace().current_sprite_y();
         let lx = self.player_state_view().x();
         let ly = self.player_state_view().y();
         let x = cur_x.wrapping_sub(8).wrapping_sub(lx);
@@ -524,8 +524,7 @@ impl ZeldaState {
         }
         match self.sprite_slot_view(k).graphics() {
             0 => {
-                self.sprite_system_view_mut()
-                    .set_alt_sprite_spawned_flag(255);
+                self.sprite_system_mut().set_alt_sprite_spawned_flag(255);
                 let direction = self.sprite_slot_view(k).sprite_type().wrapping_sub(0xae);
                 self.sprite_slot_view_mut(k).set_direction(direction);
                 self.somaria_platform_locate_path(k);
@@ -545,7 +544,7 @@ impl ZeldaState {
                 self.sprite_move_xy(k);
             }
             2 => {
-                if self.sprite_system_view().alt_sprite_spawned_flag() == 255
+                if self.sprite_system().alt_sprite_spawned_flag() == 255
                     && self.sprite_check_damage_to_link_ignore_layer(k)
                 {
                     if !self.pipe_validate_entry() {
@@ -556,7 +555,7 @@ impl ZeldaState {
                         self.player_state_view_mut().immobilize();
                         self.player_state_view_mut()
                             .set_sprite_damage_disable_timer(1);
-                        self.sprite_system_view_mut()
+                        self.sprite_system_mut()
                             .set_alt_sprite_spawned_flag(k as u8);
                     } else {
                         self.sprite_halt_all_movement();
@@ -641,8 +640,7 @@ impl ZeldaState {
                         player.set_visibility_status(0);
                         player.clear_movement_velocity();
                     }
-                    self.sprite_system_view_mut()
-                        .set_alt_sprite_spawned_flag(255);
+                    self.sprite_system_mut().set_alt_sprite_spawned_flag(255);
                     self.sprite_slot_view_mut(k).set_graphics(2);
                 } else {
                     self.pipe_handle_player_movement(
@@ -665,7 +663,7 @@ impl ZeldaState {
     pub(super) fn master_sword_main(&mut self, k: usize) {
         let ow = self.world_location_state().overworld_screen_index() as usize;
         if self.frame_state().main_module != 26
-            && (self.overworld_event_info_view().event_info(ow) & 0x40) != 0
+            && (self.overworld_event_info().event_info(ow) & 0x40) != 0
         {
             self.sprite_slot_view_mut(k).set_state(0);
             return;
@@ -680,7 +678,7 @@ impl ZeldaState {
                     || !self.sprite_check_damage_to_link_same_layer_for_world(k)
                     || self.player_state_view().facing() != 2
                     || (self.player_state_view().filtered_joypad_l() & 0x80) == 0
-                    || (self.player_resources_view().pendant_flags() & 7) != 7
+                    || (self.player_resources().pendant_flags() & 7) != 7
                 {
                     return;
                 }
@@ -726,11 +724,10 @@ impl ZeldaState {
             4 => {
                 // give to player
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.overworld_event_info_view_mut()
-                        .set_event_bits(ow, 0x40);
+                    self.overworld_event_info_mut().set_event_bits(ow, 0x40);
                     self.player_state_view_mut().set_item_receipt_method(0);
                     self.link_receive_item(1, 0);
-                    self.save_progress_view_mut().set_map_icons_indicator(5);
+                    self.save_progress_mut().set_map_icons_indicator(5);
                     self.player_state_view_mut().set_pull_action_state(0);
                     self.sprite_slot_view_mut(k).set_ai_state(5);
                 }
@@ -1149,7 +1146,7 @@ impl ZeldaState {
                 if self.inventory_items().flute() >= 2 || close {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).increment_direction();
-                    self.garnish_state_view_mut()
+                    self.garnish_state_mut()
                         .increment_haunted_grove_flute_event_latch();
                     self.sprite_slot_view_mut(k).set_delay_main(176);
                     self.player_state_view_mut().immobilize();
@@ -1163,9 +1160,9 @@ impl ZeldaState {
                 self.player_state_view_mut().immobilize();
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.set_sub_screen_layers(2);
-                    self.palette_filter_view_mut().set_color_math_control(48);
-                    self.palette_filter_view_mut().set_countdown(0);
-                    self.palette_filter_view_mut()
+                    self.palette_filter_mut().set_color_math_control(48);
+                    self.palette_filter_mut().set_countdown(0);
+                    self.palette_filter_mut()
                         .set_darkening_or_lightening_screen(0);
                     self.palette_assert_translucency_swap();
                     self.sprite_slot_view_mut(k).set_ai_state(2);
@@ -1176,7 +1173,7 @@ impl ZeldaState {
             2 => {
                 if (self.frame_state().frame_counter & 15) == 0 {
                     self.palette_filter_sp5f_for_world();
-                    if self.palette_filter_view().countdown() == 0 {
+                    if self.palette_filter().countdown() == 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(3);
                     }
                 }
@@ -1245,7 +1242,7 @@ impl ZeldaState {
             }
             3 => {
                 // wait for music
-                if self.save_progress_view().hud_current_item() == HUD_ITEM_FLUTE
+                if self.save_progress().hud_current_item() == HUD_ITEM_FLUTE
                     && (self.player_state_view().joypad1h_last() & 0x40) != 0
                 {
                     self.sprite_slot_view_mut(k).set_ai_state(4);
@@ -1277,7 +1274,7 @@ impl ZeldaState {
             5 => {
                 // done
                 self.sprite_slot_view_mut(k).set_graphics(3);
-                self.save_progress_view_mut().or_progress_indicator_3(8);
+                self.save_progress_mut().or_progress_indicator_3(8);
             }
             _ => {}
         }
@@ -1303,7 +1300,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(0);
         }
         if (self.frame_state().frame_counter & 1) == 0 {
-            let cur = self.sprite_system_view().cur_object_index();
+            let cur = self.sprite_system().cur_object_index();
             let bit = ((self.frame_state().frame_counter >> 5) ^ cur) & 1;
             let delta: u8 = if bit != 0 { 0xff } else { 1 };
             self.sprite_slot_view_mut(k).add_x_velocity(delta);
@@ -1582,11 +1579,9 @@ mod tests {
 
     fn fresh_state() -> ZeldaState {
         let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
         state
-            .oam_state_view_mut()
-            .set_current_pointer(OAM_BUF as u16);
-        state
-            .oam_state_view_mut()
+            .oam_state_mut()
             .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
         state
     }
@@ -1646,7 +1641,7 @@ mod tests {
         let mut s = fresh_state();
         s.ram[MAIN_MODULE_INDEX] = 9; // not 26
         s.set_overworld_screen(0x02);
-        s.overworld_event_info_view_mut().set_event_info(0x02, 0x40);
+        s.overworld_event_info_mut().set_event_info(0x02, 0x40);
         s.sprite_slot_view_mut(4).set_state(9);
         s.master_sword_main(4);
         assert_eq!(s.sprite_slot_view(4).state(), 0);
@@ -1771,8 +1766,8 @@ mod tests {
         let mut s = fresh_state();
         // cur_sprite=(100,200), link=(20,80). x = 92-20 = 72 > 0 (no high
         // bit) → +1. y = 184-80 = 104 > 0 → +1.
-        s.sprite_workspace_view_mut().set_current_sprite_x(100);
-        s.sprite_workspace_view_mut().set_current_sprite_y(200);
+        s.sprite_workspace_mut().set_current_sprite_x(100);
+        s.sprite_workspace_mut().set_current_sprite_y(200);
         s.player_state_view_mut().set_x(20);
         s.player_state_view_mut().set_y(80);
         write_le_u16(&mut s.ram, DRAG_PLAYER_X, 0);

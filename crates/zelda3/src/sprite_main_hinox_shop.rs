@@ -557,8 +557,7 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.player_resources_view().current_health()
-                == self.player_resources_view().health_capacity()
+            if self.player_resources().current_health() == self.player_resources().health_capacity()
             {
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
@@ -596,8 +595,8 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.player_resources_view().arrow_upgrade_level() as usize;
-            if self.player_resources_view().arrows() == MAX_ARROWS_BY_UPGRADE_LEVEL[upg] {
+            let upg = self.player_resources().arrow_upgrade_level() as usize;
+            if self.player_resources().arrows() == MAX_ARROWS_BY_UPGRADE_LEVEL[upg] {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(30) {
@@ -635,8 +634,8 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier_for_hinox_shop(k);
         if self.shop_item_check_for_a_press(k) {
-            let upg = self.player_resources_view().bomb_upgrade_level() as usize;
-            if self.player_resources_view().bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg] {
+            let upg = self.player_resources().bomb_upgrade_level() as usize;
+            if self.player_resources().bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg] {
                 self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(50) {
@@ -742,12 +741,12 @@ impl ZeldaState {
     // a 16-bit unsigned compared against `int amt`; mirror that with u16
     // arithmetic so signedness matches.
     pub(super) fn shop_item_handle_cost(&mut self, amt: i32) -> bool {
-        let goal = self.player_resources_view().rupees_goal() as i32;
+        let goal = self.player_resources().rupees_goal() as i32;
         if amt > goal {
             return false;
         }
         let new_goal = (goal - amt) as u16;
-        self.player_resources_view_mut().set_rupees_goal(new_goal);
+        self.player_resources_mut().set_rupees_goal(new_goal);
         true
     }
 
@@ -873,18 +872,18 @@ mod tests {
     #[test]
     fn shop_item_handle_cost_succeeds_when_affordable() {
         let mut s = fresh_state();
-        s.player_resources_view_mut().set_rupees_goal(200);
+        s.player_resources_mut().set_rupees_goal(200);
         assert!(s.shop_item_handle_cost(150));
-        assert_eq!(s.player_resources_view().rupees_goal(), 50);
+        assert_eq!(s.player_resources().rupees_goal(), 50);
     }
 
     #[test]
     fn shop_item_handle_cost_rejects_when_too_expensive() {
         let mut s = fresh_state();
-        s.player_resources_view_mut().set_rupees_goal(50);
+        s.player_resources_mut().set_rupees_goal(50);
         assert!(!s.shop_item_handle_cost(150));
         assert_eq!(
-            s.player_resources_view().rupees_goal(),
+            s.player_resources().rupees_goal(),
             50,
             "rupees unchanged on failed cost"
         );

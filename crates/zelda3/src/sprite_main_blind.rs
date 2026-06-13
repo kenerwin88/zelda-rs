@@ -940,14 +940,14 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_prep_blind_prepare_battle(&mut self, k: usize) {
         let dung_state = self.dungeon_savegame_state().savegame_state_bits();
-        if self.follower_state_view().indicator() != 6 && (dung_state & 0x2000) != 0 {
+        if self.follower_state().indicator() != 6 && (dung_state & 0x2000) != 0 {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_delay_aux2(96);
             sprite.set_c(1);
             sprite.set_direction(2);
             sprite.set_head_direction(4);
             sprite.set_graphics(7);
-            self.sprite_system_view_mut().set_blind_head_anim_counter(0);
+            self.sprite_system_mut().set_blind_head_anim_counter(0);
         } else {
             self.sprite_slot_view_mut(k).clear();
         }
@@ -1143,8 +1143,8 @@ impl ZeldaState {
                     sprite.set_subtype(1);
                 } else {
                     self.sprite_slot_view_mut(k).set_z_subpixel(0);
-                    let new_limit = self.sprite_system_view().limit_instance().wrapping_add(1);
-                    self.sprite_system_view_mut().set_limit_instance(new_limit);
+                    let new_limit = self.sprite_system().limit_instance().wrapping_add(1);
+                    self.sprite_system_mut().set_limit_instance(new_limit);
                     if new_limit == 3 {
                         self.sprite_kill_friends_for_blind();
                         {
@@ -1199,8 +1199,7 @@ impl ZeldaState {
             return;
         }
         // BLIND_HEAD_ANIM_COUNTER++;
-        self.sprite_system_view_mut()
-            .increment_blind_head_anim_counter();
+        self.sprite_system_mut().increment_blind_head_anim_counter();
         // stunned/ai_state branch
         if self.sprite_slot_view(k).stunned() == 0 {
             if self.sprite_slot_view(k).ai_state() != 0 {
@@ -1234,7 +1233,7 @@ impl ZeldaState {
                     sprite.increment_c();
                     sprite.set_delay_aux2(96);
                 } else if self.sprite_slot_view(k).delay_aux2() == 80 {
-                    self.dialogue_message_index_view_mut().set_value(0x123);
+                    self.dialogue_message_index_mut().set_value(0x123);
                     self.sprite_show_message_minimal_for_blind();
                 } else if self.sprite_slot_view(k).delay_aux2() == 24 {
                     self.spawn_boss_poof_for_blind(k);
@@ -1565,9 +1564,9 @@ impl ZeldaState {
             self.sprite_check_damage_to_and_from_link_for_blind(k);
         }
         let link_x = self.player_state_view().x();
-        let cur_x = self.sprite_workspace_view().current_sprite_x();
+        let cur_x = self.sprite_workspace().current_sprite_x();
         let link_y = self.player_state_view().y();
-        let cur_y = self.sprite_workspace_view().current_sprite_y();
+        let cur_y = self.sprite_workspace().current_sprite_y();
         let dx = link_x.wrapping_sub(cur_x).wrapping_add(14);
         let dy = link_y.wrapping_sub(cur_y);
         let blink_or_disable = self.player_state_view().blink_countdown()
@@ -1604,7 +1603,7 @@ impl ZeldaState {
             let direction = self.sprite_slot_view(k).direction();
             let t1 = if direction == 3 { -t1_raw } else { t1_raw };
             let t0 = (direction as i32 - 2) * 8;
-            let b = self.sprite_system_view().blind_head_anim_counter() as i32;
+            let b = self.sprite_system().blind_head_anim_counter() as i32;
             let idx = ((b >> 3) & 7) + ((b >> 2) & 1) + t0;
             // C reads kBlind_HeadDir[idx]; idx can be 0..16 (17 entries).
             let head_dir = BLIND_HEAD_DIRECTION_BASES[(idx as usize) & 0xff] as i32;
@@ -1712,9 +1711,9 @@ impl ZeldaState {
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
         let oam = self.oam_state_view().current_pointer_usize();
         let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .merge_entry_flags(oam, 0x3f, BLIND_HEAD_DRAW_FLAGS[j]);
     }
 
@@ -1781,7 +1780,7 @@ impl ZeldaState {
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {
         let oam = self.oam_state_view().current_pointer_usize() + oam_idx * 4;
-        self.oam_state_view_mut().set_entry_y(oam, y);
+        self.oam_state_mut().set_entry_y(oam, y);
     }
 
     fn blind_draw_patch_oam_head_for_blind(
@@ -1792,9 +1791,8 @@ impl ZeldaState {
         flags: u8,
     ) {
         let oam = self.oam_state_view().current_pointer_usize() + oam_idx as usize * 4;
-        self.oam_state_view_mut().set_entry_char(oam, charnum);
-        self.oam_state_view_mut()
-            .merge_entry_flags(oam, 0x3f, flags);
+        self.oam_state_mut().set_entry_char(oam, charnum);
+        self.oam_state_mut().merge_entry_flags(oam, 0x3f, flags);
     }
 }
 
@@ -1809,7 +1807,7 @@ mod tests {
     #[test]
     fn prep_blind_sets_battle_fields_when_unlocked() {
         let mut s = fresh_state();
-        s.follower_state_view_mut().set_indicator(0);
+        s.follower_state_mut().set_indicator(0);
         s.dungeon_savegame_state_mut()
             .set_savegame_state_bits(0x2000);
         // Mark our slot active and clear other slots.
@@ -1826,7 +1824,7 @@ mod tests {
     #[test]
     fn prep_blind_kills_sprite_when_locked() {
         let mut s = fresh_state();
-        s.follower_state_view_mut().set_indicator(6); // wrong indicator -> branch to else
+        s.follower_state_mut().set_indicator(6); // wrong indicator -> branch to else
         s.sprite_slot_view_mut(5).set_state(9);
         s.sprite_prep_blind_prepare_battle(5);
         assert_eq!(s.sprite_slot_view(5).state(), 0);

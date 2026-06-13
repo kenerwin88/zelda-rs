@@ -1501,8 +1501,8 @@ impl ZeldaState {
             frame.main_module,
             frame.submodule,
             frame.subsubmodule,
-            self.tile_detect_position_view().tile_collision_bits_primary(),
-            self.tile_detect_position_view().tile_collision_bits_secondary(),
+            self.tile_detect_position().tile_collision_bits_primary(),
+            self.tile_detect_position().tile_collision_bits_secondary(),
             self.dungeon_doors().door_open_counter_low(),
             self.player_state_view().last_direction(),
             self.player_state_view().swim_direction_flags(),
@@ -1536,15 +1536,15 @@ impl ZeldaState {
                 .map(|(addr, value)| format!("0x{addr:05x}=0x{value:02x}"))
                 .unwrap_or_else(|| "none".to_string()),
             self.player_state_view().swim_direction_flags(),
-            self.tile_detect_position_view().deepwater() as u8,
-            self.tile_detect_position_view().deepwater_high(),
-            self.tile_detect_position_view().normal_tiles() as u8,
-            self.tile_detect_position_view().normal_tiles_high(),
+            self.tile_detect_position().deepwater() as u8,
+            self.tile_detect_position().deepwater_high(),
+            self.tile_detect_position().normal_tiles() as u8,
+            self.tile_detect_position().normal_tiles_high(),
             self.player_state_view().deep_water_state(),
             self.player_state_view().palette_bits_of_oam(),
-            self.tile_detect_position_view().palette_bits_high(),
-            self.tile_detect_position_view().deepwater(),
-            self.tile_detect_position_view().normal_tiles(),
+            self.tile_detect_position().palette_bits_high(),
+            self.tile_detect_position().deepwater(),
+            self.tile_detect_position().normal_tiles(),
             self.player_state_view().deep_water_state(),
             self.player_state_view().x(),
             self.player_state_view().y(),
@@ -1660,9 +1660,9 @@ impl ZeldaState {
             frame.subsubmodule,
             self.player_state_view().handler_state(),
             self.player_state_view().near_pit_state(),
-            self.tile_detect_position_view().pit_tile(),
-            self.tile_detect_position_view().water_staircase(),
-            self.tile_detect_position_view().deepwater(),
+            self.tile_detect_position().pit_tile(),
+            self.tile_detect_position().water_staircase(),
+            self.tile_detect_position().deepwater(),
             self.player_state_view().flippers(),
             self.player_state_view().is_bunny_mirror() as u8,
             self.player_state_view().moon_pearl(),
@@ -1679,13 +1679,13 @@ impl ZeldaState {
             self.player_state_view().direction(),
             self.player_state_view().last_direction(),
             self.player_state_view().last_direction_moved_towards(),
-            self.tile_detect_position_view().collision_bits(),
-            self.tile_detect_position_view().slope_collision_bits(),
-            self.tile_detect_position_view().normal_tiles(),
-            self.tile_detect_position_view().vertical_ledge(),
-            self.tile_detect_position_view().stair_tile(),
+            self.tile_detect_position().collision_bits(),
+            self.tile_detect_position().slope_collision_bits(),
+            self.tile_detect_position().normal_tiles(),
+            self.tile_detect_position().vertical_ledge(),
+            self.tile_detect_position().stair_tile(),
             self.player_state_view().defense_flags(),
-            self.player_resources_view().current_health(),
+            self.player_resources().current_health(),
         );
     }
 
@@ -1725,11 +1725,11 @@ impl ZeldaState {
         PlayerStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn enhanced_features_view(&self) -> &EnhancedFeaturesState {
+    pub(crate) fn enhanced_features(&self) -> &EnhancedFeaturesState {
         &self.game_state.enhanced_features
     }
 
-    pub(crate) fn enhanced_features_view_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {
+    pub(crate) fn enhanced_features_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {
         NativeEnhancedFeaturesBridgeMut::new(&mut self.game_state.enhanced_features, &mut self.ram)
     }
 
@@ -1783,9 +1783,7 @@ impl ZeldaState {
         SpecialExitPositionView::new(&self.game_state.player.special_exit_position)
     }
 
-    pub(crate) fn special_exit_position_view_mut(
-        &mut self,
-    ) -> NativeSpecialExitPositionBridgeMut<'_> {
+    pub(crate) fn special_exit_position_mut(&mut self) -> NativeSpecialExitPositionBridgeMut<'_> {
         NativeSpecialExitPositionBridgeMut::new(
             &mut self.game_state.player.special_exit_position,
             &mut self.ram,
@@ -1796,37 +1794,37 @@ impl ZeldaState {
         SwimAccelerationView::new(&self.game_state.player.swim_acceleration)
     }
 
-    pub(crate) fn swim_acceleration_view_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
+    pub(crate) fn swim_acceleration_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
         NativeSwimAccelerationBridgeMut::new(
             &mut self.game_state.player.swim_acceleration,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn bg1_move_calc_view(&self) -> Bg1MovementAccumulatorState {
+    pub(crate) fn bg1_move_calc(&self) -> Bg1MovementAccumulatorState {
         Bg1MovementAccumulatorState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn bg1_move_calc_view_mut(&mut self) -> NativeBg1MovementAccumulatorBridgeMut<'_> {
+    pub(crate) fn bg1_move_calc_mut(&mut self) -> NativeBg1MovementAccumulatorBridgeMut<'_> {
         NativeBg1MovementAccumulatorBridgeMut::new(
             &mut self.game_state.player.bg1_movement_accumulator,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn tile_detect_position_view(&self) -> TileDetectionState {
+    pub(crate) fn tile_detect_position(&self) -> TileDetectionState {
         TileDetectionState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn tile_detect_position_view_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
+    pub(crate) fn tile_detect_position_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
         NativeTileDetectionBridgeMut::new(&mut self.game_state.player.tile_detection, &mut self.ram)
     }
 
-    pub(crate) fn ppu_scroll_copy_view(&self) -> PpuScrollCopyState {
+    pub(crate) fn ppu_scroll_copy(&self) -> PpuScrollCopyState {
         PpuScrollCopyState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn ppu_scroll_copy_view_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
+    pub(crate) fn ppu_scroll_copy_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
         NativePpuScrollCopyBridgeMut::new(
             &mut self.game_state.display.ppu_scroll_copy,
             &mut self.ram,
@@ -1841,13 +1839,11 @@ impl ZeldaState {
         NativeAttractSceneBridgeMut::new(&mut self.game_state.ending.attract_scene, &mut self.ram)
     }
 
-    pub(crate) fn dialogue_message_index_view(&self) -> &DialogueMessageIndexState {
+    pub(crate) fn dialogue_message_index(&self) -> &DialogueMessageIndexState {
         &self.game_state.messaging.dialogue_message_index
     }
 
-    pub(crate) fn dialogue_message_index_view_mut(
-        &mut self,
-    ) -> NativeDialogueMessageIndexBridgeMut<'_> {
+    pub(crate) fn dialogue_message_index_mut(&mut self) -> NativeDialogueMessageIndexBridgeMut<'_> {
         NativeDialogueMessageIndexBridgeMut::new(
             &mut self.game_state.messaging.dialogue_message_index,
             &mut self.ram,
@@ -1861,7 +1857,7 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn multiselect_choice_view_mut(&mut self) -> NativeMultiselectChoiceBridgeMut<'_> {
+    pub(crate) fn multiselect_choice_mut(&mut self) -> NativeMultiselectChoiceBridgeMut<'_> {
         NativeMultiselectChoiceBridgeMut::new(
             &mut self.game_state.messaging.multiselect_choice,
             &mut self.ram,
@@ -1872,7 +1868,7 @@ impl ZeldaState {
         PushedBlockView::new(&self.game_state.player.pushed_block)
     }
 
-    pub(crate) fn pushed_block_view_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
+    pub(crate) fn pushed_block_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
         NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
@@ -1892,11 +1888,11 @@ impl ZeldaState {
         NativeInventoryItemsBridgeMut::new(&mut self.game_state.inventory.items, &mut self.ram)
     }
 
-    pub(crate) fn player_resources_view(&self) -> PlayerResourcesState {
+    pub(crate) fn player_resources(&self) -> PlayerResourcesState {
         PlayerResourcesState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn player_resources_view_mut(&mut self) -> NativePlayerResourcesBridgeMut<'_> {
+    pub(crate) fn player_resources_mut(&mut self) -> NativePlayerResourcesBridgeMut<'_> {
         NativePlayerResourcesBridgeMut::new(
             &mut self.game_state.inventory.player_resources,
             &mut self.ram,
@@ -2691,7 +2687,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u16) {
-        self.hud_state_view_mut().set_floor_changed_timer(value);
+        self.hud_state_mut().set_floor_changed_timer(value);
     }
 
     pub(crate) fn loaded_room_data_word(&self, offset: usize, index: usize) -> u16 {
@@ -3153,26 +3149,26 @@ impl ZeldaState {
             .set_travel_bird_tile_offset(value);
     }
 
-    pub(crate) fn save_progress_view(&self) -> SaveProgressState {
+    pub(crate) fn save_progress(&self) -> SaveProgressState {
         SaveProgressState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn save_progress_view_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
+    pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
         NativeSaveProgressBridgeMut::new(
             &mut self.game_state.inventory.save_progress,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn mirror_warp_scratch_view(&self) -> &MirrorWarpState {
+    pub(crate) fn mirror_warp_scratch(&self) -> &MirrorWarpState {
         &self.game_state.inventory.mirror_warp
     }
 
-    pub(crate) fn mirror_warp_scratch_view_mut(&mut self) -> NativeMirrorWarpBridgeMut<'_> {
+    pub(crate) fn mirror_warp_scratch_mut(&mut self) -> NativeMirrorWarpBridgeMut<'_> {
         NativeMirrorWarpBridgeMut::new(&mut self.game_state.inventory.mirror_warp, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_entrance_backup_view_mut(
+    pub(crate) fn dungeon_entrance_backup_mut(
         &mut self,
     ) -> NativeDungeonEntranceBackupBridgeMut<'_> {
         NativeDungeonEntranceBackupBridgeMut::new(
@@ -3181,11 +3177,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_header_view(&self) -> DungeonHeaderState {
+    pub(crate) fn dungeon_header(&self) -> DungeonHeaderState {
         DungeonHeaderState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn dungeon_header_view_mut(&mut self) -> NativeDungeonHeaderBridgeMut<'_> {
+    pub(crate) fn dungeon_header_mut(&mut self) -> NativeDungeonHeaderBridgeMut<'_> {
         NativeDungeonHeaderBridgeMut::new(&mut self.game_state.dungeon.header, &mut self.ram)
     }
 
@@ -3193,7 +3189,7 @@ impl ZeldaState {
         DungeonKeySlotsView::new(&self.game_state.inventory.dungeon_key_slots)
     }
 
-    pub(crate) fn dungeon_key_slots_view_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
+    pub(crate) fn dungeon_key_slots_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
         NativeDungeonKeySlotsBridgeMut::new(
             &mut self.game_state.inventory.dungeon_key_slots,
             &mut self.ram,
@@ -3392,77 +3388,75 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_map_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
+    pub(crate) fn dungeon_map_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
         NativeDungeonMapDisplayBridgeMut::new(
             &mut self.game_state.dungeon_map_display,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn scratch_word_view(&self) -> DungeonScratchWordState {
+    pub(crate) fn scratch_word(&self) -> DungeonScratchWordState {
         DungeonScratchWordState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn scratch_word_view_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
+    pub(crate) fn scratch_word_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
         NativeDungeonScratchWordBridgeMut::new(
             &mut self.game_state.dungeon.scratch_word,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn ending_scratch_view(&self) -> DungeonScratchWordState {
+    pub(crate) fn ending_scratch(&self) -> DungeonScratchWordState {
         DungeonScratchWordState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn ending_scratch_view_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
+    pub(crate) fn ending_scratch_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
         NativeDungeonScratchWordBridgeMut::new(
             &mut self.game_state.dungeon.scratch_word,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn save_load_scratch_view(&self) -> &SaveLoadTransferState {
+    pub(crate) fn save_load_scratch(&self) -> &SaveLoadTransferState {
         &self.game_state.save_load_transfer
     }
 
-    pub(crate) fn save_load_scratch_view_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
+    pub(crate) fn save_load_scratch_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
         NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_map_scratch_view(&self) -> &DungeonMapDisplayState {
+    pub(crate) fn dungeon_map_scratch(&self) -> &DungeonMapDisplayState {
         &self.game_state.dungeon_map_display
     }
 
-    pub(crate) fn dungeon_map_scratch_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
+    pub(crate) fn dungeon_map_scratch_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
         NativeDungeonMapDisplayBridgeMut::new(
             &mut self.game_state.dungeon_map_display,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn dungeon_secret_scratch_view(&self) -> &DungeonSecretState {
+    pub(crate) fn dungeon_secret_scratch(&self) -> &DungeonSecretState {
         &self.game_state.dungeon_secret
     }
 
-    pub(crate) fn dungeon_secret_scratch_view_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
+    pub(crate) fn dungeon_secret_scratch_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
         NativeDungeonSecretBridgeMut::new(&mut self.game_state.dungeon_secret, &mut self.ram)
     }
 
-    pub(crate) fn temp_counter_view(&self) -> &ScratchCounterState {
+    pub(crate) fn temp_counter(&self) -> &ScratchCounterState {
         &self.game_state.scratch_counter
     }
 
-    pub(crate) fn temp_counter_view_mut(&mut self) -> NativeScratchCounterBridgeMut<'_> {
+    pub(crate) fn temp_counter_mut(&mut self) -> NativeScratchCounterBridgeMut<'_> {
         NativeScratchCounterBridgeMut::new(&mut self.game_state.scratch_counter, &mut self.ram)
     }
 
-    pub(crate) fn overworld_event_info_view(&self) -> &OverworldEventInfoState {
+    pub(crate) fn overworld_event_info(&self) -> &OverworldEventInfoState {
         &self.game_state.world.overworld.event_info
     }
 
-    pub(crate) fn overworld_event_info_view_mut(
-        &mut self,
-    ) -> NativeOverworldEventInfoBridgeMut<'_> {
+    pub(crate) fn overworld_event_info_mut(&mut self) -> NativeOverworldEventInfoBridgeMut<'_> {
         NativeOverworldEventInfoBridgeMut::new(
             &mut self.game_state.world.overworld.event_info,
             &mut self.ram,
@@ -3476,9 +3470,7 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn overworld_config_table_view_mut(
-        &mut self,
-    ) -> NativeOverworldConfigTableBridgeMut<'_> {
+    pub(crate) fn overworld_config_table_mut(&mut self) -> NativeOverworldConfigTableBridgeMut<'_> {
         NativeOverworldConfigTableBridgeMut::new(
             &mut self.game_state.world.overworld.config_table,
             &mut self.ram,
@@ -3489,15 +3481,15 @@ impl ZeldaState {
         PaletteBufferView::new(&self.game_state.display.palette_buffer)
     }
 
-    pub(crate) fn palette_buffer_view_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
+    pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
         NativePaletteBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn palette_filter_view(&self) -> &PaletteFilterState {
+    pub(crate) fn palette_filter(&self) -> &PaletteFilterState {
         &self.game_state.display.palette_filter
     }
 
-    pub(crate) fn palette_filter_view_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
+    pub(crate) fn palette_filter_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
         NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
@@ -3508,7 +3500,7 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn hud_state_view_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
+    pub(crate) fn hud_state_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
         NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
@@ -3530,27 +3522,27 @@ impl ZeldaState {
             .swap_items(old_pos, new_pos);
     }
 
-    pub(crate) fn archery_game_view(&self) -> &ArcheryGameState {
+    pub(crate) fn archery_game(&self) -> &ArcheryGameState {
         &self.game_state.archery_game
     }
 
-    pub(crate) fn archery_game_view_mut(&mut self) -> NativeArcheryGameBridgeMut<'_> {
+    pub(crate) fn archery_game_mut(&mut self) -> NativeArcheryGameBridgeMut<'_> {
         NativeArcheryGameBridgeMut::new(&mut self.game_state.archery_game, &mut self.ram)
     }
 
-    pub(crate) fn minigame_state_view(&self) -> &MinigameState {
+    pub(crate) fn minigame_state(&self) -> &MinigameState {
         &self.game_state.minigame
     }
 
-    pub(crate) fn minigame_state_view_mut(&mut self) -> NativeMinigameBridgeMut<'_> {
+    pub(crate) fn minigame_state_mut(&mut self) -> NativeMinigameBridgeMut<'_> {
         NativeMinigameBridgeMut::new(&mut self.game_state.minigame, &mut self.ram)
     }
 
-    pub(crate) fn sprite_battle_view(&self) -> SpriteBattleState {
+    pub(crate) fn sprite_battle(&self) -> SpriteBattleState {
         SpriteBattleState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_battle_view_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
+    pub(crate) fn sprite_battle_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
         NativeSpriteBattleBridgeMut::new(&mut self.game_state.sprite_battle, &mut self.ram)
     }
 
@@ -3638,11 +3630,11 @@ impl ZeldaState {
             .set_death_count_digit_tile_base(value);
     }
 
-    pub(crate) fn intro_sword_view(&self) -> &IntroSwordState {
+    pub(crate) fn intro_sword(&self) -> &IntroSwordState {
         &self.game_state.intro_sword
     }
 
-    pub(crate) fn intro_sword_view_mut(&mut self) -> NativeIntroSwordBridgeMut<'_> {
+    pub(crate) fn intro_sword_mut(&mut self) -> NativeIntroSwordBridgeMut<'_> {
         NativeIntroSwordBridgeMut::new(&mut self.game_state.intro_sword, &mut self.ram)
     }
 
@@ -3658,11 +3650,11 @@ impl ZeldaState {
         NativeOverworldMap16DecodeBridgeMut::new(&mut self.ram)
     }
 
-    pub(crate) fn room_bounds_view(&self) -> RoomBoundsState {
+    pub(crate) fn room_bounds(&self) -> RoomBoundsState {
         RoomBoundsState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn room_bounds_view_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
+    pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
         NativeRoomBoundsBridgeMut::new(&mut self.game_state.world.room_bounds, &mut self.ram)
     }
 
@@ -3784,32 +3776,30 @@ impl ZeldaState {
         NativePolyRuntimeBridgeMut::new(&mut self.game_state.poly.runtime, &mut self.ram)
     }
 
-    pub(crate) fn poly_projected_vertex_view(&self) -> PolyProjectedVerticesState {
+    pub(crate) fn poly_projected_vertex(&self) -> PolyProjectedVerticesState {
         PolyProjectedVerticesState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_projected_vertex_view_mut(
-        &mut self,
-    ) -> NativePolyProjectedVerticesBridgeMut<'_> {
+    pub(crate) fn poly_projected_vertex_mut(&mut self) -> NativePolyProjectedVerticesBridgeMut<'_> {
         NativePolyProjectedVerticesBridgeMut::new(
             &mut self.game_state.poly.projected_vertices,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn poly_face_coords_view(&self) -> PolyFaceCoordsState {
+    pub(crate) fn poly_face_coords(&self) -> PolyFaceCoordsState {
         PolyFaceCoordsState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_face_coords_view_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
+    pub(crate) fn poly_face_coords_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
         NativePolyFaceCoordsBridgeMut::new(&mut self.game_state.poly.face_coords, &mut self.ram)
     }
 
-    pub(crate) fn poly_raster_edge_view(&self) -> PolyRasterEdgeState {
+    pub(crate) fn poly_raster_edge(&self) -> PolyRasterEdgeState {
         PolyRasterEdgeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn poly_raster_edge_view_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
+    pub(crate) fn poly_raster_edge_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
         NativePolyRasterEdgeBridgeMut::new(&mut self.game_state.poly.raster_edge, &mut self.ram)
     }
 
@@ -3821,24 +3811,22 @@ impl ZeldaState {
         IntroActorViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn effect_angle_scratch_view(&self) -> &EffectAngleScratchState {
+    pub(crate) fn effect_angle_scratch(&self) -> &EffectAngleScratchState {
         &self.game_state.effects.angle_scratch
     }
 
-    pub(crate) fn effect_angle_scratch_view_mut(
-        &mut self,
-    ) -> NativeEffectAngleScratchBridgeMut<'_> {
+    pub(crate) fn effect_angle_scratch_mut(&mut self) -> NativeEffectAngleScratchBridgeMut<'_> {
         NativeEffectAngleScratchBridgeMut::new(
             &mut self.game_state.effects.angle_scratch,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn quake_bolt_view(&self, slot: usize) -> QuakeBoltSlotState {
+    pub(crate) fn quake_bolt(&self, slot: usize) -> QuakeBoltSlotState {
         self.game_state.effects.quake_bolts.slot(slot)
     }
 
-    pub(crate) fn quake_bolt_view_mut(&mut self, slot: usize) -> NativeQuakeBoltBridgeMut<'_> {
+    pub(crate) fn quake_bolt_mut(&mut self, slot: usize) -> NativeQuakeBoltBridgeMut<'_> {
         NativeQuakeBoltBridgeMut::new(
             &mut self.game_state.effects.quake_bolts,
             &mut self.ram,
@@ -3846,11 +3834,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn quake_spell_scratch_view(&self) -> &QuakeSpellState {
+    pub(crate) fn quake_spell_scratch(&self) -> &QuakeSpellState {
         &self.game_state.effects.quake_spell
     }
 
-    pub(crate) fn quake_spell_scratch_view_mut(&mut self) -> NativeQuakeSpellBridgeMut<'_> {
+    pub(crate) fn quake_spell_scratch_mut(&mut self) -> NativeQuakeSpellBridgeMut<'_> {
         NativeQuakeSpellBridgeMut::new(&mut self.game_state.effects.quake_spell, &mut self.ram)
     }
 
@@ -3873,11 +3861,11 @@ impl ZeldaState {
         BombosBlastViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn bombos_spell_scratch_view(&self) -> &BombosSpellState {
+    pub(crate) fn bombos_spell_scratch(&self) -> &BombosSpellState {
         &self.game_state.effects.bombos_spell
     }
 
-    pub(crate) fn bombos_spell_scratch_view_mut(&mut self) -> NativeBombosSpellBridgeMut<'_> {
+    pub(crate) fn bombos_spell_scratch_mut(&mut self) -> NativeBombosSpellBridgeMut<'_> {
         NativeBombosSpellBridgeMut::new(&mut self.game_state.effects.bombos_spell, &mut self.ram)
     }
 
@@ -3900,22 +3888,22 @@ impl ZeldaState {
         TowerSealSparkleViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn tower_seal_scratch_view(&self) -> &TowerSealState {
+    pub(crate) fn tower_seal_scratch(&self) -> &TowerSealState {
         &self.game_state.effects.tower_seal
     }
 
-    pub(crate) fn tower_seal_scratch_view_mut(&mut self) -> NativeTowerSealBridgeMut<'_> {
+    pub(crate) fn tower_seal_scratch_mut(&mut self) -> NativeTowerSealBridgeMut<'_> {
         NativeTowerSealBridgeMut::new(&mut self.game_state.effects.tower_seal, &mut self.ram)
     }
 
-    pub(crate) fn blast_wall_explosion_view(&self, slot: usize) -> BlastWallExplosionSlotState {
+    pub(crate) fn blast_wall_explosion(&self, slot: usize) -> BlastWallExplosionSlotState {
         self.game_state
             .effects
             .entrance_effects
             .blast_wall_explosion_slot(slot)
     }
 
-    pub(crate) fn blast_wall_explosion_view_mut(
+    pub(crate) fn blast_wall_explosion_mut(
         &mut self,
         slot: usize,
     ) -> NativeBlastWallExplosionBridgeMut<'_> {
@@ -3926,14 +3914,14 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn blast_wall_fragment_view(&self, slot: usize) -> BlastWallFragmentSlotState {
+    pub(crate) fn blast_wall_fragment(&self, slot: usize) -> BlastWallFragmentSlotState {
         self.game_state
             .effects
             .entrance_effects
             .blast_wall_fragment_slot(slot)
     }
 
-    pub(crate) fn blast_wall_fragment_view_mut(
+    pub(crate) fn blast_wall_fragment_mut(
         &mut self,
         slot: usize,
     ) -> NativeBlastWallFragmentBridgeMut<'_> {
@@ -3944,14 +3932,14 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn blast_wall_fireball_view(&self, slot: usize) -> BlastWallFireballSlotState {
+    pub(crate) fn blast_wall_fireball(&self, slot: usize) -> BlastWallFireballSlotState {
         self.game_state
             .effects
             .entrance_effects
             .blast_wall_fireball_slot(slot)
     }
 
-    pub(crate) fn blast_wall_fireball_view_mut(
+    pub(crate) fn blast_wall_fireball_mut(
         &mut self,
         slot: usize,
     ) -> NativeBlastWallFireballBridgeMut<'_> {
@@ -3962,22 +3950,22 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn blast_wall_scratch_view(&self) -> BlastWallState {
+    pub(crate) fn blast_wall_scratch(&self) -> BlastWallState {
         self.game_state.effects.entrance_effects.blast_wall()
     }
 
-    pub(crate) fn blast_wall_scratch_view_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
+    pub(crate) fn blast_wall_scratch_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
         NativeBlastWallBridgeMut::new(&mut self.game_state.effects.entrance_effects, &mut self.ram)
     }
 
-    pub(crate) fn skull_woods_fire_view(&self, slot: usize) -> SkullWoodsFireSlotState {
+    pub(crate) fn skull_woods_fire(&self, slot: usize) -> SkullWoodsFireSlotState {
         self.game_state
             .effects
             .entrance_effects
             .skull_woods_fire_slot(slot)
     }
 
-    pub(crate) fn skull_woods_fire_view_mut(
+    pub(crate) fn skull_woods_fire_mut(
         &mut self,
         slot: usize,
     ) -> NativeSkullWoodsFireSlotBridgeMut<'_> {
@@ -3988,13 +3976,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn skull_woods_fire_scratch_view(&self) -> SkullWoodsFireState {
+    pub(crate) fn skull_woods_fire_scratch(&self) -> SkullWoodsFireState {
         self.game_state.effects.entrance_effects.skull_woods_fire()
     }
 
-    pub(crate) fn skull_woods_fire_scratch_view_mut(
-        &mut self,
-    ) -> NativeSkullWoodsFireBridgeMut<'_> {
+    pub(crate) fn skull_woods_fire_scratch_mut(&mut self) -> NativeSkullWoodsFireBridgeMut<'_> {
         NativeSkullWoodsFireBridgeMut::new(
             &mut self.game_state.effects.entrance_effects,
             &mut self.ram,
@@ -4137,15 +4123,15 @@ impl ZeldaState {
         DoorDebrisView::new(&self.game_state.effects.door_debris)
     }
 
-    pub(crate) fn door_debris_view_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {
+    pub(crate) fn door_debris_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {
         NativeDoorDebrisBridgeMut::new(&mut self.game_state.effects.door_debris, &mut self.ram)
     }
 
-    pub(crate) fn digging_game_prize_view(&self) -> &DiggingGamePrizeState {
+    pub(crate) fn digging_game_prize(&self) -> &DiggingGamePrizeState {
         &self.game_state.effects.digging_game_prize
     }
 
-    pub(crate) fn digging_game_prize_view_mut(&mut self) -> NativeDiggingGamePrizeBridgeMut<'_> {
+    pub(crate) fn digging_game_prize_mut(&mut self) -> NativeDiggingGamePrizeBridgeMut<'_> {
         NativeDiggingGamePrizeBridgeMut::new(
             &mut self.game_state.effects.digging_game_prize,
             &mut self.ram,
@@ -4156,7 +4142,7 @@ impl ZeldaState {
         SpriteDrawWorkPositionView::new(&self.game_state.sprites.draw_hitbox_work)
     }
 
-    pub(crate) fn draw_scratch_position_view_mut(
+    pub(crate) fn draw_scratch_position_mut(
         &mut self,
     ) -> NativeSpriteDrawWorkPositionBridgeMut<'_> {
         NativeSpriteDrawWorkPositionBridgeMut::new(
@@ -4169,7 +4155,7 @@ impl ZeldaState {
         SpriteHitboxWorkOffsetView::new(&self.game_state.sprites.draw_hitbox_work)
     }
 
-    pub(crate) fn hitbox_scratch_offset_view_mut(
+    pub(crate) fn hitbox_scratch_offset_mut(
         &mut self,
     ) -> NativeSpriteHitboxWorkOffsetBridgeMut<'_> {
         NativeSpriteHitboxWorkOffsetBridgeMut::new(
@@ -4178,38 +4164,38 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dialogue_number_view_mut(&mut self) -> NativeDialogueNumberBridgeMut<'_> {
+    pub(crate) fn dialogue_number_mut(&mut self) -> NativeDialogueNumberBridgeMut<'_> {
         NativeDialogueNumberBridgeMut::new(
             &mut self.game_state.messaging.dialogue_number,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn dialogue_number_view(&self) -> &DialogueNumberState {
+    pub(crate) fn dialogue_number(&self) -> &DialogueNumberState {
         &self.game_state.messaging.dialogue_number
     }
 
-    pub(crate) fn messaging_state_view(&self) -> &MessagingRuntimeState {
+    pub(crate) fn messaging_state(&self) -> &MessagingRuntimeState {
         &self.game_state.messaging.runtime
     }
 
-    pub(crate) fn messaging_state_view_mut(&mut self) -> NativeMessagingRuntimeBridgeMut<'_> {
+    pub(crate) fn messaging_state_mut(&mut self) -> NativeMessagingRuntimeBridgeMut<'_> {
         NativeMessagingRuntimeBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    pub(crate) fn messaging_text_view(&self) -> &DecodedMessageTextState {
+    pub(crate) fn messaging_text(&self) -> &DecodedMessageTextState {
         &self.game_state.messaging.decoded_text
     }
 
-    pub(crate) fn messaging_text_view_mut(&mut self) -> NativeDecodedMessageTextBridgeMut<'_> {
+    pub(crate) fn messaging_text_mut(&mut self) -> NativeDecodedMessageTextBridgeMut<'_> {
         NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    pub(crate) fn messaging_render_buffer_view(&self) -> &MessagingRenderBufferState {
+    pub(crate) fn messaging_render_buffer(&self) -> &MessagingRenderBufferState {
         &self.game_state.messaging.render_buffer
     }
 
-    pub(crate) fn messaging_render_buffer_view_mut(
+    pub(crate) fn messaging_render_buffer_mut(
         &mut self,
     ) -> NativeMessagingRenderBufferBridgeMut<'_> {
         NativeMessagingRenderBufferBridgeMut::new(
@@ -4218,28 +4204,26 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn vwf_glyph_spacing_view(&self) -> &VwfRenderState {
+    pub(crate) fn vwf_glyph_spacing(&self) -> &VwfRenderState {
         &self.game_state.messaging.vwf_render
     }
 
-    pub(crate) fn vwf_glyph_spacing_view_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
+    pub(crate) fn vwf_glyph_spacing_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
         NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
 
-    pub(crate) fn dialogue_source_offset_view_mut(
-        &mut self,
-    ) -> NativeDialogueSourceOffsetBridgeMut<'_> {
+    pub(crate) fn dialogue_source_offset_mut(&mut self) -> NativeDialogueSourceOffsetBridgeMut<'_> {
         NativeDialogueSourceOffsetBridgeMut::new(
             &mut self.game_state.messaging.dialogue_source_offset,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn select_file_scratch_view(&self) -> &SelectFileMenuState {
+    pub(crate) fn select_file_scratch(&self) -> &SelectFileMenuState {
         &self.game_state.messaging.select_file_menu
     }
 
-    pub(crate) fn select_file_scratch_view_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
+    pub(crate) fn select_file_scratch_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
         NativeSelectFileMenuBridgeMut::new(
             &mut self.game_state.messaging.select_file_menu,
             &mut self.ram,
@@ -4277,10 +4261,7 @@ impl ZeldaState {
         TagalongSlotView::new(&self.game_state.sprites.tagalong_trail, slot)
     }
 
-    pub(crate) fn tagalong_slot_view_mut(
-        &mut self,
-        slot: usize,
-    ) -> NativeTagalongSlotBridgeMut<'_> {
+    pub(crate) fn tagalong_slot_mut(&mut self, slot: usize) -> NativeTagalongSlotBridgeMut<'_> {
         NativeTagalongSlotBridgeMut::new(
             &mut self.game_state.sprites.tagalong_trail,
             &mut self.ram,
@@ -4288,29 +4269,29 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn follower_state_view(&self) -> FollowerRuntimeState {
+    pub(crate) fn follower_state(&self) -> FollowerRuntimeState {
         FollowerRuntimeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn follower_state_view_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
+    pub(crate) fn follower_state_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
         NativeFollowerRuntimeBridgeMut::new(
             &mut self.game_state.sprites.follower_runtime,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn chain_chomp_history_view(&self) -> &ChainChompHistoryState {
+    pub(crate) fn chain_chomp_history(&self) -> &ChainChompHistoryState {
         &self.game_state.sprites.chain_chomp_history
     }
 
-    pub(crate) fn chain_chomp_history_view_mut(&mut self) -> NativeChainChompHistoryBridgeMut<'_> {
+    pub(crate) fn chain_chomp_history_mut(&mut self) -> NativeChainChompHistoryBridgeMut<'_> {
         NativeChainChompHistoryBridgeMut::new(
             &mut self.game_state.sprites.chain_chomp_history,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn ancilla_spawn_scratch_view_mut(
+    pub(crate) fn ancilla_spawn_scratch_mut(
         &mut self,
     ) -> NativeFailedSpinSparkleSpawnBridgeMut<'_> {
         NativeFailedSpinSparkleSpawnBridgeMut::new(
@@ -4323,7 +4304,7 @@ impl ZeldaState {
         MazeGameTimerView::new(&self.game_state.sprites.maze_game_timer)
     }
 
-    pub(crate) fn maze_game_timer_view_mut(&mut self) -> NativeMazeGameTimerBridgeMut<'_> {
+    pub(crate) fn maze_game_timer_mut(&mut self) -> NativeMazeGameTimerBridgeMut<'_> {
         NativeMazeGameTimerBridgeMut::new(
             &mut self.game_state.sprites.maze_game_timer,
             &mut self.ram,
@@ -4334,7 +4315,7 @@ impl ZeldaState {
         EnemyDamageSubclassTableView::new(&self.game_state.sprites.enemy_damage_subclasses)
     }
 
-    pub(crate) fn enemy_damage_subclass_table_view_mut(
+    pub(crate) fn enemy_damage_subclass_table_mut(
         &mut self,
     ) -> NativeEnemyDamageSubclassTableBridgeMut<'_> {
         NativeEnemyDamageSubclassTableBridgeMut::new(
@@ -4343,15 +4324,15 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn ether_orbit_view(&self) -> &EtherOrbitState {
+    pub(crate) fn ether_orbit(&self) -> &EtherOrbitState {
         &self.game_state.sprites.ether_orbit
     }
 
-    pub(crate) fn ether_orbit_view_mut(&mut self) -> NativeEtherOrbitBridgeMut<'_> {
+    pub(crate) fn ether_orbit_mut(&mut self) -> NativeEtherOrbitBridgeMut<'_> {
         NativeEtherOrbitBridgeMut::new(&mut self.game_state.sprites.ether_orbit, &mut self.ram)
     }
 
-    pub(crate) fn prize_drop_cycle_view_mut(&mut self) -> NativePrizeDropCycleBridgeMut<'_> {
+    pub(crate) fn prize_drop_cycle_mut(&mut self) -> NativePrizeDropCycleBridgeMut<'_> {
         NativePrizeDropCycleBridgeMut::new(
             &mut self.game_state.sprites.prize_drop_cycle,
             &mut self.ram,
@@ -4362,9 +4343,7 @@ impl ZeldaState {
         DualLayerTileCacheView::new(&self.game_state.sprites.dual_layer_tile_cache)
     }
 
-    pub(crate) fn dual_layer_tile_cache_view_mut(
-        &mut self,
-    ) -> NativeDualLayerTileCacheBridgeMut<'_> {
+    pub(crate) fn dual_layer_tile_cache_mut(&mut self) -> NativeDualLayerTileCacheBridgeMut<'_> {
         NativeDualLayerTileCacheBridgeMut::new(
             &mut self.game_state.sprites.dual_layer_tile_cache,
             &mut self.ram,
@@ -4379,19 +4358,19 @@ impl ZeldaState {
         SpriteSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn sprite_system_view(&self) -> SpriteSystemState {
+    pub(crate) fn sprite_system(&self) -> SpriteSystemState {
         SpriteSystemState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_system_view_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
+    pub(crate) fn sprite_system_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {
         NativeSpriteSystemBridgeMut::new(&mut self.game_state.sprites.system, &mut self.ram)
     }
 
-    pub(crate) fn sprite_workspace_view(&self) -> SpriteWorkspaceState {
+    pub(crate) fn sprite_workspace(&self) -> SpriteWorkspaceState {
         SpriteWorkspaceState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn sprite_workspace_view_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
+    pub(crate) fn sprite_workspace_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
         NativeSpriteWorkspaceBridgeMut::new(&mut self.game_state.sprites.workspace, &mut self.ram)
     }
 
@@ -4419,11 +4398,11 @@ impl ZeldaState {
         GarnishSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn garnish_state_view(&self) -> GarnishRuntimeState {
+    pub(crate) fn garnish_state(&self) -> GarnishRuntimeState {
         GarnishRuntimeState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn garnish_state_view_mut(&mut self) -> NativeGarnishRuntimeBridgeMut<'_> {
+    pub(crate) fn garnish_state_mut(&mut self) -> NativeGarnishRuntimeBridgeMut<'_> {
         NativeGarnishRuntimeBridgeMut::new(
             &mut self.game_state.sprites.garnish_runtime,
             &mut self.ram,
@@ -4434,15 +4413,15 @@ impl ZeldaState {
         OamStateView::new(&self.game_state.oam)
     }
 
-    pub(crate) fn oam_state_view_mut(&mut self) -> NativeOamStateBridgeMut<'_> {
+    pub(crate) fn oam_state_mut(&mut self) -> NativeOamStateBridgeMut<'_> {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_presence_view(&self) -> OverworldSpritePresenceState {
+    pub(crate) fn overworld_sprite_presence(&self) -> OverworldSpritePresenceState {
         OverworldSpritePresenceState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn overworld_sprite_presence_view_mut(
+    pub(crate) fn overworld_sprite_presence_mut(
         &mut self,
     ) -> NativeOverworldSpritePresenceBridgeMut<'_> {
         NativeOverworldSpritePresenceBridgeMut::new(
@@ -4451,19 +4430,19 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn memorized_tile_view(&self) -> &MemorizedTileState {
+    pub(crate) fn memorized_tile(&self) -> &MemorizedTileState {
         &self.game_state.memorized_tiles
     }
 
-    pub(crate) fn memorized_tile_view_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
+    pub(crate) fn memorized_tile_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded_view(&self) -> OverworldSpriteLoadedState {
+    pub(crate) fn overworld_sprite_loaded(&self) -> OverworldSpriteLoadedState {
         OverworldSpriteLoadedState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded_view_mut(
+    pub(crate) fn overworld_sprite_loaded_mut(
         &mut self,
     ) -> NativeOverworldSpriteLoadedBridgeMut<'_> {
         NativeOverworldSpriteLoadedBridgeMut::new(
@@ -4516,26 +4495,26 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    pub(crate) fn spotlight_hdma_view(&self) -> SpotlightHdmaState {
+    pub(crate) fn spotlight_hdma(&self) -> SpotlightHdmaState {
         SpotlightHdmaState::load_from_ram(&self.ram)
     }
 
-    pub(crate) fn spotlight_hdma_view_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
+    pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
         NativeSpotlightHdmaBridgeMut::new(
             &mut self.game_state.display.spotlight_hdma,
             &mut self.ram,
         )
     }
 
-    pub(crate) fn water_hdma_window_view(&self) -> &WaterHdmaWindowState {
+    pub(crate) fn water_hdma_window(&self) -> &WaterHdmaWindowState {
         &self.game_state.display.water_hdma_window
     }
 
-    pub(crate) fn water_hdma_window_view_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
+    pub(crate) fn water_hdma_window_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
         NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn overworld_palette_backup_view_mut(
+    pub(crate) fn overworld_palette_backup_mut(
         &mut self,
     ) -> NativeOverworldPaletteBackupBridgeMut<'_> {
         NativeOverworldPaletteBackupBridgeMut::new(
@@ -5219,7 +5198,7 @@ impl ZeldaState {
             Box::new([(0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8]); 224]);
         for line in 0..=224usize {
             if line == 128 && self.display_state().has_irq_control_flag() {
-                let name_scroll_x = self.select_file_scratch_view().name_scroll_x();
+                let name_scroll_x = self.select_file_scratch().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
@@ -5406,12 +5385,12 @@ impl ZeldaState {
             {
                 let qm = (self.world_transient().quadrant_fullsize_x() >> 1) as usize;
                 let bg2x = self.world_scroll().bg2_x();
-                extra_left = bg2x.saturating_sub(self.room_bounds_view().x_bound(qm));
-                extra_right = self.room_bounds_view().x_bound(qm + 2).saturating_sub(bg2x);
+                extra_left = bg2x.saturating_sub(self.room_bounds().x_bound(qm));
+                extra_right = self.room_bounds().x_bound(qm + 2).saturating_sub(bg2x);
             }
             let qy = (self.world_transient().quadrant_fullsize_y() >> 1) as usize;
             let bg2y = self.world_scroll().bg2_y();
-            extra_bottom = self.room_bounds_view().y_bound(qy + 2).saturating_sub(bg2y);
+            extra_bottom = self.room_bounds().y_bound(qy + 2).saturating_sub(bg2y);
         } else if module == 20 || module == 0 || module == 1 {
             extra_left = PPU_SIDE_SPACE_LIMIT;
             extra_right = PPU_SIDE_SPACE_LIMIT;
@@ -5477,8 +5456,8 @@ impl ZeldaState {
                     MAP_MODE_PERSPECTIVE_ZOOMS_FAR[223],
                 );
             } else if hdma_chans[0].table.as_deref() == Some(&ATTRACT_INDIRECT_HDMA_SETUP) {
-                let low = self.spotlight_hdma_view().hdma_table_dynamic_entry(0);
-                let high = self.spotlight_hdma_view().hdma_table_dynamic_entry(223);
+                let low = self.spotlight_hdma().hdma_table_dynamic_entry(0);
+                let high = self.spotlight_hdma().hdma_table_dynamic_entry(223);
                 self.set_mode7_perspective_correction(low, high);
             } else {
                 self.set_mode7_perspective_correction(0, 0);
@@ -5491,7 +5470,7 @@ impl ZeldaState {
 
         for line in 0..=output_height {
             if line == 128 && self.display_state().has_irq_control_flag() {
-                let name_scroll_x = self.select_file_scratch_view().name_scroll_x();
+                let name_scroll_x = self.select_file_scratch().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
@@ -5979,11 +5958,10 @@ impl ZeldaState {
                         );
                     }
                 }
-                let enhanced_features0 = self.enhanced_features_view().bits();
+                let enhanced_features0 = self.enhanced_features().bits();
                 let wanted_zelda_features = self.wanted_zelda_features;
                 if enhanced_features0 != wanted_zelda_features {
-                    self.enhanced_features_view_mut()
-                        .set_bits(wanted_zelda_features);
+                    self.enhanced_features_mut().set_bits(wanted_zelda_features);
                     self.emu_sync_memory_region(ENHANCED_FEATURES0, 4);
                     Self::state_recorder_record_patch_byte(
                         &mut state_recorder,
@@ -6059,7 +6037,7 @@ impl ZeldaState {
             }
         };
         if self.emu_runframe.is_none()
-            || self.enhanced_features_view().bits() != 0
+            || self.enhanced_features().bits() != 0
             || self.dialogue_flags != 0
         {
             self.replay_trace_ram_watch("before-run-frame-internal");
@@ -6224,7 +6202,7 @@ impl ZeldaState {
                     wram_patch_addr(LINK_ARROW_REFILL_COUNTER),
                     10,
                 );
-                let rupees = self.player_resources_view().rupees_goal().wrapping_add(100);
+                let rupees = self.player_resources().rupees_goal().wrapping_add(100);
                 self.state_recoder_multi_patch_patch(
                     &mut state_recorder,
                     &mut mp,
@@ -6421,7 +6399,7 @@ impl ZeldaState {
 
     fn clear_oam_buffer(&mut self) {
         for i in 0..128 {
-            self.oam_state_view_mut().hide_sprite_row(i);
+            self.oam_state_mut().hide_sprite_row(i);
         }
     }
 
@@ -6503,8 +6481,8 @@ impl ZeldaState {
         self.tile_detect_main_handler(4);
         self.replay_trace_submodule("pits-after-tile-detect");
         self.replay_trace_player_state("pits-after-tile-detect");
-        if self.tile_detect_position_view().pit_tile() & 1 == 0 {
-            if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+        if self.tile_detect_position().pit_tile() & 1 == 0 {
+            if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
                 self.player_state_view_mut().clear_near_pit_state();
             }
             if self.player_state_view().is_running() {
@@ -6540,7 +6518,7 @@ impl ZeldaState {
         self.replay_trace_submodule("pits-after-nearby");
         self.replay_trace_player_state("pits-after-nearby");
         self.player_state_view_mut().set_speed_setting(4);
-        if self.tile_detect_position_view().pit_tile() & 0x0f == 0 {
+        if self.tile_detect_position().pit_tile() & 0x0f == 0 {
             self.player_state_view_mut().clear_near_pit_state();
             self.player_state_view_mut().set_speed_setting(0);
             let player_state = self.player_state_view();
@@ -6561,20 +6539,18 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().pit_tile() & 0x0f != 0x0f {
+        if self.tile_detect_position().pit_tile() & 0x0f != 0x0f {
             self.replay_trace_player_state("pits-edge-slide-entry");
             let mut i = 3i8;
             loop {
-                if self.tile_detect_position_view().pit_tile() & 0x0f
-                    == FALL_HOLE_PIT_DIRS[i as usize]
-                {
+                if self.tile_detect_position().pit_tile() & 0x0f == FALL_HOLE_PIT_DIRS[i as usize] {
                     i += 4;
                     break;
                 }
                 i -= 1;
                 if i < 0 {
                     i = 3;
-                    let mut pit_tile = self.tile_detect_position_view().pit_tile();
+                    let mut pit_tile = self.tile_detect_position().pit_tile();
                     while pit_tile & 1 == 0 {
                         i -= 1;
                         pit_tile >>= 1;
@@ -6582,7 +6558,7 @@ impl ZeldaState {
                     break;
                 }
             }
-            self.tile_detect_position_view_mut()
+            self.tile_detect_position_mut()
                 .set_fall_hole_scan_index(i as u8);
             let idx = i as usize;
             if self.player_state_view().direction() & FALL_HOLE_DIRS[idx] != 0 {
@@ -6646,8 +6622,8 @@ impl ZeldaState {
         self.player_state_view_mut().advance_pit_data_index();
         let x = self.player_state_view().pit_data_index();
         self.player_state_view_mut().set_sprite_oam_state_timer(9);
-        if self.follower_state_view().indicator() != 13 && x == 1 {
-            self.follower_state_view_mut().set_appearance_none_flag(x);
+        if self.follower_state().indicator() != 13 && x == 1 {
+            self.follower_state_mut().set_appearance_none_flag(x);
         }
 
         if x == 6 {
@@ -6676,10 +6652,10 @@ impl ZeldaState {
             let previous_room = self.world_location_state().dungeon_room_index();
             self.dungeon_room_tracking_mut()
                 .set_room_index_prev(previous_room);
-            let room = self.dungeon_header_view().travel_destination(0);
+            let room = self.dungeon_header().travel_destination(0);
             self.set_dungeon_room_index(room);
             let player_y = self.player_state_view().y();
-            self.tile_detect_position_view_mut().set_y(player_y);
+            self.tile_detect_position_mut().set_y(player_y);
             let new_y = self
                 .player_state_view()
                 .y()
@@ -6753,7 +6729,7 @@ impl ZeldaState {
 
     fn finish_ground_movement_camera_tail(&mut self) {
         self.player_state_view_mut().clear_pit_correction();
-        if self.apply_links_movement_to_camera_called && self.enhanced_features_view().has(4096) {
+        if self.apply_links_movement_to_camera_called && self.enhanced_features().has(4096) {
             return;
         }
         self.handle_indoor_camera_and_doors();
@@ -6793,16 +6769,16 @@ impl ZeldaState {
     }
 
     fn cache_camera_properties_for_player(&mut self) {
-        self.ppu_scroll_copy_view_mut().cache_bg2_live_scroll();
+        self.ppu_scroll_copy_mut().cache_bg2_live_scroll();
         self.player_state_view_mut().cache_current_position();
-        let y_start = self.room_bounds_view().y_bound(0);
-        let y_end = self.room_bounds_view().y_bound(2);
-        let x_start = self.room_bounds_view().x_bound(0);
-        let x_end = self.room_bounds_view().x_bound(2);
+        let y_start = self.room_bounds().y_bound(0);
+        let y_end = self.room_bounds().y_bound(2);
+        let x_start = self.room_bounds().x_bound(0);
+        let x_end = self.room_bounds().x_bound(2);
         self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         self.world_camera_boundaries_mut().cache_scroll_targets();
-        self.ppu_scroll_copy_view_mut().cache_camera_scroll();
+        self.ppu_scroll_copy_mut().cache_camera_scroll();
         self.world_transient_mut().cache_quadrant_fullsize_state();
         self.player_state_view_mut().cache_current_quadrants();
         self.player_state_view_mut().cache_facing();
@@ -6836,9 +6812,9 @@ impl ZeldaState {
     }
 
     fn set_backdrop_color_black(&mut self) {
-        self.palette_filter_view_mut().set_fixed_color_red(0x20);
-        self.palette_filter_view_mut().set_fixed_color_green(0x40);
-        self.palette_filter_view_mut().set_fixed_color_blue(0x80);
+        self.palette_filter_mut().set_fixed_color_red(0x20);
+        self.palette_filter_mut().set_fixed_color_green(0x40);
+        self.palette_filter_mut().set_fixed_color_blue(0x80);
     }
 
     fn ancilla_x(&self, k: usize) -> u16 {
@@ -6854,12 +6830,12 @@ impl ZeldaState {
     }
 
     fn set_oam_helper0_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .write_clipped_entry_with_extended(oam, x, y, charnum, flags, big);
     }
 
     fn set_oam_helper1_at(&mut self, oam: usize, x: u16, y: u8, charnum: u8, flags: u8, big: u8) {
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .write_entry_with_extended(oam, x, y, charnum, flags, big);
     }
 
@@ -6872,7 +6848,7 @@ impl ZeldaState {
     }
 
     fn set_oam_plain(&mut self, index: usize, x: u8, y: u8, charnum: u8, flags: u8, big: u8) {
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .write_indexed_entry_with_extended(index, x, y, charnum, flags, big);
     }
 
@@ -6885,7 +6861,7 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .write_indexed_clipped_entry_with_extended(index, x, y, charnum, flags, big);
     }
 
@@ -7347,12 +7323,12 @@ mod tests {
     #[test]
     fn scratch_word_high_does_not_alias_nmi_subroutine_index() {
         let mut state = ZeldaState::new();
-        state.scratch_word_view_mut().set_word(0x0200);
+        state.scratch_word_mut().set_word(0x0200);
         state.set_pending_nmi_subroutine(11);
 
-        assert_eq!(state.scratch_word_view_mut().decrement_high(), 1);
+        assert_eq!(state.scratch_word_mut().decrement_high(), 1);
 
-        assert_eq!(state.scratch_word_view().word(), 0x0100);
+        assert_eq!(state.scratch_word().word(), 0x0100);
         assert_eq!(state.display_state().pending_nmi_subroutine, 11);
     }
 
@@ -7572,12 +7548,12 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[SUBMODULE_INDEX] = 0;
         state.set_screen_brightness(2);
-        state.ending_scratch_view_mut().set_primary_word(0x0300);
+        state.ending_scratch_mut().set_primary_word(0x0300);
 
         state.credits_handle_scene_fade();
 
         assert_eq!(state.display_state().screen_brightness, 1);
-        assert_eq!(state.ending_scratch_view().primary_word(), 0x0301);
+        assert_eq!(state.ending_scratch().primary_word(), 0x0301);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);
     }
 
@@ -7586,12 +7562,12 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[SUBMODULE_INDEX] = 0;
         state.set_screen_brightness(1);
-        state.ending_scratch_view_mut().set_primary_word(0x0300);
+        state.ending_scratch_mut().set_primary_word(0x0300);
 
         state.credits_handle_scene_fade();
 
         assert_eq!(state.display_state().screen_brightness, 0);
-        assert_eq!(state.ending_scratch_view().primary_word(), 0x0300);
+        assert_eq!(state.ending_scratch().primary_word(), 0x0300);
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
     }
 
@@ -8239,7 +8215,7 @@ mod tests {
     fn outdoor_y_collision_starts_falling_into_pit() {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(0);
-        state.tile_detect_position_view_mut().or_pit_tile(5);
+        state.tile_detect_position_mut().or_pit_tile(5);
 
         state.start_movement_collision_checks_y_handle_outdoors();
 
@@ -8277,9 +8253,7 @@ mod tests {
     #[test]
     fn outdoor_y_spike_damage_rebounds_and_unequips_cape() {
         let mut state = ZeldaState::new();
-        state
-            .tile_detect_position_view_mut()
-            .set_spike_cactus_tiles(1);
+        state.tile_detect_position_mut().set_spike_cactus_tiles(1);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
         set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 1);
         set_link_test_byte(&mut state, LINK_ELECTROCUTE_ON_TOUCH, 1);
@@ -8301,9 +8275,7 @@ mod tests {
     #[test]
     fn outdoor_x_spike_damage_applies_tile_rebound() {
         let mut state = ZeldaState::new();
-        state
-            .tile_detect_position_view_mut()
-            .set_spike_cactus_tiles(1);
+        state.tile_detect_position_mut().set_spike_cactus_tiles(1);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 2);
         set_link_test_word(&mut state, LINK_X_COORD, 0x40);
 
@@ -8323,11 +8295,9 @@ mod tests {
         state.player_state_view_mut().set_running_state(1);
         state.player_state_view_mut().set_facing(0);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
-        state
-            .tile_detect_position_view_mut()
-            .set_slope_collision_bits(5);
+        state.tile_detect_position_mut().set_slope_collision_bits(5);
         set_link_test_word(&mut state, LINK_X_COORD, 0x44);
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
 
         state.start_movement_collision_checks_x_handle_outdoors();
 
@@ -8345,13 +8315,13 @@ mod tests {
 
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x40);
 
-        state.tile_detect_position_view_mut().set_collision_bits(4);
+        state.tile_detect_position_mut().set_collision_bits(4);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x80);
         state.calculate_snap_scratch_x();
 
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x7f);
 
-        state.tile_detect_position_view_mut().set_collision_bits(1);
+        state.tile_detect_position_mut().set_collision_bits(1);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0);
         set_link_test_byte(&mut state, LINK_X_VEL, 4);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x90);
@@ -8436,7 +8406,7 @@ mod tests {
         state.handle_nudging(1);
 
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x1f);
-        assert_eq!(state.tile_detect_position_view().collision_bits(), 1);
+        assert_eq!(state.tile_detect_position().collision_bits(), 1);
     }
 
     #[test]
@@ -8462,10 +8432,8 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_word(&mut state, LINK_Y_COORD, 0x40);
         set_link_test_word(&mut state, LINK_X_COORD, 0x05);
-        state
-            .tile_detect_position_view_mut()
-            .set_slope_collision_bits(1);
-        state.tile_detect_position_view_mut().clear_diag_state();
+        state.tile_detect_position_mut().set_slope_collision_bits(1);
+        state.tile_detect_position_mut().clear_diag_state();
         state.ram[TILEDETECT_WHICH_Y_POS] = 1;
         set_link_test_byte(&mut state, LINK_Y_VEL, 0xff);
 
@@ -8479,10 +8447,8 @@ mod tests {
     fn slope_x_flag_uses_second_y_probe_word_for_r12_bit_4() {
         let mut state = ZeldaState::new();
         set_link_test_word(&mut state, LINK_X_COORD, 0x41);
-        state
-            .tile_detect_position_view_mut()
-            .set_slope_collision_bits(4);
-        state.tile_detect_position_view_mut().clear_diag_state();
+        state.tile_detect_position_mut().set_slope_collision_bits(4);
+        state.tile_detect_position_mut().clear_diag_state();
         write_le_u16(&mut state.ram, TILEDETECT_WHICH_Y_POS, 0);
         write_le_u16(&mut state.ram, TILEDETECT_WHICH_Y_POS + 2, 4);
         set_link_test_byte(&mut state, LINK_X_VEL, 0xff);
@@ -8500,7 +8466,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_Y_VEL, 4);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x40);
         set_link_test_word(&mut state, LINK_X_COORD, 0x90);
-        state.tile_detect_position_view_mut().set_collision_bits(1);
+        state.tile_detect_position_mut().set_collision_bits(1);
 
         state.start_movement_collision_checks_y_handle_indoors();
 
@@ -8611,17 +8577,17 @@ mod tests {
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
         write_le_u16(&mut state.ram, SWIM_STROKE_FRAME_COUNTER, 1);
         write_le_u16(&mut state.ram, SWIM_STROKE_FRAME_COUNTER + 2, 1);
-        state.swim_acceleration_view_mut().set_mode(0, 0);
-        state.swim_acceleration_view_mut().set_mode(2, 0);
-        state.swim_acceleration_view_mut().set_acceleration(0, 4);
-        state.swim_acceleration_view_mut().set_acceleration(2, 4);
-        state.swim_acceleration_view_mut().set_max_speed(0, 32);
-        state.swim_acceleration_view_mut().set_max_speed(2, 32);
+        state.swim_acceleration_mut().set_mode(0, 0);
+        state.swim_acceleration_mut().set_mode(2, 0);
+        state.swim_acceleration_mut().set_acceleration(0, 4);
+        state.swim_acceleration_mut().set_acceleration(2, 4);
+        state.swim_acceleration_mut().set_max_speed(0, 32);
+        state.swim_acceleration_mut().set_max_speed(2, 32);
         state
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_acceleration_direction(0, 1);
         state
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_acceleration_direction(2, 1);
 
         state.handle_swim_stroke_and_subpixels();
@@ -8681,8 +8647,8 @@ mod tests {
         state.set_indoor_flag(1);
         state.ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] = 0x20;
         state.set_dungeon_room(2);
-        state.room_bounds_view_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_view_mut().set_x_bound(2, 0x0120);
+        state.room_bounds_mut().set_x_bound(0, 0x0100);
+        state.room_bounds_mut().set_x_bound(2, 0x0120);
         set_link_test_word(&mut state, LINK_X_COORD, 0x0102);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
@@ -8692,8 +8658,8 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_X_PAGE_MOVEMENT_DELTA), 1);
         assert_eq!(link_test_byte(&state, LINK_QUADRANT_X), 1);
         assert_eq!(state.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT], 0x21);
-        assert_eq!(state.room_bounds_view().x_bound(0), 0x0200);
-        assert_eq!(state.room_bounds_view().x_bound(2), 0x0220);
+        assert_eq!(state.room_bounds().x_bound(0), 0x0200);
+        assert_eq!(state.room_bounds().x_bound(2), 0x0220);
         assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
     }
 
@@ -8709,8 +8675,8 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
         state.set_dungeon_room(0x0104);
-        state.room_bounds_view_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_view_mut().set_x_bound(1, 0x0120);
+        state.room_bounds_mut().set_x_bound(0, 0x0100);
+        state.room_bounds_mut().set_x_bound(1, 0x0120);
 
         state.handle_indoor_camera_and_doors();
 
@@ -8735,8 +8701,8 @@ mod tests {
         set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
         state.set_dungeon_room(0x0104);
-        state.room_bounds_view_mut().set_y_bound(0, 0x0100);
-        state.room_bounds_view_mut().set_y_bound(1, 0x0120);
+        state.room_bounds_mut().set_y_bound(0, 0x0100);
+        state.room_bounds_mut().set_y_bound(1, 0x0120);
 
         state.handle_indoor_camera_and_doors();
 
@@ -8757,8 +8723,8 @@ mod tests {
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
         state.set_dungeon_room(0x0104);
-        state.room_bounds_view_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_view_mut().set_x_bound(1, 0x0120);
+        state.room_bounds_mut().set_x_bound(0, 0x0100);
+        state.room_bounds_mut().set_x_bound(1, 0x0120);
 
         state.Dungeon_TryScreenEdgeTransition();
 
@@ -8824,8 +8790,8 @@ mod tests {
         state.world_scroll_mut().set_bg2_y(0x2222);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x3333);
         set_link_test_word(&mut state, LINK_X_COORD, 0x4444);
-        state.room_bounds_view_mut().set_y_bound(0, 0x5555);
-        state.room_bounds_view_mut().set_x_bound(2, 0x6666);
+        state.room_bounds_mut().set_y_bound(0, 0x5555);
+        state.room_bounds_mut().set_x_bound(2, 0x6666);
         write_le_u16(&mut state.ram, UP_DOWN_SCROLL_TARGET, 0x7777);
         write_le_u16(&mut state.ram, LEFT_RIGHT_SCROLL_TARGET_END, 0x8888);
         write_le_u16(&mut state.ram, CAMERA_Y_COORD_SCROLL_LOW, 0x9999);
@@ -8838,8 +8804,8 @@ mod tests {
 
         state.cache_camera_properties_if_outdoors();
 
-        assert_eq!(state.ppu_scroll_copy_view().bg2_h_copy2_cached(), 0x1111);
-        assert_eq!(state.ppu_scroll_copy_view().bg2_v_copy2_cached(), 0x2222);
+        assert_eq!(state.ppu_scroll_copy().bg2_h_copy2_cached(), 0x1111);
+        assert_eq!(state.ppu_scroll_copy().bg2_v_copy2_cached(), 0x2222);
         assert_eq!(link_test_word(&state, LINK_Y_COORD_CACHED), 0x3333);
         assert_eq!(link_test_word(&state, LINK_X_COORD_CACHED), 0x4444);
         assert_eq!(read_le_u16(&state.ram, CACHED_ROOM_BOUNDS_Y_START), 0x5555);
@@ -8911,7 +8877,7 @@ mod tests {
     #[test]
     fn link_initialize_applies_misc_bugfix_cleanup() {
         let mut state = ZeldaState::new();
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
         state.player_state_view_mut().set_button_mask_b_y(0xff);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
         set_link_test_byte(&mut state, LINK_IS_NEAR_MOVEABLE_STATUE, 1);
@@ -8940,7 +8906,7 @@ mod tests {
     fn link_reset_properties_a_clears_reset_chain_state() {
         let mut state = ZeldaState::new();
         state.ram.fill(0xff);
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
 
         state.link_reset_properties_a();
 
@@ -8977,7 +8943,7 @@ mod tests {
         state.player_state_view_mut().set_pit_data_index(1);
         state.ram[SWIMMING_COUNTDOWN] = 7;
         state
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_speed_active_flag(0, 0x1234);
 
         state.link_reset_state_after_damaging_pit();
@@ -9025,9 +8991,7 @@ mod tests {
         state.player_state_view_mut().set_grabbing_wall(1);
         state.player_state_view_mut().set_speed_setting(2);
         state.ram[SWIMMING_COUNTDOWN] = 7;
-        state
-            .swim_acceleration_view_mut()
-            .set_acceleration(0, 0x1234);
+        state.swim_acceleration_mut().set_acceleration(0, 0x1234);
 
         state.link_set_to_deep_water();
 
@@ -9062,7 +9026,7 @@ mod tests {
         set_link_test_byte(&mut bunny, LINK_IS_BUNNY, 1);
         bunny.player_state_view_mut().set_animation_step(3);
         bunny
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_speed_active_flag(0, 0x1111);
 
         bunny.link_splash_upon_landing();
@@ -9078,10 +9042,10 @@ mod tests {
     fn swim_accels_start_ramp_and_snap_to_table() {
         let mut state = ZeldaState::new();
         state.player_state_view_mut().set_joypad1h_last(0x0d);
-        state.swim_acceleration_view_mut().set_acceleration(0, 0);
-        state.swim_acceleration_view_mut().set_max_speed(0, 0);
-        state.swim_acceleration_view_mut().set_acceleration(2, 260);
-        state.swim_acceleration_view_mut().set_max_speed(2, 384);
+        state.swim_acceleration_mut().set_acceleration(0, 0);
+        state.swim_acceleration_mut().set_max_speed(0, 0);
+        state.swim_acceleration_mut().set_acceleration(2, 260);
+        state.swim_acceleration_mut().set_max_speed(2, 384);
 
         state.link_handle_swim_accels();
 
@@ -9097,11 +9061,9 @@ mod tests {
     fn swim_flag_max_accels_promotes_active_axes() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        state
-            .swim_acceleration_view_mut()
-            .set_acceleration(0, 0x0110);
-        state.swim_acceleration_view_mut().set_acceleration(2, 0);
-        state.swim_acceleration_view_mut().set_max_speed(2, 0x2222);
+        state.swim_acceleration_mut().set_acceleration(0, 0x0110);
+        state.swim_acceleration_mut().set_acceleration(2, 0);
+        state.swim_acceleration_mut().set_max_speed(2, 0x2222);
 
         state.link_flag_max_accels();
 
@@ -9114,7 +9076,7 @@ mod tests {
     #[test]
     fn swim_ice_max_accel_sets_both_axes_when_flag_moving() {
         let mut state = ZeldaState::new();
-        state.swim_acceleration_view_mut().set_max_speed(0, 0x1111);
+        state.swim_acceleration_mut().set_max_speed(0, 0x1111);
 
         state.link_set_ice_max_accel();
         assert_eq!(state.swim_acceleration_view().max_speed(0), 0x1111);
@@ -9133,7 +9095,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 2);
         state.player_state_view_mut().set_swim_direction_flags(0x04);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x08);
-        state.swim_acceleration_view_mut().set_max_speed(2, 0x1234);
+        state.swim_acceleration_mut().set_max_speed(2, 0x1234);
 
         state.link_set_momentum();
 
@@ -9151,21 +9113,19 @@ mod tests {
         let mut state = ZeldaState::new();
         for offset in [0, 2] {
             state
-                .swim_acceleration_view_mut()
+                .swim_acceleration_mut()
                 .set_speed_active_flag(offset, 0xffff);
-            state.swim_acceleration_view_mut().set_mode(offset, 0xffff);
+            state.swim_acceleration_mut().set_mode(offset, 0xffff);
             state
-                .swim_acceleration_view_mut()
+                .swim_acceleration_mut()
                 .set_acceleration(offset, 0xffff);
-            state
-                .swim_acceleration_view_mut()
-                .set_max_speed(offset, 0xffff);
+            state.swim_acceleration_mut().set_max_speed(offset, 0xffff);
         }
         for offset in [SWIM_STROKE_FRAME_COUNTER, SWIM_STROKE_FRAME_COUNTER + 2] {
             write_le_u16(&mut state.ram, offset, 0xffff);
         }
         state
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_acceleration_direction(0, 0xffff);
 
         state.reset_all_acceleration();
@@ -9214,7 +9174,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_FRAME_CHANGE_COUNTER, 7);
         state.player_state_view_mut().set_filtered_joypad_l(0x80);
         state.player_state_view_mut().set_joypad1h_last(8);
-        state.swim_acceleration_view_mut().set_acceleration(0, 1);
+        state.swim_acceleration_mut().set_acceleration(0, 1);
 
         state.player_handler_04_swimming();
 
@@ -9236,7 +9196,7 @@ mod tests {
         state.ram[PLAYER_DEFENSE_FLAGS] = 0xff;
         state.ram[PIT_CORRECTION_ACTIVE_FLAG] = 1;
         state
-            .swim_acceleration_view_mut()
+            .swim_acceleration_mut()
             .set_speed_active_flag(0, 0x1111);
 
         state.link_handle_swim_movements();
@@ -9252,13 +9212,11 @@ mod tests {
     fn set_the_max_accel_marks_ready_axis_and_resets_inactive_axis() {
         let mut state = ZeldaState::new();
         state.player_state_view_mut().set_joypad1h_last(0x0c);
-        state.swim_acceleration_view_mut().set_acceleration(0, 260);
-        state.swim_acceleration_view_mut().set_max_speed(0, 240);
-        state.swim_acceleration_view_mut().set_mode(0, 0);
-        state
-            .swim_acceleration_view_mut()
-            .set_speed_active_flag(2, 1);
-        state.swim_acceleration_view_mut().set_max_speed(2, 384);
+        state.swim_acceleration_mut().set_acceleration(0, 260);
+        state.swim_acceleration_mut().set_max_speed(0, 240);
+        state.swim_acceleration_mut().set_mode(0, 0);
+        state.swim_acceleration_mut().set_speed_active_flag(2, 1);
+        state.swim_acceleration_mut().set_max_speed(2, 384);
 
         state.link_set_the_max_accel();
 
@@ -9268,9 +9226,7 @@ mod tests {
         assert_eq!(state.swim_acceleration_view().max_speed(2), 240);
 
         set_link_test_byte(&mut state, LINK_SWIM_HARD_STROKE, 1);
-        state
-            .swim_acceleration_view_mut()
-            .set_speed_active_flag(0, 0);
+        state.swim_acceleration_mut().set_speed_active_flag(0, 0);
         state.link_set_the_max_accel();
         assert_eq!(state.swim_acceleration_view().speed_active_flag(0), 0);
         assert_eq!(state.swim_acceleration_view().mode(0), 1);
@@ -9363,7 +9319,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 2);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 2);
         state.player_state_view_mut().set_grabbing_wall(1);
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
 
         state.link_handle_cape_passive_lift_check();
 
@@ -9391,12 +9347,12 @@ mod tests {
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
         assert!(!state.link_check_magic_cost(1));
         assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
-        assert_eq!(state.dialogue_message_index_view().value(), 123);
+        assert_eq!(state.dialogue_message_index().value(), 123);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
 
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 125);
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
         state.refund_magic(0);
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 128);
 
@@ -9436,7 +9392,7 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
         assert_eq!(state.system_signals().sound_effect_1() & 0x3f, 60);
-        assert_eq!(state.dialogue_message_index_view().value(), 123);
+        assert_eq!(state.dialogue_message_index().value(), 123);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 14);
     }
 
@@ -9687,7 +9643,7 @@ mod tests {
     fn mirror_item_crossing_and_follower_cleanup_match_core_state() {
         let mut mirror = ZeldaState::new();
         mirror.player_state_view_mut().set_filtered_joypad_h(0x40);
-        mirror.enhanced_features_view_mut().set_bits(8);
+        mirror.enhanced_features_mut().set_bits(8);
         mirror.set_overworld_screen_word(0x40);
         set_link_test_word(&mut mirror, LINK_Y_COORD, 0x1234);
         set_link_test_word(&mut mirror, LINK_X_COORD, 0x5678);
@@ -9738,9 +9694,7 @@ mod tests {
         state.player_state_view_mut().set_facing(4);
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
-        state
-            .swim_acceleration_view_mut()
-            .set_speed_active_flag(0, 1);
+        state.swim_acceleration_mut().set_speed_active_flag(0, 1);
 
         state.link_item_hookshot();
 
@@ -9749,7 +9703,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 7);
         assert_eq!(state.ancilla_slot_view(4).ancilla_type(), 0x1f);
-        assert_eq!(state.messaging_state_view().game_over_letter_cursor(), 4);
+        assert_eq!(state.messaging_state().game_over_letter_cursor(), 4);
         assert_eq!(state.ram[ANCILLA_X_VEL + 4], 0xc0);
         assert_eq!(read_le_u16(&state.ram, ANCILLA_X_LO + 4), 0x00fc);
 
@@ -9904,7 +9858,7 @@ mod tests {
     #[test]
     fn load_actual_gear_palettes_applies_enhanced_glove_color() {
         let mut state = ZeldaState::new();
-        state.enhanced_features_view_mut().set_bits(0x1000);
+        state.enhanced_features_mut().set_bits(0x1000);
         set_link_test_byte(&mut state, LINK_ITEM_GLOVES, 2);
 
         state.load_actual_gear_palettes();
@@ -9927,7 +9881,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_COUNTDOWN_FOR_DASH, 12);
         state.player_state_view_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
-        state.swim_acceleration_view_mut().set_mode(0, 0x1234);
+        state.swim_acceleration_mut().set_mode(0, 0x1234);
         state.ancilla_slot_view_mut(0).set_ancilla_type(0x1e);
         state.ancilla_slot_view_mut(4).set_ancilla_type(0x1e);
 
@@ -9958,7 +9912,7 @@ mod tests {
         state.player_state_view_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
         state.player_state_view_mut().set_button_b_frames(8);
-        state.swim_acceleration_view_mut().set_mode(0, 0x1234);
+        state.swim_acceleration_mut().set_mode(0, 0x1234);
 
         state.link_state_exiting_dash();
 
@@ -9988,7 +9942,7 @@ mod tests {
 
         state.tile_detect_main_handler(1);
 
-        assert_eq!(state.tile_detect_position_view().collision_bits(), 0);
+        assert_eq!(state.tile_detect_position().collision_bits(), 0);
         assert_eq!(read_le_u16(&state.ram, TILEDETECT_NORMAL_TILES), 1);
     }
 
@@ -10212,9 +10166,9 @@ mod tests {
         state.set_main_module(7);
         state.world_scroll_mut().set_bg2_x(0x0110);
         state.world_scroll_mut().set_bg2_y(0x0108);
-        state.room_bounds_view_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_view_mut().set_x_bound(2, 0x0140);
-        state.room_bounds_view_mut().set_y_bound(2, 0x0120);
+        state.room_bounds_mut().set_x_bound(0, 0x0100);
+        state.room_bounds_mut().set_x_bound(2, 0x0140);
+        state.room_bounds_mut().set_y_bound(2, 0x0120);
         state.ram[QUADRANT_FULLSIZE_X] = 0;
         state.ram[QUADRANT_FULLSIZE_Y] = 0;
         state.configure_ppu_side_space();
@@ -10228,9 +10182,7 @@ mod tests {
         let mut state = ZeldaState::new();
         let mut pixels = vec![0u8; 256 * 224 * 4];
         state.set_irq_control_flag(0x80);
-        state
-            .select_file_scratch_view_mut()
-            .set_name_scroll_x(0x01f0);
+        state.select_file_scratch_mut().set_name_scroll_x(0x01f0);
         state.set_hdma_enable_mask(1 << 6);
         state.hdma_setup(0x0cfa87, 0, 0, 0, 0, 0);
 
@@ -10277,17 +10229,17 @@ mod tests {
         assert_eq!(state.display_state().screen_brightness, 15);
         assert_eq!(state.display_state().main_screen_layers, 16);
         assert_eq!(state.display_state().bg_mode, 9);
-        assert_eq!(state.palette_filter_view().color_window_selection(), 0x20);
-        assert_eq!(state.palette_filter_view().color_math_control(), 0x20);
-        assert_eq!(state.palette_filter_view().fixed_color_red(), 0x20);
-        assert_eq!(state.palette_filter_view().fixed_color_green(), 0x40);
-        assert_eq!(state.palette_filter_view().fixed_color_blue(), 0x80);
+        assert_eq!(state.palette_filter().color_window_selection(), 0x20);
+        assert_eq!(state.palette_filter().color_math_control(), 0x20);
+        assert_eq!(state.palette_filter().fixed_color_red(), 0x20);
+        assert_eq!(state.palette_filter().fixed_color_green(), 0x40);
+        assert_eq!(state.palette_filter().fixed_color_blue(), 0x80);
         assert_eq!(state.display_state().core_update_disable_flag, 0x80);
         assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
         assert_eq!(state.display_state().pending_nmi_subroutine, 0);
         assert_eq!(state.system_signals().sound_effect_2(), 0);
-        assert_eq!(state.ending_scratch_view().primary_word(), 0x1bfe);
-        assert_eq!(state.ending_scratch_view().secondary_word(), 0x17fe);
+        assert_eq!(state.ending_scratch().primary_word(), 0x1bfe);
+        assert_eq!(state.ending_scratch().secondary_word(), 0x17fe);
         assert_eq!(
             &state.ram[OAM_BUF..OAM_BUF + 16],
             &[
@@ -10379,8 +10331,8 @@ mod tests {
                 0x6e, 0x32
             ]
         );
-        assert_eq!(state.ending_scratch_view().primary_word(), 0x17fe);
-        assert_eq!(state.ending_scratch_view().secondary_word(), 0x13fe);
+        assert_eq!(state.ending_scratch().primary_word(), 0x17fe);
+        assert_eq!(state.ending_scratch().secondary_word(), 0x13fe);
     }
 
     #[test]
@@ -10389,7 +10341,7 @@ mod tests {
         state.set_main_module(0);
         state.set_submodule(7);
         state.set_subsubmodule(0xf3);
-        state.palette_filter_view_mut().set_countdown(0);
+        state.palette_filter_mut().set_countdown(0);
         state.player_state_view_mut().set_filtered_joypad_h(0x10);
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_Y_COORD, 0x12);
@@ -10415,11 +10367,11 @@ mod tests {
     fn name_file_x_scroll_both_horizontal_bits_match_c_rom_table() {
         let mut state = ZeldaState::new();
         state.player_state_view_mut().set_joypad1h_last(0x03);
-        state.select_file_scratch_view_mut().set_name_column(21);
+        state.select_file_scratch_mut().set_name_column(21);
 
         state.name_file_check_for_scroll_input_x();
 
-        let select_file = state.select_file_scratch_view();
+        let select_file = state.select_file_scratch();
         assert_eq!(select_file.name_column(), 53);
         assert_eq!(select_file.name_scroll_x_step(), 1);
         assert_eq!(select_file.name_scroll_x_direction(), 2);

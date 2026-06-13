@@ -72,8 +72,7 @@ impl ZeldaState {
                 SOLDIER_DRAW2_BIG[j],
             );
             if SOLDIER_DRAW2_CHAR[j] == 0x20 && sprite_type == 0x46 {
-                self.oam_state_view_mut()
-                    .hide_sprite_row(oam_base + oam_offset);
+                self.oam_state_mut().hide_sprite_row(oam_base + oam_offset);
             }
             oam_offset += 1;
         }
@@ -86,7 +85,7 @@ impl ZeldaState {
         let sprite_type = sprite.sprite_type();
         for i in (0..=1).rev() {
             let j = i + g;
-            self.hitbox_scratch_offset_view_mut()
+            self.hitbox_scratch_offset_mut()
                 .set_offsets(SOLDIER_DRAW3_YD[j] as u8, SOLDIER_DRAW3_XD[j] as u8);
             self.set_sprite_main_guard_oam(
                 oam_idx as usize + (1 - i),
@@ -149,7 +148,7 @@ mod tests {
             .collect();
 
         let mut s = ZeldaState::new();
-        s.oam_state_view_mut().set_current_pointer(OAM_BUF as u16);
+        s.oam_state_mut().set_current_pointer(OAM_BUF as u16);
         for i in 0..4 {
             let base = OAM_BUF + i * 4;
             s.ram[base + 1] = 0xee;

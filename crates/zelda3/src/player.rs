@@ -109,10 +109,10 @@ impl ZeldaState {
             self.player_state_view().direction(),
             self.player_state_view().last_direction(),
             self.player_state_view().last_direction_moved_towards(),
-            self.tile_detect_position_view().pit_tile(),
+            self.tile_detect_position().pit_tile(),
             self.player_state_view().tile_below(),
-            self.tile_detect_position_view().collision_bits(),
-            self.tile_detect_position_view().normal_tiles(),
+            self.tile_detect_position().collision_bits(),
+            self.tile_detect_position().normal_tiles(),
             self.player_state_view().defense_flags(),
             self.player_state_view().speed_setting(),
             self.player_state_view().speed_modifier(),
@@ -126,9 +126,9 @@ impl ZeldaState {
         eprintln!(
             "drag-tail frame={} {label} r14=0x{:04x} tilecoll=0x{:02x} misc=0x{:04x} drag=0x{:02x} timer=0x{:02x} bframes=0x{:02x} lastmove=0x{:02x} face=0x{:02x}",
             self.frame_state().frame_counter,
-            self.tile_detect_position_view().collision_bits(),
+            self.tile_detect_position().collision_bits(),
             self.player_state_view().tile_coll_flag(),
-            self.tile_detect_position_view().misc_tiles(),
+            self.tile_detect_position().misc_tiles(),
             self.player_state_view().defense_flags(),
             self.player_state_view().push_fatigue_timer(),
             self.player_state_view().button_b_frames(),
@@ -181,7 +181,7 @@ impl ZeldaState {
         self.link_reset_sword_and_item_usage();
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+        if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
             self.player_state_view_mut()
                 .clear_misc_bugfix_movement_state();
             self.world_scroll_mut().set_bg1_y_offset(0);
@@ -208,7 +208,7 @@ impl ZeldaState {
 
     pub(super) fn link_reset_properties_c(&mut self) {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+        if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
             self.player_state_view_mut().clear_custom_spell_animation();
         }
 
@@ -281,16 +281,13 @@ impl ZeldaState {
                         .copied()
                         .find(|value| *value >= acceleration)
                         .unwrap_or(384);
-                    self.swim_acceleration_view_mut()
-                        .set_max_speed(offset, target);
+                    self.swim_acceleration_mut().set_max_speed(offset, target);
                 } else if max_speed != 0 {
                     let target = max_speed.wrapping_add(160).min(384);
-                    self.swim_acceleration_view_mut()
-                        .set_max_speed(offset, target);
+                    self.swim_acceleration_mut().set_max_speed(offset, target);
                 } else {
-                    self.swim_acceleration_view_mut()
-                        .set_acceleration(offset, 1);
-                    self.swim_acceleration_view_mut().set_max_speed(offset, 240);
+                    self.swim_acceleration_mut().set_acceleration(offset, 1);
+                    self.swim_acceleration_mut().set_max_speed(offset, 240);
                 }
             }
             mask >>= 2;
@@ -305,9 +302,9 @@ impl ZeldaState {
         for offset in [2, 0] {
             let acceleration = self.swim_acceleration_view().acceleration(offset);
             if acceleration != 0 {
-                self.swim_acceleration_view_mut()
+                self.swim_acceleration_mut()
                     .set_max_speed(offset, acceleration);
-                self.swim_acceleration_view_mut().set_mode(offset, 1);
+                self.swim_acceleration_mut().set_mode(offset, 1);
             }
         }
     }
@@ -316,8 +313,8 @@ impl ZeldaState {
         if self.player_state_view().flag_moving() == 0 {
             return;
         }
-        self.swim_acceleration_view_mut().set_max_speed(0, 0x0180);
-        self.swim_acceleration_view_mut().set_max_speed(2, 0x0180);
+        self.swim_acceleration_mut().set_max_speed(0, 0x0180);
+        self.swim_acceleration_mut().set_max_speed(2, 0x0180);
     }
 
     pub(super) fn link_set_momentum(&mut self) {
@@ -342,16 +339,16 @@ impl ZeldaState {
                     & mask
                     == mask
                 {
-                    self.swim_acceleration_view_mut().set_mode(offset, 2);
+                    self.swim_acceleration_mut().set_mode(offset, 2);
                 } else {
                     let direction = if joy & bit != 0 { 0 } else { 1 };
-                    self.swim_acceleration_view_mut()
+                    self.swim_acceleration_mut()
                         .set_acceleration_direction(offset, direction);
-                    self.swim_acceleration_view_mut().set_mode(offset, 0);
+                    self.swim_acceleration_mut().set_mode(offset, 0);
                 }
 
                 if self.swim_acceleration_view().max_speed(offset) == 0 {
-                    self.swim_acceleration_view_mut().set_max_speed(offset, 240);
+                    self.swim_acceleration_mut().set_max_speed(offset, 240);
                 }
             }
             mask >>= 2;
@@ -494,20 +491,20 @@ impl ZeldaState {
                 let acceleration = self.swim_acceleration_view().acceleration(offset);
                 let max_speed = self.swim_acceleration_view().max_speed(offset);
                 if speed_active != 0 || (acceleration >= 240 && acceleration >= max_speed) {
-                    self.swim_acceleration_view_mut().set_mode(offset, 0);
+                    self.swim_acceleration_mut().set_mode(offset, 0);
                     if acceleration >= 240 {
-                        self.swim_acceleration_view_mut()
+                        self.swim_acceleration_mut()
                             .set_speed_active_flag(offset, 1);
-                        self.swim_acceleration_view_mut().set_mode(offset, 1);
+                        self.swim_acceleration_mut().set_mode(offset, 1);
                     } else {
-                        self.swim_acceleration_view_mut().set_max_speed(offset, 240);
-                        self.swim_acceleration_view_mut()
+                        self.swim_acceleration_mut().set_max_speed(offset, 240);
+                        self.swim_acceleration_mut()
                             .set_speed_active_flag(offset, 0);
                     }
                 }
             } else {
-                self.swim_acceleration_view_mut().set_max_speed(offset, 240);
-                self.swim_acceleration_view_mut()
+                self.swim_acceleration_mut().set_max_speed(offset, 240);
+                self.swim_acceleration_mut()
                     .set_speed_active_flag(offset, 0);
             }
             mask >>= 2;
@@ -540,7 +537,7 @@ impl ZeldaState {
             }
         }
         self.player_state_view_mut().cancel_dash_state();
-        self.swim_acceleration_view_mut().clear_mode_low_axis();
+        self.swim_acceleration_mut().clear_mode_low_axis();
     }
 
     pub(super) fn repel_dash(&mut self) {
@@ -583,19 +580,19 @@ impl ZeldaState {
         if self.player_state_view().flag_moving() != 0 {
             self.player_state_view_mut()
                 .set_direction_and_swim_flags(DIRECTION_BITS_BY_FACING[dir]);
-            self.swim_acceleration_view_mut()
+            self.swim_acceleration_mut()
                 .set_acceleration_direction(0, DASH_REBOUND_SWIM_Y_DIRECTIONS[dir] as u16);
-            self.swim_acceleration_view_mut()
+            self.swim_acceleration_mut()
                 .set_acceleration_direction(2, DASH_REBOUND_SWIM_X_DIRECTIONS[dir] as u16);
             let i = (self.player_state_view().flag_moving() - 1) as usize * 4 + dir;
-            self.swim_acceleration_view_mut()
+            self.swim_acceleration_mut()
                 .set_acceleration(0, DASH_REBOUND_SWIM_Y_ACCELERATIONS[i]);
-            self.swim_acceleration_view_mut()
+            self.swim_acceleration_mut()
                 .set_acceleration(2, DASH_REBOUND_SWIM_X_ACCELERATIONS[i]);
         }
         self.player_state_view_mut().set_auxiliary_state(1);
         self.player_state_view_mut().set_dash_noise_request();
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .clear_interaction_scratch_x_low();
         self.player_state_view_mut().clear_electrocute_on_touch();
         self.player_state_view_mut().set_speed_setting(0);
@@ -666,7 +663,7 @@ impl ZeldaState {
             1, 2, 3, 2, 2, 2, 3, 2, 1, 1, 2, 1, 1, 1, 2, 1, 2, 2, 3, 2, 2, 2, 3, 2,
         ];
         if self.player_state_view().handler_state() == 23
-            || (self.enhanced_features_view().has(4096)
+            || (self.enhanced_features().has(4096)
                 && self.player_state_view().handler_state() == 28)
         {
             if self.player_state_view().animation_step() < 4
@@ -808,14 +805,14 @@ impl ZeldaState {
         self.player_state_view_mut()
             .add_direction_flags(MOVE_POS_DIR_FLAG[j]);
         let y = ((self.player_state_view().y() as u32) << 8
-            | self.bg1_move_calc_view().y_subpixel() as u32)
+            | self.bg1_move_calc().y_subpixel() as u32)
             .wrapping_add(((MOVING_BELT_Y[j] as i32) << 4) as u32);
-        self.bg1_move_calc_view_mut().set_y_subpixel(y as u8);
+        self.bg1_move_calc_mut().set_y_subpixel(y as u8);
         self.player_state_view_mut().set_y((y >> 8) as u16);
         let x = ((self.player_state_view().x() as u32) << 8
-            | self.bg1_move_calc_view().x_subpixel() as u32)
+            | self.bg1_move_calc().x_subpixel() as u32)
             .wrapping_add(((MOVING_BELT_X[j] as i32) << 4) as u32);
-        self.bg1_move_calc_view_mut().set_x_subpixel(x as u8);
+        self.bg1_move_calc_mut().set_x_subpixel(x as u8);
         self.player_state_view_mut().set_x((x >> 8) as u16);
     }
 
@@ -825,7 +822,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_add_in_velocity_y_falling(&mut self) {
-        let adjust = i16::from(self.tile_detect_position_view().y_low() & 7)
+        let adjust = i16::from(self.tile_detect_position().y_low() & 7)
             - if self.player_state_view().y_velocity_signed().is_negative() {
                 8
             } else {
@@ -988,7 +985,7 @@ impl ZeldaState {
 
     pub(super) fn calculate_snap_scratch_y(&mut self) {
         let mut y_vel = self.player_state_view().y_velocity() as i8;
-        if self.tile_detect_position_view().collision_bits() & 4 != 0 {
+        if self.tile_detect_position().collision_bits() & 4 != 0 {
             if y_vel >= 0 {
                 y_vel = y_vel.wrapping_neg();
             }
@@ -1004,7 +1001,7 @@ impl ZeldaState {
 
     pub(super) fn change_axis_of_perpendicular_door_movement_y(&mut self) {
         self.player_state_view_mut().set_direction_lock_bits(2);
-        let r14 = self.tile_detect_position_view().collision_bits();
+        let r14 = self.tile_detect_position().collision_bits();
         let t = ((r14 | (r14 >> 4)) & 0x0f) as u8;
         if t & 7 == 0 {
             self.player_state_view_mut().clear_doorway_state();
@@ -1046,7 +1043,7 @@ impl ZeldaState {
 
     pub(super) fn calculate_snap_scratch_x(&mut self) {
         let mut x_vel = self.player_state_view().x_velocity() as i8;
-        if self.tile_detect_position_view().collision_bits() & 4 != 0 {
+        if self.tile_detect_position().collision_bits() & 4 != 0 {
             if x_vel >= 0 {
                 x_vel = x_vel.wrapping_neg();
             }
@@ -1062,7 +1059,7 @@ impl ZeldaState {
 
     pub(super) fn change_axis_of_perpendicular_door_movement_x(&mut self) -> i8 {
         self.player_state_view_mut().set_direction_lock_bits(2);
-        let r14 = self.tile_detect_position_view().collision_bits();
+        let r14 = self.tile_detect_position().collision_bits();
         let r0 = ((r14 | (r14 >> 4)) & 0x0f) as u8;
         if r0 & 7 == 0 {
             self.player_state_view_mut().clear_doorway_state();
@@ -1203,20 +1200,20 @@ impl ZeldaState {
             0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4,
             5, 6, 7,
         ];
-        let diag_state = self.tile_detect_position_view().diag_state() as usize;
+        let diag_state = self.tile_detect_position().diag_state() as usize;
         let x = self.player_state_view().x().wrapping_sub(
-            if self.tile_detect_position_view().slope_collision_bits() & 4 != 0 {
+            if self.tile_detect_position().slope_collision_bits() & 4 != 0 {
                 1
             } else {
                 0
             },
         );
         let o = diag_state * 4 + (x & 7) as usize;
-        let mut y = (self.tile_detect_position_view().y_low() & 7) as i8;
+        let mut y = (self.tile_detect_position().y_low() & 7) as i8;
 
-        if self.tile_detect_position_view().diagonal_tile() & 5 != 0 {
-            let mut ym = (self.tile_detect_position_view().y_low() & 7) as i8;
-            if self.enhanced_features_view().has(4096) {
+        if self.tile_detect_position().diagonal_tile() & 5 != 0 {
+            let mut ym = (self.tile_detect_position().y_low() & 7) as i8;
+            if self.enhanced_features().has(4096) {
                 if diag_state & 2 != 0 {
                     ym = ym.wrapping_neg();
                 } else {
@@ -1259,7 +1256,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_moving_against_diag_tile(4);
         }
 
-        let diag_flags = if self.tile_detect_position_view().slope_collision_bits() & 4 != 0 {
+        let diag_flags = if self.tile_detect_position().slope_collision_bits() & 4 != 0 {
             0x12
         } else {
             0x11
@@ -1273,21 +1270,21 @@ impl ZeldaState {
             0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4,
             5, 6, 7,
         ];
-        let diag_state = self.tile_detect_position_view().diag_state();
+        let diag_state = self.tile_detect_position().diag_state();
         let mut x = (self
             .player_state_view()
             .x()
             .wrapping_sub(if diag_state == 6 { 1 } else { 0 })
             & 7) as i8;
-        let which_y_offset = if self.tile_detect_position_view().slope_collision_bits() & 4 != 0 {
+        let which_y_offset = if self.tile_detect_position().slope_collision_bits() & 4 != 0 {
             2
         } else {
             0
         };
         let o = diag_state as usize * 4
-            + (self.tile_detect_position_view().y_low_at(which_y_offset) & 7) as usize;
+            + (self.tile_detect_position().y_low_at(which_y_offset) & 7) as usize;
 
-        if self.tile_detect_position_view().diagonal_tile() & 5 != 0 {
+        if self.tile_detect_position().diagonal_tile() & 5 != 0 {
             let mut xm = (self.player_state_view().x() & 7) as i8;
             if diag_state != 4 && diag_state != 6 {
                 xm = xm.wrapping_neg();
@@ -1388,9 +1385,9 @@ impl ZeldaState {
                 .set_last_direction_moved_towards(last_direction_moved_towards);
             self.tile_detect_movement_vertical_slopes(last_direction_moved_towards as u16);
 
-            let r14 = self.tile_detect_position_view().collision_bits();
+            let r14 = self.tile_detect_position().collision_bits();
             if r14 & 0x30 != 0
-                && self.tile_detect_position_view().door_direction_flags() as u8 & 2 == 0
+                && self.tile_detect_position().door_direction_flags() as u8 & 2 == 0
                 && ((((r14 & 0x30) >> 4) as u8) & self.player_state_view().direction()) == 0
                 && self.player_state_view().direction() & 3 != 0
             {
@@ -1404,7 +1401,7 @@ impl ZeldaState {
                 let mut set_thingy = false;
                 if self.dungeon_room_load().header_collision() == 0
                     && self.player_state_view().has_auxiliary_state()
-                    && self.tile_detect_position_view().slope_collision_bits() & 3 != 0
+                    && self.tile_detect_position().slope_collision_bits() & 3 != 0
                 {
                     set_thingy = true;
                 }
@@ -1413,14 +1410,13 @@ impl ZeldaState {
                     self.player_state_view_mut()
                         .clear_moving_against_diag_tile();
                     if self.player_state_view().flag_moving() != 0
-                        && self.tile_detect_position_view().spike_cactus_tiles() & 3 == 0
+                        && self.tile_detect_position().spike_cactus_tiles() & 3 == 0
                         && self.player_state_view().direction() & 3 != 0
                     {
-                        self.swim_acceleration_view_mut()
-                            .set_speed_active_flag(0, 0);
-                        self.swim_acceleration_view_mut().set_mode(0, 0);
-                        self.swim_acceleration_view_mut().set_acceleration(0, 0);
-                        self.swim_acceleration_view_mut().set_max_speed(0, 0);
+                        self.swim_acceleration_mut().set_speed_active_flag(0, 0);
+                        self.swim_acceleration_mut().set_mode(0, 0);
+                        self.swim_acceleration_mut().set_acceleration(0, 0);
+                        self.swim_acceleration_mut().set_max_speed(0, 0);
                     }
                     set_thingy = true;
                 }
@@ -1443,9 +1439,9 @@ impl ZeldaState {
                 .set_last_direction_moved_towards(last_direction_moved_towards);
             self.tile_detect_movement_horizontal_slopes(last_direction_moved_towards as u16);
 
-            let r14 = self.tile_detect_position_view().collision_bits();
+            let r14 = self.tile_detect_position().collision_bits();
             if r14 & 0x30 != 0
-                && self.tile_detect_position_view().door_direction_flags() as u8 & 2 != 0
+                && self.tile_detect_position().door_direction_flags() as u8 & 2 != 0
                 && ((((r14 & 0x30) >> 2) as u8) & self.player_state_view().direction()) == 0
                 && self.player_state_view().direction() & 0x0c != 0
             {
@@ -1459,7 +1455,7 @@ impl ZeldaState {
                 let mut set_thingy_b = false;
                 if self.dungeon_room_load().header_collision() == 0
                     && self.player_state_view().has_auxiliary_state()
-                    && self.tile_detect_position_view().slope_collision_bits() & 3 != 0
+                    && self.tile_detect_position().slope_collision_bits() & 3 != 0
                 {
                     set_thingy_b = true;
                 }
@@ -1468,14 +1464,13 @@ impl ZeldaState {
                     self.player_state_view_mut()
                         .clear_moving_against_diag_tile();
                     if self.player_state_view().flag_moving() != 0
-                        && self.tile_detect_position_view().spike_cactus_tiles() & 3 == 0
+                        && self.tile_detect_position().spike_cactus_tiles() & 3 == 0
                         && self.player_state_view().direction() & 0x0c != 0
                     {
-                        self.swim_acceleration_view_mut()
-                            .set_speed_active_flag(2, 0);
-                        self.swim_acceleration_view_mut().set_mode(2, 0);
-                        self.swim_acceleration_view_mut().set_acceleration(2, 0);
-                        self.swim_acceleration_view_mut().set_max_speed(2, 0);
+                        self.swim_acceleration_mut().set_speed_active_flag(2, 0);
+                        self.swim_acceleration_mut().set_mode(2, 0);
+                        self.swim_acceleration_mut().set_acceleration(2, 0);
+                        self.swim_acceleration_mut().set_max_speed(2, 0);
                     }
                     set_thingy_b = true;
                 }
@@ -1525,12 +1520,8 @@ impl ZeldaState {
                 self.player_state_view_mut().clear_speed_modifier();
                 assert!(self.player_state_view().dash_counter() >= 32);
             }
-            if (self
-                .tile_detect_position_view()
-                .tile_collision_bits_primary()
-                | self
-                    .tile_detect_position_view()
-                    .tile_collision_bits_secondary())
+            if (self.tile_detect_position().tile_collision_bits_primary()
+                | self.tile_detect_position().tile_collision_bits_secondary())
                 == 0x0f
             {
                 return;
@@ -1611,7 +1602,7 @@ impl ZeldaState {
             if (stroke_timer as i16) < 0 {
                 self.player_state_view_mut()
                     .set_swim_stroke_frame_counter(offset, 0);
-                self.swim_acceleration_view_mut().set_mode(offset, 1);
+                self.swim_acceleration_mut().set_mode(offset, 1);
             }
 
             let mut table_index = self.swim_acceleration_view().mode(offset);
@@ -1631,15 +1622,13 @@ impl ZeldaState {
                 self.player_state_view_mut()
                     .set_last_direction_from_current_direction();
                 if self.swim_acceleration_view().mode(offset) == 2 {
-                    self.swim_acceleration_view_mut().set_mode(offset, 0);
-                    self.swim_acceleration_view_mut().set_max_speed(offset, 240);
-                    self.swim_acceleration_view_mut()
-                        .set_acceleration(offset, 2);
+                    self.swim_acceleration_mut().set_mode(offset, 0);
+                    self.swim_acceleration_mut().set_max_speed(offset, 240);
+                    self.swim_acceleration_mut().set_acceleration(offset, 2);
                 } else {
-                    self.swim_acceleration_view_mut().set_mode(offset, 0);
-                    self.swim_acceleration_view_mut().set_max_speed(offset, 0);
-                    self.swim_acceleration_view_mut()
-                        .set_acceleration(offset, 0);
+                    self.swim_acceleration_mut().set_mode(offset, 0);
+                    self.swim_acceleration_mut().set_max_speed(offset, 0);
+                    self.swim_acceleration_mut().set_acceleration(offset, 0);
                 }
             } else {
                 let dir_index =
@@ -1650,8 +1639,7 @@ impl ZeldaState {
                 if sum >= max_sum {
                     sum = max_sum;
                 }
-                self.swim_acceleration_view_mut()
-                    .set_acceleration(offset, sum);
+                self.swim_acceleration_mut().set_acceleration(offset, sum);
             }
 
             stroke[i] = self.swim_acceleration_view().acceleration(offset);
@@ -1723,17 +1711,17 @@ impl ZeldaState {
         } else {
             8
         };
-        let o = (((if self.tile_detect_position_view().collision_bits() & 4 != 0 {
+        let o = (((if self.tile_detect_position().collision_bits() & 4 != 0 {
             0
         } else {
             2
         }) + p)
             >> 1) as usize;
 
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let y0 = link_y.wrapping_add(NUDGE_PROBE_Y0_OFFSETS[o] as u16) & mask;
@@ -1744,12 +1732,12 @@ impl ZeldaState {
         self.tile_detection_execute(x0, y0, 1);
         self.tile_detection_execute(x1, y1, 2);
 
-        let blocked = (self.tile_detect_position_view().collision_bits()
-            | self.tile_detect_position_view().horizontal_ledge() as u16)
+        let blocked = (self.tile_detect_position().collision_bits()
+            | self.tile_detect_position().horizontal_ledge() as u16)
             & 3
             != 0
-            || (self.tile_detect_position_view().vertical_ledge()
-                | self.tile_detect_position_view().diagonal_ledge_tiles())
+            || (self.tile_detect_position().vertical_ledge()
+                | self.tile_detect_position().diagonal_ledge_tiles())
                 & 0x33
                 != 0;
         if blocked {
@@ -1766,7 +1754,7 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_pushing_bonking_snaps_y(&mut self) {
-        let r14 = self.tile_detect_position_view().collision_bits();
+        let r14 = self.tile_detect_position().collision_bits();
         if r14 & 7 == 0 {
             if self.player_state_view().is_on_lower_level() {
                 return;
@@ -1792,7 +1780,7 @@ impl ZeldaState {
             let bak = r14;
             self.link_bonk_and_smash();
             self.repel_dash();
-            self.tile_detect_position_view_mut().set_collision_bits(bak);
+            self.tile_detect_position_mut().set_collision_bits(bak);
             self.replay_trace_drag_tail("snaps-y-after-first-bonk");
         }
 
@@ -1857,7 +1845,7 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_pushing_bonking_snaps_x(&mut self) {
-        let r14 = self.tile_detect_position_view().collision_bits();
+        let r14 = self.tile_detect_position().collision_bits();
         if r14 & 7 == 0 {
             if self.player_state_view().is_on_lower_level() {
                 return;
@@ -1877,7 +1865,7 @@ impl ZeldaState {
             let bak = r14;
             self.link_bonk_and_smash();
             self.repel_dash();
-            self.tile_detect_position_view_mut().set_collision_bits(bak);
+            self.tile_detect_position_mut().set_collision_bits(bak);
         }
 
         self.player_state_view_mut().set_pit_correction_active();
@@ -1957,7 +1945,7 @@ impl ZeldaState {
         }
 
         let tile_coll = self.player_state_view().tile_coll_flag();
-        let drag_bits = if self.tile_detect_position_view().misc_tiles() & 0x20 != 0 {
+        let drag_bits = if self.tile_detect_position().misc_tiles() & 0x20 != 0 {
             tile_coll << 3
         } else {
             tile_coll
@@ -1980,7 +1968,7 @@ impl ZeldaState {
 
         let idx =
             what as usize * 4 + self.player_state_view().last_direction_moved_towards() as usize;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
 
         let x0 = (x.wrapping_add(X0[idx] as i16 as u16) & mask) >> 3;
         let y0 = y.wrapping_add(Y0[idx] as i16 as u16) & mask;
@@ -2017,16 +2005,16 @@ impl ZeldaState {
             self.tile_detect_movement_y(
                 self.player_state_view().last_direction_moved_towards() as u16
             );
-            let terrain = self.tile_detect_position_view().normal_tiles()
-                | self.tile_detect_position_view().destruction_aftermath()
-                | self.tile_detect_position_view().thick_grass()
-                | self.tile_detect_position_view().deepwater();
+            let terrain = self.tile_detect_position().normal_tiles()
+                | self.tile_detect_position().destruction_aftermath()
+                | self.tile_detect_position().thick_grass()
+                | self.tile_detect_position().deepwater();
             if terrain & 7 == 7 {
                 break;
             }
         }
 
-        if self.tile_detect_position_view().deepwater() & 7 != 0 {
+        if self.tile_detect_position().deepwater() & 7 != 0 {
             self.player_state_view_mut().set_auxiliary_state(1);
             self.player_state_view_mut().clear_electrocute_on_touch();
             self.player_state_view_mut().enter_deep_water_state();
@@ -2117,7 +2105,7 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_main_handler(&mut self, item: u8) {
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
         let probe_base = if item == 8 {
@@ -2142,7 +2130,7 @@ impl ZeldaState {
             20, 20, 20, 20, 4, 28, 16, 16, 22, 22, 22, 22, 4, 24, 16, 16, 16, 16, 16, 16, 20, 20,
             23, 23, -4, 36, 16, 16, 4, 28, 16, 16, 4, 28, 16, 16, 4, 4, 28, 28,
         ];
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_x = self.player_state_view().x();
         let link_y = self.player_state_view().y();
         let x = (link_x.wrapping_add(X[offset as usize] as i16 as u16) & mask) >> 3;
@@ -2158,7 +2146,7 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().thick_grass() & 0x10 != 0 {
+        if self.tile_detect_position().thick_grass() & 0x10 != 0 {
             let tx = self.player_state_view().x() & 0x0f;
             let ty = self.player_state_view().y().wrapping_add(8) & 0x0f;
             if !(4..11).contains(&ty)
@@ -2174,7 +2162,7 @@ impl ZeldaState {
                     let prev_room = self.world_location_state().dungeon_room_index();
                     self.dungeon_room_tracking_mut()
                         .set_room_index_prev(prev_room);
-                    let room = self.dungeon_header_view().travel_destination(0);
+                    let room = self.dungeon_header().travel_destination(0);
                     self.set_dungeon_room_index(room);
                     self.handle_layer_of_destination();
                 } else if !self.player_state_view_mut().whirlpool_triggered() {
@@ -2183,7 +2171,7 @@ impl ZeldaState {
             }
         } else {
             self.player_state_view_mut().clear_whirlpool_trigger();
-            if self.tile_detect_position_view().thick_grass() & 1 != 0 {
+            if self.tile_detect_position().thick_grass() & 1 != 0 {
                 self.player_state_view_mut()
                     .set_water_ripple_or_grass_state(2);
                 if !self.link_permission_for_slosh_sounds()
@@ -2194,7 +2182,7 @@ impl ZeldaState {
                 return;
             }
 
-            if self.tile_detect_position_view().shallow_water() & 1 != 0 {
+            if self.tile_detect_position().shallow_water() & 1 != 0 {
                 self.player_state_view_mut()
                     .set_water_ripple_or_grass_state(1);
                 if self.world_location_state().is_outdoors()
@@ -2219,7 +2207,7 @@ impl ZeldaState {
 
             if self.world_location_state().is_outdoors()
                 && !self.player_state_view().is_in_deep_water()
-                && self.tile_detect_position_view().deepwater() & 1 != 0
+                && self.tile_detect_position().deepwater() & 1 != 0
             {
                 self.player_state_view_mut()
                     .set_water_ripple_or_grass_state(1);
@@ -2236,13 +2224,13 @@ impl ZeldaState {
 
         self.player_state_view_mut()
             .clear_water_ripple_or_grass_state();
-        if self.tile_detect_position_view().spike_floor_and_triggers() & 1 != 0 {
+        if self.tile_detect_position().spike_floor_and_triggers() & 1 != 0 {
             self.player_state_view_mut().set_item_pickup_in_progress(1);
             return;
         }
         self.player_state_view_mut().set_item_pickup_in_progress(0);
 
-        if self.tile_detect_position_view().spike_floor_and_triggers() & 0x10 != 0 {
+        if self.tile_detect_position().spike_floor_and_triggers() & 0x10 != 0 {
             self.player_state_view_mut().clear_given_damage();
             if !self.player_state_view().is_cape_active()
                 && !self.search_for_byrna_spark()
@@ -2260,7 +2248,7 @@ impl ZeldaState {
             }
         }
 
-        if self.tile_detect_position_view().icy_floor() & 0x11 != 0 {
+        if self.tile_detect_position().icy_floor() & 0x11 != 0 {
             if self.player_state_view().flag_moving() != 0 {
                 if self.player_state_view().num_orthogonal_directions() != 0 {
                     self.player_state_view_mut()
@@ -2268,14 +2256,12 @@ impl ZeldaState {
                 }
             } else {
                 if self.player_state_view().direction() & 0x0c != 0 {
-                    self.swim_acceleration_view_mut()
-                        .set_acceleration(0, 0x0180);
+                    self.swim_acceleration_mut().set_acceleration(0, 0x0180);
                 }
                 if self.player_state_view().direction() & 3 != 0 {
-                    self.swim_acceleration_view_mut()
-                        .set_acceleration(0, 0x0180);
+                    self.swim_acceleration_mut().set_acceleration(0, 0x0180);
                 }
-                let flag_moving = if self.tile_detect_position_view().icy_floor() & 1 != 0 {
+                let flag_moving = if self.tile_detect_position().icy_floor() & 1 != 0 {
                     1
                 } else {
                     2
@@ -2296,7 +2282,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_flag_moving(0);
         }
 
-        if self.tile_detect_position_view().spike_cactus_tiles() & 0x10 != 0
+        if self.tile_detect_position().spike_cactus_tiles() & 0x10 != 0
             && self.player_state_view().blink_countdown() == 0
         {
             self.player_state_view_mut().set_blink_countdown(58);
@@ -2356,12 +2342,12 @@ impl ZeldaState {
     }
 
     pub(super) fn start_movement_collision_checks_y_handle_indoors(&mut self) {
-        let mut r14 = self.tile_detect_position_view().collision_bits();
+        let mut r14 = self.tile_detect_position().collision_bits();
         if self.player_state_view().is_lifting_or_carrying()
             || self.player_state_view().incapacitated_timer() != 0
         {
             r14 |= r14 >> 4;
-            self.tile_detect_position_view_mut().set_collision_bits(r14);
+            self.tile_detect_position_mut().set_collision_bits(r14);
         } else {
             if self.player_state_view().doorway_state() == 2 {
                 if self.player_state_view().num_orthogonal_directions() == 0 {
@@ -2372,7 +2358,7 @@ impl ZeldaState {
                         self.change_axis_of_perpendicular_door_movement_y();
                         return;
                     }
-                } else if self.tile_detect_position_view().door_direction_flags() != 0 {
+                } else if self.tile_detect_position().door_direction_flags() != 0 {
                     self.link_add_in_velocity_y();
                     self.finish_indoor_y_collision();
                     return;
@@ -2431,12 +2417,12 @@ impl ZeldaState {
     }
 
     pub(super) fn start_movement_collision_checks_x_handle_indoors(&mut self) {
-        let mut r14 = self.tile_detect_position_view().collision_bits();
+        let mut r14 = self.tile_detect_position().collision_bits();
         if self.player_state_view().is_lifting_or_carrying()
             || self.player_state_view().incapacitated_timer() != 0
         {
             r14 |= r14 >> 4;
-            self.tile_detect_position_view_mut().set_collision_bits(r14);
+            self.tile_detect_position_mut().set_collision_bits(r14);
         } else {
             if self.player_state_view().num_orthogonal_directions() == 0 {
                 self.player_state_view_mut().clear_speed_modifier();
@@ -2491,8 +2477,8 @@ impl ZeldaState {
             self.player_state_view_mut().set_force_move_any_direction(0);
         }
 
-        if self.tile_detect_position_view().collision_bits() & 2 == 0
-            && self.tile_detect_position_view().slope_collision_bits() & 5 != 0
+        if self.tile_detect_position().collision_bits() & 2 == 0
+            && self.tile_detect_position().slope_collision_bits() & 5 != 0
         {
             self.player_state_view_mut().clear_conveyor_belt_state();
             self.flag_moving_into_slopes_x();
@@ -2512,22 +2498,22 @@ impl ZeldaState {
         self.player_state_view_mut().resolve_dash_speed_setting();
         self.replay_trace_drag_tail("outdoor-y-after-speed-setting");
 
-        if self.tile_detect_position_view().pit_tile() & 5 != 0
-            && self.tile_detect_position_view().collision_bits() & 2 == 0
+        if self.tile_detect_position().pit_tile() & 5 != 0
+            && self.tile_detect_position().collision_bits() & 2 == 0
         {
             self.start_falling_into_hole();
             return;
         }
 
-        let liftable_primary = if self.tile_detect_position_view().read_something() & 2 != 0 {
-            self.tile_detect_position_view().liftable_tile_index() >> 1
+        let liftable_primary = if self.tile_detect_position().read_something() & 2 != 0 {
+            self.tile_detect_position().liftable_tile_index() >> 1
         } else {
             0
         };
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_liftable_action_index_primary(liftable_primary);
 
-        if self.tile_detect_position_view().deepwater() & 2 != 0
+        if self.tile_detect_position().deepwater() & 2 != 0
             && !self.player_state_view().is_in_deep_water()
             && !self.player_state_view().has_auxiliary_state()
         {
@@ -2556,14 +2542,14 @@ impl ZeldaState {
         }
 
         if self.player_state_view().is_in_deep_water() {
-            if self.tile_detect_position_view().vertical_ledge() & 7 != 0 {
-                let r14 = (self.tile_detect_position_view().vertical_ledge() & 7) as u16;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
+            if self.tile_detect_position().vertical_ledge() & 7 != 0 {
+                let r14 = (self.tile_detect_position().vertical_ledge() & 7) as u16;
+                self.tile_detect_position_mut().set_collision_bits(r14);
                 self.handle_pushing_bonking_snaps_y();
                 return;
             }
-            if (self.tile_detect_position_view().stair_tile() & 7) == 7
-                || self.tile_detect_position_view().normal_tiles() & 7 == 7
+            if (self.tile_detect_position().stair_tile() & 7) == 7
+                || self.tile_detect_position().normal_tiles() & 7 == 7
             {
                 self.link_cancel_dash();
                 self.player_state_view_mut().clear_deep_water_state();
@@ -2579,17 +2565,15 @@ impl ZeldaState {
             }
         }
 
-        if self.tile_detect_position_view().horizontal_ledge() & 2 != 0
-            || self.tile_detect_position_view().diagonal_ledge_tiles() & 0x22 != 0
+        if self.tile_detect_position().horizontal_ledge() & 2 != 0
+            || self.tile_detect_position().diagonal_ledge_tiles() & 0x22 != 0
         {
-            self.tile_detect_position_view_mut().set_collision_bits(7);
+            self.tile_detect_position_mut().set_collision_bits(7);
             self.handle_pushing_bonking_snaps_y();
             return;
         }
 
-        if self.tile_detect_position_view().vertical_ledge() & 0x70 != 0
-            && self.run_ledge_hop_timer()
-        {
+        if self.tile_detect_position().vertical_ledge() & 0x70 != 0 && self.run_ledge_hop_timer() {
             self.link_cancel_dash();
             self.player_state_view_mut()
                 .set_sprite_damage_disable_timer(1);
@@ -2616,8 +2600,7 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().vertical_ledge() & 7 != 0 && self.run_ledge_hop_timer()
-        {
+        if self.tile_detect_position().vertical_ledge() & 7 != 0 && self.run_ledge_hop_timer() {
             self.ancilla_sfx2_near(0x20);
             self.player_state_view_mut()
                 .set_sprite_damage_disable_timer(1);
@@ -2629,20 +2612,20 @@ impl ZeldaState {
         }
 
         if !self.player_state_view().is_in_deep_water() {
-            if self.tile_detect_position_view().ledges_down_leftright() & 7 != 0
-                && self.tile_detect_position_view().vertical_ledge() & 0x77 == 0
+            if self.tile_detect_position().ledges_down_leftright() & 7 != 0
+                && self.tile_detect_position().vertical_ledge() & 0x77 == 0
             {
-                let xand = if self.tile_detect_position_view().interacting_tile() == 0x2f {
+                let xand = if self.tile_detect_position().interacting_tile() == 0x2f {
                     4
                 } else {
                     1
                 };
-                if self.tile_detect_position_view().ledges_down_leftright() & xand != 0
+                if self.tile_detect_position().ledges_down_leftright() & xand != 0
                     && self.run_ledge_hop_timer()
                 {
                     self.link_cancel_dash();
                     let actual_x_velocity =
-                        if self.tile_detect_position_view().ledges_down_leftright() & 4 != 0 {
+                        if self.tile_detect_position().ledges_down_leftright() & 4 != 0 {
                             16
                         } else {
                             0u8.wrapping_sub(16)
@@ -2654,14 +2637,14 @@ impl ZeldaState {
                 }
             }
 
-            if self.tile_detect_position_view().horizontal_ledge() & 0x70 != 0
-                && self.tile_detect_position_view().vertical_ledge() & 0x77 == 0
+            if self.tile_detect_position().horizontal_ledge() & 0x70 != 0
+                && self.tile_detect_position().vertical_ledge() & 0x77 == 0
                 && self.run_ledge_hop_timer()
             {
                 self.link_cancel_dash();
                 self.ancilla_sfx2_near(0x20);
                 let last_direction_moved_towards =
-                    if self.tile_detect_position_view().horizontal_ledge() & 0x40 != 0 {
+                    if self.tile_detect_position().horizontal_ledge() & 0x40 != 0 {
                         3
                     } else {
                         2
@@ -2677,10 +2660,10 @@ impl ZeldaState {
             }
         }
 
-        if (self.tile_detect_position_view().stair_tile() & 7) == 7 {
+        if (self.tile_detect_position().stair_tile() & 7) == 7 {
             if self.player_state_view().incapacitated_timer() != 0 {
-                let r14 = (self.tile_detect_position_view().stair_tile() & 7) as u16;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                let r14 = (self.tile_detect_position().stair_tile() & 7) as u16;
+                self.tile_detect_position_mut().set_collision_bits(r14);
                 self.handle_pushing_bonking_snaps_y();
                 return;
             } else if self.player_state_view().last_direction_moved_towards() & 2 == 0 {
@@ -2697,8 +2680,8 @@ impl ZeldaState {
         }
         self.replay_trace_drag_tail("outdoor-y-after-speed-modifier");
 
-        if self.tile_detect_position_view().collision_bits() & 7 == 0
-            && self.tile_detect_position_view().slope_collision_bits() & 5 != 0
+        if self.tile_detect_position().collision_bits() & 7 == 0
+            && self.tile_detect_position().slope_collision_bits() & 5 != 0
         {
             self.replay_trace_drag_tail("outdoor-y-before-slopes");
             self.flag_moving_into_slopes_y();
@@ -2711,7 +2694,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_moving_against_diag_tile();
         self.replay_trace_drag_tail("outdoor-y-after-clear-diag");
-        if self.tile_detect_position_view().key_lock_gravestones_low() & 2 != 0
+        if self.tile_detect_position().key_lock_gravestones_low() & 2 != 0
             && self.player_state_view().last_direction_moved_towards() == 0
         {
             let timeout = self
@@ -2721,9 +2704,9 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_gravestone_push_timeout(timeout);
             if self.player_state_view().is_running() || (timeout as i8).is_negative() {
-                let bak = self.tile_detect_position_view().collision_bits();
+                let bak = self.tile_detect_position().collision_bits();
                 self.ancilla_add_grave_stone(0x24, 4);
-                self.tile_detect_position_view_mut().set_collision_bits(bak);
+                self.tile_detect_position_mut().set_collision_bits(bak);
                 self.player_state_view_mut().set_gravestone_push_timeout(52);
             }
         } else {
@@ -2731,7 +2714,7 @@ impl ZeldaState {
         }
         self.replay_trace_drag_tail("outdoor-y-after-gravestone");
 
-        if self.tile_detect_position_view().spike_cactus_tiles() & 7 != 0 {
+        if self.tile_detect_position().spike_cactus_tiles() & 7 != 0 {
             if (self.player_state_view().incapacitated_timer()
                 | self.player_state_view().blink_countdown()
                 | self.player_state_view().is_cape_active() as u8)
@@ -2751,8 +2734,8 @@ impl ZeldaState {
                     return;
                 }
             } else {
-                let r14 = (self.tile_detect_position_view().spike_cactus_tiles() & 7) as u16;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                let r14 = (self.tile_detect_position().spike_cactus_tiles() & 7) as u16;
+                self.tile_detect_position_mut().set_collision_bits(r14);
             }
         }
         self.replay_trace_drag_tail("outdoor-y-before-snaps");
@@ -2768,22 +2751,22 @@ impl ZeldaState {
             }
         }
 
-        if self.tile_detect_position_view().pit_tile() & 5 != 0
-            && self.tile_detect_position_view().collision_bits() & 2 == 0
+        if self.tile_detect_position().pit_tile() & 5 != 0
+            && self.tile_detect_position().collision_bits() & 2 == 0
         {
             self.start_falling_into_hole();
             return;
         }
 
-        let liftable_secondary = if self.tile_detect_position_view().read_something() & 2 != 0 {
-            self.tile_detect_position_view().liftable_tile_index() >> 1
+        let liftable_secondary = if self.tile_detect_position().read_something() & 2 != 0 {
+            self.tile_detect_position().liftable_tile_index() >> 1
         } else {
             0
         };
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_liftable_action_index_secondary(liftable_secondary);
 
-        if self.tile_detect_position_view().deepwater() & 4 != 0
+        if self.tile_detect_position().deepwater() & 4 != 0
             && !self.player_state_view().is_in_deep_water()
             && !self.player_state_view().has_auxiliary_state()
         {
@@ -2812,16 +2795,16 @@ impl ZeldaState {
         }
 
         if if self.player_state_view().is_in_deep_water() {
-            self.tile_detect_position_view().horizontal_ledge() & 7 == 7
+            self.tile_detect_position().horizontal_ledge() & 7 == 7
         } else {
-            self.tile_detect_position_view().vertical_ledge() & 0x42 != 0
+            self.tile_detect_position().vertical_ledge() & 0x42 != 0
         } {
-            self.tile_detect_position_view_mut().set_collision_bits(7);
+            self.tile_detect_position_mut().set_collision_bits(7);
             self.handle_pushing_bonking_snaps_x();
             return;
         }
 
-        if self.tile_detect_position_view().normal_tiles() & 7 == 7
+        if self.tile_detect_position().normal_tiles() & 7 == 7
             && self.player_state_view().is_in_deep_water()
         {
             self.link_cancel_dash();
@@ -2837,9 +2820,7 @@ impl ZeldaState {
             }
         }
 
-        if self.tile_detect_position_view().horizontal_ledge() & 7 != 0
-            && self.run_ledge_hop_timer()
-        {
+        if self.tile_detect_position().horizontal_ledge() & 7 != 0 && self.run_ledge_hop_timer() {
             self.ancilla_sfx2_near(0x20);
             let actual_x_velocity =
                 if self.player_state_view().last_direction_moved_towards() & 1 != 0 {
@@ -2869,7 +2850,7 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().diagonal_ledge_tiles() & 0x77 != 0
+        if self.tile_detect_position().diagonal_ledge_tiles() & 0x77 != 0
             && self.run_ledge_hop_timer()
         {
             self.ancilla_sfx2_near(0x20);
@@ -2902,9 +2883,9 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().horizontal_ledge() & 0x70 != 0
-            && self.tile_detect_position_view().horizontal_ledge() & 7 == 0
-            && self.tile_detect_position_view().diagonal_ledge_tiles() & 0x77 == 0
+        if self.tile_detect_position().horizontal_ledge() & 0x70 != 0
+            && self.tile_detect_position().horizontal_ledge() & 7 == 0
+            && self.tile_detect_position().diagonal_ledge_tiles() & 0x77 == 0
             && self.player_state_view().handler_state() != 13
             && self.run_ledge_hop_timer()
         {
@@ -2918,9 +2899,9 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().ledges_down_leftright() & 7 != 0
-            && self.tile_detect_position_view().horizontal_ledge() & 7 == 0
-            && self.tile_detect_position_view().diagonal_ledge_tiles() & 0x77 == 0
+        if self.tile_detect_position().ledges_down_leftright() & 7 != 0
+            && self.tile_detect_position().horizontal_ledge() & 7 == 0
+            && self.tile_detect_position().diagonal_ledge_tiles() & 0x77 == 0
             && self.run_ledge_hop_timer()
         {
             let actual_x_velocity =
@@ -2936,13 +2917,13 @@ impl ZeldaState {
             return;
         }
 
-        if self.tile_detect_position_view().collision_bits() & 2 == 0
-            && self.tile_detect_position_view().slope_collision_bits() & 5 != 0
+        if self.tile_detect_position().collision_bits() & 2 == 0
+            && self.tile_detect_position().slope_collision_bits() & 5 != 0
         {
             let skip_check =
                 self.player_state_view().is_running() && self.player_state_view().facing() & 4 == 0;
             const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-            if !skip_check || self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+            if !skip_check || self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
                 self.flag_moving_into_slopes_x();
                 if self.player_state_view().moving_against_diag_tile() & 0x0f != 0 {
                     return;
@@ -2952,7 +2933,7 @@ impl ZeldaState {
 
         self.player_state_view_mut()
             .clear_moving_against_diag_tile();
-        if self.tile_detect_position_view().spike_cactus_tiles() & 7 != 0 {
+        if self.tile_detect_position().spike_cactus_tiles() & 7 != 0 {
             if (self.player_state_view().incapacitated_timer()
                 | self.player_state_view().blink_countdown()
                 | self.player_state_view().is_cape_active() as u8)
@@ -2971,8 +2952,8 @@ impl ZeldaState {
                     return;
                 }
             } else {
-                let r14 = (self.tile_detect_position_view().spike_cactus_tiles() & 7) as u16;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
+                let r14 = (self.tile_detect_position().spike_cactus_tiles() & 7) as u16;
+                self.tile_detect_position_mut().set_collision_bits(r14);
             }
         }
         self.handle_pushing_bonking_snaps_x();
@@ -3010,8 +2991,8 @@ impl ZeldaState {
             self.player_state_view_mut().set_force_move_any_direction(0);
         }
 
-        if self.tile_detect_position_view().collision_bits() & 7 == 0
-            && self.tile_detect_position_view().slope_collision_bits() & 5 != 0
+        if self.tile_detect_position().collision_bits() & 7 == 0
+            && self.tile_detect_position().slope_collision_bits() & 5 != 0
         {
             self.player_state_view_mut().clear_conveyor_belt_state();
             self.flag_moving_into_slopes_y();
@@ -3022,36 +3003,35 @@ impl ZeldaState {
 
         self.player_state_view_mut()
             .clear_moving_against_diag_tile();
-        if self.tile_detect_position_view().key_lock_gravestones() & 0x20 != 0 {
-            let bak = self.tile_detect_position_view().collision_bits();
+        if self.tile_detect_position().key_lock_gravestones() & 0x20 != 0 {
+            let bak = self.tile_detect_position().collision_bits();
             let mut chest_position = 0;
             let _ = self.OpenChestForItem(
-                self.tile_detect_position_view().tile_type() as u8,
+                self.tile_detect_position().tile_type() as u8,
                 &mut chest_position,
             );
-            self.tile_detect_position_view_mut().clear_tile_type();
-            self.tile_detect_position_view_mut().set_collision_bits(bak);
+            self.tile_detect_position_mut().clear_tile_type();
+            self.tile_detect_position_mut().set_collision_bits(bak);
         }
 
         self.finish_indoor_collision_common(true);
     }
 
     fn finish_indoor_collision_common(&mut self, y_axis: bool) {
-        let r14 = self.tile_detect_position_view().collision_bits();
+        let r14 = self.tile_detect_position().collision_bits();
         if !self.player_state_view().is_on_lower_level() {
-            if self.tile_detect_position_view().water_staircase() & 7 != 0 {
+            if self.tile_detect_position().water_staircase() & 7 != 0 {
                 self.set_player_layer_collision(
                     crate::game_state::constants::player::LAYER_COLLISION_BG1,
                     true,
                 );
-            } else if self.tile_detect_position_view().spike_cactus_tiles() & 7 == 0 && r14 & 2 == 0
-            {
+            } else if self.tile_detect_position().spike_cactus_tiles() & 7 == 0 && r14 & 2 == 0 {
                 self.set_player_layer_collision(
                     crate::game_state::constants::player::LAYER_COLLISION_BG1,
                     false,
                 );
             }
-        } else if self.tile_detect_position_view().moving_floor_tiles() & 7 != 0 {
+        } else if self.tile_detect_position().moving_floor_tiles() & 7 != 0 {
             self.set_player_layer_collision(
                 crate::game_state::constants::player::LAYER_COLLISION_BG2,
                 true,
@@ -3063,17 +3043,17 @@ impl ZeldaState {
             );
         }
 
-        if self.tile_detect_position_view().misc_tiles() & 0x2200 != 0 {
+        if self.tile_detect_position().misc_tiles() & 0x2200 != 0 {
             const DX: [u8; 4] = [8, 8, 0, 15];
             const DY: [u8; 4] = [8, 24, 16, 16];
-            let dy = if self.tile_detect_position_view().misc_tiles() & 0x2000 != 0 {
+            let dy = if self.tile_detect_position().misc_tiles() & 0x2000 != 0 {
                 8
             } else {
                 0
             };
             let dir = self.player_state_view().last_direction_moved_towards() as usize;
-            let rupees = self.player_resources_view().rupees_goal().wrapping_add(5);
-            self.player_resources_view_mut().set_rupees_goal(rupees);
+            let rupees = self.player_resources().rupees_goal().wrapping_add(5);
+            self.player_resources_mut().set_rupees_goal(rupees);
             let y = self
                 .player_state_view()
                 .y()
@@ -3096,7 +3076,7 @@ impl ZeldaState {
                     3
                 },
             );
-        } else if self.tile_detect_position_view().spike_cactus_tiles() & 7 == 0 && r14 & 2 == 0 {
+        } else if self.tile_detect_position().spike_cactus_tiles() & 7 == 0 && r14 & 2 == 0 {
             self.player_state_view_mut().clear_conveyor_belt_state();
         }
 
@@ -3108,9 +3088,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_y_collision_tail(&mut self) {
-        if (self.tile_detect_position_view().vertical_ledge() & 7) == 7
-            && self.run_ledge_hop_timer()
-        {
+        if (self.tile_detect_position().vertical_ledge() & 7) == 7 && self.run_ledge_hop_timer() {
             self.link_cancel_dash();
             self.player_state_view_mut()
                 .increment_about_to_jump_off_ledge();
@@ -3121,7 +3099,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_sprite_damage_disable_timer(1);
             self.link_hop_in_or_out_of_water_y();
-        } else if (self.tile_detect_position_view().deepwater() & 7) == 7
+        } else if (self.tile_detect_position().deepwater() & 7) == 7
             && !self.player_state_view().is_in_deep_water()
         {
             self.link_cancel_dash();
@@ -3140,11 +3118,11 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_sprite_damage_disable_timer(1);
             self.link_hop_in_or_out_of_water_y();
-        } else if self.tile_detect_position_view().normal_tiles() & 2 != 0
+        } else if self.tile_detect_position().normal_tiles() & 2 != 0
             && self.player_state_view().is_in_deep_water()
         {
             if self.player_state_view().has_auxiliary_state() {
-                self.tile_detect_position_view_mut().set_collision_bits(7);
+                self.tile_detect_position_mut().set_collision_bits(7);
             } else {
                 self.link_cancel_dash();
                 self.player_state_view_mut()
@@ -3152,7 +3130,7 @@ impl ZeldaState {
                 self.player_state_view_mut().clear_deep_water_state();
                 if self.ancilla_add_splash(0x15, 0) {
                     self.player_state_view_mut().enter_deep_water_state();
-                    self.tile_detect_position_view_mut().set_collision_bits(7);
+                    self.tile_detect_position_mut().set_collision_bits(7);
                 } else {
                     self.player_state_view_mut()
                         .set_sprite_damage_disable_timer(1);
@@ -3161,15 +3139,15 @@ impl ZeldaState {
             }
         }
 
-        if (self.tile_detect_position_view().stair_tile() & 7) == 7 {
+        if (self.tile_detect_position().stair_tile() & 7) == 7 {
             if self.player_state_view().incapacitated_timer() != 0 {
-                let stair_bits = (self.tile_detect_position_view().stair_tile() & 7) as u16;
-                self.tile_detect_position_view_mut()
+                let stair_bits = (self.tile_detect_position().stair_tile() & 7) as u16;
+                self.tile_detect_position_mut()
                     .set_collision_bits(stair_bits);
                 self.handle_pushing_bonking_snaps_y();
                 return;
             }
-            let stairs = self.tile_detect_position_view().inroom_staircase();
+            let stairs = self.tile_detect_position().inroom_staircase();
             if stairs & 0x77 != 0 {
                 let submodule = if stairs & 0x70 != 0 { 16 } else { 8 };
                 self.set_submodule(submodule);
@@ -3177,10 +3155,7 @@ impl ZeldaState {
                 self.link_cancel_dash();
             } else {
                 const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
-                if self
-                    .enhanced_features_view()
-                    .has(FEATURES0_TURN_WHILE_DASHING)
-                {
+                if self.enhanced_features().has(FEATURES0_TURN_WHILE_DASHING) {
                     self.link_cancel_dash();
                 }
             }
@@ -3197,9 +3172,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_x_collision_tail(&mut self) {
-        if self.tile_detect_position_view().horizontal_ledge() & 7 == 7
-            && self.run_ledge_hop_timer()
-        {
+        if self.tile_detect_position().horizontal_ledge() & 7 == 7 && self.run_ledge_hop_timer() {
             self.link_cancel_dash();
             self.player_state_view_mut()
                 .increment_about_to_jump_off_ledge();
@@ -3230,8 +3203,8 @@ impl ZeldaState {
                 .promote_pending_speed_modifier();
         }
 
-        let r14 = self.tile_detect_position_view().collision_bits();
-        if self.tile_detect_position_view().pit_tile() & 5 != 0 && r14 & 2 == 0 {
+        let r14 = self.tile_detect_position().collision_bits();
+        if self.tile_detect_position().pit_tile() & 5 != 0 && r14 & 2 == 0 {
             self.start_falling_into_hole();
             return true;
         }
@@ -3241,7 +3214,7 @@ impl ZeldaState {
         } else {
             self.player_state_view_mut().clear_near_pit_state();
         }
-        if self.tile_detect_position_view().spike_cactus_tiles() & 7 != 0 {
+        if self.tile_detect_position().spike_cactus_tiles() & 7 != 0 {
             if (self.player_state_view().incapacitated_timer()
                 | self.player_state_view().blink_countdown()
                 | self.player_state_view().is_cape_active() as u8)
@@ -3266,8 +3239,8 @@ impl ZeldaState {
                     return true;
                 }
             } else {
-                let spike_bits = (self.tile_detect_position_view().spike_cactus_tiles() & 7) as u16;
-                self.tile_detect_position_view_mut()
+                let spike_bits = (self.tile_detect_position().spike_cactus_tiles() & 7) as u16;
+                self.tile_detect_position_mut()
                     .set_collision_bits(spike_bits);
             }
         }
@@ -3282,9 +3255,9 @@ impl ZeldaState {
     }
 
     fn handle_indoor_pushblock_timeout(&mut self, y_axis: bool) {
-        let block_flags = self.tile_detect_position_view().block_flags();
+        let block_flags = self.tile_detect_position().block_flags();
         if block_flags != 0 && self.player_state_view().num_orthogonal_directions() == 0 {
-            self.tile_detect_position_view_mut()
+            self.tile_detect_position_mut()
                 .set_staircase_cache(block_flags as u8);
             self.player_state_view_mut()
                 .decrement_gravestone_push_timeout();
@@ -3297,15 +3270,15 @@ impl ZeldaState {
                     let idx = self.find_free_moving_block_slot(i);
                     if idx != 0xff {
                         let slot = idx as usize;
-                        self.tile_detect_position_view_mut()
+                        self.tile_detect_position_mut()
                             .set_collision_bits(idx as u16);
                         if !self.initialize_push_block(idx, (i * 2) as u8) {
                             self.sprite_dungeon_draw_single_push_block(slot * 2);
-                            self.tile_detect_position_view_mut().set_collision_bits(4);
+                            self.tile_detect_position_mut().set_collision_bits(4);
                             let facing =
                                 self.player_state_view().last_direction_moved_towards() * 2;
-                            self.pushed_block_view_mut().set_facing_player(slot, facing);
-                            self.pushed_block_view_mut().set_push_direction(facing);
+                            self.pushed_block_mut().set_facing_player(slot, facing);
+                            self.pushed_block_mut().set_push_direction(facing);
                             let target = if y_axis {
                                 let y_lo = self.pushed_block_view().y_low(slot);
                                 y_lo.wrapping_sub(u8::from(
@@ -3317,7 +3290,7 @@ impl ZeldaState {
                                     self.player_state_view().last_direction_moved_towards() != 2,
                                 ))
                             } & 0x0f;
-                            self.pushed_block_view_mut().set_target_low(slot, target);
+                            self.pushed_block_mut().set_target_low(slot, target);
                         }
                     }
                 }
@@ -3360,11 +3333,11 @@ impl ZeldaState {
         const ACTION_X: [i8; 4] = [7, 7, -3, 16];
         const ACTION_Y: [i8; 4] = [6, 24, 12, 12];
 
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
         let facing = self.player_state_view().facing_index();
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let y0 = link_y.wrapping_add(ACTION_Y[facing] as i16 as u16) & mask;
@@ -3375,8 +3348,8 @@ impl ZeldaState {
         self.tile_detection_execute(x0, y0, 1);
         self.tile_detection_execute(x1, y1, 2);
 
-        let mut action = if (self.tile_detect_position_view().collision_bits()
-            | self.tile_detect_position_view().vertical_ledge() as u16)
+        let mut action = if (self.tile_detect_position().collision_bits()
+            | self.tile_detect_position().vertical_ledge() as u16)
             & 1
             != 0
         {
@@ -3388,49 +3361,47 @@ impl ZeldaState {
         if self.world_location_state().is_indoors() {
             let liftable = self.Dungeon_CheckForAndIDLiftableTile();
             if liftable != 0xffff {
-                self.tile_detect_position_view_mut()
+                self.tile_detect_position_mut()
                     .set_liftable_action_index_primary(ACTION_FOR_TILE[(liftable & 0x0f) as usize]);
             } else {
-                if self.tile_detect_position_view().read_something() & 1 != 0
+                if self.tile_detect_position().read_something() & 1 != 0
                     && self.player_state_view().facing() == 0
-                    && self.tile_detect_position_view().liftable_tile_index() == 0
+                    && self.tile_detect_position().liftable_tile_index() == 0
                 {
                     action = 4;
                 }
-                if self.tile_detect_position_view().chest() & 1 != 0 {
+                if self.tile_detect_position().chest() & 1 != 0 {
                     action = 5;
                 }
                 return action;
             }
         } else {
-            if self.tile_detect_position_view().read_something() & 1 == 0 {
-                if self.tile_detect_position_view().chest() & 1 != 0 {
+            if self.tile_detect_position().read_something() & 1 == 0 {
+                if self.tile_detect_position().chest() & 1 != 0 {
                     action = 5;
                 }
                 return action;
             }
             if self.player_state_view().facing() == 0
-                && self.tile_detect_position_view().liftable_tile_index() == 0
+                && self.tile_detect_position().liftable_tile_index() == 0
             {
                 action = 4;
-                if self.tile_detect_position_view().chest() & 1 != 0 {
+                if self.tile_detect_position().chest() & 1 != 0 {
                     action = 5;
                 }
                 return action;
             }
-            let liftable_primary = self.tile_detect_position_view().liftable_tile_index() >> 1;
-            self.tile_detect_position_view_mut()
+            let liftable_primary = self.tile_detect_position().liftable_tile_index() >> 1;
+            self.tile_detect_position_mut()
                 .set_liftable_action_index_primary(liftable_primary);
         }
 
-        let liftable_index = self
-            .tile_detect_position_view()
-            .liftable_action_index_primary() as usize;
+        let liftable_index = self.tile_detect_position().liftable_action_index_primary() as usize;
         if self.inventory_items().gloves() >= ACTION_FOR_GLOVES[liftable_index] {
             action = 1;
         }
 
-        if self.tile_detect_position_view().chest() & 1 != 0 {
+        if self.tile_detect_position().chest() & 1 != 0 {
             action = 5;
         }
         action
@@ -3439,7 +3410,7 @@ impl ZeldaState {
     pub(super) fn link_bonk_and_smash(&mut self) {
         if !self.player_state_view().is_running()
             || self.player_state_view().dash_counter() == 64
-            || self.tile_detect_position_view().dashable_tiles() & 0x70 == 0
+            || self.tile_detect_position().dashable_tiles() & 0x70 == 0
         {
             return;
         }
@@ -3539,8 +3510,7 @@ impl ZeldaState {
         let secret = self.overworld_reveal_secret_for_smash(pos);
         if secret == 0xffff {
             let screen = u16::from(self.world_location_state().overworld_screen_index()) as usize;
-            self.overworld_event_info_view_mut()
-                .set_event_bits(screen, 0x20);
+            self.overworld_event_info_mut().set_event_bits(screen, 0x20);
             self.system_signals_mut().set_sound_effect_2(27);
             self.dungeon_doors_mut().set_door_open_counter(80);
         }
@@ -3551,7 +3521,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_reveal_secret_for_smash(&mut self, pos: u16) -> u16 {
-        self.dungeon_secret_scratch_view_mut().clear_pending_kind();
+        self.dungeon_secret_scratch_mut().clear_pending_kind();
 
         let screen = u16::from(self.world_location_state().overworld_screen_index()) as usize;
         if screen >= 0x80 {
@@ -3584,22 +3554,21 @@ impl ZeldaState {
 
         let data = secrets[ptr + 2];
         if data != 0 && data < 0x80 {
-            self.dungeon_secret_scratch_view_mut().or_pending_kind(data);
+            self.dungeon_secret_scratch_mut().or_pending_kind(data);
         }
         if data < 0x80 {
             self.adjust_secret_for_powder_for_smash();
             return 0;
         }
 
-        self.dungeon_secret_scratch_view_mut()
-            .set_pending_kind(0xff);
-        if data != 0x84 && self.overworld_event_info_view().event_info(screen) & 2 == 0 {
-            if screen == 0x5b && self.follower_state_view().indicator() != 13 {
+        self.dungeon_secret_scratch_mut().set_pending_kind(0xff);
+        if data != 0x84 && self.overworld_event_info().event_info(screen) & 2 == 0 {
+            if screen == 0x5b && self.follower_state().indicator() != 13 {
                 self.adjust_secret_for_powder_for_smash();
                 return 0;
             }
             self.system_signals_mut().set_sound_effect_2(0x1b);
-        } else if data == 0x82 && self.enhanced_features_view().has(4096) {
+        } else if data == 0x82 && self.enhanced_features().has(4096) {
             self.system_signals_mut().set_sound_effect_2(0x1b);
         }
 
@@ -3610,8 +3579,7 @@ impl ZeldaState {
 
     fn adjust_secret_for_powder_for_smash(&mut self) {
         if self.player_state_view().item_in_hand_has(0x40) {
-            self.dungeon_secret_scratch_view_mut()
-                .set_powder_pending_kind();
+            self.dungeon_secret_scratch_mut().set_powder_pending_kind();
         }
     }
 
@@ -3619,10 +3587,10 @@ impl ZeldaState {
         if value == 0x0dc5 || value == 0x0dc9 {
             return;
         }
-        let x = self.memorized_tile_view().count() as usize;
-        self.memorized_tile_view_mut().set_entry_value(x, value);
-        self.memorized_tile_view_mut().set_entry_addr(x, pos);
-        self.memorized_tile_view_mut().set_count((x + 2) as u16);
+        let x = self.memorized_tile().count() as usize;
+        self.memorized_tile_mut().set_entry_value(x, value);
+        self.memorized_tile_mut().set_entry_addr(x, pos);
+        self.memorized_tile_mut().set_count((x + 2) as u16);
     }
 
     pub(super) fn overworld_draw_map16_for_smash(&mut self, pos: u16, value: u16) {
@@ -3661,7 +3629,7 @@ impl ZeldaState {
             0x0ddb, 0x0ddc, 0x0ddd, 0x0dde, 0x0dd1, 0x0dd2, 0x0ddb, 0x0ddc, 0x0e21, 0x0e22, 0x0e23,
             0x0e24,
         ];
-        let i = self.memorized_tile_view().count() as usize;
+        let i = self.memorized_tile().count() as usize;
         let j = (self.dungeon_doors().door_open_counter() >> 1) as usize;
         let base = self.dungeon_object_tracking().big_rock_starting_address();
         let entries = [
@@ -3671,15 +3639,13 @@ impl ZeldaState {
             (base.wrapping_add(0x82), DOOR_ANIM_TILES[j + 3]),
         ];
         for (n, (pos, tile)) in entries.into_iter().enumerate() {
-            self.memorized_tile_view_mut()
-                .set_entry_addr(i + n * 2, pos);
-            self.memorized_tile_view_mut()
-                .set_entry_value(i + n * 2, tile);
+            self.memorized_tile_mut().set_entry_addr(i + n * 2, pos);
+            self.memorized_tile_mut().set_entry_value(i + n * 2, tile);
             self.overworld_draw_map16_persist_for_smash(pos, tile);
         }
         let upload = self.display_state().vram_upload_cursor_usize();
         self.write_vram_upload_buffer_word(upload, 0xffff);
-        self.memorized_tile_view_mut().set_count((i + 8) as u16);
+        self.memorized_tile_mut().set_count((i + 8) as u16);
         let step = self.dungeon_doors().door_animation_step().wrapping_add(
             if self.dungeon_doors().door_open_counter() == 32 {
                 2
@@ -3739,7 +3705,7 @@ impl ZeldaState {
                 3
             },
         );
-        if self.tile_detect_position_view().slope_collision_bits() & 5 == 0 {
+        if self.tile_detect_position().slope_collision_bits() & 5 == 0 {
             self.player_state_view_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.player_state_view_mut()
@@ -3770,7 +3736,7 @@ impl ZeldaState {
                 1
             },
         );
-        if self.tile_detect_position_view().slope_collision_bits() & 5 == 0 {
+        if self.tile_detect_position().slope_collision_bits() & 5 == 0 {
             self.player_state_view_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.player_state_view_mut()
@@ -3823,8 +3789,8 @@ impl ZeldaState {
 
     pub(super) fn link_handle_cardinal_collision(&mut self) {
         self.replay_trace_submodule("cardinal-entry");
-        self.tile_detect_position_view_mut().clear_diag_state();
-        self.tile_detect_position_view_mut().clear_diagonal_tile();
+        self.tile_detect_position_mut().clear_diag_state();
+        self.tile_detect_position_mut().clear_diagonal_tile();
 
         let can_double_layer = if self.player_state_view().moving_against_diag_tile() & 0x30 != 0 {
             true
@@ -3839,14 +3805,10 @@ impl ZeldaState {
             {
                 self.player_state_view_mut().set_tile_coll_flag(2);
                 self.player_tile_detect_nearby();
-                let collision_bits = self.tile_detect_position_view().collision_bits() as u8;
-                self.tile_detect_position_view_mut()
+                let collision_bits = self.tile_detect_position().collision_bits() as u8;
+                self.tile_detect_position_mut()
                     .set_tile_collision_bits_primary(collision_bits);
-                if self
-                    .tile_detect_position_view()
-                    .tile_collision_bits_primary()
-                    != 0
-                {
+                if self.tile_detect_position().tile_collision_bits_primary() != 0 {
                     let floor_x_velocity =
                         self.dungeon_moving_floor().floor_x_velocity_low() as u16;
                     let floor_y_velocity =
@@ -3854,7 +3816,7 @@ impl ZeldaState {
                     self.player_state_view_mut()
                         .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
 
-                    let a = self.tile_detect_position_view().collision_bits() as u8;
+                    let a = self.tile_detect_position().collision_bits() as u8;
                     let horizontal_first = if a == 12 || a == 3 {
                         false
                     } else if a == 10 || a == 5 {
@@ -3887,10 +3849,8 @@ impl ZeldaState {
             (self.player_state_view().x_velocity() | self.player_state_view().y_velocity()) != 0;
         if collision == 2 {
             self.player_tile_detect_nearby();
-            if (self.tile_detect_position_view().collision_bits() as u8
-                | self
-                    .tile_detect_position_view()
-                    .tile_collision_bits_primary())
+            if (self.tile_detect_position().collision_bits() as u8
+                | self.tile_detect_position().tile_collision_bits_primary())
                 == 0x0f
             {
                 if self.player_state_view().blink_countdown() == 0 {
@@ -3923,7 +3883,7 @@ impl ZeldaState {
             && self.player_state_view().handler_state() != 19
         {
             self.player_tile_detect_nearby();
-            if self.tile_detect_position_view().pit_tile() & 0x0f != 0 {
+            if self.tile_detect_position().pit_tile() & 0x0f != 0 {
                 self.player_state_view_mut().set_handler_state(1);
                 if !self.player_state_view().is_running() {
                     self.player_state_view_mut().set_speed_setting(4);
@@ -3992,7 +3952,7 @@ impl ZeldaState {
             && (self.player_state_view().actual_z_velocity() as i8).is_negative()
         {
             self.tile_detect_main_handler(5);
-            if self.tile_detect_position_view().deepwater() & 1 != 0 {
+            if self.tile_detect_position().deepwater() & 1 != 0 {
                 self.player_state_view_mut().set_handler_state(4);
                 self.link_set_to_deep_water();
                 self.link_reset_sword_and_item_usage();
@@ -4100,7 +4060,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_speed_setting(0);
             self.player_state_view_mut().clear_handler_state();
             self.player_state_view_mut().clear_running();
-            self.swim_acceleration_view_mut().set_mode(0, 0);
+            self.swim_acceleration_mut().set_mode(0, 0);
             if self.player_state_view().button_b_frames() < 9 {
                 self.player_state_view_mut().clear_direction_lock();
             }
@@ -4111,8 +4071,8 @@ impl ZeldaState {
     }
 
     pub(super) fn reset_all_acceleration(&mut self) {
-        self.swim_acceleration_view_mut().clear_axis_motion(0);
-        self.swim_acceleration_view_mut().clear_axis_motion(2);
+        self.swim_acceleration_mut().clear_axis_motion(0);
+        self.swim_acceleration_mut().clear_axis_motion(2);
         for offset in [0, 2] {
             self.player_state_view_mut()
                 .set_swim_stroke_frame_counter(offset, 0);
@@ -4153,7 +4113,7 @@ impl ZeldaState {
     pub(super) fn link_handle_cape_passive_lift_check(&mut self) {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self.player_state_view().is_lifting_or_carrying()
-            || (self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+            || (self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
                 && self.player_state_view().has_grabbing_wall_state())
         {
             self.player_check_handle_cape_stuff();
@@ -4211,7 +4171,7 @@ impl ZeldaState {
         }
         if item != 3 {
             self.ancilla_sfx2_near(60);
-            self.dialogue_message_index_view_mut().set_value(123);
+            self.dialogue_message_index_mut().set_value(123);
             self.main_show_text_message();
         }
         false
@@ -4224,7 +4184,7 @@ impl ZeldaState {
         let idx = item as usize * 3 + self.player_state_view().magic_consumption_level() as usize;
         let cost = LINK_ITEM_MAGIC_COSTS[idx];
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        let clamp_full = self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES);
+        let clamp_full = self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES);
         self.player_state_view_mut().refund_magic(cost, clamp_full);
     }
 
@@ -4255,7 +4215,7 @@ impl ZeldaState {
                 .clear_button_mask_b_y_bits(0x40);
             if self.player_state_view().magic_power() == 0 {
                 self.ancilla_sfx2_near(60);
-                self.dialogue_message_index_view_mut().set_value(123);
+                self.dialogue_message_index_mut().set_value(123);
                 self.main_show_text_message();
                 return;
             }
@@ -4284,7 +4244,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_cape_decrement_counter(cape_timer);
             if self.player_state_view().magic_power() == 0
-                && self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+                && self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
             {
                 self.link_force_unequip_cape();
                 return;
@@ -4445,14 +4405,12 @@ impl ZeldaState {
         );
         if k >= 0 {
             let k = k as usize;
-            if self.archery_game_view().arrows_left() != 0 {
-                self.archery_game_view_mut().decrement_arrows_left();
-                self.player_resources_view_mut().increment_arrows_by(2);
+            if self.archery_game().arrows_left() != 0 {
+                self.archery_game_mut().decrement_arrows_left();
+                self.player_resources_mut().increment_arrows_by(2);
             }
-            if self.archery_game_view().out_of_arrows() == 0
-                && self.player_resources_view().arrows() != 0
-            {
-                if self.player_resources_view_mut().decrement_arrows() == 0 {
+            if self.archery_game().out_of_arrows() == 0 && self.player_resources().arrows() != 0 {
+                if self.player_resources_mut().decrement_arrows() == 0 {
                     self.hud_refresh_icon();
                 }
             } else {
@@ -4476,7 +4434,7 @@ impl ZeldaState {
         if self.player_state_view().button_mask_b_y() & 0x40 == 0 {
             if self.player_state_view().doorway_state() != 0
                 || !self.check_y_button_press()
-                || self.minigame_state_view().flag_boomerang_in_place() != 0
+                || self.minigame_state().flag_boomerang_in_place() != 0
             {
                 return;
             }
@@ -4580,8 +4538,7 @@ impl ZeldaState {
                         self.player_state_view_mut().clear_item_in_hand();
                         self.player_state_view_mut().clear_position_mode();
                         self.link_reset_boomerang_y_stuff();
-                        self.minigame_state_view_mut()
-                            .clear_flag_boomerang_in_place();
+                        self.minigame_state_mut().clear_flag_boomerang_in_place();
                         if self.ancilla_slot_view(0).ancilla_type() == 5 {
                             self.ancilla_slot_view_mut(0).set_ancilla_type(0);
                         }
@@ -4592,8 +4549,7 @@ impl ZeldaState {
 
             const ABILITY_BITMASKS: [u8; 8] = [0xe0, 0x40, 4, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0];
             if action as usize >= ABILITY_BITMASKS.len()
-                || (ABILITY_BITMASKS[action as usize]
-                    & self.player_resources_view().ability_flags())
+                || (ABILITY_BITMASKS[action as usize] & self.player_resources().ability_flags())
                     == 0
             {
                 self.player_state_view_mut().set_y_button_action_flags(0);
@@ -4664,10 +4620,10 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_moving_against_diag_tile();
 
-        let follower = self.follower_state_view().indicator() as usize;
-        if self.follower_state_view().indicator() == DASH_FOLLOWER_SLOWDOWN_INDICATORS[follower] {
+        let follower = self.follower_state().indicator() as usize;
+        if self.follower_state().indicator() == DASH_FOLLOWER_SLOWDOWN_INDICATORS[follower] {
             self.player_state_view_mut().set_speed_setting(0);
-            self.follower_state_view_mut().set_reacquire_timer(64);
+            self.follower_state_mut().set_reacquire_timer(64);
         }
     }
 
@@ -4688,7 +4644,7 @@ impl ZeldaState {
     pub(super) fn link_perform_read(&mut self) {
         let message = if self.world_location_state().is_indoors() {
             self.Dungeon_GetTeleMsg(self.world_location_state().dungeon_room as usize)
-        } else if self.save_progress_view().progress_indicator() < 2 {
+        } else if self.save_progress().progress_indicator() < 2 {
             0x003a
         } else {
             self.asset_u16(
@@ -4696,7 +4652,7 @@ impl ZeldaState {
                 u16::from(self.world_location_state().overworld_screen_index()) as usize,
             )
         };
-        self.dialogue_message_index_view_mut().set_value(message);
+        self.dialogue_message_index_mut().set_value(message);
         self.main_show_text_message();
         self.player_state_view_mut().set_y_button_action_flags(0);
     }
@@ -4711,7 +4667,7 @@ impl ZeldaState {
 
         self.player_state_view_mut().set_y_button_action_flags(0);
         let Some((mut item, chest_position)) =
-            self.OpenChestForItemResult(self.tile_detect_position_view().interacting_tile() as u8)
+            self.OpenChestForItemResult(self.tile_detect_position().interacting_tile() as u8)
         else {
             self.player_state_view_mut().set_item_receipt_method(0);
             return;
@@ -4832,7 +4788,7 @@ impl ZeldaState {
                 self.player_state_view_mut()
                     .set_y_button_action_step(LIFT_THROW_ACTION_STEPS[timer]);
                 if self.player_state_view().action_handler_timer() == 6 {
-                    self.dungeon_secret_scratch_view_mut().clear_pending_kind();
+                    self.dungeon_secret_scratch_mut().clear_pending_kind();
                     let (what, x, y) = if self.world_location_state().is_indoors() {
                         let mut pt = Point16U { x: 0, y: 0 };
                         let what = self.Dungeon_LiftAndReplaceLiftable(&mut pt);
@@ -4957,17 +4913,14 @@ impl ZeldaState {
     pub(super) fn link_item_bombs(&mut self) {
         const FEATURES0_MORE_ACTIVE_BOMBS: u32 = 1 << 2;
         if self.player_state_view().doorway_state() != 0
-            || self.follower_state_view().indicator() == 13
+            || self.follower_state().indicator() == 13
             || !self.check_y_button_press()
         {
             return;
         }
         self.player_state_view_mut()
             .clear_button_mask_b_y_bits(0x40);
-        let limit = if self
-            .enhanced_features_view()
-            .has(FEATURES0_MORE_ACTIVE_BOMBS)
-        {
+        let limit = if self.enhanced_features().has(FEATURES0_MORE_ACTIVE_BOMBS) {
             3
         } else {
             1
@@ -4999,7 +4952,7 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_button_mask_b_y_bits(0x40);
         let btidx = self
-            .player_resources_view()
+            .player_resources()
             .equipped_bottle_index()
             .wrapping_sub(1) as usize;
         if btidx >= 4 {
@@ -5012,8 +4965,7 @@ impl ZeldaState {
         if bottle < 3 {
             self.ancilla_sfx2_near(60);
         } else if bottle == 3 {
-            if self.player_resources_view().health_capacity()
-                == self.player_resources_view().current_health()
+            if self.player_resources().health_capacity() == self.player_resources().current_health()
             {
                 self.ancilla_sfx2_near(60);
                 return;
@@ -5025,7 +4977,7 @@ impl ZeldaState {
             self.set_submodule(4);
             self.set_saved_module_for_menu(main_module);
             self.set_main_module(14);
-            self.hud_state_view_mut().set_heart_refill_countdown(7);
+            self.hud_state_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 4 {
             if self.player_state_view().magic_power() == 128 {
@@ -5039,11 +4991,10 @@ impl ZeldaState {
             self.set_submodule(8);
             self.set_saved_module_for_menu(main_module);
             self.set_main_module(14);
-            self.hud_state_view_mut().set_heart_refill_countdown(7);
+            self.hud_state_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 5 {
-            if self.player_resources_view().health_capacity()
-                == self.player_resources_view().current_health()
+            if self.player_resources().health_capacity() == self.player_resources().current_health()
                 && self.player_state_view().magic_power() == 128
             {
                 self.ancilla_sfx2_near(60);
@@ -5056,7 +5007,7 @@ impl ZeldaState {
             self.set_submodule(9);
             self.set_saved_module_for_menu(main_module);
             self.set_main_module(14);
-            self.hud_state_view_mut().set_heart_refill_countdown(7);
+            self.hud_state_mut().set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 6 {
             self.player_state_view_mut().clear_item_in_hand();
@@ -5208,8 +5159,8 @@ impl ZeldaState {
                 self.ancilla_sfx3_near(27);
                 self.ancilla_add_dug_up_flute(54, 0);
             }
-            if (self.tile_detect_position_view().thick_grass()
-                | self.tile_detect_position_view().destruction_aftermath())
+            if (self.tile_detect_position().thick_grass()
+                | self.tile_detect_position().destruction_aftermath())
                 & 1
                 == 0
             {
@@ -5217,7 +5168,7 @@ impl ZeldaState {
                 self.ancilla_sfx2_near(5);
             } else {
                 self.ancilla_add_shovel_dirt(23, 0);
-                if self.minigame_state_view().is_archer_or_shovel_game() != 0 {
+                if self.minigame_state().is_archer_or_shovel_game() != 0 {
                     self.digging_game_guy_attempt_prize_spawn();
                 }
                 self.ancilla_sfx2_near(18);
@@ -5285,10 +5236,10 @@ impl ZeldaState {
             return;
         }
 
-        if self.minigame_state_view().is_archer_or_shovel_game() != 0
+        if self.minigame_state().is_archer_or_shovel_game() != 0
             && !self.player_state_view().is_bunny_mirror()
         {
-            if self.minigame_state_view().is_archer_or_shovel_game() == 2 {
+            if self.minigame_state().is_archer_or_shovel_game() == 2 {
                 self.link_item_bow();
             } else {
                 self.link_item_shovel();
@@ -5298,17 +5249,17 @@ impl ZeldaState {
 
         let old_down = self.player_state_view().joypad1h_last();
         let old_pressed = self.player_state_view().filtered_joypad_h();
-        let old_bottle = self.player_resources_view().equipped_bottle_index();
+        let old_bottle = self.player_resources().equipped_bottle_index();
         if !self.player_state_view().has_item_in_hand()
             && !self.player_state_view().has_position_mode()
             && old_down & 0x40 == 0
         {
             let btn_index = self.get_current_item_button_index();
             if btn_index != 0 {
-                let hud_item = self.save_progress_view().hud_current_item_slot(btn_index);
+                let hud_item = self.save_progress().hud_current_item_slot(btn_index);
                 if hud_item != 0 {
                     if hud_item >= 21 {
-                        self.player_resources_view_mut()
+                        self.player_resources_mut()
                             .set_equipped_bottle_index(hud_item - 20);
                     }
                     item = self.hud_lookup_inventory_item(hud_item);
@@ -5381,7 +5332,7 @@ impl ZeldaState {
         self.player_state_view_mut().set_joypad1h_last(old_down);
         self.player_state_view_mut()
             .set_filtered_joypad_h(old_pressed);
-        self.player_resources_view_mut()
+        self.player_resources_mut()
             .set_equipped_bottle_index(old_bottle);
     }
 
@@ -5433,7 +5384,7 @@ impl ZeldaState {
         }
 
         let step = self.player_state_view().spin_animation_step_counter() as usize;
-        let delays = if self.enhanced_features_view().has(FEATURES0_DIM_FLASHES) {
+        let delays = if self.enhanced_features().has(FEATURES0_DIM_FLASHES) {
             ETHER_ANIM_DELAYS_NO_FLASH
         } else {
             ETHER_ANIM_DELAYS
@@ -5561,8 +5512,8 @@ impl ZeldaState {
             if !self.check_y_button_press() {
                 return;
             }
-            if self.follower_state_view().indicator() == 10 {
-                self.dialogue_message_index_view_mut().set_value(289);
+            if self.follower_state().indicator() == 10 {
+                self.dialogue_message_index_mut().set_value(289);
                 self.main_show_text_message();
                 return;
             }
@@ -5573,9 +5524,7 @@ impl ZeldaState {
         const FEATURES0_MIRROR_TO_DARKWORLD: u32 = 8;
         if self.player_state_view().doorway_state() != 0
             || (self.player_state_view().cheat_walk_through_walls() == 0
-                && !self
-                    .enhanced_features_view()
-                    .has(FEATURES0_MIRROR_TO_DARKWORLD)
+                && !self.enhanced_features().has(FEATURES0_MIRROR_TO_DARKWORLD)
                 && self.world_location_state().is_outdoors()
                 && u16::from(self.world_location_state().overworld_screen_index()) & 0x40 == 0)
         {
@@ -5626,13 +5575,13 @@ impl ZeldaState {
         let world_changed = (u16::from(self.world_location_state().overworld_screen_index()) as u8
             & 0x40)
             != self.world_palette_theme().last_light_vs_dark_world();
-        let bonk_bits = self.tile_detect_position_view().bonk_bits_low();
+        let bonk_bits = self.tile_detect_position().bonk_bits_low();
         if world_changed && bonk_bits & 0x0c != 0 && Self::bit_sum4(bonk_bits) >= 2 {
             self.start_mirror_transition(44);
             return;
         }
 
-        if Self::bit_sum4(self.tile_detect_position_view().deepwater() as u8) >= 2 {
+        if Self::bit_sum4(self.tile_detect_position().deepwater() as u8) >= 2 {
             if self.player_state_view().has_flippers() {
                 self.link_set_to_deep_water();
                 self.player_state_view_mut().set_handler_state(4);
@@ -5657,10 +5606,10 @@ impl ZeldaState {
         self.player_state_view_mut().set_button_mask_b_y(0);
         self.player_state_view_mut().set_button_b_frames(0);
         self.player_state_view_mut().clear_direction_lock();
-        self.swim_acceleration_view_mut().set_mode(0, 0);
+        self.swim_acceleration_mut().set_mode(0, 0);
         self.player_state_view_mut().set_actual_y_velocity(0);
         if world_changed {
-            self.memorized_tile_view_mut().set_count(0);
+            self.memorized_tile_mut().set_count(0);
         }
         let handler_state = if self.player_state_view().has_moon_pearl()
             || u16::from(self.world_location_state().overworld_screen_index()) & 0x40 == 0
@@ -5676,22 +5625,20 @@ impl ZeldaState {
     pub(super) fn handle_followers_after_mirroring(&mut self) {
         self.tile_detect_main_handler(0);
         self.player_state_view_mut().clear_animation_step();
-        match self.follower_state_view().indicator() {
+        match self.follower_state().indicator() {
             12 | 13 => {
-                if self.follower_state_view().indicator() == 13 {
-                    self.hud_state_view_mut()
-                        .set_super_bomb_indicator_timer(0xfe);
-                    self.hud_state_view_mut()
-                        .set_super_bomb_indicator_counter(0);
+                if self.follower_state().indicator() == 13 {
+                    self.hud_state_mut().set_super_bomb_indicator_timer(0xfe);
+                    self.hud_state_mut().set_super_bomb_indicator_counter(0);
                 }
-                if self.follower_state_view().dropped() != 0 {
-                    self.follower_state_view_mut().set_dropped(0);
-                    self.follower_state_view_mut().set_indicator(0);
+                if self.follower_state().dropped() != 0 {
+                    self.follower_state_mut().set_dropped(0);
+                    self.follower_state_mut().set_indicator(0);
                 }
             }
-            9 | 10 => self.follower_state_view_mut().set_indicator(0),
+            9 | 10 => self.follower_state_mut().set_indicator(0),
             7 | 8 => {
-                self.follower_state_view_mut().xor_indicator(7 ^ 8);
+                self.follower_state_mut().xor_indicator(7 ^ 8);
                 self.load_follower_graphics();
                 self.ancilla_add_dwarf_poof(0x40, 4);
             }
@@ -5775,7 +5722,7 @@ impl ZeldaState {
 
         self.player_state_view_mut().clear_somaria_platform_state();
 
-        let hei = self.messaging_state_view().effect_index() as usize;
+        let hei = self.messaging_state().effect_index() as usize;
         let item_to_link = self.ancilla_slot_view(hei).item_to_link().wrapping_sub(1);
         self.ancilla_slot_view_mut(hei)
             .set_item_to_link(item_to_link);
@@ -5807,7 +5754,7 @@ impl ZeldaState {
         }
 
         self.ancilla_slot_view_mut(hei).set_ancilla_type(0);
-        self.follower_state_view_mut()
+        self.follower_state_mut()
             .set_hookshot_release_tail_index_from_tail_write_index();
         self.finish_hookshot_state_without_button_clamp();
 
@@ -5828,7 +5775,7 @@ impl ZeldaState {
         }
 
         self.player_tile_detect_nearby();
-        if self.tile_detect_position_view().deepwater() & 0x0f != 0
+        if self.tile_detect_position().deepwater() & 0x0f != 0
             && !self.player_state_view().is_in_deep_water()
         {
             self.link_set_to_deep_water();
@@ -5844,7 +5791,7 @@ impl ZeldaState {
             if self.player_state_view().button_b_frames() >= 9 {
                 self.player_state_view_mut().set_button_b_frames(9);
             }
-        } else if self.tile_detect_position_view().pit_tile() & 0x0f != 0 {
+        } else if self.tile_detect_position().pit_tile() & 0x0f != 0 {
             self.player_state_view_mut().set_sprite_oam_state_timer(9);
             self.player_state_view_mut().begin_pit_check();
             self.player_state_view_mut().set_handler_state(1);
@@ -5865,9 +5812,9 @@ impl ZeldaState {
         self.link_move_position();
         self.tile_detect_main_handler(5);
         if self.world_location_state().is_indoors() {
-            let x = (self.tile_detect_position_view().vertical_ledge() >> 4)
-                | self.tile_detect_position_view().vertical_ledge()
-                | self.tile_detect_position_view().horizontal_ledge();
+            let x = (self.tile_detect_position().vertical_ledge() >> 4)
+                | self.tile_detect_position().vertical_ledge()
+                | self.tile_detect_position().horizontal_ledge();
             if x & 1 != 0 {
                 self.player_state_view_mut()
                     .decrement_hookshot_bg_check_off_timer();
@@ -5881,14 +5828,14 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_water_ripple_or_grass_state();
         if !self.player_state_view().hookshot_interlock_has(2) {
-            if self.tile_detect_position_view().thick_grass_low() & 1 != 0 {
+            if self.tile_detect_position().thick_grass_low() & 1 != 0 {
                 self.player_state_view_mut()
                     .set_water_ripple_or_grass_state(2);
                 if !self.link_permission_for_slosh_sounds() {
                     self.ancilla_sfx2_near(26);
                 }
-            } else if (self.tile_detect_position_view().shallow_water_low()
-                | self.tile_detect_position_view().deepwater() as u8)
+            } else if (self.tile_detect_position().shallow_water_low()
+                | self.tile_detect_position().deepwater() as u8)
                 & 1
                 != 0
             {
@@ -5921,7 +5868,7 @@ impl ZeldaState {
             let mut did_charge_magic = false;
             if !(0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x2c) {
                 if !self.link_check_magic_cost(4) {
-                    if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+                    if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
                         self.player_state_view_mut()
                             .clear_button_mask_b_y_bits(0x40);
                     }
@@ -5933,8 +5880,7 @@ impl ZeldaState {
             self.player_state_view_mut()
                 .set_item_action_debug_value_2(1);
             if self.ancilla_add_somaria_block(0x2c, 1).is_none() {
-                if did_charge_magic || !self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
-                {
+                if did_charge_magic || !self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
                     self.refund_magic(4);
                 }
             }
@@ -6138,8 +6084,7 @@ impl ZeldaState {
             || self.player_state_view().is_menu_blocked()
             || self.dungeon_savegame_state().savegame_state_bits() & 0x8000 != 0
             || !sword_ok
-            || (self.follower_state_view().dropped() != 0
-                && self.follower_state_view().indicator() == 13);
+            || (self.follower_state().dropped() != 0 && self.follower_state().indicator() == 13);
         if blocked {
             self.ancilla_sfx2_near(60);
             return;
@@ -6191,7 +6136,7 @@ impl ZeldaState {
 
         let k = self.ancilla_add_simple(a, y)?;
         self.player_state_view_mut().clear_hookshot_interlock();
-        self.messaging_state_view_mut().set_effect_index(k as u8);
+        self.messaging_state_mut().set_effect_index(k as u8);
         let dir = self.player_state_view().facing() >> 1;
         {
             let mut hookshot = self.ancilla_slot_view_mut(k);
@@ -6269,12 +6214,12 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn cache_camera_properties(&mut self) {
-        self.ppu_scroll_copy_view_mut().cache_bg2_live_scroll();
+        self.ppu_scroll_copy_mut().cache_bg2_live_scroll();
         self.player_state_view_mut().cache_current_position();
-        let y_start = self.room_bounds_view().y_bound(0);
-        let y_end = self.room_bounds_view().y_bound(2);
-        let x_start = self.room_bounds_view().x_bound(0);
-        let x_end = self.room_bounds_view().x_bound(2);
+        let y_start = self.room_bounds().y_bound(0);
+        let y_end = self.room_bounds().y_bound(2);
+        let x_start = self.room_bounds().x_bound(0);
+        let x_end = self.room_bounds().x_bound(2);
         self.world_transient_mut()
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
         copy_le_u16(
@@ -6345,35 +6290,30 @@ impl ZeldaState {
                     && self.player_state_view().spin_attack_delay_timer() != 0
                 {
                     self.ancilla_slot_view_mut(0).set_ancilla_type(0);
-                    self.minigame_state_view_mut()
-                        .clear_flag_boomerang_in_place();
+                    self.minigame_state_mut().clear_flag_boomerang_in_place();
                 }
                 if self.player_state_view().blink_countdown() == 0 {
                     self.player_state_view_mut().set_blink_countdown(58);
                 }
                 self.ancilla_sfx2_near(38);
-                self.sprite_battle_view_mut()
-                    .increment_times_hurt_by_sprites();
-                let new_dmg = self
-                    .player_resources_view()
-                    .current_health()
-                    .wrapping_sub(dmg);
+                self.sprite_battle_mut().increment_times_hurt_by_sprites();
+                let new_dmg = self.player_resources().current_health().wrapping_sub(dmg);
                 let new_dmg = if new_dmg == 0 || new_dmg >= 0xa8 {
                     let main_layers = self.display_state().main_screen_layers;
                     let sub_layers = self.display_state().sub_screen_layers;
-                    self.ppu_scroll_copy_view_mut().set_mapbak_tm(main_layers);
-                    self.ppu_scroll_copy_view_mut().set_mapbak_ts(sub_layers);
+                    self.ppu_scroll_copy_mut().set_mapbak_tm(main_layers);
+                    self.ppu_scroll_copy_mut().set_mapbak_ts(sub_layers);
                     let main_module = self.frame_state().main_module;
                     self.set_saved_module_for_menu(main_module);
                     self.set_main_module(18);
                     self.set_submodule(1);
                     self.player_state_view_mut().clear_blink_countdown();
-                    self.player_resources_view_mut().set_heart_filler(0);
+                    self.player_resources_mut().set_heart_filler(0);
                     0
                 } else {
                     new_dmg
                 };
-                self.player_resources_view_mut().set_current_health(new_dmg);
+                self.player_resources_mut().set_current_health(new_dmg);
             }
         }
         if self.player_state_view().handler_state() != 0 {
@@ -6550,8 +6490,8 @@ impl ZeldaState {
         self.player_state_view_mut().set_actual_z_velocity(0xff);
         self.player_state_view_mut().set_recoil_timer(0);
         if self.player_state_view().flag_moving() != 0 {
-            self.swim_acceleration_view_mut().set_max_speed(0, 0x0180);
-            self.swim_acceleration_view_mut().set_max_speed(2, 0x0180);
+            self.swim_acceleration_mut().set_max_speed(0, 0x0180);
+            self.swim_acceleration_mut().set_max_speed(2, 0x0180);
             self.link_handle_swim_movements();
             return;
         }
@@ -6790,7 +6730,7 @@ impl ZeldaState {
             }
             const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
             if self.player_state_view().dash_countdown() != 0
-                && (!self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+                && (!self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
                     || self.player_state_view().joypad1l_last() & 0x80 != 0)
             {
                 self.link_state_dashing();
@@ -6830,7 +6770,7 @@ impl ZeldaState {
         self.link_handle_velocity();
 
         let link_y = self.player_state_view().y();
-        let target_y = self.tile_detect_position_view().y();
+        let target_y = self.tile_detect_position().y();
         if (link_y as i16).is_negative() && !(target_y as i16).is_negative() {
             if (!link_y).wrapping_add(1).wrapping_add(target_y) < 0x8000 {
                 return;
@@ -6840,7 +6780,7 @@ impl ZeldaState {
         }
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+        if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
             self.player_state_view_mut().clear_about_to_jump_off_ledge();
         }
         self.player_state_view_mut().set_y(target_y);
@@ -6853,22 +6793,19 @@ impl ZeldaState {
         self.set_submodule(0);
         self.player_state_view_mut()
             .clear_sprite_damage_disable_timer();
-        if self.follower_state_view().indicator() != 0
-            && self.follower_state_view().indicator() != 3
-        {
-            self.follower_state_view_mut().set_appearance_none_flag(0);
-            if self.follower_state_view().indicator() == 13 {
-                self.follower_state_view_mut().set_indicator(0);
-                self.hud_state_view_mut().set_super_bomb_indicator_timer(0);
-                self.hud_state_view_mut()
-                    .set_super_bomb_indicator_counter(0);
-                self.follower_state_view_mut().set_dropped(0);
+        if self.follower_state().indicator() != 0 && self.follower_state().indicator() != 3 {
+            self.follower_state_mut().set_appearance_none_flag(0);
+            if self.follower_state().indicator() == 13 {
+                self.follower_state_mut().set_indicator(0);
+                self.hud_state_mut().set_super_bomb_indicator_timer(0);
+                self.hud_state_mut().set_super_bomb_indicator_counter(0);
+                self.follower_state_mut().set_dropped(0);
             } else {
                 self.follower_initialize();
             }
         }
         self.tile_detect_main_handler(0);
-        if self.tile_detect_position_view().shallow_water() & 1 != 0 {
+        if self.tile_detect_position().shallow_water() & 1 != 0 {
             self.ancilla_sfx2_near(0x24);
         }
         self.player_tile_detect_nearby();
@@ -6877,13 +6814,13 @@ impl ZeldaState {
         }
 
         if self.dungeon_room_load().header_collision_2() == 2
-            && self.tile_detect_position_view().water_staircase() & 0x0f != 0
+            && self.tile_detect_position().water_staircase() & 0x0f != 0
         {
             self.player_state_view_mut().set_layer_collision_flags(
                 crate::game_state::constants::player::LAYER_COLLISION_BOTH,
             );
         }
-        if self.tile_detect_position_view().deepwater() & 0x0f == 0x0f {
+        if self.tile_detect_position().deepwater() & 0x0f == 0x0f {
             self.player_state_view_mut().enter_deep_water_state();
             self.player_state_view_mut()
                 .set_swim_flags_from_last_direction();
@@ -6896,7 +6833,7 @@ impl ZeldaState {
                 .clear_state_item_and_grab_flags();
             self.player_state_view_mut().set_speed_setting(0);
         } else {
-            let handler_state = if self.tile_detect_position_view().pit_tile() & 0x0f != 0 {
+            let handler_state = if self.tile_detect_position().pit_tile() & 0x0f != 0 {
                 1
             } else {
                 0
@@ -7083,16 +7020,16 @@ impl ZeldaState {
                     .last_direction_moved_towards()
                     .into(),
             );
-            let terrain = self.tile_detect_position_view().normal_tiles()
-                | self.tile_detect_position_view().pit_tile_word()
-                | self.tile_detect_position_view().destruction_aftermath()
-                | self.tile_detect_position_view().thick_grass()
-                | self.tile_detect_position_view().deepwater();
+            let terrain = self.tile_detect_position().normal_tiles()
+                | self.tile_detect_position().pit_tile_word()
+                | self.tile_detect_position().destruction_aftermath()
+                | self.tile_detect_position().thick_grass()
+                | self.tile_detect_position().deepwater();
             if terrain & 7 == 7 {
                 break;
             }
         }
-        if self.tile_detect_position_view().deepwater() & 7 != 0 {
+        if self.tile_detect_position().deepwater() & 7 != 0 {
             self.player_state_view_mut().enter_deep_water_state();
             if !self.player_state_view().is_in_auxiliary_state(4) {
                 self.player_state_view_mut().set_auxiliary_state(2);
@@ -7103,7 +7040,7 @@ impl ZeldaState {
             self.player_state_view_mut().clear_grabbing_wall();
             self.player_state_view_mut().set_speed_setting(0);
         }
-        if self.tile_detect_position_view().pit_tile_word() & 7 != 0 {
+        if self.tile_detect_position().pit_tile_word() & 7 != 0 {
             self.player_state_view_mut().mark_pit_landing_oam_state();
             self.player_state_view_mut().begin_pit_check();
         }
@@ -7164,10 +7101,10 @@ impl ZeldaState {
                 .into(),
         );
 
-        let terrain = self.tile_detect_position_view().normal_tiles()
-            | self.tile_detect_position_view().destruction_aftermath()
-            | self.tile_detect_position_view().thick_grass()
-            | self.tile_detect_position_view().deepwater();
+        let terrain = self.tile_detect_position().normal_tiles()
+            | self.tile_detect_position().destruction_aftermath()
+            | self.tile_detect_position().thick_grass()
+            | self.tile_detect_position().deepwater();
 
         if terrain & 7 != 7 {
             self.player_state_view_mut().set_y(original_y);
@@ -7202,7 +7139,7 @@ impl ZeldaState {
             self.player_state_view_mut().set_z_and_mirror(z);
         }
 
-        if self.tile_detect_position_view().deepwater() & 7 != 0 {
+        if self.tile_detect_position().deepwater() & 7 != 0 {
             self.player_state_view_mut().set_auxiliary_state(2);
             self.link_set_to_deep_water();
         }
@@ -7227,14 +7164,14 @@ impl ZeldaState {
                     .into(),
             );
 
-            let terrain = self.tile_detect_position_view().normal_tiles()
-                | self.tile_detect_position_view().destruction_aftermath()
-                | self.tile_detect_position_view().thick_grass()
-                | self.tile_detect_position_view().deepwater()
-                | self.tile_detect_position_view().pit_tile_word();
+            let terrain = self.tile_detect_position().normal_tiles()
+                | self.tile_detect_position().destruction_aftermath()
+                | self.tile_detect_position().thick_grass()
+                | self.tile_detect_position().deepwater()
+                | self.tile_detect_position().pit_tile_word();
 
             if terrain & 7 == 7 {
-                if self.tile_detect_position_view().deepwater() & 7 == 7 {
+                if self.tile_detect_position().deepwater() & 7 == 7 {
                     self.player_state_view_mut().enter_deep_water_state();
                     self.player_state_view_mut().set_auxiliary_state(2);
                     self.player_state_view_mut()
@@ -7373,16 +7310,16 @@ impl ZeldaState {
                     .into(),
             );
             let scratch = LEDGE_DIAG_BITS[o];
-            let terrain = self.tile_detect_position_view().normal_tiles()
-                | self.tile_detect_position_view().destruction_aftermath_low() as u16
-                | self.tile_detect_position_view().thick_grass_low() as u16
-                | self.tile_detect_position_view().deepwater();
+            let terrain = self.tile_detect_position().normal_tiles()
+                | self.tile_detect_position().destruction_aftermath_low() as u16
+                | self.tile_detect_position().thick_grass_low() as u16
+                | self.tile_detect_position().deepwater();
             if terrain & scratch as u16 == scratch as u16 {
                 break scratch;
             }
         };
 
-        if self.tile_detect_position_view().deepwater() & scratch as u16 != 0 {
+        if self.tile_detect_position().deepwater() & scratch as u16 != 0 {
             self.player_state_view_mut().enter_deep_water_state();
             self.player_state_view_mut().set_auxiliary_state(2);
             self.player_state_view_mut()
@@ -7426,12 +7363,12 @@ impl ZeldaState {
                 let mut falling_into_pit = false;
                 if matches!(self.player_state_view().handler_state(), 12 | 14) {
                     self.tile_detect_main_handler(0);
-                    if self.tile_detect_position_view().deepwater() as u8 & 1 != 0 {
+                    if self.tile_detect_position().deepwater() as u8 & 1 != 0 {
                         self.player_state_view_mut().set_handler_state(4);
                         self.link_set_to_deep_water();
                         self.link_reset_sword_and_item_usage();
                         self.ancilla_add_splash(21, 0);
-                    } else if self.tile_detect_position_view().pit_tile() & 1 != 0 {
+                    } else if self.tile_detect_position().pit_tile() & 1 != 0 {
                         self.player_state_view_mut().mark_pit_landing_oam_state();
                         self.player_state_view_mut().begin_pit_check();
                         self.player_state_view_mut().set_handler_state(1);
@@ -7541,10 +7478,9 @@ impl ZeldaState {
         }
         if (self.player_state_view_mut().decrement_dash_countdown() as i8).is_negative() {
             self.player_state_view_mut().set_dash_countdown(0);
-            let follower = self.follower_state_view().indicator() as usize;
-            if self.follower_state_view().indicator() == DASH_FOLLOWER_SLOWDOWN_INDICATORS[follower]
-            {
-                self.follower_state_view_mut()
+            let follower = self.follower_state().indicator() as usize;
+            if self.follower_state().indicator() == DASH_FOLLOWER_SLOWDOWN_INDICATORS[follower] {
+                self.follower_state_mut()
                     .set_indicator(DASH_FOLLOWER_RELEASE_INDICATORS[follower]);
             }
         } else {
@@ -7605,7 +7541,7 @@ impl ZeldaState {
         if self.inventory_items().sword_type().wrapping_add(1) & 0xfe != 0 {
             self.tile_detect_main_handler(7);
         }
-        if self.save_progress_view().progress_indicator() != 0 {
+        if self.save_progress().progress_indicator() != 0 {
             self.player_state_view_mut().add_button_mask_b_y_bits(0x80);
             self.player_state_view_mut().set_button_b_frames(9);
         }
@@ -7613,10 +7549,7 @@ impl ZeldaState {
 
         let mut want_stop_dash = false;
         const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
-        if self
-            .enhanced_features_view()
-            .has(FEATURES0_TURN_WHILE_DASHING)
-        {
+        if self.enhanced_features().has(FEATURES0_TURN_WHILE_DASHING) {
             if self.player_state_view().joypad1l_last() & 0x80 == 0 {
                 self.player_state_view_mut().set_dash_countdown(0x11);
                 want_stop_dash = true;
@@ -7649,9 +7582,7 @@ impl ZeldaState {
         }
 
         if self.player_state_view().speed_setting() == 0
-            && self
-                .enhanced_features_view()
-                .has(FEATURES0_TURN_WHILE_DASHING)
+            && self.enhanced_features().has(FEATURES0_TURN_WHILE_DASHING)
         {
             self.player_state_view_mut().set_speed_setting(16);
         }
@@ -7692,12 +7623,9 @@ impl ZeldaState {
         self.player_state_view_mut()
             .clear_spin_attack_step_counter();
 
-        let health = self
-            .player_resources_view()
-            .health_capacity()
-            .wrapping_sub(4);
+        let health = self.player_resources().health_capacity().wrapping_sub(4);
         let sword = self.inventory_items().sword_type();
-        if health < self.player_resources_view().current_health()
+        if health < self.player_resources().current_health()
             && sword.wrapping_add(1) & 0xfe != 0
             && sword >= 2
             && !(0..5)
@@ -7723,7 +7651,7 @@ impl ZeldaState {
             }
             if self.player_state_view().doorway_state() != 0 {
                 self.tile_detect_sword_swing_deep_in_door(self.player_state_view().doorway_state());
-                if self.tile_detect_position_view().collision_bits_low() & 0x30 == 0x30 {
+                if self.tile_detect_position().collision_bits_low() & 0x30 == 0x30 {
                     return;
                 }
             }
@@ -7787,7 +7715,7 @@ impl ZeldaState {
         if self.player_state_view().defense_flags() & 0x80 != 0
             || self.player_state_view().defense_flags() & 9 == 0
         {
-            if self.sprite_battle_view().damaging_enemies_timer() == 0 {
+            if self.sprite_battle().damaging_enemies_timer() == 0 {
                 self.player_state_view_mut().set_button_b_frames(9);
                 self.player_state_view_mut().set_direction_lock_bits(1);
                 self.player_state_view_mut().set_spin_attack_delay_timer(0);
@@ -7823,7 +7751,7 @@ impl ZeldaState {
                     self.calculate_sword_hit_box();
                 }
                 return;
-            } else if self.sprite_battle_view().damaging_enemies_timer() == 1 {
+            } else if self.sprite_battle().damaging_enemies_timer() == 1 {
                 self.link_reset_sword_and_item_usage();
                 return;
             }
@@ -7996,7 +7924,7 @@ impl ZeldaState {
                         self.player_state_view_mut()
                             .clear_sprite_damage_disable_timer();
                         let old_state = self.player_state_view().handler_state();
-                        self.tile_detect_position_view_mut()
+                        self.tile_detect_position_mut()
                             .set_interaction_scratch_y(old_state as u16);
                         if self.player_state_view().handler_state() != 6 {
                             self.player_state_view_mut().clear_button_b_frames();
@@ -8028,15 +7956,15 @@ impl ZeldaState {
                                 self.ancilla_add_splash(21, 0);
                             }
                             self.tile_detect_main_handler(0);
-                            if self.tile_detect_position_view().thick_grass_low() & 1 != 0 {
+                            if self.tile_detect_position().thick_grass_low() & 1 != 0 {
                                 self.ancilla_sfx2_near(26);
                             }
-                            if self.tile_detect_position_view().shallow_water_low() & 1 != 0
+                            if self.tile_detect_position().shallow_water_low() & 1 != 0
                                 && self.system_signals().sound_effect_1() != 36
                             {
                                 self.ancilla_sfx2_near(28);
                             }
-                            if self.tile_detect_position_view().deepwater() & 1 != 0 {
+                            if self.tile_detect_position().deepwater() & 1 != 0 {
                                 self.player_state_view_mut().set_handler_state(4);
                                 self.link_set_to_deep_water();
                                 self.link_reset_sword_and_item_usage();
@@ -8091,7 +8019,7 @@ impl ZeldaState {
         if self.player_state_view().should_probe_recoil_landing_tile() {
             self.player_tile_detect_nearby();
             self.replay_trace_player_state("recoil-timer-after-nearby");
-            if self.tile_detect_position_view().pit_tile() & 0x0f == 0x0f {
+            if self.tile_detect_position().pit_tile() & 0x0f == 0x0f {
                 self.player_state_view_mut().set_handler_state(1);
                 self.player_state_view_mut().set_speed_setting(4);
                 self.replay_trace_player_state("recoil-timer-set-pit");
@@ -8120,9 +8048,9 @@ impl ZeldaState {
         self.player_state_view_mut().and_defense_flags(!4);
         let debris_y = self.door_debris_view().y(k);
         let debris_x = self.door_debris_view().x(k);
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_interaction_scratch_y_bytes(debris_y, debris_x);
-        let big_rock = self.tile_detect_position_view().interaction_scratch_y();
+        let big_rock = self.tile_detect_position().interaction_scratch_y();
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(big_rock);
         let counter = match big_rock {
@@ -8135,7 +8063,7 @@ impl ZeldaState {
     }
 
     pub(super) fn somaria_block_handle_player_interaction(&mut self, k: usize) {
-        self.sprite_system_view_mut().set_cur_object_index(k as u8);
+        self.sprite_system_mut().set_cur_object_index(k as u8);
         if self.ancilla_slot_view(k).g() != 0 {
             return;
         }
@@ -8358,9 +8286,9 @@ impl ZeldaState {
         x = x.wrapping_add(self.dungeon_room_load().loading_bg_offset_h() & 0xff00);
         y = y.wrapping_add(self.dungeon_room_load().loading_bg_offset_v() & 0xff00);
 
-        self.pushed_block_view_mut().init_slot(slot, x, y);
+        self.pushed_block_mut().init_slot(slot, x, y);
 
-        if self.dungeon_header_view().primary_header_tag() != 38
+        if self.dungeon_header().primary_header_tag() != 38
             && self
                 .dungeon_object_tracking()
                 .replacement_tile_state(idx_word)
@@ -8398,15 +8326,15 @@ impl ZeldaState {
             .min(CHAR.len() - 1)];
         if ch != 0xff {
             let oam = self.oam_state_view().current_pointer_usize();
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .write_entry(oam, x as u8, y as u8, ch, 0x20);
             let ext = self.oam_state_view().current_extended_pointer_usize();
-            self.oam_state_view_mut().set_extended_byte_at(ext, 2);
+            self.oam_state_mut().set_extended_byte_at(ext, 2);
         }
     }
 
     pub(super) fn handle_layer_of_destination(&mut self) {
-        let hole_teleporter_plane = self.dungeon_header_view().hole_teleporter_plane(0);
+        let hole_teleporter_plane = self.dungeon_header().hole_teleporter_plane(0);
         self.player_state_view_mut().set_lower_level_states(
             u8::from(hole_teleporter_plane >= 2),
             u8::from(hole_teleporter_plane >= 1),
@@ -8415,12 +8343,8 @@ impl ZeldaState {
 
     pub(super) fn dungeon_pit_do_damage(&mut self) {
         self.set_submodule(20);
-        if self
-            .player_resources_view_mut()
-            .decrement_current_health_by(8)
-            >= 0xa8
-        {
-            self.player_resources_view_mut().set_current_health(0);
+        if self.player_resources_mut().decrement_current_health_by(8) >= 0xa8 {
+            self.player_resources_mut().set_current_health(0);
         }
     }
 
@@ -8431,7 +8355,7 @@ impl ZeldaState {
         self.player_state_view_mut().clear_conveyor_belt_state();
         self.player_state_view_mut().set_layer_collision_flags(0);
         self.player_state_view_mut().clear_immobilized();
-        self.follower_state_view_mut().clear_palette_swap_flag();
+        self.follower_state_mut().clear_palette_swap_flag();
         self.player_state_view_mut().clear_faint_animation_active();
         self.player_state_view_mut().clear_given_damage();
         self.player_state_view_mut().clear_actual_velocity_xy();
@@ -8439,7 +8363,7 @@ impl ZeldaState {
         self.player_state_view_mut().set_z(0);
         self.player_state_view_mut()
             .clear_water_ripple_or_grass_state();
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_tile_collision_bits_primary(0);
         self.player_state_view_mut().clear_blink_countdown();
         self.player_state_view_mut().clear_handler_state();
@@ -8465,14 +8389,14 @@ impl ZeldaState {
                 && self.player_state_view().handler_state() != 17
             {
                 self.link_handle_y_item();
-                if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+                if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
                     && ((self.frame_state().main_module == 14 && self.frame_state().submodule != 2)
                         || matches!(self.player_state_view().handler_state(), 8 | 9 | 10))
                 {
                     self.finish_ground_movement_clear_vel_tail();
                     return;
                 }
-                if self.save_progress_view().progress_indicator() != 0 {
+                if self.save_progress().progress_indicator() != 0 {
                     self.link_handle_sword_cooldown();
                     if self.player_state_view().handler_state() == 3 {
                         self.finish_ground_movement_clear_vel_tail();
@@ -8509,8 +8433,8 @@ impl ZeldaState {
                 || (self.player_state_view().button_mask_b_y() & 0x80) == 0)
         {
             if self.player_state_view().flag_moving() != 0 {
-                self.swim_acceleration_view_mut().set_max_speed(0, 0x0180);
-                self.swim_acceleration_view_mut().set_max_speed(2, 0x0180);
+                self.swim_acceleration_mut().set_max_speed(0, 0x0180);
+                self.swim_acceleration_mut().set_max_speed(2, 0x0180);
                 self.link_handle_swim_movements();
                 return;
             }
@@ -8567,8 +8491,7 @@ impl ZeldaState {
             }
 
             if matches!(
-                self.tile_detect_position_view()
-                    .liftable_action_index_primary(),
+                self.tile_detect_position().liftable_action_index_primary(),
                 5 | 6
             ) {
                 self.player_state_view_mut().set_action_handler_timer(1);
@@ -8659,7 +8582,7 @@ impl ZeldaState {
         const DIGGING_GAME_X: [i8; 2] = [0, 19];
         const DIGGING_GAME_ITEMS: [u8; 4] = [0xdb, 0xda, 0xd9, 0xdf];
 
-        self.digging_game_prize_view_mut().increment_attempts();
+        self.digging_game_prize_mut().increment_attempts();
         if self.player_state_view().y() >= 0x0b18 {
             return;
         }
@@ -8667,13 +8590,13 @@ impl ZeldaState {
         let item_to_spawn = match j {
             0..=3 => DIGGING_GAME_ITEMS[j as usize],
             4 => {
-                if self.digging_game_prize_view().attempts() < 25
-                    || self.digging_game_prize_view().spawned_marker() != 0
+                if self.digging_game_prize().attempts() < 25
+                    || self.digging_game_prize().spawned_marker() != 0
                     || self.get_random_number() & 3 != 0
                 {
                     return;
                 }
-                self.digging_game_prize_view_mut().mark_spawned();
+                self.digging_game_prize_mut().mark_spawned();
                 0xeb
             }
             _ => return,
@@ -8742,7 +8665,7 @@ impl ZeldaState {
         self.player_state_view_mut().clear_page_movement_deltas();
 
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-        if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+        if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
             && !(self.frame_state().main_module == 7 && self.frame_state().submodule == 0)
         {
             return;

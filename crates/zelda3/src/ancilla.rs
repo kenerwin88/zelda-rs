@@ -312,20 +312,18 @@ impl ZeldaState {
     }
 
     fn ancilla_weapon_tink(&mut self) {
-        if self.garnish_state_view().repulsespark_timer() == 0 {
+        if self.garnish_state().repulsespark_timer() == 0 {
             return;
         }
-        self.sprite_system_view_mut().set_alert_flag(2);
-        let anim_delay = self
-            .garnish_state_view_mut()
-            .decrement_repulsespark_anim_delay();
+        self.sprite_system_mut().set_alert_flag(2);
+        let anim_delay = self.garnish_state_mut().decrement_repulsespark_anim_delay();
         if sign8(anim_delay) {
-            self.garnish_state_view_mut().decrement_repulsespark_timer();
-            self.garnish_state_view_mut().set_repulsespark_anim_delay(1);
+            self.garnish_state_mut().decrement_repulsespark_timer();
+            self.garnish_state_mut().set_repulsespark_anim_delay(1);
         }
 
         if self.oam_state_view().has_sprite_sorting() {
-            if self.garnish_state_view().repulsespark_floor_status() != 0 {
+            if self.garnish_state().repulsespark_floor_status() != 0 {
                 self.oam_allocate_from_region_f(0x10);
             } else {
                 self.oam_allocate_from_region_d(0x10);
@@ -335,29 +333,28 @@ impl ZeldaState {
         }
 
         let x = self
-            .garnish_state_view()
+            .garnish_state()
             .repulsespark_x_lo()
             .wrapping_sub(self.world_scroll().bg2_x_low());
         let y = self
-            .garnish_state_view()
+            .garnish_state()
             .repulsespark_y_lo()
             .wrapping_sub(self.world_scroll().bg2_y_low());
         if x >= 0xf8 || y >= 0xf0 {
-            self.garnish_state_view_mut().clear_repulsespark_timer();
+            self.garnish_state_mut().clear_repulsespark_timer();
             return;
         }
 
         let oam = self.oam_state_view().current_pointer_usize();
         let oam_idx = (oam - OAM_BUF) / 4;
         const REPULSE_SPARK_FLAGS: [u8; 4] = [0x22, 0x12, 0x22, 0x22];
-        let flags =
-            REPULSE_SPARK_FLAGS[self.garnish_state_view().repulsespark_floor_status() as usize];
-        if self.garnish_state_view().repulsespark_timer() >= 3 {
+        let flags = REPULSE_SPARK_FLAGS[self.garnish_state().repulsespark_floor_status() as usize];
+        if self.garnish_state().repulsespark_timer() >= 3 {
             self.set_oam_plain(
                 oam_idx,
                 x,
                 y,
-                if self.garnish_state_view().repulsespark_timer() < 9 {
+                if self.garnish_state().repulsespark_timer() < 9 {
                     0x92
                 } else {
                     0x80
@@ -369,7 +366,7 @@ impl ZeldaState {
         }
 
         const REPULSE_SPARK_CHAR: [u8; 3] = [0x93, 0x82, 0x81];
-        let c = REPULSE_SPARK_CHAR[self.garnish_state_view().repulsespark_timer() as usize];
+        let c = REPULSE_SPARK_CHAR[self.garnish_state().repulsespark_timer() as usize];
         self.set_oam_plain(oam_idx, x.wrapping_sub(4), y.wrapping_sub(4), c, flags, 0);
         self.set_oam_plain(
             oam_idx + 1,
@@ -411,7 +408,7 @@ impl ZeldaState {
 
     fn ancilla_execute_all(&mut self) {
         for i in (0..10).rev() {
-            self.sprite_system_view_mut().set_cur_object_index(i as u8);
+            self.sprite_system_mut().set_cur_object_index(i as u8);
             let ty = self.ancilla_slot_view(i).ancilla_type();
             if ty != 0 {
                 let ancilla = self.ancilla_slot_view(i);
@@ -705,7 +702,7 @@ impl ZeldaState {
             .set_receive_item_index(item_type);
 
         let (x, y) = if item_idx != 0 && item_idx != 5 {
-            if self.save_progress_view().palace_index_x2() == 20 {
+            if self.save_progress().palace_index_x2() == 20 {
                 (
                     (self.player_state_view().x() & 0xff00) | 0x0100,
                     (self.player_state_view().y() & 0xff00) | 0x0100,
@@ -741,11 +738,11 @@ impl ZeldaState {
             return;
         };
         let mut j = self.player_state_view().facing() as usize * 2;
-        self.effect_angle_scratch_view_mut()
+        self.effect_angle_scratch_mut()
             .set_angles4(&SWORD_BEAM_TRAILING_ANGLES, j);
-        self.effect_angle_scratch_view_mut()
+        self.effect_angle_scratch_mut()
             .set_trailing_angle(SWORD_BEAM_TRAILING_ANGLES[j + 3]);
-        self.effect_angle_scratch_view_mut().set_radial_radius(14);
+        self.effect_angle_scratch_mut().set_radial_radius(14);
         j = self.player_state_view().facing_index();
         {
             let mut ancilla = self.ancilla_slot_view_mut(k);
@@ -764,7 +761,7 @@ impl ZeldaState {
 
         let swordbeam_temp_y = self.player_state_view().y().wrapping_add(12);
         let swordbeam_temp_x = self.player_state_view().x().wrapping_add(8);
-        self.ether_orbit_view_mut()
+        self.ether_orbit_mut()
             .set_swordbeam_temp(swordbeam_temp_x, swordbeam_temp_y);
 
         if self.ancilla_check_initial_tile_a(k) >= 0 {
@@ -954,7 +951,7 @@ impl ZeldaState {
                     ancilla.set_ancilla_type(0x32);
                     ancilla.set_floor(floor);
                 }
-                self.blast_wall_fireball_view_mut(k).set_timer(16);
+                self.blast_wall_fireball_mut(k).set_timer(16);
                 let j = (self.frame_state().frame_counter & 15) as usize;
                 let velocity = BLAST_WALL_FIREBALL_VELOCITY[j];
                 {
@@ -964,8 +961,8 @@ impl ZeldaState {
                 }
                 self.ancilla_set_xy(
                     k,
-                    self.blast_wall_fragment_view(r4).x().wrapping_add(16),
-                    self.blast_wall_fragment_view(r4).y().wrapping_add(8),
+                    self.blast_wall_fragment(r4).x().wrapping_add(16),
+                    self.blast_wall_fragment(r4).y().wrapping_add(8),
                 );
                 return;
             }
@@ -985,12 +982,11 @@ impl ZeldaState {
         const SHOOT_BOW_XVEL: [i8; 4] = [0, 0, -48, 48];
         const SHOOT_BOW_YVEL: [i8; 4] = [-48, 48, 0, 0];
 
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_interaction_scratch_y(ycoord);
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut()
             .set_interaction_scratch_x(xcoord);
-        self.tile_detect_position_view_mut()
-            .set_interacting_tile_low(ax);
+        self.tile_detect_position_mut().set_interacting_tile_low(ax);
 
         if self.ancilla_add_check_for_presence(a) {
             return -1;
@@ -1039,13 +1035,11 @@ impl ZeldaState {
             }
         } else {
             loop {
-                let rotate = self
-                    .sprite_system_view_mut()
-                    .decrement_ancilla_alloc_rotate();
+                let rotate = self.sprite_system_mut().decrement_ancilla_alloc_rotate();
                 if sign8(rotate) {
-                    self.sprite_system_view_mut().set_ancilla_alloc_rotate(4);
+                    self.sprite_system_mut().set_ancilla_alloc_rotate(4);
                 }
-                k = self.sprite_system_view().ancilla_alloc_rotate() as i32;
+                k = self.sprite_system().ancilla_alloc_rotate() as i32;
                 if self.ancilla_slot_view(k as usize).ancilla_type() == 10 {
                     break;
                 }
@@ -1089,7 +1083,7 @@ impl ZeldaState {
             ancilla.set_g(0);
         }
 
-        let xt: u16 = if self.enhanced_features_view().has(1) {
+        let xt: u16 = if self.enhanced_features().has(1) {
             0x40
         } else {
             0
@@ -1423,7 +1417,7 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() == 7
             && self.ancilla_slot_view(k).work_byte_3() == 2
         {
-            self.door_debris_view_mut().set_x_word(k, 0);
+            self.door_debris_mut().set_x_word(k, 0);
             self.bomb_check_for_destructibles(
                 self.ancilla_get_x(k),
                 self.ancilla_get_y(k),
@@ -1465,9 +1459,9 @@ impl ZeldaState {
     fn boomerang_screen_edge(&self, k: usize) -> bool {
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
-        if self.messaging_state_view().effect_index() & 3 != 0 {
+        if self.messaging_state().effect_index() & 3 != 0 {
             let t = x
-                .wrapping_add(if self.messaging_state_view().effect_index() & 1 != 0 {
+                .wrapping_add(if self.messaging_state().effect_index() & 1 != 0 {
                     16
                 } else {
                     0
@@ -1477,9 +1471,9 @@ impl ZeldaState {
                 return true;
             }
         }
-        if self.messaging_state_view().effect_index() & 12 != 0 {
+        if self.messaging_state().effect_index() & 12 != 0 {
             let t = y
-                .wrapping_add(if self.messaging_state_view().effect_index() & 4 != 0 {
+                .wrapping_add(if self.messaging_state().effect_index() & 4 != 0 {
                     16
                 } else {
                     0
@@ -1505,8 +1499,7 @@ impl ZeldaState {
 
     fn boomerang_terminate(&mut self, k: usize) {
         self.ancilla_slot_view_mut(k).clear();
-        self.minigame_state_view_mut()
-            .clear_flag_boomerang_in_place();
+        self.minigame_state_mut().clear_flag_boomerang_in_place();
         if self.player_state_view().item_in_hand_has(0x80) {
             self.player_state_view_mut().clear_item_in_hand();
             self.player_state_view_mut()
@@ -1544,7 +1537,7 @@ impl ZeldaState {
                 if self.player_state_view().is_bunny_mirror()
                     || self.player_state_view().has_auxiliary_state()
                     || !self.player_state_view().has_item_in_hand()
-                        && self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES)
+                        && self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES)
                 {
                     self.boomerang_terminate(k);
                     return;
@@ -1623,7 +1616,7 @@ impl ZeldaState {
                 self.ancilla_slot_view(k).work_byte_23(),
                 self.player_state_view().x(),
                 self.player_state_view().y(),
-                self.messaging_state_view().effect_index(),
+                self.messaging_state().effect_index(),
             );
         }
         let hit_spr = self.ancilla_check_sprite_collision(k);
@@ -1874,11 +1867,11 @@ impl ZeldaState {
             let priority =
                 (TAGALONG_LAYER_BITS[self.player_state_view().lower_level_state() as usize] as u16)
                     << 8;
-            self.oam_state_view_mut().set_priority_word(priority);
+            self.oam_state_mut().set_priority_word(priority);
         }
 
         if self.ancilla_slot_view(k).object_priority() != 0 {
-            self.oam_state_view_mut().set_priority_word(0x3000);
+            self.oam_state_mut().set_priority_word(0x3000);
         }
 
         if self.frame_state().submodule == 0 && self.ancilla_slot_view(k).aux_timer() != 0 {
@@ -1901,9 +1894,9 @@ impl ZeldaState {
         let y = info_y.wrapping_add(offset.y as i16 as u16);
         if self.ancilla_slot_view(k).aux_timer() == 0 {
             let i = BOOMERANG_DRAW_OAM_IDX[self.oam_state_view().sprite_sorting_offset_index()];
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_current_extended_pointer((i >> 2) + 0xa20);
-            self.oam_state_view_mut().set_current_pointer(i + 0x800);
+            self.oam_state_mut().set_current_pointer(i + 0x800);
         }
         self.ancilla_set_oam_safe(
             self.oam_state_view().current_pointer_usize(),
@@ -1929,7 +1922,7 @@ impl ZeldaState {
     }
 
     fn ancilla_sword_wall_hit(&mut self, k: usize) {
-        self.sprite_system_view_mut().set_alert_flag(3);
+        self.sprite_system_mut().set_alert_flag(3);
         if sign8(self.ancilla_slot_view_mut(k).tick_aux_timer()) {
             let t = self.ancilla_slot_view_mut(k).advance_item_to_link();
             if t == 8 {
@@ -1963,7 +1956,7 @@ impl ZeldaState {
                     .add_movement_velocity_delta(0, offs as u16);
             }
         }
-        self.sprite_system_view_mut().set_alert_flag(3);
+        self.sprite_system_mut().set_alert_flag(3);
     }
 
     fn ancilla1_e_dash_dust(&mut self, k: usize) {
@@ -2313,8 +2306,8 @@ impl ZeldaState {
             [0, 6, 4, 0, 2, 10, 12, 0, 0, 8, 14, 0, 0, 0, 0, 0];
         let temp_x = self.ancilla_get_x(k);
         let temp_y = self.ancilla_get_y(k);
-        self.minigame_state_view_mut().set_boomerang_temp_x(temp_x);
-        self.minigame_state_view_mut().set_boomerang_temp_y(temp_y);
+        self.minigame_state_mut().set_boomerang_temp_x(temp_x);
+        self.minigame_state_mut().set_boomerang_temp_y(temp_y);
         if let Some(k) = self.ancilla_add_ancilla(6, 1) {
             {
                 let mut wall_clink = self.ancilla_slot_view_mut(k);
@@ -2322,14 +2315,14 @@ impl ZeldaState {
                 wall_clink.set_work_byte_3(1);
             }
             let j = (BOOMERANG_WALL_HIT_OFFSET_INDEX
-                [self.messaging_state_view().effect_index() as usize]
+                [self.messaging_state().effect_index() as usize]
                 >> 1) as usize;
             self.ancilla_set_xy(
                 k,
-                self.minigame_state_view()
+                self.minigame_state()
                     .boomerang_temp_x()
                     .wrapping_add(BOOMERANG_WALL_HIT_X[j] as i16 as u16),
-                self.minigame_state_view()
+                self.minigame_state()
                     .boomerang_temp_y()
                     .wrapping_add(BOOMERANG_WALL_HIT_Y[j] as i16 as u16),
             );
@@ -2445,7 +2438,7 @@ impl ZeldaState {
         ];
         self.ancilla_slot_view_mut(k).set_ancilla_type(0x31);
         let j = (self.player_state_view().facing() << 1) as usize;
-        self.effect_angle_scratch_view_mut()
+        self.effect_angle_scratch_mut()
             .set_angles4(&CANE_SPARK_TRAILING_ANGLES, j);
         let value = 0;
         self.ancilla_slot_view_mut(k).set_g(value);
@@ -2461,7 +2454,7 @@ impl ZeldaState {
         let value = 2;
         self.ancilla_slot_view_mut(k).set_work_byte_1(value);
         self.ancilla_slot_view_mut(k).set_timer(21);
-        self.effect_angle_scratch_view_mut().set_radial_radius(20);
+        self.effect_angle_scratch_mut().set_radial_radius(20);
         self.ancilla_sfx3_near(0x30);
         self.ancilla31_byrna_spark(k);
     }
@@ -2497,7 +2490,7 @@ impl ZeldaState {
                 if sign8(self.ancilla_slot_view(k).g()) {
                     let value = 0x17;
                     self.ancilla_slot_view_mut(k).set_g(value);
-                    self.player_resources_view_mut().set_magic_power(r0);
+                    self.player_resources_mut().set_magic_power(r0);
                 }
                 if self.player_state_view().filtered_joypad_h() & 0x40 != 0 {
                     self.kill_byrna_spark(k);
@@ -2535,7 +2528,7 @@ impl ZeldaState {
             .wrapping_add(12)
             .wrapping_sub(z as u16);
         let swordbeam_temp_x = self.player_state_view().x().wrapping_add(8);
-        self.ether_orbit_view_mut()
+        self.ether_orbit_mut()
             .set_swordbeam_temp(swordbeam_temp_x, swordbeam_temp_y);
         if self.ancilla_slot_view(k).timer() == 0 {
             self.ancilla_slot_view_mut(k).set_timer(21);
@@ -2545,14 +2538,15 @@ impl ZeldaState {
         let mut i = self.ancilla_slot_view(k).step() as usize;
         loop {
             let angle = if self.frame_state().submodule == 0 {
-                self.effect_angle_scratch_view_mut().add_angle_mod64(i, 3)
+                self.effect_angle_scratch_mut().add_angle_mod64(i, 3)
             } else {
-                self.effect_angle_scratch_view().angle(i)
+                self.effect_angle_scratch().angle(i)
             };
-            let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
-                angle,
-                self.effect_angle_scratch_view().radial_radius(),
-            ));
+            let pt =
+                self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
+                    angle,
+                    self.effect_angle_scratch().radial_radius(),
+                ));
             self.ancilla_set_oam(
                 oam,
                 pt.x,
@@ -2664,7 +2658,7 @@ impl ZeldaState {
         let Some(k) = self.ancilla_add_ancilla(ain, yin) else {
             return;
         };
-        let effect = if self.follower_state_view().indicator() == 8 {
+        let effect = if self.follower_state().indicator() == 8 {
             0x14
         } else {
             0x15
@@ -2677,8 +2671,8 @@ impl ZeldaState {
             poof.set_step(0);
             poof.set_aux_timer(7);
         }
-        self.follower_state_view_mut().set_appearance_none_flag(1);
-        let j = self.follower_state_view().data_index() as usize;
+        self.follower_state_mut().set_appearance_none_flag(1);
+        let j = self.follower_state().data_index() as usize;
         let x = self.tagalong_slot_view(j).x();
         let y = self.tagalong_slot_view(j).y();
         self.ancilla_set_xy(k, x, y.wrapping_add(4));
@@ -2884,19 +2878,19 @@ impl ZeldaState {
             self.set_chr_halfslot_request(13);
             self.system_signals_mut().set_sound_effect_1(0x35);
             for i in 0..5 {
-                self.quake_bolt_view_mut(i).set_phase(0);
+                self.quake_bolt_mut(i).set_phase(0);
             }
-            self.quake_spell_scratch_view_mut().set_active_bolt_limit(0);
+            self.quake_spell_scratch_mut().set_active_bolt_limit(0);
             for i in 0..5 {
-                self.quake_bolt_view_mut(i).set_timer(1);
+                self.quake_bolt_mut(i).set_timer(1);
             }
             self.player_state_view_mut()
                 .set_custom_spell_animation_active();
             let quake_origin_y = self.player_state_view().y().wrapping_add(26);
             let quake_origin_x = self.player_state_view().x().wrapping_add(8);
-            self.quake_spell_scratch_view_mut()
+            self.quake_spell_scratch_mut()
                 .set_origin(quake_origin_x, quake_origin_y);
-            self.quake_spell_scratch_view_mut().set_screen_shake_y(3);
+            self.quake_spell_scratch_mut().set_screen_shake_y(3);
         }
     }
 
@@ -2913,23 +2907,22 @@ impl ZeldaState {
             }
             self.player_state_view_mut()
                 .set_custom_spell_animation_active();
-            self.ether_orbit_view_mut().set_radius(40);
+            self.ether_orbit_mut().set_radius(40);
             self.set_chr_halfslot_request(9);
-            self.ether_orbit_view_mut().set_spin_countdown(0x40);
+            self.ether_orbit_mut().set_spin_countdown(0x40);
             self.set_sound_effect_2_with_link_pan(0x26);
             for i in 0..8 {
-                self.ether_orbit_view_mut().set_angle(i, (i * 8) as u8);
+                self.ether_orbit_mut().set_angle(i, (i * 8) as u8);
             }
             let ether_y = self.player_state_view().y();
             let ether_x = self.player_state_view().x();
-            self.ether_orbit_view_mut()
-                .set_orb_position(ether_x, ether_y);
+            self.ether_orbit_mut().set_orb_position(ether_x, ether_y);
             let y = self.world_scroll().bg2_y().wrapping_sub(16);
-            self.ether_orbit_view_mut()
+            self.ether_orbit_mut()
                 .initialize_beam_adjusted_y(y & 0x00f0);
             let ether_y2 = ether_y.wrapping_sub(16);
-            self.ether_orbit_view_mut().set_beam_y(ether_y2);
-            self.ether_orbit_view_mut()
+            self.ether_orbit_mut().set_beam_y(ether_y2);
+            self.ether_orbit_mut()
                 .set_orbit_position(ether_x.wrapping_add(8), ether_y2.wrapping_add(0x24));
             self.ancilla_set_xy(k, ether_x, y);
         }
@@ -2980,7 +2973,7 @@ impl ZeldaState {
             1 => self.ether_spell_handle_orb_pulse(k),
             3 => self.ether_spell_handle_radial_spin(k),
             4 => {
-                if self.ether_orbit_view_mut().tick_spin_countdown() == 0 {
+                if self.ether_orbit_mut().tick_spin_countdown() == 0 {
                     self.ancilla_slot_view_mut(k).set_step(5);
                 }
                 self.ether_spell_handle_radial_spin(k);
@@ -3000,15 +2993,11 @@ impl ZeldaState {
         self.ancilla_move_y(k);
         let y = self.ancilla_get_y(k);
 
-        if self.ether_orbit_view().beam_top_bucket() != (y & 0xf0) as u8 {
-            self.ether_orbit_view_mut()
-                .set_beam_top_bucket((y & 0xf0) as u8);
+        if self.ether_orbit().beam_top_bucket() != (y & 0xf0) as u8 {
+            self.ether_orbit_mut().set_beam_top_bucket((y & 0xf0) as u8);
             self.ancilla_slot_view_mut(k).advance_work_byte_25();
         }
-        if y < 0xe000
-            && self.ether_orbit_view().beam_y() < 0xe000
-            && self.ether_orbit_view().beam_y() <= y
-        {
+        if y < 0xe000 && self.ether_orbit().beam_y() < 0xe000 && self.ether_orbit().beam_y() <= y {
             self.ancilla_slot_view_mut(k).set_step(1);
         }
         self.ancilla_draw_ether_blitz(k);
@@ -3054,12 +3043,12 @@ impl ZeldaState {
                 self.system_signals_mut().set_sound_effect_2(0x6a);
             }
         } else {
-            let radius = self.ether_orbit_view().radius();
+            let radius = self.ether_orbit().radius();
             self.ancilla_slot_view_mut(k).set_x(u16::from(radius));
             self.ancilla_move_x(k);
             let radius = self.ancilla_slot_view(k).x() as u8;
-            self.ether_orbit_view_mut().set_radius(radius);
-            if self.ether_orbit_view().radius() == 0x40 {
+            self.ether_orbit_mut().set_radius(radius);
+            if self.ether_orbit().radius() == 0x40 {
                 self.ancilla_slot_view_mut(k).set_step(4);
             }
         }
@@ -3068,18 +3057,18 @@ impl ZeldaState {
         let sa = self.ancilla_slot_view(k).item_to_link() as usize;
         let mut oam = self.oam_state_view().current_pointer_usize();
         for i in (0..=7).rev() {
-            let mut angle = self.ether_orbit_view().angle(i);
+            let mut angle = self.ether_orbit().angle(i);
             if sb != 2 && sb != 5 {
-                angle = self.ether_orbit_view_mut().advance_angle(i);
+                angle = self.ether_orbit_mut().advance_angle(i);
             }
-            let arp = self.ancilla_get_radial_projection(angle, self.ether_orbit_view().radius());
+            let arp = self.ancilla_get_radial_projection(angle, self.ether_orbit().radius());
             if sb != 2 {
                 oam = self.ancilla_draw_ether_blitz_ball(oam, &arp, sa);
             } else {
                 oam = self.ancilla_draw_ether_blitz_segment(oam, &arp, sa, i);
             }
         }
-        if self.ether_orbit_view().radius() < 0xf0 {
+        if self.ether_orbit().radius() < 0xf0 {
             let oam = self.oam_state_view().current_pointer_usize();
             for i in 0..8 {
                 if self.oam_state_view().entry_y(oam + i * 4) != 0xf0 {
@@ -3098,13 +3087,12 @@ impl ZeldaState {
         self.clear_modal_pause_flag();
 
         if self.world_location_state().overworld_screen_index() == 0x70
-            && self.overworld_event_info_view().event_info(0x70) & 0x20 == 0
+            && self.overworld_event_info().event_info(0x70) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(2)
         {
             self.set_special_entrance_trigger(3);
             self.set_subsubmodule(0);
-            self.scratch_word_view_mut()
-                .clear_module_transition_counter();
+            self.scratch_word_mut().clear_module_transition_counter();
         }
 
         if self.player_state_view().handler_state() != 25 {
@@ -3136,10 +3124,10 @@ impl ZeldaState {
             self.bombos_blast_view_mut(i).set_phase(0);
             self.bombos_blast_view_mut(i).set_timer(3);
         }
-        self.bombos_spell_scratch_view_mut().set_mode(0);
-        self.bombos_spell_scratch_view_mut()
+        self.bombos_spell_scratch_mut().set_mode(0);
+        self.bombos_spell_scratch_mut()
             .set_blast_release_locked(false);
-        self.bombos_spell_scratch_view_mut()
+        self.bombos_spell_scratch_mut()
             .set_blast_release_countdown(0x80);
         self.bombos_fire_column_view_mut(0).set_radial_angle(0x10);
         self.set_chr_halfslot_request(11);
@@ -3156,7 +3144,7 @@ impl ZeldaState {
         t = if t < 0xe0 { t } else { t & 0x7f };
         let link_x = self.player_state_view().x();
         let link_y = self.player_state_view().y();
-        self.bombos_spell_scratch_view_mut().set_blast_position(
+        self.bombos_spell_scratch_mut().set_blast_position(
             0,
             (link_x & !0xff) | u16::from(t),
             (link_y & !0xff) | u16::from(t),
@@ -3168,10 +3156,9 @@ impl ZeldaState {
         for i in 0..1 {
             let bombos_x_coord2 = link_x.wrapping_add(BOMBOS_X_DELTA[i] as u16);
             let bombos_y_coord2 = link_y.wrapping_add(BOMBOS_Y_DELTA[i] as u16);
-            self.bombos_spell_scratch_view_mut()
+            self.bombos_spell_scratch_mut()
                 .set_fire_column_seed_position(i, bombos_x_coord2, bombos_y_coord2);
-            self.bombos_spell_scratch_view_mut()
-                .set_fire_column_radius(16);
+            self.bombos_spell_scratch_mut().set_fire_column_radius(16);
             let arp = self
                 .ancilla_get_radial_projection(self.bombos_fire_column_view(i).radial_angle(), 16);
             let x = (if arp.r6 != 0 {
@@ -3190,7 +3177,7 @@ impl ZeldaState {
     }
 
     fn ancilla19_bombos_spell(&mut self, k: usize) {
-        if self.bombos_spell_scratch_view().mode() == 0 {
+        if self.bombos_spell_scratch().mode() == 0 {
             if self.frame_state().submodule == 0 {
                 self.bombos_spell_control_fire_columns(k);
                 return;
@@ -3198,7 +3185,7 @@ impl ZeldaState {
             for i in (0..=9).rev() {
                 self.ancilla_draw_bombos_fire_column(i);
             }
-        } else if self.bombos_spell_scratch_view().mode() != 2 {
+        } else if self.bombos_spell_scratch().mode() != 2 {
             if self.frame_state().submodule == 0 {
                 self.bombos_spell_finish_fire_columns(k);
                 return;
@@ -3255,25 +3242,23 @@ impl ZeldaState {
                                 sb as usize
                             };
                             let radius = self
-                                .bombos_spell_scratch_view_mut()
+                                .bombos_spell_scratch_mut()
                                 .grow_fire_column_radius(3, 207);
                             let angle =
                                 self.bombos_fire_column_view_mut(0).add_radial_angle(6) & 0x3f;
                             let arp = self.ancilla_get_radial_projection(angle, radius);
-                            let x = (if arp.r6 != 0 {
-                                -(arp.r4 as i32)
-                            } else {
-                                arp.r4 as i32
-                            }) + i32::from(
-                                self.bombos_spell_scratch_view().fire_column_seed_x(0),
-                            );
-                            let y = (if arp.r2 != 0 {
-                                -(arp.r0 as i32)
-                            } else {
-                                arp.r0 as i32
-                            }) + i32::from(
-                                self.bombos_spell_scratch_view().fire_column_seed_y(0),
-                            );
+                            let x =
+                                (if arp.r6 != 0 {
+                                    -(arp.r4 as i32)
+                                } else {
+                                    arp.r4 as i32
+                                }) + i32::from(self.bombos_spell_scratch().fire_column_seed_x(0));
+                            let y =
+                                (if arp.r2 != 0 {
+                                    -(arp.r0 as i32)
+                                } else {
+                                    arp.r0 as i32
+                                }) + i32::from(self.bombos_spell_scratch().fire_column_seed_y(0));
                             self.bombos_fire_column_view_mut(j)
                                 .set_position(x as u16, y as u16);
 
@@ -3303,7 +3288,7 @@ impl ZeldaState {
             }
         }
         if self.bombos_fire_column_view(0).radial_angle() >= 0x80 {
-            self.bombos_spell_scratch_view_mut().set_mode(1);
+            self.bombos_spell_scratch_mut().set_mode(1);
         }
         self.ancilla_slot_view_mut(k).set_step(sb);
     }
@@ -3331,7 +3316,7 @@ impl ZeldaState {
                 return;
             }
         }
-        self.bombos_spell_scratch_view_mut().set_mode(2);
+        self.bombos_spell_scratch_mut().set_mode(2);
         self.medallion_check_sprite_damage(kk);
         self.ancilla_slot_view_mut(kk).set_step(0);
     }
@@ -3346,7 +3331,7 @@ impl ZeldaState {
                 if sign8(timer) {
                     self.bombos_blast_view_mut(uk).set_timer(3);
                     let phase = self.bombos_blast_view_mut(uk).advance_phase();
-                    if phase == 1 && !self.bombos_spell_scratch_view().blast_release_locked() {
+                    if phase == 1 && !self.bombos_spell_scratch().blast_release_locked() {
                         let mut j = sb;
                         if j != 15 {
                             sb += 1;
@@ -3365,12 +3350,12 @@ impl ZeldaState {
                         let x = u16::from(BOMBOS_BLAST_POSITION_TABLE[idx + 3]);
                         let bg2vofs_copy2 = self.world_scroll().bg2_y();
                         let bg2hofs_copy2 = self.world_scroll().bg2_x();
-                        self.bombos_spell_scratch_view_mut().set_blast_position(
+                        self.bombos_spell_scratch_mut().set_blast_position(
                             uj,
                             x.wrapping_add(bg2hofs_copy2),
                             y.wrapping_add(bg2vofs_copy2),
                         );
-                        let bombos_x = self.bombos_spell_scratch_view().blast_x(uj);
+                        let bombos_x = self.bombos_spell_scratch().blast_x(uj);
                         self.system_signals_mut().set_sound_effect_1(
                             0x0c | BOMBOS_PANNED_SFX_BITS[((bombos_x >> 5) & 7) as usize],
                         );
@@ -3385,13 +3370,13 @@ impl ZeldaState {
             if self.bombos_blast_view(j).phase() != 8 {
                 self.ancilla_slot_view_mut(kk).set_step(sb as u8);
                 if self
-                    .bombos_spell_scratch_view_mut()
+                    .bombos_spell_scratch_mut()
                     .tick_blast_release_countdown()
                     == 0
                 {
-                    self.bombos_spell_scratch_view_mut()
+                    self.bombos_spell_scratch_mut()
                         .set_blast_release_countdown(1);
-                    self.bombos_spell_scratch_view_mut()
+                    self.bombos_spell_scratch_mut()
                         .set_blast_release_locked(true);
                 }
                 return;
@@ -3420,13 +3405,13 @@ impl ZeldaState {
         self.player_state_view_mut().clear_magic_spell_player_lock();
 
         if self
-            .bombos_spell_scratch_view_mut()
+            .bombos_spell_scratch_mut()
             .tick_blast_release_countdown()
             == 0
         {
-            self.bombos_spell_scratch_view_mut()
+            self.bombos_spell_scratch_mut()
                 .set_blast_release_countdown(1);
-            self.bombos_spell_scratch_view_mut()
+            self.bombos_spell_scratch_mut()
                 .set_blast_release_locked(true);
         }
     }
@@ -3434,8 +3419,8 @@ impl ZeldaState {
     pub(super) fn ancilla_add_gt_cutscene(&mut self) {
         if self.player_state_view().is_lifting_or_carrying()
             || self.player_state_view().has_auxiliary_state()
-            || self.player_resources_view().crystal_flags() & 0x7f != 0x7f
-            || self.overworld_event_info_view().event_info(0x43) & 0x20 != 0
+            || self.player_resources().crystal_flags() & 0x7f != 0x7f
+            || self.overworld_event_info().event_info(0x43) & 0x20 != 0
         {
             return;
         }
@@ -3461,8 +3446,8 @@ impl ZeldaState {
             self.tower_seal_sparkle_view_mut(i).set_phase(0xff);
         }
         self.DecodeAnimatedSpriteTile_variable(0x28);
-        self.palette_buffer_view_mut().set_sp6r_indoors(4);
-        self.palette_buffer_view_mut()
+        self.palette_buffer_mut().set_sp6r_indoors(4);
+        self.palette_buffer_mut()
             .select_overworld_aux_palette_offset();
         self.palette_load_sprite_environment_dungeon();
         self.system_signals_mut().increment_cgram_update_flag();
@@ -3473,8 +3458,8 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_x_subpixel(value);
         let value = 0;
         self.ancilla_slot_view_mut(k).set_step(value);
-        self.tower_seal_scratch_view_mut().set_wait_countdown(240);
-        self.tower_seal_scratch_view_mut().set_ring_radius(0);
+        self.tower_seal_scratch_mut().set_wait_countdown(240);
+        self.tower_seal_scratch_mut().set_ring_radius(0);
 
         self.tower_seal_orbit_view_mut(0).set_angle(0);
         self.tower_seal_orbit_view_mut(1).set_angle(10);
@@ -3535,18 +3520,18 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(1).set_floor(value);
         let value = self.player_state_view().lower_level_mirror_state();
         self.ancilla_slot_view_mut(0).set_floor2(value);
-        self.blast_wall_scratch_view_mut().clear_entry_state();
-        self.blast_wall_explosion_view_mut(1).set_timer(0);
-        self.blast_wall_explosion_view_mut(1).set_phase(0);
-        self.blast_wall_scratch_view_mut().clear_secondary_state();
-        self.blast_wall_explosion_view_mut(0).set_phase(1);
+        self.blast_wall_scratch_mut().clear_entry_state();
+        self.blast_wall_explosion_mut(1).set_timer(0);
+        self.blast_wall_explosion_mut(1).set_phase(0);
+        self.blast_wall_scratch_mut().clear_secondary_state();
+        self.blast_wall_explosion_mut(0).set_phase(1);
         self.player_state_view_mut()
             .set_custom_spell_animation_active();
-        self.blast_wall_explosion_view_mut(0).set_timer(3);
+        self.blast_wall_explosion_mut(0).set_timer(3);
 
-        let mut j = self.blast_wall_scratch_view().direction() as usize;
+        let mut j = self.blast_wall_scratch().direction() as usize;
         let (blast_wall_center_x, blast_wall_center_y) =
-            self.blast_wall_scratch_view_mut().offset_center(
+            self.blast_wall_scratch_mut().offset_center(
                 BLAST_WALL_FRAGMENT_Y_OFFSET[j],
                 BLAST_WALL_FRAGMENT_X_OFFSET[j],
             );
@@ -3555,7 +3540,7 @@ impl ZeldaState {
             let offset = BLAST_WALL_FRAGMENT_OFFSET[j];
             let y = blast_wall_center_y.wrapping_add(offset.y as i16 as u16);
             let x = blast_wall_center_x.wrapping_add(offset.x as i16 as u16);
-            self.blast_wall_fragment_view_mut(k).set_position(x, y);
+            self.blast_wall_fragment_mut(k).set_position(x, y);
             let x = x.wrapping_sub(self.world_scroll().bg2_x());
             if x < 256 {
                 self.system_signals_mut()
@@ -3580,7 +3565,7 @@ impl ZeldaState {
             let value = 1;
             self.ancilla_slot_view_mut(k).set_l(value);
 
-            let enhanced_bird_travel = self.enhanced_features_view().has(1);
+            let enhanced_bird_travel = self.enhanced_features().has(1);
             let mut bird = self.ancilla_slot_view_mut(k);
             if enhanced_bird_travel {
                 bird.set_z_velocity(58);
@@ -3670,12 +3655,12 @@ impl ZeldaState {
         let Some(k) = self.ancilla_add_ancilla(a, y) else {
             return;
         };
-        if self.player_resources_view().bombs() == 0 {
+        if self.player_resources().bombs() == 0 {
             self.ancilla_slot_view_mut(k).clear();
             return;
         }
 
-        if self.player_resources_view_mut().decrement_bombs() == 0 {
+        if self.player_resources_mut().decrement_bombs() == 0 {
             self.hud_refresh_icon();
         }
 
@@ -3752,8 +3737,7 @@ impl ZeldaState {
         }
         let value = self.ancilla_slot_view(k).num_sprites();
         self.ancilla_slot_view_mut(k).set_l(value);
-        self.minigame_state_view_mut()
-            .set_flag_boomerang_in_place(1);
+        self.minigame_state_mut().set_flag_boomerang_in_place(1);
         let mut j = self.inventory_items().boomerang().wrapping_sub(1) as usize;
         let value = j as u8;
         self.ancilla_slot_view_mut(k).set_g(value);
@@ -3780,14 +3764,14 @@ impl ZeldaState {
         } else {
             BOOMERANG_DIRECTION_BITS[self.player_state_view().facing_index()]
         };
-        self.messaging_state_view_mut().clear_effect_index();
+        self.messaging_state_mut().clear_effect_index();
 
         if r1 & 0x0c != 0 {
             let y_velocity = if r1 & 8 != 0 { (-(r0 as i8)) as u8 } else { r0 };
             self.ancilla_slot_view_mut(k).set_y_velocity(y_velocity);
             let i = if sign8(y_velocity) { 0 } else { 1 };
             self.ancilla_slot_view_mut(k).set_direction(i);
-            self.messaging_state_view_mut()
+            self.messaging_state_mut()
                 .set_effect_index(BOOMERANG_DIRECTION_BITS[i as usize]);
         }
         let value = 0;
@@ -3802,7 +3786,7 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_x_velocity(x_velocity);
             let i = if sign8(x_velocity) { 2 } else { 3 };
             self.ancilla_slot_view_mut(k).set_direction(i);
-            self.messaging_state_view_mut()
+            self.messaging_state_mut()
                 .or_effect_index(BOOMERANG_DIRECTION_BITS[i as usize]);
         }
 
@@ -3847,8 +3831,7 @@ impl ZeldaState {
             }
         } else {
             self.ancilla_slot_view_mut(k).clear();
-            self.minigame_state_view_mut()
-                .clear_flag_boomerang_in_place();
+            self.minigame_state_mut().clear_flag_boomerang_in_place();
             let effect = if self.ancilla_slot_view(k).tile_attribute() != 0xf0 {
                 5
             } else {
@@ -4023,7 +4006,7 @@ impl ZeldaState {
             explosion.set_work_byte_3(BOMB_PHASE_TIMERS[1]);
             explosion.set_item_to_link(1);
         }
-        let j = self.follower_state_view().data_index() as usize;
+        let j = self.follower_state().data_index() as usize;
         let y = self.tagalong_slot_view(j).y();
         let x = self.tagalong_slot_view(j).x();
         self.ancilla_set_xy(k, x.wrapping_add(8), y.wrapping_add(16));
@@ -4168,13 +4151,11 @@ impl ZeldaState {
             self.player_state_view_mut().clear_position_mode();
         }
         self.player_state_view_mut().clear_flute_countdown();
-        self.follower_state_view_mut().clear_event_flags();
+        self.follower_state_mut().clear_event_flags();
         self.player_state_view_mut()
             .clear_ancilla_interactive_reset_flag();
-        self.minigame_state_view_mut()
-            .clear_flag_boomerang_in_place();
-        self.minigame_state_view_mut()
-            .clear_is_archer_or_shovel_game();
+        self.minigame_state_mut().clear_flag_boomerang_in_place();
+        self.minigame_state_mut().clear_is_archer_or_shovel_game();
         self.player_state_view_mut()
             .clear_sprite_damage_disable_timer();
         self.player_state_view_mut()
@@ -4210,7 +4191,7 @@ impl ZeldaState {
     pub(super) fn ancilla_prep_oam_coord(&mut self, k: usize) -> (u16, u16) {
         const TAGALONG_LAYER_BITS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
         let floor = self.ancilla_slot_view(k).floor() as usize;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_priority_word((TAGALONG_LAYER_BITS[floor] as u16) << 8);
         (
             self.ancilla_x(k).wrapping_sub(self.world_scroll().bg2_x()),
@@ -4335,28 +4316,26 @@ impl ZeldaState {
         for i in 1..=5 {
             self.ancilla_slot_view_mut(i).clear();
         }
-        self.minigame_state_view_mut()
-            .clear_flag_boomerang_in_place();
+        self.minigame_state_mut().clear_flag_boomerang_in_place();
         self.ancilla_slot_view_mut(0)
             .set_num_sprites(ANCILLA_DRAW_SPRITE_COUNTS[0x34]);
-        self.skull_woods_fire_view_mut(0).set_phase(253);
-        self.skull_woods_fire_view_mut(1).set_phase(254);
-        self.skull_woods_fire_view_mut(2).set_phase(255);
-        self.skull_woods_fire_view_mut(3).set_phase(0);
-        self.skull_woods_fire_scratch_view_mut()
+        self.skull_woods_fire_mut(0).set_phase(253);
+        self.skull_woods_fire_mut(1).set_phase(254);
+        self.skull_woods_fire_mut(2).set_phase(255);
+        self.skull_woods_fire_mut(3).set_phase(0);
+        self.skull_woods_fire_scratch_mut()
             .clear_entrance_opening_started();
         for i in 0..4 {
-            self.skull_woods_fire_view_mut(i).set_timer(5);
+            self.skull_woods_fire_mut(i).set_timer(5);
         }
         self.ancilla_slot_view_mut(0).set_aux_timer(5);
-        self.skull_woods_fire_scratch_view_mut()
+        self.skull_woods_fire_scratch_mut()
             .set_inner_position(0x0098, 0x0100);
-        self.skull_woods_fire_scratch_view_mut()
+        self.skull_woods_fire_scratch_mut()
             .set_outer_position(0x0098, 0x0100);
         self.set_special_entrance_trigger(2);
         self.set_subsubmodule(0);
-        self.scratch_word_view_mut()
-            .clear_module_transition_counter();
+        self.scratch_word_mut().clear_module_transition_counter();
         let value = self.player_state_view().lower_level_state();
         self.ancilla_slot_view_mut(0).set_floor(value);
         let value = self.player_state_view().lower_level_mirror_state();
@@ -4444,20 +4423,20 @@ impl ZeldaState {
                     let value = 0x80;
                     self.sprite_slot_view_mut(sprite).set_delay_aux2(value);
                     self.sprite_slot_view_mut(0).set_delay_aux4(128);
-                    if self.archery_game_view().hit_counter() < 9 {
-                        self.archery_game_view_mut().increment_hit_counter();
+                    if self.archery_game().hit_counter() < 9 {
+                        self.archery_game_mut().increment_hit_counter();
                     }
-                    let value = self.archery_game_view().hit_counter();
+                    let value = self.archery_game().hit_counter();
                     self.sprite_slot_view_mut(sprite).set_b(value);
                     let value = self.sprite_slot_view(sprite).g().wrapping_add(1);
                     self.sprite_slot_view_mut(sprite).set_g(value);
                 } else {
                     let value = 4;
                     self.sprite_slot_view_mut(sprite).set_delay_aux3(value);
-                    self.archery_game_view_mut().clear_hit_counter();
+                    self.archery_game_mut().clear_hit_counter();
                 }
             } else {
-                self.archery_game_view_mut().clear_hit_counter();
+                self.archery_game_mut().clear_hit_counter();
             }
         } else {
             let coll = self.ancilla_check_tile_collision(k);
@@ -4472,7 +4451,7 @@ impl ZeldaState {
                     self.ancilla_get_y(k)
                         .wrapping_add(ARROW_Y[dir] as i16 as u16),
                 );
-                self.archery_game_view_mut().clear_hit_counter();
+                self.archery_game_mut().clear_hit_counter();
                 j = dir;
             } else {
                 self.arrow_draw(k);
@@ -4516,14 +4495,14 @@ impl ZeldaState {
         if self.frame_state().submodule == 0 {
             self.ancilla_set_xy(
                 k,
-                self.ether_orbit_view().swordbeam_temp_x(),
-                self.ether_orbit_view().swordbeam_temp_y(),
+                self.ether_orbit().swordbeam_temp_x(),
+                self.ether_orbit().swordbeam_temp_y(),
             );
             self.ancilla_move_x(k);
             self.ancilla_move_y(k);
             let x = self.ancilla_get_x(k);
             let y = self.ancilla_get_y(k);
-            self.ether_orbit_view_mut().set_swordbeam_temp(x, y);
+            self.ether_orbit_mut().set_swordbeam_temp(x, y);
 
             let g = self.ancilla_slot_view(k).g();
             let value = g.wrapping_add(1);
@@ -4564,14 +4543,15 @@ impl ZeldaState {
         let s = self.ancilla_slot_view(k).s_player();
         for i in (0..=3).rev() {
             let angle = if self.frame_state().submodule == 0 {
-                self.effect_angle_scratch_view_mut().add_angle_mod64(i, s)
+                self.effect_angle_scratch_mut().add_angle_mod64(i, s)
             } else {
-                self.effect_angle_scratch_view().angle(i)
+                self.effect_angle_scratch().angle(i)
             };
-            let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
-                angle,
-                self.effect_angle_scratch_view().radial_radius(),
-            ));
+            let pt =
+                self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
+                    angle,
+                    self.effect_angle_scratch().radial_radius(),
+                ));
             self.ancilla_set_oam(
                 oam,
                 pt.x,
@@ -4596,16 +4576,15 @@ impl ZeldaState {
                 beam.advance_work_byte_1_mod4()
             };
             if work_byte_1 == 3 {
-                self.effect_angle_scratch_view_mut()
-                    .add_trailing_angle_mod64(s);
+                self.effect_angle_scratch_mut().add_trailing_angle_mod64(s);
             }
         }
 
         let t = self.ancilla_slot_view(k).work_byte_1();
         if t != 3 {
             let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
-                self.effect_angle_scratch_view().trailing_angle(),
-                self.effect_angle_scratch_view().radial_radius(),
+                self.effect_angle_scratch().trailing_angle(),
+                self.effect_angle_scratch().radial_radius(),
             ));
             self.ancilla_set_oam(
                 oam,
@@ -4657,8 +4636,7 @@ impl ZeldaState {
             .wrapping_sub(self.world_scroll().bg2_y());
 
         let flags = SWORD_FULL_CHARGE_SPARK_FLAGS[self.ancilla_slot_view(k).floor() as usize];
-        self.oam_state_view_mut()
-            .set_priority_word((flags as u16) << 8);
+        self.oam_state_mut().set_priority_word((flags as u16) << 8);
         let oam = self.oam_state_view().current_pointer_usize();
         self.ancilla_set_oam(oam, x, y, 0xd7, flags | 2, 0);
     }
@@ -4823,7 +4801,7 @@ impl ZeldaState {
         ];
 
         if self
-            .skull_woods_fire_scratch_view()
+            .skull_woods_fire_scratch()
             .has_started_entrance_opening()
             && self.ancilla_slot_view(k).item_to_link() != 4
             && sign8(self.ancilla_slot_view_mut(k).tick_aux_timer())
@@ -4835,20 +4813,20 @@ impl ZeldaState {
 
         let mut oam = self.oam_state_view().current_pointer_usize();
         for i in (0..=3).rev() {
-            let timer = self.skull_woods_fire_view_mut(i).tick_timer();
+            let timer = self.skull_woods_fire_mut(i).tick_timer();
             if sign8(timer) {
-                self.skull_woods_fire_view_mut(i).set_timer(5);
-                if self.skull_woods_fire_view(i).phase() != 128 {
-                    let phase = self.skull_woods_fire_view_mut(i).advance_phase();
+                self.skull_woods_fire_mut(i).set_timer(5);
+                if self.skull_woods_fire(i).phase() != 128 {
+                    let phase = self.skull_woods_fire_mut(i).advance_phase();
                     if phase == 0 || phase == 4 {
-                        self.skull_woods_fire_view_mut(i).set_phase(0);
-                        let inner_y = self.skull_woods_fire_scratch_view_mut().retreat_inner_y(8);
+                        self.skull_woods_fire_mut(i).set_phase(0);
+                        let inner_y = self.skull_woods_fire_scratch_mut().retreat_inner_y(8);
                         if inner_y < 200
                             && !self
-                                .skull_woods_fire_scratch_view()
+                                .skull_woods_fire_scratch()
                                 .has_started_entrance_opening()
                         {
-                            self.skull_woods_fire_scratch_view_mut()
+                            self.skull_woods_fire_scratch_mut()
                                 .set_entrance_opening_started();
                             let pan =
                                 (0x98u16.wrapping_sub(self.world_scroll().bg2_x()) as u8) >> 5;
@@ -4856,14 +4834,13 @@ impl ZeldaState {
                                 .set_sound_effect_1(BOMBOS_PANNED_SFX_BITS[pan as usize] | 0x0c);
                         }
                         if inner_y < 168 {
-                            self.skull_woods_fire_view_mut(i).set_phase(128);
+                            self.skull_woods_fire_mut(i).set_phase(128);
                         }
-                        let inner_x = self.skull_woods_fire_scratch_view().inner_x();
-                        self.skull_woods_fire_view_mut(i)
-                            .set_position(inner_x, inner_y);
+                        let inner_x = self.skull_woods_fire_scratch().inner_x();
+                        self.skull_woods_fire_mut(i).set_position(inner_x, inner_y);
                         if self.system_signals().sound_effect_1() == 0 {
                             let pan = (self
-                                .skull_woods_fire_scratch_view()
+                                .skull_woods_fire_scratch()
                                 .inner_x()
                                 .wrapping_sub(self.world_scroll().bg2_x())
                                 as u8)
@@ -4875,14 +4852,14 @@ impl ZeldaState {
                 }
             }
 
-            if !self.skull_woods_fire_view(i).is_finished() {
-                let j = self.skull_woods_fire_view(i).phase() as usize;
+            if !self.skull_woods_fire(i).is_finished() {
+                let j = self.skull_woods_fire(i).phase() as usize;
                 let x = self
-                    .skull_woods_fire_view(i)
+                    .skull_woods_fire(i)
                     .x()
                     .wrapping_sub(self.world_scroll().bg2_x());
                 let y = self
-                    .skull_woods_fire_view(i)
+                    .skull_woods_fire(i)
                     .y()
                     .wrapping_sub(self.world_scroll().bg2_y())
                     .wrapping_add(SKULL_WOODS_FIRE_DRAW_Y[j] as i16 as u16);
@@ -4910,7 +4887,7 @@ impl ZeldaState {
         }
 
         let mut i = 3i32;
-        while self.skull_woods_fire_view(i as usize).is_finished() {
+        while self.skull_woods_fire(i as usize).is_finished() {
             i -= 1;
             if i < 0 {
                 self.ancilla_slot_view_mut(k).clear();
@@ -4920,7 +4897,7 @@ impl ZeldaState {
 
         let item_to_link = self.ancilla_slot_view(k).item_to_link();
         if !self
-            .skull_woods_fire_scratch_view()
+            .skull_woods_fire_scratch()
             .has_started_entrance_opening()
             || item_to_link == 4
         {
@@ -4959,11 +4936,11 @@ impl ZeldaState {
         const MORPH_POOF_EXT: [u8; 3] = [2, 0, 0];
         if self.oam_state_view().has_sprite_sorting()
             && self.ancilla_slot_view(k).floor() != 0
-            && (self.minigame_state_view().flag_boomerang_in_place() == 0
+            && (self.minigame_state().flag_boomerang_in_place() == 0
                 || self.frame_state().frame_counter & 1 == 0)
         {
-            self.oam_state_view_mut().set_current_pointer(0x08d0);
-            self.oam_state_view_mut()
+            self.oam_state_mut().set_current_pointer(0x08d0);
+            self.oam_state_mut()
                 .set_current_extended_pointer(0x0a20 + (0x0d0 >> 2));
         }
         let (x, y) = self.ancilla_prep_oam_coord(k);
@@ -4998,7 +4975,7 @@ impl ZeldaState {
             };
             if item_to_link == 3 {
                 self.ancilla_slot_view_mut(k).clear();
-                self.follower_state_view_mut().set_appearance_none_flag(0);
+                self.follower_state_mut().set_appearance_none_flag(0);
                 return;
             }
         }
@@ -5212,7 +5189,7 @@ impl ZeldaState {
             }
         }
 
-        self.oam_state_view_mut().set_priority_word(0x3000);
+        self.oam_state_mut().set_priority_word(0x3000);
         let bomb_phase = self.ancilla_slot_view(k).item_to_link() as usize;
         let numframes = BOMB_DRAW_FRAME_COUNTS[bomb_phase] as usize;
         let j = BOMB_DRAW_FRAME_STARTS[bomb_phase] as usize * 6;
@@ -5240,14 +5217,14 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() == 3
             && self.ancilla_slot_view(k).work_byte_3() == 1
         {
-            let old = if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
-                self.follower_state_view().indicator()
+            let old = if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
+                self.follower_state().indicator()
             } else {
                 0
             };
-            self.follower_state_view_mut().set_indicator(13);
+            self.follower_state_mut().set_indicator(13);
             self.bomb_check_for_destructibles(self.ancilla_get_x(k), self.ancilla_get_y(k), 0);
-            self.follower_state_view_mut().set_indicator(old);
+            self.follower_state_mut().set_indicator(old);
         }
     }
 
@@ -5384,9 +5361,9 @@ impl ZeldaState {
         const TRANSMUTE_SPIN_SPARK_Y: [i8; 4] = [28, -2, 24, 6];
 
         let mut j = self.player_state_view().facing() as usize * 2;
-        self.effect_angle_scratch_view_mut()
+        self.effect_angle_scratch_mut()
             .set_angles4(&TRANSMUTE_SPIN_SPARK_ARR, j);
-        self.effect_angle_scratch_view_mut()
+        self.effect_angle_scratch_mut()
             .set_trailing_angle(TRANSMUTE_SPIN_SPARK_ARR[j + 3]);
         {
             let mut sparkle = self.ancilla_slot_view_mut(k);
@@ -5398,11 +5375,11 @@ impl ZeldaState {
             sparkle.set_l(0);
             sparkle.set_work_byte_1(255);
         }
-        self.effect_angle_scratch_view_mut().set_radial_radius(20);
+        self.effect_angle_scratch_mut().set_radial_radius(20);
 
         let swordbeam_temp_x = self.player_state_view().x().wrapping_add(8);
         let swordbeam_temp_y = self.player_state_view().y().wrapping_add(12);
-        self.ether_orbit_view_mut()
+        self.ether_orbit_mut()
             .set_swordbeam_temp(swordbeam_temp_x, swordbeam_temp_y);
 
         j = self.player_state_view().facing_index();
@@ -5462,14 +5439,15 @@ impl ZeldaState {
         let mut i = self.ancilla_slot_view(k).step() as usize;
         loop {
             let angle = if self.frame_state().submodule == 0 {
-                self.effect_angle_scratch_view_mut().add_angle_mod64(i, 4)
+                self.effect_angle_scratch_mut().add_angle_mod64(i, 4)
             } else {
-                self.effect_angle_scratch_view().angle(i)
+                self.effect_angle_scratch().angle(i)
             };
-            let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
-                angle,
-                self.effect_angle_scratch_view().radial_radius(),
-            ));
+            let pt =
+                self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
+                    angle,
+                    self.effect_angle_scratch().radial_radius(),
+                ));
             self.ancilla_set_oam(
                 oam,
                 pt.x,
@@ -5490,7 +5468,7 @@ impl ZeldaState {
             if !sign8(work_byte_3) {
                 if self.ancilla_slot_view(k).item_to_link() == 7 {
                     let value = 1;
-                    self.oam_state_view_mut()
+                    self.oam_state_mut()
                         .set_extended_byte((oam_org - OAM_BUF) / 4 + 3, value);
                 }
                 return;
@@ -5502,8 +5480,7 @@ impl ZeldaState {
                 sparkle.advance_work_byte_1_mod4()
             };
             if work_byte_1 == 3 {
-                self.effect_angle_scratch_view_mut()
-                    .add_trailing_angle_mod64(9);
+                self.effect_angle_scratch_mut().add_trailing_angle_mod64(9);
             }
         }
 
@@ -5511,8 +5488,8 @@ impl ZeldaState {
         if t != 3 {
             const SPIN_SPARK_CHAR2: [u8; 3] = [0xb7, 0x80, 0x83];
             let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
-                self.effect_angle_scratch_view().trailing_angle(),
-                self.effect_angle_scratch_view().radial_radius(),
+                self.effect_angle_scratch().trailing_angle(),
+                self.effect_angle_scratch().radial_radius(),
             ));
             self.ancilla_set_oam(
                 oam,
@@ -5525,7 +5502,7 @@ impl ZeldaState {
         }
         if self.ancilla_slot_view(k).item_to_link() == 7 {
             let value = 1;
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam_org - OAM_BUF) / 4 + 3, value);
         }
     }
@@ -5912,7 +5889,7 @@ impl ZeldaState {
     }
 
     fn quake_spell_shake_screen(&mut self, _k: usize) {
-        let shake_y = self.quake_spell_scratch_view_mut().invert_screen_shake_y();
+        let shake_y = self.quake_spell_scratch_mut().invert_screen_shake_y();
         self.world_scroll_mut().set_bg1_y_offset(shake_y);
         self.player_state_view_mut()
             .add_y_velocity_delta(shake_y as u8);
@@ -5920,7 +5897,7 @@ impl ZeldaState {
 
     fn ancilla1_c_quake_spell(&mut self, k: usize) {
         if self.frame_state().submodule != 0 {
-            if self.quake_bolt_view(4).phase() != QUAKE_BOLT_TARGET_PHASES[4] {
+            if self.quake_bolt(4).phase() != QUAKE_BOLT_TARGET_PHASES[4] {
                 self.ancilla_draw_quake_initial_bolts(k);
             }
             return;
@@ -5946,13 +5923,12 @@ impl ZeldaState {
         self.world_scroll_mut().set_bg1_x_offset(0);
         self.world_scroll_mut().set_bg1_y_offset(0);
         if self.world_location_state().overworld_screen_index() == 0x47
-            && self.overworld_event_info_view().event_info(0x47) & 0x20 == 0
+            && self.overworld_event_info().event_info(0x47) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(3)
         {
             self.set_special_entrance_trigger(4);
             self.set_subsubmodule(0);
-            self.scratch_word_view_mut()
-                .clear_module_transition_counter();
+            self.scratch_word_mut().clear_module_transition_counter();
         }
         let button_mask_b_y = if self.player_state_view().button_b_frames() != 0 {
             self.player_state_view().joypad1h_last() & 0x80
@@ -5967,24 +5943,24 @@ impl ZeldaState {
 
     fn quake_spell_control_bolts(&mut self, k: usize) {
         let pending_step = self.ancilla_slot_view(k).step();
-        self.quake_spell_scratch_view_mut()
+        self.quake_spell_scratch_mut()
             .set_pending_step(pending_step);
-        let mut j = self.quake_spell_scratch_view().active_bolt_limit() as i32;
+        let mut j = self.quake_spell_scratch().active_bolt_limit() as i32;
         loop {
             let uj = j as usize;
-            if self.quake_bolt_view(uj).phase() != QUAKE_BOLT_TARGET_PHASES[uj] {
-                let timer = self.quake_bolt_view_mut(uj).tick_timer();
+            if self.quake_bolt(uj).phase() != QUAKE_BOLT_TARGET_PHASES[uj] {
+                let timer = self.quake_bolt_mut(uj).tick_timer();
                 if sign8(timer) {
-                    self.quake_bolt_view_mut(uj).set_timer(1);
-                    let phase = self.quake_bolt_view_mut(uj).advance_phase();
+                    self.quake_bolt_mut(uj).set_timer(1);
+                    let phase = self.quake_bolt_mut(uj).advance_phase();
                     if phase != QUAKE_BOLT_TARGET_PHASES[uj] {
                         if j == 0 && phase == 2 {
                             self.ancilla_sfx2_near(0x0c);
-                            self.quake_spell_scratch_view_mut().set_active_bolt_limit(1);
+                            self.quake_spell_scratch_mut().set_active_bolt_limit(1);
                         } else if j == 1 && phase == 2 {
-                            self.quake_spell_scratch_view_mut().set_active_bolt_limit(4);
+                            self.quake_spell_scratch_mut().set_active_bolt_limit(4);
                         } else if j == 4 && phase == 7 {
-                            self.quake_spell_scratch_view_mut().set_pending_step(1);
+                            self.quake_spell_scratch_mut().set_pending_step(1);
                         }
                         self.ancilla_draw_quake_initial_bolts(uj);
                     }
@@ -5997,7 +5973,7 @@ impl ZeldaState {
                 break;
             }
         }
-        let step = self.quake_spell_scratch_view().pending_step();
+        let step = self.quake_spell_scratch().pending_step();
         self.ancilla_slot_view_mut(k).set_step(step);
     }
 
@@ -6005,7 +5981,7 @@ impl ZeldaState {
         const QUAKE_GROUND_BOLT_OAM_STARTS: [u8; 5] = [0, 0x18, 0, 0x18, 0x2f];
 
         let t = self
-            .quake_bolt_view(k)
+            .quake_bolt(k)
             .phase()
             .wrapping_add(QUAKE_GROUND_BOLT_OAM_STARTS[k]) as usize;
         let mut oam = self.oam_state_view().current_pointer_usize();
@@ -6014,12 +5990,12 @@ impl ZeldaState {
         for item_idx in idx..end {
             let sprite = QUAKE_INITIAL_BOLT_SPRITES[item_idx];
             let x = self
-                .quake_spell_scratch_view()
+                .quake_spell_scratch()
                 .origin_x()
                 .wrapping_add(sprite.x as u16)
                 .wrapping_sub(self.world_scroll().bg2_x());
             let y = self
-                .quake_spell_scratch_view()
+                .quake_spell_scratch()
                 .origin_y()
                 .wrapping_add(sprite.y as u16)
                 .wrapping_sub(self.world_scroll().bg2_y());
@@ -6032,7 +6008,7 @@ impl ZeldaState {
                     yval = y as u8;
                 }
             }
-            self.oam_state_view_mut().write_entry(
+            self.oam_state_mut().write_entry(
                 oam,
                 xval,
                 yval,
@@ -6040,7 +6016,7 @@ impl ZeldaState {
                 (sprite.flags & 0xc0) | 0x3c,
             );
             let value = 2;
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam += 4;
             let cur = self.oam_state_view().current_pointer().wrapping_add(4);
@@ -6048,8 +6024,8 @@ impl ZeldaState {
                 .oam_state_view()
                 .current_extended_pointer()
                 .wrapping_add(1);
-            self.oam_state_view_mut().set_current_pointer(cur);
-            self.oam_state_view_mut().set_current_extended_pointer(ext);
+            self.oam_state_mut().set_current_pointer(cur);
+            self.oam_state_mut().set_current_extended_pointer(ext);
         }
     }
 
@@ -6072,7 +6048,7 @@ impl ZeldaState {
         let mut oam = self.oam_state_view().current_pointer_usize();
         for item_idx in idx..end {
             let sprite = QUAKE_SPREAD_BOLT_SPRITES[item_idx];
-            self.oam_state_view_mut().write_entry(
+            self.oam_state_mut().write_entry(
                 oam,
                 sprite.x as u8,
                 sprite.y as u8,
@@ -6080,15 +6056,15 @@ impl ZeldaState {
                 (sprite.flags & 0xc0) | 0x3c,
             );
             let value = (sprite.flags >> 4) & 3;
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             let cur = self.oam_state_view().current_pointer().wrapping_add(4);
             let ext = self
                 .oam_state_view()
                 .current_extended_pointer()
                 .wrapping_add(1);
-            self.oam_state_view_mut().set_current_pointer(cur);
-            self.oam_state_view_mut().set_current_extended_pointer(ext);
+            self.oam_state_mut().set_current_pointer(cur);
+            self.oam_state_mut().set_current_extended_pointer(ext);
             oam = self.ancilla_allocate_oam_from_custom_region(oam + 4);
         }
     }
@@ -6142,17 +6118,17 @@ impl ZeldaState {
                         let mut r0 = 0u8;
                         let contact = if self.world_location_state().is_indoors() {
                             if self.ancilla_slot_view(k).direction() & 2 == 0 {
-                                r0 = (self.tile_detect_position_view().vertical_ledge()
-                                    | (self.tile_detect_position_view().vertical_ledge() >> 4))
+                                r0 = (self.tile_detect_position().vertical_ledge()
+                                    | (self.tile_detect_position().vertical_ledge() >> 4))
                                     & 3;
                             } else {
-                                r0 = self.tile_detect_position_view().horizontal_ledge() & 3;
+                                r0 = self.tile_detect_position().horizontal_ledge() & 3;
                             }
                             r0 != 0
                         } else {
-                            (self.tile_detect_position_view().horizontal_ledge() & 3
-                                | self.tile_detect_position_view().vertical_ledge()
-                                | self.tile_detect_position_view().diagonal_ledge_tiles())
+                            (self.tile_detect_position().horizontal_ledge() & 3
+                                | self.tile_detect_position().vertical_ledge()
+                                | self.tile_detect_position().diagonal_ledge_tiles())
                                 & 0x33
                                 != 0
                         };
@@ -6164,7 +6140,7 @@ impl ZeldaState {
                             if self.ancilla_slot_view(k).k() != 0
                                 && ((r0 & 3) != 0
                                     || self.ancilla_slot_view(k).k()
-                                        != self.tile_detect_position_view().interacting_tile_low())
+                                        != self.tile_detect_position().interacting_tile_low())
                             {
                                 self.ancilla_slot_view_mut(k).set_g(2);
                                 let l = self.ancilla_slot_view_mut(k).retreat_l();
@@ -6173,7 +6149,7 @@ impl ZeldaState {
                                 }
                             } else {
                                 let interacting_tile =
-                                    self.tile_detect_position_view().interacting_tile_low();
+                                    self.tile_detect_position().interacting_tile_low();
                                 let mut hookshot = self.ancilla_slot_view_mut(k);
                                 hookshot.advance_l();
                                 hookshot.set_k(interacting_tile);
@@ -6185,12 +6161,11 @@ impl ZeldaState {
                             if !sign8(self.ancilla_slot_view(k).g()) {
                                 self.ancilla_slot_view_mut(k).tick_g();
                             } else {
-                                let collision_bits =
-                                    self.tile_detect_position_view().collision_bits();
+                                let collision_bits = self.tile_detect_position().collision_bits();
                                 let blocked = (((collision_bits >> 4)
                                     | collision_bits
-                                    | self.tile_detect_position_view().stair_tile() as u16
-                                    | self.tile_detect_position_view().slope_collision_bits())
+                                    | self.tile_detect_position().stair_tile() as u16
+                                    | self.tile_detect_position().slope_collision_bits())
                                     & 3)
                                     != 0;
                                 if blocked && self.ancilla_slot_view(k).step() == 0 {
@@ -6198,12 +6173,11 @@ impl ZeldaState {
                                     hookshot.set_step(1);
                                     hookshot.negate_y_velocity();
                                     hookshot.negate_x_velocity();
-                                    if self.tile_detect_position_view().misc_tiles() & 3 == 0 {
+                                    if self.tile_detect_position().misc_tiles() & 3 == 0 {
                                         self.ancilla_add_hookshot_wall_clink(k, 6, 1);
                                         self.ancilla_sfx2_pan(
                                             k,
-                                            if self.tile_detect_position_view().misc_tiles() & 0x30
-                                                != 0
+                                            if self.tile_detect_position().misc_tiles() & 0x30 != 0
                                             {
                                                 6
                                             } else {
@@ -6213,13 +6187,13 @@ impl ZeldaState {
                                     }
                                 }
 
-                                if self.tile_detect_position_view().misc_tiles() & 3 != 0 {
+                                if self.tile_detect_position().misc_tiles() & 3 != 0 {
                                     if self.ancilla_slot_view(k).item_to_link() < 4 {
                                         self.ancilla_slot_view_mut(k).clear();
                                         return;
                                     }
                                     self.player_state_view_mut().set_hookshot_interlock(1);
-                                    self.messaging_state_view_mut().set_effect_index(k as u8);
+                                    self.messaging_state_mut().set_effect_index(k as u8);
                                 }
                             }
                         }
@@ -6230,7 +6204,7 @@ impl ZeldaState {
 
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
         if self.ancilla_slot_view(k).l() != 0 {
-            self.oam_state_view_mut().set_priority_word(0x3000);
+            self.oam_state_mut().set_priority_word(0x3000);
         }
         let mut oam = self.oam_state_view().current_pointer_usize();
 
@@ -6315,7 +6289,7 @@ impl ZeldaState {
         const ETHER_BLITZ_BALL_CHAR: [u8; 2] = [0x68, 0x6a];
 
         let x = self
-            .ether_orbit_view()
+            .ether_orbit()
             .orbit_x()
             .wrapping_add(if arp.r6 != 0 {
                 0u16.wrapping_sub(arp.r4 as u16)
@@ -6325,7 +6299,7 @@ impl ZeldaState {
             .wrapping_sub(8)
             .wrapping_sub(self.world_scroll().bg2_x());
         let y = self
-            .ether_orbit_view()
+            .ether_orbit()
             .orbit_y()
             .wrapping_add(if arp.r2 != 0 {
                 0u16.wrapping_sub(arp.r0 as u16)
@@ -6374,11 +6348,11 @@ impl ZeldaState {
         };
         let t = s * 8 + k;
         let base_x = x
-            .wrapping_add(self.ether_orbit_view().orbit_x())
+            .wrapping_add(self.ether_orbit().orbit_x())
             .wrapping_sub(8)
             .wrapping_sub(self.world_scroll().bg2_x());
         let base_y = y
-            .wrapping_add(self.ether_orbit_view().orbit_y())
+            .wrapping_add(self.ether_orbit().orbit_y())
             .wrapping_sub(8)
             .wrapping_sub(self.world_scroll().bg2_y());
         self.ancilla_set_oam(
@@ -6391,10 +6365,10 @@ impl ZeldaState {
         );
         self.ancilla_set_oam(
             oam + 4,
-            x.wrapping_add(self.ether_orbit_view().orbit_x())
+            x.wrapping_add(self.ether_orbit().orbit_x())
                 .wrapping_add(ETHER_SPLITTING_BLITZ_SEGMENT_X[t] as i16 as u16)
                 .wrapping_sub(self.world_scroll().bg2_x()),
-            y.wrapping_add(self.ether_orbit_view().orbit_y())
+            y.wrapping_add(self.ether_orbit().orbit_y())
                 .wrapping_add(ETHER_SPLITTING_BLITZ_SEGMENT_Y[t] as i16 as u16)
                 .wrapping_sub(self.world_scroll().bg2_y()),
             ETHER_SPLITTING_BLITZ_SEGMENT_CHAR[t * 2 + 1],
@@ -6440,12 +6414,12 @@ impl ZeldaState {
         const ETHER_BLITZ_ORB_FLAGS: [u8; 8] = [0x3c, 0x7c, 0x3c, 0x7c, 0x3c, 0x7c, 0x3c, 0x7c];
 
         let mut y = self
-            .ether_orbit_view()
+            .ether_orbit()
             .orb_y()
             .wrapping_sub(1)
             .wrapping_sub(self.world_scroll().bg2_y());
         let mut x = self
-            .ether_orbit_view()
+            .ether_orbit()
             .orb_x()
             .wrapping_sub(8)
             .wrapping_sub(self.world_scroll().bg2_x());
@@ -6540,8 +6514,8 @@ impl ZeldaState {
             0x4e, 0x4e, 0x4e, 0x4e,
         ];
 
-        let x = self.bombos_spell_scratch_view().blast_x(k);
-        let y = self.bombos_spell_scratch_view().blast_y(k);
+        let x = self.bombos_spell_scratch().blast_x(k);
+        let y = self.bombos_spell_scratch().blast_y(k);
         if self.bombos_blast_view(k).phase() == 8 {
             return;
         }
@@ -6572,7 +6546,7 @@ impl ZeldaState {
     fn ancilla27_duck(&mut self, k: usize) {
         if self.frame_state().submodule == 0 {
             if self.ancilla_slot_view(k).timer() != 0 {
-                let xt: u16 = if self.enhanced_features_view().has(1) {
+                let xt: u16 = if self.enhanced_features().has(1) {
                     0x40
                 } else {
                     0
@@ -6614,7 +6588,7 @@ impl ZeldaState {
                         let value = 0;
                         self.ancilla_slot_view_mut(k).set_step(value);
                         self.player_state_view_mut().set_visibility_status(0);
-                        self.follower_state_view_mut().set_appearance_none_flag(0);
+                        self.follower_state_mut().set_appearance_none_flag(0);
                         self.player_state_view_mut().clear_item_hold_pose();
                         let value = 0;
                         self.ancilla_slot_view_mut(k).set_y_velocity(value);
@@ -6624,9 +6598,9 @@ impl ZeldaState {
                         self.player_state_view_mut()
                             .clear_player_special_draw_flag();
                         self.player_state_view_mut().set_blink_countdown(144);
-                        if !((self.follower_state_view().indicator() == 12
-                            || self.follower_state_view().indicator() == 13)
-                            && self.follower_state_view().dropped() != 0)
+                        if !((self.follower_state().indicator() == 12
+                            || self.follower_state().indicator() == 13)
+                            && self.follower_state().dropped() != 0)
                         {
                             self.follower_initialize();
                         }
@@ -6660,9 +6634,9 @@ impl ZeldaState {
                             self.ancilla_slot_view_mut(i).set_ancilla_type(value);
                         }
                     }
-                    if self.follower_state_view().indicator() == 9 {
-                        self.follower_state_view_mut().set_indicator(0);
-                        self.follower_state_view_mut().set_appearance_none_flag(0);
+                    if self.follower_state().indicator() == 9 {
+                        self.follower_state_mut().set_indicator(0);
+                        self.follower_state_mut().set_appearance_none_flag(0);
                     }
                 }
                 {
@@ -6683,7 +6657,7 @@ impl ZeldaState {
                 self.player_state_view_mut().immobilize();
                 self.player_state_view_mut()
                     .set_sprite_damage_disable_timer(1);
-                self.follower_state_view_mut().set_appearance_none_flag(1);
+                self.follower_state_mut().set_appearance_none_flag(1);
                 let value = 2;
                 self.ancilla_slot_view_mut(k).set_step(value);
                 self.increment_modal_pause_flag();
@@ -7098,7 +7072,7 @@ impl ZeldaState {
         let k = self.garnish_alloc_force_for_ancilla();
         let value = 10;
         self.garnish_slot_view_mut(k).set_garnish_type(value);
-        self.garnish_state_view_mut().set_active_type(10);
+        self.garnish_state_mut().set_active_type(10);
         let value = self.sprite_slot_view(j).x_low();
         self.garnish_slot_view_mut(k).set_x_low(value);
         let value = self.sprite_slot_view(j).x_high();
@@ -7221,7 +7195,7 @@ impl ZeldaState {
                     }
                     if self.ancilla_slot_view(k).timer() == 17 {
                         self.start_shared_message_timer(0x0df3);
-                        self.follower_state_view_mut().set_indicator(0x0e);
+                        self.follower_state_mut().set_indicator(0x0e);
                         self.ancilla22_item_receipt_show_message(k);
                     }
                 } else {
@@ -7273,7 +7247,7 @@ impl ZeldaState {
     fn ancilla22_item_receipt_finish(&mut self, k: usize) {
         self.player_state_view_mut().set_item_receipt_method(0);
         let a = self.ancilla_slot_view(k).item_to_link();
-        if a == 23 && self.player_resources_view().heart_pieces() == 0 {
+        if a == 23 && self.player_resources().heart_pieces() == 0 {
             self.link_receive_item(0x26, 0);
             let value = 0;
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
@@ -7282,30 +7256,24 @@ impl ZeldaState {
         }
 
         if a == 0x26 || a == 0x3f {
-            if self.player_resources_view().health_capacity() != 0xa0 {
-                let capacity = self
-                    .player_resources_view_mut()
-                    .increment_health_capacity_by(8);
-                let filler = capacity.wrapping_sub(self.player_resources_view().current_health());
-                self.player_resources_view_mut()
+            if self.player_resources().health_capacity() != 0xa0 {
+                let capacity = self.player_resources_mut().increment_health_capacity_by(8);
+                let filler = capacity.wrapping_sub(self.player_resources().current_health());
+                self.player_resources_mut()
                     .increment_heart_filler_by(filler);
                 self.ancilla_sfx3_near(0x0d);
             }
         } else if a == 0x3e {
             self.player_state_view_mut().clear_immobilized();
-            if self.player_resources_view().health_capacity() != 0xa0 {
-                self.player_resources_view_mut()
-                    .increment_health_capacity_by(8);
-                self.player_resources_view_mut()
-                    .increment_heart_filler_by(8);
+            if self.player_resources().health_capacity() != 0xa0 {
+                self.player_resources_mut().increment_health_capacity_by(8);
+                self.player_resources_mut().increment_heart_filler_by(8);
                 self.ancilla_sfx3_near(0x0d);
             }
         } else if a == 0x42 {
-            self.player_resources_view_mut()
-                .increment_heart_filler_by(8);
+            self.player_resources_mut().increment_heart_filler_by(8);
         } else if a == 0x45 {
-            self.player_resources_view_mut()
-                .increment_magic_filler_by(16);
+            self.player_resources_mut().increment_magic_filler_by(16);
         } else if a == 0x22 || a == 0x23 {
             self.Palette_Load_LinkArmorAndGloves();
         }
@@ -7343,7 +7311,7 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() == 0x38
             || self.ancilla_slot_view(k).item_to_link() == 0x39
         {
-            if self.player_resources_view().pendant_flags() & 7 == 7 {
+            if self.player_resources().pendant_flags() & 7 == 7 {
                 msg = RECEIVE_ITEM_SPECIAL_MESSAGES[item - 0x38];
             } else {
                 msg = RECEIVE_ITEM_MESSAGES[item];
@@ -7351,13 +7319,13 @@ impl ZeldaState {
         } else if self.ancilla_slot_view(k).step() != 2 {
             if self.ancilla_slot_view(k).item_to_link() == 0x17 {
                 msg = RECEIVE_ITEM_HEART_PIECE_MESSAGES
-                    [self.player_resources_view().heart_pieces() as usize];
+                    [self.player_resources().heart_pieces() as usize];
             } else {
                 msg = RECEIVE_ITEM_MESSAGES[item];
             }
         }
         if msg != -1 {
-            self.dialogue_message_index_view_mut().set_value(msg as u16);
+            self.dialogue_message_index_mut().set_value(msg as u16);
             if msg == 0x70 {
                 self.system_signals_mut().set_ambient_sound_effect(9);
             }
@@ -7451,22 +7419,18 @@ impl ZeldaState {
 
         let y = self
             .ancilla_get_y(k)
-            .wrapping_sub(self.ppu_scroll_copy_view().bg2_v_copy());
+            .wrapping_sub(self.ppu_scroll_copy().bg2_v_copy());
         if y < 0x49 {
-            self.ancilla_set_y(
-                k,
-                0x49u16.wrapping_add(self.ppu_scroll_copy_view().bg2_v_copy()),
-            );
+            self.ancilla_set_y(k, 0x49u16.wrapping_add(self.ppu_scroll_copy().bg2_v_copy()));
             if self.frame_state().submodule == 0 {
-                let i = (self.save_progress_view().palace_index_x2() >> 1) as usize;
-                self.player_resources_view_mut()
+                let i = (self.save_progress().palace_index_x2() >> 1) as usize;
+                self.player_resources_mut()
                     .add_crystal_flags(DUNGEON_CRYSTAL_PENDANT_BIT[i]);
                 self.set_submodule(0x18);
                 self.set_subsubmodule(0);
-                self.palette_buffer_view_mut()
-                    .clear_aux_visible_subpalettes();
-                self.palette_filter_view_mut().set_countdown_word(0);
-                self.palette_filter_view_mut()
+                self.palette_buffer_mut().clear_aux_visible_subpalettes();
+                self.palette_filter_mut().set_countdown_word(0);
+                self.palette_filter_mut()
                     .set_darkening_or_lightening_screen_word(0);
             }
         }
@@ -7508,8 +7472,8 @@ impl ZeldaState {
             {
                 let value = 1;
                 self.ancilla_slot_view_mut(k).set_work_byte_3(value);
-                self.palette_buffer_view_mut().set_sp6r_indoors(4);
-                self.palette_buffer_view_mut()
+                self.palette_buffer_mut().set_sp6r_indoors(4);
+                self.palette_buffer_mut()
                     .select_overworld_aux_palette_offset();
                 self.Palette_Load_SpriteEnvironment_Dungeon();
                 self.system_signals_mut().increment_cgram_update_flag();
@@ -8018,7 +7982,7 @@ impl ZeldaState {
                 .wrapping_add(y.wrapping_sub(r6) as i8 as i16 as u16)
                 .wrapping_sub(self.world_scroll().bg2_y())
                 .wrapping_add(0x10);
-            self.oam_state_view_mut().write_entry(
+            self.oam_state_mut().write_entry(
                 oam,
                 x,
                 if y_adj >= 0x100 { 0xf0 } else { y },
@@ -8026,7 +7990,7 @@ impl ZeldaState {
                 BEAM_HIT_FLAGS[m] | 2 | info.flags,
             );
             let value = if x_adj >= 0x100 { 1 } else { 0 };
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam += 4;
         }
@@ -8074,7 +8038,7 @@ impl ZeldaState {
         j = (self.ancilla_slot_view(k).timer() & 0x1c) as i32;
         for i in (0..=3).rev() {
             let n = i + j as usize;
-            self.oam_state_view_mut().write_entry(
+            self.oam_state_mut().write_entry(
                 oam,
                 info.x.wrapping_add(ICE_SHOT_SPARKLE_X[n]),
                 info.y.wrapping_add(ICE_SHOT_SPARKLE_Y[n]),
@@ -8082,7 +8046,7 @@ impl ZeldaState {
                 info.flags | 4,
             );
             let value = 0;
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam += 4;
         }
@@ -8162,7 +8126,7 @@ impl ZeldaState {
 
     pub(super) fn ancilla_alloc_init(&mut self, ty: u8, limit: u8) -> Option<usize> {
         if self.system_signals().bugs_fixed() >= BUGFIX_POLY_RENDERER {
-            self.tile_detect_position_view_mut()
+            self.tile_detect_position_mut()
                 .set_collision_bits(u16::from(limit.wrapping_add(1)));
         }
 
@@ -8184,7 +8148,7 @@ impl ZeldaState {
             }
         }
 
-        let mut k = self.sprite_system_view().ancilla_alloc_rotate() as i8;
+        let mut k = self.sprite_system().ancilla_alloc_rotate() as i8;
         loop {
             k -= 1;
             if k < 0 {
@@ -8192,15 +8156,14 @@ impl ZeldaState {
             }
             let old_type = self.ancilla_slot_view(k as usize).ancilla_type();
             if old_type == 0x3c || old_type == 0x13 || old_type == 0x0a {
-                self.sprite_system_view_mut()
-                    .set_ancilla_alloc_rotate(k as u8);
+                self.sprite_system_mut().set_ancilla_alloc_rotate(k as u8);
                 return Some(k as usize);
             }
             if k == 0 {
                 break;
             }
         }
-        self.sprite_system_view_mut().clear_ancilla_alloc_rotate();
+        self.sprite_system_mut().clear_ancilla_alloc_rotate();
         None
     }
 
@@ -8467,7 +8430,7 @@ impl ZeldaState {
     fn sparkle_prep_oam_from_radial(&self, p: AncillaRadialProjection) -> Point16U {
         Point16U {
             y: self
-                .ether_orbit_view()
+                .ether_orbit()
                 .swordbeam_temp_y()
                 .wrapping_add(if p.r2 != 0 {
                     -(p.r0 as i16)
@@ -8477,7 +8440,7 @@ impl ZeldaState {
                 .wrapping_sub(4)
                 .wrapping_sub(self.world_scroll().bg2_y()),
             x: self
-                .ether_orbit_view()
+                .ether_orbit()
                 .swordbeam_temp_x()
                 .wrapping_add(if p.r6 != 0 {
                     -(p.r4 as i16)
@@ -9031,7 +8994,7 @@ impl ZeldaState {
                 return false;
             }
             if t == 1 {
-                self.sprite_system_view_mut().set_alert_flag(3);
+                self.sprite_system_mut().set_alert_flag(3);
                 return true;
             }
             if t == 2 {
@@ -9039,7 +9002,7 @@ impl ZeldaState {
             }
             if t == 3 {
                 if self.ancilla_slot_view(k).floor2() != 0 {
-                    self.sprite_system_view_mut().set_alert_flag(3);
+                    self.sprite_system_mut().set_alert_flag(3);
                     return true;
                 }
                 return false;
@@ -9176,7 +9139,7 @@ impl ZeldaState {
         let Some(k) = k else {
             // C writes through k = -1 on allocation failure; preserve those
             // aliasing writes explicitly instead of silently returning.
-            self.ancilla_spawn_scratch_view_mut()
+            self.ancilla_spawn_scratch_mut()
                 .write_failed_spin_sparkle(x, spark_x, spark_y);
             return;
         };
@@ -9348,15 +9311,15 @@ impl ZeldaState {
                     self.player_state_view().x(),
                     self.player_state_view().y(),
                     self.player_state_view().handler_state(),
-                    self.tile_detect_position_view().deepwater(),
+                    self.tile_detect_position().deepwater(),
                     self.player_state_view().deep_water_state(),
                     self.world_location_state().indoor_flag,
                     self.player_state_view().lower_level_state(),
                     self.player_state_view().auxiliary_state(),
                     self.player_state_view().z(),
                     self.player_state_view().actual_z_velocity(),
-                    self.tile_detect_position_view().tile_type(),
-                    self.tile_detect_position_view().normal_tiles(),
+                    self.tile_detect_position().tile_type(),
+                    self.tile_detect_position().normal_tiles(),
                     self.player_state_view().joypad1h_last(),
                     self.player_state_view().joypad1l_last(),
                 );
@@ -9377,15 +9340,15 @@ impl ZeldaState {
                 self.player_state_view().x(),
                 self.player_state_view().y(),
                 self.player_state_view().handler_state(),
-                self.tile_detect_position_view().deepwater(),
+                self.tile_detect_position().deepwater(),
                 self.player_state_view().deep_water_state(),
                 self.world_location_state().indoor_flag,
                 self.player_state_view().lower_level_state(),
                 self.player_state_view().auxiliary_state(),
                 self.player_state_view().z(),
                 self.player_state_view().actual_z_velocity(),
-                self.tile_detect_position_view().tile_type(),
-                self.tile_detect_position_view().normal_tiles(),
+                self.tile_detect_position().tile_type(),
+                self.tile_detect_position().normal_tiles(),
                 self.player_state_view().joypad1h_last(),
                 self.player_state_view().joypad1l_last(),
             );
@@ -9471,13 +9434,12 @@ impl ZeldaState {
                     self.set_sound_effect_2_with_link_pan(0x1b);
                 } else if self.dungeon_doors().door_open_counter_low() == 0x38 {
                     let screen = self.world_location_state().overworld_screen_index() as usize;
-                    self.overworld_event_info_view_mut()
-                        .set_event_bits(screen, 0x20);
+                    self.overworld_event_info_mut().set_event_bits(screen, 0x20);
                     self.set_sound_effect_2_with_link_pan(0x1b);
                 }
 
                 let debris = pos.wrapping_sub(0x80);
-                self.door_debris_view_mut()
+                self.door_debris_mut()
                     .set_y_low_and_x_low_from_word(k, debris);
 
                 self.Overworld_DoMapUpdate32x32_B();
@@ -9546,9 +9508,9 @@ impl ZeldaState {
             self.ancilla_move_y(k);
             let x = self.ancilla_get_x(k);
             let y = self.ancilla_get_y(k);
-            let bg2vofs = self.ppu_scroll_copy_view().bg2_v_copy();
+            let bg2vofs = self.ppu_scroll_copy().bg2_v_copy();
             if y.wrapping_sub(bg2vofs) < 0x38 {
-                self.tower_seal_scratch_view_mut().set_center(
+                self.tower_seal_scratch_mut().set_center(
                     x.wrapping_add(8),
                     0x38u16.wrapping_add(8).wrapping_add(bg2vofs),
                 );
@@ -9556,7 +9518,7 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).add_step(1);
                 self.system_signals_mut().set_ambient_sound_effect(5);
                 self.system_signals_mut().set_music_control(0xf1);
-                self.dialogue_message_index_view_mut().set_value(0x013b);
+                self.dialogue_message_index_mut().set_value(0x013b);
                 self.main_show_text_message();
                 draw_ring = false;
             } else if self.frame_state().submodule == 0 {
@@ -9570,19 +9532,19 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_x_velocity(value);
                 let bak0 = self.ancilla_slot_view(k).x_low();
                 let bak1 = self.ancilla_slot_view(k).x_high();
-                let value = self.tower_seal_scratch_view().ring_radius();
+                let value = self.tower_seal_scratch().ring_radius();
                 self.ancilla_slot_view_mut(k).set_x_low(value);
                 let value = 0;
                 self.ancilla_slot_view_mut(k).set_x_high(value);
                 self.ancilla_move_x(k);
                 let radius = self.ancilla_slot_view(k).x_low();
-                self.tower_seal_scratch_view_mut().set_ring_radius(radius);
+                self.tower_seal_scratch_mut().set_ring_radius(radius);
                 let value = bak0;
                 self.ancilla_slot_view_mut(k).set_x_low(value);
                 let value = bak1;
                 self.ancilla_slot_view_mut(k).set_x_high(value);
-                if self.tower_seal_scratch_view().ring_radius() >= 48 {
-                    self.tower_seal_scratch_view_mut().set_ring_radius(48);
+                if self.tower_seal_scratch().ring_radius() >= 48 {
+                    self.tower_seal_scratch_mut().set_ring_radius(48);
                     self.ancilla_slot_view_mut(k).add_step(1);
                 }
             }
@@ -9592,11 +9554,10 @@ impl ZeldaState {
                 && self.ancilla_slot_view(k).step() != 1
             {
                 if self.ancilla_slot_view(k).step() == 2 {
-                    if self.tower_seal_scratch_view_mut().tick_wait_countdown() == 0 {
+                    if self.tower_seal_scratch_mut().tick_wait_countdown() == 0 {
                         self.set_special_entrance_trigger(5);
                         self.set_subsubmodule(0);
-                        self.scratch_word_view_mut()
-                            .clear_module_transition_counter();
+                        self.scratch_word_mut().clear_module_transition_counter();
                         self.ancilla_slot_view_mut(k).add_step(1);
                     }
                 } else {
@@ -9604,20 +9565,20 @@ impl ZeldaState {
                     self.ancilla_slot_view_mut(k).set_x_velocity(value);
                     let bak0 = self.ancilla_slot_view(k).x_low();
                     let bak1 = self.ancilla_slot_view(k).x_high();
-                    let value = self.tower_seal_scratch_view().ring_radius();
+                    let value = self.tower_seal_scratch().ring_radius();
                     self.ancilla_slot_view_mut(k).set_x_low(value);
                     let value = 0;
                     self.ancilla_slot_view_mut(k).set_x_high(value);
                     self.ancilla_move_x(k);
                     let radius = self.ancilla_slot_view(k).x_low();
-                    self.tower_seal_scratch_view_mut().set_ring_radius(radius);
+                    self.tower_seal_scratch_mut().set_ring_radius(radius);
                     let value = bak0;
                     self.ancilla_slot_view_mut(k).set_x_low(value);
                     let value = bak1;
                     self.ancilla_slot_view_mut(k).set_x_high(value);
-                    if self.tower_seal_scratch_view().ring_radius() >= 240 {
-                        self.palette_buffer_view_mut().set_sp6r_indoors(0);
-                        self.palette_buffer_view_mut()
+                    if self.tower_seal_scratch().ring_radius() >= 240 {
+                        self.palette_buffer_mut().set_sp6r_indoors(0);
+                        self.palette_buffer_mut()
                             .select_overworld_aux_palette_offset();
                         self.Palette_Load_SpriteEnvironment_Dungeon();
                         self.system_signals_mut().increment_cgram_update_flag();
@@ -9642,22 +9603,22 @@ impl ZeldaState {
                 }
                 let arp = self.ancilla_get_radial_projection(
                     self.tower_seal_orbit_view(j).angle(),
-                    self.tower_seal_scratch_view().ring_radius(),
+                    self.tower_seal_scratch().ring_radius(),
                 );
                 let x = (if arp.r6 != 0 {
                     -(arp.r4 as i32)
                 } else {
                     arp.r4 as i32
-                }) + i32::from(self.tower_seal_scratch_view().center_x())
+                }) + i32::from(self.tower_seal_scratch().center_x())
                     - 8
-                    - i32::from(self.ppu_scroll_copy_view().bg2_h_copy());
+                    - i32::from(self.ppu_scroll_copy().bg2_h_copy());
                 let y = (if arp.r2 != 0 {
                     -(arp.r0 as i32)
                 } else {
                     arp.r0 as i32
-                }) + i32::from(self.tower_seal_scratch_view().center_y())
+                }) + i32::from(self.tower_seal_scratch().center_y())
                     - 8
-                    - i32::from(self.ppu_scroll_copy_view().bg2_v_copy());
+                    - i32::from(self.ppu_scroll_copy().bg2_v_copy());
 
                 self.tower_seal_orbit_view_mut(j)
                     .set_base_sparkle_position(x as u16, y as u16);
@@ -9734,17 +9695,17 @@ impl ZeldaState {
             let x = info_x.wrapping_add(offset.x as i16 as u16);
             let mut yv = 0xf0;
             if x < 256 && y < 256 {
-                self.oam_state_view_mut().set_entry_x(oam, x as u8);
+                self.oam_state_mut().set_entry_x(oam, x as u8);
                 if y < 224 {
                     yv = y as u8;
                 }
             }
-            self.oam_state_view_mut().set_entry_y(oam, yv);
-            self.oam_state_view_mut().set_entry_char(oam, tile.char);
+            self.oam_state_mut().set_entry_y(oam, yv);
+            self.oam_state_mut().set_entry_char(oam, tile.char);
             let flags = tile.flags & !0x30 | self.oam_state_view().priority_high();
-            self.oam_state_view_mut().set_entry_flags(oam, flags);
+            self.oam_state_mut().set_entry_flags(oam, flags);
             let value = 0;
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam = self.ancilla_allocate_oam_from_custom_region(oam + 4);
             j += 1;
@@ -9859,7 +9820,7 @@ impl ZeldaState {
         let oam = self.oam_state_view().current_pointer_usize();
         let j = self.ancilla_slot_view(k).direction() as usize * 6
             + self.ancilla_slot_view(k).step() as usize;
-        self.oam_state_view_mut().write_entry(
+        self.oam_state_mut().write_entry(
             oam,
             info.x.wrapping_add(SOMARIAN_BLAST_DRAW_X0[j] as u8),
             if sign8(SOMARIAN_BLAST_DRAW_Y0[j]) {
@@ -9871,9 +9832,9 @@ impl ZeldaState {
             info.flags | SOMARIAN_BLAST_DRAW_FLAGS0[j],
         );
         let value = 0;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF) / 4, value);
-        self.oam_state_view_mut().write_entry(
+        self.oam_state_mut().write_entry(
             oam + 4,
             info.x.wrapping_add(SOMARIAN_BLAST_DRAW_X1[j] as u8),
             if sign8(SOMARIAN_BLAST_DRAW_Y1[j]) {
@@ -9885,7 +9846,7 @@ impl ZeldaState {
             info.flags | SOMARIAN_BLAST_DRAW_FLAGS1[j],
         );
         let value = 0;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF) / 4 + 1, value);
     }
 
@@ -9913,7 +9874,7 @@ impl ZeldaState {
 
         let (mut x, mut y) = self.ancilla_prep_adjusted_oam_coord(k);
         if self.ancilla_slot_view(k).object_priority() != 0 {
-            self.oam_state_view_mut().set_priority_high(0x30);
+            self.oam_state_mut().set_priority_high(0x30);
         }
         if self.ancilla_slot_view(k).h() != 0 {
             x = x.wrapping_add(
@@ -9973,9 +9934,8 @@ impl ZeldaState {
     fn revival_fairy_monitor_hp(&mut self) {
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 
-        if (self.player_resources_view().current_health()
-            == self.player_resources_view().health_capacity()
-            || self.player_resources_view().current_health() == 0x38)
+        if (self.player_resources().current_health() == self.player_resources().health_capacity()
+            || self.player_resources().current_health() == 0x38)
             && !self.hud_state_view().is_doing_heart_animation()
         {
             if self.player_state_view().is_in_deep_water() {
@@ -9984,7 +9944,7 @@ impl ZeldaState {
             } else if self.player_state_view().is_bunny() {
                 self.player_state_view_mut().set_handler_state(23);
                 self.player_state_view_mut().set_bunny_state(1);
-                if self.enhanced_features_view().has(FEATURES0_MISC_BUG_FIXES) {
+                if self.enhanced_features().has(FEATURES0_MISC_BUG_FIXES) {
                     self.LoadGearPalettes_bunny();
                 }
             } else {
@@ -10177,7 +10137,7 @@ impl ZeldaState {
                 let value = 3;
                 self.ancilla_slot_view_mut(k).set_step(value);
                 self.increment_submodule();
-                let main_screen_layers = self.ppu_scroll_copy_view().mapbak_tm();
+                let main_screen_layers = self.ppu_scroll_copy().mapbak_tm();
                 self.set_main_screen_layers(main_screen_layers);
             }
         }
@@ -10253,11 +10213,8 @@ impl ZeldaState {
         } else {
             return false;
         };
-        let rupees = self
-            .player_resources_view()
-            .rupees_goal()
-            .wrapping_add(amount);
-        self.player_resources_view_mut().set_rupees_goal(rupees);
+        let rupees = self.player_resources().rupees_goal().wrapping_add(amount);
+        self.player_resources_mut().set_rupees_goal(rupees);
         true
     }
 
@@ -10303,11 +10260,11 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(j).set_floor2(value);
             }
         }
-        self.temp_counter_view_mut().set(0xff);
+        self.temp_counter_mut().set(0xff);
     }
 
     fn ancilla_terminate_if_offscreen(&mut self, j: usize) {
-        let xt: u16 = if self.enhanced_features_view().has(1) {
+        let xt: u16 = if self.enhanced_features().has(1) {
             0x40
         } else {
             0
@@ -10344,8 +10301,8 @@ impl ZeldaState {
                 || k + 1 == self.player_state_view().ancilla_pickup_flag() as usize
                     && self.player_state_view().is_lifting_or_carrying())
         {
-            self.oam_state_view_mut().set_current_pointer(0x08d0);
-            self.oam_state_view_mut()
+            self.oam_state_mut().set_current_pointer(0x08d0);
+            self.oam_state_mut()
                 .set_current_extended_pointer(0x0a20 + 0x34);
         }
 
@@ -10358,7 +10315,7 @@ impl ZeldaState {
             && self.ancilla_slot_view(k).k() != 3
             && self.ancilla_slot_view(k).object_priority() != 0
         {
-            self.oam_state_view_mut().set_priority_word(0x3000);
+            self.oam_state_mut().set_priority_word(0x3000);
         }
         y = y.wrapping_sub(z as i16 as u16);
         let mut j = self.ancilla_slot_view(k).work_byte_1() as usize * 4;
@@ -10514,13 +10471,13 @@ impl ZeldaState {
     fn ancilla_prep_adjusted_oam_coord(&mut self, k: usize) -> (u16, u16) {
         const TAGALONG_LAYER_BITS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
         let floor = self.ancilla_slot_view(k).floor() as usize;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_priority_word((TAGALONG_LAYER_BITS[floor] as u16) << 8);
         (
             self.ancilla_get_x(k)
-                .wrapping_sub(self.ppu_scroll_copy_view().bg2_h_copy()),
+                .wrapping_sub(self.ppu_scroll_copy().bg2_h_copy()),
             self.ancilla_get_y(k)
-                .wrapping_sub(self.ppu_scroll_copy_view().bg2_v_copy()),
+                .wrapping_sub(self.ppu_scroll_copy().bg2_v_copy()),
         )
     }
 
@@ -10552,8 +10509,8 @@ impl ZeldaState {
             }
             a = 0x820;
         }
-        self.oam_state_view_mut().set_current_pointer(a as u16);
-        self.oam_state_view_mut()
+        self.oam_state_mut().set_current_pointer(a as u16);
+        self.oam_state_mut()
             .set_current_extended_pointer((((a - 0x800) >> 2) + 0xa20) as u16);
         self.oam_state_view().current_pointer_usize()
     }
@@ -10561,8 +10518,8 @@ impl ZeldaState {
     fn hit_stars_update_oam_buffer_position(&mut self, oam: usize) -> usize {
         let mut oam = oam;
         if !self.oam_state_view().has_sprite_sorting() && oam >= 0x9d0 {
-            self.oam_state_view_mut().set_current_pointer(0x820);
-            self.oam_state_view_mut()
+            self.oam_state_mut().set_current_pointer(0x820);
+            self.oam_state_mut()
                 .set_current_extended_pointer(0xa20 + (0x20 >> 2));
             oam = self.oam_state_view().current_pointer_usize();
         }
@@ -10595,11 +10552,10 @@ impl ZeldaState {
             0x46, 0x56,
         ];
 
-        self.oam_state_view_mut().set_current_pointer(0x0800);
-        self.oam_state_view_mut()
-            .set_current_extended_pointer(0x0a20);
+        self.oam_state_mut().set_current_pointer(0x0800);
+        self.oam_state_mut().set_current_extended_pointer(0x0a20);
         let mut oam = self.oam_state_view().current_pointer_usize();
-        let mut k = self.minigame_state_view().flag_boomerang_in_place() as i32;
+        let mut k = self.minigame_state().flag_boomerang_in_place() as i32;
         loop {
             let j = k as usize * 2;
             let x = self.ancilla_get_x(k as usize);
@@ -10669,15 +10625,15 @@ impl ZeldaState {
         let spark_x = self.sprite_slot_view(k).x_low();
         let spark_y = self.sprite_slot_view(k).y_low();
         let spark_floor = self.sprite_slot_view(k).floor();
-        self.garnish_state_view_mut().set_repulsespark_x_lo(spark_x);
-        self.garnish_state_view_mut().set_repulsespark_y_lo(spark_y);
-        self.garnish_state_view_mut().set_repulsespark_timer(5);
-        self.garnish_state_view_mut()
+        self.garnish_state_mut().set_repulsespark_x_lo(spark_x);
+        self.garnish_state_mut().set_repulsespark_y_lo(spark_y);
+        self.garnish_state_mut().set_repulsespark_timer(5);
+        self.garnish_state_mut()
             .set_repulsespark_floor_status(spark_floor);
     }
 
     fn sprite_place_weapon_tink_for_ancilla(&mut self, k: usize) {
-        if self.garnish_state_view().repulsespark_timer() != 0 {
+        if self.garnish_state().repulsespark_timer() != 0 {
             return;
         }
         self.sprite_sfx_queue_sfx2_with_pan(k, 5);
@@ -10736,19 +10692,19 @@ impl ZeldaState {
 
     fn medallion_check_sprite_damage(&mut self, k: usize) {
         let ancilla_type = self.ancilla_slot_view(k).ancilla_type();
-        self.temp_counter_view_mut().set(ancilla_type);
+        self.temp_counter_mut().set(ancilla_type);
         for j in (0..16).rev() {
             if self.sprite_slot_view(j).state() >= 9
                 && (self.sprite_slot_view(j).ignore_projectile() | self.sprite_slot_view(j).pause())
                     == 0
             {
-                self.ancilla_check_damage_to_sprite_aggressive(j, self.temp_counter_view().value());
+                self.ancilla_check_damage_to_sprite_aggressive(j, self.temp_counter().value());
             }
         }
     }
 
     fn sprite_func15_for_ancilla(&mut self, k: usize, a: u8) {
-        self.sprite_battle_view_mut().set_damage_type_determiner(a);
+        self.sprite_battle_mut().set_damage_type_determiner(a);
         self.sprite_apply_calculated_damage_for_ancilla(k, if a == 8 { 0x35 } else { 0x20 });
     }
 
@@ -10767,7 +10723,7 @@ impl ZeldaState {
         {
             return;
         }
-        let damage_type = self.sprite_battle_view().damage_type_determiner() as usize;
+        let damage_type = self.sprite_battle().damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
         let dmg = ENEMY_DAMAGES[damage_type * 8
             | self
@@ -10805,7 +10761,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_incoming_damage(dmg);
         }
         if dmg == 0 {
-            if self.sprite_battle_view().damage_type_determiner() != 10 {
+            if self.sprite_battle().damage_type_determiner() != 10 {
                 if self.sprite_slot_view(k).flags() & 4 != 0 {
                     self.sprite_set_damage_stun_for_ancilla(k);
                     return;
@@ -10860,7 +10816,7 @@ impl ZeldaState {
 
     fn sprite_set_damage_stun_for_ancilla(&mut self, k: usize) {
         let ty = self.sprite_slot_view(k).sprite_type();
-        let value = if self.sprite_battle_view().damage_type_determiner() >= 13 {
+        let value = if self.sprite_battle().damage_type_determiner() >= 13 {
             0
         } else if ty == 9 {
             20
@@ -11003,8 +10959,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_x_recoil(value);
                 let value = ANCILLA_CHECK_SPRITE_COLL_RECOIL_Y[i];
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
-                self.sprite_workspace_view_mut()
-                    .set_shared_scratch_a(k as u8);
+                self.sprite_workspace_mut().set_shared_scratch_a(k as u8);
                 self.ancilla_check_damage_to_sprite(j, self.ancilla_slot_view(k).ancilla_type());
                 return_true_set_alert = true;
             }
@@ -11015,7 +10970,7 @@ impl ZeldaState {
         if return_true_set_alert {
             let value = self.ancilla_slot_view(k).ancilla_type();
             self.sprite_slot_view_mut(j).set_draw_work_byte_2(value);
-            self.sprite_system_view_mut().set_alert_flag(3);
+            self.sprite_system_mut().set_alert_flag(3);
             return return_value;
         }
         false
@@ -11223,7 +11178,7 @@ impl ZeldaState {
             && self.ancilla_slot_view(k).k() != 3
             && self.ancilla_slot_view(k).object_priority() != 0
         {
-            self.oam_state_view_mut().set_priority_word(0x3000);
+            self.oam_state_mut().set_priority_word(0x3000);
         }
         y = y.wrapping_sub(z as i16 as u16);
         let j =
@@ -11252,9 +11207,8 @@ impl ZeldaState {
                     || k + 1 == self.player_state_view().ancilla_pickup_flag() as usize
                         && self.player_state_view().is_lifting_or_carrying())
             {
-                self.oam_state_view_mut()
-                    .set_current_pointer(0x0800 + 0x34 * 4);
-                self.oam_state_view_mut()
+                self.oam_state_mut().set_current_pointer(0x0800 + 0x34 * 4);
+                self.oam_state_mut()
                     .set_current_extended_pointer(0x0a20 + 0x34);
             }
         }
@@ -11300,7 +11254,7 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_y_velocity(value);
             self.ancilla_move_y(k);
             self.ancilla_move_x(k);
-            let timer = self.blast_wall_fireball_view_mut(k).tick_timer();
+            let timer = self.blast_wall_fireball_mut(k).tick_timer();
             if sign8(timer) {
                 let value = 0;
                 self.ancilla_slot_view_mut(k).set_ancilla_type(value);
@@ -11315,7 +11269,7 @@ impl ZeldaState {
         }
 
         let (x, y) = self.ancilla_prep_oam_coord(k);
-        let timer = self.blast_wall_fireball_view(k).timer();
+        let timer = self.blast_wall_fireball(k).timer();
         let j = if timer & 8 != 0 {
             0
         } else if timer & 4 != 0 {
@@ -11335,32 +11289,32 @@ impl ZeldaState {
 
     fn ancilla33_blast_wall_explosion(&mut self, k: usize) {
         if self.frame_state().submodule == 0 {
-            if self.blast_wall_explosion_view(k).phase() != 0 {
-                let timer = self.blast_wall_explosion_view_mut(k).tick_timer();
+            if self.blast_wall_explosion(k).phase() != 0 {
+                let timer = self.blast_wall_explosion_mut(k).tick_timer();
                 if timer == 0 {
-                    let phase = self.blast_wall_explosion_view_mut(k).advance_phase();
+                    let phase = self.blast_wall_explosion_mut(k).advance_phase();
                     if phase != 0 && phase < 9 {
                         self.ancilla_add_blast_wall_fireball(0x32, 10, k * 4);
                     }
                     if phase == 11 {
-                        self.blast_wall_explosion_view_mut(k).set_phase(0);
-                        self.blast_wall_explosion_view_mut(k).set_timer(0);
+                        self.blast_wall_explosion_mut(k).set_phase(0);
+                        self.blast_wall_explosion_mut(k).set_timer(0);
                     } else {
-                        self.blast_wall_explosion_view_mut(k).set_timer(3);
+                        self.blast_wall_explosion_mut(k).set_timer(3);
                     }
                 }
             } else {
                 let k = k ^ 1;
-                if self.blast_wall_explosion_view(k).phase() == 6
-                    && self.blast_wall_explosion_view(k).timer() == 2
+                if self.blast_wall_explosion(k).phase() == 6
+                    && self.blast_wall_explosion(k).timer() == 2
                     && self.ancilla_slot_view(0).item_to_link().wrapping_add(1) < 7
                 {
                     self.ancilla_slot_view_mut(0).advance_item_to_link();
-                    self.blast_wall_explosion_view_mut(k).set_phase(1);
-                    self.blast_wall_explosion_view_mut(k).set_timer(3);
+                    self.blast_wall_explosion_mut(k).set_phase(1);
+                    self.blast_wall_explosion_mut(k).set_timer(3);
                     for i in (0..=3).rev() {
                         let mut arr = [0i8, 0i8];
-                        let j = if self.blast_wall_scratch_view().direction() < 4 {
+                        let j = if self.blast_wall_scratch().direction() < 4 {
                             1
                         } else {
                             0
@@ -11368,7 +11322,7 @@ impl ZeldaState {
                         arr[j] = if i & 2 != 0 { -13 } else { 13 };
                         let j = k * 4 + i;
                         let (x, _y) = self
-                            .blast_wall_fragment_view_mut(j)
+                            .blast_wall_fragment_mut(j)
                             .offset(arr[1] as i16, arr[0] as i16);
                         let x = x.wrapping_sub(self.world_scroll().bg2_x());
                         if x < 256 {
@@ -11382,19 +11336,19 @@ impl ZeldaState {
         }
 
         let k = self.ancilla_slot_view(0).k() as usize;
-        if self.blast_wall_explosion_view(k).phase() != 0 {
+        if self.blast_wall_explosion(k).phase() != 0 {
             let first_i = if k == 1 { 7 } else { 3 };
             for i in (first_i - 3..=first_i).rev() {
                 self.ancilla_draw_blast_wall_blast(
                     k,
-                    self.blast_wall_fragment_view(i).x(),
-                    self.blast_wall_fragment_view(i).y(),
+                    self.blast_wall_fragment(i).x(),
+                    self.blast_wall_fragment(i).y(),
                 );
             }
         }
         if self.ancilla_slot_view(0).item_to_link() == 6
-            && self.blast_wall_explosion_view(0).phase() == 0
-            && self.blast_wall_explosion_view(1).phase() == 0
+            && self.blast_wall_explosion(0).phase() == 0
+            && self.blast_wall_explosion(1).phase() == 0
         {
             self.ancilla_slot_view_mut(0).set_ancilla_type(0);
             let value = 0;
@@ -11404,14 +11358,14 @@ impl ZeldaState {
     }
 
     fn ancilla_draw_blast_wall_blast(&mut self, k: usize, x: u16, y: u16) {
-        self.oam_state_view_mut().set_priority_word(0x3000);
+        self.oam_state_mut().set_priority_word(0x3000);
         if self.oam_state_view().has_sprite_sorting() {
             self.oam_allocate_from_region_d(0x18);
         } else {
             self.oam_allocate_from_region_a(0x18);
         }
         let oam = self.oam_state_view().current_pointer_usize();
-        let i = self.blast_wall_explosion_view(k).phase() as usize;
+        let i = self.blast_wall_explosion(k).phase() as usize;
         self.ancilla_draw_explosion(
             oam,
             BOMB_DRAW_FRAME_STARTS[i] as usize * 6,
@@ -11437,13 +11391,13 @@ impl ZeldaState {
             x >>= 3;
             self.overworld_get_tile_attribute_at_location(x, y)
         };
-        self.sprite_workspace_view_mut().set_tile_type(tiletype);
+        self.sprite_workspace_mut().set_tile_type(tiletype);
         tiletype
     }
 
     fn entity_check_sloped_tile_collision_for_ancilla(&self, x: u16, y: u16) -> bool {
         let a = (y & 7) as u8;
-        let r6 = self.sprite_workspace_view().tile_type().wrapping_sub(0x10);
+        let r6 = self.sprite_workspace().tile_type().wrapping_sub(0x10);
         if r6 >= 4 {
             return true;
         }
@@ -11457,23 +11411,23 @@ impl ZeldaState {
 
     fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
         let mut yval = 0xf0;
-        let xt: u16 = if self.enhanced_features_view().has(1) {
+        let xt: u16 = if self.enhanced_features().has(1) {
             0x40
         } else {
             0
         };
         if x.wrapping_add(xt) < 256 + xt * 2 && y < 256 {
             big |= ((x >> 8) as u8) & 1;
-            self.oam_state_view_mut().set_entry_x(oam, x as u8);
+            self.oam_state_mut().set_entry_x(oam, x as u8);
             if y < 0xf0 {
                 yval = y as u8;
             }
         }
-        self.oam_state_view_mut().set_entry_y(oam, yval);
-        self.oam_state_view_mut().set_entry_char(oam, charnum);
-        self.oam_state_view_mut().set_entry_flags(oam, flags);
+        self.oam_state_mut().set_entry_y(oam, yval);
+        self.oam_state_mut().set_entry_char(oam, charnum);
+        self.oam_state_mut().set_entry_flags(oam, flags);
         let value = big;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF) / 4, value);
     }
 
@@ -11486,10 +11440,10 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .write_entry(oam, x as u8, y as u8, charnum, flags);
         let value = big;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF) / 4, value);
     }
 
@@ -11503,8 +11457,8 @@ impl ZeldaState {
         mut big: u8,
     ) {
         let mut yval = 0xf0;
-        self.oam_state_view_mut().set_entry_x(oam, x as u8);
-        let xt: u16 = if self.enhanced_features_view().has(1) {
+        self.oam_state_mut().set_entry_x(oam, x as u8);
+        let xt: u16 = if self.enhanced_features().has(1) {
             0x48
         } else {
             0
@@ -11515,11 +11469,11 @@ impl ZeldaState {
                 yval = y as u8;
             }
         }
-        self.oam_state_view_mut().set_entry_y(oam, yval);
-        self.oam_state_view_mut().set_entry_char(oam, charnum);
-        self.oam_state_view_mut().set_entry_flags(oam, flags);
+        self.oam_state_mut().set_entry_y(oam, yval);
+        self.oam_state_mut().set_entry_char(oam, charnum);
+        self.oam_state_mut().set_entry_flags(oam, flags);
         let value = big;
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF) / 4, value);
     }
 
@@ -11557,8 +11511,8 @@ impl ZeldaState {
             return y as i32;
         }
         if j == 2 {
-            let start = self.room_bounds_view().packed_top().wrapping_add(1);
-            let end = self.room_bounds_view().packed_bottom().wrapping_sub(1);
+            let start = self.room_bounds().packed_top().wrapping_add(1);
+            let end = self.room_bounds().packed_bottom().wrapping_sub(1);
             let a = y.wrapping_add(self.world_scroll().bg2_y());
             if a <= start || a >= end {
                 0
@@ -11566,8 +11520,8 @@ impl ZeldaState {
                 y as i32
             }
         } else {
-            let start = self.room_bounds_view().packed_left().wrapping_add(1);
-            let end = self.room_bounds_view().packed_right().wrapping_sub(1);
+            let start = self.room_bounds().packed_left().wrapping_add(1);
+            let end = self.room_bounds().packed_right().wrapping_sub(1);
             let a = y.wrapping_add(self.world_scroll().bg2_x());
             if a <= start || a >= end {
                 0

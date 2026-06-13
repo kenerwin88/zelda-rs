@@ -178,7 +178,7 @@ impl ZeldaState {
             let f1 = self.poly_runtime().f1();
             let x = self.poly_runtime().base_x().wrapping_add(f0);
             let y = self.poly_runtime().base_y().wrapping_sub(f1);
-            self.poly_projected_vertex_view_mut().set_position(i, x, y);
+            self.poly_projected_vertex_mut().set_position(i, x, y);
         }
     }
 
@@ -241,18 +241,18 @@ impl ZeldaState {
             src += 1;
             self.poly_runtime_mut().set_num_vertex_in_poly(n);
             self.poly_runtime_mut().set_tmp0(n);
-            self.poly_face_coords_view_mut()
+            self.poly_face_coords_mut()
                 .set_xy_coords_count(n.wrapping_mul(2));
 
             let mut i = 1usize;
             loop {
                 let j = poly[src] as usize;
                 src += 1;
-                let projected = self.poly_projected_vertex_view();
+                let projected = self.poly_projected_vertex();
                 let x = projected.x(j);
                 let y = projected.y(j);
-                self.poly_face_coords_view_mut().set_coord(i, x);
-                self.poly_face_coords_view_mut().set_coord(i + 1, y);
+                self.poly_face_coords_mut().set_coord(i, x);
+                self.poly_face_coords_mut().set_coord(i + 1, y);
                 i += 2;
                 if self.poly_runtime_mut().decrement_tmp0() == 0 {
                     break;
@@ -273,7 +273,7 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_calculate_cross_product(&mut self) -> i16 {
-        let face = self.poly_face_coords_view();
+        let face = self.poly_face_coords();
         let mut a = (face.coord(3) as i16).wrapping_sub(face.coord(1) as i16);
         let mut tmp0 = (a as i32)
             .wrapping_mul((face.coord(6).wrapping_sub(face.coord(4)) as i8) as i32)
@@ -312,15 +312,15 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_draw_face(&mut self) {
-        let mut n = self.poly_face_coords_view().xy_coords_count() as usize;
-        let mut min_y = self.poly_face_coords_view().coord(n);
+        let mut n = self.poly_face_coords().xy_coords_count() as usize;
+        let mut min_y = self.poly_face_coords().coord(n);
         let mut min_idx = n;
         loop {
             n = n.wrapping_sub(2);
             if n == 0 {
                 break;
             }
-            let y = self.poly_face_coords_view().coord(n);
+            let y = self.poly_face_coords().coord(n);
             if y < min_y {
                 min_y = y;
                 min_idx = n;
@@ -331,16 +331,13 @@ impl ZeldaState {
             + (((min_y & 0x38) ^ if min_y & 0x20 != 0 { 0x24 } else { 0 }) as u16) * 64
             + ((min_y & 7) as u16) * 2;
         self.poly_runtime_mut().set_raster_dst_ptr(raster_dst_ptr);
-        let total_steps = self.poly_face_coords_view().xy_coords_count() >> 1;
-        self.poly_raster_edge_view_mut()
+        let total_steps = self.poly_face_coords().xy_coords_count() >> 1;
+        self.poly_raster_edge_mut()
             .set_both_cur_vertex_idx(min_idx as u8);
-        self.poly_raster_edge_view_mut()
-            .set_total_num_steps(total_steps);
-        let min_x = self.poly_face_coords_view().coord(min_idx - 1);
-        self.poly_raster_edge_view_mut()
-            .set_left_current(min_x, min_y);
-        self.poly_raster_edge_view_mut()
-            .set_right_current(min_x, min_y);
+        self.poly_raster_edge_mut().set_total_num_steps(total_steps);
+        let min_x = self.poly_face_coords().coord(min_idx - 1);
+        self.poly_raster_edge_mut().set_left_current(min_x, min_y);
+        self.poly_raster_edge_mut().set_right_current(min_x, min_y);
         if self.polyhedral_set_left() || self.polyhedral_set_right() {
             return;
         }
@@ -356,26 +353,24 @@ impl ZeldaState {
             }
             self.poly_runtime_mut().set_raster_dst_ptr(raster_dst_ptr);
 
-            let edge = self.poly_raster_edge_view();
+            let edge = self.poly_raster_edge();
             if edge.y0_cur() == edge.y0_trigger() {
-                let x0_target = self.poly_raster_edge_view().x0_target();
-                self.poly_raster_edge_view_mut()
-                    .set_left_current_x(x0_target);
+                let x0_target = self.poly_raster_edge().x0_target();
+                self.poly_raster_edge_mut().set_left_current_x(x0_target);
                 if self.polyhedral_set_left() {
                     return;
                 }
             }
-            self.poly_raster_edge_view_mut().increment_y0_cur();
-            let edge = self.poly_raster_edge_view();
+            self.poly_raster_edge_mut().increment_y0_cur();
+            let edge = self.poly_raster_edge();
             if edge.y1_cur() == edge.y1_trigger() {
-                let x1_target = self.poly_raster_edge_view().x1_target();
-                self.poly_raster_edge_view_mut()
-                    .set_right_current_x(x1_target);
+                let x1_target = self.poly_raster_edge().x1_target();
+                self.poly_raster_edge_mut().set_right_current_x(x1_target);
                 if self.polyhedral_set_right() {
                     return;
                 }
             }
-            self.poly_raster_edge_view_mut().increment_y1_cur();
+            self.poly_raster_edge_mut().increment_y1_cur();
             self.poly_runtime_mut().add_x0_step_to_fraction();
             self.poly_runtime_mut().add_x1_step_to_fraction();
         }
@@ -423,25 +418,24 @@ impl ZeldaState {
 
     pub(super) fn polyhedral_set_left(&mut self) -> bool {
         loop {
-            if self.poly_raster_edge_view_mut().decrement_total_num_steps() < 0 {
+            if self.poly_raster_edge_mut().decrement_total_num_steps() < 0 {
                 return true;
             }
-            let mut i = self.poly_raster_edge_view().cur_vertex_idx0() as i32 - 2;
+            let mut i = self.poly_raster_edge().cur_vertex_idx0() as i32 - 2;
             if i == 0 {
-                i = self.poly_face_coords_view().xy_coords_count() as i32;
+                i = self.poly_face_coords().xy_coords_count() as i32;
             }
             let i = i as usize;
-            let y = self.poly_face_coords_view().coord(i);
-            let x = self.poly_face_coords_view().coord(i - 1);
-            let y0_cur = self.poly_raster_edge_view().y0_cur();
+            let y = self.poly_face_coords().coord(i);
+            let x = self.poly_face_coords().coord(i - 1);
+            let y0_cur = self.poly_raster_edge().y0_cur();
             if y < y0_cur {
                 return true;
             }
             if y != y0_cur {
-                self.poly_raster_edge_view_mut().set_left_target(x, y);
-                self.poly_raster_edge_view_mut()
-                    .set_cur_vertex_idx0(i as u8);
-                let edge = self.poly_raster_edge_view();
+                self.poly_raster_edge_mut().set_left_target(x, y);
+                self.poly_raster_edge_mut().set_cur_vertex_idx0(i as u8);
+                let edge = self.poly_raster_edge();
                 let x0_cur = edge.x0_cur();
                 let y0_cur = edge.y0_cur();
                 let y0_trigger = edge.y0_trigger();
@@ -453,33 +447,31 @@ impl ZeldaState {
                     .set_x0_step(if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
-            self.poly_raster_edge_view_mut().set_left_current_x(x);
-            self.poly_raster_edge_view_mut()
-                .set_cur_vertex_idx0(i as u8);
+            self.poly_raster_edge_mut().set_left_current_x(x);
+            self.poly_raster_edge_mut().set_cur_vertex_idx0(i as u8);
         }
     }
 
     pub(super) fn polyhedral_set_right(&mut self) -> bool {
         loop {
-            if self.poly_raster_edge_view_mut().decrement_total_num_steps() < 0 {
+            if self.poly_raster_edge_mut().decrement_total_num_steps() < 0 {
                 return true;
             }
-            let mut i = self.poly_raster_edge_view().cur_vertex_idx1() as usize;
-            if i == self.poly_face_coords_view().xy_coords_count() as usize {
+            let mut i = self.poly_raster_edge().cur_vertex_idx1() as usize;
+            if i == self.poly_face_coords().xy_coords_count() as usize {
                 i = 0;
             }
             i += 2;
-            let y = self.poly_face_coords_view().coord(i);
-            let x = self.poly_face_coords_view().coord(i - 1);
-            let y1_cur = self.poly_raster_edge_view().y1_cur();
+            let y = self.poly_face_coords().coord(i);
+            let x = self.poly_face_coords().coord(i - 1);
+            let y1_cur = self.poly_raster_edge().y1_cur();
             if y < y1_cur {
                 return true;
             }
             if y != y1_cur {
-                self.poly_raster_edge_view_mut().set_right_target(x, y);
-                self.poly_raster_edge_view_mut()
-                    .set_cur_vertex_idx1(i as u8);
-                let edge = self.poly_raster_edge_view();
+                self.poly_raster_edge_mut().set_right_target(x, y);
+                self.poly_raster_edge_mut().set_cur_vertex_idx1(i as u8);
+                let edge = self.poly_raster_edge();
                 let x1_cur = edge.x1_cur();
                 let y1_cur = edge.y1_cur();
                 let y1_trigger = edge.y1_trigger();
@@ -491,9 +483,8 @@ impl ZeldaState {
                     .set_x1_step(if u < 0 { t.wrapping_neg() } else { t });
                 return false;
             }
-            self.poly_raster_edge_view_mut().set_right_current_x(x);
-            self.poly_raster_edge_view_mut()
-                .set_cur_vertex_idx1(i as u8);
+            self.poly_raster_edge_mut().set_right_current_x(x);
+            self.poly_raster_edge_mut().set_cur_vertex_idx1(i as u8);
         }
     }
 

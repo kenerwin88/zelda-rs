@@ -548,7 +548,7 @@ impl ZeldaState {
                     0
                 };
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
+                if self.garnish_state().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
                     self.sprite_slot_view_mut(k).set_x_velocity((-16i8) as u8);
@@ -586,7 +586,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_slot_view_mut(k).set_graphics(3);
-                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
+                if self.garnish_state().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).xor_direction(1);
                     let value = FLUTE_BOY_ANIMAL_X_VELOCITIES
@@ -627,10 +627,10 @@ impl ZeldaState {
             | FLUTE_BOY_ANIMAL_OAM_FLAGS[usize::from(self.sprite_slot_view(k).direction())];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         let cur = self.oam_state_view().current_pointer();
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
         let ext = self.oam_state_view().current_extended_pointer();
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).subtract_flags2(1);
         self.sprite_draw_single_large(k);
@@ -645,7 +645,7 @@ impl ZeldaState {
                     3
                 };
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.garnish_state_view().haunted_grove_flute_event_latch() != 0 {
+                if self.garnish_state().haunted_grove_flute_event_latch() != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).xor_direction(1);
                     let value = FLUTE_BOY_ANIMAL_X_VELOCITIES
@@ -686,7 +686,7 @@ impl ZeldaState {
         };
         let oam = self.oam_state_view().current_pointer_usize();
         let j = usize::from(self.sprite_slot_view(k).direction());
-        self.oam_state_view_mut().write_entry(
+        self.oam_state_mut().write_entry(
             oam,
             x.wrapping_add(FLUTE_BOY_BIRD_X_OFFSETS[j] as i16 as u16) as u8,
             y as u8,
@@ -1017,7 +1017,7 @@ impl ZeldaState {
                             self.sprite_slot_view_mut(j).set_delay_main(32);
                         }
                     }
-                    self.temp_counter_view_mut().set(0xff);
+                    self.temp_counter_mut().set(0xff);
                 } else {
                     self.sprite_slot_view_mut(k).or_hit_timer(0xe0);
                 }
@@ -1230,13 +1230,13 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_a(xo as u8);
                 self.sprite_slot_view_mut(k).set_b(yo as u8);
                 let x_delta = self
-                    .sprite_workspace_view()
+                    .sprite_workspace()
                     .current_sprite_x()
                     .wrapping_add(xo as i16 as u16)
                     .wrapping_sub(self.player_state_view().x())
                     .wrapping_add(12);
                 let y_delta = self
-                    .sprite_workspace_view()
+                    .sprite_workspace()
                     .current_sprite_y()
                     .wrapping_add(yo as i16 as u16)
                     .wrapping_sub(self.player_state_view().y())
@@ -1253,23 +1253,23 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_e(loot);
                     match loot {
                         1 => {
-                            if self.player_resources_view().bombs() != 0 {
-                                self.player_resources_view_mut().decrement_bombs();
+                            if self.player_resources().bombs() != 0 {
+                                self.player_resources_mut().decrement_bombs();
                             } else {
                                 self.sprite_slot_view_mut(k).set_g(0);
                             }
                         }
                         2 => {
-                            if self.player_resources_view().arrows() != 0 {
-                                self.player_resources_view_mut().decrement_arrows();
+                            if self.player_resources().arrows() != 0 {
+                                self.player_resources_mut().decrement_arrows();
                             } else {
                                 self.sprite_slot_view_mut(k).set_g(0);
                             }
                         }
                         3 => {
-                            let rupees = self.player_resources_view().rupees_goal();
+                            let rupees = self.player_resources().rupees_goal();
                             if rupees != 0 {
-                                self.player_resources_view_mut().subtract_rupees_goal(1);
+                                self.player_resources_mut().subtract_rupees_goal(1);
                             } else {
                                 self.sprite_slot_view_mut(k).set_g(0);
                             }
@@ -1332,13 +1332,13 @@ impl ZeldaState {
             && self
                 .player_state_view()
                 .x()
-                .wrapping_sub(self.sprite_workspace_view().current_sprite_x())
+                .wrapping_sub(self.sprite_workspace().current_sprite_x())
                 .wrapping_add(40)
                 < 80
             && self
                 .player_state_view()
                 .y()
-                .wrapping_sub(self.sprite_workspace_view().current_sprite_y())
+                .wrapping_sub(self.sprite_workspace().current_sprite_y())
                 .wrapping_add(48)
                 < 80
             && !self.player_state_view().has_disabled_oam_offsets()
@@ -2156,13 +2156,13 @@ impl ZeldaState {
                     let x = self.sprite_get_x(j);
                     let y = self.sprite_get_y(j);
                     if self
-                        .sprite_workspace_view()
+                        .sprite_workspace()
                         .current_sprite_x()
                         .wrapping_sub(x)
                         .wrapping_add(2)
                         < 4
                         && self
-                            .sprite_workspace_view()
+                            .sprite_workspace()
                             .current_sprite_y()
                             .wrapping_sub(y)
                             .wrapping_add(2)
@@ -2312,7 +2312,7 @@ impl ZeldaState {
         const FLOPPING_FISH_GROUND_GRAPHICS: [u8; 17] =
             [5, 5, 6, 6, 5, 5, 4, 4, 3, 7, 7, 8, 8, 7, 7, 8, 8];
 
-        if self.sprite_system_view().chr_halfslot_state() < 3 {
+        if self.sprite_system().chr_halfslot_state() < 3 {
             self.fish_draw(k);
         }
         if self.sprite_slot_view(k).state() == 10 {
@@ -2327,7 +2327,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_check_tile_collision(k);
-                if self.sprite_workspace_view().tile_type() == 8 {
+                if self.sprite_workspace().tile_type() == 8 {
                     self.sprite_slot_view_mut(k).set_state(0);
                 } else {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
@@ -2340,9 +2340,9 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
                     self.sprite_slot_view_mut(k).set_z(0);
-                    if self.sprite_workspace_view().tile_type() == 9 {
+                    if self.sprite_workspace().tile_type() == 9 {
                         self.sprite_spawn_small_splash(k);
-                    } else if self.sprite_workspace_view().tile_type() == 8 {
+                    } else if self.sprite_workspace().tile_type() == 8 {
                         self.sprite_slot_view_mut(k).set_state(0);
                         self.sprite_spawn_small_splash(k);
                     }
@@ -2385,7 +2385,7 @@ impl ZeldaState {
                 self.sprite_move_z(k);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if self.sprite_slot_view(k).z_velocity() == 0 && self.sprite_slot_view(k).a() != 0 {
-                    self.dialogue_message_index_view_mut().set_value(0x176);
+                    self.dialogue_message_index_mut().set_value(0x176);
                     self.sprite_show_message_minimal_c();
                 }
                 if sign8(self.sprite_slot_view(k).z()) {
@@ -2519,8 +2519,8 @@ impl ZeldaState {
         }
         let cur_x = self.sprite_get_x(k);
         let cur_y = self.sprite_get_y(k);
-        self.sprite_workspace_view_mut().set_current_sprite_x(cur_x);
-        self.sprite_workspace_view_mut().set_current_sprite_y(cur_y);
+        self.sprite_workspace_mut().set_current_sprite_x(cur_x);
+        self.sprite_workspace_mut().set_current_sprite_y(cur_y);
         let x = u16::from(self.sprite_slot_view(k).a())
             | (u16::from(self.sprite_slot_view(k).b()) << 8);
         let y = u16::from(self.sprite_slot_view(k).c())
@@ -2711,7 +2711,7 @@ impl ZeldaState {
             self.boulder_outdoors_main(k);
             return;
         }
-        if self.sprite_system_view().chr_halfslot_state() < 3 {
+        if self.sprite_system().chr_halfslot_state() < 3 {
             self.sprite_draw_single_small(k);
         }
         if self.sprite_return_if_inactive(k) {
@@ -2723,8 +2723,8 @@ impl ZeldaState {
         if (((k as u8) ^ self.frame_state().frame_counter) & 3) != 0 {
             return;
         }
-        let cur_x = self.sprite_workspace_view().current_sprite_x();
-        let cur_y = self.sprite_workspace_view().current_sprite_y();
+        let cur_x = self.sprite_workspace().current_sprite_x();
+        let cur_y = self.sprite_workspace().current_sprite_y();
         let link_x = self.player_state_view().x();
         let link_y = self.player_state_view().y();
         if cur_x.wrapping_sub(link_x).wrapping_add(4) < 16
@@ -3046,7 +3046,7 @@ impl ZeldaState {
                             let j = j as usize;
                             let value = 21;
                             self.garnish_slot_view_mut(j).set_garnish_type(value);
-                            self.garnish_state_view_mut().set_active_type(21);
+                            self.garnish_state_mut().set_active_type(21);
                             let value = self.sprite_slot_view(k).x_low();
                             self.garnish_slot_view_mut(j).set_x_low(value);
                             let value = self.sprite_slot_view(k).x_high();
@@ -3105,21 +3105,21 @@ impl ZeldaState {
         for i in 0..4 {
             let addr = oam + i * 4;
             let charnum = self.oam_state_view().entry_char(addr).wrapping_add(chr);
-            self.oam_state_view_mut().set_entry_char(addr, charnum);
+            self.oam_state_mut().set_entry_char(addr, charnum);
         }
         if self.sprite_slot_view(k).ai_state() == 5 {
-            self.oam_state_view_mut().hide_entry(oam + 4 * 4);
+            self.oam_state_mut().hide_entry(oam + 4 * 4);
         }
         if (self.sprite_slot_view(k).subtype2() & 8) != 0 {
-            self.oam_state_view_mut().or_entry_flags(oam + 4 * 4, 0x40);
+            self.oam_state_mut().or_entry_flags(oam + 4 * 4, 0x40);
         }
 
         if self.sprite_slot_view(k).ai_state() != 5 {
             let cur = self.oam_state_view().current_pointer();
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_current_pointer(cur.wrapping_add(4));
             let ext = self.oam_state_view().current_extended_pointer();
-            self.oam_state_view_mut()
+            self.oam_state_mut()
                 .set_current_extended_pointer(ext.wrapping_add(1));
             if self.sprite_slot_view(k).z() < 0xa0 {
                 let bak = self.sprite_slot_view(k).oam_flags();
@@ -3595,7 +3595,7 @@ impl ZeldaState {
             if self.garnish_slot_view(i).is_empty() {
                 let value = 2;
                 self.garnish_slot_view_mut(i).set_garnish_type(value);
-                self.garnish_state_view_mut().set_active_type(2);
+                self.garnish_state_mut().set_active_type(2);
                 let value = self.sprite_slot_view(k).x_low();
                 self.garnish_slot_view_mut(i).set_x_low(value);
                 let value = self.sprite_slot_view(k).x_high();
@@ -3662,10 +3662,10 @@ impl ZeldaState {
                 if !self.sprite_check_damage_to_and_from_link(k) {
                     self.sprite_move_xy(k);
                     let cy = self
-                        .sprite_workspace_view()
+                        .sprite_workspace()
                         .current_sprite_y()
                         .wrapping_sub(u16::from(self.sprite_slot_view(k).z()));
-                    self.sprite_workspace_view_mut().set_current_sprite_y(cy);
+                    self.sprite_workspace_mut().set_current_sprite_y(cy);
                     if self.sprite_check_tile_collision(k) == 0 {
                         self.sprite_94_tile_animate(k);
                         return;
@@ -3806,11 +3806,11 @@ impl ZeldaState {
                     let j = if self.sprite_slot_view(k).direction() < 2 {
                         self.player_state_view()
                             .y()
-                            .wrapping_sub(self.sprite_workspace_view().current_sprite_y())
+                            .wrapping_sub(self.sprite_workspace().current_sprite_y())
                     } else {
                         self.player_state_view()
                             .x()
-                            .wrapping_sub(self.sprite_workspace_view().current_sprite_x())
+                            .wrapping_sub(self.sprite_workspace().current_sprite_x())
                     };
                     if j.wrapping_add(16) < 32 {
                         self.sprite_slot_view_mut(k).set_delay_main(32);
@@ -3848,8 +3848,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_delay_main(255);
             self.sprite_slot_view_mut(k).set_x_velocity(0);
             self.sprite_slot_view_mut(k).set_y_velocity(0);
-            self.enemy_damage_subclass_table_view_mut()
-                .set_entry(0x918, 2);
+            self.enemy_damage_subclass_table_mut().set_entry(0x918, 2);
         }
         if self.sprite_return_if_recoiling(k) {
             return;
@@ -3884,8 +3883,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.enemy_damage_subclass_table_view_mut()
-                    .set_entry(0x918, 0);
+                self.enemy_damage_subclass_table_mut().set_entry(0x918, 0);
                 self.sprite_check_damage_to_and_from_link(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -4247,11 +4245,8 @@ impl ZeldaState {
 
     // void Sprite_88_Mothula(int k) {  // 9ebe7e
     pub(super) fn sprite_88_mothula(&mut self, k: usize) {
-        if self
-            .enhanced_features_view()
-            .has(FEATURE_MISC_BUG_FIXES_MOTHULA)
-        {
-            let mut damage_data = self.enemy_damage_subclass_table_view_mut();
+        if self.enhanced_features().has(FEATURE_MISC_BUG_FIXES_MOTHULA) {
+            let mut damage_data = self.enemy_damage_subclass_table_mut();
             damage_data.set_entry(0x884, 1);
             damage_data.set_entry(0x885, 1);
         }
@@ -4280,9 +4275,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn mothula_draw(&mut self, k: usize) {
-        self.oam_state_view_mut().set_current_pointer(0x920);
-        self.oam_state_view_mut()
-            .set_current_extended_pointer(0xa68);
+        self.oam_state_mut().set_current_pointer(0x920);
+        self.oam_state_mut().set_current_extended_pointer(0xa68);
         let g = self.sprite_slot_view(k).graphics() as usize;
         let (info_x, info_y) = self.sprite_draw_multiple_for_mothula(k, g * 8, 8);
         if self.sprite_slot_view(k).pause() != 0 {
@@ -4545,7 +4539,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_z(0);
             }
         }
-        self.temp_counter_view_mut().set(0xff);
+        self.temp_counter_mut().set(0xff);
     }
 
     // void Mothula_HandleSpikes(int k) {  // 9ec088
@@ -4604,15 +4598,9 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j)
             .set_direction(MOTHULA_SPIKE_DIRECTIONS[i]);
         self.sprite_slot_view_mut(j).set_e(1);
-        let value = self
-            .sprite_workspace_view()
-            .room_origin_x_high()
-            .wrapping_add(1);
+        let value = self.sprite_workspace().room_origin_x_high().wrapping_add(1);
         self.sprite_slot_view_mut(j).set_x_high(value);
-        let value = self
-            .sprite_workspace_view()
-            .room_origin_y_high()
-            .wrapping_add(1);
+        let value = self.sprite_workspace().room_origin_y_high().wrapping_add(1);
         self.sprite_slot_view_mut(j).set_y_high(value);
         self.sprite_slot_view_mut(j).set_x_velocity(1);
         self.sprite_get_16bit_coords_for_mothula(j);
@@ -4733,7 +4721,7 @@ impl ZeldaState {
                 return;
             }
             if self
-                .sprite_workspace_view_mut()
+                .sprite_workspace_mut()
                 .decrement_armos_knight_remaining_count()
                 == 1
             {
@@ -4764,7 +4752,7 @@ impl ZeldaState {
         if sign8(self.sprite_slot_view(k).z()) {
             self.sprite_slot_view_mut(k).set_z_velocity(0);
             self.sprite_slot_view_mut(k).set_z(0);
-            if self.sprite_workspace_view().armos_knight_remaining_count() != 1
+            if self.sprite_workspace().armos_knight_remaining_count() != 1
                 && self.sprite_slot_view(k).a() != 0
             {
                 self.sprite_slot_view_mut(k).set_z_velocity(48);
@@ -4803,7 +4791,7 @@ impl ZeldaState {
                     self.sprite_repel_dash();
                 }
             }
-        } else if self.sprite_workspace_view().armos_knight_remaining_count() == 1 {
+        } else if self.sprite_workspace().armos_knight_remaining_count() == 1 {
             self.sprite_armos_crusher(k);
         } else {
             self.sprite_check_damage_to_and_from_link(k);
@@ -4818,8 +4806,8 @@ impl ZeldaState {
                     | (u16::from(self.sprite_slot_view(k).x_high()) << 8);
                 let cur_y = u16::from(self.sprite_slot_view(k).y_low())
                     | (u16::from(self.sprite_slot_view(k).y_high()) << 8);
-                self.sprite_workspace_view_mut().set_current_sprite_x(cur_x);
-                self.sprite_workspace_view_mut().set_current_sprite_y(cur_y);
+                self.sprite_workspace_mut().set_current_sprite_x(cur_x);
+                self.sprite_workspace_mut().set_current_sprite_y(cur_y);
                 if x.wrapping_sub(cur_x).wrapping_add(2) < 4
                     && y.wrapping_sub(cur_y).wrapping_add(2) < 4
                 {
@@ -4945,8 +4933,8 @@ impl ZeldaState {
                         | (u16::from(self.sprite_slot_view(k).x_high()) << 8);
                     let cur_y = u16::from(self.sprite_slot_view(k).y_low())
                         | (u16::from(self.sprite_slot_view(k).y_high()) << 8);
-                    self.sprite_workspace_view_mut().set_current_sprite_x(cur_x);
-                    self.sprite_workspace_view_mut().set_current_sprite_y(cur_y);
+                    self.sprite_workspace_mut().set_current_sprite_x(cur_x);
+                    self.sprite_workspace_mut().set_current_sprite_y(cur_y);
                     let x = u16::from(self.sprite_slot_view(k).b())
                         | (u16::from(self.sprite_slot_view(k).c()) << 8);
                     let y = u16::from(self.sprite_slot_view(k).e())
@@ -5191,7 +5179,7 @@ mod tests {
         s.sprite_slot_view_mut(k).set_z(0);
 
         s.mothula_spawn_beams(k);
-        assert_eq!(s.temp_counter_view().value(), 0xff);
+        assert_eq!(s.temp_counter().value(), 0xff);
 
         // The reverse-allocator hands out 15, 14, 13 across the loop.
         // First iter (i = 2): x_vel = 16, y_vel = 24, x_lo = 0x80 + 16.
@@ -5298,8 +5286,8 @@ mod tests {
         // calling get_random_number isn't an option here, but the
         // table lookup with whatever index is produced just needs to be
         // valid; we assert side-effects independent of index.
-        s.sprite_workspace_view_mut().set_room_origin_x_high(0x10);
-        s.sprite_workspace_view_mut().set_room_origin_y_high(0x20);
+        s.sprite_workspace_mut().set_room_origin_x_high(0x10);
+        s.sprite_workspace_mut().set_room_origin_y_high(0x20);
         write_le_u16(&mut s.ram, SPRCOLL_X_SIZE, 0xffff);
         write_le_u16(&mut s.ram, SPRCOLL_Y_SIZE, 0xffff);
 

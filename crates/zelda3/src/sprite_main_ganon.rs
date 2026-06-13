@@ -572,7 +572,7 @@ impl ZeldaState {
                 } else if self.sprite_slot_view(k).delay_main() == 32 {
                     self.system_signals_mut().set_music_control(0x1f);
                 } else if self.sprite_slot_view(k).delay_main() == 64 {
-                    self.dialogue_message_index_view_mut().set_value(0x16f);
+                    self.dialogue_message_index_mut().set_value(0x16f);
                     self.sprite_show_message_minimal_c();
                 }
             }
@@ -870,7 +870,7 @@ impl ZeldaState {
                             self.ganon_select_warp_location(k, 10);
                             self.sprite_slot_view_mut(k).set_health(96);
                             self.sprite_slot_view_mut(k).set_delay_aux2(224);
-                            self.dialogue_message_index_view_mut().set_value(0x170);
+                            self.dialogue_message_index_mut().set_value(0x170);
                             self.sprite_show_message_minimal_c();
                         }
                     } else {
@@ -945,9 +945,8 @@ impl ZeldaState {
     //   Sprite_DrawMultiple(k, &kPhantomGanon_Dmd[sprite_graphics[k] * 8], 8, NULL);
     // }
     pub(super) fn phantom_ganon_draw(&mut self, k: usize) {
-        self.oam_state_view_mut().set_current_pointer(0x950);
-        self.oam_state_view_mut()
-            .set_current_extended_pointer(0xa74);
+        self.oam_state_mut().set_current_pointer(0x950);
+        self.oam_state_mut().set_current_extended_pointer(0xa74);
         let g = self.sprite_slot_view(k).graphics() as usize;
         // Sprite_DrawMultiple emits 8 OAM entries starting at index g*8.
         self.sprite_draw_multiple_for_ganon(k, &PHANTOM_GANON_DRAW_FRAMES, g * 8, 8);
@@ -1066,8 +1065,8 @@ impl ZeldaState {
     //   return (uint16)(cur_sprite_x - x + 4) < 8 && (uint16)(cur_sprite_y - y + 4) < 8;
     // }
     pub(super) fn ganon_attempt_trident_catch(&self, x: u16, y: u16) -> bool {
-        let cx = self.sprite_workspace_view().current_sprite_x();
-        let cy = self.sprite_workspace_view().current_sprite_y();
+        let cx = self.sprite_workspace().current_sprite_x();
+        let cy = self.sprite_workspace().current_sprite_y();
         cx.wrapping_sub(x).wrapping_add(4) < 8 && cy.wrapping_sub(y).wrapping_add(4) < 8
     }
 
@@ -1121,7 +1120,7 @@ impl ZeldaState {
             let y = (sprite0_y as i32).wrapping_add(ys as i32);
             self.overlord_slot_view_mut(i + 1).set_circle_y(y as u16);
         }
-        self.temp_counter_view_mut().set(8);
+        self.temp_counter_mut().set(8);
     }
 
     // void Ganon_SpawnSpiralBat(int k) {  // sprite_main.c:14582
@@ -1251,7 +1250,7 @@ impl ZeldaState {
     //   sprite_ignore_projectile[j] = 7;
     // }
     pub(super) fn ganon_func1(&mut self, k: usize, t: u8) {
-        self.temp_counter_view_mut().set(t);
+        self.temp_counter_mut().set(t);
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_ex_for_ganon(k, 0xC9, 8) {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x2a);
             self.sprite_set_spawned_coordinates_for_ganon(j, r0_x, r2_y);
@@ -1408,20 +1407,18 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).g() == 9 {
-            self.oam_state_view_mut().set_current_pointer(0x828);
-            self.oam_state_view_mut()
-                .set_current_extended_pointer(0xa2a);
+            self.oam_state_mut().set_current_pointer(0x828);
+            self.oam_state_mut().set_current_extended_pointer(0xa2a);
             self.ganon_draw_emit_g9_overlay_for_ganon(k);
         }
 
         let z = (self.sprite_slot_view(k).z() as u16).wrapping_sub(1);
         let frame: u16 = if (z >> 11) > 4 { 4 } else { z >> 11 };
-        let cy = self.sprite_workspace_view().current_sprite_y();
-        self.sprite_workspace_view_mut()
+        let cy = self.sprite_workspace().current_sprite_y();
+        self.sprite_workspace_mut()
             .set_current_sprite_y(cy.wrapping_add(z));
-        self.oam_state_view_mut().set_current_pointer(0x9f4);
-        self.oam_state_view_mut()
-            .set_current_extended_pointer(0xa9d);
+        self.oam_state_mut().set_current_pointer(0x9f4);
+        self.oam_state_mut().set_current_extended_pointer(0xa9d);
         let bak = self.sprite_slot_view(k).oam_flags();
         self.sprite_slot_view_mut(k).set_oam_flags(0);
         self.sprite_slot_view_mut(k).set_object_priority(48);
@@ -1577,13 +1574,13 @@ impl ZeldaState {
             } else {
                 0
             };
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_entry_char(oam, GANON_DRAW_PATCH_CHARS[j]);
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .merge_entry_flags(oam, 0x3f, GANON_DRAW_PATCH_FLAGS[j]);
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .set_entry_char(oam + 4, GANON_DRAW_PATCH_CHARS[j + 1]);
-        self.oam_state_view_mut()
+        self.oam_state_mut()
             .merge_entry_flags(oam + 4, 0x3f, GANON_DRAW_PATCH_FLAGS[j + 1]);
     }
 
@@ -1610,12 +1607,10 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        self.oam_state_view_mut()
-            .write_entry(oam, x, y, charnum, flags);
+        self.oam_state_mut().write_entry(oam, x, y, charnum, flags);
         let ext_index = (oam - OAM_BUF) / 4;
         let value = big;
-        self.oam_state_view_mut()
-            .set_extended_byte(ext_index, value);
+        self.oam_state_mut().set_extended_byte(ext_index, value);
     }
 
     // Rewired to canonical Sprite_Get16BitCoords port.
@@ -1636,8 +1631,8 @@ mod tests {
     fn attempt_trident_catch_matches_8x8_window() {
         // cur_sprite_(x,y) within +/- 4 of the target should report a catch.
         let mut s = fresh_state();
-        s.sprite_workspace_view_mut().set_current_sprite_x(0x100);
-        s.sprite_workspace_view_mut().set_current_sprite_y(0x80);
+        s.sprite_workspace_mut().set_current_sprite_x(0x100);
+        s.sprite_workspace_mut().set_current_sprite_y(0x80);
         // Same coords -> 4 + (0) wraps into window — bool true.
         assert!(s.ganon_attempt_trident_catch(0x100, 0x80));
         // 7-unit X delta should still land within (uint16)(dx + 4) < 8 -> 4+(-7)=-3 wraps high -> false.
@@ -1814,7 +1809,7 @@ mod tests {
             0x10u16.wrapping_sub(4)
         );
         // tmp_counter is set to 8.
-        assert_eq!(s.temp_counter_view().value(), 8);
+        assert_eq!(s.temp_counter().value(), 8);
         // With scale = 0, GanonSin -> 0, so every overlord_x_hi[i+1] == sprite_x_lo(0) == 0x80.
         for i in 0..8 {
             assert_eq!(s.overlord_slot_view(i + 1).x_high(), 0x80);
@@ -1830,8 +1825,8 @@ mod tests {
         // highest free slot in [0..=8] wins. Ensure slot 8 is free so it
         // gets picked (matching the C entry-point behavior).
         s.sprite_slot_view_mut(8).set_state(0);
-        s.sprite_workspace_view_mut().set_current_sprite_x(0x40);
-        s.sprite_workspace_view_mut().set_current_sprite_y(0x60);
+        s.sprite_workspace_mut().set_current_sprite_x(0x40);
+        s.sprite_workspace_mut().set_current_sprite_y(0x60);
         s.ganon_spawn_spiral_bat(k);
         let j = 8;
         assert_eq!(s.sprite_slot_view(j).state(), 9);

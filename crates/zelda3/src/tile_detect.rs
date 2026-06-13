@@ -49,13 +49,13 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_y(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let detect_y = link_y.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16);
-        self.tile_detect_position_view_mut().set_y(detect_y);
+        self.tile_detect_position_mut().set_y(detect_y);
         let y = detect_y & mask;
         let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16)
             & mask)
@@ -66,8 +66,7 @@ impl ZeldaState {
         let x2 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16)
             & mask)
             >> 3;
-        self.tile_detect_position_view_mut()
-            .set_tile_probe_anchor(x2);
+        self.tile_detect_position_mut().set_tile_probe_anchor(x2);
         self.tile_detection_execute(x0, y, 1);
         self.tile_detection_execute(x1, y, 2);
         self.tile_detection_execute(x2, y, 4);
@@ -76,9 +75,9 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_x(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x =
@@ -86,10 +85,10 @@ impl ZeldaState {
         let y0 =
             link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16) & mask;
         let y1_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_CENTER_OFFSETS[direction] as u16);
-        self.tile_detect_position_view_mut().set_y(y1_pos);
+        self.tile_detect_position_mut().set_y(y1_pos);
         let y1 = y1_pos & mask;
         let y2_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16);
-        self.tile_detect_position_view_mut().set_x(y2_pos);
+        self.tile_detect_position_mut().set_x(y2_pos);
         let y2 = y2_pos & mask;
         self.tile_detection_execute(x, y0, 1);
         self.tile_detection_execute(x, y1, 2);
@@ -99,9 +98,9 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_vertical_slopes(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let y = link_y.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16) & mask;
@@ -117,9 +116,9 @@ impl ZeldaState {
     pub(super) fn tile_detect_movement_horizontal_slopes(&mut self, direction: u16) {
         assert!(direction < 4);
         self.tile_detect_reset_state();
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         let direction = direction as usize;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x = (link_x.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16)
@@ -133,8 +132,8 @@ impl ZeldaState {
 
     pub(super) fn player_tile_detect_nearby(&mut self) {
         self.tile_detect_reset_state();
-        self.tile_detect_position_view_mut().clear_pit_tile();
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        self.tile_detect_position_mut().clear_pit_tile();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[0] as u16) & mask) >> 3;
@@ -142,8 +141,7 @@ impl ZeldaState {
             (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[0] as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[2] as u16) & mask;
         let y1 = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[2] as u16) & mask;
-        self.tile_detect_position_view_mut()
-            .set_tile_probe_anchor(y0);
+        self.tile_detect_position_mut().set_tile_probe_anchor(y0);
         self.tile_detection_execute(x0, y0, 8);
         self.tile_detection_execute(x0, y1, 2);
         self.tile_detection_execute(x1, y0, 4);
@@ -163,7 +161,7 @@ impl ZeldaState {
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
         let dir = self.ancilla_slot_view(k).direction() as i32;
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         if self.dungeon_room_load().header_collision() == 2 {
             self.player_state_view_mut().set_lower_level_state(1);
@@ -185,7 +183,7 @@ impl ZeldaState {
         const CHECK_X: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
         const CHECK_Y: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
         let base = dir as usize * 2;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let y0 = y.wrapping_add(CHECK_Y[base] as u16) & mask;
         let y1 = y.wrapping_add(CHECK_Y[base + 1] as u16) & mask;
         let x0 = (x.wrapping_add(CHECK_X[base] as u16) & mask) >> 3;
@@ -206,22 +204,22 @@ impl ZeldaState {
         } else {
             2
         };
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         const DETECT_Y: [i8; 4] = [8, 23, 16, 16];
         const DETECT_X: [i8; 4] = [8, 8, 0, 15];
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(DETECT_X[y] as i16 as u16) & mask) >> 3;
         let y0 = link_y.wrapping_add(DETECT_Y[y] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
-        if ((self.tile_detect_position_view().collision_bits()
-            | self.tile_detect_position_view().horizontal_ledge() as u16)
+        if ((self.tile_detect_position().collision_bits()
+            | self.tile_detect_position().horizontal_ledge() as u16)
             & 3)
             == 0
-            && ((self.tile_detect_position_view().vertical_ledge()
-                | self.tile_detect_position_view().diagonal_ledge_tiles())
+            && ((self.tile_detect_position().vertical_ledge()
+                | self.tile_detect_position().diagonal_ledge_tiles())
                 & 0x33)
                 == 0
         {
@@ -239,17 +237,16 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_check_for_mirror_bonk(&mut self) {
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(2) & mask) >> 3;
         let x1 = (link_x.wrapping_add(13) & mask) >> 3;
         let y0 = link_y.wrapping_add(10) & mask;
         let y1 = link_y.wrapping_add(21) & mask;
-        self.tile_detect_position_view_mut()
-            .set_tile_probe_anchor(y0);
+        self.tile_detect_position_mut().set_tile_probe_anchor(y0);
         self.tile_detection_execute(x0, y0, 8);
         self.tile_detection_execute(x0, y1, 2);
         self.tile_detection_execute(x1, y0, 4);
@@ -257,12 +254,12 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_sword_swing_deep_in_door(&mut self, dw: u8) {
-        self.tile_detect_position_view_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         const DOORWAY_DETECT_X: [i8; 4] = [8, 8, -1, 16];
         const DOORWAY_DETECT_Y: [i8; 4] = [-1, 24, 16, 16];
         let o = dw.wrapping_sub(1) as usize * 2;
-        let mask = self.tile_detect_position_view().location_calc_mask();
+        let mask = self.tile_detect_position().location_calc_mask();
         let link_y = self.player_state_view().y();
         let link_x = self.player_state_view().x();
         let x0 = (link_x.wrapping_add(DOORWAY_DETECT_X[o] as i16 as u16) & mask) >> 3;
@@ -274,44 +271,36 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_reset_state(&mut self) {
-        self.tile_detect_position_view_mut()
-            .clear_slope_collision_bits();
-        self.tile_detect_position_view_mut().clear_collision_bits();
-        self.tile_detect_position_view_mut().clear_diagonal_tile();
-        self.tile_detect_position_view_mut().clear_stair_tile();
-        self.tile_detect_position_view_mut().clear_pit_tile();
-        self.tile_detect_position_view_mut()
-            .clear_inroom_staircase();
-        self.tile_detect_position_view_mut().clear_block_flags();
-        self.tile_detect_position_view_mut()
-            .clear_door_direction_flags();
-        self.tile_detect_position_view_mut()
-            .clear_moving_floor_tiles();
-        self.tile_detect_position_view_mut().clear_deepwater();
-        self.tile_detect_position_view_mut().clear_normal_tiles();
-        self.tile_detect_position_view_mut().clear_icy_floor();
-        self.tile_detect_position_view_mut().clear_water_staircase();
-        self.tile_detect_position_view_mut().clear_thick_grass();
-        self.tile_detect_position_view_mut().clear_shallow_water();
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut().clear_slope_collision_bits();
+        self.tile_detect_position_mut().clear_collision_bits();
+        self.tile_detect_position_mut().clear_diagonal_tile();
+        self.tile_detect_position_mut().clear_stair_tile();
+        self.tile_detect_position_mut().clear_pit_tile();
+        self.tile_detect_position_mut().clear_inroom_staircase();
+        self.tile_detect_position_mut().clear_block_flags();
+        self.tile_detect_position_mut().clear_door_direction_flags();
+        self.tile_detect_position_mut().clear_moving_floor_tiles();
+        self.tile_detect_position_mut().clear_deepwater();
+        self.tile_detect_position_mut().clear_normal_tiles();
+        self.tile_detect_position_mut().clear_icy_floor();
+        self.tile_detect_position_mut().clear_water_staircase();
+        self.tile_detect_position_mut().clear_thick_grass();
+        self.tile_detect_position_mut().clear_shallow_water();
+        self.tile_detect_position_mut()
             .clear_destruction_aftermath();
-        self.tile_detect_position_view_mut().clear_read_something();
-        self.tile_detect_position_view_mut().clear_vertical_ledge();
-        self.tile_detect_position_view_mut()
-            .clear_horizontal_ledge();
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut().clear_read_something();
+        self.tile_detect_position_mut().clear_vertical_ledge();
+        self.tile_detect_position_mut().clear_horizontal_ledge();
+        self.tile_detect_position_mut()
             .clear_ledges_down_leftright();
-        self.tile_detect_position_view_mut()
-            .clear_diagonal_ledge_tiles();
-        self.tile_detect_position_view_mut().clear_chest();
-        self.tile_detect_position_view_mut()
-            .clear_key_lock_gravestones();
-        self.tile_detect_position_view_mut()
-            .clear_spike_cactus_tiles();
-        self.tile_detect_position_view_mut()
+        self.tile_detect_position_mut().clear_diagonal_ledge_tiles();
+        self.tile_detect_position_mut().clear_chest();
+        self.tile_detect_position_mut().clear_key_lock_gravestones();
+        self.tile_detect_position_mut().clear_spike_cactus_tiles();
+        self.tile_detect_position_mut()
             .clear_spike_floor_and_triggers();
-        self.tile_detect_position_view_mut().clear_dashable_tiles();
-        self.tile_detect_position_view_mut().clear_misc_tiles();
+        self.tile_detect_position_mut().clear_dashable_tiles();
+        self.tile_detect_position_mut().clear_misc_tiles();
         self.dungeon_environment_mut()
             .clear_moving_floor_check_flags();
     }
@@ -321,12 +310,12 @@ impl ZeldaState {
         let is_indoors = self.world_location_state().is_indoors();
         let trace = env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame();
-        let r14_before = self.tile_detect_position_view().collision_bits();
-        let r12_before = self.tile_detect_position_view().slope_collision_bits();
-        let misc_before = self.tile_detect_position_view().misc_tiles();
-        let normal_before = self.tile_detect_position_view().normal_tiles();
-        let pit_before = self.tile_detect_position_view().pit_tile();
-        let diag_before = self.tile_detect_position_view().diag_state();
+        let r14_before = self.tile_detect_position().collision_bits();
+        let r12_before = self.tile_detect_position().slope_collision_bits();
+        let misc_before = self.tile_detect_position().misc_tiles();
+        let normal_before = self.tile_detect_position().normal_tiles();
+        let pit_before = self.tile_detect_position().pit_tile();
+        let diag_before = self.tile_detect_position().diag_state();
         let below_before = self.player_state_view().tile_below();
         let tile = if is_indoors {
             self.player_state_view_mut().clear_force_move_high_byte();
@@ -363,17 +352,17 @@ impl ZeldaState {
                 self.player_state_view().speed_setting(),
                 self.player_state_view().speed_modifier(),
                 r14_before,
-                self.tile_detect_position_view().collision_bits(),
+                self.tile_detect_position().collision_bits(),
                 r12_before,
-                self.tile_detect_position_view().slope_collision_bits(),
+                self.tile_detect_position().slope_collision_bits(),
                 misc_before,
-                self.tile_detect_position_view().misc_tiles(),
+                self.tile_detect_position().misc_tiles(),
                 normal_before,
-                self.tile_detect_position_view().normal_tiles(),
+                self.tile_detect_position().normal_tiles(),
                 pit_before,
-                self.tile_detect_position_view().pit_tile(),
+                self.tile_detect_position().pit_tile(),
                 diag_before,
-                self.tile_detect_position_view().diag_state(),
+                self.tile_detect_position().diag_state(),
                 below_before,
                 self.player_state_view().tile_below(),
             );
@@ -421,206 +410,206 @@ impl ZeldaState {
             | 0xbf
             | 0xd0..=0xef => {
                 if !is_indoors {
-                    let normal = self.tile_detect_position_view().normal_tiles() | bits;
-                    self.tile_detect_position_view_mut().set_normal_tiles(normal);
+                    let normal = self.tile_detect_position().normal_tiles() | bits;
+                    self.tile_detect_position_mut().set_normal_tiles(normal);
                 }
             }
             0x01 | 0x02 | 0x03 | 0x26 | 0x43 => {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_collision_bits(bits);
             }
             0x04 => {
                 if is_indoors {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_collision_bits(bits);
                 } else {
-                    let grass = self.tile_detect_position_view().thick_grass() | bits;
-                    self.tile_detect_position_view_mut().set_thick_grass(grass);
+                    let grass = self.tile_detect_position().thick_grass() | bits;
+                    self.tile_detect_position_mut().set_thick_grass(grass);
                 }
             }
             0x0b => {
                 if is_indoors {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_collision_bits(bits);
                 } else {
-                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                    let deepwater = self.tile_detect_position_view().deepwater() | (bits << 4);
-                    self.tile_detect_position_view_mut().set_deepwater(deepwater);
+                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                    let deepwater = self.tile_detect_position().deepwater() | (bits << 4);
+                    self.tile_detect_position_mut().set_deepwater(deepwater);
                 }
             }
             0x08 => {
-                let deepwater = self.tile_detect_position_view().deepwater() | bits;
-                self.tile_detect_position_view_mut().set_deepwater(deepwater);
+                let deepwater = self.tile_detect_position().deepwater() | bits;
+                self.tile_detect_position_mut().set_deepwater(deepwater);
             }
             0x09 => {
-                let shallow = self.tile_detect_position_view().shallow_water() | bits;
-                self.tile_detect_position_view_mut().set_shallow_water(shallow);
+                let shallow = self.tile_detect_position().shallow_water() | bits;
+                self.tile_detect_position_mut().set_shallow_water(shallow);
             }
             0x0a => {
-                let normal = self.tile_detect_position_view().normal_tiles() | bits;
-                self.tile_detect_position_view_mut().set_normal_tiles(normal);
+                let normal = self.tile_detect_position().normal_tiles() | bits;
+                self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x0c => {
-                let moving_floor = self.tile_detect_position_view().moving_floor_tiles() | bits;
-                self.tile_detect_position_view_mut().set_moving_floor_tiles(moving_floor);
+                let moving_floor = self.tile_detect_position().moving_floor_tiles() | bits;
+                self.tile_detect_position_mut().set_moving_floor_tiles(moving_floor);
             }
             0x0d => {
                 if !self.player_state_view().is_menu_blocked()
                     && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
-                    self.tile_detect_position_view_mut().or_spike_floor_and_triggers((bits << 4) as u8);
+                    self.tile_detect_position_mut().or_spike_floor_and_triggers((bits << 4) as u8);
                 }
             }
             0x0e => {
-                let icy = self.tile_detect_position_view().icy_floor() | bits;
-                self.tile_detect_position_view_mut().set_icy_floor(icy);
+                let icy = self.tile_detect_position().icy_floor() | bits;
+                self.tile_detect_position_mut().set_icy_floor(icy);
             }
             0x0f => {
-                let icy = self.tile_detect_position_view().icy_floor() | (bits << 4);
-                self.tile_detect_position_view_mut().set_icy_floor(icy);
+                let icy = self.tile_detect_position().icy_floor() | (bits << 4);
+                self.tile_detect_position_mut().set_icy_floor(icy);
             }
             0x6c..=0x6f if is_indoors => {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_collision_bits(bits);
             }
             0x6c..=0x6f => {
-                let normal = self.tile_detect_position_view().normal_tiles() | bits;
-                self.tile_detect_position_view_mut().set_normal_tiles(normal);
+                let normal = self.tile_detect_position().normal_tiles() | bits;
+                self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x10..=0x13 => {
                 const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
-                self.tile_detect_position_view_mut().or_slope_collision_bits(bits);
-                self.tile_detect_position_view_mut()
+                self.tile_detect_position_mut().or_slope_collision_bits(bits);
+                self.tile_detect_position_mut()
                     .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
             }
             0x18..=0x1b => {
                 const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
-                let diagonal = self.tile_detect_position_view().diagonal_tile() | bits;
-                self.tile_detect_position_view_mut().set_diagonal_tile(diagonal);
-                self.tile_detect_position_view_mut().or_slope_collision_bits(bits);
-                self.tile_detect_position_view_mut()
+                let diagonal = self.tile_detect_position().diagonal_tile() | bits;
+                self.tile_detect_position_mut().set_diagonal_tile(diagonal);
+                self.tile_detect_position_mut().or_slope_collision_bits(bits);
+                self.tile_detect_position_mut()
                     .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
             }
             0x1c => {
-                let water_stair = self.tile_detect_position_view().water_staircase() | bits;
-                self.tile_detect_position_view_mut().set_water_staircase(water_stair);
+                let water_stair = self.tile_detect_position().water_staircase() | bits;
+                self.tile_detect_position_mut().set_water_staircase(water_stair);
             }
             0x1d..=0x1f => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_inroom_staircase(bits);
-                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_inroom_staircase(bits);
+                self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x20 | 0xb0..=0xbd => {
                 if !self.player_state_view().has_somaria_platform_state() {
-                    self.tile_detect_position_view_mut().or_pit_tile(bits as u8);
+                    self.tile_detect_position_mut().or_pit_tile(bits as u8);
                 }
             }
             0x22 | 0x30..=0x37 => {
-                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
+                self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x27 => {
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | bits;
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0x28 => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_vertical_ledge(bits as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_vertical_ledge(bits as u8);
             }
             0x29 => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_vertical_ledge((bits << 4) as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_vertical_ledge((bits << 4) as u8);
             }
             0x2a | 0x2b => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_horizontal_ledge(bits as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_horizontal_ledge(bits as u8);
             }
             0x2c | 0x2e => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_horizontal_ledge((bits << 4) as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_horizontal_ledge((bits << 4) as u8);
             }
             0x2d | 0x2f => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_ledges_down_leftright(bits as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_ledges_down_leftright(bits as u8);
             }
             0x3d..=0x3f => {
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_view_mut().or_inroom_staircase(bits << 4);
-                self.tile_detect_position_view_mut().or_stair_tile(bits as u8);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                self.tile_detect_position_mut().or_inroom_staircase(bits << 4);
+                self.tile_detect_position_mut().or_stair_tile(bits as u8);
             }
             0x40 => {
-                let grass = self.tile_detect_position_view().thick_grass() | bits;
-                self.tile_detect_position_view_mut().set_thick_grass(grass);
+                let grass = self.tile_detect_position().thick_grass() | bits;
+                self.tile_detect_position_mut().set_thick_grass(grass);
             }
             0x44 => {
                 if !self.player_state_view().is_menu_blocked()
                     && self.dungeon_savegame_state().savegame_state_bits() & 0x8000 == 0
                 {
-                    self.tile_detect_position_view_mut().or_spike_cactus_tiles(bits as u8);
+                    self.tile_detect_position_mut().or_spike_cactus_tiles(bits as u8);
                 } else {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_collision_bits(bits);
                 }
             }
             0x46 => {
-                self.tile_detect_position_view_mut().or_spike_floor_and_triggers(bits as u8);
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_spike_floor_and_triggers(bits as u8);
+                self.tile_detect_position_mut().or_collision_bits(bits);
             }
             0x48 | 0x4a => {
-                let aftermath = self.tile_detect_position_view().destruction_aftermath() | bits;
-                let normal = self.tile_detect_position_view().normal_tiles() | bits;
-                self.tile_detect_position_view_mut().set_destruction_aftermath(aftermath);
-                self.tile_detect_position_view_mut().set_normal_tiles(normal);
+                let aftermath = self.tile_detect_position().destruction_aftermath() | bits;
+                let normal = self.tile_detect_position().normal_tiles() | bits;
+                self.tile_detect_position_mut().set_destruction_aftermath(aftermath);
+                self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x4b => {
-                let grass = self.tile_detect_position_view().thick_grass() | (bits << 4);
-                self.tile_detect_position_view_mut().set_thick_grass(grass);
+                let grass = self.tile_detect_position().thick_grass() | (bits << 4);
+                self.tile_detect_position_mut().set_thick_grass(grass);
             }
             0x4c | 0x4d => {
                 if !is_indoors {
-                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                    self.tile_detect_position_view_mut().or_diagonal_ledge_tiles(bits as u8);
+                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                    self.tile_detect_position_mut().or_diagonal_ledge_tiles(bits as u8);
                 }
             }
             0x4e | 0x4f => {
                 if !is_indoors {
-                    self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
-                    self.tile_detect_position_view_mut().or_diagonal_ledge_tiles((bits << 4) as u8);
+                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
+                    self.tile_detect_position_mut().or_diagonal_ledge_tiles((bits << 4) as u8);
                 }
             }
             0x50..=0x56 => {
                 const TILE50_DATA: [u8; 7] = [0x54, 0x52, 0x50, 0x51, 0x53, 0x55, 0x56];
                 if let Some(i) = TILE50_DATA.iter().rposition(|&value| value == tile) {
                     if tile == 0x50 || tile == 0x51 {
-                        self.tile_detect_position_view_mut().or_dashable_tiles((bits << 4) as u8);
+                        self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
                     }
-                    let read_something = self.tile_detect_position_view().read_something() | bits;
-                    let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                    let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                    self.tile_detect_position_view_mut().set_read_something(read_something);
-                    self.tile_detect_position_view_mut().set_liftable_tile_index((i * 2) as u8);
-                    self.tile_detect_position_view_mut().set_collision_bits(r14);
-                    self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                    let read_something = self.tile_detect_position().read_something() | bits;
+                    let r14 = self.tile_detect_position().collision_bits() | bits;
+                    let misc = self.tile_detect_position().misc_tiles() | bits;
+                    self.tile_detect_position_mut().set_read_something(read_something);
+                    self.tile_detect_position_mut().set_liftable_tile_index((i * 2) as u8);
+                    self.tile_detect_position_mut().set_collision_bits(r14);
+                    self.tile_detect_position_mut().set_misc_tiles(misc);
                 }
             }
             0x57 => {
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
-                self.tile_detect_position_view_mut().or_dashable_tiles((bits << 4) as u8);
+                self.tile_detect_position_mut().or_collision_bits(bits);
+                self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
             }
             0x58..=0x5d | 0x63 => {
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
-                self.tile_detect_position_view_mut().set_interacting_tile(tile as u16);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | bits;
+                self.tile_detect_position_mut().set_misc_tiles(misc);
+                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
                 if tile != 0x63
                     && self.dungeon_room_items().chest_location((tile - 0x58) as usize)
                         >= 0x8000
                 {
-                    self.tile_detect_position_view_mut().set_collision_bits(r14);
-                    self.tile_detect_position_view_mut().or_key_lock_gravestones((bits << 4) as u8);
+                    self.tile_detect_position_mut().set_collision_bits(r14);
+                    self.tile_detect_position_mut().or_key_lock_gravestones((bits << 4) as u8);
                     if bits & 2 != 0 {
-                        self.tile_detect_position_view_mut().set_tile_type(tile as u16);
+                        self.tile_detect_position_mut().set_tile_type(tile as u16);
                     }
                 } else {
-                    let chest = self.tile_detect_position_view().chest() | bits;
-                    self.tile_detect_position_view_mut().set_collision_bits(r14);
-                    self.tile_detect_position_view_mut().set_chest(chest);
+                    let chest = self.tile_detect_position().chest() | bits;
+                    self.tile_detect_position_mut().set_collision_bits(r14);
+                    self.tile_detect_position_mut().set_chest(chest);
                 }
             }
             0x60 => {
@@ -630,19 +619,19 @@ impl ZeldaState {
                     } else {
                         bits << 12
                     };
-                    let misc = self.tile_detect_position_view().misc_tiles() | misc_bits;
-                    self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                    let misc = self.tile_detect_position().misc_tiles() | misc_bits;
+                    self.tile_detect_position_mut().set_misc_tiles(misc);
                 } else {
-                    let normal = self.tile_detect_position_view().normal_tiles() | bits;
-                    self.tile_detect_position_view_mut().set_normal_tiles(normal);
+                    let normal = self.tile_detect_position().normal_tiles() | bits;
+                    self.tile_detect_position_mut().set_normal_tiles(normal);
                 }
             }
             0x67 => {
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
-                self.tile_detect_position_view_mut().or_spike_cactus_tiles((bits << 4) as u8);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | bits;
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_misc_tiles(misc);
+                self.tile_detect_position_mut().or_spike_cactus_tiles((bits << 4) as u8);
             }
             0x68 => {
                 self.dungeon_environment_mut().or_moving_floor_check_flags(bits);
@@ -659,63 +648,63 @@ impl ZeldaState {
             0x70..=0x7f => {
                 if bits & 2 != 0 {
                     let block_flags =
-                        self.tile_detect_position_view().block_flags() | (1 << (tile & 0x0f));
-                    self.tile_detect_position_view_mut().set_block_flags(block_flags);
+                        self.tile_detect_position().block_flags() | (1 << (tile & 0x0f));
+                    self.tile_detect_position_mut().set_block_flags(block_flags);
                 }
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | bits;
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0x80..=0x8d => {
-                let r14 = self.tile_detect_position_view().collision_bits()
+                let r14 = self.tile_detect_position().collision_bits()
                     | if tile == 0x82 || tile == 0x83 {
                         (bits << 4) | (bits << 8)
                     } else {
                         bits << 4
                     };
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0x8e | 0x8f => {
-                let r14 = self.tile_detect_position_view().collision_bits() | (bits << 4);
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().or_dashable_tiles(bits as u8);
-                self.tile_detect_position_view_mut().clear_door_direction_flags();
+                let r14 = self.tile_detect_position().collision_bits() | (bits << 4);
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().or_dashable_tiles(bits as u8);
+                self.tile_detect_position_mut().clear_door_direction_flags();
             }
             0x90..=0x9f | 0xa8..=0xaf => {
                 self.world_transient_mut().set_room_transitioning_flags(if tile < 0x98 { 1 } else { 3 });
-                let r14 = self.tile_detect_position_view().collision_bits() | (bits << 4) | (bits << 8);
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
+                let r14 = self.tile_detect_position().collision_bits() | (bits << 4) | (bits << 8);
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xa0..=0xa5 => {
                 self.world_transient_mut().set_room_transitioning_flags(2);
-                let r14 = self.tile_detect_position_view().collision_bits()
+                let r14 = self.tile_detect_position().collision_bits()
                     | if tile == 0xa2 || tile == 0xa3 {
                         (bits << 4) | (bits << 8)
                     } else {
                         bits << 4
                     };
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_door_direction_flags(2 * (tile as u16 & 1));
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
             }
             0xc0..=0xcf => {
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | bits;
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | bits;
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0xf0..=0xff => {
-                let r14 = self.tile_detect_position_view().collision_bits() | bits;
-                let misc = self.tile_detect_position_view().misc_tiles() | (bits << 4);
-                self.tile_detect_position_view_mut().set_collision_bits(r14);
-                self.tile_detect_position_view_mut().set_misc_tiles(misc);
+                let r14 = self.tile_detect_position().collision_bits() | bits;
+                let misc = self.tile_detect_position().misc_tiles() | (bits << 4);
+                self.tile_detect_position_mut().set_collision_bits(r14);
+                self.tile_detect_position_mut().set_misc_tiles(misc);
             }
             0x42 => {
                 if !is_indoors {
-                    self.tile_detect_position_view_mut().or_key_lock_gravestones(bits as u8);
-                self.tile_detect_position_view_mut().or_collision_bits(bits);
+                    self.tile_detect_position_mut().or_key_lock_gravestones(bits as u8);
+                self.tile_detect_position_mut().or_collision_bits(bits);
                 }
             }
         }
