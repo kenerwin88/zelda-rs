@@ -402,22 +402,227 @@ impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonMapDisplayState {
+    scroll_draw_offset: u16,
+    scroll_input: u16,
+    marker_x_offset: u16,
+    marker_y_offset: u16,
+    location_marker_base_y: u16,
+    init_state: u8,
     current_floor: u16,
+    floor_scroll_step: u8,
+    idx: u16,
+    scroll_target_y: u16,
+    player_marker_x: u16,
+    player_marker_y: u16,
 }
 
 impl DungeonMapDisplayState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            current_floor: read_le_u16(ram, DUNGEON_MAP_CURRENT_FLOOR),
+            scroll_draw_offset: read_le_u16(ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET),
+            scroll_input: read_le_u16(ram, DUNGEON_MAP_SCROLL_INPUT),
+            marker_x_offset: read_le_u16(ram, DUNGEON_MAP_MARKER_X_OFFSET),
+            marker_y_offset: read_le_u16(ram, DUNGEON_MAP_MARKER_Y_OFFSET),
+            location_marker_base_y: read_le_u16(ram, DUNGEON_MAP_LOCATION_MARKER_BASE_Y),
+            init_state: ram_byte(ram, DUNGMAP_INIT_STATE),
+            current_floor: read_le_u16(ram, DUNGMAP_CUR_FLOOR),
+            floor_scroll_step: ram_byte(ram, DUNGMAP_FLOOR_SCROLL_STEP),
+            idx: read_le_u16(ram, DUNGMAP_IDX),
+            scroll_target_y: read_le_u16(ram, DUNGMAP_SCROLL_TARGET_Y),
+            player_marker_x: read_le_u16(ram, DUNGMAP_PLAYER_MARKER_X),
+            player_marker_y: read_le_u16(ram, DUNGMAP_PLAYER_MARKER_Y),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_MAP_CURRENT_FLOOR, self.current_floor);
+        write_le_u16(ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET, self.scroll_draw_offset);
+        write_le_u16(ram, DUNGEON_MAP_SCROLL_INPUT, self.scroll_input);
+        write_le_u16(ram, DUNGEON_MAP_MARKER_X_OFFSET, self.marker_x_offset);
+        write_le_u16(ram, DUNGEON_MAP_MARKER_Y_OFFSET, self.marker_y_offset);
+        write_le_u16(
+            ram,
+            DUNGEON_MAP_LOCATION_MARKER_BASE_Y,
+            self.location_marker_base_y,
+        );
+        ram[DUNGMAP_INIT_STATE] = self.init_state;
+        write_le_u16(ram, DUNGMAP_CUR_FLOOR, self.current_floor);
+        ram[DUNGMAP_FLOOR_SCROLL_STEP] = self.floor_scroll_step;
+        write_le_u16(ram, DUNGMAP_IDX, self.idx);
+        write_le_u16(ram, DUNGMAP_SCROLL_TARGET_Y, self.scroll_target_y);
+        write_le_u16(ram, DUNGMAP_PLAYER_MARKER_X, self.player_marker_x);
+        write_le_u16(ram, DUNGMAP_PLAYER_MARKER_Y, self.player_marker_y);
+    }
+
+    pub(crate) fn scroll_draw_offset(&self) -> u16 {
+        self.scroll_draw_offset
+    }
+
+    pub(crate) fn scroll_input(&self) -> u16 {
+        self.scroll_input
+    }
+
+    pub(crate) fn scroll_input_direction_index(&self) -> usize {
+        usize::from((self.scroll_input() >> 3) & 1)
+    }
+
+    pub(crate) fn marker_x_offset(&self) -> u16 {
+        self.marker_x_offset
+    }
+
+    pub(crate) fn marker_y_offset(&self) -> u16 {
+        self.marker_y_offset
+    }
+
+    pub(crate) fn location_marker_base_y(&self) -> u8 {
+        self.location_marker_base_y as u8
+    }
+
+    pub(crate) fn dungmap_init_state(&self) -> u8 {
+        self.init_state
+    }
+
+    pub(crate) fn dungmap_cur_floor(&self) -> u16 {
+        self.current_floor
+    }
+
+    pub(crate) fn dungmap_cur_floor_byte(&self) -> u8 {
+        self.current_floor as u8
+    }
+
+    pub(crate) fn dungmap_floor_scroll_step(&self) -> u8 {
+        self.floor_scroll_step
+    }
+
+    pub(crate) fn dungmap_idx(&self) -> u16 {
+        self.idx
+    }
+
+    pub(crate) fn dungmap_scroll_target_y(&self) -> u16 {
+        self.scroll_target_y
+    }
+
+    pub(crate) fn dungmap_player_marker_x(&self) -> u16 {
+        self.player_marker_x
+    }
+
+    pub(crate) fn dungmap_player_marker_x_byte(&self) -> u8 {
+        self.player_marker_x as u8
+    }
+
+    pub(crate) fn dungmap_player_marker_y(&self) -> u16 {
+        self.player_marker_y
     }
 
     pub(crate) fn current_floor(&self) -> u16 {
         self.current_floor
+    }
+
+    fn clear_scroll_state(&mut self) {
+        self.scroll_draw_offset = 0;
+        self.scroll_input = 0;
+    }
+
+    fn set_scroll_draw_offset(&mut self, value: u16) {
+        self.scroll_draw_offset = value;
+    }
+
+    fn set_scroll_input(&mut self, value: u16) {
+        self.scroll_input = value;
+    }
+
+    fn reset_marker_offsets(&mut self) {
+        self.marker_x_offset = 0x0040;
+        self.marker_y_offset = 0x0040;
+    }
+
+    fn set_marker_x_offset(&mut self, value: u16) {
+        self.marker_x_offset = value;
+    }
+
+    fn set_marker_y_offset(&mut self, value: u16) {
+        self.marker_y_offset = value;
+    }
+
+    fn set_location_marker_base_y(&mut self, value: u8) {
+        self.location_marker_base_y = u16::from(value);
+    }
+
+    fn shift_marker_x_left(&mut self) -> u16 {
+        self.marker_x_offset = self.marker_x_offset.wrapping_sub(0x10);
+        self.marker_x_offset
+    }
+
+    fn reset_marker_x_offset(&mut self) {
+        self.marker_x_offset = 0x0040;
+    }
+
+    fn shift_marker_y_low_up(&mut self) {
+        self.marker_y_offset = (self.marker_y_offset & 0xff00)
+            | u16::from((self.marker_y_offset as u8).wrapping_sub(0x10));
+    }
+
+    fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
+        self.marker_y_offset = self.marker_y_offset.wrapping_add_signed(value);
+        self.marker_y_offset
+    }
+
+    fn increment_dungmap_init_state(&mut self) {
+        self.init_state = self.init_state.wrapping_add(1);
+    }
+
+    fn clear_dungmap_init_state(&mut self) {
+        self.init_state = 0;
+    }
+
+    fn set_dungmap_cur_floor(&mut self, value: u16) {
+        self.current_floor = value;
+    }
+
+    fn decrement_dungmap_cur_floor_byte(&mut self) {
+        self.current_floor =
+            (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_sub(1));
+    }
+
+    fn increment_dungmap_cur_floor(&mut self) -> u16 {
+        self.current_floor = self.current_floor.wrapping_add(1);
+        self.current_floor
+    }
+
+    fn increment_dungmap_cur_floor_byte(&mut self) {
+        self.current_floor =
+            (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_add(1));
+    }
+
+    fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
+        self.floor_scroll_step = value;
+    }
+
+    fn clear_dungmap_floor_scroll_step(&mut self) {
+        self.floor_scroll_step = 0;
+    }
+
+    fn increment_dungmap_floor_scroll_step(&mut self) {
+        self.floor_scroll_step = self.floor_scroll_step.wrapping_add(1);
+    }
+
+    fn set_dungmap_idx(&mut self, value: u16) {
+        self.idx = value;
+    }
+
+    fn clear_dungmap_idx(&mut self) {
+        self.idx = 0;
+    }
+
+    fn set_dungmap_scroll_target_y(&mut self, value: u16) {
+        self.scroll_target_y = value;
+    }
+
+    fn set_dungmap_player_marker_x(&mut self, value: u16) {
+        self.player_marker_x = value;
+    }
+
+    fn set_dungmap_player_marker_y(&mut self, value: u16) {
+        self.player_marker_y = value;
     }
 
     pub(crate) fn clear_current_floor_high(&mut self) {
@@ -443,10 +648,142 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.display.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_scroll_state(&mut self) {
+        self.display.clear_scroll_state();
+        self.sync();
+    }
+
+    pub(crate) fn set_scroll_draw_offset(&mut self, value: u16) {
+        self.display.set_scroll_draw_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_scroll_input(&mut self, value: u16) {
+        self.display.set_scroll_input(value);
+        self.sync();
+    }
+
+    pub(crate) fn reset_marker_offsets(&mut self) {
+        self.display.reset_marker_offsets();
+        self.sync();
+    }
+
+    pub(crate) fn set_marker_x_offset(&mut self, value: u16) {
+        self.display.set_marker_x_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_marker_y_offset(&mut self, value: u16) {
+        self.display.set_marker_y_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_location_marker_base_y(&mut self, value: u8) {
+        self.display.set_location_marker_base_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn shift_marker_x_left(&mut self) -> u16 {
+        let value = self.display.shift_marker_x_left();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn reset_marker_x_offset(&mut self) {
+        self.display.reset_marker_x_offset();
+        self.sync();
+    }
+
+    pub(crate) fn shift_marker_y_low_up(&mut self) {
+        self.display.shift_marker_y_low_up();
+        self.sync();
+    }
+
+    pub(crate) fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
+        let value = self.display.add_marker_y_offset_signed(value);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn increment_dungmap_init_state(&mut self) {
+        self.display.increment_dungmap_init_state();
+        self.sync();
+    }
+
+    pub(crate) fn clear_dungmap_init_state(&mut self) {
+        self.display.clear_dungmap_init_state();
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_cur_floor(&mut self, value: u16) {
+        self.display.set_dungmap_cur_floor(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
+        self.display.decrement_dungmap_cur_floor_byte();
+        self.sync();
+    }
+
+    pub(crate) fn increment_dungmap_cur_floor(&mut self) -> u16 {
+        let value = self.display.increment_dungmap_cur_floor();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn increment_dungmap_cur_floor_byte(&mut self) {
+        self.display.increment_dungmap_cur_floor_byte();
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
+        self.display.set_dungmap_floor_scroll_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_dungmap_floor_scroll_step(&mut self) {
+        self.display.clear_dungmap_floor_scroll_step();
+        self.sync();
+    }
+
+    pub(crate) fn increment_dungmap_floor_scroll_step(&mut self) {
+        self.display.increment_dungmap_floor_scroll_step();
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_idx(&mut self, value: u16) {
+        self.display.set_dungmap_idx(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_dungmap_idx(&mut self) {
+        self.display.clear_dungmap_idx();
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_scroll_target_y(&mut self, value: u16) {
+        self.display.set_dungmap_scroll_target_y(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_player_marker_x(&mut self, value: u16) {
+        self.display.set_dungmap_player_marker_x(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_dungmap_player_marker_y(&mut self, value: u16) {
+        self.display.set_dungmap_player_marker_y(value);
+        self.sync();
+    }
+
     pub(crate) fn clear_current_floor_high(&mut self) {
         self.display.clear_current_floor_high();
-        self.ram[DUNGEON_MAP_CURRENT_FLOOR + 1] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 

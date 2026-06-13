@@ -630,30 +630,81 @@ mod tests {
     #[test]
     fn dungeon_map_display_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, DUNGEON_MAP_CURRENT_FLOOR, 0x1234);
+        write_le_u16(&mut ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET, 0x0010);
+        write_le_u16(&mut ram, DUNGEON_MAP_SCROLL_INPUT, 0x0008);
+        write_le_u16(&mut ram, DUNGEON_MAP_MARKER_X_OFFSET, 0x0044);
+        write_le_u16(&mut ram, DUNGEON_MAP_MARKER_Y_OFFSET, 0x0055);
+        write_le_u16(&mut ram, DUNGEON_MAP_LOCATION_MARKER_BASE_Y, 0xabcd);
+        ram[DUNGMAP_INIT_STATE] = 2;
+        write_le_u16(&mut ram, DUNGMAP_CUR_FLOOR, 0x1234);
+        ram[DUNGMAP_FLOOR_SCROLL_STEP] = 3;
+        write_le_u16(&mut ram, DUNGMAP_IDX, 0x0006);
+        write_le_u16(&mut ram, DUNGMAP_SCROLL_TARGET_Y, 0x0080);
+        write_le_u16(&mut ram, DUNGMAP_PLAYER_MARKER_X, 0x0090);
+        write_le_u16(&mut ram, DUNGMAP_PLAYER_MARKER_Y, 0x00a0);
 
         let mut display = DungeonMapDisplayState::load_from_ram(&ram);
+        assert_eq!(display.scroll_draw_offset(), 0x0010);
+        assert_eq!(display.scroll_input_direction_index(), 1);
+        assert_eq!(display.marker_x_offset(), 0x0044);
+        assert_eq!(display.marker_y_offset(), 0x0055);
+        assert_eq!(display.location_marker_base_y(), 0xcd);
+        assert_eq!(display.dungmap_init_state(), 2);
         assert_eq!(display.current_floor(), 0x1234);
+        assert_eq!(display.dungmap_cur_floor(), 0x1234);
+        assert_eq!(display.dungmap_floor_scroll_step(), 3);
+        assert_eq!(display.dungmap_idx(), 0x0006);
+        assert_eq!(display.dungmap_scroll_target_y(), 0x0080);
+        assert_eq!(display.dungmap_player_marker_x(), 0x0090);
+        assert_eq!(display.dungmap_player_marker_y(), 0x00a0);
 
         display.clear_current_floor_high();
         display.write_to_ram(&mut ram);
 
-        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
+        assert_eq!(read_le_u16(&ram, DUNGMAP_CUR_FLOOR), 0x0034);
+        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_MARKER_X_OFFSET), 0x0044);
     }
 
     #[test]
     fn native_dungeon_map_display_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, DUNGEON_MAP_CURRENT_FLOOR, 0x1234);
+        write_le_u16(&mut ram, DUNGEON_MAP_MARKER_Y_OFFSET, 0x01f0);
+        write_le_u16(&mut ram, DUNGMAP_CUR_FLOOR, 0x1234);
 
         let mut display = DungeonMapDisplayState::default();
         {
             let mut bridge = NativeDungeonMapDisplayBridgeMut::new(&mut display, &mut ram);
+            bridge.reset_marker_offsets();
+            bridge.shift_marker_x_left();
+            bridge.set_location_marker_base_y(0x77);
+            bridge.set_scroll_input(0x0008);
+            bridge.increment_dungmap_init_state();
+            bridge.set_dungmap_floor_scroll_step(4);
+            bridge.set_dungmap_idx(0x0012);
+            bridge.set_dungmap_scroll_target_y(0x0070);
+            bridge.set_dungmap_player_marker_x(0x0088);
+            bridge.set_dungmap_player_marker_y(0x0099);
             bridge.clear_current_floor_high();
         }
 
+        assert_eq!(display.marker_x_offset(), 0x0030);
+        assert_eq!(display.marker_y_offset(), 0x0040);
+        assert_eq!(display.location_marker_base_y(), 0x77);
+        assert_eq!(display.scroll_input_direction_index(), 1);
+        assert_eq!(display.dungmap_init_state(), 1);
+        assert_eq!(display.dungmap_floor_scroll_step(), 4);
+        assert_eq!(display.dungmap_idx(), 0x0012);
+        assert_eq!(display.dungmap_scroll_target_y(), 0x0070);
+        assert_eq!(display.dungmap_player_marker_x_byte(), 0x88);
+        assert_eq!(display.dungmap_player_marker_y(), 0x0099);
         assert_eq!(display.current_floor(), 0x0034);
-        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_CURRENT_FLOOR), 0x0034);
+        assert_eq!(read_le_u16(&ram, DUNGMAP_CUR_FLOOR), 0x0034);
+        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_MARKER_X_OFFSET), 0x0030);
+        assert_eq!(read_le_u16(&ram, DUNGEON_MAP_MARKER_Y_OFFSET), 0x0040);
+        assert_eq!(
+            read_le_u16(&ram, DUNGEON_MAP_LOCATION_MARKER_BASE_Y),
+            0x0077
+        );
     }
 
     #[test]

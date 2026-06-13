@@ -36,8 +36,8 @@ use crate::game_state::{
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonHeaderState, DungeonKeySlotsView,
-    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
+    DungeonMapDisplayState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
+    DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
     EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsScratchViewMut,
@@ -3190,12 +3190,15 @@ impl ZeldaState {
         NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_map_scratch_view(&self) -> DungeonMapScratchView<'_> {
-        DungeonMapScratchView::new(&self.ram)
+    pub(crate) fn dungeon_map_scratch_view(&self) -> &DungeonMapDisplayState {
+        &self.game_state.dungeon_map_display
     }
 
-    pub(crate) fn dungeon_map_scratch_view_mut(&mut self) -> DungeonMapScratchViewMut<'_> {
-        DungeonMapScratchViewMut::new(&mut self.ram)
+    pub(crate) fn dungeon_map_scratch_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
+        NativeDungeonMapDisplayBridgeMut::new(
+            &mut self.game_state.dungeon_map_display,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dungeon_secret_scratch_view(&self) -> &DungeonSecretState {
