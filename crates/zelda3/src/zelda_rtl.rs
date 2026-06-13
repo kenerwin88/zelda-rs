@@ -34,9 +34,9 @@ use crate::game_state::{
     BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState, CachedSpriteSlotView,
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisView, DualLayerTileCacheView, DungeonHeaderState, DungeonKeySlotsView,
-    DungeonMapDisplayState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
+    DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonHeaderState,
+    DungeonKeySlotsView, DungeonMapDisplayState, DungeonSavegameState, DungeonScratchWordState,
+    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
     EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
     EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
     GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
@@ -52,8 +52,9 @@ use crate::game_state::{
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonEntranceBackupBridgeMut,
-    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
     NativeDungeonSecretBridgeMut, NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut,
     NativeEndingCreditBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
@@ -3217,6 +3218,17 @@ impl ZeldaState {
     pub(crate) fn dungeon_savegame_state_mut(&mut self) -> NativeDungeonSavegameBridgeMut<'_> {
         NativeDungeonSavegameBridgeMut::new(
             &mut self.game_state.dungeon.savegame_state,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_bg2_attributes(&self) -> DungeonBg2AttributeState {
+        DungeonBg2AttributeState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_bg2_attributes_mut(&mut self) -> NativeDungeonBg2AttributeBridgeMut<'_> {
+        NativeDungeonBg2AttributeBridgeMut::new(
+            &mut self.game_state.dungeon.bg2_attributes,
             &mut self.ram,
         )
     }
@@ -8260,7 +8272,7 @@ mod tests {
         set_link_test_word(&mut state, LINK_Y_COORD, 0x20);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
         let offset = 0x145;
-        state.dungeon_state_view_mut().set_bg2_attr(offset, 1);
+        state.dungeon_bg2_attributes_mut().set_bg2_attr(offset, 1);
 
         state.handle_nudging(1);
 
@@ -9895,14 +9907,18 @@ mod tests {
         let mut state = ZeldaState::new();
         write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
-        state.dungeon_state_view_mut().set_bg2_attr(0x18 * 8 + 4, 0);
+        state
+            .dungeon_bg2_attributes_mut()
+            .set_bg2_attr(0x18 * 8 + 4, 0);
         state
             .dungeon_state_view_mut()
             .set_bg2_attr(0x18 * 8 + 5, 11);
 
         assert!(state.push_block_attempt_to_push_the_block(0, 0x20, 0x20));
 
-        state.dungeon_state_view_mut().set_bg2_attr(0x18 * 8 + 5, 9);
+        state
+            .dungeon_bg2_attributes_mut()
+            .set_bg2_attr(0x18 * 8 + 5, 9);
         assert!(!state.push_block_attempt_to_push_the_block(0, 0x20, 0x20));
     }
 

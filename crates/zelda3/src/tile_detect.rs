@@ -337,7 +337,7 @@ impl ZeldaState {
                 } else {
                     0
                 };
-            let mut tile = self.dungeon_state_view().bg2_attr(offset);
+            let mut tile = self.dungeon_bg2_attributes().bg2_attr(offset);
             if self.player_state_view().cheat_walk_through_walls() != 0 {
                 tile = 0;
             }
@@ -625,7 +625,7 @@ impl ZeldaState {
             }
             0x60 => {
                 if is_indoors {
-                    let misc_bits = if self.dungeon_state_view().bg2_attr(offset + 64) == 0x60 {
+                    let misc_bits = if self.dungeon_bg2_attributes().bg2_attr(offset + 64) == 0x60 {
                         bits << 8
                     } else {
                         bits << 12

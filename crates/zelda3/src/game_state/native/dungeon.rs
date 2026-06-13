@@ -1,5 +1,6 @@
 use crate::game_state::constants::{
-    AUX_TILE_THEME_INDEX, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
+    AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
+    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
     DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
     DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA,
     DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
@@ -12,6 +13,7 @@ const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
 const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
+const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonState {
@@ -20,6 +22,7 @@ pub(crate) struct DungeonState {
     pub(crate) entrance_backup: DungeonEntranceBackupState,
     pub(crate) torch: DungeonTorchState,
     pub(crate) savegame_state: DungeonSavegameState,
+    pub(crate) bg2_attributes: DungeonBg2AttributeState,
 }
 
 impl DungeonState {
@@ -30,6 +33,7 @@ impl DungeonState {
             entrance_backup: DungeonEntranceBackupState::load_from_ram(ram),
             torch: DungeonTorchState::load_from_ram(ram),
             savegame_state: DungeonSavegameState::load_from_ram(ram),
+            bg2_attributes: DungeonBg2AttributeState::load_from_ram(ram),
         }
     }
 
@@ -39,6 +43,77 @@ impl DungeonState {
         self.entrance_backup.write_to_ram(ram);
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
+        self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonBg2AttributeState {
+    attrs: Vec<u8>,
+}
+
+impl Default for DungeonBg2AttributeState {
+    fn default() -> Self {
+        Self {
+            attrs: vec![0; DUNGEON_BG2_ATTR_BUFFER_LEN],
+        }
+    }
+}
+
+impl DungeonBg2AttributeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut attrs = vec![0; DUNGEON_BG2_ATTR_BUFFER_LEN];
+        let available = ram.len().saturating_sub(DUNGEON_BG2_ATTR_TABLE);
+        let len = attrs.len().min(available);
+        attrs[..len].copy_from_slice(&ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len]);
+        Self { attrs }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        let available = ram.len().saturating_sub(DUNGEON_BG2_ATTR_TABLE);
+        let len = self.attrs.len().min(available);
+        ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len]
+            .copy_from_slice(&self.attrs[..len]);
+    }
+
+    pub(crate) fn bg2_attr(&self, offset: usize) -> u8 {
+        self.attrs.get(offset).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn bg2_attr_word(&self, offset: usize) -> u16 {
+        u16::from(self.bg2_attr(offset)) | (u16::from(self.bg2_attr(offset + 1)) << 8)
+    }
+
+    pub(crate) fn bg2_attr_address(&self, offset: usize) -> usize {
+        DUNGEON_BG2_ATTR_TABLE + offset
+    }
+
+    pub(crate) fn bg2_attr_pair(&self, offset: usize) -> Option<(u8, u8)> {
+        Some((
+            *self.attrs.get(offset)?,
+            *self.attrs.get(offset.wrapping_add(1))?,
+        ))
+    }
+
+    pub(crate) fn bg2_attr_slice(&self, start: usize, len: usize) -> &[u8] {
+        &self.attrs[start..start + len]
+    }
+
+    fn set_bg2_attr(&mut self, offset: usize, value: u8) {
+        self.attrs[offset] = value;
+    }
+
+    fn set_bg2_attr_word(&mut self, offset: usize, value: u16) {
+        self.attrs[offset] = value as u8;
+        self.attrs[offset + 1] = (value >> 8) as u8;
+    }
+
+    fn xor_bg2_attr(&mut self, offset: usize, value: u8) {
+        self.attrs[offset] ^= value;
+    }
+
+    fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
+        self.attrs[start..start + len].fill(value);
     }
 }
 
@@ -576,6 +651,50 @@ impl<'a> NativeDungeonSavegameBridgeMut<'a> {
         let value = self.state.or_savegame_state_bits(mask);
         self.sync();
         value
+    }
+}
+
+pub(crate) struct NativeDungeonBg2AttributeBridgeMut<'a> {
+    state: &'a mut DungeonBg2AttributeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonBg2AttributeState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonBg2AttributeState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonBg2AttributeState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_bg2_attr(&mut self, offset: usize, value: u8) {
+        self.state.set_bg2_attr(offset, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_bg2_attr_word(&mut self, offset: usize, value: u16) {
+        self.state.set_bg2_attr_word(offset, value);
+        self.sync();
+    }
+
+    pub(crate) fn xor_bg2_attr(&mut self, offset: usize, value: u8) {
+        self.state.xor_bg2_attr(offset, value);
+        self.sync();
+    }
+
+    pub(crate) fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
+        self.state.fill_bg2_attr_range(start, len, value);
+        self.sync();
     }
 }
 

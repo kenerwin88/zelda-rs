@@ -5171,11 +5171,16 @@ impl ZeldaState {
                 + if floor >= 1 { 0x1000 } else { 0 };
 
             let mut t = 0usize;
-            if self.dungeon_state_view().bg2_attr(pos.wrapping_sub(0x40)) & 0xf0 != 0xb0 {
+            if self
+                .dungeon_bg2_attributes()
+                .bg2_attr(pos.wrapping_sub(0x40))
+                & 0xf0
+                != 0xb0
+            {
                 t += 1;
-                if self.dungeon_state_view().bg2_attr(pos + 0x40) & 0xf0 != 0xb0 {
+                if self.dungeon_bg2_attributes().bg2_attr(pos + 0x40) & 0xf0 != 0xb0 {
                     t += 1;
-                    if self.dungeon_state_view().bg2_attr(pos.wrapping_sub(1)) & 0xf0 != 0xb0 {
+                    if self.dungeon_bg2_attributes().bg2_attr(pos.wrapping_sub(1)) & 0xf0 != 0xb0 {
                         t += 1;
                     }
                 }
@@ -11429,7 +11434,7 @@ impl ZeldaState {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_state_view().bg2_attr(t)
+            self.dungeon_bg2_attributes().bg2_attr(t)
         } else {
             x >>= 3;
             self.overworld_get_tile_attribute_at_location(x, y)

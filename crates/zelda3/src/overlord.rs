@@ -983,7 +983,7 @@ impl ZeldaState {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_state_view().bg2_attr(t)
+            self.dungeon_bg2_attributes().bg2_attr(t)
         } else {
             self.overworld_get_tile_attribute_at_location(x >> 3, y)
         };

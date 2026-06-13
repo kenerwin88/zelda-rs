@@ -356,7 +356,7 @@ impl ZeldaState {
             };
             t += ((cur_x & 0x01f8) >> 3) as usize;
             t += ((cur_y & 0x01f8) << 3) as usize;
-            self.dungeon_state_view().bg2_attr(t)
+            self.dungeon_bg2_attributes().bg2_attr(t)
         } else {
             let world = self.world_scroll();
             let t = ((cur_x >> 3).wrapping_sub(world.overworld_offset_base_x())

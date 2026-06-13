@@ -1103,7 +1103,7 @@ impl ZeldaState {
             } else {
                 0
             };
-        self.dungeon_state_view().bg2_attr(offset)
+        self.dungeon_bg2_attributes().bg2_attr(offset)
     }
 
     pub(super) fn link_handle_change_in_z_velocity(&mut self) {
@@ -8631,7 +8631,7 @@ impl ZeldaState {
             };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_state_view().bg2_attr(t)
+            self.dungeon_bg2_attributes().bg2_attr(t)
         } else {
             self.overworld_get_tile_attribute_at_location(x >> 3, y)
         };

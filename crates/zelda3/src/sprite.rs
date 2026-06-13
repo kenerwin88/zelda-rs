@@ -7741,7 +7741,7 @@ impl ZeldaState {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((*x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
-            self.dungeon_state_view().bg2_attr(t)
+            self.dungeon_bg2_attributes().bg2_attr(t)
         } else {
             *x >>= 3;
             self.overworld_get_tile_attribute_at_location(*x, y)
@@ -8709,7 +8709,7 @@ mod tests {
         let mut x = 0x0128;
         let y = 0x0030;
         let offset = 0x1000 + (((x & 0x01f8) >> 3) as usize) + (((y & 0x01f8) << 3) as usize);
-        s.dungeon_state_view_mut().set_bg2_attr(offset, 0x72);
+        s.dungeon_bg2_attributes_mut().set_bg2_attr(offset, 0x72);
 
         assert_eq!(s.sprite_get_tile_attribute(k, &mut x, y), 0x72);
 
@@ -8717,7 +8717,7 @@ mod tests {
         assert_eq!(s.sprite_workspace_view().tile_type(), 0x72);
 
         let mut floor0_x = 0x0008;
-        s.dungeon_state_view_mut().set_bg2_attr(1, 0x34);
+        s.dungeon_bg2_attributes_mut().set_bg2_attr(1, 0x34);
         assert_eq!(s.GetTileAttribute(0, &mut floor0_x, 0), 0x34);
         assert_eq!(floor0_x, 0x0008);
         assert_eq!(s.sprite_workspace_view().tile_type(), 0x34);
