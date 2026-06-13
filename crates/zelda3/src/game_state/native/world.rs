@@ -2819,7 +2819,6 @@ pub(crate) struct NativeRoomBoundsBridgeMut<'a> {
 
 impl<'a> NativeRoomBoundsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut RoomBoundsState, ram: &'a mut [u8]) -> Self {
-        *state = RoomBoundsState::load_from_ram(ram);
         Self { state, ram }
     }
 

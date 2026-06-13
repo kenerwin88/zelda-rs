@@ -3654,7 +3654,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn room_bounds(&self) -> RoomBoundsState {
-        RoomBoundsState::load_from_ram(&self.ram)
+        self.game_state.world.room_bounds.clone()
     }
 
     pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {

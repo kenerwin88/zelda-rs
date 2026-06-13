@@ -6572,16 +6572,43 @@ mod tests {
     }
 
     #[test]
-    fn native_room_bounds_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn room_bounds_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, ROOM_BOUNDS, 0x0010);
         write_le_u16(&mut ram, ROOM_BOUNDS + 2, 0x0020);
         write_le_u16(&mut ram, ROOM_BOUNDS + 8, 0x0030);
         write_le_u16(&mut ram, ROOM_BOUNDS + 10, 0x0040);
+
+        let mut bounds = RoomBoundsState::load_from_ram(&ram);
+        assert_eq!(bounds.y_bound(0), 0x0010);
+        assert_eq!(bounds.y_bound(1), 0x0020);
+        assert_eq!(bounds.x_bound(0), 0x0030);
+        assert_eq!(bounds.x_bound(1), 0x0040);
+
+        bounds.set_y_bound(2, 0x3000);
+        bounds.set_x_bound(3, 0x4000);
+        bounds.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 4), 0x3000);
+        assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 14), 0x4000);
+    }
+
+    #[test]
+    fn native_room_bounds_bridge_dual_writes_changes_from_native_state() {
+        let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, SCRATCH_0, 0x0aaa);
         write_le_u16(&mut ram, SCRATCH_1, 0x0bbb);
 
         let mut bounds = RoomBoundsState::default();
+        bounds.set_y_bound(0, 0x0010);
+        bounds.set_y_bound(1, 0x0020);
+        bounds.set_y_bound(2, 0x0030);
+        bounds.set_y_bound(3, 0x0040);
+        bounds.set_x_bound(0, 0x0030);
+        bounds.set_x_bound(1, 0x0040);
+        bounds.set_x_bound(2, 0x0050);
+        bounds.set_x_bound(3, 0x0060);
+        bounds.write_to_ram(&mut ram);
         {
             let mut bridge = NativeRoomBoundsBridgeMut::new(&mut bounds, &mut ram);
             bridge.add_y_bounds_a(0x0005);
@@ -6603,6 +6630,34 @@ mod tests {
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 6), 0x4000);
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 8), 0x0bbb);
         assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 10), 0x0047);
+    }
+
+    #[test]
+    fn native_room_bounds_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut bounds = RoomBoundsState::default();
+        bounds.set_y_bound(0, 0x0010);
+        bounds.set_y_bound(1, 0x0020);
+        bounds.set_y_bound(2, 0x0030);
+        bounds.set_y_bound(3, 0x0040);
+        bounds.set_x_bound(0, 0x0050);
+        bounds.set_x_bound(1, 0x0060);
+        bounds.set_x_bound(2, 0x0070);
+        bounds.set_x_bound(3, 0x0080);
+        bounds.write_to_ram(&mut ram);
+
+        write_le_u16(&mut ram, ROOM_BOUNDS, 0xaaaa);
+        write_le_u16(&mut ram, ROOM_BOUNDS + 8, 0xbbbb);
+
+        {
+            let mut bridge = NativeRoomBoundsBridgeMut::new(&mut bounds, &mut ram);
+            bridge.set_y_bound(1, 0x1234);
+        }
+
+        assert_eq!(bounds.y_bound(0), 0x0010);
+        assert_eq!(bounds.y_bound(1), 0x1234);
+        assert_eq!(bounds.x_bound(0), 0x0050);
+        assert_eq!(RoomBoundsState::load_from_ram(&ram), bounds);
     }
 
     #[test]
