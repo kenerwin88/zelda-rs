@@ -117,7 +117,7 @@ use crate::game_state::{
     TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
     WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
     WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldRegionState,
-    WorldScrollState, WorldStateView, WorldStateViewMut, WorldTransientState,
+    WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3157,14 +3157,6 @@ impl ZeldaState {
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
         self.display_state_bridge_mut()
             .set_travel_bird_tile_offset(value);
-    }
-
-    pub(crate) fn world_state_view(&self) -> WorldStateView<'_> {
-        WorldStateView::new(&self.ram)
-    }
-
-    pub(crate) fn world_state_view_mut(&mut self) -> WorldStateViewMut<'_> {
-        WorldStateViewMut::new(&mut self.ram)
     }
 
     pub(crate) fn save_progress_view(&self) -> SaveProgressState {

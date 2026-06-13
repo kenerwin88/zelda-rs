@@ -14,14 +14,12 @@ mod player;
 mod poly;
 mod raw;
 mod sprites;
-mod world;
 
 pub(crate) use effects::*;
 pub(crate) use player::*;
 pub(crate) use poly::*;
 pub(crate) use raw::*;
 pub(crate) use sprites::*;
-pub(crate) use world::*;
 
 fn byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)

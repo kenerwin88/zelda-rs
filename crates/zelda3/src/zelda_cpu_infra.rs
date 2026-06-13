@@ -12,10 +12,11 @@ use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 use crate::game_state::constants::{RUN_MAIN_THREAD, RUN_POLY_THREAD};
 use crate::game_state::{
     AncillaSlotView, DisplayState, FrameState, PlayerStateView, SpriteSlotView, WorldLocationState,
-    WorldStateView,
+    WorldState,
 };
 use crate::types::{read_le_u16, write_le_u16};
 use crate::zelda_rtl::ZeldaState;
+use crate::OverworldMap16LoadState;
 
 pub const RUN_MAIN: u8 = 1;
 pub const RUN_POLY: u8 = 2;
@@ -1258,7 +1259,8 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
     let display = DisplayState::load_from_ram(ram);
     let player = PlayerStateView::new(ram);
     let world_location = WorldLocationState::load_from_ram(ram);
-    let world = WorldStateView::new(ram);
+    let world = WorldState::load_from_ram(ram);
+    let map16_load = OverworldMap16LoadState::load_from_ram(ram);
     SemanticSnapshot {
         frame: SemanticFrame {
             main_module: frame.main_module,
@@ -1293,19 +1295,19 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
         world: SemanticWorld {
             dungeon_room: world_location.dungeon_room,
             overworld_screen: world_location.overworld_screen_index(),
-            overworld_area: world.overworld_area(),
-            transition_direction: world.transition_direction(),
-            overlay_index: world.overlay_index(),
-            map16_load_src: world.map16_load_src(),
-            map16_load_dst: world.map16_load_dst(),
-            map16_load_y_unit: world.map16_load_y_unit(),
-            bg1_x: world.bg1_x(),
-            bg1_y: world.bg1_y(),
-            bg2_x: world.bg2_x(),
-            bg2_y: world.bg2_y(),
-            camera_x: world.camera_x(),
-            camera_y: world.camera_y(),
-            rng_seed: world.rng_seed(),
+            overworld_area: world.region.overworld_area(),
+            transition_direction: world.overworld.transition.direction_enum(),
+            overlay_index: world.region.overlay_index(),
+            map16_load_src: map16_load.src_off,
+            map16_load_dst: map16_load.dst_off,
+            map16_load_y_unit: map16_load.y_unit,
+            bg1_x: world.scroll.bg1_x(),
+            bg1_y: world.scroll.bg1_y(),
+            bg2_x: world.scroll.bg2_x(),
+            bg2_y: world.scroll.bg2_y(),
+            camera_x: world.scroll.camera_x(),
+            camera_y: world.scroll.camera_y(),
+            rng_seed: world.region.rng_seed(),
         },
         ppu: SemanticPpu {
             screen_enabled: ppu_array::<4>(ppu_regs, 4),
