@@ -6328,7 +6328,7 @@ mod tests {
         write_le_u16(&mut ram, INTRO_SPRITE_ALLOC, 0x0800);
         write_le_u16(&mut ram, TRIFORCE_CTR, 0);
 
-        let mut intro = IntroSceneState::default();
+        let mut intro = IntroSceneState::load_from_ram(&ram);
         {
             let mut bridge = NativeIntroSceneBridgeMut::new(&mut intro, &mut ram);
             bridge.pause_triangle_motion();
@@ -6353,12 +6353,62 @@ mod tests {
     }
 
     #[test]
+    fn native_intro_scene_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[INTRO_WANT_DOUBLE_RET] = 1;
+        write_le_u16(&mut ram, INTRO_SPRITE_ALLOC, 0x0800);
+        write_le_u16(&mut ram, TRIFORCE_CTR, 0x0001);
+        let mut intro = IntroSceneState {
+            triangle_motion_pause: 0,
+            sprite_oam_cursor: 0x0900,
+            triforce_countdown: 0x0020,
+        };
+
+        {
+            let mut bridge = NativeIntroSceneBridgeMut::new(&mut intro, &mut ram);
+            assert_eq!(bridge.allocate_oam_entries(1), 0x0900);
+        }
+
+        assert_eq!(intro.sprite_oam_cursor, 0x0904);
+        assert_eq!(intro.triforce_countdown, 0x0020);
+        assert_eq!(ram[INTRO_WANT_DOUBLE_RET], 0);
+        assert_eq!(read_le_u16(&ram, INTRO_SPRITE_ALLOC), 0x0904);
+        assert_eq!(read_le_u16(&ram, TRIFORCE_CTR), 0x0020);
+    }
+
+    #[test]
+    fn native_intro_actor_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[INTRO_SPRITE_STATE + 1] = 0xaa;
+        ram[INTRO_X_LO + 1] = 0xbb;
+        ram[INTRO_X_HI + 1] = 0xcc;
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[INTRO_SPRITE_STATE + 1] = 0x22;
+        native_ram[INTRO_X_LO + 1] = 0x34;
+        native_ram[INTRO_X_HI + 1] = 0x12;
+        let mut actors = ending::IntroActorState::load_from_ram(&native_ram);
+
+        {
+            let mut bridge = NativeIntroActorBridgeMut::new(&mut actors, &mut ram, 1);
+            bridge.increment_state();
+            bridge.set_x_low(0x78);
+        }
+
+        let actor = IntroActorRead::new(&actors, 1);
+        assert_eq!(actor.state(), 0x23);
+        assert_eq!(actor.x(), 0x1278);
+        assert_eq!(ram[INTRO_SPRITE_STATE + 1], 0x23);
+        assert_eq!(ram[INTRO_X_LO + 1], 0x78);
+        assert_eq!(ram[INTRO_X_HI + 1], 0x12);
+    }
+
+    #[test]
     fn native_ending_credit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, ENDING_WHICH_DUNG, 0xffff);
         write_le_u16(&mut ram, ENDING_CREDIT_DIGIT_CHAR, 0x1111);
 
-        let mut credits = EndingCreditState::default();
+        let mut credits = EndingCreditState::load_from_ram(&ram);
         {
             let mut bridge = NativeEndingCreditBridgeMut::new(&mut credits, &mut ram);
             bridge.clear_palace_death_count_digit_step();
@@ -6371,6 +6421,27 @@ mod tests {
         assert_eq!(credits.death_count_digit_tile_base, 0x3cf6);
         assert_eq!(read_le_u16(&ram, ENDING_WHICH_DUNG), 4);
         assert_eq!(read_le_u16(&ram, ENDING_CREDIT_DIGIT_CHAR), 0x3cf6);
+    }
+
+    #[test]
+    fn native_ending_credit_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, ENDING_WHICH_DUNG, 0xffff);
+        write_le_u16(&mut ram, ENDING_CREDIT_DIGIT_CHAR, 0x1111);
+        let mut credits = EndingCreditState {
+            palace_death_count_digit_step: 2,
+            death_count_digit_tile_base: 0x2222,
+        };
+
+        {
+            let mut bridge = NativeEndingCreditBridgeMut::new(&mut credits, &mut ram);
+            bridge.advance_palace_death_count_digit_step();
+        }
+
+        assert_eq!(credits.palace_death_count_digit_step, 3);
+        assert_eq!(credits.death_count_digit_tile_base, 0x2222);
+        assert_eq!(read_le_u16(&ram, ENDING_WHICH_DUNG), 3);
+        assert_eq!(read_le_u16(&ram, ENDING_CREDIT_DIGIT_CHAR), 0x2222);
     }
 
     #[test]
