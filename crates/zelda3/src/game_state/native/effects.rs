@@ -1,28 +1,32 @@
 use crate::game_state::constants::{
-    BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION, BLAST_WALL_ENTRY_STATE,
-    BLAST_WALL_EXPLOSION_PHASE, BLAST_WALL_EXPLOSION_TIMER, BLAST_WALL_FIREBALL_TIMER,
-    BLAST_WALL_FRAGMENT_X, BLAST_WALL_FRAGMENT_Y, BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_PHASE,
-    BOMBOS_BLAST_RELEASE_COUNTDOWN, BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_TIMER,
-    BOMBOS_BLAST_X, BOMBOS_BLAST_Y, BOMBOS_FIRE_COLUMN_PHASE, BOMBOS_FIRE_COLUMN_RADIAL_ANGLE,
-    BOMBOS_FIRE_COLUMN_RADIUS, BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y,
-    BOMBOS_FIRE_COLUMN_TIMER, BOMBOS_FIRE_COLUMN_X_HI, BOMBOS_FIRE_COLUMN_X_LO,
-    BOMBOS_FIRE_COLUMN_Y_HI, BOMBOS_FIRE_COLUMN_Y_LO, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS,
-    DIGGING_GAME_PRIZE_SPAWNED, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
-    EFFECT_ANGLE_WORK, HAPPINESS_POND_ACTIVE, HAPPINESS_POND_ITEM_TO_LINK, HAPPINESS_POND_STEP,
-    HAPPINESS_POND_TIMER, HAPPINESS_POND_X_HI, HAPPINESS_POND_X_LO, HAPPINESS_POND_X_SUBPIXEL,
-    HAPPINESS_POND_X_VEL, HAPPINESS_POND_Y_HI, HAPPINESS_POND_Y_LO, HAPPINESS_POND_Y_SUBPIXEL,
-    HAPPINESS_POND_Y_VEL, HAPPINESS_POND_Z, HAPPINESS_POND_Z_SUBPIXEL, HAPPINESS_POND_Z_VEL,
-    QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE, QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y,
-    QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y, SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y,
-    SKULL_WOODS_FIRE_OUTER_X, SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED,
-    TOWER_SEAL_BASE_SPARKLE_X_HI, TOWER_SEAL_BASE_SPARKLE_X_LO, TOWER_SEAL_BASE_SPARKLE_Y_HI,
-    TOWER_SEAL_BASE_SPARKLE_Y_LO, TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE,
-    TOWER_SEAL_RING_RADIUS, TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER,
-    TOWER_SEAL_SPARKLE_X_HI, TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI,
-    TOWER_SEAL_SPARKLE_Y_LO, TOWER_SEAL_WAIT_COUNTDOWN, WEATHERVANE_ANIM_TIMER,
-    WEATHERVANE_DRAW_STATE, WEATHERVANE_X_HI, WEATHERVANE_X_LO, WEATHERVANE_X_VELOCITY,
-    WEATHERVANE_Y_HI, WEATHERVANE_Y_LO, WEATHERVANE_Y_VELOCITY, WEATHERVANE_Z,
-    WEATHERVANE_Z_VELOCITY,
+    BEAMOS_LASER_HISTORY_X_HI, BEAMOS_LASER_HISTORY_X_LO, BEAMOS_LASER_HISTORY_Y_HI,
+    BEAMOS_LASER_HISTORY_Y_LO, BLAST_WALL_CENTER_X, BLAST_WALL_CENTER_Y, BLAST_WALL_DIRECTION,
+    BLAST_WALL_ENTRY_STATE, BLAST_WALL_EXPLOSION_PHASE, BLAST_WALL_EXPLOSION_TIMER,
+    BLAST_WALL_FIREBALL_TIMER, BLAST_WALL_FRAGMENT_X, BLAST_WALL_FRAGMENT_Y,
+    BLAST_WALL_SECONDARY_STATE, BOMBOS_BLAST_PHASE, BOMBOS_BLAST_RELEASE_COUNTDOWN,
+    BOMBOS_BLAST_RELEASE_LOCKED, BOMBOS_BLAST_TIMER, BOMBOS_BLAST_X, BOMBOS_BLAST_Y,
+    BOMBOS_FIRE_COLUMN_PHASE, BOMBOS_FIRE_COLUMN_RADIAL_ANGLE, BOMBOS_FIRE_COLUMN_RADIUS,
+    BOMBOS_FIRE_COLUMN_SEED_X, BOMBOS_FIRE_COLUMN_SEED_Y, BOMBOS_FIRE_COLUMN_TIMER,
+    BOMBOS_FIRE_COLUMN_X_HI, BOMBOS_FIRE_COLUMN_X_LO, BOMBOS_FIRE_COLUMN_Y_HI,
+    BOMBOS_FIRE_COLUMN_Y_LO, BOMBOS_MODE, DIGGING_GAME_PRIZE_ATTEMPTS, DIGGING_GAME_PRIZE_SPAWNED,
+    DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y, EFFECT_ANGLE_WORK, HAPPINESS_POND_ACTIVE,
+    HAPPINESS_POND_ITEM_TO_LINK, HAPPINESS_POND_STEP, HAPPINESS_POND_TIMER, HAPPINESS_POND_X_HI,
+    HAPPINESS_POND_X_LO, HAPPINESS_POND_X_SUBPIXEL, HAPPINESS_POND_X_VEL, HAPPINESS_POND_Y_HI,
+    HAPPINESS_POND_Y_LO, HAPPINESS_POND_Y_SUBPIXEL, HAPPINESS_POND_Y_VEL, HAPPINESS_POND_Z,
+    HAPPINESS_POND_Z_SUBPIXEL, HAPPINESS_POND_Z_VEL, MOLDORM_HISTORY_X_HI, MOLDORM_HISTORY_X_LO,
+    MOLDORM_HISTORY_Y_HI, MOLDORM_HISTORY_Y_LO, QUAKE_ACTIVE_BOLT_LIMIT, QUAKE_BOLT_PHASE,
+    QUAKE_BOLT_TIMER, QUAKE_ORIGIN_X, QUAKE_ORIGIN_Y, QUAKE_PENDING_STEP, QUAKE_SCREEN_SHAKE_Y,
+    SKULL_WOODS_FIRE_INNER_X, SKULL_WOODS_FIRE_INNER_Y, SKULL_WOODS_FIRE_OUTER_X,
+    SKULL_WOODS_FIRE_OUTER_Y, SKULL_WOODS_FIRE_STARTED, SWAMOLA_HISTORY_X_HI, SWAMOLA_HISTORY_X_LO,
+    SWAMOLA_HISTORY_Y_HI, SWAMOLA_HISTORY_Y_LO, SWAMOLA_TARGET_X_HI, SWAMOLA_TARGET_X_LO,
+    SWAMOLA_TARGET_Y_HI, SWAMOLA_TARGET_Y_LO, TOWER_SEAL_BASE_SPARKLE_X_HI,
+    TOWER_SEAL_BASE_SPARKLE_X_LO, TOWER_SEAL_BASE_SPARKLE_Y_HI, TOWER_SEAL_BASE_SPARKLE_Y_LO,
+    TOWER_SEAL_CENTER_X, TOWER_SEAL_CENTER_Y, TOWER_SEAL_ORBIT_ANGLE, TOWER_SEAL_RING_RADIUS,
+    TOWER_SEAL_SPARKLE_PHASE, TOWER_SEAL_SPARKLE_TIMER, TOWER_SEAL_SPARKLE_X_HI,
+    TOWER_SEAL_SPARKLE_X_LO, TOWER_SEAL_SPARKLE_Y_HI, TOWER_SEAL_SPARKLE_Y_LO,
+    TOWER_SEAL_WAIT_COUNTDOWN, WEATHERVANE_ANIM_TIMER, WEATHERVANE_DRAW_STATE, WEATHERVANE_X_HI,
+    WEATHERVANE_X_LO, WEATHERVANE_X_VELOCITY, WEATHERVANE_Y_HI, WEATHERVANE_Y_LO,
+    WEATHERVANE_Y_VELOCITY, WEATHERVANE_Z, WEATHERVANE_Z_VELOCITY,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -35,6 +39,10 @@ const TOWER_SEAL_ORBIT_SLOTS: usize = 8;
 const TOWER_SEAL_SPARKLE_SLOTS: usize = 24;
 const HAPPINESS_POND_RUPEE_SLOTS: usize = 10;
 const WEATHER_VANE_DEBRIS_SLOTS: usize = 12;
+const MOLDORM_HISTORY_SLOTS: usize = 128;
+const SWAMOLA_TARGET_SLOTS: usize = 6;
+const SWAMOLA_HISTORY_SLOTS: usize = 192;
+const BEAMOS_LASER_HISTORY_SLOTS: usize = 128;
 const ENTRANCE_EFFECT_PHASE_SLOTS: usize = 8;
 const ENTRANCE_EFFECT_POSITION_SLOTS: usize = 8;
 const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
@@ -49,6 +57,7 @@ pub(crate) struct EffectState {
     pub(crate) tower_seal: TowerSealState,
     pub(crate) happiness_pond_rupees: HappinessPondRupeesState,
     pub(crate) weather_vane_debris: WeatherVaneDebrisState,
+    pub(crate) sprite_histories: SpriteHistoryScratchState,
     pub(crate) entrance_effects: EntranceEffectState,
     pub(crate) digging_game_prize: DiggingGamePrizeState,
 }
@@ -64,6 +73,7 @@ impl EffectState {
             tower_seal: TowerSealState::load_from_ram(ram),
             happiness_pond_rupees: HappinessPondRupeesState::load_from_ram(ram),
             weather_vane_debris: WeatherVaneDebrisState::load_from_ram(ram),
+            sprite_histories: SpriteHistoryScratchState::load_from_ram(ram),
             entrance_effects: EntranceEffectState::load_from_ram(ram),
             digging_game_prize: DiggingGamePrizeState::load_from_ram(ram),
         }
@@ -1187,6 +1197,344 @@ impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
         write_split_u16(self.ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, self.slot, x);
         self.ram[WEATHERVANE_Z + self.slot] = z;
         self.reload();
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteHistoryScratchState {
+    moldorm_x: Vec<u16>,
+    moldorm_y: Vec<u16>,
+    swamola_target_x: Vec<u16>,
+    swamola_target_y: Vec<u16>,
+    swamola_history_x: Vec<u16>,
+    swamola_history_y: Vec<u16>,
+    beamos_laser_x: Vec<u16>,
+    beamos_laser_y: Vec<u16>,
+}
+
+impl SpriteHistoryScratchState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            moldorm_x: read_split_word_bank(
+                ram,
+                MOLDORM_HISTORY_X_LO,
+                MOLDORM_HISTORY_X_HI,
+                MOLDORM_HISTORY_SLOTS,
+            ),
+            moldorm_y: read_split_word_bank(
+                ram,
+                MOLDORM_HISTORY_Y_LO,
+                MOLDORM_HISTORY_Y_HI,
+                MOLDORM_HISTORY_SLOTS,
+            ),
+            swamola_target_x: read_split_word_bank(
+                ram,
+                SWAMOLA_TARGET_X_LO,
+                SWAMOLA_TARGET_X_HI,
+                SWAMOLA_TARGET_SLOTS,
+            ),
+            swamola_target_y: read_split_word_bank(
+                ram,
+                SWAMOLA_TARGET_Y_LO,
+                SWAMOLA_TARGET_Y_HI,
+                SWAMOLA_TARGET_SLOTS,
+            ),
+            swamola_history_x: read_split_word_bank(
+                ram,
+                SWAMOLA_HISTORY_X_LO,
+                SWAMOLA_HISTORY_X_HI,
+                SWAMOLA_HISTORY_SLOTS,
+            ),
+            swamola_history_y: read_split_word_bank(
+                ram,
+                SWAMOLA_HISTORY_Y_LO,
+                SWAMOLA_HISTORY_Y_HI,
+                SWAMOLA_HISTORY_SLOTS,
+            ),
+            beamos_laser_x: read_split_word_bank(
+                ram,
+                BEAMOS_LASER_HISTORY_X_LO,
+                BEAMOS_LASER_HISTORY_X_HI,
+                BEAMOS_LASER_HISTORY_SLOTS,
+            ),
+            beamos_laser_y: read_split_word_bank(
+                ram,
+                BEAMOS_LASER_HISTORY_Y_LO,
+                BEAMOS_LASER_HISTORY_Y_HI,
+                BEAMOS_LASER_HISTORY_SLOTS,
+            ),
+        }
+    }
+
+    pub(crate) fn moldorm_history(&self, slot: usize) -> HistoryPositionState {
+        history_position(&self.moldorm_x, &self.moldorm_y, slot)
+    }
+
+    pub(crate) fn swamola_target(&self, slot: usize) -> HistoryPositionState {
+        history_position(&self.swamola_target_x, &self.swamola_target_y, slot)
+    }
+
+    pub(crate) fn swamola_history(&self, slot: usize) -> HistoryPositionState {
+        history_position(&self.swamola_history_x, &self.swamola_history_y, slot)
+    }
+
+    pub(crate) fn beamos_laser_history(&self, slot: usize) -> HistoryPositionState {
+        history_position(&self.beamos_laser_x, &self.beamos_laser_y, slot)
+    }
+
+    pub(crate) fn lanmola_segment_motion(&self, slot: usize) -> LanmolaSegmentMotionState {
+        LanmolaSegmentMotionState {
+            z_offset: self
+                .beamos_laser_x
+                .get(slot)
+                .copied()
+                .unwrap_or(0)
+                .to_be_bytes()[0],
+            direction: self
+                .beamos_laser_y
+                .get(slot)
+                .copied()
+                .unwrap_or(0)
+                .to_be_bytes()[0],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HistoryPositionState {
+    x: u16,
+    y: u16,
+}
+
+impl HistoryPositionState {
+    pub(crate) fn x(&self) -> u16 {
+        self.x
+    }
+
+    pub(crate) fn y(&self) -> u16 {
+        self.y
+    }
+
+    pub(crate) fn x_low(&self) -> u8 {
+        self.x as u8
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.y as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LanmolaSegmentMotionState {
+    z_offset: u8,
+    direction: u8,
+}
+
+impl LanmolaSegmentMotionState {
+    pub(crate) fn z_offset(&self) -> u8 {
+        self.z_offset
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.direction
+    }
+}
+
+fn history_position(xs: &[u16], ys: &[u16], slot: usize) -> HistoryPositionState {
+    HistoryPositionState {
+        x: xs.get(slot).copied().unwrap_or(0),
+        y: ys.get(slot).copied().unwrap_or(0),
+    }
+}
+
+pub(crate) struct NativeMoldormHistoryBridgeMut<'a> {
+    state: &'a mut SpriteHistoryScratchState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeMoldormHistoryBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut SpriteHistoryScratchState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = SpriteHistoryScratchState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        write_split_u16(
+            self.ram,
+            MOLDORM_HISTORY_X_LO,
+            MOLDORM_HISTORY_X_HI,
+            self.slot,
+            x,
+        );
+        write_split_u16(
+            self.ram,
+            MOLDORM_HISTORY_Y_LO,
+            MOLDORM_HISTORY_Y_HI,
+            self.slot,
+            y,
+        );
+        self.reload();
+    }
+
+    pub(crate) fn set_low_position(&mut self, x_low: u8, y_low: u8) {
+        self.ram[MOLDORM_HISTORY_X_LO + self.slot] = x_low;
+        self.ram[MOLDORM_HISTORY_Y_LO + self.slot] = y_low;
+        self.reload();
+    }
+}
+
+pub(crate) struct NativeSwamolaTargetBridgeMut<'a> {
+    state: &'a mut SpriteHistoryScratchState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeSwamolaTargetBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut SpriteHistoryScratchState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = SpriteHistoryScratchState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    fn reload(&mut self) {
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        write_split_u16(
+            self.ram,
+            SWAMOLA_TARGET_X_LO,
+            SWAMOLA_TARGET_X_HI,
+            self.slot,
+            x,
+        );
+        write_split_u16(
+            self.ram,
+            SWAMOLA_TARGET_Y_LO,
+            SWAMOLA_TARGET_Y_HI,
+            self.slot,
+            y,
+        );
+        self.reload();
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.ram[SWAMOLA_TARGET_X_LO + self.slot] = value;
+        self.reload();
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.ram[SWAMOLA_TARGET_Y_LO + self.slot] = value;
+        self.reload();
+    }
+}
+
+pub(crate) struct NativeSwamolaHistoryBridgeMut<'a> {
+    state: &'a mut SpriteHistoryScratchState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeSwamolaHistoryBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut SpriteHistoryScratchState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = SpriteHistoryScratchState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        write_split_u16(
+            self.ram,
+            SWAMOLA_HISTORY_X_LO,
+            SWAMOLA_HISTORY_X_HI,
+            self.slot,
+            x,
+        );
+        write_split_u16(
+            self.ram,
+            SWAMOLA_HISTORY_Y_LO,
+            SWAMOLA_HISTORY_Y_HI,
+            self.slot,
+            y,
+        );
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+    }
+}
+
+pub(crate) struct NativeBeamosLaserHistoryBridgeMut<'a> {
+    state: &'a mut SpriteHistoryScratchState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeBeamosLaserHistoryBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut SpriteHistoryScratchState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = SpriteHistoryScratchState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        write_split_u16(
+            self.ram,
+            BEAMOS_LASER_HISTORY_X_LO,
+            BEAMOS_LASER_HISTORY_X_HI,
+            self.slot,
+            x,
+        );
+        write_split_u16(
+            self.ram,
+            BEAMOS_LASER_HISTORY_Y_LO,
+            BEAMOS_LASER_HISTORY_Y_HI,
+            self.slot,
+            y,
+        );
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+    }
+}
+
+pub(crate) struct NativeLanmolaSegmentMotionBridgeMut<'a> {
+    state: &'a mut SpriteHistoryScratchState,
+    ram: &'a mut [u8],
+    slot: usize,
+}
+
+impl<'a> NativeLanmolaSegmentMotionBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut SpriteHistoryScratchState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        *state = SpriteHistoryScratchState::load_from_ram(ram);
+        Self { state, ram, slot }
+    }
+
+    pub(crate) fn set_z_offset(&mut self, value: u8) {
+        self.ram[BEAMOS_LASER_HISTORY_X_HI + self.slot] = value;
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
+    }
+
+    pub(crate) fn set_direction(&mut self, value: u8) {
+        self.ram[BEAMOS_LASER_HISTORY_Y_HI + self.slot] = value;
+        *self.state = SpriteHistoryScratchState::load_from_ram(self.ram);
     }
 }
 
@@ -2390,6 +2738,14 @@ fn word_from_bank(bank: [u8; DOOR_DEBRIS_BANK_LEN], slot: usize) -> u16 {
 fn read_split_u16(ram: &[u8], low_base: usize, high_base: usize, slot: usize) -> u16 {
     u16::from(ram.get(low_base + slot).copied().unwrap_or(0))
         | (u16::from(ram.get(high_base + slot).copied().unwrap_or(0)) << 8)
+}
+
+fn read_split_word_bank(ram: &[u8], low_base: usize, high_base: usize, len: usize) -> Vec<u16> {
+    let mut bank = Vec::with_capacity(len);
+    for slot in 0..len {
+        bank.push(read_split_u16(ram, low_base, high_base, slot));
+    }
+    bank
 }
 
 fn write_split_u16(ram: &mut [u8], low_base: usize, high_base: usize, slot: usize, value: u16) {

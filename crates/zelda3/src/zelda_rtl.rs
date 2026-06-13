@@ -28,30 +28,30 @@ use crate::game_state::constants::{
 use crate::game_state::{
     loaded_room_data_word, AltSpriteSlotViewMut, AncillaSlotView, AncillaSlotViewMut,
     ArcheryGameState, ArmosKnightHomeView, ArmosKnightHomeViewMut, ArrghusPuffHomeView,
-    AttractSceneState, BeamosLaserHistoryView, BeamosLaserHistoryViewMut,
-    Bg1MovementAccumulatorState, BirdTravelDestinationState, BlastWallExplosionSlotState,
-    BlastWallFireballSlotState, BlastWallFragmentSlotState, BlastWallState, BombosBlastState,
-    BombosFireColumnState, BombosSpellState, CachedSpriteSlotView, CachedSpriteSlotViewMut,
-    ChainChompHistoryState, DecodedMessageTextState, DialogueMessageIndexState,
-    DialogueNumberState, DiggingGamePrizeState, DisplayState, DoorDebrisState,
-    DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState,
-    DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState, DungeonMovableBlockState,
-    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomDoorSetupState,
-    DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState,
-    DungeonRoomRuntimeState, DungeonRoomTilemapState, DungeonRoomTrackingState,
-    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
-    DungeonStairListsState, DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState,
-    EndingCreditState, EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState,
-    FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState, GarnishSlotView,
-    GarnishSlotViewMut, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
-    HappinessPondRupeeSnapshot, HudInventoryOrderState, HudStateRead, IntroActorRead,
-    IntroSceneState, IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView,
-    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerState, MemorizedTileState,
-    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
-    MoldormHistoryView, MoldormHistoryViewMut, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
+    AttractSceneState, Bg1MovementAccumulatorState, BirdTravelDestinationState,
+    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
+    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
+    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
+    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
+    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
+    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
+    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
+    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
+    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
+    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
+    HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState, IntroSwordState,
+    InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot, MazeGameTimerState,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
     NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -76,9 +76,10 @@ use crate::game_state::{
     NativeGraphicsScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
     NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroActorBridgeMut,
     NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
+    NativeLanmolaSegmentMotionBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
+    NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
@@ -96,11 +97,12 @@ use crate::game_state::{
     NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
-    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut,
+    NativeSwamolaTargetBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
+    NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut,
+    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
     NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
@@ -114,8 +116,7 @@ use crate::game_state::{
     SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
     SmallOverworldMap16ScrollBackupState, SpecialExitPositionState, SpotlightHdmaState,
     SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemState, SpriteWorkspaceState, SwamolaHistoryView, SwamolaHistoryViewMut,
-    SwamolaTargetView, SwamolaTargetViewMut, SwimAccelerationState, SystemSignalsState,
+    SpriteSystemState, SpriteWorkspaceState, SwimAccelerationState, SystemSignalsState,
     TagalongSlotRead, TileDetectionState, TowerSealOrbitState, TowerSealSparkleState,
     TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
     WeatherVaneDebrisSlotState, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
@@ -4106,50 +4107,85 @@ impl ZeldaState {
             .clear_destination(slot);
     }
 
-    pub(crate) fn moldorm_history_view(&self, slot: usize) -> MoldormHistoryView<'_> {
-        MoldormHistoryView::new(&self.ram, slot)
+    pub(crate) fn moldorm_history(&self, slot: usize) -> HistoryPositionState {
+        self.game_state
+            .effects
+            .sprite_histories
+            .moldorm_history(slot)
     }
 
-    pub(crate) fn moldorm_history_view_mut(&mut self, slot: usize) -> MoldormHistoryViewMut<'_> {
-        MoldormHistoryViewMut::new(&mut self.ram, slot)
+    pub(crate) fn moldorm_history_mut(&mut self, slot: usize) -> NativeMoldormHistoryBridgeMut<'_> {
+        NativeMoldormHistoryBridgeMut::new(
+            &mut self.game_state.effects.sprite_histories,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn swamola_target_view(&self, slot: usize) -> SwamolaTargetView<'_> {
-        SwamolaTargetView::new(&self.ram, slot)
+    pub(crate) fn swamola_target(&self, slot: usize) -> HistoryPositionState {
+        self.game_state
+            .effects
+            .sprite_histories
+            .swamola_target(slot)
     }
 
-    pub(crate) fn swamola_target_view_mut(&mut self, slot: usize) -> SwamolaTargetViewMut<'_> {
-        SwamolaTargetViewMut::new(&mut self.ram, slot)
+    pub(crate) fn swamola_target_mut(&mut self, slot: usize) -> NativeSwamolaTargetBridgeMut<'_> {
+        NativeSwamolaTargetBridgeMut::new(
+            &mut self.game_state.effects.sprite_histories,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn swamola_history_view(&self, slot: usize) -> SwamolaHistoryView<'_> {
-        SwamolaHistoryView::new(&self.ram, slot)
+    pub(crate) fn swamola_history(&self, slot: usize) -> HistoryPositionState {
+        self.game_state
+            .effects
+            .sprite_histories
+            .swamola_history(slot)
     }
 
-    pub(crate) fn swamola_history_view_mut(&mut self, slot: usize) -> SwamolaHistoryViewMut<'_> {
-        SwamolaHistoryViewMut::new(&mut self.ram, slot)
+    pub(crate) fn swamola_history_mut(&mut self, slot: usize) -> NativeSwamolaHistoryBridgeMut<'_> {
+        NativeSwamolaHistoryBridgeMut::new(
+            &mut self.game_state.effects.sprite_histories,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn beamos_laser_history_view(&self, slot: usize) -> BeamosLaserHistoryView<'_> {
-        BeamosLaserHistoryView::new(&self.ram, slot)
+    pub(crate) fn beamos_laser_history(&self, slot: usize) -> HistoryPositionState {
+        self.game_state
+            .effects
+            .sprite_histories
+            .beamos_laser_history(slot)
     }
 
-    pub(crate) fn beamos_laser_history_view_mut(
+    pub(crate) fn beamos_laser_history_mut(
         &mut self,
         slot: usize,
-    ) -> BeamosLaserHistoryViewMut<'_> {
-        BeamosLaserHistoryViewMut::new(&mut self.ram, slot)
+    ) -> NativeBeamosLaserHistoryBridgeMut<'_> {
+        NativeBeamosLaserHistoryBridgeMut::new(
+            &mut self.game_state.effects.sprite_histories,
+            &mut self.ram,
+            slot,
+        )
     }
 
-    pub(crate) fn lanmola_segment_motion_view(&self, slot: usize) -> LanmolaSegmentMotionView<'_> {
-        LanmolaSegmentMotionView::new(&self.ram, slot)
+    pub(crate) fn lanmola_segment_motion(&self, slot: usize) -> LanmolaSegmentMotionState {
+        self.game_state
+            .effects
+            .sprite_histories
+            .lanmola_segment_motion(slot)
     }
 
-    pub(crate) fn lanmola_segment_motion_view_mut(
+    pub(crate) fn lanmola_segment_motion_mut(
         &mut self,
         slot: usize,
-    ) -> LanmolaSegmentMotionViewMut<'_> {
-        LanmolaSegmentMotionViewMut::new(&mut self.ram, slot)
+    ) -> NativeLanmolaSegmentMotionBridgeMut<'_> {
+        NativeLanmolaSegmentMotionBridgeMut::new(
+            &mut self.game_state.effects.sprite_histories,
+            &mut self.ram,
+            slot,
+        )
     }
 
     pub(crate) fn door_debris(&self) -> &DoorDebrisState {

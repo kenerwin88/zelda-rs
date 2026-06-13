@@ -4054,7 +4054,7 @@ impl ZeldaState {
         let j = usize::from(self.sprite_slot_view(k).subtype2() & 0x7f);
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
-        self.moldorm_history_view_mut(j).set_position(x, y);
+        self.moldorm_history_mut(j).set_position(x, y);
 
         self.sprite_draw_moldorm_head(k);
         if self.sprite_slot_view(k).b() < 4 {
@@ -4131,8 +4131,8 @@ impl ZeldaState {
         ];
         let j =
             (i32::from(self.sprite_slot_view(k).subtype2()).wrapping_sub(lookback) & 0x7f) as usize;
-        let cur_x = self.moldorm_history_view(j).x();
-        let cur_y = self.moldorm_history_view(j).y();
+        let cur_x = self.moldorm_history(j).x();
+        let cur_y = self.moldorm_history(j).y();
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
         let cur = self.oam_state().current_pointer();
@@ -4149,8 +4149,8 @@ impl ZeldaState {
         const GIANT_MOLDORM_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
         let j =
             (i32::from(self.sprite_slot_view(k).subtype2()).wrapping_sub(lookback) & 0x7f) as usize;
-        let cur_x = self.moldorm_history_view(j).x();
-        let cur_y = self.moldorm_history_view(j).y();
+        let cur_x = self.moldorm_history(j).x();
+        let cur_y = self.moldorm_history(j).y();
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
         let bak = self.sprite_slot_view(k).oam_flags();
@@ -5671,7 +5671,7 @@ impl ZeldaState {
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..32).rev() {
             let j = g * 32 + i;
-            let history = self.beamos_laser_history_view(j);
+            let history = self.beamos_laser_history(j);
             let x = history.x().wrapping_sub(self.world_scroll().bg2_x());
             let y = history.y().wrapping_sub(self.world_scroll().bg2_y());
             self.set_oam_helper0_at_for_draw(oam, x, y, 0x5c, info.flags, 0);
@@ -5699,7 +5699,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).add_subtype2(1);
             let x = self.sprite_slot_view(k).x();
             let y = self.sprite_slot_view(k).y();
-            self.beamos_laser_history_view_mut(t).set_position(x, y);
+            self.beamos_laser_history_mut(t).set_position(x, y);
             self.sprite_move_xy(k);
         }
 
@@ -10254,8 +10254,7 @@ impl ZeldaState {
                     let t = (u16::from(self.sprite_slot_view(k).head_direction()) << 8)
                         | u16::from(self.sprite_slot_view(k).c());
                     let target_y = t.wrapping_add_signed(i16::from(TARGET_Y[usize::from(j)]));
-                    self.swamola_target_view_mut(k)
-                        .set_position(target_x, target_y);
+                    self.swamola_target_mut(k).set_position(target_x, target_y);
                     let value = 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 0;
@@ -10290,8 +10289,8 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).z_velocity() == Z_VEL_TARGET[j] as u8 {
                     self.sprite_slot_view_mut(k).add_g(1);
                 }
-                let x = self.swamola_target_view(k).x();
-                let y = self.swamola_target_view(k).y();
+                let x = self.swamola_target(k).x();
+                let y = self.swamola_target(k).y();
                 if self
                     .sprite_workspace()
                     .current_sprite_x()
@@ -10365,8 +10364,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // ProjectSpeedRet Swamola_ProjectVelocityTowardsTarget(int k) {  // 9d9e13
     pub(super) fn swamola_project_velocity_towards_target(&mut self, k: usize) -> ProjectSpeedRet {
-        let x = self.swamola_target_view(k).x();
-        let y = self.swamola_target_view(k).y();
+        let x = self.swamola_target(k).x();
+        let y = self.swamola_target(k).y();
         self.sprite_project_speed_towards_location(k, x, y, 15)
     }
 
@@ -10487,7 +10486,7 @@ impl ZeldaState {
         let hist = usize::from(self.sprite_slot_view(k).subtype2() & 0x1f) + k * 32;
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
-        self.swamola_history_view_mut(hist).set_position(x, y);
+        self.swamola_history_mut(hist).set_position(x, y);
 
         let (mut oam_step, mut ext_step): (i16, i16) =
             if sign8(self.sprite_slot_view(k).y_velocity()) {
@@ -10516,8 +10515,8 @@ impl ZeldaState {
                     .wrapping_sub(HIST_OFFS[i])
                     & 31,
             ) + k * 32;
-            let x = self.swamola_history_view(j).x();
-            let y = self.swamola_history_view(j).y();
+            let x = self.swamola_history(j).x();
+            let y = self.swamola_history(j).y();
             self.sprite_workspace_mut().set_current_sprite_x(x);
             self.sprite_workspace_mut().set_current_sprite_y(y);
             oam_step = delta * 4;
@@ -25188,7 +25187,7 @@ impl ZeldaState {
         let j = (usize::from(self.sprite_slot_view(k).subtype2() & 0x1f)) + k * 32;
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
-        self.moldorm_history_view_mut(j).set_position(x, y);
+        self.moldorm_history_mut(j).set_position(x, y);
 
         for i in (0..3).rev() {
             let j = usize::from(
@@ -25197,7 +25196,7 @@ impl ZeldaState {
                     .wrapping_add(GET_OFFS[i])
                     & 0x1f,
             ) + k * 32;
-            let history = self.moldorm_history_view(j);
+            let history = self.moldorm_history(j);
             let x = history
                 .x()
                 .wrapping_sub(self.world_scroll().bg2_x())
@@ -25351,11 +25350,11 @@ impl ZeldaState {
                             .wrapping_sub(self.garnish_slot_view(k).y_low().wrapping_mul(8))
                             & 0x3f,
                     ) + k * 0x40;
-                    let history = self.moldorm_history_view(i);
+                    let history = self.moldorm_history(i);
                     let xlo = history
                         .x_low()
                         .wrapping_sub(self.world_scroll().bg2_x_low());
-                    let segment = self.lanmola_segment_motion_view(i);
+                    let segment = self.lanmola_segment_motion(i);
                     let ylo = history
                         .y_low()
                         .wrapping_sub(segment.z_offset())
@@ -25439,11 +25438,10 @@ impl ZeldaState {
         let j = k * 64 + usize::from(r2);
         let x_low = self.sprite_slot_view(k).x_low();
         let y_low = self.sprite_slot_view(k).y_low();
-        self.moldorm_history_view_mut(j)
-            .set_low_position(x_low, y_low);
+        self.moldorm_history_mut(j).set_low_position(x_low, y_low);
         let z_offset = self.sprite_slot_view(k).z();
         let direction = self.sprite_slot_view(k).graphics();
-        let mut segment = self.lanmola_segment_motion_view_mut(j);
+        let mut segment = self.lanmola_segment_motion_mut(j);
         segment.set_z_offset(z_offset);
         segment.set_direction(direction);
         if self.sprite_slot_view(k).state() == 9
@@ -25466,11 +25464,11 @@ impl ZeldaState {
         loop {
             let hist = usize::from(r2) + k * 64;
             r2 = r2.wrapping_sub(8) & 63;
-            let history_x_low = self.moldorm_history_view(hist).x_low();
-            let history_y_low = self.moldorm_history_view(hist).y_low();
+            let history_x_low = self.moldorm_history(hist).x_low();
+            let history_y_low = self.moldorm_history(hist).y_low();
             let entry_x = history_x_low.wrapping_sub(self.world_scroll().bg2_x_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
-            let segment = self.lanmola_segment_motion_view(hist);
+            let segment = self.lanmola_segment_motion(hist);
             let z_offset = segment.z_offset();
             let dir = usize::from(segment.direction());
             if !sign8(z_offset) {
@@ -25505,11 +25503,11 @@ impl ZeldaState {
         loop {
             let hist = usize::from(r5) + k * 64;
             r5 = r5.wrapping_sub(8) & 63;
-            let history_x_low = self.moldorm_history_view(hist).x_low();
-            let history_y_low = self.moldorm_history_view(hist).y_low();
+            let history_x_low = self.moldorm_history(hist).x_low();
+            let history_y_low = self.moldorm_history(hist).y_low();
             let entry_x = history_x_low.wrapping_sub(self.world_scroll().bg2_x_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
-            let segment = self.lanmola_segment_motion_view(hist);
+            let segment = self.lanmola_segment_motion(hist);
             if !sign8(segment.z_offset()) {
                 let entry_y = history_y_low
                     .wrapping_add(10)

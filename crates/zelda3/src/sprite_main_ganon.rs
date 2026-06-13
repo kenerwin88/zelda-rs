@@ -671,9 +671,9 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).increment_ignore_projectile();
                 let x = (u16::from(self.sprite_slot_view(k).x_high()) << 8)
-                    | u16::from(self.swamola_target_view(0).x_low());
+                    | u16::from(self.swamola_target(0).x_low());
                 let y = (u16::from(self.sprite_slot_view(k).y_high()) << 8)
-                    | u16::from(self.swamola_target_view(0).y_low());
+                    | u16::from(self.swamola_target(0).y_low());
                 if self.ganon_attempt_trident_catch(x, y) {
                     let direction = self.sprite_slot_view(k).subtype() >> 2;
                     self.sprite_slot_view_mut(k).set_direction(direction);
@@ -1346,8 +1346,8 @@ impl ZeldaState {
                 self.sprite_slot_view(k).health(),
                 self.sprite_slot_view(k).subtype(),
                 self.sprite_slot_view(k).direction(),
-                self.swamola_target_view(0).x_low(),
-                self.swamola_target_view(0).y_low(),
+                self.swamola_target(0).x_low(),
+                self.swamola_target(0).y_low(),
             );
         }
         let rnd = self.get_random_number();
@@ -1357,9 +1357,9 @@ impl ZeldaState {
         let j = GANON_WARP_SUBTYPES[idx & 0x1f];
         self.sprite_slot_view_mut(k).set_subtype(j);
         let ju = j as usize;
-        self.swamola_target_view_mut(0)
+        self.swamola_target_mut(0)
             .set_x_low(GANON_WARP_TARGET_X_LOW[ju]);
-        self.swamola_target_view_mut(0)
+        self.swamola_target_mut(0)
             .set_y_low(GANON_WARP_TARGET_Y_LOW[ju]);
         self.sprite_slot_view_mut(k).set_ai_state(a);
         self.sprite_slot_view_mut(k).set_x_velocity(0);

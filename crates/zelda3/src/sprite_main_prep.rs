@@ -706,7 +706,7 @@ impl ZeldaState {
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
         for _ in 0..32 {
-            self.moldorm_history_view_mut(j).set_position(x, y);
+            self.moldorm_history_mut(j).set_position(x, y);
             j += 1;
         }
     }
@@ -2902,7 +2902,7 @@ impl ZeldaState {
         let y = self.sprite_slot_view(j).y();
         for i in 0..32 {
             let o = t * 32 + i;
-            self.beamos_laser_history_view_mut(o).set_position(x, y);
+            self.beamos_laser_history_mut(o).set_position(x, y);
         }
     }
 
@@ -3379,7 +3379,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_graphics(1);
                     self.sprite_slot_view_mut(k).set_delay_main(80);
                     self.digging_game_prize_mut().clear_prize_spawned();
-                    self.lanmola_segment_motion_view_mut(1).set_z_offset(0);
+                    self.lanmola_segment_motion_mut(1).set_z_offset(0);
                     self.sprite_slot_view_mut(k).set_delay_aux1(5);
                     self.sprite_initialize_secondary_item_minigame(1);
                     self.system_signals_mut().set_music_control(14);
@@ -4037,7 +4037,7 @@ impl ZeldaState {
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
         for _ in 0..32 {
-            self.swamola_history_view_mut(j).set_position(x, y);
+            self.swamola_history_mut(j).set_position(x, y);
             j += 1;
         }
     }
@@ -4100,7 +4100,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_delay_main(INIT_DELAY[k]);
         self.sprite_slot_view_mut(k).set_z(0xff);
         for i in 0..64 {
-            self.lanmola_segment_motion_view_mut(k * 0x40 + i)
+            self.lanmola_segment_motion_mut(k * 0x40 + i)
                 .set_z_offset(0xff);
         }
         let value = 7;
@@ -4607,7 +4607,7 @@ impl ZeldaState {
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
         for i in 0..128 {
-            self.moldorm_history_view_mut(i).set_position(x, y);
+            self.moldorm_history_mut(i).set_position(x, y);
         }
     }
 }

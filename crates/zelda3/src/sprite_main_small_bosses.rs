@@ -251,7 +251,7 @@ impl ZeldaState {
         let j = (self.sprite_slot_view(k).subtype2() & 0x7f) as usize;
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        self.moldorm_history_view_mut(j).set_position(x, y);
+        self.moldorm_history_mut(j).set_position(x, y);
 
         if self.sprite_slot_view(k).f() == 14 {
             self.sprite_slot_view_mut(k).set_f(8);
@@ -331,7 +331,7 @@ impl ZeldaState {
                 .subtype2()
                 .wrapping_sub(TRINEXX_BODY_HISTORY_OFFSETS[i])
                 & 0x7f) as usize;
-            let history = self.moldorm_history_view(j);
+            let history = self.moldorm_history(j);
             let cur_x = history.x();
             let cur_y = history.y();
             self.sprite_workspace_mut().set_current_sprite_x(cur_x);
@@ -1995,7 +1995,7 @@ impl ZeldaState {
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
         for i in 0..128 {
-            self.moldorm_history_view_mut(i).set_position(x, y);
+            self.moldorm_history_mut(i).set_position(x, y);
         }
     }
 

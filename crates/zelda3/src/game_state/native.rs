@@ -51,13 +51,16 @@ pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
     BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
     DiggingGamePrizeState, DoorDebrisState, EffectAngleScratchState, EffectState,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, NativeBlastWallBridgeMut,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
+    LanmolaSegmentMotionState, NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut,
     NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
+    NativeLanmolaSegmentMotionBridgeMut, NativeMoldormHistoryBridgeMut, NativeQuakeBoltBridgeMut,
     NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
+    NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut, NativeTowerSealBridgeMut,
+    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
     NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
     SkullWoodsFireState, TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
     WeatherVaneDebrisSlotState,
@@ -2079,6 +2082,72 @@ mod tests {
         assert_eq!(ram[WEATHERVANE_Z + 3], 0x45);
         assert_eq!(ram[WEATHERVANE_Z_VELOCITY + 3], 0xdd);
         assert_eq!(ram[WEATHERVANE_DRAW_STATE + 3], 0xff);
+    }
+
+    #[test]
+    fn native_sprite_history_bridges_update_position_and_motion_banks() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut effects = EffectState::load_from_ram(&ram);
+
+        {
+            let mut bridge =
+                NativeMoldormHistoryBridgeMut::new(&mut effects.sprite_histories, &mut ram, 7);
+            bridge.set_position(0x1234, 0x5678);
+        }
+        assert_eq!(effects.sprite_histories.moldorm_history(7).x(), 0x1234);
+        assert_eq!(effects.sprite_histories.moldorm_history(7).y(), 0x5678);
+        {
+            let mut bridge =
+                NativeMoldormHistoryBridgeMut::new(&mut effects.sprite_histories, &mut ram, 7);
+            bridge.set_low_position(0xab, 0xcd);
+        }
+        assert_eq!(effects.sprite_histories.moldorm_history(7).x(), 0x12ab);
+        assert_eq!(effects.sprite_histories.moldorm_history(7).y(), 0x56cd);
+        assert_eq!(ram[MOLDORM_HISTORY_X_LO + 7], 0xab);
+        assert_eq!(ram[MOLDORM_HISTORY_Y_LO + 7], 0xcd);
+
+        {
+            let mut bridge =
+                NativeSwamolaTargetBridgeMut::new(&mut effects.sprite_histories, &mut ram, 2);
+            bridge.set_position(0x2345, 0x6789);
+            bridge.set_x_low(0xef);
+            bridge.set_y_low(0x01);
+        }
+        assert_eq!(effects.sprite_histories.swamola_target(2).x(), 0x23ef);
+        assert_eq!(effects.sprite_histories.swamola_target(2).y(), 0x6701);
+
+        {
+            let mut bridge =
+                NativeSwamolaHistoryBridgeMut::new(&mut effects.sprite_histories, &mut ram, 0x40);
+            bridge.set_position(0x3456, 0x789a);
+        }
+        assert_eq!(effects.sprite_histories.swamola_history(0x40).x(), 0x3456);
+        assert_eq!(effects.sprite_histories.swamola_history(0x40).y(), 0x789a);
+
+        {
+            let mut bridge =
+                NativeBeamosLaserHistoryBridgeMut::new(&mut effects.sprite_histories, &mut ram, 9);
+            bridge.set_position(0x4567, 0x89ab);
+        }
+        assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x4567);
+        assert_eq!(effects.sprite_histories.beamos_laser_history(9).y(), 0x89ab);
+
+        {
+            let mut bridge = NativeLanmolaSegmentMotionBridgeMut::new(
+                &mut effects.sprite_histories,
+                &mut ram,
+                9,
+            );
+            bridge.set_z_offset(0x55);
+            bridge.set_direction(0xaa);
+        }
+        let segment = effects.sprite_histories.lanmola_segment_motion(9);
+        assert_eq!(segment.z_offset(), 0x55);
+        assert_eq!(segment.direction(), 0xaa);
+        assert_eq!(ram[BEAMOS_LASER_HISTORY_X_HI + 9], 0x55);
+        assert_eq!(ram[BEAMOS_LASER_HISTORY_Y_HI + 9], 0xaa);
+        assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x5567);
+        assert_eq!(effects.sprite_histories.beamos_laser_history(9).y(), 0xaaab);
     }
 
     #[test]

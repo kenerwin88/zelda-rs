@@ -15,6 +15,7 @@ mod poly;
 mod raw;
 mod sprites;
 
+#[allow(unused_imports)]
 pub(crate) use effects::*;
 pub(crate) use player::*;
 #[allow(unused_imports)]
