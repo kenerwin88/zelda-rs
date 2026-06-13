@@ -3542,7 +3542,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn sprite_battle(&self) -> SpriteBattleState {
-        SpriteBattleState::load_from_ram(&self.ram)
+        self.game_state.sprite_battle
     }
 
     pub(crate) fn sprite_battle_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {

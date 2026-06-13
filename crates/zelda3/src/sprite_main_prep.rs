@@ -4644,7 +4644,7 @@ mod tests {
     fn key_prep_consumes_item_drop_counter() {
         let mut s = fresh_state();
         let k = 5;
-        s.ram[ITEM_DROP_COUNTER] = 0x7e;
+        s.sprite_battle_mut().set_item_drop_counter(0x7e);
         s.sprite_prep_small_key(k);
         assert_eq!(s.sprite_slot(k).subtype(), 0xff);
         assert_eq!(s.sprite_slot(k).die_action(), 0x7e);
@@ -5077,7 +5077,7 @@ mod tests {
 
         let mut indoor = fresh_state();
         indoor.set_indoor_flag(1);
-        indoor.ram[ITEM_DROP_COUNTER] = 1;
+        indoor.sprite_battle_mut().set_item_drop_counter(1);
         indoor.sprite_slot_mut(k).set_graphics(4);
         indoor
             .dungeon_savegame_state_mut()
@@ -5093,7 +5093,7 @@ mod tests {
 
         let mut key = fresh_state();
         key.sprite_slot_mut(k).set_x_low(0x20);
-        key.ram[ITEM_DROP_COUNTER] = 7;
+        key.sprite_battle_mut().set_item_drop_counter(7);
         key.sprite_prep_big_key(k);
         assert_eq!(key.sprite_slot(k).x_low(), 0x28);
         assert_eq!(key.sprite_slot(k).subtype(), 0xff);
@@ -6191,8 +6191,8 @@ mod tests {
         rupees.sprite_slot_mut(k).set_state(9);
         rupees.sprite_set_x(k, 0x0180);
         rupees.sprite_set_y(k, 0x0280);
-        rupees.ram[NUM_SPRITES_KILLED_PREP] = 4;
-        rupees.ram[NUMBER_OF_TIMES_HURT_BY_SPRITES] = 0;
+        rupees.sprite_battle_mut().set_sprites_killed(4);
+        rupees.sprite_battle_mut().set_times_hurt_by_sprites(0);
         rupees.rupee_pull_spawn_prize(k);
         assert_eq!(rupees.sprite_workspace().shared_scratch_a(), 2);
         assert_eq!(rupees.temp_counter().value(), 0xff);

@@ -871,8 +871,12 @@ pub(crate) struct NativeMinigameBridgeMut<'a> {
 
 impl<'a> NativeMinigameBridgeMut<'a> {
     pub(crate) fn new(minigame: &'a mut MinigameState, ram: &'a mut [u8]) -> Self {
-        *minigame = MinigameState::load_from_ram(ram);
         Self { minigame, ram }
+    }
+
+    fn sync(&mut self) {
+        self.minigame.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -881,52 +885,43 @@ impl<'a> NativeMinigameBridgeMut<'a> {
 
     pub(crate) fn set_is_archer_or_shovel_game(&mut self, value: u8) {
         self.minigame.set_is_archer_or_shovel_game(value);
-        self.ram[IS_ARCHER_OR_SHOVEL_GAME] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_is_archer_or_shovel_game(&mut self) {
         self.minigame.clear_is_archer_or_shovel_game();
-        self.ram[IS_ARCHER_OR_SHOVEL_GAME] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_credits(&mut self, value: u8) {
         self.minigame.set_credits(value);
-        self.ram[MINIGAME_CREDITS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_credits(&mut self) -> u8 {
         let value = self.minigame.decrement_credits();
-        self.ram[MINIGAME_CREDITS] = self.ram[MINIGAME_CREDITS].wrapping_sub(1);
-        debug_assert_eq!(value, self.ram[MINIGAME_CREDITS]);
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
         self.minigame.clear_flag_boomerang_in_place();
-        self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_flag_boomerang_in_place(&mut self, value: u8) {
         self.minigame.set_flag_boomerang_in_place(value);
-        self.ram[FLAG_FOR_BOOMERANG_IN_PLACE] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_boomerang_temp_x(&mut self, value: u16) {
         self.minigame.set_boomerang_temp_x(value);
-        write_le_u16(self.ram, BOOMERANG_TEMP_X, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_boomerang_temp_y(&mut self, value: u16) {
         self.minigame.set_boomerang_temp_y(value);
-        write_le_u16(self.ram, BOOMERANG_TEMP_Y, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1057,7 +1052,6 @@ pub(crate) struct NativeIntroSwordBridgeMut<'a> {
 
 impl<'a> NativeIntroSwordBridgeMut<'a> {
     pub(crate) fn new(intro_sword: &'a mut IntroSwordState, ram: &'a mut [u8]) -> Self {
-        *intro_sword = IntroSwordState::load_from_ram(ram);
         Self { intro_sword, ram }
     }
 
@@ -1198,8 +1192,12 @@ pub(crate) struct NativeArcheryGameBridgeMut<'a> {
 
 impl<'a> NativeArcheryGameBridgeMut<'a> {
     pub(crate) fn new(archery_game: &'a mut ArcheryGameState, ram: &'a mut [u8]) -> Self {
-        *archery_game = ArcheryGameState::load_from_ram(ram);
         Self { archery_game, ram }
+    }
+
+    fn sync(&mut self) {
+        self.archery_game.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -1211,38 +1209,32 @@ impl<'a> NativeArcheryGameBridgeMut<'a> {
 
     pub(crate) fn clear_hit_counter(&mut self) {
         self.archery_game.clear_hit_counter();
-        self.ram[ARCHERY_GAME_HIT_COUNTER] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_hit_counter(&mut self) {
         self.archery_game.increment_hit_counter();
-        self.ram[ARCHERY_GAME_HIT_COUNTER] = self.ram[ARCHERY_GAME_HIT_COUNTER].wrapping_add(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_arrows_left(&mut self, value: u8) {
         self.archery_game.set_arrows_left(value);
-        self.ram[ARCHERY_GAME_ARROWS_LEFT] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_arrows_left(&mut self) {
         self.archery_game.decrement_arrows_left();
-        self.ram[ARCHERY_GAME_ARROWS_LEFT] = self.ram[ARCHERY_GAME_ARROWS_LEFT].wrapping_sub(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_out_of_arrows(&mut self) {
         self.archery_game.increment_out_of_arrows();
-        self.ram[ARCHERY_GAME_OUT_OF_ARROWS] = self.ram[ARCHERY_GAME_OUT_OF_ARROWS].wrapping_add(1);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_out_of_arrows(&mut self) {
         self.archery_game.clear_out_of_arrows();
-        self.ram[ARCHERY_GAME_OUT_OF_ARROWS] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -1316,7 +1308,6 @@ pub(crate) struct NativeSpriteBattleBridgeMut<'a> {
 
 impl<'a> NativeSpriteBattleBridgeMut<'a> {
     pub(crate) fn new(sprite_battle: &'a mut SpriteBattleState, ram: &'a mut [u8]) -> Self {
-        *sprite_battle = SpriteBattleState::load_from_ram(ram);
         Self { sprite_battle, ram }
     }
 
@@ -1333,8 +1324,18 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn set_sprites_killed(&mut self, value: u8) {
+        self.sprite_battle.sprites_killed = value;
+        self.sync();
+    }
+
     pub(crate) fn clear_times_hurt_by_sprites(&mut self) {
         self.sprite_battle.times_hurt_by_sprites = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_times_hurt_by_sprites(&mut self, value: u8) {
+        self.sprite_battle.times_hurt_by_sprites = value;
         self.sync();
     }
 
@@ -1356,6 +1357,11 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
 
     pub(crate) fn clear_item_drop_counter(&mut self) {
         self.sprite_battle.item_drop_counter = 0;
+        self.sync();
+    }
+
+    pub(crate) fn set_item_drop_counter(&mut self, value: u8) {
+        self.sprite_battle.item_drop_counter = value;
         self.sync();
     }
 
@@ -1442,7 +1448,6 @@ pub(crate) struct NativeEnhancedFeaturesBridgeMut<'a> {
 
 impl<'a> NativeEnhancedFeaturesBridgeMut<'a> {
     pub(crate) fn new(enhanced_features: &'a mut EnhancedFeaturesState, ram: &'a mut [u8]) -> Self {
-        *enhanced_features = EnhancedFeaturesState::load_from_ram(ram);
         Self {
             enhanced_features,
             ram,
