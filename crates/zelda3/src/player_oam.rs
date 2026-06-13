@@ -2129,7 +2129,7 @@ impl ZeldaState {
             kPlayerOam_FloorOamPrio[self.player_state_view().lower_level_state() as usize];
         self.oam_state_mut().set_priority_word(oam_priority_value);
         let mut sort_sprites_offset_into_oam_buffer =
-            kPlayerOam_SortSpritesOffs[self.oam_state_view().sprite_sorting_offset_index()];
+            kPlayerOam_SortSpritesOffs[self.oam_state().sprite_sorting_offset_index()];
         self.oam_state_mut()
             .set_sort_sprites_offset(sort_sprites_offset_into_oam_buffer);
 
@@ -2225,7 +2225,7 @@ impl ZeldaState {
                     continue_after_set = true;
                 } else if self.player_state_view().is_in_auxiliary_state(1) {
                     if handler_state == PLAYER_HANDLER_STATE_TURTLE_ROCK {
-                        if self.oam_state_view().turtle_rock_priority_flag() == 0 {
+                        if self.oam_state().turtle_rock_priority_flag() == 0 {
                             oam_priority_value = 0x3000;
                             self.oam_state_mut().set_priority_word(oam_priority_value);
                         }
@@ -2529,7 +2529,7 @@ impl ZeldaState {
         if self.player_state_view().visibility_status() != 12
             && handler_state != PLAYER_HANDLER_STATE_ASLEEP_IN_BED
         {
-            if self.oam_state_view().player_oam_computed_value() != 5
+            if self.oam_state().player_oam_computed_value() != 5
                 && self.player_state_view().water_ripple_or_grass_state() != 0
             {
                 self.link_oam_draw_foot_object(r4loc, xcoord, ycoord);
@@ -2570,7 +2570,7 @@ impl ZeldaState {
                             + sort_sprites_offset_into_oam_buffer)
                             >> 2) as usize;
                         let mut td = (kLinkShadows_Chardata[shadow_idx * 2] & !0x3000)
-                            | self.oam_state_view().priority_value_2();
+                            | self.oam_state().priority_value_2();
                         if link_palette_bits_of_oam == 0 {
                             td = (td & !0x0e00) | 0x0600;
                         }
@@ -2761,7 +2761,7 @@ impl ZeldaState {
         if td == 0xffff {
             return oam_pos;
         }
-        td = (td & !0x3000) | self.oam_state_view().priority_word();
+        td = (td & !0x3000) | self.oam_state().priority_word();
         if self.player_state_view().palette_bits_of_oam_word() == 0 {
             td = (td & !0x0e00) | 0x0600;
         }
@@ -2785,14 +2785,14 @@ impl ZeldaState {
         } else {
             kSwordStuff_oam_index_ptrs_0[r4loc]
         } as u16
-            + self.oam_state_view().sort_sprites_offset())
+            + self.oam_state().sort_sprites_offset())
             >> 2) as usize;
         for _ in 0..4 {
             let st = kPlayerOam_DrawOam_Throwing_State[j];
             if st != -1 {
                 self.set_oam_charnum(
                     oam_pos,
-                    (0x2609 & !0x3000) | self.oam_state_view().priority_word(),
+                    (0x2609 & !0x3000) | self.oam_state().priority_word(),
                 );
                 self.oam_state_mut().set_entry_xy(
                     oam_addr(oam_pos),
@@ -2834,7 +2834,7 @@ impl ZeldaState {
         } else {
             kShadow_oam_indexes_0[r4loc]
         } as u16
-            + self.oam_state_view().sort_sprites_offset())
+            + self.oam_state().sort_sprites_offset())
             >> 2) as usize;
         yv *= 2;
         for _ in 0..2 {
@@ -2842,7 +2842,7 @@ impl ZeldaState {
             if td != 0xffff {
                 self.set_oam_charnum(
                     oam_pos,
-                    (td & !0x3000) | self.oam_state_view().priority_value_2(),
+                    (td & !0x3000) | self.oam_state().priority_value_2(),
                 );
                 self.set_oam_word_xy(oam_pos, xcoord, ycoord);
             }
@@ -2882,7 +2882,7 @@ impl ZeldaState {
         oam_x = add_i8(oam_x, kOffsToShadowGivenDir_X[i]);
         oam_y = add_i8(oam_y, kOffsToShadowGivenDir_Y[i]);
         let oam_pos = ((kShadow_oam_indexes_1[r4loc] as u16
-            + self.oam_state_view().sort_sprites_offset())
+            + self.oam_state().sort_sprites_offset())
             >> 2) as usize;
         let yv = if self.player_state_view().water_ripple_or_grass_state() == 2 {
             let yv = if self.player_state_view().animation_step() >= 3 {
@@ -2899,20 +2899,16 @@ impl ZeldaState {
             5 + timer as usize
         };
         if yv >= 11 {
-            self.set_oam_charnum(oam_pos, self.oam_state_view().priority_value_2());
-            self.set_oam_charnum(
-                oam_pos + 1,
-                0x00ae | self.oam_state_view().priority_value_2(),
-            );
+            self.set_oam_charnum(oam_pos, self.oam_state().priority_value_2());
+            self.set_oam_charnum(oam_pos + 1, 0x00ae | self.oam_state().priority_value_2());
         } else {
             self.set_oam_charnum(
                 oam_pos,
-                (kLinkShadows_Chardata[yv * 2] & !0x3000)
-                    | self.oam_state_view().priority_value_2(),
+                (kLinkShadows_Chardata[yv * 2] & !0x3000) | self.oam_state().priority_value_2(),
             );
             self.set_oam_charnum(
                 oam_pos + 1,
-                kLinkShadows_Chardata[yv * 2 + 1] | self.oam_state_view().priority_value_2(),
+                kLinkShadows_Chardata[yv * 2 + 1] | self.oam_state().priority_value_2(),
             );
         }
         self.oam_state_mut().set_entry_x(oam_addr(oam_pos), oam_x);

@@ -356,11 +356,11 @@ impl ZeldaState {
             }
 
             let oam = self
-                .oam_state_view()
+                .oam_state()
                 .current_pointer()
                 .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i]);
             let ext = self
-                .oam_state_view()
+                .oam_state()
                 .current_extended_pointer()
                 .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i] >> 2);
             self.oam_state_mut().set_current_pointer(oam);
@@ -893,7 +893,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let count = usize::from(self.sprite_slot_view(k).subtype2());
         for i in 0..count {
             let j = i + k * 9;
@@ -1859,8 +1859,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn yellow_stalfos_draw(&mut self, k: usize) {
-        let old_oam = self.oam_state_view().current_pointer();
-        let old_ext = self.oam_state_view().current_extended_pointer();
+        let old_oam = self.oam_state().current_pointer();
+        let old_ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_pointer(old_oam.wrapping_add(4));
         self.oam_state_mut()
@@ -1898,7 +1898,7 @@ impl ZeldaState {
         let y = info.y.wrapping_sub(self.sprite_slot_view(k).c() as u16);
         let charnum = YELLOW_STALFOS_HEAD_CHARS[j];
         let flags = YELLOW_STALFOS_HEAD_FLAGS[j] | info.flags;
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         self.set_oam_helper0_for_small_bosses(oam, x, y, charnum, flags, 2);
     }
 

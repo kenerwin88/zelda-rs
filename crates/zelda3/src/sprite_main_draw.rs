@@ -448,7 +448,7 @@ impl ZeldaState {
         } else {
             2
         };
-        let oam = (self.oam_state_view().current_pointer_usize()) + n * 4;
+        let oam = (self.oam_state().current_pointer_usize()) + n * 4;
         let i = (self.sprite_slot_view(k).direction() >> 1) as usize;
         let dx = BEAMOS_EYEBALL_DRAW_X_OFFSETS[i].wrapping_sub(3);
         let dy = BEAMOS_EYEBALL_DRAW_Y_OFFSETS[i].wrapping_sub(18);
@@ -470,7 +470,7 @@ impl ZeldaState {
         );
         // oam_cur_ptr += n * 4; oam_ext_cur_ptr += n;
         self.oam_state_mut().add_current_pointer((n as u16) * 4);
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(n as u16));
         self.sprite_correct_oam_entries_for_draw(k, 0, 0);
@@ -484,10 +484,10 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_draw_water_ripple_with_oam_adjust(&mut self, k: usize) {
         self.sprite_draw_water_ripple(k);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
     }
@@ -525,7 +525,7 @@ impl ZeldaState {
         let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let d = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         for i in (0..2usize).rev() {
             let j = d + i;
@@ -986,7 +986,7 @@ impl ZeldaState {
                 0x85, 0x85, 0x85, 0x85, 4, 0x44, 0x84, 0xc4, 4, 0x44, 0x84, 0xc4, 4, 0x44, 0x84,
                 0xc4,
             ];
-            let mut oam = self.oam_state_view().current_pointer_usize();
+            let mut oam = self.oam_state().current_pointer_usize();
             let g = usize::from(self.sprite_slot_view(k).graphics());
             for i in (0..4usize).rev() {
                 let j = g * 4 + i;
@@ -1017,7 +1017,7 @@ impl ZeldaState {
         const CH1: [u8; 8] = [0xae, 0xae, 0xae, 0xae, 0xac, 0xac, 0xac, 0xac];
         const FLAGS1: [u8; 8] = [0, 0x40, 0x40, 0x40, 0, 0, 0x40, 0x40];
         self.oam_allocate_from_region_c(0x10);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from((self.sprite_slot_view(k).delay_aux2() >> 1) & 4);
         for i in (0..4usize).rev() {
             let j = g + i;
@@ -1445,7 +1445,7 @@ impl ZeldaState {
         let Some((x, mut y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         if g == 0 || g == 2 {
             y = y.wrapping_sub(1);
@@ -1531,8 +1531,8 @@ impl ZeldaState {
         let frame = self.frame_state().frame_counter;
         let base = (WATER_RIPPLE_FRAME_INDICES[((frame >> 2) & 3) as usize] as usize) * 2;
         self.sprite_draw_multiple(k, &WATER_RIPPLE_DRAW_FRAMES[base..base + 2], None);
-        let oam = self.oam_state_view().current_pointer_usize();
-        let t = (self.oam_state_view().entry_flags(oam) & 0x30) | 0x4;
+        let oam = self.oam_state().current_pointer_usize();
+        let t = (self.oam_state().entry_flags(oam) & 0x30) | 0x4;
         self.oam_state_mut().set_entry_flags(oam, t);
         self.oam_state_mut().set_entry_flags(oam + 4, t | 0x40);
     }
@@ -1551,7 +1551,7 @@ impl ZeldaState {
         spr_offs: i32,
     ) {
         let j = (self.sprite_slot_view(k).head_direction() & 3) as usize;
-        let oam = ((self.oam_state_view().current_pointer() as i32) + spr_offs * 4) as usize;
+        let oam = ((self.oam_state().current_pointer() as i32) + spr_offs * 4) as usize;
         let y = info.y.wrapping_sub(9);
         let flags = info.flags | CHAIN_BALL_TROOPER_HEAD_FLAGS[j];
         self.set_oam_helper0_at_for_draw(
@@ -1587,7 +1587,7 @@ impl ZeldaState {
     ) {
         let g = self.sprite_slot_view(k).graphics() as usize;
         let spr_offs = spr_offs + ((FLAIL_TROOPER_BODY_SPRITE_OFFSETS[g] >> 2) as i32);
-        let mut oam = ((self.oam_state_view().current_pointer() as i32) + spr_offs * 4) as usize;
+        let mut oam = ((self.oam_state().current_pointer() as i32) + spr_offs * 4) as usize;
         let mut n: i32 = FLAIL_TROOPER_BODY_SEGMENT_COUNTS[g] as i32;
         loop {
             let j = (g * 3) + (n as usize);
@@ -1621,7 +1621,7 @@ impl ZeldaState {
     //   See sprite_main.c:3962 — chain-ball flail with sin-wave segments.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_bnc_flail(&mut self, k: usize, info: &PrepOamCoordsRet) {
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
 
         self.draw_scratch_position_mut()
             .set_low_position(info.x as u8, info.y as u8);
@@ -1706,7 +1706,7 @@ impl ZeldaState {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = (self.sprite_slot_view(k).graphics() & 1) as usize;
         let mut i: i32 = 3;
         loop {
@@ -1754,7 +1754,7 @@ impl ZeldaState {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let base = ((self.sprite_slot_view(k).delay_aux1() >> 1) & 0xc) as usize;
         let mut i: i32 = 3;
         loop {
@@ -1803,7 +1803,7 @@ impl ZeldaState {
             0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0,
         ];
 
-        let mut oam = ((self.oam_state_view().current_pointer() as i32) + spr_offs * 4) as usize;
+        let mut oam = ((self.oam_state().current_pointer() as i32) + spr_offs * 4) as usize;
         let r6 = (self.sprite_slot_view(k).direction() as u8)
             .wrapping_mul(4)
             .wrapping_add(((self.sprite_slot_view(k).a() ^ 1) << 1) & 2);
@@ -1867,7 +1867,7 @@ impl ZeldaState {
             0x88, 0x8d, 0xcd, 0xcd, 0xcd, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 0xcd,
             0xcd,
         ];
-        let mut oam = ((self.oam_state_view().current_pointer() as i32) + spr_offs * 4) as usize;
+        let mut oam = ((self.oam_state().current_pointer() as i32) + spr_offs * 4) as usize;
         let g_signed = self.sprite_slot_view(k).graphics() as i32 - 14;
         let base: usize = if g_signed < 0 {
             ARCHER_WEAPON_BASE_FRAME_BY_DIRECTION
@@ -1913,7 +1913,7 @@ impl ZeldaState {
             None => return,
         };
 
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let mut i: i32 = 3;
         loop {
             let x = info
@@ -1937,7 +1937,7 @@ impl ZeldaState {
             }
         }
         self.oam_allocate_from_region_b(12);
-        oam = self.oam_state_view().current_pointer_usize();
+        oam = self.oam_state().current_pointer_usize();
         let info_y = self
             .sprite_get_y(k)
             .wrapping_sub(self.world_scroll().bg2_y());
@@ -2046,7 +2046,7 @@ impl ZeldaState {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = (((self.sprite_slot_view(k).delay_main() >> 1) & 0xc) ^ 0xc) as usize;
         let mut i: i32 = 3;
         loop {
@@ -2180,7 +2180,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() != 2 || self.sprite_slot_view(k).pause() != 0 {
             return;
         }
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let x = info.x.wrapping_add(4) as u8;
         let y = info.y.wrapping_add(3) as u8;
         // oam[5]: 20 byte offset from oam base.
@@ -2238,7 +2238,7 @@ impl ZeldaState {
             g = (self.sprite_slot_view(k).subtype() as usize) + 2;
         }
         self.oam_allocate_from_region_c(0x10);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let tmp_x = self.temp_counter().value();
         let tmp_y = self.sprite_workspace().shared_scratch_a();
         let mut i: i32 = 3;
@@ -2543,7 +2543,7 @@ impl ZeldaState {
         info.flags &= !0x10;
 
         if self.sprite_slot_view(k).ai_state() == 3 {
-            let mut oam = (self.oam_state_view().current_pointer_usize()) + 4 * 4;
+            let mut oam = (self.oam_state().current_pointer_usize()) + 4 * 4;
             let xb = self
                 .sprite_slot_view(k)
                 .a()
@@ -2574,7 +2574,7 @@ impl ZeldaState {
         self.oam_state_mut().set_current_pointer(0x9f0);
         self.oam_state_mut().set_current_extended_pointer(0xa9c);
 
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let xb = self
             .sprite_slot_view(k)
             .a()
@@ -2653,10 +2653,10 @@ impl ZeldaState {
         let z = self.sprite_slot_view(k).z() as u16;
         self.sprite_workspace_mut()
             .set_current_sprite_y(cur_y.wrapping_add(z));
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(16));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = (anim as usize) * 3;
@@ -2709,7 +2709,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).subtype2() == 0 {
             return;
         }
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let kn = self.sprite_slot_view(k).subtype2().wrapping_sub(1);
         let end = self.sprite_slot_view(k).subtype();
         let t = end.wrapping_add(1) as usize;
@@ -3136,7 +3136,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()).min(17);
         for i in (0..=3).rev() {
             let j = g * 4 + i;
@@ -3172,7 +3172,7 @@ impl ZeldaState {
         } else {
             self.oam_allocate_from_region_b(8);
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         if self.sprite_slot_view(k).head_direction() == 0 {
             return;
         }
@@ -4044,10 +4044,10 @@ impl ZeldaState {
         let value = 11;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_draw_moldorm_eyeballs(k, &info);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
 
@@ -4135,10 +4135,10 @@ impl ZeldaState {
         let cur_y = self.moldorm_history_view(j).y();
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x10));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 1) & 1) * 4;
@@ -4278,10 +4278,10 @@ impl ZeldaState {
     pub(super) fn sprite_draw_moldorm_segment_c(&mut self, k: usize) {
         let value = 0;
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x10));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         self.giant_moldorm_draw_segment_c_or_tail(k, 0x28);
@@ -4321,10 +4321,10 @@ impl ZeldaState {
     //   GiantMoldorm_DrawSegment_C_OrTail(k, 0x30);
     // }
     pub(super) fn sprite_draw_moldorm_tail(&mut self, k: usize) {
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).add_graphics(1);
@@ -4351,7 +4351,7 @@ impl ZeldaState {
         const GIANT_MOLDORM_EYE_FLAGS: [u8; 16] = [
             0, 0, 0, 0, 0x80, 0x80, 0x40, 0x40, 0x40, 0x40, 0xc0, 0xc0, 0, 0, 0x80, 0x80,
         ];
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let r7: u8 = if self.sprite_slot_view(k).f() != 0 {
             self.frame_state().frame_counter
         } else {
@@ -4591,13 +4591,13 @@ impl ZeldaState {
         const HELMASAUR_KING_MASK_X_OFFSETS: [i8; 2] = [-3, 11];
         const HELMASAUR_KING_MASK_CHARS: [u8; 8] = [0xce, 0xcf, 0xde, 0xde, 0xde, 0xde, 0xcf, 0xce];
         const HELMASAUR_KING_MASK_FLAGS: [u8; 2] = [0x3b, 0x7b];
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x40));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(0x10));
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let mut i: i32 = 1;
         loop {
             let j = ((self.overlord_slot_view(4).x_low() >> 2) & 7) as usize;
@@ -4772,13 +4772,13 @@ impl ZeldaState {
         const HELMASAUR_KING_EXPLOSION_CHARS: [u8; 4] = [0xa2, 0xa6, 0xa2, 0xa6];
         const HELMASAUR_KING_EXPLOSION_FLAGS: [u8; 4] = [0xb, 0xb, 0x4b, 0x4b];
 
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(19 * 4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(19));
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let mut i: i32 = 3;
         loop {
             let x = info
@@ -4844,7 +4844,7 @@ impl ZeldaState {
         let yd_idx = (self.sprite_slot_view(k).delay_aux2() >> 2) as usize;
         let yd = HELMASAUR_KING_FIREBALL_Y_OFFSETS[yd_idx];
         self.oam_allocate_from_region_b(4);
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let x = info.x as u8;
         let y = (info.y as u8).wrapping_add(yd).wrapping_add(0x13);
         self.set_oam_plain_at_for_draw(oam, x, y, 0xaa, info.flags ^ 0xb, 2);
@@ -4998,10 +4998,10 @@ impl ZeldaState {
                 ext: 2,
             },
         ];
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
         if self.sprite_slot_view(k).c() >= 3 {
@@ -5023,10 +5023,10 @@ impl ZeldaState {
         info.y = prepped.y;
         info.r4 = prepped.r4;
         info.flags = prepped.flags;
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x20));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(8));
         if self.sprite_slot_view(k).delay_aux4() != 0 {
@@ -5128,7 +5128,7 @@ impl ZeldaState {
             orbit.set_y_low(helmasaur_sin(angle.wrapping_add(0x80), r15).wrapping_sub(40) as u8);
         }
 
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let start = self.overlord_slot_view(3).gen2() as usize;
         let mut is_hit = false;
         for i in start..16usize {
@@ -5183,7 +5183,7 @@ impl ZeldaState {
             return;
         }
         let i = (self.sprite_slot_view(k).head_direction() & 3) as usize;
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let y = info
             .y
             .wrapping_add(self.sprite_slot_view(k).c() as u16)
@@ -5530,7 +5530,7 @@ impl ZeldaState {
         const FLAGS: [u8; 2] = [0x33, 0x73];
         const LOCAL_GRAPHICS: [u8; 4] = [2, 2, 1, 0];
 
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let flags = FLAGS[usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 1)];
         let x = self
@@ -5640,7 +5640,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_c(12);
             0
         };
-        let mut oam = self.oam_state_view().current_pointer_usize() + spr_offs * 4;
+        let mut oam = self.oam_state().current_pointer_usize() + spr_offs * 4;
         for i in (0..2).rev() {
             self.set_oam_helper0_at_for_draw(
                 oam,
@@ -5667,7 +5667,7 @@ impl ZeldaState {
             flags: 0,
         };
         self.sprite_prep_oam_coord(k, &mut info);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..32).rev() {
             let j = g * 32 + i;
@@ -5752,7 +5752,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         for i in (0..4).rev() {
             self.set_oam_helper0_at_for_draw(
                 oam,
@@ -5777,7 +5777,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let d = (self.sprite_slot_view(k).graphics() as usize) * 2;
         for i in (0..2).rev() {
             let j = d + i;
@@ -5807,7 +5807,7 @@ impl ZeldaState {
         };
         let d = usize::from(self.sprite_slot_view(k).direction() & 1);
         let ch = POE_DRAW_CHARS[((self.sprite_slot_view(k).subtype2() >> 3) & 3) as usize];
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         self.set_oam_helper0_at_for_draw(
             oam,
             x.wrapping_add(POE_DRAW_X_OFFSETS[d] as i16 as u16),
@@ -6151,7 +6151,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let r6 = (self.sprite_slot_view(k).direction() as usize) * 2;
         let r7 = (self.sprite_slot_view(k).a() as usize) * 8;
         for i in (0..2).rev() {
@@ -6182,7 +6182,7 @@ impl ZeldaState {
         };
         let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
         if self.sprite_slot_view(k).direction() != 3 {
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             let j = (self.sprite_slot_view(k).c() as usize) * 3
                 + self.sprite_slot_view(k).direction() as usize;
             self.set_oam_helper0_at_for_draw(
@@ -6194,10 +6194,10 @@ impl ZeldaState {
                 0,
             );
         }
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).subtract_flags2(1);
@@ -6650,7 +6650,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).a() == 0 && self.frame_state().submodule != 7 {
             self.oam_allocate_defer_to_player(k);
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..4).rev() {
             let j = g * 4 + i;
@@ -6674,7 +6674,7 @@ impl ZeldaState {
             self.oam_state_mut()
                 .set_current_extended_pointer(0x0a20 + spr_idx as u16);
         }
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let z = (self.sprite_slot_view(k).z().min(32)) >> 3;
         let y = self
             .sprite_get_y(k)
@@ -7509,7 +7509,7 @@ impl ZeldaState {
             } else {
                 4
             };
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         self.oam_state_mut()
             .set_entry_char(oam, ZAZAK_DRAW_CHARS[i]);
         self.oam_state_mut()
@@ -7550,7 +7550,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let d = (self.sprite_slot_view(k).graphics() as usize).min(13);
         for i in (0..=LEEVER_DRAW_COUNTS[d] as usize).rev() {
             let j = d * 4 + i;
@@ -7861,10 +7861,10 @@ impl ZeldaState {
             None
         };
         if let Some(extra_base) = extra {
-            let cur = self.oam_state_view().current_pointer();
+            let cur = self.oam_state().current_pointer();
             self.oam_state_mut()
                 .set_current_pointer(cur.wrapping_add(8));
-            let ext = self.oam_state_view().current_extended_pointer();
+            let ext = self.oam_state().current_extended_pointer();
             self.oam_state_mut()
                 .set_current_extended_pointer(ext.wrapping_add(2));
             self.sprite_draw_multiple(
@@ -7901,7 +7901,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         let mut chr = SPIKE_ROLLER_DRAW_CHARS[(g * 8).min(SPIKE_ROLLER_DRAW_CHARS.len() - 1)];
         let max_i = if self.sprite_slot_view(k).ai_state() != 0 {
@@ -8275,7 +8275,7 @@ impl ZeldaState {
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         for i in (0..6).rev() {
             self.oam_state_mut().write_entry(
                 oam,
@@ -8518,10 +8518,10 @@ impl ZeldaState {
         self.sprite_workspace_mut()
             .set_current_sprite_y(cur_y.wrapping_add(z as u16));
         let j = (z >> 2).min(2) as usize;
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
         self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES2[j * 3..j * 3 + 3], Some(&mut info));
@@ -9326,7 +9326,7 @@ impl ZeldaState {
             return;
         };
         self.oam_allocate_defer_to_player(k);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = (self.sprite_slot_view(k).graphics() as usize)
             .min(BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS.len() - 1);
         let yoff = BAD_PULL_SWITCH_CENTER_Y_OFFSETS
@@ -9360,7 +9360,7 @@ impl ZeldaState {
             return;
         };
         self.oam_allocate_defer_to_player(k);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = (self.sprite_slot_view(k).graphics() as usize)
             .min(BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS.len() - 1);
         let yoff =
@@ -9389,7 +9389,7 @@ impl ZeldaState {
             return;
         };
         self.oam_allocate_defer_to_player(k);
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let t = GOOD_PULL_SWITCH_BOTTOM_Y_OFFSETS[(self.sprite_slot_view(k).graphics() as usize)
             .min(GOOD_PULL_SWITCH_BOTTOM_Y_OFFSETS.len() - 1)];
         self.set_oam_helper0_at_for_draw(oam, x, y.wrapping_sub(1), 0xee, flags, 2);
@@ -10500,10 +10500,10 @@ impl ZeldaState {
         } else {
             1
         };
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add_signed(oam_step));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add_signed(ext_step));
 
@@ -10522,10 +10522,10 @@ impl ZeldaState {
             self.sprite_workspace_mut().set_current_sprite_y(y);
             oam_step = delta * 4;
             ext_step = delta;
-            let cur = self.oam_state_view().current_pointer();
+            let cur = self.oam_state().current_pointer();
             self.oam_state_mut()
                 .set_current_pointer(cur.wrapping_add_signed(oam_step));
-            let ext = self.oam_state_view().current_extended_pointer();
+            let ext = self.oam_state().current_extended_pointer();
             self.oam_state_mut()
                 .set_current_extended_pointer(ext.wrapping_add_signed(ext_step));
             self.sprite_draw_single_large(k);
@@ -11259,7 +11259,7 @@ impl ZeldaState {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
         self.sprite_draw_multiple(k, &D[base..base + 3], Some(&mut info));
         if self.sprite_slot_view(k).graphics() < 8 && self.sprite_slot_view(k).pause() == 0 {
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             let i = usize::from(self.sprite_slot_view(k).head_direction());
             self.oam_state_mut().set_entry_char(oam, CH[i]);
             self.oam_state_mut().merge_entry_flags(oam, !0x70, FLAGS[i]);
@@ -11487,18 +11487,18 @@ impl ZeldaState {
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
         self.sprite_draw_stalfos_knight_head(k, &info);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 5;
         self.sprite_draw_multiple_with_info(k, &D[base..base + 5], tuple);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_sub(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_sub(1));
         let mut shadow_info = SpritePrepOamCoordsRet {
@@ -11869,7 +11869,7 @@ impl ZeldaState {
         let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let d = usize::from(self.sprite_slot_view(k).graphics()) * 5;
         for i in (0..5).rev() {
             let j = d + i;
@@ -12134,7 +12134,7 @@ impl ZeldaState {
 
         self.sprite_draw_antfairy(k);
         if self.sprite_slot_view(k).pause() == 0 {
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             let charnum = RABBIT_BEAM_GFX[self.sprite_slot_view(k).graphics() as usize];
             for i in 0..5 {
                 let pos = oam + i * 4;
@@ -12850,10 +12850,10 @@ impl ZeldaState {
             let value = bak0;
             self.sprite_slot_view_mut(k).set_flags2(value);
         }
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
         let base = (usize::from(self.sprite_slot_view(k).subtype2())
@@ -13203,7 +13203,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..2).rev() {
             self.set_oam_helper0_at_for_draw(
@@ -13725,7 +13725,7 @@ impl ZeldaState {
             r4: 0,
             flags: info_flags,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         for i in (0..3).rev() {
             let ch = CH[g * 3 + i];
@@ -14514,7 +14514,7 @@ impl ZeldaState {
             r4: 0,
             flags: info_flags,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize() + 12;
+        let mut oam = self.oam_state().current_pointer_usize() + 12;
         let d = self.sprite_slot_view(k).b();
         for i in (0..=self.sprite_slot_view(k).a()).rev() {
             let ch =
@@ -15171,10 +15171,10 @@ impl ZeldaState {
             self.sprite_draw_multiple(k, &D2[d..d + 1], None);
         }
 
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let g = usize::from(self.sprite_slot_view(k).graphics());
@@ -16386,7 +16386,7 @@ impl ZeldaState {
             return;
         };
         self.oam_allocate_defer_to_player(k);
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let scratch = self.draw_scratch_position_view();
         let x = scratch.x_low();
@@ -18372,7 +18372,7 @@ impl ZeldaState {
     // void Sprite_EC_ThrownItem(int k) {  // 86aae0
     pub(super) fn sprite_ec_thrown_item(&mut self, k: usize) {
         if self.sprite_system().chr_halfslot_state() < 3 {
-            if self.oam_state_view().has_sprite_sorting() && self.sprite_slot_view(k).floor() != 0 {
+            if self.oam_state().has_sprite_sorting() && self.sprite_slot_view(k).floor() != 0 {
                 let spr_slot = 0x2c + (k & 3);
                 self.oam_state_mut()
                     .set_current_pointer((0x0800 + spr_slot * 4) as u16);
@@ -18385,7 +18385,7 @@ impl ZeldaState {
                 self.sprite_draw_thrown_item_gigantic(k);
             } else {
                 self.sprite_draw_single_large(k);
-                let oam = self.oam_state_view().current_pointer_usize();
+                let oam = self.oam_state().current_pointer_usize();
                 let t = self
                     .world_location_state()
                     .indoor_flag
@@ -18396,7 +18396,7 @@ impl ZeldaState {
                 self.oam_state_mut()
                     .merge_entry_flags(oam, 0xf0, THROWABLE_SCENERY_FLAGS[j]);
                 let value = (self.sprite_slot_view(k).oam_flags() & 0xc0)
-                    | (self.oam_state_view().entry_flags(oam) & 0x0f);
+                    | (self.oam_state().entry_flags(oam) & 0x0f);
                 self.sprite_slot_view_mut(k).set_oam_flags(value);
             }
         }
@@ -18422,7 +18422,7 @@ impl ZeldaState {
         if self.sprite_system().chr_halfslot_state() >= 3 {
             return;
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let r7 = if self.sprite_slot_view(k).sprite_type() == 0x17 {
             2
         } else {
@@ -18674,7 +18674,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         for i in (0..3).rev() {
             let j = g * 3 + i;
@@ -18707,7 +18707,7 @@ impl ZeldaState {
             r4: 0,
             flags: info_flags,
         };
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let hd = usize::from(self.sprite_slot_view(k).head_direction() & 3);
         self.set_oam_helper0_at_for_draw(
             oam,
@@ -20144,7 +20144,7 @@ impl ZeldaState {
         if g == 6 {
             return;
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let big = BIG[g];
         for i in (0..4).rev() {
             let j = g * 4 + i;
@@ -20176,7 +20176,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let d = usize::from(self.sprite_slot_view(k).graphics()) * 4;
         for i in (0..4).rev() {
             let j = d + i;
@@ -20610,7 +20610,7 @@ impl ZeldaState {
         if self.sprite_prep_oam_coord_or_double_ret(k).is_none() {
             return;
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let (x0, y0) = self
             .draw_scratch_position_mut()
             .offset_low_position(0u8.wrapping_sub(0x20), 0u8.wrapping_sub(0x20));
@@ -21446,7 +21446,7 @@ impl ZeldaState {
             else {
                 return;
             };
-            let mut oam = self.oam_state_view().current_pointer_usize();
+            let mut oam = self.oam_state().current_pointer_usize();
             let g = usize::from(self.sprite_slot_view(k).graphics());
             for i in (0..12).rev() {
                 let j = g * 12 + i;
@@ -22397,7 +22397,7 @@ impl ZeldaState {
         let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         self.sprite_workspace_mut().set_shared_scratch_a(info_flags);
         self.draw_scratch_position_mut()
             .set_low_position(x as u8, y as u8);
@@ -22431,12 +22431,12 @@ impl ZeldaState {
             return;
         }
 
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         for _ in 0..4 {
             let ext_index = (oam - OAM_BUF) / 4;
-            if self.oam_state_view().extended_byte(ext_index) & 1 == 0 {
-                let ox = self.oam_state_view().entry_x(oam);
-                let oy = self.oam_state_view().entry_y(oam);
+            if self.oam_state().extended_byte(ext_index) & 1 == 0 {
+                let ox = self.oam_state().entry_x(oam);
+                let oy = self.oam_state().entry_y(oam);
                 let link_x = self.player_state_view().x() as u8;
                 let link_y = self.player_state_view().y() as u8;
                 if ox
@@ -22868,10 +22868,10 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).or_object_priority(0x30);
         }
         self.poe_draw(k);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).subtract_flags2(1);
@@ -23312,7 +23312,7 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot_view(k).e() != 0 {
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             self.oam_state_mut().or_entry_flags(oam, 0x30);
 
             let old_z = self.sprite_slot_view(k).z();
@@ -24057,7 +24057,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         let ybase = self
             .sprite_get_y(k)
@@ -24967,7 +24967,7 @@ impl ZeldaState {
             r4: 0,
             flags: info_flags,
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         for i in (0..4).rev() {
             let j = d + i;
             self.set_oam_helper0_at_for_draw(
@@ -25096,7 +25096,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let j = usize::from(self.sprite_slot_view(k).a());
         self.set_oam_helper0_at_for_draw(
             oam,
@@ -25106,10 +25106,10 @@ impl ZeldaState {
             FL[j] | info_flags,
             2,
         );
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
@@ -25163,7 +25163,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let mut base = self.sprite_slot_view(k).direction().wrapping_sub(1);
         for _ in (0..2).rev() {
             let idx = usize::from(base & 0x0f);
@@ -25178,10 +25178,10 @@ impl ZeldaState {
             oam += 4;
             base = base.wrapping_add(2);
         }
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
 
@@ -25460,8 +25460,7 @@ impl ZeldaState {
         }
 
         let reverse = sign8(self.sprite_slot_view(k).y_velocity());
-        let mut oam =
-            self.oam_state_view().current_pointer_usize() + if reverse { 7 * 4 } else { 0 };
+        let mut oam = self.oam_state().current_pointer_usize() + if reverse { 7 * 4 } else { 0 };
         let oam_step: isize = if reverse { -4 } else { 4 };
         let mut i = n;
         loop {
@@ -25501,7 +25500,7 @@ impl ZeldaState {
             }
         }
 
-        oam = self.oam_state_view().current_pointer_usize() + 8 * 4;
+        oam = self.oam_state().current_pointer_usize() + 8 * 4;
         i = n;
         loop {
             let hist = usize::from(r5) + k * 64;
@@ -25534,7 +25533,7 @@ impl ZeldaState {
             const CHAR2: [u8; 6] = [0xee, 0xee, 0xec, 0xec, 0xce, 0xce];
             const FLAGS2: [u8; 6] = [0, 0x40, 0, 0x40, 0, 0x40];
             self.oam_allocate_from_region_b(4);
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             let j =
                 usize::from(IDX2[usize::from(self.sprite_slot_view(k).delay_main() >> 3).min(15)]);
             self.set_oam_plain_at_for_draw(
@@ -25567,7 +25566,7 @@ impl ZeldaState {
             } else {
                 self.oam_allocate_from_region_c(8);
             }
-            let mut oam = self.oam_state_view().current_pointer_usize();
+            let mut oam = self.oam_state().current_pointer_usize();
             let r6 = usize::from((((self.sprite_slot_view(k).delay_aux1() >> 2) & 3) ^ 3) * 2);
             let x = self
                 .sprite_slot_view(k)
@@ -25910,7 +25909,7 @@ impl ZeldaState {
             let j = ((usize::from(self.sprite_slot_view(k).direction()) * 2)
                 | usize::from(self.sprite_slot_view(k).subtype2()))
                 & 7;
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             self.set_oam_helper0_at_for_draw(
                 oam,
                 info.x.wrapping_add(ARM_X[j] as i16 as u16),
@@ -25981,15 +25980,15 @@ impl ZeldaState {
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
         let mut shadow_info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_pikit_tongue(k, &info);
-        let oam = self.oam_state_view().current_pointer_usize();
-        let oam_byte = self.oam_state_view().entry_x(oam);
+        let oam = self.oam_state().current_pointer_usize();
+        let oam_byte = self.oam_state().entry_x(oam);
         self.temp_counter_mut().set(oam_byte);
-        let shared_scratch_a = self.oam_state_view().entry_y(oam);
+        let shared_scratch_a = self.oam_state().entry_y(oam);
         self.sprite_workspace_mut()
             .set_shared_scratch_a(shared_scratch_a);
         self.oam_state_mut()
             .set_current_pointer((oam as u16).wrapping_add(24));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(6));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
@@ -26014,7 +26013,7 @@ impl ZeldaState {
         let value = (self.sprite_slot_view(k).oam_flags() & 0x3f) | OAM_FLAGS[j];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_draw_single_large(k);
-        let mut oam = self.oam_state_view().current_pointer_usize() + 4;
+        let mut oam = self.oam_state().current_pointer_usize() + 4;
         let flags =
             self.sprite_slot_view(k).oam_flags() ^ self.sprite_slot_view(k).object_priority();
         let r8 = u16::from(self.sprite_slot_view(k).delay_aux1() & 1) + 4;
@@ -26341,17 +26340,17 @@ impl ZeldaState {
         if self.sprite_slot_view(k).pause() != 0 {
             return;
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         if self.sprite_slot_view(k).delay_aux1() != 0 {
             for _ in 0..4 {
                 let ext_index = (oam - OAM_BUF) / 4;
-                if self.oam_state_view().extended_byte(ext_index) & 2 == 0 {
+                if self.oam_state().extended_byte(ext_index) & 2 == 0 {
                     self.oam_state_mut().hide_entry(oam);
                 }
                 oam += 4;
             }
         }
-        let oam = self.oam_state_view().current_pointer_usize()
+        let oam = self.oam_state().current_pointer_usize()
             + usize::from(OBJ_OFFS[gfx.min(OBJ_OFFS.len() - 1)]) * 4;
         let j = usize::from(self.sprite_slot_view(k).head_direction() & 3);
         self.oam_state_mut().set_entry_char(oam, HEAD_CHAR[j]);
@@ -26368,7 +26367,7 @@ impl ZeldaState {
         let y = self
             .sprite_get_y(k)
             .wrapping_sub(self.world_scroll().bg2_y());
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         self.set_oam_helper0_at_for_draw(
             oam,
             info.x.wrapping_add(xoffs),
@@ -26448,7 +26447,7 @@ impl ZeldaState {
         else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize() + 4;
+        let mut oam = self.oam_state().current_pointer_usize() + 4;
         let b = usize::from(self.sprite_slot_view(k).b()).wrapping_sub(1);
         for i in (0..5).rev() {
             let charnum = if i == 4 {
@@ -26481,7 +26480,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         for i in (0..2).rev() {
             let j = g + i;
@@ -26517,7 +26516,7 @@ impl ZeldaState {
             flags: 0,
         };
         self.sprite_prep_oam_coord(k, &mut info);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         for i in (0..3).rev() {
             let j = g * 3 + i;
@@ -26593,13 +26592,13 @@ impl ZeldaState {
         let value = flags;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         let r1 = (self.sprite_slot_view(k).b() >> 2) & 3;
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let base = usize::from(self.sprite_slot_view(k).direction()) * 5;
         let scratch = self.draw_scratch_position_view();
         let base_x = scratch.x_low();
@@ -26619,7 +26618,7 @@ impl ZeldaState {
                 if i == 4 { 2 } else { 0 },
             );
         }
-        let big = self.oam_state_view().current_extended_pointer_usize();
+        let big = self.oam_state().current_extended_pointer_usize();
         self.oam_state_mut()
             .set_extended_bytes_at(big, &[0, 0, 0, 0, 2]);
         self.sprite_correct_oam_entries_for_draw(k, 4, 0xff);
@@ -26908,10 +26907,10 @@ mod tests {
         s.sprite_slot_view_mut(k).set_delay_main(0xff);
         // The function performs an OAM allocation; ensure it returns
         // without trashing state we care about.
-        let oam_cur_before = s.oam_state_view().current_pointer();
+        let oam_cur_before = s.oam_state().current_pointer();
         s.sprite_draw_altar_zelda_warp(k);
         // OAM cursor should have moved (the alloc/draw advanced it).
-        assert_ne!(s.oam_state_view().current_pointer(), oam_cur_before);
+        assert_ne!(s.oam_state().current_pointer(), oam_cur_before);
     }
 
     #[test]
@@ -26956,8 +26955,8 @@ mod tests {
         s.oam_state_mut().set_current_extended_pointer(0xa20);
         s.sprite_slot_view_mut(k).set_graphics(9);
         s.sprite_draw_moldorm_tail(k);
-        assert_eq!(s.oam_state_view().current_pointer(), 0x804);
-        assert_eq!(s.oam_state_view().current_extended_pointer(), 0xa21);
+        assert_eq!(s.oam_state().current_pointer(), 0x804);
+        assert_eq!(s.oam_state().current_extended_pointer(), 0xa21);
         assert_eq!(s.sprite_slot_view(k).graphics(), 10);
         assert_eq!(s.sprite_slot_view(k).oam_flags(), 13);
     }
@@ -26971,8 +26970,8 @@ mod tests {
         s.oam_state_mut().set_current_extended_pointer(0xa20);
         s.sprite_draw_moldorm_segment_c(k);
         assert_eq!(s.sprite_slot_view(k).graphics(), 0);
-        assert_eq!(s.oam_state_view().current_pointer(), 0x810);
-        assert_eq!(s.oam_state_view().current_extended_pointer(), 0xa24);
+        assert_eq!(s.oam_state().current_pointer(), 0x810);
+        assert_eq!(s.oam_state().current_extended_pointer(), 0xa24);
     }
 
     #[test]
@@ -26992,7 +26991,7 @@ mod tests {
         s.oam_state_mut().set_current_extended_pointer(0xa20);
         s.sprite_draw_big_shadow(k, 0);
         // Cursor + ext both advanced.
-        assert_ne!(s.oam_state_view().current_pointer(), 0x800);
+        assert_ne!(s.oam_state().current_pointer(), 0x800);
         // cur_sprite_y == sprite_get_y(k)  (from Sprite_Get16BitCoords).
         let cy = s.sprite_workspace().current_sprite_y();
         assert_eq!(cy, 0x0150);
@@ -27085,10 +27084,10 @@ mod tests {
         let k = 11;
         s.sprite_slot_view_mut(k).set_g(0);
         // OAM cursor unchanged baseline.
-        let before = s.oam_state_view().current_pointer();
+        let before = s.oam_state().current_pointer();
         let info = PrepOamCoordsRet::default();
         s.sprite_draw_pikit_loot(k, &info);
-        assert_eq!(s.oam_state_view().current_pointer(), before);
+        assert_eq!(s.oam_state().current_pointer(), before);
     }
 
     #[test]
@@ -27106,8 +27105,8 @@ mod tests {
             flags: 0,
         };
         s.sprite_draw_beamos_eyeball(k, &info);
-        assert_eq!(s.oam_state_view().current_pointer(), 0x800);
-        assert_eq!(s.oam_state_view().current_extended_pointer(), 0xa20);
+        assert_eq!(s.oam_state().current_pointer(), 0x800);
+        assert_eq!(s.oam_state().current_extended_pointer(), 0xa20);
         let scratch = s.draw_scratch_position_view();
         assert_eq!(scratch.x_low(), 5);
         assert_eq!(scratch.y_low(), 0xfd);
@@ -27128,8 +27127,8 @@ mod tests {
         };
         s.sprite_draw_beamos_eyeball(k, &info);
         // n = 2 → oam_cur += 8, oam_ext += 2.
-        assert_eq!(s.oam_state_view().current_pointer(), 0x808);
-        assert_eq!(s.oam_state_view().current_extended_pointer(), 0xa22);
+        assert_eq!(s.oam_state().current_pointer(), 0x808);
+        assert_eq!(s.oam_state().current_extended_pointer(), 0xa22);
     }
 
     #[test]

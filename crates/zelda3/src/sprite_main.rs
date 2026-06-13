@@ -48,7 +48,7 @@ impl ZeldaState {
         let sprite = self.sprite_slot_view(k);
         let g = sprite.graphics() as usize * 4;
         let sprite_type = sprite.sprite_type();
-        let oam_base = (self.oam_state_view().current_pointer_usize() - OAM_BUF) / 4;
+        let oam_base = (self.oam_state().current_pointer_usize() - OAM_BUF) / 4;
         let mut oam_offset = oam_idx as usize;
         for i in (0..=3).rev() {
             let j = i + g;
@@ -107,7 +107,7 @@ impl ZeldaState {
         flags: u8,
         big: u8,
     ) {
-        let oam_cur = self.oam_state_view().current_pointer_usize();
+        let oam_cur = self.oam_state().current_pointer_usize();
         let index = (oam_cur - OAM_BUF) / 4 + offset;
         self.set_oam_helper0_index(index, x, y, charnum, flags, big);
     }

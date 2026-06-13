@@ -1709,7 +1709,7 @@ impl ZeldaState {
     }
 
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
         self.oam_state_mut()
             .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
@@ -1779,7 +1779,7 @@ impl ZeldaState {
     }
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {
-        let oam = self.oam_state_view().current_pointer_usize() + oam_idx * 4;
+        let oam = self.oam_state().current_pointer_usize() + oam_idx * 4;
         self.oam_state_mut().set_entry_y(oam, y);
     }
 
@@ -1790,7 +1790,7 @@ impl ZeldaState {
         charnum: u8,
         flags: u8,
     ) {
-        let oam = self.oam_state_view().current_pointer_usize() + oam_idx as usize * 4;
+        let oam = self.oam_state().current_pointer_usize() + oam_idx as usize * 4;
         self.oam_state_mut().set_entry_char(oam, charnum);
         self.oam_state_mut().merge_entry_flags(oam, 0x3f, flags);
     }

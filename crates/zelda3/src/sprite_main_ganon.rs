@@ -1548,7 +1548,7 @@ impl ZeldaState {
 
     fn ganon_draw_emit_body_oam_for_ganon(&mut self, k: usize, info: (u16, u16, u8)) {
         let (info_x, info_y, info_flags) = info;
-        let mut oam = self.oam_state_view().current_pointer_usize() + 5 * 4;
+        let mut oam = self.oam_state().current_pointer_usize() + 5 * 4;
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in 0..12 {
             let j = g * 12 + i;
@@ -1567,7 +1567,7 @@ impl ZeldaState {
         if offs == 15 {
             return;
         }
-        let oam = self.oam_state_view().current_pointer_usize() + (5 + usize::from(offs)) * 4;
+        let oam = self.oam_state().current_pointer_usize() + (5 + usize::from(offs)) * 4;
         let j = usize::from(self.sprite_slot_view(k).head_direction()) * 2
             + if self.sprite_slot_view(k).direction() != 0 {
                 6

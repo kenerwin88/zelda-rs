@@ -89,7 +89,7 @@ pub(crate) use misc::{
     NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeScratchCounterBridgeMut,
     NativeSpriteBattleBridgeMut, SaveLoadTransferState, ScratchCounterState, SpriteBattleState,
 };
-pub(crate) use oam::{NativeOamStateBridgeMut, OamState, OamStateView};
+pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 pub(crate) use player::{
     Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut,

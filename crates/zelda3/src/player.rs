@@ -8325,10 +8325,10 @@ impl ZeldaState {
             [self.pushed_block_view().animation_mode() as usize]
             .min(CHAR.len() - 1)];
         if ch != 0xff {
-            let oam = self.oam_state_view().current_pointer_usize();
+            let oam = self.oam_state().current_pointer_usize();
             self.oam_state_mut()
                 .write_entry(oam, x as u8, y as u8, ch, 0x20);
-            let ext = self.oam_state_view().current_extended_pointer_usize();
+            let ext = self.oam_state().current_extended_pointer_usize();
             self.oam_state_mut().set_extended_byte_at(ext, 2);
         }
     }

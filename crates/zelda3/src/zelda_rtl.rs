@@ -100,7 +100,7 @@ use crate::game_state::{
     NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OamStateView, OverlordSlotView, OverlordSlotViewMut,
+    NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
     OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
     OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
@@ -4409,8 +4409,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn oam_state_view(&self) -> OamStateView<'_> {
-        OamStateView::new(&self.game_state.oam)
+    pub(crate) fn oam_state(&self) -> &OamState {
+        &self.game_state.oam
     }
 
     pub(crate) fn oam_state_mut(&mut self) -> NativeOamStateBridgeMut<'_> {

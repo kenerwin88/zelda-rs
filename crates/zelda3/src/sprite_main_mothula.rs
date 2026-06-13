@@ -626,10 +626,10 @@ impl ZeldaState {
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
             | FLUTE_BOY_ANIMAL_OAM_FLAGS[usize::from(self.sprite_slot_view(k).direction())];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        let cur = self.oam_state_view().current_pointer();
+        let cur = self.oam_state().current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
-        let ext = self.oam_state_view().current_extended_pointer();
+        let ext = self.oam_state().current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).subtract_flags2(1);
@@ -684,7 +684,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let j = usize::from(self.sprite_slot_view(k).direction());
         self.oam_state_mut().write_entry(
             oam,
@@ -3100,11 +3100,11 @@ impl ZeldaState {
             },
         ];
         self.sprite_draw_multiple(k, &D, None);
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let chr = self.sprite_slot_view(k).graphics().wrapping_mul(2);
         for i in 0..4 {
             let addr = oam + i * 4;
-            let charnum = self.oam_state_view().entry_char(addr).wrapping_add(chr);
+            let charnum = self.oam_state().entry_char(addr).wrapping_add(chr);
             self.oam_state_mut().set_entry_char(addr, charnum);
         }
         if self.sprite_slot_view(k).ai_state() == 5 {
@@ -3115,10 +3115,10 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).ai_state() != 5 {
-            let cur = self.oam_state_view().current_pointer();
+            let cur = self.oam_state().current_pointer();
             self.oam_state_mut()
                 .set_current_pointer(cur.wrapping_add(4));
-            let ext = self.oam_state_view().current_extended_pointer();
+            let ext = self.oam_state().current_extended_pointer();
             self.oam_state_mut()
                 .set_current_extended_pointer(ext.wrapping_add(1));
             if self.sprite_slot_view(k).z() < 0xa0 {
@@ -4285,7 +4285,7 @@ impl ZeldaState {
         let info_y = info_y.wrapping_add(self.sprite_slot_view(k).z() as u16);
         // oam = current oam ptr + 10 entries (each OamEnt is 4 bytes
         // in the small region pointed to by oam_cur_ptr in the C port).
-        let oam_base = self.oam_state_view().current_pointer_usize();
+        let oam_base = self.oam_state().current_pointer_usize();
         // Iterate i = 8..=0 (inclusive). The C `oam++` advances one
         // OamEnt per iteration; the small region uses 4 bytes/entry.
         for step in 0..=8 {

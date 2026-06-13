@@ -1195,7 +1195,7 @@ impl ZeldaState {
         }
 
         for i in 0..32 {
-            let value = self.oam_state_view().packed_extended_oam_byte(i);
+            let value = self.oam_state().packed_extended_oam_byte(i);
             self.oam_state_mut().set_packed_extended_oam_byte(i, value);
         }
 

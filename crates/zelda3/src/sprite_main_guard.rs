@@ -551,7 +551,7 @@ impl ZeldaState {
         let sprite = self.sprite_slot_view(k);
         let j = ((sprite.direction() as usize) * 2) | (sprite.subtype2() as usize);
         let j = j & 7;
-        let oam_cur = self.oam_state_view().current_pointer_usize();
+        let oam_cur = self.oam_state().current_pointer_usize();
         let x = info
             .x
             .wrapping_add(BOMB_TROOPER_ARM_X_OFFSETS[j] as i16 as u16);

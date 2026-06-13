@@ -985,7 +985,7 @@ impl ZeldaState {
         if time & 0x18 == 0 {
             return;
         }
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let mut i: i32 = 3;
         loop {
             let x = xin.wrapping_add(SPRITE_DISTRESS_X_OFFSETS[i as usize] as i16 as u16);

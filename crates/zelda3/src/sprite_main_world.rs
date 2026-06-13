@@ -1083,7 +1083,7 @@ impl ZeldaState {
         // Write six OAM entries (i = 5 down to 0). Each entry is 4 bytes at
         // OAM_CUR_PTR; we advance after each write to match the C pointer
         // increment.
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         for i in (0..=5usize).rev() {
             let ex = x.wrapping_add(MASTER_SWORD_DRAW_X_OFFSETS[i] as i16 as u16);
             let ey = y.wrapping_add(MASTER_SWORD_DRAW_Y_OFFSETS[i] as i16 as u16);

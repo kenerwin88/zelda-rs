@@ -466,7 +466,7 @@ impl ZeldaState {
 
         if self.ppu_scroll_copy().bg2_v_copy() == 0 {
             self.attract_show_timed_text_message();
-            if self.oam_state_view().priority_word() == 0 {
+            if self.oam_state().priority_word() == 0 {
                 if self.attract_scene().throne_fade_timer() < 31
                     && self.attract_scene().throne_fade_timer() & 1 == 0
                 {
@@ -508,7 +508,7 @@ impl ZeldaState {
         self.player_state_view_mut().set_filtered_joypad_l(0);
         self.player_state_view_mut().set_filtered_joypad_h(0);
         self.RenderText();
-        let priority = self.oam_state_view().priority_word();
+        let priority = self.oam_state().priority_word();
         if priority != 0 {
             self.oam_state_mut()
                 .set_priority_word(priority.wrapping_sub(1));
@@ -836,7 +836,7 @@ impl ZeldaState {
 
     pub(super) fn attract_maiden_warp_case4(&mut self) {
         self.attract_show_timed_text_message();
-        if self.oam_state_view().priority_word() == 0 {
+        if self.oam_state().priority_word() == 0 {
             if self.attract_scene().maiden_warp_step() < 31
                 && self.attract_scene().maiden_warp_step() & 1 == 0
             {
@@ -1072,7 +1072,7 @@ impl ZeldaState {
         ];
         let Some(k) = (if self.attract_scene().scene_timer() < 0x80 {
             self.attract_show_timed_text_message();
-            if self.oam_state_view().priority_word() != 0 {
+            if self.oam_state().priority_word() != 0 {
                 Some(4)
             } else {
                 self.attract_zelda_prison_case1_step()
@@ -1164,7 +1164,7 @@ impl ZeldaState {
     }
 
     fn set_guard_oam(&mut self, offset: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
-        let oam_cur = self.oam_state_view().current_pointer_usize();
+        let oam_cur = self.oam_state().current_pointer_usize();
         let index = (oam_cur - OAM_BUF) / 4 + offset;
         self.set_oam_helper0_index(index, x, y, charnum, flags, big);
     }

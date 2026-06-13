@@ -2743,7 +2743,7 @@ impl ZeldaState {
     }
 
     fn thief_draw_apply_head_overrides_for_dn(&mut self, k: usize) {
-        let oam = self.oam_state_view().current_pointer_usize();
+        let oam = self.oam_state().current_pointer_usize();
         let j = self.sprite_slot_view(k).head_direction() as usize;
         self.oam_state_mut().set_entry_char(oam, THIEF_DRAW_CHAR[j]);
         self.oam_state_mut()

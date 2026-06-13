@@ -1552,15 +1552,15 @@ impl ZeldaState {
         let frame = (ain & 3).wrapping_add(av).wrapping_add(yt) as usize;
         let link_y = self.tagalong_link_state().y();
         let spr_offs = if (link_y == yin && (ain & 3) == 0) || link_y < yin {
-            TAGALONG_DRAW_SPR_OFFS0[self.oam_state_view().sprite_sorting_offset_index()] >> 2
+            TAGALONG_DRAW_SPR_OFFS0[self.oam_state().sprite_sorting_offset_index()] >> 2
         } else {
-            TAGALONG_DRAW_SPR_OFFS1[self.oam_state_view().sprite_sorting_offset_index()] >> 2
+            TAGALONG_DRAW_SPR_OFFS1[self.oam_state().sprite_sorting_offset_index()] >> 2
         } as usize;
         self.oam_state_mut()
             .set_current_extended_pointer(0x0a20 + spr_offs as u16);
         self.oam_state_mut()
             .set_current_pointer(0x0800 + (spr_offs as u16) * 4);
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         let scrolly = yin.wrapping_sub(self.ppu_scroll_copy().bg2_v_copy2());
         let scrollx = xin.wrapping_sub(self.ppu_scroll_copy().bg2_h_copy2());
         let mut skip_first_sprites = false;
@@ -1633,9 +1633,7 @@ impl ZeldaState {
                 scrollx.wrapping_add(sprd.x1 as i16 as u16),
                 scrolly.wrapping_add(sprd.y1 as i16 as u16),
                 0x20,
-                (sprf.flags & 0xf0)
-                    | (pal << 1)
-                    | (self.oam_state_view().priority_word() >> 8) as u8,
+                (sprf.flags & 0xf0) | (pal << 1) | (self.oam_state().priority_word() >> 8) as u8,
                 2,
             );
             oam += 4;
@@ -1646,9 +1644,7 @@ impl ZeldaState {
             scrollx.wrapping_add(sprd.x2 as i16 as u16),
             scrolly.wrapping_add(sprd.y2 as i16 as u16).wrapping_add(8),
             0x22,
-            ((sprf.flags & 0x0f) << 4)
-                | (pal << 1)
-                | (self.oam_state_view().priority_word() >> 8) as u8,
+            ((sprf.flags & 0x0f) << 4) | (pal << 1) | (self.oam_state().priority_word() >> 8) as u8,
             2,
         );
         self.set_sprite_dma_body_pointer(sprf.dma7);

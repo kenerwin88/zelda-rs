@@ -889,7 +889,7 @@ impl ZeldaState {
             self.archery_game().arrows_left()
         };
         let mut i = (count as i32) * 2 + 7;
-        let mut oam = self.oam_state_view().current_pointer_usize();
+        let mut oam = self.oam_state().current_pointer_usize();
         while i >= 0 {
             let idx = i as usize;
             self.set_oam_plain_at_for_prep(
