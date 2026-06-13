@@ -2304,7 +2304,6 @@ pub(crate) struct NativeOverworldSpritePresenceBridgeMut<'a> {
 
 impl<'a> NativeOverworldSpritePresenceBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut OverworldSpritePresenceState, ram: &'a mut [u8]) -> Self {
-        *state = OverworldSpritePresenceState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2333,7 +2332,6 @@ pub(crate) struct NativeOverworldSpriteLoadedBridgeMut<'a> {
 
 impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut OverworldSpriteLoadedState, ram: &'a mut [u8]) -> Self {
-        *state = OverworldSpriteLoadedState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2519,7 +2517,6 @@ pub(crate) struct NativeEtherOrbitBridgeMut<'a> {
 
 impl<'a> NativeEtherOrbitBridgeMut<'a> {
     pub(crate) fn new(orbit: &'a mut EtherOrbitState, ram: &'a mut [u8]) -> Self {
-        *orbit = EtherOrbitState::load_from_ram(ram);
         Self { orbit, ram }
     }
 
@@ -2662,7 +2659,6 @@ pub(crate) struct NativeChainChompHistoryBridgeMut<'a> {
 
 impl<'a> NativeChainChompHistoryBridgeMut<'a> {
     pub(crate) fn new(history: &'a mut ChainChompHistoryState, ram: &'a mut [u8]) -> Self {
-        *history = ChainChompHistoryState::load_from_ram(ram);
         Self { history, ram }
     }
 
@@ -2807,7 +2803,6 @@ pub(crate) struct NativeTagalongSlotBridgeMut<'a> {
 
 impl<'a> NativeTagalongSlotBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TagalongTrailState, ram: &'a mut [u8], slot: usize) -> Self {
-        *state = TagalongTrailState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2927,7 +2922,6 @@ pub(crate) struct NativeEnemyDamageSubclassTableBridgeMut<'a> {
 
 impl<'a> NativeEnemyDamageSubclassTableBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EnemyDamageSubclassTableState, ram: &'a mut [u8]) -> Self {
-        *state = EnemyDamageSubclassTableState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3017,7 +3011,6 @@ pub(crate) struct NativeSpriteDrawWorkPositionBridgeMut<'a> {
 
 impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpriteDrawHitboxWorkState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteDrawHitboxWorkState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -3070,7 +3063,6 @@ pub(crate) struct NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
 
 impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpriteDrawHitboxWorkState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteDrawHitboxWorkState::load_from_ram(ram);
         Self { state, ram }
     }
 

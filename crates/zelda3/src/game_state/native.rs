@@ -1808,12 +1808,13 @@ mod tests {
     }
 
     #[test]
-    fn native_tagalong_slot_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[TAGALONG_X_LO + 2] = 1;
-        ram[TAGALONG_X_HI + 2] = 2;
+    fn native_tagalong_slot_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[TAGALONG_X_LO + 2] = 1;
+        native_ram[TAGALONG_X_HI + 2] = 2;
+        let mut trail = TagalongTrailState::load_from_ram(&native_ram);
 
-        let mut trail = TagalongTrailState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut slot = NativeTagalongSlotBridgeMut::new(&mut trail, &mut ram, 2);
             slot.set_position(0x1234, 0x5678);
@@ -1868,12 +1869,13 @@ mod tests {
     }
 
     #[test]
-    fn native_chain_chomp_history_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_X, 0x1234);
-        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_Y, 0x5678);
+    fn native_chain_chomp_history_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, CHAIN_CHOMP_HISTORY_X, 0x1234);
+        write_le_u16(&mut native_ram, CHAIN_CHOMP_HISTORY_Y, 0x5678);
+        let mut history = ChainChompHistoryState::load_from_ram(&native_ram);
 
-        let mut history = ChainChompHistoryState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeChainChompHistoryBridgeMut::new(&mut history, &mut ram);
             bridge.set_x(0, 0x1111);
@@ -1924,12 +1926,13 @@ mod tests {
     }
 
     #[test]
-    fn native_ether_orbit_bridge_syncs_seeded_ram_and_dual_writes_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, ETHER_BEAM_TOP_BUCKET, 0x1200);
-        ram[ETHER_SPIN_COUNTDOWN] = 0;
+    fn native_ether_orbit_bridge_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut native_ram, ETHER_BEAM_TOP_BUCKET, 0x1200);
+        native_ram[ETHER_SPIN_COUNTDOWN] = 0;
+        let mut orbit = EtherOrbitState::load_from_ram(&native_ram);
 
-        let mut orbit = EtherOrbitState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeEtherOrbitBridgeMut::new(&mut orbit, &mut ram);
             bridge.set_angle(0, 0x3f);
@@ -1983,12 +1986,13 @@ mod tests {
     }
 
     #[test]
-    fn native_enemy_damage_subclass_table_loads_packed_nibbles_and_dual_writes_overrides() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[ENEMY_DAMAGE_DATA + 0x918] = 9;
+    fn native_enemy_damage_subclass_table_projects_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[ENEMY_DAMAGE_DATA + 0x918] = 9;
+        let mut table = EnemyDamageSubclassTableState::load_from_ram(&native_ram);
 
         let packed = vec![0xab, 0xcd, 0xef];
-        let mut table = EnemyDamageSubclassTableState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut bridge = NativeEnemyDamageSubclassTableBridgeMut::new(&mut table, &mut ram);
             bridge.load_from_packed_nibbles(&packed);
@@ -2033,14 +2037,15 @@ mod tests {
     }
 
     #[test]
-    fn native_sprite_draw_hitbox_work_bridges_share_flags_offset_byte() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[DRAW_WORK_POSITION_X] = 0x10;
-        ram[DRAW_WORK_POSITION_Y] = 0x20;
-        ram[HITBOX_WORK_Y_OFFSET] = 0x30;
-        ram[HITBOX_WORK_X_OFFSET] = 0x40;
+    fn native_sprite_draw_hitbox_work_bridges_project_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[DRAW_WORK_POSITION_X] = 0x10;
+        native_ram[DRAW_WORK_POSITION_Y] = 0x20;
+        native_ram[HITBOX_WORK_Y_OFFSET] = 0x30;
+        native_ram[HITBOX_WORK_X_OFFSET] = 0x40;
+        let mut work = SpriteDrawHitboxWorkState::load_from_ram(&native_ram);
 
-        let mut work = SpriteDrawHitboxWorkState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
         {
             let mut draw = NativeSpriteDrawWorkPositionBridgeMut::new(&mut work, &mut ram);
             draw.set_low_position_word(0x9abc);
@@ -8199,12 +8204,13 @@ mod tests {
     }
 
     #[test]
-    fn native_overworld_sprite_flag_bridges_dual_write_changes() {
-        let mut ram = vec![0; WRAM_SIZE];
-        ram[OVERWORLD_SPRITE_PRESENCE + 3] = 0x12;
-        ram[OVERWORLD_SPRITE_WAS_LOADED + 4] = 0b1010_0000;
+    fn native_overworld_sprite_flag_bridges_project_native_state_over_stale_ram() {
+        let mut native_ram = vec![0; WRAM_SIZE];
+        native_ram[OVERWORLD_SPRITE_PRESENCE + 3] = 0x12;
+        native_ram[OVERWORLD_SPRITE_WAS_LOADED + 4] = 0b1010_0000;
 
-        let mut presence = OverworldSpritePresenceState::default();
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let mut presence = OverworldSpritePresenceState::load_from_ram(&native_ram);
         {
             let mut bridge = NativeOverworldSpritePresenceBridgeMut::new(&mut presence, &mut ram);
             bridge.set_marker(3, 0x34);
@@ -8212,7 +8218,7 @@ mod tests {
         assert_eq!(presence.marker(3), 0x34);
         assert_eq!(ram[OVERWORLD_SPRITE_PRESENCE + 3], 0x34);
 
-        let mut loaded = OverworldSpriteLoadedState::default();
+        let mut loaded = OverworldSpriteLoadedState::load_from_ram(&native_ram);
         {
             let mut bridge = NativeOverworldSpriteLoadedBridgeMut::new(&mut loaded, &mut ram);
             bridge.clear_loaded_mask(32, 0b0010_0000);

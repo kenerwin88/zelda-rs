@@ -4501,8 +4501,8 @@ impl ZeldaState {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_presence(&self) -> OverworldSpritePresenceState {
-        OverworldSpritePresenceState::load_from_ram(&self.ram)
+    pub(crate) fn overworld_sprite_presence(&self) -> &OverworldSpritePresenceState {
+        &self.game_state.sprites.overworld_sprite_presence
     }
 
     pub(crate) fn overworld_sprite_presence_mut(
@@ -4522,8 +4522,8 @@ impl ZeldaState {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded(&self) -> OverworldSpriteLoadedState {
-        OverworldSpriteLoadedState::load_from_ram(&self.ram)
+    pub(crate) fn overworld_sprite_loaded(&self) -> &OverworldSpriteLoadedState {
+        &self.game_state.sprites.overworld_sprite_loaded
     }
 
     pub(crate) fn overworld_sprite_loaded_mut(
