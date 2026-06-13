@@ -318,8 +318,8 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_light_torch(&mut self) {
-        if self.dungeon_torch_view().torch_attr() & 0xf0 != 0xc0 {
-            self.dungeon_torch_view_mut().clear_attr();
+        if self.dungeon_torch_state().torch_attr() & 0xf0 != 0xc0 {
+            self.dungeon_torch_mut().clear_attr();
             return;
         }
 
@@ -328,9 +328,9 @@ impl ZeldaState {
         } else {
             0xc0
         };
-        let i = self.dungeon_torch_view().attr_index()
-            + ((self.dungeon_torch_view().torches_start_index() >> 1) as usize);
-        let opos = self.dungeon_torch_view().torch_object_data_pos(i) as usize;
+        let i = self.dungeon_torch_state().attr_index()
+            + ((self.dungeon_torch_state().torches_start_index() >> 1) as usize);
+        let opos = self.dungeon_torch_state().torch_object_data_pos(i) as usize;
         let mut tilemap_pos = self.dungeon_state_view().object_tilemap_pos(i);
         if tilemap_pos & 0x8000 != 0 {
             return;
@@ -339,7 +339,7 @@ impl ZeldaState {
         self.dungeon_state_view_mut()
             .set_object_tilemap_pos(i, tilemap_pos);
         if r8 == 0 {
-            self.dungeon_torch_view_mut()
+            self.dungeon_torch_mut()
                 .set_torch_data_word(opos, tilemap_pos);
         }
 
@@ -363,9 +363,9 @@ impl ZeldaState {
             }
         }
 
-        let torch_timer = self.dungeon_torch_view().attr_index();
-        self.dungeon_torch_view_mut().set_timer(torch_timer, r8);
-        self.dungeon_torch_view_mut().clear_attr();
+        let torch_timer = self.dungeon_torch_state().attr_index();
+        self.dungeon_torch_mut().set_timer(torch_timer, r8);
+        self.dungeon_torch_mut().clear_attr();
     }
 
     pub(super) fn room_draw_adjust_torch_lighting_change(&mut self, x: u16, y: u16, r8: u16) {

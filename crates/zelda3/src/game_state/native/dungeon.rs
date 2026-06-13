@@ -1,19 +1,23 @@
 use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
-    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_WORK_R16, DUNGEON_WORK_R18, MAIN_TILE_THEME_INDEX,
-    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
-    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX,
+    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
+    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_OBJECT_POS_IN_OBJDATA, GANON_TORCH_COUNT,
+    MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX,
+    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
 const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
+const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
+const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonState {
     pub(crate) header: DungeonHeaderState,
     pub(crate) scratch_word: DungeonScratchWordState,
     pub(crate) entrance_backup: DungeonEntranceBackupState,
+    pub(crate) torch: DungeonTorchState,
 }
 
 impl DungeonState {
@@ -22,6 +26,7 @@ impl DungeonState {
             header: DungeonHeaderState::load_from_ram(ram),
             scratch_word: DungeonScratchWordState::load_from_ram(ram),
             entrance_backup: DungeonEntranceBackupState::load_from_ram(ram),
+            torch: DungeonTorchState::load_from_ram(ram),
         }
     }
 
@@ -29,6 +34,96 @@ impl DungeonState {
         self.header.write_to_ram(ram);
         self.scratch_word.write_to_ram(ram);
         self.entrance_backup.write_to_ram(ram);
+        self.torch.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonTorchState {
+    timers: [u8; DUNGEON_TORCH_TIMER_COUNT],
+    attr: u8,
+    ganon_torch_count: u8,
+    torches_start_index: u16,
+    object_data_positions: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
+}
+
+impl DungeonTorchState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut timers = [0; DUNGEON_TORCH_TIMER_COUNT];
+        for (index, timer) in timers.iter_mut().enumerate() {
+            *timer = ram.get(TORCH_TIMERS + index).copied().unwrap_or(0);
+        }
+
+        let mut object_data_positions = [0; DUNGEON_TORCH_OBJECT_POS_COUNT];
+        for (index, position) in object_data_positions.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
+        }
+
+        Self {
+            timers,
+            attr: ram.get(DUNGEON_TORCH_ATTR).copied().unwrap_or(0),
+            ganon_torch_count: ram.get(GANON_TORCH_COUNT).copied().unwrap_or(0),
+            torches_start_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES_START),
+            object_data_positions,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].copy_from_slice(&self.timers);
+        ram[DUNGEON_TORCH_ATTR] = self.attr;
+        ram[GANON_TORCH_COUNT] = self.ganon_torch_count;
+        write_le_u16(ram, DUNG_INDEX_OF_TORCHES_START, self.torches_start_index);
+        for (index, position) in self.object_data_positions.iter().enumerate() {
+            write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
+        }
+    }
+
+    pub(crate) fn timer(&self, index: usize) -> u8 {
+        self.timers.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn attr_index(&self) -> usize {
+        usize::from(self.attr & 0x0f)
+    }
+
+    pub(crate) fn torch_attr(&self) -> u8 {
+        self.attr
+    }
+
+    pub(crate) fn ganon_torch_count(&self) -> u8 {
+        self.ganon_torch_count
+    }
+
+    pub(crate) fn torches_start_index(&self) -> u16 {
+        self.torches_start_index
+    }
+
+    pub(crate) fn torch_object_data_pos(&self, index: usize) -> u16 {
+        self.object_data_positions.get(index).copied().unwrap_or(0)
+    }
+
+    fn clear_timer(&mut self, index: usize) {
+        if let Some(timer) = self.timers.get_mut(index) {
+            *timer = 0;
+        }
+    }
+
+    fn set_timer(&mut self, index: usize, value: u8) {
+        if let Some(timer) = self.timers.get_mut(index) {
+            *timer = value;
+        }
+    }
+
+    fn set_attr(&mut self, value: u8) {
+        self.attr = value;
+    }
+
+    fn clear_attr(&mut self) {
+        self.attr = 0;
+    }
+
+    fn set_ganon_torch_count(&mut self, value: u8) {
+        self.ganon_torch_count = value;
     }
 }
 
@@ -402,6 +497,74 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
         let next = self.scratch.increment_secondary_low();
         self.sync();
         next
+    }
+}
+
+pub(crate) struct NativeDungeonTorchBridgeMut<'a> {
+    torch: &'a mut DungeonTorchState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonTorchBridgeMut<'a> {
+    pub(crate) fn new(torch: &'a mut DungeonTorchState, ram: &'a mut [u8]) -> Self {
+        *torch = DungeonTorchState::load_from_ram(ram);
+        Self { torch, ram }
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.torch, DungeonTorchState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn copy_torch_init_to_movable_blocks(&mut self, torch_init: &[u8]) {
+        self.ram[MOVABLE_BLOCK_DATAS + 99 * 4..MOVABLE_BLOCK_DATAS + 99 * 4 + 116]
+            .copy_from_slice(&torch_init[..116]);
+    }
+
+    pub(crate) fn copy_torch_junk(&mut self, torch_junk: &[u8]) {
+        self.ram[DUNGEON_TORCH_DATA + 144 * 2..DUNGEON_TORCH_DATA + 144 * 2 + torch_junk.len()]
+            .copy_from_slice(torch_junk);
+    }
+
+    pub(crate) fn clear_timer(&mut self, index: usize) {
+        self.torch.clear_timer(index);
+        if index < DUNGEON_TORCH_TIMER_COUNT {
+            self.ram[TORCH_TIMERS + index] = 0;
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_timer(&mut self, index: usize, value: u8) {
+        self.torch.set_timer(index, value);
+        if index < DUNGEON_TORCH_TIMER_COUNT {
+            self.ram[TORCH_TIMERS + index] = value;
+        }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_torch_data_word(&mut self, index: usize, value: u16) {
+        write_le_u16(self.ram, DUNGEON_TORCH_DATA + index * 2, value);
+    }
+
+    pub(crate) fn set_attr(&mut self, value: u8) {
+        self.torch.set_attr(value);
+        self.ram[DUNGEON_TORCH_ATTR] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_ganon_torch_count(&mut self, value: u8) {
+        self.torch.set_ganon_torch_count(value);
+        self.ram[GANON_TORCH_COUNT] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_attr(&mut self) {
+        self.torch.clear_attr();
+        self.ram[DUNGEON_TORCH_ATTR] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn refresh_object_data_positions(&mut self) {
+        *self.torch = DungeonTorchState::load_from_ram(self.ram);
     }
 }
 

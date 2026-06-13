@@ -506,13 +506,13 @@ impl ZeldaState {
             .expect("missing torch init asset")
             .to_vec();
         self.copy_to_ram(DUNG_TORCH_DATA_DUNGEON, &torch_init);
-        self.dungeon_torch_view_mut()
+        self.dungeon_torch_mut()
             .copy_torch_init_to_movable_blocks(&torch_init);
         let torch_junk = self
             .asset_raw(55)
             .expect("missing torch junk asset")
             .to_vec();
-        self.dungeon_torch_view_mut().copy_torch_junk(&torch_junk);
+        self.dungeon_torch_mut().copy_torch_junk(&torch_junk);
         self.fill_ram(POTS_REVEALED_IN_ROOM_DUNGEON, 0x280, 0);
         self.memorized_tile_view_mut().clear_entry_addresses();
     }
@@ -6828,7 +6828,7 @@ impl ZeldaState {
 
     pub(super) fn RoomTag_SwitchTrigger_HoldDoor(&mut self, _k: usize) {
         let mut i = 0usize;
-        let end = self.dungeon_torch_view().torches_start_index() as usize;
+        let end = self.dungeon_torch_state().torches_start_index() as usize;
         let down = loop {
             if i == end {
                 break u16::from(
@@ -10390,25 +10390,25 @@ impl ZeldaState {
 
     pub(super) fn Ganon_ExtinguishTorch_adjust_translucency(&mut self) {
         self.Palette_AssertTranslucencySwap();
-        self.dungeon_torch_view_mut().set_attr(0xc0);
+        self.dungeon_torch_mut().set_attr(0xc0);
         self.Dungeon_ExtinguishTorch();
     }
 
     pub(super) fn Ganon_ExtinguishTorch(&mut self) {
-        self.dungeon_torch_view_mut().set_attr(193);
+        self.dungeon_torch_mut().set_attr(193);
         self.Dungeon_ExtinguishTorch();
     }
 
     pub(super) fn Dungeon_ExtinguishTorch(&mut self) {
-        let y = ((self.dungeon_torch_view().torch_attr() & 0x0f) as usize) * 2
-            + self.dungeon_torch_view().torches_start_index() as usize;
+        let y = ((self.dungeon_torch_state().torch_attr() & 0x0f) as usize) * 2
+            + self.dungeon_torch_state().torches_start_index() as usize;
         let idx = y >> 1;
         let mut r8 = self.dungeon_state_view().object_tilemap_pos(idx) & 0x7fff;
         self.dungeon_state_view_mut()
             .set_object_tilemap_pos(idx, r8);
 
         let obj_pos = (self.dungeon_state_view().object_pos_in_objdata(idx) & 0x00ff) >> 1;
-        self.dungeon_torch_view_mut()
+        self.dungeon_torch_mut()
             .set_torch_data_word(obj_pos as usize, r8);
 
         r8 &= 0x3fff;
@@ -10432,9 +10432,9 @@ impl ZeldaState {
             }
         }
 
-        let torch_timer = (self.dungeon_torch_view().torch_attr() & 0x0f) as usize;
-        self.dungeon_torch_view_mut().clear_timer(torch_timer);
-        self.dungeon_torch_view_mut().clear_attr();
+        let torch_timer = (self.dungeon_torch_state().torch_attr() & 0x0f) as usize;
+        self.dungeon_torch_mut().clear_timer(torch_timer);
+        self.dungeon_torch_mut().clear_attr();
     }
 
     fn set_spiral_stair_wall_priority(&mut self, pos: u16, high: bool) {
@@ -11529,7 +11529,7 @@ impl ZeldaState {
                 count = count.wrapping_add(1);
             }
         }
-        self.dungeon_torch_view_mut().set_ganon_torch_count(count);
+        self.dungeon_torch_mut().set_ganon_torch_count(count);
         if count == 0 {
             self.set_sub_screen_layers(0);
             self.palette_filter_view_mut().set_color_math_control(0xb3);
@@ -11595,7 +11595,7 @@ impl ZeldaState {
     pub(super) fn dungeon_push_block_handler(&mut self) {
         const PUSH_BLOCK_MOVE_DISTANCES: [i16; 4] = [-0x100, 0x100, -0x04, 0x04];
         while self.dungeon_state_view().misc_object_index()
-            != self.dungeon_torch_view().torches_start_index()
+            != self.dungeon_torch_state().torches_start_index()
         {
             let obj = self.dungeon_state_view().misc_object_index();
             let k = usize::from(obj >> 1);
@@ -11859,12 +11859,12 @@ impl ZeldaState {
             && self.world_state_view().flag_custom_spell_anim_active() == 0
         {
             for i in 0..16 {
-                let timer = self.dungeon_torch_view().timer(i);
+                let timer = self.dungeon_torch_state().timer(i);
                 if timer != 0 {
                     let next = timer.wrapping_sub(1);
-                    self.dungeon_torch_view_mut().set_timer(i, next);
+                    self.dungeon_torch_mut().set_timer(i, next);
                     if next == 0 {
-                        self.dungeon_torch_view_mut().set_attr(0xc0 + i as u8);
+                        self.dungeon_torch_mut().set_attr(0xc0 + i as u8);
                         self.Dungeon_ExtinguishTorch();
                     }
                 }

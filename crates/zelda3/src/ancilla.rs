@@ -2737,7 +2737,7 @@ impl ZeldaState {
             );
             self.ancilla_check_tile_collision(k);
             let value = self.ancilla_slot_view(k).tile_attribute();
-            self.dungeon_torch_view_mut().set_attr(value);
+            self.dungeon_torch_mut().set_attr(value);
             if self.player_state_view().current_item_active() == 9 {
                 self.ancilla_slot_view_mut(k).clear();
                 return;
@@ -4266,13 +4266,13 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_item_to_link(value);
                 self.ancilla_slot_view_mut(k).and_direction(!0x0c);
                 let value = self.ancilla_slot_view(k).l();
-                self.dungeon_torch_view_mut().set_attr(value);
-                if self.dungeon_torch_view().torch_attr() & 0xf0 == 0xc0 {
+                self.dungeon_torch_mut().set_attr(value);
+                if self.dungeon_torch_state().torch_attr() & 0xf0 == 0xc0 {
                     self.dungeon_light_torch();
                 } else {
                     let value = self.ancilla_slot_view(k).tile_attribute();
-                    self.dungeon_torch_view_mut().set_attr(value);
-                    if self.dungeon_torch_view().torch_attr() & 0xf0 == 0xc0 {
+                    self.dungeon_torch_mut().set_attr(value);
+                    if self.dungeon_torch_state().torch_attr() & 0xf0 == 0xc0 {
                         self.dungeon_light_torch();
                     }
                 }
@@ -7033,7 +7033,7 @@ impl ZeldaState {
                 if self.ancilla_slot_view(k).item_to_link() == 9 {
                     let value = 0;
                     self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-                    self.dungeon_torch_view_mut().clear_attr();
+                    self.dungeon_torch_mut().clear_attr();
                     return;
                 }
                 let value = self.ancilla_slot_view(k).item_to_link().wrapping_add(1);

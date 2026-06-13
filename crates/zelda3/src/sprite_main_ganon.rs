@@ -508,12 +508,12 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_graphics(graphics);
         }
 
-        if self.dungeon_torch_view().ganon_torch_count() == 2
-            && self.dungeon_torch_view().ganon_torch_count() != self.sprite_slot_view(k).room()
+        if self.dungeon_torch_state().ganon_torch_count() == 2
+            && self.dungeon_torch_state().ganon_torch_count() != self.sprite_slot_view(k).room()
         {
             self.sprite_slot_view_mut(k).set_delay_aux1(64);
         }
-        let torch_count = self.dungeon_torch_view().ganon_torch_count();
+        let torch_count = self.dungeon_torch_state().ganon_torch_count();
         self.sprite_slot_view_mut(k).set_room(torch_count);
 
         self.ganon_draw(k);
@@ -558,7 +558,7 @@ impl ZeldaState {
         if (self.sprite_slot_view(k).ignore_projectile()
             | self.player_state_view().immobilized_flag())
             == 0
-            && self.dungeon_torch_view().ganon_torch_count() == 2
+            && self.dungeon_torch_state().ganon_torch_count() == 2
         {
             self.sprite_check_damage_to_and_from_link(k);
         }
@@ -1388,7 +1388,7 @@ impl ZeldaState {
         if sign8(g)
             || (self.sprite_slot_view(k).ai_state() != 19
                 && self.sprite_slot_view(k).delay_aux4() == 0
-                && self.dungeon_torch_view().ganon_torch_count() == 0)
+                && self.dungeon_torch_state().ganon_torch_count() == 0)
         {
             let _ = self.sprite_prep_oam_coord_or_double_ret(k);
             return;
@@ -1475,25 +1475,25 @@ impl ZeldaState {
     // Sprite_D6_Ganon calls them from sprite_main.c.
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
         self.Palette_AssertTranslucencySwap();
-        self.dungeon_torch_view_mut().set_attr(0xc0);
+        self.dungeon_torch_mut().set_attr(0xc0);
         self.dungeon_extinguish_torch_for_ganon();
     }
 
     fn ganon_extinguish_torch_for_ganon(&mut self) {
-        self.dungeon_torch_view_mut().set_attr(193);
+        self.dungeon_torch_mut().set_attr(193);
         self.dungeon_extinguish_torch_for_ganon();
     }
 
     fn dungeon_extinguish_torch_for_ganon(&mut self) {
-        let y = self.dungeon_torch_view().attr_index() * 2
-            + self.dungeon_torch_view().torches_start_index() as usize;
+        let y = self.dungeon_torch_state().attr_index() * 2
+            + self.dungeon_torch_state().torches_start_index() as usize;
         let idx = y >> 1;
         let mut r8 = self.dungeon_state_view().object_tilemap_pos(idx) & 0x7fff;
         self.dungeon_state_view_mut()
             .set_object_tilemap_pos(idx, r8);
 
         let opos = (self.dungeon_state_view().object_pos_in_objdata(idx) & 0xff) >> 1;
-        self.dungeon_torch_view_mut()
+        self.dungeon_torch_mut()
             .set_torch_data_word(opos as usize, r8);
 
         r8 &= 0x3fff;
@@ -1516,9 +1516,9 @@ impl ZeldaState {
             }
         }
 
-        let torch_timer = self.dungeon_torch_view().attr_index();
-        self.dungeon_torch_view_mut().clear_timer(torch_timer);
-        self.dungeon_torch_view_mut().clear_attr();
+        let torch_timer = self.dungeon_torch_state().attr_index();
+        self.dungeon_torch_mut().clear_timer(torch_timer);
+        self.dungeon_torch_mut().clear_attr();
     }
 
     fn sprite_draw_multiple_for_ganon(
