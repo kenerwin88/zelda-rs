@@ -575,7 +575,7 @@ impl ZeldaState {
         }
 
         let main_tile_theme = self.asset_u8(assets.blockset, i);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_main_tile_theme_index(main_tile_theme);
         let current_floor = self.asset_u8(assets.floor, i);
         self.dungeon_state_view_mut()
@@ -1145,8 +1145,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_LoadCustomTileAttr(&mut self) {
-        let offset =
-            self.asset_u16(51, self.world_state_view().aux_tile_theme_index() as usize) as usize;
+        let offset = self.asset_u16(
+            51,
+            self.world_palette_theme().aux_tile_theme_index() as usize,
+        ) as usize;
         let attrs = self.asset_raw(52).expect("missing dungeon tile attr asset");
         let custom_attrs = attrs[offset..offset + 0x80].to_vec();
         self.dungeon_state_view_mut()
@@ -1308,7 +1310,7 @@ impl ZeldaState {
         self.palette_buffer_view_mut().set_sp0l(pal[1]);
         self.palette_buffer_view_mut().set_sp5l(pal[2]);
         self.palette_buffer_view_mut().set_sp6l(pal[3]);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_aux_tile_theme_index(header[2]);
         self.sprite_system_view_mut()
             .set_graphics_index(header[3].wrapping_add(0x40));
@@ -9057,9 +9059,9 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_SaveAndLoadAllPalettes(&mut self, main_tile_theme: u8, sprite_gfx: u8) {
         self.sprite_system_view_mut().set_graphics_index(sprite_gfx);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_main_tile_theme_index(main_tile_theme);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_aux_tile_theme_index(main_tile_theme);
         self.initialize_tilesets();
         self.palette_buffer_view_mut()
@@ -9652,14 +9654,14 @@ impl ZeldaState {
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
         let animated =
-            DUNG_ANIMATED_TILES[self.world_state_view().main_tile_theme_index() as usize];
+            DUNG_ANIMATED_TILES[self.world_palette_theme().main_tile_theme_index() as usize];
         self.decompress_animated_dungeon_tiles(animated as usize);
         self.Dungeon_LoadAttributeTable();
         self.set_subsubmodule(bak.wrapping_add(1));
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
-        self.world_state_view_mut().set_palette_sp6r_indoors(10);
+        self.world_palette_theme_mut().set_palette_sp6r_indoors(10);
         self.dungeon_load_palettes();
         self.hud_restore_torch_background();
         self.player_state_view_mut().set_button_mask_b_y(0);
@@ -10164,7 +10166,7 @@ impl ZeldaState {
         self.set_submodule(0);
         self.clear_bg_vram_load_mode();
         self.system_signals_view_mut().save_current_music_as_last();
-        if self.world_state_view().palette_swap_flag() != 0 {
+        if self.world_palette_theme().palette_swap_flag() != 0 {
             self.Palette_RevertTranslucencySwap();
         }
     }
@@ -11103,13 +11105,13 @@ impl ZeldaState {
         self.Dungeon_LoadCustomTileAttr();
 
         let animated =
-            DUNG_ANIMATED_TILES[self.world_state_view().main_tile_theme_index() as usize];
+            DUNG_ANIMATED_TILES[self.world_palette_theme().main_tile_theme_index() as usize];
         self.decompress_animated_dungeon_tiles(animated as usize);
         self.Dungeon_LoadAttributeTable();
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
-        self.world_state_view_mut().set_palette_sp6r_indoors(10);
+        self.world_palette_theme_mut().set_palette_sp6r_indoors(10);
         self.dungeon_load_palettes();
 
         let room = self.world_location_state().dungeon_room;

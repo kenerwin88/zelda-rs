@@ -111,13 +111,13 @@ impl ZeldaState {
         self.set_core_update_disable_flag(6);
         self.palette_load_dungeon_set();
         self.palette_load_ow_bg3();
-        self.world_state_view_mut().set_hud_palette(0);
+        self.world_palette_theme_mut().set_hud_palette(0);
         self.palette_load_hud();
         self.save_progress_view_mut().set_hud_current_item(0);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(1);
-        self.world_state_view_mut().set_main_tile_theme_index(35);
-        self.world_state_view_mut().set_aux_tile_theme_index(81);
+        self.world_palette_theme_mut().set_main_tile_theme_index(35);
+        self.world_palette_theme_mut().set_aux_tile_theme_index(81);
         self.load_default_graphics();
         self.initialize_tilesets();
         self.load_file_select_graphics();

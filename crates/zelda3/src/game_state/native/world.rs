@@ -316,6 +316,171 @@ impl WorldScrollState {
     }
 }
 
+const AUX_BG_SUBSET_COUNT: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorldPaletteThemeState {
+    pub(crate) last_light_vs_dark_world: u8,
+    pub(crate) aux_bg_subset: [u8; AUX_BG_SUBSET_COUNT],
+    pub(crate) overworld_palette_aux1_hi: u8,
+    pub(crate) overworld_palette_mode: u8,
+    pub(crate) palette_main_indoors: u8,
+    pub(crate) palette_main_indoors_copy: u8,
+    pub(crate) palette_swap_flag: u8,
+    pub(crate) palette_sp0l: u8,
+    pub(crate) palette_sp5l: u8,
+    pub(crate) palette_sp6l: u8,
+    pub(crate) palette_sp6r_indoors: u8,
+    pub(crate) hud_palette: u8,
+    pub(crate) overworld_palette_aux2_hi: u8,
+    pub(crate) overworld_palette_aux3_lo: u8,
+    pub(crate) misc_sprites_graphics_index: u8,
+    pub(crate) overworld_tile_theme_index: u8,
+    pub(crate) main_tile_theme_index: u8,
+    pub(crate) aux_tile_theme_index: u8,
+    pub(crate) special_exit_overworld_tile_theme_index: u8,
+    pub(crate) special_exit_main_tile_theme_index: u8,
+    pub(crate) special_exit_aux_tile_theme_index: u8,
+    pub(crate) exit_overworld_tile_theme_index: u8,
+    pub(crate) exit_main_tile_theme_index: u8,
+    pub(crate) exit_aux_tile_theme_index: u8,
+}
+
+impl WorldPaletteThemeState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut aux_bg_subset = [0; AUX_BG_SUBSET_COUNT];
+        for (index, subset) in aux_bg_subset.iter_mut().enumerate() {
+            *subset = ram_byte(ram, AUX_BG_SUBSET_0 + index);
+        }
+        Self {
+            last_light_vs_dark_world: ram_byte(ram, LAST_LIGHT_VS_DARK_WORLD),
+            aux_bg_subset,
+            overworld_palette_aux1_hi: ram_byte(ram, OVERWORLD_PALETTE_AUX1_BP2TO4_HI),
+            overworld_palette_mode: ram_byte(ram, OVERWORLD_PALETTE_MODE),
+            palette_main_indoors: ram_byte(ram, PALETTE_MAIN_INDOORS),
+            palette_main_indoors_copy: ram_byte(ram, PALETTE_MAIN_INDOORS_COPY),
+            palette_swap_flag: ram_byte(ram, PALETTE_SWAP_FLAG),
+            palette_sp0l: ram_byte(ram, PALETTE_SP0L),
+            palette_sp5l: ram_byte(ram, PALETTE_SP5L),
+            palette_sp6l: ram_byte(ram, PALETTE_SP6L),
+            palette_sp6r_indoors: ram_byte(ram, PALETTE_SP6R_INDOORS),
+            hud_palette: ram_byte(ram, HUD_PALETTE),
+            overworld_palette_aux2_hi: ram_byte(ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI),
+            overworld_palette_aux3_lo: ram_byte(ram, OVERWORLD_PALETTE_AUX3_BP7_LO),
+            misc_sprites_graphics_index: ram_byte(ram, MISC_SPRITES_GRAPHICS_INDEX),
+            overworld_tile_theme_index: ram_byte(ram, OVERWORLD_TILE_THEME_INDEX),
+            main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX),
+            aux_tile_theme_index: ram_byte(ram, AUX_TILE_THEME_INDEX),
+            special_exit_overworld_tile_theme_index: ram_byte(
+                ram,
+                OVERWORLD_SPECIAL_TILE_THEME_INDEX,
+            ),
+            special_exit_main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX_SPEXIT),
+            special_exit_aux_tile_theme_index: ram_byte(ram, AUX_TILE_THEME_INDEX_SPEXIT),
+            exit_overworld_tile_theme_index: ram_byte(ram, OVERWORLD_TILE_THEME_INDEX_EXIT),
+            exit_main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX_EXIT),
+            exit_aux_tile_theme_index: ram_byte(ram, AUX_TILE_THEME_INDEX_EXIT),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[LAST_LIGHT_VS_DARK_WORLD] = self.last_light_vs_dark_world;
+        for (index, subset) in self.aux_bg_subset.iter().enumerate() {
+            ram[AUX_BG_SUBSET_0 + index] = *subset;
+        }
+        ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = self.overworld_palette_aux1_hi;
+        ram[OVERWORLD_PALETTE_MODE] = self.overworld_palette_mode;
+        ram[PALETTE_MAIN_INDOORS] = self.palette_main_indoors;
+        ram[PALETTE_MAIN_INDOORS_COPY] = self.palette_main_indoors_copy;
+        ram[PALETTE_SWAP_FLAG] = self.palette_swap_flag;
+        ram[PALETTE_SP0L] = self.palette_sp0l;
+        ram[PALETTE_SP5L] = self.palette_sp5l;
+        ram[PALETTE_SP6L] = self.palette_sp6l;
+        ram[PALETTE_SP6R_INDOORS] = self.palette_sp6r_indoors;
+        ram[HUD_PALETTE] = self.hud_palette;
+        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = self.overworld_palette_aux2_hi;
+        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = self.overworld_palette_aux3_lo;
+        ram[MISC_SPRITES_GRAPHICS_INDEX] = self.misc_sprites_graphics_index;
+        ram[OVERWORLD_TILE_THEME_INDEX] = self.overworld_tile_theme_index;
+        ram[MAIN_TILE_THEME_INDEX] = self.main_tile_theme_index;
+        ram[AUX_TILE_THEME_INDEX] = self.aux_tile_theme_index;
+        ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX] = self.special_exit_overworld_tile_theme_index;
+        ram[MAIN_TILE_THEME_INDEX_SPEXIT] = self.special_exit_main_tile_theme_index;
+        ram[AUX_TILE_THEME_INDEX_SPEXIT] = self.special_exit_aux_tile_theme_index;
+        ram[OVERWORLD_TILE_THEME_INDEX_EXIT] = self.exit_overworld_tile_theme_index;
+        ram[MAIN_TILE_THEME_INDEX_EXIT] = self.exit_main_tile_theme_index;
+        ram[AUX_TILE_THEME_INDEX_EXIT] = self.exit_aux_tile_theme_index;
+    }
+
+    pub(crate) fn aux_bg_subset(&self, index: usize) -> u8 {
+        self.aux_bg_subset.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn last_light_vs_dark_world(&self) -> u8 {
+        self.last_light_vs_dark_world
+    }
+
+    pub(crate) fn overworld_palette_aux1_hi(&self) -> u8 {
+        self.overworld_palette_aux1_hi
+    }
+
+    pub(crate) fn overworld_palette_mode(&self) -> u8 {
+        self.overworld_palette_mode
+    }
+
+    pub(crate) fn palette_main_indoors(&self) -> u8 {
+        self.palette_main_indoors
+    }
+
+    pub(crate) fn palette_main_indoors_copy(&self) -> u8 {
+        self.palette_main_indoors_copy
+    }
+
+    pub(crate) fn palette_swap_flag(&self) -> u8 {
+        self.palette_swap_flag
+    }
+
+    pub(crate) fn palette_sp0l(&self) -> u8 {
+        self.palette_sp0l
+    }
+
+    pub(crate) fn palette_sp5l(&self) -> u8 {
+        self.palette_sp5l
+    }
+
+    pub(crate) fn palette_sp6l(&self) -> u8 {
+        self.palette_sp6l
+    }
+
+    pub(crate) fn palette_sp6r_indoors(&self) -> u8 {
+        self.palette_sp6r_indoors
+    }
+
+    pub(crate) fn hud_palette(&self) -> u8 {
+        self.hud_palette
+    }
+
+    pub(crate) fn overworld_palette_aux2_hi(&self) -> u8 {
+        self.overworld_palette_aux2_hi
+    }
+
+    pub(crate) fn overworld_palette_aux3_lo(&self) -> u8 {
+        self.overworld_palette_aux3_lo
+    }
+
+    pub(crate) fn misc_sprites_graphics_index(&self) -> u8 {
+        self.misc_sprites_graphics_index
+    }
+
+    pub(crate) fn main_tile_theme_index(&self) -> u8 {
+        self.main_tile_theme_index
+    }
+
+    pub(crate) fn aux_tile_theme_index(&self) -> u8 {
+        self.aux_tile_theme_index
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WeatherVaneState {
     pub(crate) countdown: u16,
@@ -1154,6 +1319,7 @@ impl RoomBoundsState {
 pub(crate) struct WorldState {
     pub(crate) location: WorldLocationState,
     pub(crate) scroll: WorldScrollState,
+    pub(crate) palette_theme: WorldPaletteThemeState,
     pub(crate) overworld: OverworldState,
     pub(crate) room_bounds: RoomBoundsState,
 }
@@ -1163,6 +1329,7 @@ impl WorldState {
         Self {
             location: WorldLocationState::load_from_ram(ram),
             scroll: WorldScrollState::load_from_ram(ram),
+            palette_theme: WorldPaletteThemeState::load_from_ram(ram),
             overworld: OverworldState::load_from_ram(ram),
             room_bounds: RoomBoundsState::load_from_ram(ram),
         }
@@ -1171,8 +1338,98 @@ impl WorldState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.location.write_to_ram(ram);
         self.scroll.write_to_ram(ram);
+        self.palette_theme.write_to_ram(ram);
         self.overworld.write_to_ram(ram);
         self.room_bounds.write_to_ram(ram);
+    }
+}
+
+pub(crate) struct NativeWorldPaletteThemeBridgeMut<'a> {
+    state: &'a mut WorldPaletteThemeState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut WorldPaletteThemeState, ram: &'a mut [u8]) -> Self {
+        *state = WorldPaletteThemeState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, WorldPaletteThemeState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
+        self.state.last_light_vs_dark_world = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
+        if let Some(subset) = self.state.aux_bg_subset.get_mut(index) {
+            *subset = value;
+        }
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
+        self.state.overworld_palette_aux1_hi = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_hud_palette(&mut self, value: u8) {
+        self.state.hud_palette = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
+        self.state.overworld_tile_theme_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_main_tile_theme_index(&mut self, value: u8) {
+        self.state.main_tile_theme_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_aux_tile_theme_index(&mut self, value: u8) {
+        self.state.aux_tile_theme_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
+        self.state.misc_sprites_graphics_index = value;
+        self.sync();
+    }
+
+    pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
+        self.state.palette_sp6r_indoors = value;
+        self.sync();
+    }
+
+    pub(crate) fn restore_exit_tile_themes(&mut self) {
+        self.state.overworld_tile_theme_index = self.state.exit_overworld_tile_theme_index;
+        self.state.main_tile_theme_index = self.state.exit_main_tile_theme_index;
+        self.state.aux_tile_theme_index = self.state.exit_aux_tile_theme_index;
+        self.sync();
+    }
+
+    pub(crate) fn save_special_exit_tile_themes(&mut self) {
+        self.state.special_exit_overworld_tile_theme_index = self.state.overworld_tile_theme_index;
+        self.state.special_exit_main_tile_theme_index = self.state.main_tile_theme_index;
+        self.state.special_exit_aux_tile_theme_index = self.state.aux_tile_theme_index;
+        self.sync();
+    }
+
+    pub(crate) fn restore_special_exit_tile_themes(&mut self) {
+        self.state.overworld_tile_theme_index = self.state.special_exit_overworld_tile_theme_index;
+        self.state.main_tile_theme_index = self.state.special_exit_main_tile_theme_index;
+        self.state.aux_tile_theme_index = self.state.special_exit_aux_tile_theme_index;
+        self.sync();
     }
 }
 

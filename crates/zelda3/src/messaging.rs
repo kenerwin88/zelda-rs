@@ -1898,9 +1898,9 @@ impl ZeldaState {
         self.replay_trace_ram_watch("dungmap-prep-entry");
         let hdmaen_bak = self.display_state().hdma_enable_mask;
         self.clear_hdma_enable_mask();
-        let main_tile_theme = self.world_state_view().main_tile_theme_index();
+        let main_tile_theme = self.world_palette_theme().main_tile_theme_index();
         let sprite_gfx = self.sprite_system_view().graphics_index();
-        let aux_tile_theme = self.world_state_view().aux_tile_theme_index();
+        let aux_tile_theme = self.world_palette_theme().aux_tile_theme_index();
         let main_layers = self.display_state().main_screen_layers;
         let sub_layers = self.display_state().sub_screen_layers;
         self.ppu_scroll_copy_view_mut()
@@ -2462,7 +2462,7 @@ impl ZeldaState {
             }
         }
         let y = DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(r3)].wrapping_sub(4);
-        let flags = if self.world_state_view().palette_swap_flag() != 0 {
+        let flags = if self.world_palette_theme().palette_swap_flag() != 0 {
             0x30
         } else {
             0x3e

@@ -618,7 +618,8 @@ impl ZeldaState {
             .set_special_exit_room_bounds(top, bottom, left, right);
         self.world_state_view_mut().copy_spexit_scroll_targets();
         self.world_state_view_mut().copy_spexit_scroll_counters();
-        self.world_state_view_mut().save_spexit_tile_themes();
+        self.world_palette_theme_mut()
+            .save_special_exit_tile_themes();
         self.sprite_system_view_mut()
             .save_special_exit_graphics_index();
         if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
@@ -655,7 +656,7 @@ impl ZeldaState {
         self.reset_incremental_vram_upload_counter();
         self.sprite_system_view_mut()
             .set_graphics_index(SPECIAL_EXIT_SPRITE_GRAPHICS[i]);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_aux_tile_theme_index(SPECIAL_EXIT_AUX_GRAPHICS[i]);
         self.Overworld_LoadPalettes(SPECIAL_EXIT_BG_PALETTES[i], SPECIAL_EXIT_SPRITE_PALETTES[i]);
 
@@ -2499,7 +2500,7 @@ impl ZeldaState {
                 self.palette_filter_view_mut().set_fixed_color_blue(0x9f);
                 self.palette_buffer_view_mut()
                     .clear_overworld_aux_or_main_offset();
-                self.world_state_view_mut().set_hud_palette(0);
+                self.world_palette_theme_mut().set_hud_palette(0);
                 self.FindPartnerWhirlpoolExit();
                 self.dungeon_state_view_mut().set_draw_width_indicator(0);
                 self.Overworld_LoadOverlays2();
@@ -2992,7 +2993,7 @@ impl ZeldaState {
             OVERWORLD_SCROLL_RIGHT_COUNTER_OVERWORLD,
             OVERWORLD_SCROLL_RIGHT_COUNTER_EXIT_OVERWORLD,
         );
-        self.world_state_view_mut().restore_exit_tile_themes();
+        self.world_palette_theme_mut().restore_exit_tile_themes();
         self.sprite_system_view_mut().restore_exit_graphics_index();
     }
 
@@ -3083,7 +3084,8 @@ impl ZeldaState {
             OVERWORLD_SCROLL_RIGHT_COUNTER_OVERWORLD,
             OVERWORLD_SCROLL_RIGHT_COUNTER_SPEXIT_OVERWORLD,
         );
-        self.world_state_view_mut().restore_spexit_tile_themes();
+        self.world_palette_theme_mut()
+            .restore_special_exit_tile_themes();
         self.sprite_system_view_mut()
             .restore_special_exit_graphics_index();
 
@@ -3135,7 +3137,7 @@ impl ZeldaState {
         self.sprite_system_view_mut()
             .set_graphics_index(graphics_index);
         let aux_tile_theme_index = self.asset_u8(108, i);
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_aux_tile_theme_index(aux_tile_theme_index);
         self.backup_overworld_big_area_low();
 
@@ -3144,10 +3146,10 @@ impl ZeldaState {
         self.set_overworld_right_bottom_bound_high(if small { 1 } else { 3 });
         let is_dark_world_screen = self.world_location_state().overworld_screen_index() & 0x40 != 0;
         let main_tile_theme_index = if is_dark_world_screen { 0x21 } else { 0x20 };
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_main_tile_theme_index(main_tile_theme_index);
         let packs = 6 + if is_dark_world_screen { 8 } else { 0 };
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(VARIOUS_PACKS_OVERWORLD[packs]);
 
         let j = (self.world_location_state().overworld_screen_index() & 0xbf) as usize;

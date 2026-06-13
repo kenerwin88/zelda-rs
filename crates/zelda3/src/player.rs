@@ -5603,9 +5603,9 @@ impl ZeldaState {
             return;
         }
         let screen = u16::from(self.world_location_state().overworld_screen_index());
-        self.world_state_view_mut()
+        self.world_palette_theme_mut()
             .set_last_light_vs_dark_world((screen & 0x40) as u8);
-        if self.world_state_view().last_light_vs_dark_world() != 0 {
+        if self.world_palette_theme().last_light_vs_dark_world() != 0 {
             let y = self.player_state_view().y();
             let x = self.player_state_view().x();
             self.set_bird_travel_destination(15, x, y);
@@ -5624,7 +5624,7 @@ impl ZeldaState {
         self.tile_check_for_mirror_bonk();
         let world_changed = (u16::from(self.world_location_state().overworld_screen_index()) as u8
             & 0x40)
-            != self.world_state_view().last_light_vs_dark_world();
+            != self.world_palette_theme().last_light_vs_dark_world();
         let bonk_bits = self.tile_detect_position_view().bonk_bits_low();
         if world_changed && bonk_bits & 0x0c != 0 && Self::bit_sum4(bonk_bits) >= 2 {
             self.start_mirror_transition(44);

@@ -733,7 +733,8 @@ impl ZeldaState {
         self.palette_buffer_view_mut().clear_main_full();
 
         self.palette_buffer_view_mut().set_overworld_palette_mode(5);
-        self.world_state_view_mut().set_overworld_palette_aux1_hi(3);
+        self.world_palette_theme_mut()
+            .set_overworld_palette_aux1_hi(3);
         self.palette_buffer_view_mut()
             .set_overworld_palette_aux2_hi(3);
         self.palette_buffer_view_mut()
@@ -779,9 +780,9 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_load_palettes_inner(&mut self) {
-        let main_indoors = self.world_state_view().palette_main_indoors();
-        let aux3_lo = self.world_state_view().overworld_palette_aux3_lo();
-        let main_indoors_copy = self.world_state_view().palette_main_indoors_copy();
+        let main_indoors = self.world_palette_theme().palette_main_indoors();
+        let aux3_lo = self.world_palette_theme().overworld_palette_aux3_lo();
+        let main_indoors_copy = self.world_palette_theme().palette_main_indoors_copy();
         self.overworld_palette_backup_view_mut()
             .set_main_indoors_backup(main_indoors);
         self.overworld_palette_backup_view_mut()
@@ -796,9 +797,9 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sp0l(&mut self) {
-        let src =
-            PALETTE_SPRITE_AUX3_SNES_ADDR + self.world_state_view().palette_sp0l() as u32 * 7 * 2;
-        let dst = if self.world_state_view().palette_swap_flag() != 0 {
+        let src = PALETTE_SPRITE_AUX3_SNES_ADDR
+            + self.world_palette_theme().palette_sp0l() as u32 * 7 * 2;
+        let dst = if self.world_palette_theme().palette_swap_flag() != 0 {
             0x1e2
         } else {
             0x102
@@ -807,14 +808,14 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sp5l(&mut self) {
-        let src =
-            PALETTE_SPRITE_AUX1_SNES_ADDR + self.world_state_view().palette_sp5l() as u32 * 7 * 2;
+        let src = PALETTE_SPRITE_AUX1_SNES_ADDR
+            + self.world_palette_theme().palette_sp5l() as u32 * 7 * 2;
         self.palette_load_single(src, 0x1a2, 6);
     }
 
     pub(super) fn palette_load_sp6l(&mut self) {
-        let src =
-            PALETTE_SPRITE_AUX1_SNES_ADDR + self.world_state_view().palette_sp6l() as u32 * 7 * 2;
+        let src = PALETTE_SPRITE_AUX1_SNES_ADDR
+            + self.world_palette_theme().palette_sp6l() as u32 * 7 * 2;
         self.palette_load_single(src, 0x1c2, 6);
     }
 
@@ -851,31 +852,31 @@ impl ZeldaState {
 
     pub(super) fn palette_load_ow_bg_main(&mut self) {
         let src = PALETTE_OVERWORLD_BG_MAIN_SNES_ADDR
-            + self.world_state_view().overworld_palette_mode() as u32 * 35 * 2;
+            + self.world_palette_theme().overworld_palette_mode() as u32 * 35 * 2;
         self.palette_load_multiple(src, 0x42, 6, 4);
     }
 
     pub(super) fn palette_load_ow_bg1(&mut self) {
         let src = PALETTE_OVERWORLD_BG_AUX12_SNES_ADDR
-            + self.world_state_view().overworld_palette_aux1_hi() as u32 * 21 * 2;
+            + self.world_palette_theme().overworld_palette_aux1_hi() as u32 * 21 * 2;
         self.palette_load_multiple(src, 0x52, 6, 2);
     }
 
     pub(super) fn palette_load_ow_bg2(&mut self) {
         let src = PALETTE_OVERWORLD_BG_AUX12_SNES_ADDR
-            + self.world_state_view().overworld_palette_aux2_hi() as u32 * 21 * 2;
+            + self.world_palette_theme().overworld_palette_aux2_hi() as u32 * 21 * 2;
         self.palette_load_multiple(src, 0xb2, 6, 2);
     }
 
     pub(super) fn palette_load_ow_bg3(&mut self) {
         let src = PALETTE_OVERWORLD_BG_AUX3_SNES_ADDR
-            + self.world_state_view().overworld_palette_aux3_lo() as u32 * 7 * 2;
+            + self.world_palette_theme().overworld_palette_aux3_lo() as u32 * 7 * 2;
         self.palette_load_single(src, 0xe2, 6);
     }
 
     pub(super) fn palette_load_sprite_environment_dungeon(&mut self) {
         let src = PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR
-            + self.world_state_view().palette_sp6r_indoors() as u32 * 7 * 2;
+            + self.world_palette_theme().palette_sp6r_indoors() as u32 * 7 * 2;
         self.palette_load_single(src, 0x1d2, 6);
     }
 
@@ -894,7 +895,7 @@ impl ZeldaState {
             7
         };
         let src = PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR + t * 7 * 2;
-        let dst = if self.world_state_view().palette_swap_flag() != 0 {
+        let dst = if self.world_palette_theme().palette_swap_flag() != 0 {
             0x1f2
         } else {
             0x112
@@ -904,7 +905,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_hud(&mut self) {
-        let src = HUD_PALETTE_SNES_ADDR + self.world_state_view().hud_palette() as u32 * 32 * 2;
+        let src = HUD_PALETTE_SNES_ADDR + self.world_palette_theme().hud_palette() as u32 * 32 * 2;
         self.palette_load_multiple(src, 0, 15, 1);
     }
 
@@ -948,9 +949,9 @@ impl ZeldaState {
 
     pub(super) fn palette_load_dungeon_set(&mut self) {
         let src = PALETTE_DUNGEON_BG_MAIN_SNES_ADDR
-            + (self.world_state_view().palette_main_indoors() >> 1) as u32 * 90 * 2;
+            + (self.world_palette_theme().palette_main_indoors() >> 1) as u32 * 90 * 2;
         self.palette_load_multiple(src, 0x42, 14, 5);
-        let dst = if self.world_state_view().palette_swap_flag() != 0 {
+        let dst = if self.world_palette_theme().palette_swap_flag() != 0 {
             0x1e2
         } else {
             0x112
@@ -1189,8 +1190,9 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_tilesets(&mut self) {
-        let main_tileset = main_tileset(self.world_state_view().main_tile_theme_index() as usize);
-        let aux_tileset = aux_tileset(self.world_state_view().aux_tile_theme_index() as usize);
+        let main_tileset =
+            main_tileset(self.world_palette_theme().main_tile_theme_index() as usize);
+        let aux_tileset = aux_tileset(self.world_palette_theme().aux_tile_theme_index() as usize);
         let sprite_tileset = sprite_tileset(self.sprite_system_view().graphics_index() as usize);
 
         self.load_common_sprites();
@@ -1233,7 +1235,7 @@ impl ZeldaState {
             0x8a00,
         );
 
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             0,
             if aux_tileset[0] != 0 {
                 aux_tileset[0]
@@ -1241,7 +1243,7 @@ impl ZeldaState {
                 main_tileset[3]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             1,
             if aux_tileset[1] != 0 {
                 aux_tileset[1]
@@ -1249,7 +1251,7 @@ impl ZeldaState {
                 main_tileset[4]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             2,
             if aux_tileset[2] != 0 {
                 aux_tileset[2]
@@ -1257,7 +1259,7 @@ impl ZeldaState {
                 main_tileset[5]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             3,
             if aux_tileset[3] != 0 {
                 aux_tileset[3]
@@ -1286,25 +1288,25 @@ impl ZeldaState {
         );
         self.load_background_graphics(
             0x2c00,
-            self.world_state_view().aux_bg_subset(0) as usize,
+            self.world_palette_theme().aux_bg_subset(0) as usize,
             4,
             0x6000,
         );
         self.load_background_graphics(
             0x3000,
-            self.world_state_view().aux_bg_subset(1) as usize,
+            self.world_palette_theme().aux_bg_subset(1) as usize,
             3,
             0x6600,
         );
         self.load_background_graphics(
             0x3400,
-            self.world_state_view().aux_bg_subset(2) as usize,
+            self.world_palette_theme().aux_bg_subset(2) as usize,
             2,
             0x6c00,
         );
         self.load_background_graphics(
             0x3800,
-            self.world_state_view().aux_bg_subset(3) as usize,
+            self.world_palette_theme().aux_bg_subset(3) as usize,
             1,
             0x7200,
         );
@@ -1320,7 +1322,7 @@ impl ZeldaState {
         let Some(data) = self
             .asset_bytes(
                 64,
-                self.world_state_view().misc_sprites_graphics_index() as usize,
+                self.world_palette_theme().misc_sprites_graphics_index() as usize,
             )
             .map(Vec::from)
         else {
@@ -1378,7 +1380,7 @@ impl ZeldaState {
         };
         self.graphics_scratch_mut()
             .copy_decompressed_graphics_to(decomp_dst, &data);
-        let high = if self.world_state_view().main_tile_theme_index() >= 0x20 {
+        let high = if self.world_palette_theme().main_tile_theme_index() >= 0x20 {
             matches!(slot, 7 | 2 | 3 | 4)
         } else {
             slot >= 4
@@ -1592,7 +1594,7 @@ impl ZeldaState {
 
         let mut pack = GRAPHICS_HALF_SLOT_PACKS[k as usize - 1] as usize;
         if pack == 1 {
-            pack = self.world_state_view().misc_sprites_graphics_index() as usize;
+            pack = self.world_palette_theme().misc_sprites_graphics_index() as usize;
         }
         let bank_offset = if tilebytes == 0x46 { 0x300 } else { 0 };
         self.load_chr_half_slot_pack(pack, bank_offset);
@@ -1783,7 +1785,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadTransAuxGFX(&mut self) {
-        let p = aux_tileset(self.world_state_view().aux_tile_theme_index() as usize);
+        let p = aux_tileset(self.world_palette_theme().aux_tile_theme_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
                 self.graphics_scratch_mut().set_aux_bg_subset_pack(i, pack);
@@ -1815,10 +1817,10 @@ impl ZeldaState {
     }
 
     pub(super) fn ReloadPreviouslyLoadedSheets(&mut self) {
-        self.decomp_bg_to_ram(0x6000, self.world_state_view().aux_bg_subset(0) as usize);
-        self.decomp_bg_to_ram(0x6600, self.world_state_view().aux_bg_subset(1) as usize);
-        self.decomp_bg_to_ram(0x6c00, self.world_state_view().aux_bg_subset(2) as usize);
-        self.decomp_bg_to_ram(0x7200, self.world_state_view().aux_bg_subset(3) as usize);
+        self.decomp_bg_to_ram(0x6000, self.world_palette_theme().aux_bg_subset(0) as usize);
+        self.decomp_bg_to_ram(0x6600, self.world_palette_theme().aux_bg_subset(1) as usize);
+        self.decomp_bg_to_ram(0x6c00, self.world_palette_theme().aux_bg_subset(2) as usize);
+        self.decomp_bg_to_ram(0x7200, self.world_palette_theme().aux_bg_subset(3) as usize);
         self.decomp_spr_to_ram(
             0x7800,
             self.sprite_workspace_view().graphics_subset(0) as usize,
@@ -1897,11 +1899,11 @@ impl ZeldaState {
             3 => {
                 self.decomp_bg_to_ram(
                     GraphicsDecompressionScratch::primary_buffer_offset(),
-                    self.world_state_view().aux_bg_subset(1) as usize,
+                    self.world_palette_theme().aux_bg_subset(1) as usize,
                 );
                 self.decomp_bg_to_ram(
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
-                    self.world_state_view().aux_bg_subset(2) as usize,
+                    self.world_palette_theme().aux_bg_subset(2) as usize,
                 );
                 let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
                 self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
@@ -2006,9 +2008,10 @@ impl ZeldaState {
     }
 
     pub(super) fn AnimateMirrorWarp_DecompressNewTileSets(&mut self) {
-        let main_tileset = main_tileset(self.world_state_view().main_tile_theme_index() as usize);
-        let aux_tileset = aux_tileset(self.world_state_view().aux_tile_theme_index() as usize);
-        self.world_state_view_mut().set_aux_bg_subset(
+        let main_tileset =
+            main_tileset(self.world_palette_theme().main_tile_theme_index() as usize);
+        let aux_tileset = aux_tileset(self.world_palette_theme().aux_tile_theme_index() as usize);
+        self.world_palette_theme_mut().set_aux_bg_subset(
             0,
             if aux_tileset[0] != 0 {
                 aux_tileset[0]
@@ -2016,7 +2019,7 @@ impl ZeldaState {
                 main_tileset[3]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             1,
             if aux_tileset[1] != 0 {
                 aux_tileset[1]
@@ -2024,7 +2027,7 @@ impl ZeldaState {
                 main_tileset[4]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             2,
             if aux_tileset[2] != 0 {
                 aux_tileset[2]
@@ -2032,7 +2035,7 @@ impl ZeldaState {
                 main_tileset[5]
             },
         );
-        self.world_state_view_mut().set_aux_bg_subset(
+        self.world_palette_theme_mut().set_aux_bg_subset(
             3,
             if aux_tileset[3] != 0 {
                 aux_tileset[3]
@@ -2072,7 +2075,7 @@ impl ZeldaState {
             .graphics_scratch_mut()
             .staged_bg_and_sprite_decompression_buffers();
         self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
-        if self.world_state_view().aux_tile_theme_index() >= 32 {
+        if self.world_palette_theme().aux_tile_theme_index() >= 32 {
             self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 0x80);
             self.do3_to_4_low_16bit_from_slice(0x11800, &tmp, 0x1200, 0x40);
         } else {
@@ -2812,7 +2815,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_HandleTranslucencyAndPalette(&mut self) {
-        if self.world_state_view().palette_swap_flag() != 0 {
+        if self.world_palette_theme().palette_swap_flag() != 0 {
             self.Palette_RevertTranslucencySwap();
         }
 
@@ -2932,7 +2935,7 @@ impl ZeldaState {
             .clear_overworld_aux_or_main_offset();
         let bg_base = bg as usize * 3;
         if OW_BG_PAL_INFO[bg_base] >= 0 {
-            self.world_state_view_mut()
+            self.world_palette_theme_mut()
                 .set_overworld_palette_aux1_hi(OW_BG_PAL_INFO[bg_base] as u8);
         }
         if OW_BG_PAL_INFO[bg_base + 1] >= 0 {

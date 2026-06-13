@@ -85,11 +85,12 @@ use crate::game_state::{
     NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
     NativeTowerSealBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
     NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldLocationBridgeMut, NativeWorldScrollBridgeMut, OamStateView, OverlordSlotView,
-    OverlordSlotViewMut, OverworldConfigTableView, OverworldEventInfoState, OverworldMap16Decode,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, PaletteBufferView, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
+    NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldScrollBridgeMut,
+    OamStateView, OverlordSlotView, OverlordSlotViewMut, OverworldConfigTableView,
+    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16LoadState,
+    OverworldMap16SourcePage, OverworldSpriteLoadedState, OverworldSpritePresenceState,
+    PaletteBufferView, PaletteFilterState, PlayerResourcesState, PlayerStateView,
+    PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
     PushedBlockView, QuakeBoltSlotState, QuakeSpellState, RoomBoundsState, SaveLoadTransferState,
     SaveProgressState, ScratchCounterState, SelectFileMenuState, SharedMessageTimerState,
@@ -101,7 +102,8 @@ use crate::game_state::{
     TileDetectionState, TowerSealOrbitView, TowerSealOrbitViewMut, TowerSealSparkleView,
     TowerSealSparkleViewMut, TowerSealState, TrinexxPaletteState, VwfRenderState,
     WaterHdmaWindowState, WeatherVaneDebrisView, WeatherVaneDebrisViewMut, WeatherVaneState,
-    WorldLocationState, WorldScrollState, WorldStateView, WorldStateViewMut,
+    WorldLocationState, WorldPaletteThemeState, WorldScrollState, WorldStateView,
+    WorldStateViewMut,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2016,6 +2018,17 @@ impl ZeldaState {
 
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
         NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
+    }
+
+    pub(crate) fn world_palette_theme(&self) -> WorldPaletteThemeState {
+        WorldPaletteThemeState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {
+        NativeWorldPaletteThemeBridgeMut::new(
+            &mut self.game_state.world.palette_theme,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {

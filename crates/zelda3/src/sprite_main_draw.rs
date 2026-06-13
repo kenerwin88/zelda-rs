@@ -23582,7 +23582,7 @@ impl ZeldaState {
                     self.player_state_view_mut().set_actual_velocity_xy(0, 0);
                     self.player_state_view_mut().set_handler_state(20);
                     let screen_bits = self.world_location_state().overworld_screen_index() & 0x40;
-                    self.world_state_view_mut()
+                    self.world_palette_theme_mut()
                         .set_last_light_vs_dark_world(screen_bits);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
@@ -23645,7 +23645,7 @@ impl ZeldaState {
                 self.player_state_view_mut().set_actual_velocity_xy(0, 0);
                 self.player_state_view_mut().set_handler_state(20);
                 let screen_bits = self.world_location_state().overworld_screen_index() & 0x40;
-                self.world_state_view_mut()
+                self.world_palette_theme_mut()
                     .set_last_light_vs_dark_world(screen_bits);
             }
         } else {
