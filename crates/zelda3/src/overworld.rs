@@ -366,7 +366,7 @@ impl ZeldaState {
             self.frame_state().subsubmodule,
             self.overworld_event_info_view().event_info(screen_byte as usize),
             self.world_region().ow_entrance_value(),
-            self.dungeon_state_view().big_rock_starting_address(),
+            self.dungeon_object_tracking().big_rock_starting_address(),
         );
     }
 
@@ -577,7 +577,7 @@ impl ZeldaState {
             let big_rock_starting_address = read_word_from_slice(&exit_fancy_door, k * 2);
             self.world_region_mut()
                 .set_ow_entrance_value(entrance_value);
-            self.dungeon_state_view_mut()
+            self.dungeon_object_tracking_mut()
                 .set_big_rock_starting_address(big_rock_starting_address);
             let screen = exit_screen[k] as u16;
             self.world_region_mut()
@@ -1206,7 +1206,7 @@ impl ZeldaState {
                         // Mirror the C goto after: skip opening, continue entrance lookup.
                     } else {
                         self.dungeon_state_view_mut().set_door_open_counter_low(24);
-                        self.dungeon_state_view_mut()
+                        self.dungeon_object_tracking_mut()
                             .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                         self.system_signals_view_mut().set_sound_effect_2(21);
                         self.set_subsubmodule(0);
@@ -1215,7 +1215,7 @@ impl ZeldaState {
                         return;
                     }
                 } else {
-                    self.dungeon_state_view_mut()
+                    self.dungeon_object_tracking_mut()
                         .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                     self.system_signals_view_mut().set_sound_effect_2(21);
                     self.set_subsubmodule(0);
@@ -2618,13 +2618,13 @@ impl ZeldaState {
                 self.set_submodule(submodule);
             }
             self.set_overworld_transition_countdown(16);
-            let big_rock = self.dungeon_state_view().big_rock_starting_address();
+            let big_rock = self.dungeon_object_tracking().big_rock_starting_address();
             if (self.world_region_mut().ow_entrance_value() as u8 | big_rock as u8) != 0
                 && big_rock & 0xff00 != 0
             {
                 self.dungeon_state_view_mut()
                     .set_door_open_counter_low(if big_rock & 0x8000 != 0 { 0x18 } else { 0 });
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(big_rock & 0x7fff);
                 self.world_transient_mut().set_door_animation_step(0);
                 self.set_submodule(9);
@@ -2863,7 +2863,7 @@ impl ZeldaState {
             .set_camera_x_coord_scroll_hi(camera_x.wrapping_sub(2));
 
         self.world_region_mut().set_ow_entrance_value(0);
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(0);
         self.Overworld_LoadNewScreenProperties();
         self.sprite_reset_all();
@@ -4239,7 +4239,7 @@ impl ZeldaState {
         self.set_transition_direction_enum(dir_enum);
         self.set_screen_transition(dir_enum);
         self.world_region_mut().set_ow_entrance_value(0);
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(0);
         self.set_transition_counter(0);
 
@@ -4754,7 +4754,7 @@ impl ZeldaState {
                     .set_event_bits(0x62, 0x20);
                 self.system_signals_view_mut().set_sound_effect_2(27);
                 self.dungeon_state_view_mut().set_door_open_counter(0x50);
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(0x0d20);
                 self.Overworld_DoMapUpdate32x32_B();
             }
@@ -5258,7 +5258,7 @@ impl ZeldaState {
 
     pub(super) fn overworld_alter_weathervane(&mut self) {
         self.dungeon_state_view_mut().set_door_open_counter(0x68);
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(0x0c3e);
         self.overworld_do_map_update32x32_b();
         self.overworld_draw_map16_persist(0x0c42, 0x0e21);
@@ -5346,7 +5346,7 @@ impl ZeldaState {
 
         let i = self.memorized_tile_view().count() as usize;
         let j = (self.dungeon_state_view().door_open_counter() >> 1) as usize;
-        let base = self.dungeon_state_view().big_rock_starting_address();
+        let base = self.dungeon_object_tracking().big_rock_starting_address();
         let entries = [
             (base, DOOR_ANIM_TILES[j]),
             (base.wrapping_add(2), DOOR_ANIM_TILES[j + 1]),

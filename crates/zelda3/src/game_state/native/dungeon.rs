@@ -1,15 +1,18 @@
 use crate::game_state::constants::{
-    AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_FLOOR_X_VELOCITY,
+    AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, CHANGEABLE_DUNGEON_OBJECT_INDEX,
+    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_FLOOR_X_VELOCITY,
     DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
-    DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA,
-    DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED,
-    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_INDEX_OF_TORCHES_START,
-    DUNG_INTER_STAIRCASES, DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE,
+    DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_FLOOR,
+    DUNG_CUR_FLOOR_CACHED, DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS,
+    DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES, DUNG_MISC_OBJS_INDEX,
+    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
     DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
     DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
-    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX,
-    MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
-    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
+    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_SAVEGAME_STATE_BITS,
+    GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX,
+    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
+    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -28,6 +31,8 @@ const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
+const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
+const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
@@ -63,6 +68,7 @@ pub(crate) struct DungeonState {
     pub(crate) stair_movement: DungeonStairMovementState,
     pub(crate) moving_floor: DungeonMovingFloorState,
     pub(crate) room_tracking: DungeonRoomTrackingState,
+    pub(crate) object_tracking: DungeonObjectTrackingState,
 }
 
 impl DungeonState {
@@ -78,6 +84,7 @@ impl DungeonState {
             stair_movement: DungeonStairMovementState::load_from_ram(ram),
             moving_floor: DungeonMovingFloorState::load_from_ram(ram),
             room_tracking: DungeonRoomTrackingState::load_from_ram(ram),
+            object_tracking: DungeonObjectTrackingState::load_from_ram(ram),
         }
     }
 
@@ -88,6 +95,173 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonObjectTrackingState {
+    misc_object_index: u16,
+    replacement_tile_states: [u16; DUNGEON_OBJECT_SLOT_COUNT],
+    object_data_positions: [u16; DUNGEON_OBJECT_SLOT_COUNT],
+    object_tilemap_positions: [u16; DUNGEON_OBJECT_SLOT_COUNT],
+    changeable_object_indices: [u8; CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT],
+    big_rock_starting_address: u16,
+}
+
+impl DungeonObjectTrackingState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut replacement_tile_states = [0; DUNGEON_OBJECT_SLOT_COUNT];
+        for (index, state) in replacement_tile_states.iter_mut().enumerate() {
+            *state = read_le_u16(ram, DUNGEON_REPLACEMENT_TILE_STATE + index * 2);
+        }
+
+        let mut object_data_positions = [0; DUNGEON_OBJECT_SLOT_COUNT];
+        for (index, position) in object_data_positions.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
+        }
+
+        let mut object_tilemap_positions = [0; DUNGEON_OBJECT_SLOT_COUNT];
+        for (index, position) in object_tilemap_positions.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_OBJECT_TILEMAP_POS + index * 2);
+        }
+
+        let mut changeable_object_indices = [0; CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT];
+        for (index, object_index) in changeable_object_indices.iter_mut().enumerate() {
+            *object_index = ram
+                .get(CHANGEABLE_DUNGEON_OBJECT_INDEX + index)
+                .copied()
+                .unwrap_or(0);
+        }
+
+        Self {
+            misc_object_index: read_le_u16(ram, DUNG_MISC_OBJS_INDEX),
+            replacement_tile_states,
+            object_data_positions,
+            object_tilemap_positions,
+            changeable_object_indices,
+            big_rock_starting_address: read_le_u16(ram, BIG_ROCK_STARTING_ADDRESS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNG_MISC_OBJS_INDEX, self.misc_object_index);
+        for (index, state) in self.replacement_tile_states.iter().enumerate() {
+            write_le_u16(ram, DUNGEON_REPLACEMENT_TILE_STATE + index * 2, *state);
+        }
+        for (index, position) in self.object_data_positions.iter().enumerate() {
+            write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
+        }
+        for (index, position) in self.object_tilemap_positions.iter().enumerate() {
+            write_le_u16(ram, DUNG_OBJECT_TILEMAP_POS + index * 2, *position);
+        }
+        for (index, object_index) in self.changeable_object_indices.iter().enumerate() {
+            ram[CHANGEABLE_DUNGEON_OBJECT_INDEX + index] = *object_index;
+        }
+        write_le_u16(
+            ram,
+            BIG_ROCK_STARTING_ADDRESS,
+            self.big_rock_starting_address,
+        );
+    }
+
+    pub(crate) fn misc_object_index(&self) -> u16 {
+        self.misc_object_index
+    }
+
+    pub(crate) fn misc_object_slot(&self) -> usize {
+        (self.misc_object_index >> 1) as usize
+    }
+
+    pub(crate) fn replacement_tile_state(&self, index: usize) -> u16 {
+        self.replacement_tile_states
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn object_pos_in_objdata(&self, index: usize) -> u16 {
+        self.object_data_positions.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn object_tilemap_pos(&self, index: usize) -> u16 {
+        self.object_tilemap_positions
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn changeable_object_index(&self, index: usize) -> u8 {
+        self.changeable_object_indices
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn big_rock_starting_address(&self) -> u16 {
+        self.big_rock_starting_address
+    }
+
+    fn set_misc_object_index(&mut self, value: u16) {
+        self.misc_object_index = value;
+    }
+
+    fn clear_misc_object_index(&mut self) {
+        self.misc_object_index &= 0xff00;
+    }
+
+    fn advance_misc_object_index_by(&mut self, value: u16) -> u16 {
+        self.misc_object_index = self.misc_object_index.wrapping_add(value);
+        self.misc_object_index
+    }
+
+    fn clear_replacement_tile_states(&mut self) {
+        self.replacement_tile_states.fill(0);
+    }
+
+    fn set_replacement_tile_state(&mut self, index: usize, value: u16) {
+        if let Some(state) = self.replacement_tile_states.get_mut(index) {
+            *state = value;
+        }
+    }
+
+    fn increment_replacement_tile_state(&mut self, index: usize) -> u16 {
+        let Some(state) = self.replacement_tile_states.get_mut(index) else {
+            return 0;
+        };
+        *state = state.wrapping_add(1);
+        *state
+    }
+
+    fn clear_replacement_tile_state_low(&mut self, index: usize) {
+        if let Some(state) = self.replacement_tile_states.get_mut(index) {
+            *state &= 0xff00;
+        }
+    }
+
+    fn set_object_data_pos(&mut self, index: usize, value: u16) {
+        if let Some(position) = self.object_data_positions.get_mut(index) {
+            *position = value;
+        }
+    }
+
+    fn set_object_tilemap_pos(&mut self, index: usize, value: u16) {
+        if let Some(position) = self.object_tilemap_positions.get_mut(index) {
+            *position = value;
+        }
+    }
+
+    fn set_changeable_object_index(&mut self, index: usize, value: u8) {
+        if let Some(object_index) = self.changeable_object_indices.get_mut(index) {
+            *object_index = value;
+        }
+    }
+
+    fn clear_changeable_object_index(&mut self, index: usize) {
+        self.set_changeable_object_index(index, 0);
+    }
+
+    fn set_big_rock_starting_address(&mut self, value: u16) {
+        self.big_rock_starting_address = value;
     }
 }
 
@@ -1631,6 +1805,92 @@ impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
 
     pub(crate) fn reset_room_history(&mut self) {
         self.state.reset_room_history();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonObjectTrackingBridgeMut<'a> {
+    state: &'a mut DungeonObjectTrackingState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonObjectTrackingState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonObjectTrackingState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonObjectTrackingState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_big_rock_starting_address(&mut self, value: u16) {
+        self.state.set_big_rock_starting_address(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_replacement_tile_states(&mut self) {
+        self.state.clear_replacement_tile_states();
+        self.sync();
+    }
+
+    pub(crate) fn set_replacement_tile_state(&mut self, index: usize, value: u16) {
+        self.state.set_replacement_tile_state(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_replacement_tile_state(&mut self, index: usize) -> u16 {
+        let value = self.state.increment_replacement_tile_state(index);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn clear_replacement_tile_state_low(&mut self, index: usize) {
+        self.state.clear_replacement_tile_state_low(index);
+        self.sync();
+    }
+
+    pub(crate) fn set_object_data_pos(&mut self, index: usize, value: u16) {
+        self.state.set_object_data_pos(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_object_tilemap_pos(&mut self, index: usize, value: u16) {
+        self.state.set_object_tilemap_pos(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_misc_object_index(&mut self, value: u16) {
+        self.state.set_misc_object_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_misc_object_index(&mut self) {
+        self.state.clear_misc_object_index();
+        self.sync();
+    }
+
+    pub(crate) fn advance_misc_object_index_by(&mut self, value: u16) -> u16 {
+        let next = self.state.advance_misc_object_index_by(value);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_changeable_object_index(&mut self, index: usize, value: u8) {
+        self.state.set_changeable_object_index(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_changeable_object_index(&mut self, index: usize) {
+        self.state.clear_changeable_object_index(index);
         self.sync();
     }
 }

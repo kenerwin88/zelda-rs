@@ -30,13 +30,14 @@ pub(crate) use display::{
 };
 pub(crate) use dungeon::{
     DungeonBg2AttributeState, DungeonHeaderState, DungeonMovingFloorState,
-    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState,
-    DungeonStairListsState, DungeonStairMovementState, DungeonState, DungeonTorchState,
-    NativeDungeonBg2AttributeBridgeMut, NativeDungeonEntranceBackupBridgeMut,
+    DungeonObjectTrackingState, DungeonRoomTrackingState, DungeonSavegameState,
+    DungeonScratchWordState, DungeonStairListsState, DungeonStairMovementState, DungeonState,
+    DungeonTorchState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonEntranceBackupBridgeMut,
     NativeDungeonHeaderBridgeMut, NativeDungeonMovingFloorBridgeMut,
-    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonStairListsBridgeMut,
-    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
+    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomTrackingBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
+    NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,

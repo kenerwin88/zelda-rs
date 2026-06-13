@@ -3533,7 +3533,7 @@ impl ZeldaState {
         const BIG_ROCK_QUADRANT_Y_OFFSETS: [i16; 4] = [0, 0, -64, -64];
         const BIG_ROCK_QUADRANT_X_OFFSETS: [i16; 4] = [0, -1, 0, -1];
         let pos = 2 * ((pos >> 1).wrapping_add(BIG_ROCK_MAP16_QUADRANT_OFFSETS[quadrant] as u16));
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(pos);
         self.dungeon_state_view_mut().set_door_open_counter(40);
         let secret = self.overworld_reveal_secret_for_smash(pos);
@@ -3663,7 +3663,7 @@ impl ZeldaState {
         ];
         let i = self.memorized_tile_view().count() as usize;
         let j = (self.dungeon_state_view().door_open_counter() >> 1) as usize;
-        let base = self.dungeon_state_view().big_rock_starting_address();
+        let base = self.dungeon_object_tracking().big_rock_starting_address();
         let entries = [
             (base, DOOR_ANIM_TILES[j]),
             (base.wrapping_add(2), DOOR_ANIM_TILES[j + 1]),
@@ -5595,9 +5595,9 @@ impl ZeldaState {
             }
             self.Mirror_SaveRoomData();
             if self.system_signals_view().sound_effect_1() != 60 {
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(0);
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(1);
             }
             return;
@@ -8125,7 +8125,7 @@ impl ZeldaState {
         self.tile_detect_position_view_mut()
             .set_interaction_scratch_y_bytes(debris_y, debris_x);
         let big_rock = self.tile_detect_position_view().interaction_scratch_y();
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(big_rock);
         let counter = match big_rock {
             0x0532 => 0x48,
@@ -8338,13 +8338,13 @@ impl ZeldaState {
     }
 
     pub(super) fn find_free_moving_block_slot(&mut self, x: u8) -> u8 {
-        if self.dungeon_state_view().changeable_object_index(1) == 0 {
-            self.dungeon_state_view_mut()
+        if self.dungeon_object_tracking().changeable_object_index(1) == 0 {
+            self.dungeon_object_tracking_mut()
                 .set_changeable_object_index(1, x.wrapping_add(1));
             return 1;
         }
-        if self.dungeon_state_view().changeable_object_index(0) == 0 {
-            self.dungeon_state_view_mut()
+        if self.dungeon_object_tracking().changeable_object_index(0) == 0 {
+            self.dungeon_object_tracking_mut()
                 .set_changeable_object_index(0, x.wrapping_add(1));
             return 0;
         }
@@ -8354,7 +8354,7 @@ impl ZeldaState {
     pub(super) fn initialize_push_block(&mut self, r14: u8, idx: u8) -> bool {
         let slot = r14 as usize;
         let idx_word = (idx >> 1) as usize;
-        let pos = self.dungeon_state_view().object_tilemap_pos(idx_word);
+        let pos = self.dungeon_object_tracking().object_tilemap_pos(idx_word);
         let mut x = (pos & 0x007e) << 2;
         let mut y = (pos & 0x1f80) >> 4;
         x = x.wrapping_add(self.dungeon_state_view().loading_bg_offset_h() & 0xff00);
@@ -8363,17 +8363,20 @@ impl ZeldaState {
         self.pushed_block_view_mut().init_slot(slot, x, y);
 
         if self.dungeon_header_view().primary_header_tag() != 38
-            && self.dungeon_state_view().replacement_tile_state(idx_word) == 0
+            && self
+                .dungeon_object_tracking()
+                .replacement_tile_state(idx_word)
+                == 0
         {
             if !self.push_block_attempt_to_push_the_block(0, x, y) {
                 self.ancilla_sfx2_near(0x22);
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .set_replacement_tile_state(idx_word, 1);
                 return false;
             }
         }
 
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(slot);
         true
     }

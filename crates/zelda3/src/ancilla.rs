@@ -9465,7 +9465,7 @@ impl ZeldaState {
                 }
 
                 let pos = MOVE_GRAVESTONE_POS[j];
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(pos);
                 self.dungeon_state_view_mut()
                     .set_door_open_counter(MOVE_GRAVESTONE_CTR[j] as u16);

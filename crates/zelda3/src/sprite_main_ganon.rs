@@ -1489,11 +1489,11 @@ impl ZeldaState {
         let y = self.dungeon_torch_state().attr_index() * 2
             + self.dungeon_torch_state().torches_start_index() as usize;
         let idx = y >> 1;
-        let mut r8 = self.dungeon_state_view().object_tilemap_pos(idx) & 0x7fff;
-        self.dungeon_state_view_mut()
+        let mut r8 = self.dungeon_object_tracking().object_tilemap_pos(idx) & 0x7fff;
+        self.dungeon_object_tracking_mut()
             .set_object_tilemap_pos(idx, r8);
 
-        let opos = (self.dungeon_state_view().object_pos_in_objdata(idx) & 0xff) >> 1;
+        let opos = (self.dungeon_object_tracking().object_pos_in_objdata(idx) & 0xff) >> 1;
         self.dungeon_torch_mut()
             .set_torch_data_word(opos as usize, r8);
 

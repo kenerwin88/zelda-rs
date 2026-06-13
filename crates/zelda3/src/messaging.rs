@@ -376,9 +376,9 @@ impl ZeldaState {
                 self.system_signals_view_mut().set_ambient_sound_effect(15);
                 self.set_main_module(23);
                 self.set_submodule(1);
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(0);
-                self.dungeon_state_view_mut()
+                self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(1);
             } else {
                 self.multiselect_choice_view_mut().restore_backup();
@@ -882,9 +882,9 @@ impl ZeldaState {
                 return;
             }
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(0);
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(1);
         self.set_pending_nmi_subroutine(22);
         self.set_core_update_disable_flag(22);
@@ -3799,9 +3799,9 @@ impl ZeldaState {
                 return;
             }
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(0);
-        self.dungeon_state_view_mut()
+        self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(1);
     }
 
