@@ -155,7 +155,7 @@ impl ZeldaState {
         let bak0 = self.world_location_state().dungeon_room_index();
         let bak1 = self.player_state_view().lower_level_state();
         if self.ancilla_slot_view(k).work_byte_1() != 0 {
-            if self.dungeon_state_view().kind_of_in_room_staircase() == 0 {
+            if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
                 self.increment_dungeon_room_index_by(0x10);
             }
             self.player_state_view_mut().set_lower_level_state(bak1 ^ 1);

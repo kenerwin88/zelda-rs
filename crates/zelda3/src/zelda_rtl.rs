@@ -35,20 +35,20 @@ use crate::game_state::{
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
     DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonHeaderState,
-    DungeonKeySlotsView, DungeonMapDisplayState, DungeonSavegameState, DungeonScratchWordState,
-    DungeonSecretState, DungeonStairList, DungeonStairListsState, DungeonStateView,
-    DungeonStateViewMut, DungeonTorchState, EffectAngleScratchState, EndingCreditState,
-    EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState,
-    FrameState, GameState, GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut,
-    GraphicsDecompressionScratch, HappinessPondRupeeView, HappinessPondRupeeViewMut,
-    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
-    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut,
-    LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState, MessagingRenderBufferState,
-    MessagingRuntimeState, MinigameState, MirrorWarpState, MoldormHistoryView,
-    MoldormHistoryViewMut, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState, DungeonSavegameState,
+    DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
+    DungeonStairMovementState, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
+    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
+    HappinessPondRupeeView, HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView,
+    IntroActorView, IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryItemsState,
+    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
+    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
+    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
@@ -56,9 +56,10 @@ use crate::game_state::{
     NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
     NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
-    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
-    NativeDungeonSecretBridgeMut, NativeDungeonStairListsBridgeMut, NativeDungeonTorchBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
+    NativeDungeonMovingFloorBridgeMut, NativeDungeonSavegameBridgeMut,
+    NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
+    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
+    NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
@@ -3241,6 +3242,28 @@ impl ZeldaState {
     pub(crate) fn dungeon_stair_lists_mut(&mut self) -> NativeDungeonStairListsBridgeMut<'_> {
         NativeDungeonStairListsBridgeMut::new(
             &mut self.game_state.dungeon.stair_lists,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_stair_movement(&self) -> DungeonStairMovementState {
+        DungeonStairMovementState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_stair_movement_mut(&mut self) -> NativeDungeonStairMovementBridgeMut<'_> {
+        NativeDungeonStairMovementBridgeMut::new(
+            &mut self.game_state.dungeon.stair_movement,
+            &mut self.ram,
+        )
+    }
+
+    pub(crate) fn dungeon_moving_floor(&self) -> DungeonMovingFloorState {
+        DungeonMovingFloorState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_moving_floor_mut(&mut self) -> NativeDungeonMovingFloorBridgeMut<'_> {
+        NativeDungeonMovingFloorBridgeMut::new(
+            &mut self.game_state.dungeon.moving_floor,
             &mut self.ram,
         )
     }
@@ -6661,7 +6684,7 @@ impl ZeldaState {
         self.player_state_view_mut().cache_facing();
         self.player_state_view_mut().cache_lower_level_states();
         self.dungeon_state_view_mut().cache_standing_in_doorway();
-        self.dungeon_state_view_mut().cache_current_floor();
+        self.dungeon_stair_movement_mut().cache_current_floor();
     }
 
     fn move_link_coord(&mut self, subpixel: usize, coord: usize, vel: u8) -> u16 {

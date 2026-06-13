@@ -621,8 +621,8 @@ impl ZeldaState {
     pub(super) fn sprite_fall_adjust_position(&mut self, k: usize) {
         self.sprite_add_xy(
             k,
-            self.dungeon_state_view().floor_x_velocity() as i16 as i32,
-            self.dungeon_state_view().floor_y_velocity() as i16 as i32,
+            self.dungeon_moving_floor().floor_x_velocity() as i16 as i32,
+            self.dungeon_moving_floor().floor_y_velocity() as i16 as i32,
         );
     }
 

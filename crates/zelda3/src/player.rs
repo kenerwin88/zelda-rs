@@ -143,10 +143,10 @@ impl ZeldaState {
 
     pub(super) fn dungeon_handle_layer_change(&mut self) {
         self.player_state_view_mut().mark_lower_level_mirror();
-        if self.dungeon_state_view().kind_of_in_room_staircase() == 0 {
+        if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
             self.increment_dungeon_room_index_by(16);
         }
-        if self.dungeon_state_view().kind_of_in_room_staircase() != 2 {
+        if self.dungeon_stair_movement().kind_of_in_room_staircase() != 2 {
             self.player_state_view_mut().mark_lower_level();
         }
         self.player_state_view_mut().clear_about_to_jump_off_ledge();
@@ -765,11 +765,11 @@ impl ZeldaState {
         let y = self
             .player_state_view()
             .y()
-            .wrapping_add(self.dungeon_state_view().floor_y_velocity());
+            .wrapping_add(self.dungeon_moving_floor().floor_y_velocity());
         let x = self
             .player_state_view()
             .x()
-            .wrapping_add(self.dungeon_state_view().floor_x_velocity());
+            .wrapping_add(self.dungeon_moving_floor().floor_x_velocity());
         self.player_state_view_mut().set_y(y);
         self.player_state_view_mut().set_x(x);
     }
@@ -920,8 +920,8 @@ impl ZeldaState {
             return;
         }
 
-        let floor_y = self.dungeon_state_view().floor_y_velocity();
-        let floor_x = self.dungeon_state_view().floor_x_velocity();
+        let floor_y = self.dungeon_moving_floor().floor_y_velocity();
+        let floor_x = self.dungeon_moving_floor().floor_x_velocity();
         self.player_state_view_mut()
             .mark_moving_floor_direction(floor_y, floor_x);
 
@@ -1778,7 +1778,7 @@ impl ZeldaState {
 
         let mut used_swim_axis_reprobe = false;
         if self.player_state_view().handler_state() == 4 {
-            if self.dungeon_state_view().floor_y_velocity_low() == 0 {
+            if self.dungeon_moving_floor().floor_y_velocity_low() == 0 {
                 self.reset_all_acceleration();
             }
             if self.player_state_view().num_orthogonal_directions() != 0 {
@@ -1868,7 +1868,7 @@ impl ZeldaState {
         }
 
         if self.player_state_view().handler_state() == 4
-            && self.dungeon_state_view().floor_x_velocity_low() == 0
+            && self.dungeon_moving_floor().floor_x_velocity_low() == 0
         {
             self.reset_all_acceleration();
         }
@@ -3848,8 +3848,10 @@ impl ZeldaState {
                     .tile_collision_bits_primary()
                     != 0
                 {
-                    let floor_x_velocity = self.dungeon_state_view().floor_x_velocity_low() as u16;
-                    let floor_y_velocity = self.dungeon_state_view().floor_y_velocity_low() as u16;
+                    let floor_x_velocity =
+                        self.dungeon_moving_floor().floor_x_velocity_low() as u16;
+                    let floor_y_velocity =
+                        self.dungeon_moving_floor().floor_y_velocity_low() as u16;
                     self.player_state_view_mut()
                         .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
 
@@ -3865,7 +3867,7 @@ impl ZeldaState {
                     } else if self.player_state_view().x_velocity() == 0 {
                         false
                     } else {
-                        (self.dungeon_state_view().floor_y_velocity_low() as i8) >= 0
+                        (self.dungeon_moving_floor().floor_y_velocity_low() as i8) >= 0
                     };
                     if horizontal_first {
                         self.run_slope_collision_checks_horizontal_first();
@@ -3896,12 +3898,12 @@ impl ZeldaState {
                     self.player_state_view_mut().set_blink_countdown(58);
                 }
                 if self.player_state_view().direction() == 0 {
-                    if self.dungeon_state_view().floor_y_velocity_low() != 0 {
+                    if self.dungeon_moving_floor().floor_y_velocity_low() != 0 {
                         let y_velocity = self.player_state_view().y_velocity();
                         self.player_state_view_mut()
                             .set_y_velocity((0u8).wrapping_sub(y_velocity));
                     }
-                    if self.dungeon_state_view().floor_x_velocity_low() != 0 {
+                    if self.dungeon_moving_floor().floor_x_velocity_low() != 0 {
                         let x_velocity = self.player_state_view().x_velocity();
                         self.player_state_view_mut()
                             .set_x_velocity((0u8).wrapping_sub(x_velocity));
@@ -3948,27 +3950,27 @@ impl ZeldaState {
             return;
         }
 
-        if self.dungeon_state_view().floor_y_velocity_low() != 0
+        if self.dungeon_moving_floor().floor_y_velocity_low() != 0
             && self
                 .player_state_view()
                 .y_velocity()
-                .wrapping_sub(self.dungeon_state_view().floor_y_velocity_low())
+                .wrapping_sub(self.dungeon_moving_floor().floor_y_velocity_low())
                 == 0
         {
-            if (self.dungeon_state_view().floor_y_velocity_low() as i8).is_negative() {
+            if (self.dungeon_moving_floor().floor_y_velocity_low() as i8).is_negative() {
                 self.player_state_view_mut().clear_direction_flags(8);
             } else {
                 self.player_state_view_mut().clear_direction_flags(4);
             }
         }
-        if self.dungeon_state_view().floor_x_velocity_low() != 0
+        if self.dungeon_moving_floor().floor_x_velocity_low() != 0
             && self
                 .player_state_view()
                 .x_velocity()
-                .wrapping_sub(self.dungeon_state_view().floor_x_velocity_low())
+                .wrapping_sub(self.dungeon_moving_floor().floor_x_velocity_low())
                 == 0
         {
-            if (self.dungeon_state_view().floor_x_velocity_low() as i8).is_negative() {
+            if (self.dungeon_moving_floor().floor_x_velocity_low() as i8).is_negative() {
                 self.player_state_view_mut().clear_direction_flags(2);
             } else {
                 self.player_state_view_mut().clear_direction_flags(1);
@@ -5813,14 +5815,14 @@ impl ZeldaState {
         if self.ancilla_slot_view(hei).work_byte_1() != 0 {
             self.player_state_view_mut()
                 .toggle_lower_level_mirror_state();
-            self.dungeon_state_view_mut().decrement_current_floor();
-            if self.dungeon_state_view().kind_of_in_room_staircase() == 0 {
+            self.dungeon_stair_movement_mut().decrement_current_floor();
+            if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
                 let dungeon_room_index = self.world_location_state().dungeon_room_index();
                 self.dungeon_state_view_mut()
                     .set_room_index2(dungeon_room_index);
                 self.increment_dungeon_room_index_by(0x10);
             }
-            if self.dungeon_state_view().kind_of_in_room_staircase() != 2 {
+            if self.dungeon_stair_movement().kind_of_in_room_staircase() != 2 {
                 self.player_state_view_mut().toggle_lower_level_state();
             }
             self.Dungeon_FlagRoomData_Quadrants();
@@ -6317,7 +6319,7 @@ impl ZeldaState {
         let doorway_state = self.player_state_view().doorway_state();
         self.dungeon_state_view_mut()
             .set_standing_in_doorway_cached(doorway_state);
-        self.dungeon_state_view_mut().cache_current_floor();
+        self.dungeon_stair_movement_mut().cache_current_floor();
     }
 
     pub(super) fn link_main(&mut self) {

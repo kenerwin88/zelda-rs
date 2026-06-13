@@ -1347,11 +1347,11 @@ impl ZeldaState {
                     } else {
                         old_y = self
                             .ancilla_get_y(k)
-                            .wrapping_add(self.dungeon_state_view().floor_y_velocity());
+                            .wrapping_add(self.dungeon_moving_floor().floor_y_velocity());
                         self.ancilla_set_x(
                             k,
                             self.ancilla_get_x(k)
-                                .wrapping_add(self.dungeon_state_view().floor_x_velocity()),
+                                .wrapping_add(self.dungeon_moving_floor().floor_x_velocity()),
                         );
                     }
                 } else if a == 0x20 || (a & 0xf0) == 0xb0 && a != 0xb6 && a != 0xbc {
@@ -5844,11 +5844,11 @@ impl ZeldaState {
                     } else {
                         old_y = self
                             .ancilla_get_y(k)
-                            .wrapping_add(self.dungeon_state_view().floor_y_velocity());
+                            .wrapping_add(self.dungeon_moving_floor().floor_y_velocity());
                         self.ancilla_set_x(
                             k,
                             self.ancilla_get_x(k)
-                                .wrapping_add(self.dungeon_state_view().floor_x_velocity()),
+                                .wrapping_add(self.dungeon_moving_floor().floor_x_velocity()),
                         );
                     }
                 } else if a == 0x20 || (a & 0xf0) == 0xb0 && a != 0xb6 && a != 0xbc {

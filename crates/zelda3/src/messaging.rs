@@ -2053,13 +2053,13 @@ impl ZeldaState {
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t =
             (-(i16::from((DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8)) as u16) as u8;
-        if self.dungeon_state_view().current_floor_word() != u16::from(t) {
-            let dung_cur_floor = u16::from(self.dungeon_state_view().current_floor());
+        if self.dungeon_stair_movement().current_floor_word() != u16::from(t) {
+            let dung_cur_floor = u16::from(self.dungeon_stair_movement().current_floor());
             self.dungeon_map_scratch_view_mut()
                 .set_dungmap_cur_floor(dung_cur_floor);
         } else {
             let dung_cur_floor = self
-                .dungeon_state_view()
+                .dungeon_stair_movement()
                 .current_floor_word()
                 .wrapping_add(1);
             let dungmap_idx = self
@@ -2239,7 +2239,7 @@ impl ZeldaState {
         let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
-        let floor1 = t5.wrapping_add(self.dungeon_state_view().current_floor());
+        let floor1 = t5.wrapping_add(self.dungeon_stair_movement().current_floor());
 
         let mut room = self.world_location_state().dungeon_room;
         for i in 0..3 {
@@ -2431,7 +2431,7 @@ impl ZeldaState {
         let dung = usize::from(self.save_progress_view().palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let r2 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
-        let floor = r2.wrapping_add(self.dungeon_state_view().current_floor());
+        let floor = r2.wrapping_add(self.dungeon_stair_movement().current_floor());
 
         let mut spr_pos = 0usize;
         let mut r14 = 0u16;

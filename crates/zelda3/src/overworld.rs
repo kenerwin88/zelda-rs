@@ -1833,7 +1833,7 @@ impl ZeldaState {
         let doorway_state = self.world_transient().is_standing_in_doorway_cached();
         self.player_state_view_mut()
             .set_doorway_state(doorway_state);
-        self.dungeon_state_view_mut().restore_cached_floor();
+        self.dungeon_stair_movement_mut().restore_cached_floor();
         self.player_state_view_mut().set_visibility_status(0);
         self.player_state_view_mut().set_blink_countdown(0x90);
         self.Dungeon_PlayBlipAndCacheQuadrantVisits();

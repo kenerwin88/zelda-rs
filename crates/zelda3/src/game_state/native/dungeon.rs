@@ -1,14 +1,20 @@
 use crate::game_state::constants::{
-    AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE,
-    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG,
-    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
-    DUNGEON_WORK_R18, DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES,
-    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
+    AUX_TILE_THEME_INDEX, DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_FLOOR_X_VELOCITY,
+    DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
+    DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA,
+    DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_FLOOR, DUNG_CUR_FLOOR_CACHED,
+    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_INDEX_OF_TORCHES_START,
+    DUNG_INTER_STAIRCASES, DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
     DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
     DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
     DUNG_OBJECT_POS_IN_OBJDATA, DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX,
     MOVABLE_BLOCK_DATAS, OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
     OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
+};
+use crate::game_state::constants::{
+    COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
+    STAIRCASE_LOWER_LEVEL_STATUS, STAIRCASE_MOVE_COUNTER, STAIRCASE_TILEMAP_POS_X2,
+    WHICH_STAIRCASE_INDEX,
 };
 use crate::game_state::DungeonStairList;
 use crate::types::{read_le_u16, write_le_u16};
@@ -50,6 +56,8 @@ pub(crate) struct DungeonState {
     pub(crate) savegame_state: DungeonSavegameState,
     pub(crate) bg2_attributes: DungeonBg2AttributeState,
     pub(crate) stair_lists: DungeonStairListsState,
+    pub(crate) stair_movement: DungeonStairMovementState,
+    pub(crate) moving_floor: DungeonMovingFloorState,
 }
 
 impl DungeonState {
@@ -62,6 +70,8 @@ impl DungeonState {
             savegame_state: DungeonSavegameState::load_from_ram(ram),
             bg2_attributes: DungeonBg2AttributeState::load_from_ram(ram),
             stair_lists: DungeonStairListsState::load_from_ram(ram),
+            stair_movement: DungeonStairMovementState::load_from_ram(ram),
+            moving_floor: DungeonMovingFloorState::load_from_ram(ram),
         }
     }
 
@@ -72,6 +82,303 @@ impl DungeonState {
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
         self.bg2_attributes.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonMovingFloorState {
+    y_velocity: u16,
+    x_velocity: u16,
+    x_offset: u16,
+    y_offset: u16,
+    move_flags: u16,
+}
+
+impl DungeonMovingFloorState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            y_velocity: read_le_u16(ram, DUNGEON_FLOOR_Y_VELOCITY),
+            x_velocity: read_le_u16(ram, DUNGEON_FLOOR_X_VELOCITY),
+            x_offset: read_le_u16(ram, DUNG_FLOOR_X_OFFS),
+            y_offset: read_le_u16(ram, DUNG_FLOOR_Y_OFFS),
+            move_flags: read_le_u16(ram, DUNG_FLOOR_MOVE_FLAGS),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_FLOOR_Y_VELOCITY, self.y_velocity);
+        write_le_u16(ram, DUNGEON_FLOOR_X_VELOCITY, self.x_velocity);
+        write_le_u16(ram, DUNG_FLOOR_X_OFFS, self.x_offset);
+        write_le_u16(ram, DUNG_FLOOR_Y_OFFS, self.y_offset);
+        write_le_u16(ram, DUNG_FLOOR_MOVE_FLAGS, self.move_flags);
+    }
+
+    pub(crate) fn floor_y_velocity(&self) -> u16 {
+        self.y_velocity
+    }
+
+    pub(crate) fn floor_y_velocity_low(&self) -> u8 {
+        self.y_velocity as u8
+    }
+
+    pub(crate) fn floor_x_velocity(&self) -> u16 {
+        self.x_velocity
+    }
+
+    pub(crate) fn floor_x_velocity_low(&self) -> u8 {
+        self.x_velocity as u8
+    }
+
+    pub(crate) fn floor_x_offset(&self) -> u16 {
+        self.x_offset
+    }
+
+    pub(crate) fn floor_y_offset(&self) -> u16 {
+        self.y_offset
+    }
+
+    pub(crate) fn floor_move_flags(&self) -> u16 {
+        self.move_flags
+    }
+
+    fn set_floor_y_velocity_high(&mut self, value: u8) {
+        self.y_velocity = (self.y_velocity & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn set_floor_y_velocity(&mut self, value: u16) {
+        self.y_velocity = value;
+    }
+
+    fn set_floor_x_velocity(&mut self, value: u16) {
+        self.x_velocity = value;
+    }
+
+    fn clear_floor_velocity(&mut self) {
+        self.x_velocity = 0;
+        self.y_velocity = 0;
+    }
+
+    fn set_floor_x_offset(&mut self, value: u16) {
+        self.x_offset = value;
+    }
+
+    fn set_floor_y_offset(&mut self, value: u16) {
+        self.y_offset = value;
+    }
+
+    fn set_floor_y_offset_low(&mut self, value: u8) {
+        self.y_offset = (self.y_offset & 0xff00) | u16::from(value);
+    }
+
+    fn set_floor_offsets(&mut self, x: u16, y: u16) {
+        self.x_offset = x;
+        self.y_offset = y;
+    }
+
+    fn add_floor_x_offset(&mut self, delta: u16) -> u16 {
+        self.x_offset = self.x_offset.wrapping_add(delta);
+        self.x_offset
+    }
+
+    fn sub_floor_x_offset(&mut self, delta: u16) -> u16 {
+        self.x_offset = self.x_offset.wrapping_sub(delta);
+        self.x_offset
+    }
+
+    fn add_floor_y_offset(&mut self, delta: u16) -> u16 {
+        self.y_offset = self.y_offset.wrapping_add(delta);
+        self.y_offset
+    }
+
+    fn sub_floor_y_offset(&mut self, delta: u16) -> u16 {
+        self.y_offset = self.y_offset.wrapping_sub(delta);
+        self.y_offset
+    }
+
+    fn clear_floor_offsets(&mut self) {
+        self.set_floor_offsets(0, 0);
+    }
+
+    fn clear_floor_move_flags(&mut self) {
+        self.move_flags = 0;
+    }
+
+    fn set_floor_move_flags(&mut self, value: u16) {
+        self.move_flags = value;
+    }
+
+    fn increment_floor_move_flags(&mut self) {
+        self.move_flags = self.move_flags.wrapping_add(1);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonStairMovementState {
+    current_floor_word: u16,
+    cached_floor: u8,
+    staircase_index: u16,
+    move_counter: u8,
+    current_plane: u8,
+    lower_level_status: u8,
+    tilemap_pos_x2: u16,
+    in_room_kind: u16,
+    countdown: u8,
+}
+
+impl DungeonStairMovementState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        Self {
+            current_floor_word: read_le_u16(ram, DUNG_CUR_FLOOR),
+            cached_floor: ram.get(DUNG_CUR_FLOOR_CACHED).copied().unwrap_or(0),
+            staircase_index: read_le_u16(ram, WHICH_STAIRCASE_INDEX),
+            move_counter: ram.get(STAIRCASE_MOVE_COUNTER).copied().unwrap_or(0),
+            current_plane: ram.get(CUR_STAIRCASE_PLANE).copied().unwrap_or(0),
+            lower_level_status: ram.get(STAIRCASE_LOWER_LEVEL_STATUS).copied().unwrap_or(0),
+            tilemap_pos_x2: read_le_u16(ram, STAIRCASE_TILEMAP_POS_X2),
+            in_room_kind: read_le_u16(ram, KIND_OF_IN_ROOM_STAIRCASE),
+            countdown: ram
+                .get(COUNTDOWN_TIMER_FOR_STAIRCASES)
+                .copied()
+                .unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNG_CUR_FLOOR, self.current_floor_word);
+        ram[DUNG_CUR_FLOOR_CACHED] = self.cached_floor;
+        write_le_u16(ram, WHICH_STAIRCASE_INDEX, self.staircase_index);
+        ram[STAIRCASE_MOVE_COUNTER] = self.move_counter;
+        ram[CUR_STAIRCASE_PLANE] = self.current_plane;
+        ram[STAIRCASE_LOWER_LEVEL_STATUS] = self.lower_level_status;
+        write_le_u16(ram, STAIRCASE_TILEMAP_POS_X2, self.tilemap_pos_x2);
+        write_le_u16(ram, KIND_OF_IN_ROOM_STAIRCASE, self.in_room_kind);
+        ram[COUNTDOWN_TIMER_FOR_STAIRCASES] = self.countdown;
+    }
+
+    pub(crate) fn current_floor(&self) -> u8 {
+        self.current_floor_word as u8
+    }
+
+    pub(crate) fn current_floor_word(&self) -> u16 {
+        self.current_floor_word
+    }
+
+    pub(crate) fn cached_floor(&self) -> u8 {
+        self.cached_floor
+    }
+
+    pub(crate) fn current_staircase_plane(&self) -> u8 {
+        self.current_plane
+    }
+
+    pub(crate) fn staircase_lower_level_status(&self) -> u8 {
+        self.lower_level_status
+    }
+
+    pub(crate) fn staircase_index(&self) -> u8 {
+        self.staircase_index as u8
+    }
+
+    pub(crate) fn staircase_index_slot(&self) -> usize {
+        usize::from(self.staircase_index() & 3)
+    }
+
+    pub(crate) fn staircase_index_has_vertical_bit(&self) -> bool {
+        self.staircase_index() & 4 != 0
+    }
+
+    pub(crate) fn staircase_move_counter(&self) -> u8 {
+        self.move_counter
+    }
+
+    pub(crate) fn kind_of_in_room_staircase(&self) -> u8 {
+        self.in_room_kind as u8
+    }
+
+    pub(crate) fn staircase_tilemap_pos_x2(&self) -> u16 {
+        self.tilemap_pos_x2
+    }
+
+    pub(crate) fn staircase_countdown(&self) -> u8 {
+        self.countdown
+    }
+
+    fn set_current_floor(&mut self, value: u8) {
+        self.current_floor_word = (self.current_floor_word & 0xff00) | u16::from(value);
+    }
+
+    fn decrement_current_floor(&mut self) -> u8 {
+        let next = self.current_floor().wrapping_sub(1);
+        self.set_current_floor(next);
+        next
+    }
+
+    fn increment_current_floor(&mut self) -> u8 {
+        let next = self.current_floor().wrapping_add(1);
+        self.set_current_floor(next);
+        next
+    }
+
+    fn cache_current_floor(&mut self) {
+        self.cached_floor = self.current_floor();
+    }
+
+    fn restore_cached_floor(&mut self) {
+        self.set_current_floor(self.cached_floor);
+    }
+
+    fn set_staircase_tilemap_pos_x2(&mut self, value: u16) {
+        self.tilemap_pos_x2 = value;
+    }
+
+    fn set_current_staircase_plane(&mut self, value: u8) {
+        self.current_plane = value;
+    }
+
+    fn set_staircase_lower_level_status(&mut self, value: u8) {
+        self.lower_level_status = value;
+    }
+
+    fn set_staircase_countdown(&mut self, value: u8) {
+        self.countdown = value;
+    }
+
+    fn decrement_staircase_countdown_clamped(&mut self) -> u8 {
+        let value = self.countdown.wrapping_sub(1);
+        self.countdown = if (value as i8).is_negative() {
+            0
+        } else {
+            value
+        };
+        self.countdown
+    }
+
+    fn decrement_staircase_countdown_underflowed(&mut self) -> bool {
+        let value = self.countdown.wrapping_sub(1);
+        let underflowed = (value as i8).is_negative();
+        self.countdown = if underflowed { 0 } else { value };
+        underflowed
+    }
+
+    fn set_staircase_index(&mut self, value: u8) {
+        self.staircase_index = (self.staircase_index & 0xff00) | u16::from(value);
+    }
+
+    fn set_staircase_index_high(&mut self, value: u8) {
+        self.staircase_index = (self.staircase_index & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    fn set_staircase_move_counter(&mut self, value: u8) {
+        self.move_counter = value;
+    }
+
+    fn decrement_staircase_move_counter(&mut self) -> u8 {
+        self.move_counter = self.move_counter.wrapping_sub(1);
+        self.move_counter
+    }
+
+    fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
+        self.in_room_kind = value;
     }
 }
 
@@ -1070,6 +1377,223 @@ impl<'a> NativeDungeonStairListsBridgeMut<'a> {
 
     pub(crate) fn set_inter_staircase_pos(&mut self, index: usize, value: u16) {
         self.state.set_inter_staircase_pos(index, value);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonMovingFloorBridgeMut<'a> {
+    state: &'a mut DungeonMovingFloorState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonMovingFloorState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonMovingFloorState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonMovingFloorState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_floor_y_velocity_high(&mut self, value: u8) {
+        self.state.set_floor_y_velocity_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_y_velocity(&mut self, value: u16) {
+        self.state.set_floor_y_velocity(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_x_velocity(&mut self, value: u16) {
+        self.state.set_floor_x_velocity(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_floor_velocity(&mut self) {
+        self.state.clear_floor_velocity();
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_x_offset(&mut self, value: u16) {
+        self.state.set_floor_x_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_y_offset(&mut self, value: u16) {
+        self.state.set_floor_y_offset(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_y_offset_low(&mut self, value: u8) {
+        self.state.set_floor_y_offset_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_offsets(&mut self, x: u16, y: u16) {
+        self.state.set_floor_offsets(x, y);
+        self.sync();
+    }
+
+    pub(crate) fn add_floor_x_offset(&mut self, delta: u16) -> u16 {
+        let value = self.state.add_floor_x_offset(delta);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn sub_floor_x_offset(&mut self, delta: u16) -> u16 {
+        let value = self.state.sub_floor_x_offset(delta);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn add_floor_y_offset(&mut self, delta: u16) -> u16 {
+        let value = self.state.add_floor_y_offset(delta);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn sub_floor_y_offset(&mut self, delta: u16) -> u16 {
+        let value = self.state.sub_floor_y_offset(delta);
+        self.sync();
+        value
+    }
+
+    pub(crate) fn clear_floor_offsets(&mut self) {
+        self.state.clear_floor_offsets();
+        self.sync();
+    }
+
+    pub(crate) fn clear_floor_move_flags(&mut self) {
+        self.state.clear_floor_move_flags();
+        self.sync();
+    }
+
+    pub(crate) fn set_floor_move_flags(&mut self, value: u16) {
+        self.state.set_floor_move_flags(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_floor_move_flags(&mut self) {
+        self.state.increment_floor_move_flags();
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonStairMovementBridgeMut<'a> {
+    state: &'a mut DungeonStairMovementState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonStairMovementBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonStairMovementState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonStairMovementState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonStairMovementState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_current_floor(&mut self, value: u8) {
+        self.state.set_current_floor(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_current_floor(&mut self) -> u8 {
+        let value = self.state.decrement_current_floor();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn increment_current_floor(&mut self) -> u8 {
+        let value = self.state.increment_current_floor();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn cache_current_floor(&mut self) {
+        self.state.cache_current_floor();
+        self.sync();
+    }
+
+    pub(crate) fn restore_cached_floor(&mut self) {
+        self.state.restore_cached_floor();
+        self.sync();
+    }
+
+    pub(crate) fn set_staircase_tilemap_pos_x2(&mut self, value: u16) {
+        self.state.set_staircase_tilemap_pos_x2(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_staircase_plane(&mut self, value: u8) {
+        self.state.set_current_staircase_plane(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_staircase_lower_level_status(&mut self, value: u8) {
+        self.state.set_staircase_lower_level_status(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_staircase_countdown(&mut self, value: u8) {
+        self.state.set_staircase_countdown(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_staircase_countdown_clamped(&mut self) -> u8 {
+        let value = self.state.decrement_staircase_countdown_clamped();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn decrement_staircase_countdown_underflowed(&mut self) -> bool {
+        let underflowed = self.state.decrement_staircase_countdown_underflowed();
+        self.sync();
+        underflowed
+    }
+
+    pub(crate) fn set_staircase_index(&mut self, value: u8) {
+        self.state.set_staircase_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_staircase_index_high(&mut self, value: u8) {
+        self.state.set_staircase_index_high(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_staircase_move_counter(&mut self, value: u8) {
+        self.state.set_staircase_move_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn decrement_staircase_move_counter(&mut self) -> u8 {
+        let value = self.state.decrement_staircase_move_counter();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn set_kind_of_in_room_staircase_word(&mut self, value: u16) {
+        self.state.set_kind_of_in_room_staircase_word(value);
         self.sync();
     }
 }

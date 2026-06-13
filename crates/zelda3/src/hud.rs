@@ -318,18 +318,18 @@ impl ZeldaState {
         self.hud_buffer_set(0xf4 / 2, 0x250f);
 
         let mut k = 0usize;
-        let j = if (self.dungeon_state_view().current_floor() as i8) >= 0 {
-            if self.dungeon_state_view().current_floor_word() == 0
+        let j = if (self.dungeon_stair_movement().current_floor() as i8) >= 0 {
+            if self.dungeon_stair_movement().current_floor_word() == 0
                 && self.world_location_state().dungeon_room != 2
                 && self.save_progress_view().progress_indicator() < 2
             {
                 self.system_signals_view_mut().set_ambient_sound_effect(3);
             }
-            self.dungeon_state_view().current_floor()
+            self.dungeon_stair_movement().current_floor()
         } else {
             self.system_signals_view_mut().set_ambient_sound_effect(5);
             k += 1;
-            self.dungeon_state_view().current_floor() ^ 0xff
+            self.dungeon_stair_movement().current_floor() ^ 0xff
         } as usize;
         self.hud_buffer_set(k + 0xf2 / 2, DUNGEON_FLOOR_INDICATOR_TOP_TILES[j]);
         self.hud_buffer_set(k + 0x132 / 2, DUNGEON_FLOOR_INDICATOR_BOTTOM_TILES[j]);

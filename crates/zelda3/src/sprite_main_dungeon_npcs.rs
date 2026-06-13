@@ -563,11 +563,11 @@ impl ZeldaState {
         let x = self
             .sprite_workspace_view()
             .current_sprite_x()
-            .wrapping_sub(self.dungeon_state_view().floor_x_offset());
+            .wrapping_sub(self.dungeon_moving_floor().floor_x_offset());
         let y = self
             .sprite_workspace_view()
             .current_sprite_y()
-            .wrapping_sub(self.dungeon_state_view().floor_y_offset());
+            .wrapping_sub(self.dungeon_moving_floor().floor_y_offset());
         self.sprite_workspace_view_mut().set_current_sprite_x(x);
         self.sprite_workspace_view_mut().set_current_sprite_y(y);
 

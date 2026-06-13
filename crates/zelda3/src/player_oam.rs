@@ -2105,7 +2105,7 @@ impl ZeldaState {
 
         if submodule == 18 || submodule == 19 {
             let mut t = if submodule == 18 { 0 } else { 12 };
-            if self.dungeon_state_view().staircase_index() & 4 != 0 {
+            if self.dungeon_stair_movement().staircase_index() & 4 != 0 {
                 t += 6;
             }
             if self.player_state_view().animation_step() < 6 {
@@ -2165,7 +2165,7 @@ impl ZeldaState {
                 if self.player_state_view().facing() != 4 && self.player_state_view().facing() != 6
                 {
                     rt = kPlayerOam_Tab1[self.player_state_view().animation_step_index()] as u8;
-                    yt = if self.dungeon_state_view().staircase_index() & 4 != 0 {
+                    yt = if self.dungeon_stair_movement().staircase_index() & 4 != 0 {
                         0x1a
                     } else {
                         0x19

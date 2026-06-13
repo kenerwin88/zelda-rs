@@ -416,11 +416,12 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_anim_clock(16);
                 self.sprite_slot_view_mut(k).set_x_velocity(0);
                 self.sprite_slot_view_mut(k).set_y_velocity(0);
-                self.dungeon_state_view_mut().set_floor_y_velocity_high(255);
+                self.dungeon_moving_floor_mut()
+                    .set_floor_y_velocity_high(255);
             } else if self.sprite_slot_view(k).delay_main() >= 0xff {
             } else if self.sprite_slot_view(k).delay_main() >= 0xe0 {
                 if (self.sprite_slot_view(k).delay_main() & 3) == 0 {
-                    self.dungeon_state_view_mut().set_floor_y_velocity(0xffff);
+                    self.dungeon_moving_floor_mut().set_floor_y_velocity(0xffff);
                     self.dungeon_state_view_mut()
                         .set_header_collision_2_mirror(1);
                 }
@@ -547,9 +548,9 @@ impl ZeldaState {
                         bak_y.wrapping_sub(self.sprite_slot_view(k).y_low()) as i8 as i16 as u16;
                     let floor_x_vel =
                         bak_x.wrapping_sub(self.sprite_slot_view(k).x_low()) as i8 as i16 as u16;
-                    self.dungeon_state_view_mut()
+                    self.dungeon_moving_floor_mut()
                         .set_floor_y_velocity(floor_y_vel);
-                    self.dungeon_state_view_mut()
+                    self.dungeon_moving_floor_mut()
                         .set_floor_x_velocity(floor_x_vel);
                     self.dungeon_state_view_mut()
                         .set_header_collision_2_mirror(1);

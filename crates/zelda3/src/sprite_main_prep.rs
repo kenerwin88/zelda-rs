@@ -4443,7 +4443,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_delay_main(80);
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
         self.sprite_slot_view_mut(k).set_graphics(2);
-        self.dungeon_state_view_mut().increment_floor_move_flags();
+        self.dungeon_moving_floor_mut().increment_floor_move_flags();
         self.sprite_slot_view_mut(k).set_c(112);
     }
 

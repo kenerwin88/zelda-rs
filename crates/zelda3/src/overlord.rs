@@ -628,7 +628,7 @@ impl ZeldaState {
         if self.sprite_slot_view(0).state() == 4 {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            self.dungeon_state_view_mut().set_floor_move_flags(1);
+            self.dungeon_moving_floor_mut().set_floor_move_flags(1);
             return;
         }
 
@@ -644,14 +644,14 @@ impl ZeldaState {
                     1
                 };
                 let flags = (self.get_random_number() & mask) * 2;
-                self.dungeon_state_view_mut()
+                self.dungeon_moving_floor_mut()
                     .set_floor_move_flags(u16::from(flags));
                 let value = (self.get_random_number() & 127).wrapping_add(128);
                 self.overlord_slot_view_mut(k).set_gen2(value);
                 let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                 self.overlord_slot_view_mut(k).set_gen1(value);
             } else {
-                self.dungeon_state_view_mut().set_floor_move_flags(1);
+                self.dungeon_moving_floor_mut().set_floor_move_flags(1);
             }
         } else {
             let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
