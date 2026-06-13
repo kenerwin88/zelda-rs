@@ -49,7 +49,6 @@ pub(crate) struct NativeScratchCounterBridgeMut<'a> {
 
 impl<'a> NativeScratchCounterBridgeMut<'a> {
     pub(crate) fn new(scratch_counter: &'a mut ScratchCounterState, ram: &'a mut [u8]) -> Self {
-        *scratch_counter = ScratchCounterState::load_from_ram(ram);
         Self {
             scratch_counter,
             ram,
@@ -167,11 +166,15 @@ pub(crate) struct NativeMemorizedTileBridgeMut<'a> {
 
 impl<'a> NativeMemorizedTileBridgeMut<'a> {
     pub(crate) fn new(memorized_tiles: &'a mut MemorizedTileState, ram: &'a mut [u8]) -> Self {
-        *memorized_tiles = MemorizedTileState::load_from_ram(ram);
         Self {
             memorized_tiles,
             ram,
         }
+    }
+
+    fn sync(&mut self) {
+        self.memorized_tiles.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -183,41 +186,32 @@ impl<'a> NativeMemorizedTileBridgeMut<'a> {
 
     pub(crate) fn set_count(&mut self, value: u16) {
         self.memorized_tiles.set_count(value);
-        write_le_u16(self.ram, NUM_MEMORIZED_TILES, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_count(&mut self) {
         self.memorized_tiles.clear_count();
-        write_le_u16(self.ram, NUM_MEMORIZED_TILES, 0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_entry_addr(&mut self, byte_offset: usize, pos: u16) {
         self.memorized_tiles.set_entry_addr(byte_offset, pos);
-        write_le_u16(self.ram, MEMORIZED_TILE_ADDR + byte_offset, pos);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_entry_value(&mut self, byte_offset: usize, tile: u16) {
         self.memorized_tiles.set_entry_value(byte_offset, tile);
-        write_le_u16(self.ram, MEMORIZED_TILE_VALUE + byte_offset, tile);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
-        let byte_offset = usize::from(self.memorized_tiles.count());
         self.memorized_tiles.append_entry(pos, tile);
-        write_le_u16(self.ram, MEMORIZED_TILE_VALUE + byte_offset, tile);
-        write_le_u16(self.ram, MEMORIZED_TILE_ADDR + byte_offset, pos);
-        write_le_u16(self.ram, NUM_MEMORIZED_TILES, byte_offset as u16 + 2);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_entry_addresses(&mut self) {
         self.memorized_tiles.clear_entry_addresses();
-        self.ram[MEMORIZED_TILE_ADDR..MEMORIZED_TILE_ADDR + 0x100].fill(0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -300,7 +294,6 @@ pub(crate) struct NativeDungeonSecretBridgeMut<'a> {
 
 impl<'a> NativeDungeonSecretBridgeMut<'a> {
     pub(crate) fn new(dungeon_secret: &'a mut DungeonSecretState, ram: &'a mut [u8]) -> Self {
-        *dungeon_secret = DungeonSecretState::load_from_ram(ram);
         Self {
             dungeon_secret,
             ram,
@@ -382,8 +375,12 @@ pub(crate) struct NativeSaveLoadTransferBridgeMut<'a> {
 
 impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
     pub(crate) fn new(transfer: &'a mut SaveLoadTransferState, ram: &'a mut [u8]) -> Self {
-        *transfer = SaveLoadTransferState::load_from_ram(ram);
         Self { transfer, ram }
+    }
+
+    fn sync(&mut self) {
+        self.transfer.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -395,8 +392,7 @@ impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
 
     pub(crate) fn set_source_offset(&mut self, value: u16) {
         self.transfer.set_source_offset(value);
-        write_le_u16(self.ram, SAVE_LOAD_SOURCE_OFFSET, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 }
 
@@ -637,7 +633,6 @@ pub(crate) struct NativeDungeonMapDisplayBridgeMut<'a> {
 
 impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DungeonMapDisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DungeonMapDisplayState::load_from_ram(ram);
         Self { display, ram }
     }
 
