@@ -2008,31 +2008,6 @@ impl<'a> DungeonStateViewMut<'a> {
     }
 }
 
-pub(crate) struct DungeonEntranceBackupViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> DungeonEntranceBackupViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn cache_exit_tile_themes(&mut self) {
-        self.ram[OVERWORLD_EXIT_TILE_THEME_INDEX] = self.ram[OVERWORLD_TILE_THEME_INDEX];
-        self.ram[OVERWORLD_EXIT_TILE_THEME_INDEX + 1] = self.ram[MAIN_TILE_THEME_INDEX];
-        self.ram[OVERWORLD_EXIT_TILE_THEME_INDEX + 2] = self.ram[AUX_TILE_THEME_INDEX];
-        self.ram[OVERWORLD_EXIT_TILE_THEME_INDEX + 3] = self.ram[SPRITE_GRAPHICS_INDEX];
-    }
-
-    pub(crate) fn clear_overworld_screen_high(&mut self) {
-        self.ram[OVERWORLD_SCREEN_INDEX + 1] = 0;
-    }
-
-    pub(crate) fn clear_overlay_high(&mut self) {
-        self.ram[OVERLAY_INDEX + 1] = 0;
-    }
-}
-
 pub(crate) struct DungeonTorchView<'a> {
     ram: &'a [u8],
 }

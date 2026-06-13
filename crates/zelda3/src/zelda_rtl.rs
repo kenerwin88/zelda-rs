@@ -35,10 +35,10 @@ use crate::game_state::{
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
     CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderState,
-    DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState,
-    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
-    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
+    DoorDebrisView, DualLayerTileCacheView, DungeonHeaderState, DungeonKeySlotsView,
+    DungeonMapScratchView, DungeonMapScratchViewMut, DungeonScratchWordState, DungeonSecretState,
+    DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut,
+    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableView,
     EnhancedFeaturesState, EtherOrbitState, FollowerStateView, FollowerStateViewMut, FrameState,
     GameState, GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
     GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
@@ -53,7 +53,8 @@ use crate::game_state::{
     NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
     NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
     NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonScratchWordBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
@@ -3114,8 +3115,13 @@ impl ZeldaState {
         NativeMirrorWarpBridgeMut::new(&mut self.game_state.inventory.mirror_warp, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_entrance_backup_view_mut(&mut self) -> DungeonEntranceBackupViewMut<'_> {
-        DungeonEntranceBackupViewMut::new(&mut self.ram)
+    pub(crate) fn dungeon_entrance_backup_view_mut(
+        &mut self,
+    ) -> NativeDungeonEntranceBackupBridgeMut<'_> {
+        NativeDungeonEntranceBackupBridgeMut::new(
+            &mut self.game_state.dungeon.entrance_backup,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn dungeon_header_view(&self) -> DungeonHeaderState {

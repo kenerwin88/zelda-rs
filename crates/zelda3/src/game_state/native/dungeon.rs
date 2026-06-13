@@ -1,6 +1,8 @@
 use crate::game_state::constants::{
-    DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
-    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_WORK_R16, DUNGEON_WORK_R18,
+    AUX_TILE_THEME_INDEX, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
+    DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_WORK_R16, DUNGEON_WORK_R18, MAIN_TILE_THEME_INDEX,
+    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
+    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -11,6 +13,7 @@ const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 pub(crate) struct DungeonState {
     pub(crate) header: DungeonHeaderState,
     pub(crate) scratch_word: DungeonScratchWordState,
+    pub(crate) entrance_backup: DungeonEntranceBackupState,
 }
 
 impl DungeonState {
@@ -18,12 +21,69 @@ impl DungeonState {
         Self {
             header: DungeonHeaderState::load_from_ram(ram),
             scratch_word: DungeonScratchWordState::load_from_ram(ram),
+            entrance_backup: DungeonEntranceBackupState::load_from_ram(ram),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.header.write_to_ram(ram);
         self.scratch_word.write_to_ram(ram);
+        self.entrance_backup.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonEntranceBackupState {
+    exit_tile_themes: [u8; 4],
+    overworld_screen_high: u8,
+    overlay_high: u8,
+}
+
+impl DungeonEntranceBackupState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut exit_tile_themes = [0; 4];
+        for (index, theme) in exit_tile_themes.iter_mut().enumerate() {
+            *theme = ram
+                .get(OVERWORLD_EXIT_TILE_THEME_INDEX + index)
+                .copied()
+                .unwrap_or(0);
+        }
+        Self {
+            exit_tile_themes,
+            overworld_screen_high: ram.get(OVERWORLD_SCREEN_INDEX + 1).copied().unwrap_or(0),
+            overlay_high: ram.get(OVERLAY_INDEX + 1).copied().unwrap_or(0),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4]
+            .copy_from_slice(&self.exit_tile_themes);
+        ram[OVERWORLD_SCREEN_INDEX + 1] = self.overworld_screen_high;
+        ram[OVERLAY_INDEX + 1] = self.overlay_high;
+    }
+
+    pub(crate) fn exit_tile_theme(&self, index: usize) -> u8 {
+        self.exit_tile_themes.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn overworld_screen_high(&self) -> u8 {
+        self.overworld_screen_high
+    }
+
+    pub(crate) fn overlay_high(&self) -> u8 {
+        self.overlay_high
+    }
+
+    pub(crate) fn cache_exit_tile_themes(&mut self, overworld: u8, main: u8, aux: u8, sprite: u8) {
+        self.exit_tile_themes = [overworld, main, aux, sprite];
+    }
+
+    pub(crate) fn clear_overworld_screen_high(&mut self) {
+        self.overworld_screen_high = 0;
+    }
+
+    pub(crate) fn clear_overlay_high(&mut self) {
+        self.overlay_high = 0;
     }
 }
 
@@ -200,6 +260,50 @@ impl DungeonScratchWordState {
         let next = self.secondary_low().wrapping_add(1);
         self.r18 = (self.r18 & 0xff00) | u16::from(next);
         next
+    }
+}
+
+pub(crate) struct NativeDungeonEntranceBackupBridgeMut<'a> {
+    state: &'a mut DungeonEntranceBackupState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonEntranceBackupState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonEntranceBackupState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.state,
+            DungeonEntranceBackupState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn cache_exit_tile_themes(&mut self) {
+        self.state.cache_exit_tile_themes(
+            self.ram[OVERWORLD_TILE_THEME_INDEX],
+            self.ram[MAIN_TILE_THEME_INDEX],
+            self.ram[AUX_TILE_THEME_INDEX],
+            self.ram[SPRITE_GRAPHICS_INDEX],
+        );
+        self.sync();
+    }
+
+    pub(crate) fn clear_overworld_screen_high(&mut self) {
+        self.state.clear_overworld_screen_high();
+        self.sync();
+    }
+
+    pub(crate) fn clear_overlay_high(&mut self) {
+        self.state.clear_overlay_high();
+        self.sync();
     }
 }
 

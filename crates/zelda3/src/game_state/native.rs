@@ -27,7 +27,8 @@ pub(crate) use display::{
     PaletteFilterState, PpuScrollCopyState, TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
-    DungeonHeaderState, DungeonScratchWordState, DungeonState, NativeDungeonHeaderBridgeMut,
+    DungeonHeaderState, DungeonScratchWordState, DungeonState,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonScratchWordBridgeMut,
 };
 pub(crate) use effects::{
@@ -100,6 +101,8 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{HudRuntimeState, HudTilemapState, OverworldPaletteBackupState, PaletteBufferState};
+#[cfg(test)]
+use dungeon::DungeonEntranceBackupState;
 #[cfg(test)]
 use effects::DoorDebrisState;
 #[cfg(test)]
@@ -5291,5 +5294,37 @@ mod tests {
         assert_eq!(accumulator.x_subpixel(), 0x03);
         assert_eq!(accumulator.y_subpixel(), 0x44);
         assert_eq!(read_le_u16(&ram, BG1_MOVE_CALC_BUFFER), 0x0344);
+    }
+
+    #[test]
+    fn native_dungeon_entrance_backup_bridge_caches_themes_and_clears_high_bytes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_TILE_THEME_INDEX] = 0x11;
+        ram[MAIN_TILE_THEME_INDEX] = 0x22;
+        ram[AUX_TILE_THEME_INDEX] = 0x33;
+        ram[SPRITE_GRAPHICS_INDEX] = 0x44;
+        ram[OVERWORLD_SCREEN_INDEX + 1] = 0xaa;
+        ram[OVERLAY_INDEX + 1] = 0xbb;
+
+        let mut backup = DungeonEntranceBackupState::default();
+        {
+            let mut bridge = NativeDungeonEntranceBackupBridgeMut::new(&mut backup, &mut ram);
+            bridge.cache_exit_tile_themes();
+            bridge.clear_overworld_screen_high();
+            bridge.clear_overlay_high();
+        }
+
+        assert_eq!(backup.exit_tile_theme(0), 0x11);
+        assert_eq!(backup.exit_tile_theme(1), 0x22);
+        assert_eq!(backup.exit_tile_theme(2), 0x33);
+        assert_eq!(backup.exit_tile_theme(3), 0x44);
+        assert_eq!(backup.overworld_screen_high(), 0);
+        assert_eq!(backup.overlay_high(), 0);
+        assert_eq!(
+            &ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4],
+            &[0x11, 0x22, 0x33, 0x44]
+        );
+        assert_eq!(ram[OVERWORLD_SCREEN_INDEX + 1], 0);
+        assert_eq!(ram[OVERLAY_INDEX + 1], 0);
     }
 }
