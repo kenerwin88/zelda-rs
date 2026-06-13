@@ -34,8 +34,8 @@ use crate::game_state::{
     BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState, CachedSpriteSlotView,
     CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
     DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonHeaderState,
-    DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState,
+    DoorDebrisView, DualLayerTileCacheView, DungeonBg2AttributeState, DungeonDoorState,
+    DungeonHeaderState, DungeonKeySlotsView, DungeonMapDisplayState, DungeonMovingFloorState,
     DungeonObjectTrackingState, DungeonRoomTrackingState, DungeonSavegameState,
     DungeonScratchWordState, DungeonSecretState, DungeonStairList, DungeonStairListsState,
     DungeonStairMovementState, DungeonStateView, DungeonStateViewMut, DungeonTorchState,
@@ -55,7 +55,7 @@ use crate::game_state::{
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
-    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
     NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
     NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
@@ -1496,7 +1496,7 @@ impl ZeldaState {
             frame.subsubmodule,
             self.tile_detect_position_view().tile_collision_bits_primary(),
             self.tile_detect_position_view().tile_collision_bits_secondary(),
-            self.dungeon_state_view().door_open_counter_low(),
+            self.dungeon_doors().door_open_counter_low(),
             self.player_state_view().last_direction(),
             self.player_state_view().swim_direction_flags(),
             self.player_state_view().speed_setting(),
@@ -3292,6 +3292,14 @@ impl ZeldaState {
             &mut self.game_state.dungeon.object_tracking,
             &mut self.ram,
         )
+    }
+
+    pub(crate) fn dungeon_doors(&self) -> DungeonDoorState {
+        DungeonDoorState::load_from_ram(&self.ram)
+    }
+
+    pub(crate) fn dungeon_doors_mut(&mut self) -> NativeDungeonDoorBridgeMut<'_> {
+        NativeDungeonDoorBridgeMut::new(&mut self.game_state.dungeon.doors, &mut self.ram)
     }
 
     pub(crate) fn dungeon_map_view_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {

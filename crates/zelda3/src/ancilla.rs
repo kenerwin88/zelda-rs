@@ -9467,11 +9467,11 @@ impl ZeldaState {
                 let pos = MOVE_GRAVESTONE_POS[j];
                 self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(pos);
-                self.dungeon_state_view_mut()
+                self.dungeon_doors_mut()
                     .set_door_open_counter(MOVE_GRAVESTONE_CTR[j] as u16);
-                if self.dungeon_state_view().door_open_counter_low() == 0x58 {
+                if self.dungeon_doors().door_open_counter_low() == 0x58 {
                     self.set_sound_effect_2_with_link_pan(0x1b);
-                } else if self.dungeon_state_view().door_open_counter_low() == 0x38 {
+                } else if self.dungeon_doors().door_open_counter_low() == 0x38 {
                     let screen = self.world_location_state().overworld_screen_index() as usize;
                     self.overworld_event_info_view_mut()
                         .set_event_bits(screen, 0x20);

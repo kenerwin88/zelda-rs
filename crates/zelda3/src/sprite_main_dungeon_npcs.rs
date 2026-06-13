@@ -1261,7 +1261,7 @@ impl ZeldaState {
             .set_head_direction(head_direction);
         if (self.world_location_state().dungeon_room_index() & 1) == 0 {
             self.sprite_show_solicited_message(k, 0x131);
-        } else if (self.dungeon_state_view().opened_doors() & 0xff00) == 0 {
+        } else if (self.dungeon_doors().opened_doors() & 0xff00) == 0 {
             self.sprite_show_solicited_message(k, 0x12f);
         } else {
             self.sprite_show_solicited_message(k, 0x130);

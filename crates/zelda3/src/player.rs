@@ -3535,14 +3535,14 @@ impl ZeldaState {
         let pos = 2 * ((pos >> 1).wrapping_add(BIG_ROCK_MAP16_QUADRANT_OFFSETS[quadrant] as u16));
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(pos);
-        self.dungeon_state_view_mut().set_door_open_counter(40);
+        self.dungeon_doors_mut().set_door_open_counter(40);
         let secret = self.overworld_reveal_secret_for_smash(pos);
         if secret == 0xffff {
             let screen = u16::from(self.world_location_state().overworld_screen_index()) as usize;
             self.overworld_event_info_view_mut()
                 .set_event_bits(screen, 0x20);
             self.system_signals_view_mut().set_sound_effect_2(27);
-            self.dungeon_state_view_mut().set_door_open_counter(80);
+            self.dungeon_doors_mut().set_door_open_counter(80);
         }
         let x = x.wrapping_add((BIG_ROCK_QUADRANT_X_OFFSETS[quadrant] * 2) as u16);
         let y = y.wrapping_add((BIG_ROCK_QUADRANT_Y_OFFSETS[quadrant] * 2) as u16);
@@ -3649,7 +3649,7 @@ impl ZeldaState {
 
     fn overworld_do_map_update32x32_b_for_smash(&mut self) {
         self.overworld_do_map_update32x32_for_smash();
-        self.dungeon_state_view_mut().clear_door_open_counter_low();
+        self.dungeon_doors_mut().clear_door_open_counter_low();
     }
 
     fn overworld_do_map_update32x32_for_smash(&mut self) {
@@ -3662,7 +3662,7 @@ impl ZeldaState {
             0x0e24,
         ];
         let i = self.memorized_tile_view().count() as usize;
-        let j = (self.dungeon_state_view().door_open_counter() >> 1) as usize;
+        let j = (self.dungeon_doors().door_open_counter() >> 1) as usize;
         let base = self.dungeon_object_tracking().big_rock_starting_address();
         let entries = [
             (base, DOOR_ANIM_TILES[j]),
@@ -3680,18 +3680,16 @@ impl ZeldaState {
         let upload = self.display_state().vram_upload_cursor_usize();
         self.write_vram_upload_buffer_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
-        let step = self
-            .dungeon_state_view()
-            .door_animation_step()
-            .wrapping_add(if self.dungeon_state_view().door_open_counter() == 32 {
+        let step = self.dungeon_doors().door_animation_step().wrapping_add(
+            if self.dungeon_doors().door_open_counter() == 32 {
                 2
             } else {
                 1
-            });
-        self.dungeon_state_view_mut().set_door_animation_step(step);
+            },
+        );
+        self.dungeon_doors_mut().set_door_animation_step(step);
         self.set_bg_vram_load_mode(1);
-        self.dungeon_state_view_mut()
-            .increment_door_open_counter_low();
+        self.dungeon_doors_mut().increment_door_open_counter_low();
     }
 
     fn overworld_draw_map16_persist_for_smash(&mut self, pos: u16, value: u16) {
@@ -8132,7 +8130,7 @@ impl ZeldaState {
             0x0488 => 0x60,
             _ => 0x40,
         };
-        self.dungeon_state_view_mut().set_door_open_counter(counter);
+        self.dungeon_doors_mut().set_door_open_counter(counter);
         self.overworld_do_map_update32x32_b_for_smash();
     }
 

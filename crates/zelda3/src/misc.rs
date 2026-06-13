@@ -528,7 +528,7 @@ impl ZeldaState {
         self.world_camera_boundaries_mut()
             .set_camera_y_coord_scroll_hi(0x0181);
         self.dungeon_state_view_mut().set_quadrants_visited(2);
-        self.dungeon_state_view_mut().set_current_door_index(2);
+        self.dungeon_doors_mut().set_current_door_index(2);
         self.palette_buffer_view_mut().set_sp0l(0);
         self.palette_buffer_view_mut().set_sp5l(3);
         self.palette_buffer_view_mut().set_sp6l(1);

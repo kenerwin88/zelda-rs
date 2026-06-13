@@ -1,18 +1,21 @@
 use crate::game_state::constants::{
     AUX_TILE_THEME_INDEX, BIG_ROCK_STARTING_ADDRESS, CHANGEABLE_DUNGEON_OBJECT_INDEX,
-    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_FLOOR_X_VELOCITY,
-    DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE, DUNGEON_HEADER_STAIRCASE_PLANE,
-    DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS, DUNGEON_REPLACEMENT_TILE_STATE,
-    DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16, DUNGEON_WORK_R18, DUNG_CUR_FLOOR,
-    DUNG_CUR_FLOOR_CACHED, DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS,
-    DUNG_INDEX_OF_TORCHES_START, DUNG_INTER_STAIRCASES, DUNG_MISC_OBJS_INDEX,
-    DUNG_NUM_ACTIVATED_WATER_LADDERS, DUNG_NUM_INROOM_UPNORTH_STAIRS,
-    DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER, DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER,
-    DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1, DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET,
-    DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS, DUNG_SAVEGAME_STATE_BITS,
-    GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS, OVERLAY_INDEX,
-    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX,
-    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
+    DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, DOOR_OPEN_CLOSED_COUNTER, DOOR_TYPE_AND_SLOT,
+    DUNGEON_BG1_ATTR_TABLE, DUNGEON_BG2_ATTR_TABLE, DUNGEON_DOOR_DIRECTION,
+    DUNGEON_FLOOR_X_VELOCITY, DUNGEON_FLOOR_Y_VELOCITY, DUNGEON_HEADER_HOLE_TELEPORTER_PLANE,
+    DUNGEON_HEADER_STAIRCASE_PLANE, DUNGEON_HEADER_TAG, DUNGEON_HEADER_TRAVEL_DESTINATIONS,
+    DUNGEON_REPLACEMENT_TILE_STATE, DUNGEON_TORCH_ATTR, DUNGEON_TORCH_DATA, DUNGEON_WORK_R16,
+    DUNGEON_WORK_R18, DUNG_CUR_DOOR_IDX, DUNG_CUR_DOOR_POS_DUNGEON, DUNG_CUR_FLOOR,
+    DUNG_CUR_FLOOR_CACHED, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG, DUNG_DOOR_OPENED,
+    DUNG_DOOR_OPENED_INCL_ADJACENT, DUNG_DOOR_SWITCH_TRIGGERED, DUNG_DOOR_TILEMAP_ADDRESS,
+    DUNG_FLOOR_MOVE_FLAGS, DUNG_FLOOR_X_OFFS, DUNG_FLOOR_Y_OFFS, DUNG_INDEX_OF_TORCHES_START,
+    DUNG_INTER_STAIRCASES, DUNG_MISC_OBJS_INDEX, DUNG_NUM_ACTIVATED_WATER_LADDERS,
+    DUNG_NUM_INROOM_UPNORTH_STAIRS, DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER,
+    DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER, DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS, DUNG_NUM_STAIRS_1,
+    DUNG_NUM_STAIRS_2, DUNG_NUM_STAIRS_WET, DUNG_OBJECT_POS_IN_OBJDATA, DUNG_OBJECT_TILEMAP_POS,
+    DUNG_SAVEGAME_STATE_BITS, GANON_TORCH_COUNT, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
+    OVERLAY_INDEX, OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_SCREEN_INDEX,
+    OVERWORLD_TILE_THEME_INDEX, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -33,6 +36,7 @@ const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
+const DUNGEON_DOOR_SLOT_COUNT: usize = 16;
 const DUNGEON_BG2_ATTR_BUFFER_LEN: usize = (DUNGEON_BG1_ATTR_TABLE - DUNGEON_BG2_ATTR_TABLE) * 2;
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
@@ -69,6 +73,7 @@ pub(crate) struct DungeonState {
     pub(crate) moving_floor: DungeonMovingFloorState,
     pub(crate) room_tracking: DungeonRoomTrackingState,
     pub(crate) object_tracking: DungeonObjectTrackingState,
+    pub(crate) doors: DungeonDoorState,
 }
 
 impl DungeonState {
@@ -85,6 +90,7 @@ impl DungeonState {
             moving_floor: DungeonMovingFloorState::load_from_ram(ram),
             room_tracking: DungeonRoomTrackingState::load_from_ram(ram),
             object_tracking: DungeonObjectTrackingState::load_from_ram(ram),
+            doors: DungeonDoorState::load_from_ram(ram),
         }
     }
 
@@ -262,6 +268,271 @@ impl DungeonObjectTrackingState {
 
     fn set_big_rock_starting_address(&mut self, value: u16) {
         self.big_rock_starting_address = value;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DungeonDoorState {
+    opened_doors: u16,
+    opened_doors_including_adjacent: u16,
+    current_door_index: u16,
+    current_door_pos: u16,
+    animation_step: u16,
+    open_counter: u16,
+    door_tilemap_addresses: [u16; DUNGEON_DOOR_SLOT_COUNT],
+    door_types: [u16; DUNGEON_DOOR_SLOT_COUNT],
+    door_directions: [u16; DUNGEON_DOOR_SLOT_COUNT],
+    switch_triggered: u8,
+    barrier_or_switch_flag: u16,
+}
+
+impl DungeonDoorState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut door_tilemap_addresses = [0; DUNGEON_DOOR_SLOT_COUNT];
+        for (door, address) in door_tilemap_addresses.iter_mut().enumerate() {
+            *address = read_le_u16(ram, DUNG_DOOR_TILEMAP_ADDRESS + door * 2);
+        }
+
+        let mut door_types = [0; DUNGEON_DOOR_SLOT_COUNT];
+        for (door, door_type) in door_types.iter_mut().enumerate() {
+            *door_type = read_le_u16(ram, DOOR_TYPE_AND_SLOT + door * 2);
+        }
+
+        let mut door_directions = [0; DUNGEON_DOOR_SLOT_COUNT];
+        for (door, direction) in door_directions.iter_mut().enumerate() {
+            *direction = read_le_u16(ram, DUNGEON_DOOR_DIRECTION + door * 2);
+        }
+
+        Self {
+            opened_doors: read_le_u16(ram, DUNG_DOOR_OPENED),
+            opened_doors_including_adjacent: read_le_u16(ram, DUNG_DOOR_OPENED_INCL_ADJACENT),
+            current_door_index: read_le_u16(ram, DUNG_CUR_DOOR_IDX),
+            current_door_pos: read_le_u16(ram, DUNG_CUR_DOOR_POS_DUNGEON),
+            animation_step: read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON),
+            open_counter: read_le_u16(ram, DOOR_OPEN_CLOSED_COUNTER),
+            door_tilemap_addresses,
+            door_types,
+            door_directions,
+            switch_triggered: ram.get(DUNG_DOOR_SWITCH_TRIGGERED).copied().unwrap_or(0),
+            barrier_or_switch_flag: read_le_u16(ram, DUNG_DOOR_BARRIER_OR_SWITCH_FLAG),
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNG_DOOR_OPENED, self.opened_doors);
+        write_le_u16(
+            ram,
+            DUNG_DOOR_OPENED_INCL_ADJACENT,
+            self.opened_doors_including_adjacent,
+        );
+        write_le_u16(ram, DUNG_CUR_DOOR_IDX, self.current_door_index);
+        write_le_u16(ram, DUNG_CUR_DOOR_POS_DUNGEON, self.current_door_pos);
+        write_le_u16(
+            ram,
+            DOOR_ANIMATION_STEP_INDICATOR_DUNGEON,
+            self.animation_step,
+        );
+        write_le_u16(ram, DOOR_OPEN_CLOSED_COUNTER, self.open_counter);
+        for (door, address) in self.door_tilemap_addresses.iter().enumerate() {
+            write_le_u16(ram, DUNG_DOOR_TILEMAP_ADDRESS + door * 2, *address);
+        }
+        for (door, door_type) in self.door_types.iter().enumerate() {
+            write_le_u16(ram, DOOR_TYPE_AND_SLOT + door * 2, *door_type);
+        }
+        for (door, direction) in self.door_directions.iter().enumerate() {
+            write_le_u16(ram, DUNGEON_DOOR_DIRECTION + door * 2, *direction);
+        }
+        ram[DUNG_DOOR_SWITCH_TRIGGERED] = self.switch_triggered;
+        write_le_u16(
+            ram,
+            DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
+            self.barrier_or_switch_flag,
+        );
+    }
+
+    pub(crate) fn opened_doors(&self) -> u16 {
+        self.opened_doors
+    }
+
+    pub(crate) fn opened_doors_including_adjacent(&self) -> u16 {
+        self.opened_doors_including_adjacent
+    }
+
+    pub(crate) fn has_opened_door_mask(&self, mask: u16) -> bool {
+        self.opened_doors_including_adjacent & mask != 0
+    }
+
+    pub(crate) fn door_tilemap_address(&self, door: usize) -> u16 {
+        self.door_tilemap_addresses.get(door).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn door_type_and_slot(&self, door: usize) -> u8 {
+        self.door_type_word(door) as u8
+    }
+
+    pub(crate) fn door_type_word(&self, door: usize) -> u16 {
+        self.door_types.get(door).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn door_direction(&self, door: usize) -> u8 {
+        self.door_direction_word(door) as u8
+    }
+
+    pub(crate) fn door_direction_word(&self, door: usize) -> u16 {
+        self.door_directions.get(door).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn current_door_index(&self) -> u16 {
+        self.current_door_index
+    }
+
+    pub(crate) fn current_door_slot(&self) -> usize {
+        (self.current_door_index >> 1) as usize
+    }
+
+    pub(crate) fn current_door_pos(&self) -> u16 {
+        self.current_door_pos
+    }
+
+    pub(crate) fn door_animation_step(&self) -> u16 {
+        self.animation_step
+    }
+
+    pub(crate) fn door_animation_step_low(&self) -> u8 {
+        self.animation_step as u8
+    }
+
+    pub(crate) fn door_open_counter(&self) -> u16 {
+        self.open_counter
+    }
+
+    pub(crate) fn door_open_counter_low(&self) -> u8 {
+        self.open_counter as u8
+    }
+
+    pub(crate) fn door_switch_triggered(&self) -> bool {
+        self.switch_triggered != 0
+    }
+
+    fn set_opened_doors(&mut self, value: u16) {
+        self.opened_doors = value;
+    }
+
+    fn or_opened_doors(&mut self, mask: u16) -> u16 {
+        self.opened_doors |= mask;
+        self.opened_doors
+    }
+
+    fn mark_door_opened(&mut self, door: usize) -> u16 {
+        self.or_opened_doors(0x8000u16 >> (door & 15))
+    }
+
+    fn set_opened_doors_including_adjacent(&mut self, value: u16) {
+        self.opened_doors_including_adjacent = value;
+    }
+
+    fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
+        self.opened_doors_including_adjacent |= mask;
+        self.opened_doors_including_adjacent
+    }
+
+    fn clear_door_tilemap_addresses(&mut self) {
+        self.door_tilemap_addresses.fill(0);
+    }
+
+    fn set_door_tilemap_address(&mut self, door: usize, value: u16) {
+        if let Some(address) = self.door_tilemap_addresses.get_mut(door) {
+            *address = value;
+        }
+    }
+
+    fn clear_door_tables(&mut self) {
+        self.door_types.fill(0);
+        self.door_directions.fill(0);
+    }
+
+    fn set_door_type_word(&mut self, door: usize, value: u16) {
+        if let Some(door_type) = self.door_types.get_mut(door) {
+            *door_type = value;
+        }
+    }
+
+    fn set_door_direction_word(&mut self, door: usize, value: u16) {
+        if let Some(direction) = self.door_directions.get_mut(door) {
+            *direction = value;
+        }
+    }
+
+    fn clear_door_direction(&mut self, door: usize) {
+        self.set_door_direction_word(door, 0);
+    }
+
+    fn set_current_door_index(&mut self, value: u16) {
+        self.current_door_index = value;
+    }
+
+    fn set_current_door_index_for_slot(&mut self, door: usize) {
+        self.current_door_index = (door * 2) as u16;
+    }
+
+    fn advance_current_door_index_by(&mut self, value: u16) -> u16 {
+        self.current_door_index = self.current_door_index.wrapping_add(value);
+        self.current_door_index
+    }
+
+    fn set_current_door_pos(&mut self, value: u16) {
+        self.current_door_pos = value;
+    }
+
+    fn clear_current_door_pos(&mut self) {
+        self.current_door_pos = 0;
+    }
+
+    fn clear_door_animation_step(&mut self) {
+        self.animation_step = 0;
+    }
+
+    fn set_door_animation_step(&mut self, value: u16) {
+        self.animation_step = value;
+    }
+
+    fn set_door_animation_step_low(&mut self, value: u8) {
+        self.animation_step = (self.animation_step & 0xff00) | u16::from(value);
+    }
+
+    fn increment_door_animation_step(&mut self) -> u16 {
+        self.animation_step = self.animation_step.wrapping_add(1);
+        self.animation_step
+    }
+
+    fn set_door_open_counter(&mut self, value: u16) {
+        self.open_counter = value;
+    }
+
+    fn set_door_open_counter_low(&mut self, value: u8) {
+        self.open_counter = (self.open_counter & 0xff00) | u16::from(value);
+    }
+
+    fn clear_door_open_counter_low(&mut self) {
+        self.open_counter &= 0xff00;
+    }
+
+    fn increment_door_open_counter_low(&mut self) -> u8 {
+        let value = self.door_open_counter_low().wrapping_add(1);
+        self.set_door_open_counter_low(value);
+        value
+    }
+
+    fn mark_door_switch_triggered(&mut self) {
+        self.switch_triggered = 1;
+    }
+
+    fn clear_door_switch_triggered(&mut self) {
+        self.switch_triggered = 0;
+    }
+
+    fn clear_door_barrier_or_switch_flag(&mut self) {
+        self.barrier_or_switch_flag = 0;
     }
 }
 
@@ -1891,6 +2162,168 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
 
     pub(crate) fn clear_changeable_object_index(&mut self, index: usize) {
         self.state.clear_changeable_object_index(index);
+        self.sync();
+    }
+}
+
+pub(crate) struct NativeDungeonDoorBridgeMut<'a> {
+    state: &'a mut DungeonDoorState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeDungeonDoorBridgeMut<'a> {
+    pub(crate) fn new(state: &'a mut DungeonDoorState, ram: &'a mut [u8]) -> Self {
+        *state = DungeonDoorState::load_from_ram(ram);
+        Self { state, ram }
+    }
+
+    fn sync(&mut self) {
+        self.state.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(*self.state, DungeonDoorState::load_from_ram(self.ram));
+    }
+
+    pub(crate) fn set_opened_doors(&mut self, value: u16) {
+        self.state.set_opened_doors(value);
+        self.sync();
+    }
+
+    pub(crate) fn or_opened_doors(&mut self, mask: u16) -> u16 {
+        let opened = self.state.or_opened_doors(mask);
+        self.sync();
+        opened
+    }
+
+    pub(crate) fn mark_door_opened(&mut self, door: usize) -> u16 {
+        let opened = self.state.mark_door_opened(door);
+        self.sync();
+        opened
+    }
+
+    pub(crate) fn set_opened_doors_including_adjacent(&mut self, value: u16) {
+        self.state.set_opened_doors_including_adjacent(value);
+        self.sync();
+    }
+
+    pub(crate) fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
+        let opened = self.state.mark_opened_door_mask(mask);
+        self.sync();
+        opened
+    }
+
+    pub(crate) fn clear_door_tilemap_addresses(&mut self) {
+        self.state.clear_door_tilemap_addresses();
+        self.sync();
+    }
+
+    pub(crate) fn set_door_tilemap_address(&mut self, door: usize, value: u16) {
+        self.state.set_door_tilemap_address(door, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_tables(&mut self) {
+        self.state.clear_door_tables();
+        self.sync();
+    }
+
+    pub(crate) fn set_door_type_word(&mut self, door: usize, value: u16) {
+        self.state.set_door_type_word(door, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_door_direction_word(&mut self, door: usize, value: u16) {
+        self.state.set_door_direction_word(door, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_direction(&mut self, door: usize) {
+        self.state.clear_door_direction(door);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_door_index(&mut self, value: u16) {
+        self.state.set_current_door_index(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {
+        self.state.set_current_door_index_for_slot(door);
+        self.sync();
+    }
+
+    pub(crate) fn advance_current_door_index_by(&mut self, value: u16) -> u16 {
+        let next = self.state.advance_current_door_index_by(value);
+        self.sync();
+        next
+    }
+
+    pub(crate) fn set_current_door_pos(&mut self, value: u16) {
+        self.state.set_current_door_pos(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_current_door_pos(&mut self) {
+        self.state.clear_current_door_pos();
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_animation_step(&mut self) {
+        self.state.clear_door_animation_step();
+        self.sync();
+    }
+
+    pub(crate) fn set_door_animation_step(&mut self, value: u16) {
+        self.state.set_door_animation_step(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_door_animation_step_low(&mut self, value: u8) {
+        self.state.set_door_animation_step_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn increment_door_animation_step(&mut self) -> u16 {
+        let step = self.state.increment_door_animation_step();
+        self.sync();
+        step
+    }
+
+    pub(crate) fn set_door_open_counter(&mut self, value: u16) {
+        self.state.set_door_open_counter(value);
+        self.sync();
+    }
+
+    pub(crate) fn set_door_open_counter_low(&mut self, value: u8) {
+        self.state.set_door_open_counter_low(value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_open_counter_low(&mut self) {
+        self.state.clear_door_open_counter_low();
+        self.sync();
+    }
+
+    pub(crate) fn increment_door_open_counter_low(&mut self) -> u8 {
+        let value = self.state.increment_door_open_counter_low();
+        self.sync();
+        value
+    }
+
+    pub(crate) fn mark_door_switch_triggered(&mut self) {
+        self.state.mark_door_switch_triggered();
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_switch_triggered(&mut self) {
+        self.state.clear_door_switch_triggered();
+        self.sync();
+    }
+
+    pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
+        self.state.clear_door_barrier_or_switch_flag();
         self.sync();
     }
 }

@@ -1199,8 +1199,8 @@ impl ZeldaState {
             self.dungeon_object_tracking_mut()
                 .set_object_tilemap_pos(i, 0);
         }
-        self.dungeon_state_view_mut().clear_door_tilemap_addresses();
-        self.dungeon_state_view_mut().clear_door_tables();
+        self.dungeon_doors_mut().clear_door_tilemap_addresses();
+        self.dungeon_doors_mut().clear_door_tables();
         self.dungeon_state_view_mut()
             .clear_exit_door_count_and_flags();
         self.dungeon_state_view_mut().set_load_ptr_offset(0);
@@ -1331,9 +1331,8 @@ impl ZeldaState {
             .set_room_index_x3((room as u16).wrapping_mul(3));
 
         let saved = self.asset_u16_from_ram(0xf000, room);
-        self.dungeon_state_view_mut()
-            .set_opened_doors(saved & 0xf000);
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut().set_opened_doors(saved & 0xf000);
+        self.dungeon_doors_mut()
             .set_opened_doors_including_adjacent((saved & 0xf000) | 0x0f00);
         self.dungeon_state_view_mut()
             .set_savegame_state_bits((saved & 0x0ff0) << 4);
@@ -1382,14 +1381,12 @@ impl ZeldaState {
         for i in 0..16 {
             let word = read_word_from_slice(&doors, i * 2);
             if word == 0xffff {
-                self.dungeon_state_view_mut().set_door_tilemap_address(i, 0);
+                self.dungeon_doors_mut().set_door_tilemap_address(i, 0);
                 return;
             }
-            self.dungeon_state_view_mut()
-                .set_door_tilemap_address(i, word);
+            self.dungeon_doors_mut().set_door_tilemap_address(i, word);
         }
-        self.dungeon_state_view_mut()
-            .set_door_tilemap_address(16, 0);
+        self.dungeon_doors_mut().set_door_tilemap_address(16, 0);
     }
 
     fn Dungeon_CheckAdjacentRoomsForOpenDoors(&mut self, idx: usize, room: usize) {
@@ -1414,7 +1411,7 @@ impl ZeldaState {
                 if a == LOOKUP[j] {
                     let rev = LOOKUP2[j] as u8;
                     for door in 0..8 {
-                        let cur = self.dungeon_state_view().door_tilemap_address(door);
+                        let cur = self.dungeon_doors().door_tilemap_address(door);
                         if cur as u8 == rev {
                             let kind = (cur >> 8) as u8;
                             if kind == 0x30 {
@@ -1431,10 +1428,9 @@ impl ZeldaState {
                             {
                                 break;
                             }
-                            let opened =
-                                self.dungeon_state_view().opened_doors_including_adjacent()
-                                    | upper_bitmask(door);
-                            self.dungeon_state_view_mut()
+                            let opened = self.dungeon_doors().opened_doors_including_adjacent()
+                                | upper_bitmask(door);
+                            self.dungeon_doors_mut()
                                 .set_opened_doors_including_adjacent(opened);
                             break;
                         }
@@ -3170,11 +3166,11 @@ impl ZeldaState {
     ) {
         if position >= 6 {
             if let Some(&down_dsto_bytes) = DOOR_POSITION_DOWN.get(position - 6) {
-                let saved = self.dungeon_state_view().current_door_index();
-                self.dungeon_state_view_mut()
+                let saved = self.dungeon_doors().current_door_index();
+                self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.RoomDraw_CheckIfLowerLayerDoors_Y(door_type, down_dsto_bytes / 2);
-                self.dungeon_state_view_mut().set_current_door_index(saved);
+                self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
         self.RoomDraw_OneSidedShutters_North(door_type, dsto);
@@ -3199,21 +3195,15 @@ impl ZeldaState {
     }
 
     pub(super) fn Door_Up_StairMaskLocked(&mut self, door_type: u8, mut dsto: u16) {
-        let door = self.dungeon_state_view().current_door_index() as usize >> 1;
-        self.dungeon_state_view_mut()
-            .set_door_direction_word(door, 0);
-        self.dungeon_state_view_mut()
+        let door = self.dungeon_doors().current_door_index() as usize >> 1;
+        self.dungeon_doors_mut().set_door_direction_word(door, 0);
+        self.dungeon_doors_mut()
             .set_door_tilemap_address(door, dsto * 2);
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_door_type_word(door, ((door as u16) << 8) | door_type as u16);
-        if self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(door & 7)
-            != 0
-        {
-            let next = self
-                .dungeon_state_view()
-                .current_door_index()
-                .wrapping_add(2);
-            self.dungeon_state_view_mut().set_current_door_index(next);
+        if self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(door & 7) != 0 {
+            let next = self.dungeon_doors().current_door_index().wrapping_add(2);
+            self.dungeon_doors_mut().set_current_door_index(next);
             return;
         }
         if door_type < DOOR_TYPE_STAIR_MASK_LOCKED2 {
@@ -3250,21 +3240,15 @@ impl ZeldaState {
             .copied()
             .unwrap_or(0)
             / 2;
-        let door = self.dungeon_state_view().current_door_index() as usize >> 1;
-        self.dungeon_state_view_mut()
+        let door = self.dungeon_doors().current_door_index() as usize >> 1;
+        self.dungeon_doors_mut()
             .set_door_tilemap_address(door, 2 * (dsto + 10));
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_door_type_word(door, ((door as u16) << 8) | DOOR_TYPE_LG_EXPLOSION as u16);
-        if self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(door & 7)
-            == 0
-        {
-            self.dungeon_state_view_mut()
-                .set_door_direction_word(door, 0);
-            let next = self
-                .dungeon_state_view()
-                .current_door_index()
-                .wrapping_add(2);
-            self.dungeon_state_view_mut().set_current_door_index(next);
+        if self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(door & 7) == 0 {
+            self.dungeon_doors_mut().set_door_direction_word(door, 0);
+            let next = self.dungeon_doors().current_door_index().wrapping_add(2);
+            self.dungeon_doors_mut().set_current_door_index(next);
             return;
         }
 
@@ -3278,11 +3262,8 @@ impl ZeldaState {
             .force_vertical_fullsize_for_blast_wall();
         self.dungeon_state_view_mut().mark_blast_wall_y_open();
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_DOWN[42] as usize, dsto);
-        let next = self
-            .dungeon_state_view()
-            .current_door_index()
-            .wrapping_add(2);
-        self.dungeon_state_view_mut().set_current_door_index(next);
+        let next = self.dungeon_doors().current_door_index().wrapping_add(2);
+        self.dungeon_doors_mut().set_current_door_index(next);
         self.dungeon_state_view_mut()
             .add_reset_xy_check_flags(0x0200);
         self.RoomDraw_ExplodingWallSegment(DOOR_TYPE_SRC_UP[42] as usize, dsto + xy(0, 6) as u16);
@@ -3329,11 +3310,11 @@ impl ZeldaState {
     ) {
         if position >= 6 {
             if let Some(&right_dsto_bytes) = DOOR_POSITION_RIGHT.get(position - 6) {
-                let saved = self.dungeon_state_view().current_door_index();
-                self.dungeon_state_view_mut()
+                let saved = self.dungeon_doors().current_door_index();
+                self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.RoomDraw_NormalRangedDoors_East(door_type, right_dsto_bytes / 2);
-                self.dungeon_state_view_mut().set_current_door_index(saved);
+                self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
 
@@ -3387,13 +3368,9 @@ impl ZeldaState {
     }
 
     pub(super) fn room_rewrite_last_door_type(&mut self, door_type: u8) {
-        let index = (self
-            .dungeon_state_view()
-            .current_door_index()
-            .wrapping_sub(2)
-            >> 1) as usize;
+        let index = (self.dungeon_doors().current_door_index().wrapping_sub(2) >> 1) as usize;
         if index < 16 {
-            self.dungeon_state_view_mut()
+            self.dungeon_doors_mut()
                 .set_door_type_word(index, ((index as u16) << 8) | door_type as u16);
         }
     }
@@ -3404,19 +3381,18 @@ impl ZeldaState {
         door_type: u8,
         dsto: u16,
     ) -> u16 {
-        let slot = self.dungeon_state_view().current_door_index() as usize >> 1;
+        let slot = self.dungeon_doors().current_door_index() as usize >> 1;
         if slot < 16 {
-            self.dungeon_state_view_mut()
+            self.dungeon_doors_mut()
                 .set_door_direction_word(slot, direction);
-            self.dungeon_state_view_mut()
+            self.dungeon_doors_mut()
                 .set_door_tilemap_address(slot, dsto * 2);
-            self.dungeon_state_view_mut()
+            self.dungeon_doors_mut()
                 .set_door_type_word(slot, ((slot as u16) << 8) | door_type as u16);
         }
         let mut remapped = door_type;
         if (slot & 7) < 4
-            && self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(slot & 7)
-                != 0
+            && self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(slot & 7) != 0
         {
             let is_shutter =
                 door_type == DOOR_TYPE_SHUTTERS_TWO_WAY || door_type == DOOR_TYPE_SHUTTER;
@@ -3430,11 +3406,11 @@ impl ZeldaState {
                     && door_type != DOOR_TYPE_REGULAR_DOOR33
                     && door_type != DOOR_TYPE_WARP_ROOM_DOOR
                 {
-                    self.dungeon_state_view_mut().mark_door_opened(slot);
+                    self.dungeon_doors_mut().mark_door_opened(slot);
                 }
             }
         }
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_current_door_index((slot as u16).wrapping_mul(2).wrapping_add(2));
 
         if remapped == DOOR_TYPE_SLASHABLE || remapped == DOOR_TYPE_WATERFALL_TUNNEL {
@@ -3446,9 +3422,8 @@ impl ZeldaState {
 
         self.dungeon_state_view_mut()
             .set_invisible_door_marker(slot, direction);
-        let opened =
-            self.dungeon_state_view().opened_doors_including_adjacent() | upper_bitmask(slot);
-        self.dungeon_state_view_mut()
+        let opened = self.dungeon_doors().opened_doors_including_adjacent() | upper_bitmask(slot);
+        self.dungeon_doors_mut()
             .set_opened_doors_including_adjacent(opened);
         DOOR_TYPE_REGULAR as u16
     }
@@ -3502,14 +3477,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Door_PrioritizeCurDoor(&mut self) {
-        let index = (self
-            .dungeon_state_view()
-            .current_door_index()
-            .wrapping_sub(2)
-            >> 1) as usize;
+        let index = (self.dungeon_doors().current_door_index().wrapping_sub(2) >> 1) as usize;
         if index < 16 {
-            let addr = self.dungeon_state_view().door_tilemap_address(index) | 0x2000;
-            self.dungeon_state_view_mut()
+            let addr = self.dungeon_doors().door_tilemap_address(index) | 0x2000;
+            self.dungeon_doors_mut()
                 .set_door_tilemap_address(index, addr);
         }
     }
@@ -3535,11 +3506,11 @@ impl ZeldaState {
     ) {
         if position >= 6 && door_type != DOOR_TYPE_WARP_ROOM_DOOR {
             if let Some(&down_dsto_bytes) = DOOR_POSITION_DOWN.get(position - 6) {
-                let saved = self.dungeon_state_view().current_door_index();
-                self.dungeon_state_view_mut()
+                let saved = self.dungeon_doors().current_door_index();
+                self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.RoomDraw_OneSidedLowerShutters_South(door_type, down_dsto_bytes / 2);
-                self.dungeon_state_view_mut().set_current_door_index(saved);
+                self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
         let mut t = self.RoomDraw_FlagDoorsAndGetFinalType(0, door_type, dsto);
@@ -3598,11 +3569,11 @@ impl ZeldaState {
     ) {
         if position >= 6 {
             if let Some(&right_dsto_bytes) = DOOR_POSITION_RIGHT.get(position - 6) {
-                let saved = self.dungeon_state_view().current_door_index();
-                self.dungeon_state_view_mut()
+                let saved = self.dungeon_doors().current_door_index();
+                self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.RoomDraw_OneSidedLowerShutters_East(door_type, right_dsto_bytes / 2);
-                self.dungeon_state_view_mut().set_current_door_index(saved);
+                self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
         let mut t = self.RoomDraw_FlagDoorsAndGetFinalType(2, door_type, dsto);
@@ -3994,12 +3965,12 @@ impl ZeldaState {
                 }
                 if (a & 0xf0) == 0xf0 {
                     let j = (a & 0x0f) as usize;
-                    let ty = self.dungeon_state_view().door_type_and_slot(j) & 0xfe;
+                    let ty = self.dungeon_doors().door_type_and_slot(j) & 0xfe;
                     if ty != DOOR_TYPE_BREAKABLE_WALL && ty != 0x2a && ty != 0x2e {
                         return;
                     }
-                    self.dungeon_state_view_mut().set_current_door_pos(k as u16);
-                    let addr = self.dungeon_state_view().door_tilemap_address(j);
+                    self.dungeon_doors_mut().set_current_door_pos(k as u16);
+                    let addr = self.dungeon_doors().door_tilemap_address(j);
                     let door_x = ((addr & 0x007e) << 2)
                         .wrapping_add(self.dungeon_state_view().loading_bg_offset_h());
                     let door_y = ((addr & 0x1f80) >> 4)
@@ -4007,7 +3978,7 @@ impl ZeldaState {
                     let r14 = r14 as usize;
                     self.door_debris_view_mut().set_x_word(r14, door_x);
                     self.door_debris_view_mut().set_y_word(r14, door_y);
-                    let direction = self.dungeon_state_view().door_direction(j) & 3;
+                    let direction = self.dungeon_doors().door_direction(j) & 3;
                     self.door_debris_view_mut().set_direction(r14, direction);
                     self.system_signals_view_mut().set_sound_effect_2(0x1b);
                     self.set_submodule(9);
@@ -5485,7 +5456,7 @@ impl ZeldaState {
 
     pub(super) fn Dung_SaveDataForCurrentRoom(&mut self) {
         let saved = (self.dungeon_savegame_state().savegame_state_bits() >> 4)
-            | (self.dungeon_state_view().opened_doors() & 0xf000)
+            | (self.dungeon_doors().opened_doors() & 0xf000)
             | self.dungeon_state_view().quadrants_visited();
         let room = self.world_location_state().dungeon_room as usize;
         self.save_progress_view_mut()
@@ -6538,8 +6509,8 @@ impl ZeldaState {
                     self.dungeon_state_view_mut().set_trapdoors_down_low(down);
                     self.system_signals_view_mut().set_sound_effect_2(37);
                     self.set_submodule(5);
-                    self.dungeon_state_view_mut().clear_current_door_pos();
-                    self.dungeon_state_view_mut().clear_door_animation_step();
+                    self.dungeon_doors_mut().clear_current_door_pos();
+                    self.dungeon_doors_mut().clear_door_animation_step();
                 }
             }
         } else if self.sprite_check_if_screen_is_clear() {
@@ -6569,8 +6540,8 @@ impl ZeldaState {
             && self.dungeon_state_view().trapdoors_down() != 0
         {
             self.dungeon_state_view_mut().clear_trapdoors_down();
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
         }
     }
@@ -6584,8 +6555,8 @@ impl ZeldaState {
         let palace = (self.save_progress_view().palace_index_x2() >> 1) as usize;
         if prizes & DUNGEON_CRYSTAL_PENDANT_BITS[palace] != 0 {
             self.dungeon_state_view_mut().clear_trapdoors_down();
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
             self.dungeon_header_view_mut().clear_header_tag(k);
         }
@@ -6601,8 +6572,8 @@ impl ZeldaState {
         let down = u16::from(lit < 4);
         if down != self.dungeon_state_view().trapdoors_down() {
             self.dungeon_state_view_mut().set_trapdoors_down(down);
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.system_signals_view_mut().set_sound_effect_2(0x1b);
             self.set_submodule(5);
         }
@@ -6628,14 +6599,14 @@ impl ZeldaState {
         self.dungeon_header_view_mut().clear_header_tag(k);
 
         let mut door = 0usize;
-        while self.dungeon_state_view().door_type_and_slot(door) & !1 != 0x30 {
+        while self.dungeon_doors().door_type_and_slot(door) & !1 != 0x30 {
             door += 1;
         }
         self.dungeon_state_view_mut()
             .set_blast_wall_door_index(door);
 
         let mut i = (((self.player_state_view().y() >> 8) & 1) + 1) * 2;
-        if self.dungeon_state_view().door_direction(door) & 2 != 0 {
+        if self.dungeon_doors().door_direction(door) & 2 != 0 {
             i = (self.player_state_view().x() >> 8) & 1;
         }
 
@@ -6644,7 +6615,7 @@ impl ZeldaState {
                 BLAST_WALL_MESSAGE_DIRECTION_BY_QUADRANT[i as usize],
             ));
         let pos = self
-            .dungeon_state_view()
+            .dungeon_doors()
             .door_tilemap_address(door)
             .wrapping_add(BLAST_WALL_DOOR_TILEMAP_OFFSETS[i as usize]);
         let x = ((pos & 0x007e) << 2).wrapping_add(self.dungeon_state_view().loading_bg_offset_h());
@@ -6886,8 +6857,8 @@ impl ZeldaState {
 
         if down != self.dungeon_state_view().trapdoors_down() {
             self.dungeon_state_view_mut().set_trapdoors_down(down);
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             if down == 0 {
                 self.system_signals_view_mut().set_sound_effect_2(0x25);
             }
@@ -6897,18 +6868,18 @@ impl ZeldaState {
 
     pub(super) fn RoomTag_SwitchTrigger_ToggleDoor(&mut self, _k: usize) {
         let mut attr = 0;
-        if !self.dungeon_state_view().door_switch_triggered() {
+        if !self.dungeon_doors().door_switch_triggered() {
             if self.RoomTag_MaybeCheckShutters(&mut attr) {
-                self.dungeon_state_view_mut().clear_current_door_pos();
-                self.dungeon_state_view_mut().clear_door_animation_step();
+                self.dungeon_doors_mut().clear_current_door_pos();
+                self.dungeon_doors_mut().clear_door_animation_step();
                 self.system_signals_view_mut().set_sound_effect_2(0x25);
                 self.PushPressurePlate(attr);
                 let down = self.dungeon_state_view().trapdoors_down() ^ 1;
                 self.dungeon_state_view_mut().set_trapdoors_down(down);
-                self.dungeon_state_view_mut().mark_door_switch_triggered();
+                self.dungeon_doors_mut().mark_door_switch_triggered();
             }
         } else if !self.RoomTag_MaybeCheckShutters(&mut attr) {
-            self.dungeon_state_view_mut().clear_door_switch_triggered();
+            self.dungeon_doors_mut().clear_door_switch_triggered();
         }
     }
 
@@ -7218,7 +7189,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Object_Draw_DoorLeft_3x4(&mut self, src: u16, door: usize) {
-        let dsto = self.dungeon_state_view().door_tilemap_address(door) >> 1;
+        let dsto = self.dungeon_doors().door_tilemap_address(door) >> 1;
         for i in 0..3 {
             for y in 0..4 {
                 self.room_write_bg(
@@ -7231,7 +7202,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Object_Draw_DoorRight_3x4(&mut self, src: u16, door: usize) {
-        let dsto = self.dungeon_state_view().door_tilemap_address(door) >> 1;
+        let dsto = self.dungeon_doors().door_tilemap_address(door) >> 1;
         for i in 0..3 {
             for y in 0..4 {
                 self.room_write_bg(
@@ -7248,11 +7219,11 @@ impl ZeldaState {
     }
 
     pub(super) fn DoorDoorStep1_North(&mut self, door: usize, dma_ptr: usize) -> usize {
-        let mut pos = self.dungeon_state_view().door_tilemap_address(door) as i32;
+        let mut pos = self.dungeon_doors().door_tilemap_address(door) as i32;
         let mut dma_ptr = dma_ptr;
         if (pos & 0x1fff) >= DOOR_POSITION_UP[6] as i32 {
             pos -= 0x500;
-            if (self.dungeon_state_view().door_type_and_slot(door) & 0xfe) >= 0x42 {
+            if (self.dungeon_doors().door_type_and_slot(door) & 0xfe) >= 0x42 {
                 pos -= 0x300;
             }
             self.GetDoorDrawDataIndex_South(door ^ 8, door & 7);
@@ -7264,8 +7235,8 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDoorDrawDataIndex_North(&mut self, door: usize, r4_door: usize) {
-        let door_type = self.dungeon_state_view().door_type_and_slot(door) & 0xfe;
-        let mut x = self.dungeon_state_view().door_open_counter_low() as usize;
+        let door_type = self.dungeon_doors().door_type_and_slot(door) & 0xfe;
+        let mut x = self.dungeon_doors().door_open_counter_low() as usize;
         if x == 0 || x == 4 {
             self.DrawDoorToTileMap_North(door, r4_door);
             return;
@@ -7290,7 +7261,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Object_Draw_DoorUp_4x3(&mut self, src: u16, door: usize) {
-        let dsto = self.dungeon_state_view().door_tilemap_address(door) >> 1;
+        let dsto = self.dungeon_doors().door_tilemap_address(door) >> 1;
         for i in 0..4 {
             for y in 0..3 {
                 self.room_write_bg(
@@ -7307,11 +7278,11 @@ impl ZeldaState {
     }
 
     pub(super) fn DoorDoorStep1_South(&mut self, door: usize, dma_ptr: usize) -> usize {
-        let mut pos = self.dungeon_state_view().door_tilemap_address(door) as i32;
+        let mut pos = self.dungeon_doors().door_tilemap_address(door) as i32;
         let mut dma_ptr = dma_ptr;
         if (pos & 0x1fff) < DOOR_POSITION_DOWN[9] as i32 {
             pos += 0x500;
-            if (self.dungeon_state_view().door_type_and_slot(door) & 0xfe) >= 0x42 {
+            if (self.dungeon_doors().door_type_and_slot(door) & 0xfe) >= 0x42 {
                 pos += 0x300;
             }
             self.GetDoorDrawDataIndex_North(door ^ 8, door & 7);
@@ -7323,8 +7294,8 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDoorDrawDataIndex_South(&mut self, door: usize, r4_door: usize) {
-        let door_type = self.dungeon_state_view().door_type_and_slot(door) & 0xfe;
-        let mut x = self.dungeon_state_view().door_open_counter_low() as usize;
+        let door_type = self.dungeon_doors().door_type_and_slot(door) & 0xfe;
+        let mut x = self.dungeon_doors().door_open_counter_low() as usize;
         if x == 0 || x == 4 {
             self.DrawDoorToTileMap_South(door, r4_door);
             return;
@@ -7346,7 +7317,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Object_Draw_DoorDown_4x3(&mut self, src: u16, door: usize) {
-        let dsto = self.dungeon_state_view().door_tilemap_address(door) >> 1;
+        let dsto = self.dungeon_doors().door_tilemap_address(door) >> 1;
         for i in 0..4 {
             for y in 0..3 {
                 self.room_write_bg(
@@ -7363,11 +7334,11 @@ impl ZeldaState {
     }
 
     pub(super) fn DoorDoorStep1_West(&mut self, door: usize, dma_ptr: usize) -> usize {
-        let mut pos = self.dungeon_state_view().door_tilemap_address(door) as i32;
+        let mut pos = self.dungeon_doors().door_tilemap_address(door) as i32;
         let mut dma_ptr = dma_ptr;
         if (pos & 0x7ff) >= DOOR_POSITION_LEFT[6] as i32 {
             pos -= 16;
-            if (self.dungeon_state_view().door_type_and_slot(door) & 0xfe) >= 0x42 {
+            if (self.dungeon_doors().door_type_and_slot(door) & 0xfe) >= 0x42 {
                 pos -= 12;
             }
             self.GetDoorDrawDataIndex_East(door ^ 8, door & 7);
@@ -7379,8 +7350,8 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDoorDrawDataIndex_West(&mut self, door: usize, r4_door: usize) {
-        let door_type = self.dungeon_state_view().door_type_and_slot(door) & 0xfe;
-        let mut x = self.dungeon_state_view().door_open_counter_low() as usize;
+        let door_type = self.dungeon_doors().door_type_and_slot(door) & 0xfe;
+        let mut x = self.dungeon_doors().door_open_counter_low() as usize;
         if x == 0 || x == 4 {
             self.DrawDoorToTileMap_West(door, r4_door);
             return;
@@ -7406,11 +7377,11 @@ impl ZeldaState {
     }
 
     pub(super) fn DoorDoorStep1_East(&mut self, door: usize, dma_ptr: usize) -> usize {
-        let mut pos = self.dungeon_state_view().door_tilemap_address(door) as i32;
+        let mut pos = self.dungeon_doors().door_tilemap_address(door) as i32;
         let mut dma_ptr = dma_ptr;
         if (pos & 0x7ff) < DOOR_POSITION_RIGHT[6] as i32 {
             pos += 16;
-            if (self.dungeon_state_view().door_type_and_slot(door) & 0xfe) >= 0x42 {
+            if (self.dungeon_doors().door_type_and_slot(door) & 0xfe) >= 0x42 {
                 pos += 12;
             }
             self.GetDoorDrawDataIndex_West(door ^ 8, door & 7);
@@ -7422,8 +7393,8 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDoorDrawDataIndex_East(&mut self, door: usize, r4_door: usize) {
-        let door_type = self.dungeon_state_view().door_type_and_slot(door) & 0xfe;
-        let mut x = self.dungeon_state_view().door_open_counter_low() as usize;
+        let door_type = self.dungeon_doors().door_type_and_slot(door) & 0xfe;
+        let mut x = self.dungeon_doors().door_open_counter_low() as usize;
         if x == 0 || x == 4 {
             self.DrawDoorToTileMap_East(door, r4_door);
             return;
@@ -7445,9 +7416,8 @@ impl ZeldaState {
     }
 
     pub(super) fn GetDoorGraphicsIndex(&self, door: usize, r4_door: usize) -> u8 {
-        let mut door_type = self.dungeon_state_view().door_type_and_slot(door) & 0xfe;
-        if self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(r4_door) != 0
-        {
+        let mut door_type = self.dungeon_doors().door_type_and_slot(door) & 0xfe;
+        if self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(r4_door) != 0 {
             door_type = DOOR_TYPE_REMAP[door_type as usize >> 1];
         }
         door_type
@@ -7503,8 +7473,8 @@ impl ZeldaState {
             r14 = 1;
             r10 = 3;
         }
-        let door = self.dungeon_state_view().current_door_index() as usize >> 1;
-        if self.dungeon_state_view().door_direction(door) & 2 == 0 {
+        let door = self.dungeon_doors().current_door_index() as usize >> 1;
+        if self.dungeon_doors().door_direction(door) & 2 == 0 {
             r6 = r6.wrapping_add(1);
         }
 
@@ -7625,10 +7595,10 @@ impl ZeldaState {
     }
 
     pub(super) fn DrawDoorOpening_Step1(&mut self, door: usize, dma_ptr: usize) -> usize {
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_current_door_index_for_slot(door);
         self.dungeon_state_view_mut().set_selected_key_door(door);
-        match self.dungeon_state_view().door_direction(door) & 3 {
+        match self.dungeon_doors().door_direction(door) & 3 {
             0 => self.DoorDoorStep1_North(door, dma_ptr),
             1 => self.DoorDoorStep1_South(door, dma_ptr),
             2 => self.DoorDoorStep1_West(door, dma_ptr),
@@ -7638,10 +7608,10 @@ impl ZeldaState {
     }
 
     pub(super) fn DrawShutterDoorSteps(&mut self, door: usize) {
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_current_door_index_for_slot(door);
         self.dungeon_state_view_mut().set_selected_key_door(door);
-        match self.dungeon_state_view().door_direction(door) & 3 {
+        match self.dungeon_doors().door_direction(door) & 3 {
             0 => self.GetDoorDrawDataIndex_North_clean_door_index(door),
             1 => self.GetDoorDrawDataIndex_South_clean_door_index(door),
             2 => self.GetDoorDrawDataIndex_West_clean_door_index(door),
@@ -7651,10 +7621,10 @@ impl ZeldaState {
     }
 
     pub(super) fn DrawEyeWatchDoor(&mut self, door: usize) {
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_current_door_index_for_slot(door);
         self.dungeon_state_view_mut().set_selected_key_door(door);
-        match self.dungeon_state_view().door_direction(door) & 3 {
+        match self.dungeon_doors().door_direction(door) & 3 {
             0 => self.DrawDoorToTileMap_North(door, door),
             1 => self.DrawDoorToTileMap_South(door, door),
             2 => self.DrawDoorToTileMap_West(door, door),
@@ -7667,11 +7637,8 @@ impl ZeldaState {
         let mut anim_dst = 0usize;
         let mut y = 2u8;
 
-        let step = self
-            .dungeon_state_view()
-            .door_animation_step()
-            .wrapping_add(1);
-        self.dungeon_state_view_mut().set_door_animation_step(step);
+        let step = self.dungeon_doors().door_animation_step().wrapping_add(1);
+        self.dungeon_doors_mut().set_door_animation_step(step);
         if step != 4 {
             y = if self.dungeon_state_view().trapdoors_down_low() != 0 {
                 0
@@ -7679,7 +7646,7 @@ impl ZeldaState {
                 4
             };
             if step != 8 {
-                if self.dungeon_state_view().door_animation_step_low() != 0x10 {
+                if self.dungeon_doors().door_animation_step_low() != 0x10 {
                     return;
                 }
                 self.set_submodule(0);
@@ -7687,26 +7654,24 @@ impl ZeldaState {
                 return;
             }
         }
-        self.dungeon_state_view_mut()
-            .set_door_open_counter(y as u16);
+        self.dungeon_doors_mut().set_door_open_counter(y as u16);
 
         let mut cur = 0usize;
         while cur != 0x18 {
-            self.dungeon_state_view_mut()
-                .set_current_door_pos(cur as u16);
+            self.dungeon_doors_mut().set_current_door_pos(cur as u16);
             let j = cur >> 1;
-            let door_type = self.dungeon_state_view().door_type_and_slot(j) & 0xfe;
+            let door_type = self.dungeon_doors().door_type_and_slot(j) & 0xfe;
             if door_type == DOOR_TYPE_SHUTTER || door_type == DOOR_TYPE_SHUTTERS_TWO_WAY {
                 let mask = upper_bitmask(j);
                 let mut should_draw = true;
-                let mut opened = self.dungeon_state_view().opened_doors_including_adjacent();
+                let mut opened = self.dungeon_doors().opened_doors_including_adjacent();
                 if self.dungeon_state_view().trapdoors_down_low() == 0 {
                     if opened & mask != 0 {
                         should_draw = false;
                     } else if step == 8 {
                         self.system_signals_view_mut().set_sound_effect_2(21);
                         opened ^= mask;
-                        self.dungeon_state_view_mut()
+                        self.dungeon_doors_mut()
                             .set_opened_doors_including_adjacent(opened);
                     }
                 } else if opened & mask == 0 {
@@ -7714,13 +7679,13 @@ impl ZeldaState {
                 } else if step == 8 {
                     self.system_signals_view_mut().set_sound_effect_2(22);
                     opened ^= mask;
-                    self.dungeon_state_view_mut()
+                    self.dungeon_doors_mut()
                         .set_opened_doors_including_adjacent(opened);
                 }
 
                 if should_draw {
                     self.DrawShutterDoorSteps(j);
-                    let addr = self.dungeon_state_view().door_tilemap_address(j);
+                    let addr = self.dungeon_doors().door_tilemap_address(j);
                     anim_dst = self.dungeon_prep_overlay_dma_next_prep(anim_dst, addr);
                     if step == 8 {
                         self.Dungeon_LoadToggleDoorAttr_OtherEntry(j as i32);
@@ -7729,12 +7694,12 @@ impl ZeldaState {
             }
             cur += 2;
         }
-        self.dungeon_state_view_mut().set_current_door_pos(0x16);
+        self.dungeon_doors_mut().set_current_door_pos(0x16);
 
         if anim_dst != 0 {
             self.set_core_update_disable_flag(1);
             self.request_nmi_copy_packets();
-            if self.dungeon_state_view().door_animation_step_low() != 0x10 {
+            if self.dungeon_doors().door_animation_step_low() != 0x10 {
                 return;
             }
         }
@@ -7750,14 +7715,11 @@ impl ZeldaState {
         let mut ctr = 2u8;
         let step;
         if skip_anim {
-            self.dungeon_state_view_mut().set_door_animation_step(16);
+            self.dungeon_doors_mut().set_door_animation_step(16);
             step = 16;
         } else {
-            step = self
-                .dungeon_state_view()
-                .door_animation_step()
-                .wrapping_add(1);
-            self.dungeon_state_view_mut().set_door_animation_step(step);
+            step = self.dungeon_doors().door_animation_step().wrapping_add(1);
+            self.dungeon_doors_mut().set_door_animation_step(step);
             if step != 4 && step != 12 {
                 if step == 16 {
                     self.finish_locked_door_opening();
@@ -7767,20 +7729,20 @@ impl ZeldaState {
         }
 
         if step == 12 || skip_anim {
-            let cur = self.dungeon_state_view().current_door_pos() as usize;
+            let cur = self.dungeon_doors().current_door_pos() as usize;
             let mask = upper_bitmask((self.dungeon_bg2_attributes().bg2_attr(cur) & 7) as usize);
-            let opened_adj = self.dungeon_state_view().opened_doors_including_adjacent() | mask;
-            self.dungeon_state_view_mut()
+            let opened_adj = self.dungeon_doors().opened_doors_including_adjacent() | mask;
+            self.dungeon_doors_mut()
                 .set_opened_doors_including_adjacent(opened_adj);
-            self.dungeon_state_view_mut().or_opened_doors(mask);
+            self.dungeon_doors_mut().or_opened_doors(mask);
             ctr = 4;
         }
 
-        self.dungeon_state_view_mut().set_door_open_counter_low(ctr);
-        let cur = self.dungeon_state_view().current_door_pos() as usize;
+        self.dungeon_doors_mut().set_door_open_counter_low(ctr);
+        let cur = self.dungeon_doors().current_door_pos() as usize;
         let k = (self.dungeon_bg2_attributes().bg2_attr(cur) & 0x0f) as usize;
         let dma_ptr = self.DrawDoorOpening_Step1(k, 0);
-        let addr = self.dungeon_state_view().door_tilemap_address(k);
+        let addr = self.dungeon_doors().door_tilemap_address(k);
         self.dungeon_prep_overlay_dma_next_prep(dma_ptr, addr);
         self.system_signals_view_mut().set_sound_effect_2(21);
         self.request_nmi_copy_packets();
@@ -7791,11 +7753,11 @@ impl ZeldaState {
     }
 
     fn finish_locked_door_opening(&mut self) {
-        let cur = self.dungeon_state_view().current_door_pos() as usize;
+        let cur = self.dungeon_doors().current_door_pos() as usize;
         let k = (self.dungeon_bg2_attributes().bg2_attr(cur) & 0x0f) as usize;
         self.Dungeon_LoadToggleDoorAttr_OtherEntry(k as i32);
         if self.dungeon_bg2_attributes().bg2_attr(cur) >= 0xf0 {
-            let door_type = self.dungeon_state_view().door_type_and_slot(k);
+            let door_type = self.dungeon_doors().door_type_and_slot(k);
             if (DOOR_TYPE_STAIR_MASK_LOCKED0..=DOOR_TYPE_STAIR_MASK_LOCKED3).contains(&door_type) {
                 self.DrawCompletelyOpenDoor();
             }
@@ -8452,7 +8414,7 @@ impl ZeldaState {
 
     fn Dungeon_LoadDoorAttribute(&mut self) {
         for k in 0..16 {
-            if self.dungeon_state_view().door_tilemap_address(k) != 0 {
+            if self.dungeon_doors().door_tilemap_address(k) != 0 {
                 self.Dungeon_LoadSingleDoorAttribute(k);
             }
         }
@@ -8473,21 +8435,21 @@ impl ZeldaState {
             0x8080, 0x8282, 0x8080, 0x8080, 0x8080, 0x8282, 0x8282, 0x8080, 0x8080, 0x8080, 0x8484,
             0x8484, 0x8686, 0x8888, 0x8686, 0x8686, 0x8080, 0x8080,
         ];
-        let t = self.dungeon_state_view().door_type_and_slot(k) & 0xfe;
+        let t = self.dungeon_doors().door_type_and_slot(k) & 0xfe;
         if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
             eprintln!(
                 "door-attr frame={} entry k={} t=0x{:02x} raw=0x{:04x} opened=0x{:04x} opened_adj=0x{:04x} cur=0x{:04x} addr=0x{:04x} dir=0x{:04x} sub={} step=0x{:04x}",
                 self.frame_state().frame_counter,
                 k,
                 t,
-                self.dungeon_state_view().door_type_word(k),
-                self.dungeon_state_view().opened_doors(),
-                self.dungeon_state_view().opened_doors_including_adjacent(),
-                self.dungeon_state_view().current_door_pos(),
-                self.dungeon_state_view().door_tilemap_address(k),
-                self.dungeon_state_view().door_direction_word(k),
+                self.dungeon_doors().door_type_word(k),
+                self.dungeon_doors().opened_doors(),
+                self.dungeon_doors().opened_doors_including_adjacent(),
+                self.dungeon_doors().current_door_pos(),
+                self.dungeon_doors().door_tilemap_address(k),
+                self.dungeon_doors().door_direction_word(k),
                 self.frame_state().submodule,
-                self.dungeon_state_view().door_animation_step(),
+                self.dungeon_doors().door_animation_step(),
             );
         }
         if !matches!(
@@ -8509,11 +8471,10 @@ impl ZeldaState {
             if t >= DOOR_TYPE_REGULAR_DOOR33 {
                 if t != DOOR_TYPE_REGULAR_DOOR33
                     && t != DOOR_TYPE_WARP_ROOM_DOOR
-                    && self.dungeon_state_view().opened_doors_including_adjacent()
-                        & upper_bitmask(k)
+                    && self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(k)
                         == 0
                 {
-                    let j = self.dungeon_state_view().door_tilemap_address(k) >> 1;
+                    let j = self.dungeon_doors().door_tilemap_address(k) >> 1;
                     let attr = (0xf0u16.wrapping_add(k as u16)).wrapping_mul(0x0101);
                     self.write_attr2(j as usize + xy(1, 1), attr);
                     self.write_attr2(j as usize + xy(1, 2), attr);
@@ -8525,10 +8486,8 @@ impl ZeldaState {
                 } else {
                     k & 7
                 };
-                if self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(i)
-                    == 0
-                {
-                    let j = self.dungeon_state_view().door_tilemap_address(k) >> 1;
+                if self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(i) == 0 {
+                    let j = self.dungeon_doors().door_tilemap_address(k) >> 1;
                     let attr = (0xf0u16.wrapping_add(k as u16)).wrapping_mul(0x0101);
                     self.write_attr2(j as usize + xy(1, 1), attr);
                     self.write_attr2(j as usize + xy(1, 2), attr);
@@ -8561,8 +8520,8 @@ impl ZeldaState {
                 attr,
             );
         }
-        let dir = self.dungeon_state_view().door_direction(k) & 3;
-        let address = self.dungeon_state_view().door_tilemap_address(k);
+        let dir = self.dungeon_doors().door_direction(k) & 3;
+        let address = self.dungeon_doors().door_tilemap_address(k);
         let beta = matches!(
             t,
             DOOR_TYPE_ENTRANCE_LARGE2
@@ -8573,7 +8532,7 @@ impl ZeldaState {
                 | DOOR_TYPE_REGULAR_DOOR33
                 | DOOR_TYPE_WARP_ROOM_DOOR
         ) || (t >= DOOR_TYPE_REGULAR_DOOR33
-            && self.dungeon_state_view().opened_doors_including_adjacent() & upper_bitmask(k) != 0);
+            && self.dungeon_doors().opened_doors_including_adjacent() & upper_bitmask(k) != 0);
 
         if !beta {
             if dir == 0 {
@@ -8655,8 +8614,8 @@ impl ZeldaState {
     }
 
     fn Door_LoadBlastWallAttr(&mut self, k: usize) {
-        let mut j = (self.dungeon_state_view().door_tilemap_address(k) >> 1) as usize;
-        if self.dungeon_state_view().door_direction(k) & 2 == 0 {
+        let mut j = (self.dungeon_doors().door_tilemap_address(k) >> 1) as usize;
+        if self.dungeon_doors().door_direction(k) & 2 == 0 {
             for _ in 0..12 {
                 self.write_attr2(j + xy(0, 0), 0x0102);
                 for i in (2..20).step_by(2) {
@@ -8749,11 +8708,11 @@ impl ZeldaState {
                     base,
                     format_optional_hex(before.map(|pair| pair.0)),
                     format_optional_hex(before.map(|pair| pair.1)),
-                    self.dungeon_state_view().opened_doors(),
-                    self.dungeon_state_view().opened_doors_including_adjacent(),
-                    self.dungeon_state_view().current_door_pos(),
+                    self.dungeon_doors().opened_doors(),
+                    self.dungeon_doors().opened_doors_including_adjacent(),
+                    self.dungeon_doors().current_door_pos(),
                     self.frame_state().submodule,
-                    self.dungeon_state_view().door_animation_step(),
+                    self.dungeon_doors().door_animation_step(),
                 );
             }
         }
@@ -9369,8 +9328,8 @@ impl ZeldaState {
     pub(super) fn Dung_TagRoutine_TrapdoorsUp(&mut self) {
         if self.dungeon_state_view().trapdoors_down() != 0 {
             self.dungeon_state_view_mut().clear_trapdoors_down();
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.system_signals_view_mut().set_sound_effect_2(0x1b);
             self.set_submodule(5);
         }
@@ -9889,7 +9848,7 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_Subtile_ResetShutters(&mut self) {
         self.dungeon_state_view_mut().set_trapdoors_down_low(0);
-        self.dungeon_state_view_mut().set_door_animation_step_low(7);
+        self.dungeon_doors_mut().set_door_animation_step_low(7);
         let bak = self.frame_state().submodule;
         self.OperateShutterDoors();
         self.set_submodule(bak);
@@ -9902,8 +9861,8 @@ impl ZeldaState {
         self.ResetThenCacheRoomEntryProperties();
         if self.dungeon_state_view().trapdoors_down_low() == 0 {
             self.dungeon_state_view_mut().set_trapdoors_down_low(1);
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
         }
     }
@@ -9944,8 +9903,8 @@ impl ZeldaState {
                 || self.dungeon_savegame_state().savegame_state_bits() & 0x3000 != 0)
         {
             self.dungeon_state_view_mut().set_trapdoors_down_low(1);
-            self.dungeon_state_view_mut().clear_current_door_pos();
-            self.dungeon_state_view_mut().clear_door_animation_step();
+            self.dungeon_doors_mut().clear_current_door_pos();
+            self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
         }
         self.Dungeon_PlayMusicIfDefeated();
@@ -11924,21 +11883,20 @@ impl ZeldaState {
                 let k = (self.dungeon_bg2_attributes().bg2_attr(pos) & 0x0f) as usize;
                 self.dungeon_state_view_mut().set_selected_key_door(k);
 
-                if (self.dungeon_state_view().door_direction(k) & 3) == dir as u8 {
-                    let door_type = self.dungeon_state_view().door_type_and_slot(k) & 0xfe;
+                if (self.dungeon_doors().door_direction(k) & 3) == dir as u8 {
+                    let door_type = self.dungeon_doors().door_type_and_slot(k) & 0xfe;
                     if door_type == DOOR_TYPE_BREAKABLE_WALL {
                         if self.player_state_view().is_running()
                             && self.player_state_view().dash_counter() < 63
                         {
-                            self.dungeon_state_view_mut()
-                                .set_current_door_pos(pos as u16);
+                            self.dungeon_doors_mut().set_current_door_pos(pos as u16);
 
                             let db = self.ancilla_add_door_debris();
                             if db >= 0 {
                                 let db = db as usize;
-                                let direction = self.dungeon_state_view().door_direction(k) & 3;
+                                let direction = self.dungeon_doors().door_direction(k) & 3;
                                 self.door_debris_view_mut().set_direction(db, direction);
-                                let addr = self.dungeon_state_view().door_tilemap_address(k);
+                                let addr = self.dungeon_doors().door_tilemap_address(k);
                                 let door_x = self
                                     .dungeon_state_view()
                                     .loading_bg_offset_h()
@@ -11956,22 +11914,20 @@ impl ZeldaState {
                             return;
                         }
                     } else if door_type == DOOR_TYPE_1E {
-                        self.dungeon_state_view_mut().clear_door_animation_step();
-                        self.dungeon_state_view_mut()
-                            .set_current_door_pos(pos as u16);
+                        self.dungeon_doors_mut().clear_door_animation_step();
+                        self.dungeon_doors_mut().set_current_door_pos(pos as u16);
                         let palace =
                             (self.save_progress_view().palace_index_x2_word() >> 1) as usize;
                         if self
                             .player_resources_view()
                             .has_big_key_mask(upper_bitmask(palace))
                         {
-                            self.dungeon_state_view_mut().clear_door_animation_step();
-                            self.dungeon_state_view_mut()
-                                .set_current_door_pos(pos as u16);
+                            self.dungeon_doors_mut().clear_door_animation_step();
+                            self.dungeon_doors_mut().set_current_door_pos(pos as u16);
                             self.set_submodule(4);
                             let sound_effect_2 = 20
                                 | OPEN_DOOR_PANNING
-                                    [(self.dungeon_state_view().door_direction(k) & 3) as usize];
+                                    [(self.dungeon_doors().door_direction(k) & 3) as usize];
                             self.system_signals_view_mut()
                                 .set_sound_effect_2(sound_effect_2);
                             return;
@@ -11988,13 +11944,12 @@ impl ZeldaState {
                         && self.player_resources_view().keys() != 0
                     {
                         self.player_resources_view_mut().decrement_keys();
-                        self.dungeon_state_view_mut().clear_door_animation_step();
-                        self.dungeon_state_view_mut()
-                            .set_current_door_pos(pos as u16);
+                        self.dungeon_doors_mut().clear_door_animation_step();
+                        self.dungeon_doors_mut().set_current_door_pos(pos as u16);
                         self.set_submodule(4);
                         let sound_effect_2 = 20
                             | OPEN_DOOR_PANNING
-                                [(self.dungeon_state_view().door_direction(k) & 3) as usize];
+                                [(self.dungeon_doors().door_direction(k) & 3) as usize];
                         self.system_signals_view_mut()
                             .set_sound_effect_2(sound_effect_2);
                         return;
@@ -12016,7 +11971,7 @@ impl ZeldaState {
         {
             let dir = invisible as u8;
             let j = ((invisible >> 8) >> 1) as usize;
-            let mut opened = self.dungeon_state_view().opened_doors_including_adjacent();
+            let mut opened = self.dungeon_doors().opened_doors_including_adjacent();
             if dir != self.player_state_view().facing()
                 && (dir ^ 2) == self.player_state_view().facing()
             {
@@ -12024,11 +11979,11 @@ impl ZeldaState {
             } else {
                 opened &= !upper_bitmask(j);
             }
-            if opened != self.dungeon_state_view().opened_doors_including_adjacent() {
-                self.dungeon_state_view_mut()
+            if opened != self.dungeon_doors().opened_doors_including_adjacent() {
+                self.dungeon_doors_mut()
                     .set_opened_doors_including_adjacent(opened);
                 self.DrawEyeWatchDoor(j);
-                let addr = self.dungeon_state_view().door_tilemap_address(j);
+                let addr = self.dungeon_doors().door_tilemap_address(j);
                 self.dungeon_prep_overlay_dma_next_prep(0, addr);
                 self.Dungeon_LoadToggleDoorAttr_OtherEntry(j as i32);
                 self.request_nmi_copy_packets();
@@ -12094,22 +12049,20 @@ impl ZeldaState {
             addr = ((pos - xy(1, 1)) * 2) as u16;
             self.RoomDraw_Object_Nx4_Bg2(4, SRC_TILES_1[(attr & 3) as usize] as usize, addr >> 1);
         } else {
-            self.dungeon_state_view_mut()
-                .set_current_door_pos(pos as u16);
+            self.dungeon_doors_mut().set_current_door_pos(pos as u16);
             let k = (attr & 0x0f) as usize;
-            if self.dungeon_state_view().door_type_and_slot(k) != DOOR_TYPE_SLASHABLE {
+            if self.dungeon_doors().door_type_and_slot(k) != DOOR_TYPE_SLASHABLE {
                 return;
             }
             self.system_signals_view_mut().set_sound_effect_2(27);
-            addr = self.dungeon_state_view().door_tilemap_address(k);
+            addr = self.dungeon_doors().door_tilemap_address(k);
             let opened_adj =
-                self.dungeon_state_view().opened_doors_including_adjacent() | upper_bitmask(k);
-            self.dungeon_state_view_mut()
+                self.dungeon_doors().opened_doors_including_adjacent() | upper_bitmask(k);
+            self.dungeon_doors_mut()
                 .set_opened_doors_including_adjacent(opened_adj);
-            self.dungeon_state_view_mut().mark_door_opened(k);
-            self.dungeon_state_view_mut().set_door_open_counter(0);
-            self.dungeon_state_view_mut()
-                .set_current_door_index_for_slot(k);
+            self.dungeon_doors_mut().mark_door_opened(k);
+            self.dungeon_doors_mut().set_door_open_counter(0);
+            self.dungeon_doors_mut().set_current_door_index_for_slot(k);
             self.dungeon_state_view_mut().set_selected_key_door(k);
             self.RoomDraw_Object_Nx4_Bg2(4, DOOR_TYPE_SRC_UP[0x56 / 2] as usize, addr >> 1);
             self.Dungeon_LoadToggleDoorAttr_OtherEntry(k as i32);
@@ -12129,21 +12082,20 @@ impl ZeldaState {
             return;
         }
 
-        self.dungeon_state_view_mut()
-            .clear_door_barrier_or_switch_flag();
+        self.dungeon_doors_mut().clear_door_barrier_or_switch_flag();
         self.tile_detect_position_view_mut()
             .clear_slope_collision_bits();
-        self.dungeon_state_view_mut().clear_door_animation_step();
+        self.dungeon_doors_mut().clear_door_animation_step();
         let blast_door_x2 = self.dungeon_state_view().blast_wall_door_index_x2();
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_current_door_index(blast_door_x2);
 
         let door = usize::from(blast_door_x2 >> 1);
         let addr = self
-            .dungeon_state_view()
+            .dungeon_doors()
             .door_tilemap_address(door)
             .wrapping_sub(2);
-        self.dungeon_state_view_mut()
+        self.dungeon_doors_mut()
             .set_door_tilemap_address(door, addr);
         let dsto = usize::from(addr >> 1);
 
@@ -12160,12 +12112,12 @@ impl ZeldaState {
 
         if walls2 == 21 {
             let mask = upper_bitmask(door);
-            let opened_adj = self.dungeon_state_view().opened_doors_including_adjacent() | mask;
-            self.dungeon_state_view_mut()
+            let opened_adj = self.dungeon_doors().opened_doors_including_adjacent() | mask;
+            self.dungeon_doors_mut()
                 .set_opened_doors_including_adjacent(opened_adj);
-            self.dungeon_state_view_mut().or_opened_doors(mask);
+            self.dungeon_doors_mut().or_opened_doors(mask);
 
-            if self.dungeon_state_view().door_direction(door) & 2 != 0 {
+            if self.dungeon_doors().door_direction(door) & 2 != 0 {
                 self.dungeon_state_view_mut().mark_blast_wall_x_open();
                 self.world_transient_mut()
                     .force_horizontal_fullsize_for_blast_wall();

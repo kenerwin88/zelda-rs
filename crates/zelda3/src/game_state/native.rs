@@ -29,15 +29,15 @@ pub(crate) use display::{
     TrinexxPaletteState, WaterHdmaWindowState,
 };
 pub(crate) use dungeon::{
-    DungeonBg2AttributeState, DungeonHeaderState, DungeonMovingFloorState,
+    DungeonBg2AttributeState, DungeonDoorState, DungeonHeaderState, DungeonMovingFloorState,
     DungeonObjectTrackingState, DungeonRoomTrackingState, DungeonSavegameState,
     DungeonScratchWordState, DungeonStairListsState, DungeonStairMovementState, DungeonState,
-    DungeonTorchState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonEntranceBackupBridgeMut,
-    NativeDungeonHeaderBridgeMut, NativeDungeonMovingFloorBridgeMut,
-    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomTrackingBridgeMut,
-    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
-    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
-    NativeDungeonTorchBridgeMut,
+    DungeonTorchState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
+    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
+    NativeDungeonScratchWordBridgeMut, NativeDungeonStairListsBridgeMut,
+    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,

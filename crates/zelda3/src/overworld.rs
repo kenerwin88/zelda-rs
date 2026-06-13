@@ -1200,12 +1200,12 @@ impl ZeldaState {
                 }
             }
             if a == 0x0149 || a == 0x0169 || a == 0x4149 || a == 0x4169 {
-                self.dungeon_state_view_mut().clear_door_open_counter_low();
+                self.dungeon_doors_mut().clear_door_open_counter_low();
                 if a & 0x20 != 0 {
                     if self.save_progress_view().progress_indicator() & 0x0f >= 3 {
                         // Mirror the C goto after: skip opening, continue entrance lookup.
                     } else {
-                        self.dungeon_state_view_mut().set_door_open_counter_low(24);
+                        self.dungeon_doors_mut().set_door_open_counter_low(24);
                         self.dungeon_object_tracking_mut()
                             .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                         self.system_signals_view_mut().set_sound_effect_2(21);
@@ -2622,7 +2622,7 @@ impl ZeldaState {
             if (self.world_region_mut().ow_entrance_value() as u8 | big_rock as u8) != 0
                 && big_rock & 0xff00 != 0
             {
-                self.dungeon_state_view_mut()
+                self.dungeon_doors_mut()
                     .set_door_open_counter_low(if big_rock & 0x8000 != 0 { 0x18 } else { 0 });
                 self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(big_rock & 0x7fff);
@@ -4753,7 +4753,7 @@ impl ZeldaState {
                 self.overworld_event_info_view_mut()
                     .set_event_bits(0x62, 0x20);
                 self.system_signals_view_mut().set_sound_effect_2(27);
-                self.dungeon_state_view_mut().set_door_open_counter(0x50);
+                self.dungeon_doors_mut().set_door_open_counter(0x50);
                 self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(0x0d20);
                 self.Overworld_DoMapUpdate32x32_B();
@@ -5257,7 +5257,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_alter_weathervane(&mut self) {
-        self.dungeon_state_view_mut().set_door_open_counter(0x68);
+        self.dungeon_doors_mut().set_door_open_counter(0x68);
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(0x0c3e);
         self.overworld_do_map_update32x32_b();
@@ -5271,7 +5271,7 @@ impl ZeldaState {
 
     fn overworld_do_map_update32x32_b(&mut self) {
         self.overworld_do_map_update32x32();
-        self.dungeon_state_view_mut().clear_door_open_counter_low();
+        self.dungeon_doors_mut().clear_door_open_counter_low();
     }
 
     pub(super) fn Overworld_DoMapUpdate32x32_B(&mut self) {
@@ -5279,9 +5279,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_DoMapUpdate32x32_conditional(&mut self) {
-        if self.dungeon_state_view().door_open_counter_low() & 7 != 0 {
-            self.dungeon_state_view_mut()
-                .increment_door_open_counter_low();
+        if self.dungeon_doors().door_open_counter_low() & 7 != 0 {
+            self.dungeon_doors_mut().increment_door_open_counter_low();
         } else {
             self.overworld_do_map_update32x32();
         }
@@ -5345,7 +5344,7 @@ impl ZeldaState {
         ];
 
         let i = self.memorized_tile_view().count() as usize;
-        let j = (self.dungeon_state_view().door_open_counter() >> 1) as usize;
+        let j = (self.dungeon_doors().door_open_counter() >> 1) as usize;
         let base = self.dungeon_object_tracking().big_rock_starting_address();
         let entries = [
             (base, DOOR_ANIM_TILES[j]),
@@ -5364,7 +5363,7 @@ impl ZeldaState {
         self.write_vram_upload_buffer_word(upload, 0xffff);
         self.memorized_tile_view_mut().set_count((i + 8) as u16);
         let step = self.world_transient().door_animation_step().wrapping_add(
-            if self.dungeon_state_view().door_open_counter() == 32 {
+            if self.dungeon_doors().door_open_counter() == 32 {
                 2
             } else {
                 1
@@ -5373,8 +5372,7 @@ impl ZeldaState {
         self.world_transient_mut()
             .set_door_animation_step_word(step);
         self.set_bg_vram_load_mode(1);
-        self.dungeon_state_view_mut()
-            .increment_door_open_counter_low();
+        self.dungeon_doors_mut().increment_door_open_counter_low();
     }
 
     fn overworld_draw_map16_persist(&mut self, pos: u16, value: u16) {
