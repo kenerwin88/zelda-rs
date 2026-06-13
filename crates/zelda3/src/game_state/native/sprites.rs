@@ -1,13 +1,15 @@
 use crate::game_state::constants::{
-    DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
-    ENEMY_DAMAGE_DATA, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI,
-    MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE,
-    TAGALONG_LAYERBITS, TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
+    CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X,
+    DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, HITBOX_WORK_X_OFFSET,
+    HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, PRIZE_DROP_CYCLE, TAGALONG_LAYERBITS, TAGALONG_X_HI,
+    TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
 };
 use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
 const TAGALONG_SLOT_COUNT: usize = 20;
+const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -18,6 +20,7 @@ pub(crate) struct SpriteState {
     pub(crate) draw_hitbox_work: SpriteDrawHitboxWorkState,
     pub(crate) enemy_damage_subclasses: EnemyDamageSubclassTableState,
     pub(crate) tagalong_trail: TagalongTrailState,
+    pub(crate) chain_chomp_history: ChainChompHistoryState,
 }
 
 impl SpriteState {
@@ -29,6 +32,7 @@ impl SpriteState {
             draw_hitbox_work: SpriteDrawHitboxWorkState::load_from_ram(ram),
             enemy_damage_subclasses: EnemyDamageSubclassTableState::load_from_ram(ram),
             tagalong_trail: TagalongTrailState::load_from_ram(ram),
+            chain_chomp_history: ChainChompHistoryState::load_from_ram(ram),
         }
     }
 
@@ -39,6 +43,106 @@ impl SpriteState {
         self.draw_hitbox_work.write_to_ram(ram);
         self.enemy_damage_subclasses.write_to_ram(ram);
         self.tagalong_trail.write_to_ram(ram);
+        self.chain_chomp_history.write_to_ram(ram);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ChainChompHistoryState {
+    x_positions: Vec<u16>,
+    y_positions: Vec<u16>,
+}
+
+impl Default for ChainChompHistoryState {
+    fn default() -> Self {
+        Self {
+            x_positions: vec![0; CHAIN_CHOMP_HISTORY_LEN],
+            y_positions: vec![0; CHAIN_CHOMP_HISTORY_LEN],
+        }
+    }
+}
+
+impl ChainChompHistoryState {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+        let mut x_positions = vec![0; CHAIN_CHOMP_HISTORY_LEN];
+        let mut y_positions = vec![0; CHAIN_CHOMP_HISTORY_LEN];
+        for position in 0..CHAIN_CHOMP_HISTORY_LEN {
+            x_positions[position] = read_le_u16(ram, CHAIN_CHOMP_HISTORY_X + position * 2);
+            y_positions[position] = read_le_u16(ram, CHAIN_CHOMP_HISTORY_Y + position * 2);
+        }
+        Self {
+            x_positions,
+            y_positions,
+        }
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        for position in 0..CHAIN_CHOMP_HISTORY_LEN {
+            write_le_u16(
+                ram,
+                CHAIN_CHOMP_HISTORY_X + position * 2,
+                self.x_positions[position],
+            );
+            write_le_u16(
+                ram,
+                CHAIN_CHOMP_HISTORY_Y + position * 2,
+                self.y_positions[position],
+            );
+        }
+    }
+
+    pub(crate) fn x(&self, position: usize) -> u16 {
+        self.x_positions.get(position).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn y(&self, position: usize) -> u16 {
+        self.y_positions.get(position).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_x(&mut self, position: usize, value: u16) {
+        if let Some(x) = self.x_positions.get_mut(position) {
+            *x = value;
+        }
+    }
+
+    pub(crate) fn set_y(&mut self, position: usize, value: u16) {
+        if let Some(y) = self.y_positions.get_mut(position) {
+            *y = value;
+        }
+    }
+}
+
+pub(crate) struct NativeChainChompHistoryBridgeMut<'a> {
+    history: &'a mut ChainChompHistoryState,
+    ram: &'a mut [u8],
+}
+
+impl<'a> NativeChainChompHistoryBridgeMut<'a> {
+    pub(crate) fn new(history: &'a mut ChainChompHistoryState, ram: &'a mut [u8]) -> Self {
+        *history = ChainChompHistoryState::load_from_ram(ram);
+        Self { history, ram }
+    }
+
+    fn sync(&mut self) {
+        self.history.write_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    fn debug_assert_matches_ram(&self) {
+        debug_assert_eq!(
+            *self.history,
+            ChainChompHistoryState::load_from_ram(self.ram)
+        );
+    }
+
+    pub(crate) fn set_x(&mut self, position: usize, value: u16) {
+        self.history.set_x(position, value);
+        self.sync();
+    }
+
+    pub(crate) fn set_y(&mut self, position: usize, value: u16) {
+        self.history.set_y(position, value);
+        self.sync();
     }
 }
 

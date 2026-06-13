@@ -33,27 +33,28 @@ use crate::game_state::{
     BlastWallExplosionViewMut, BlastWallFireballView, BlastWallFireballViewMut,
     BlastWallFragmentView, BlastWallFragmentViewMut, BlastWallState, BombosBlastView,
     BombosBlastViewMut, BombosFireColumnView, BombosFireColumnViewMut, BombosSpellState,
-    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryView, ChainChompHistoryViewMut,
-    DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState,
-    DisplayState, DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut,
-    DungeonHeaderView, DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView,
-    DungeonMapScratchViewMut, DungeonSecretState, DungeonStairList, DungeonStateView,
-    DungeonStateViewMut, DungeonTorchView, DungeonTorchViewMut, EffectAngleScratchState,
-    EndingCreditState, EndingScratchView, EndingScratchViewMut, EnemyDamageSubclassTableView,
-    EnhancedFeaturesState, EtherOrbitView, EtherOrbitViewMut, FollowerStateView,
-    FollowerStateViewMut, FrameState, GameState, GarnishSlotView, GarnishSlotViewMut,
-    GarnishStateView, GarnishStateViewMut, GraphicsScratchViewMut, HappinessPondRupeeView,
-    HappinessPondRupeeViewMut, HudInventoryOrderState, HudStateView, IntroActorView,
-    IntroActorViewMut, IntroSceneState, IntroSwordState, InventoryStateView, InventoryStateViewMut,
-    LanmolaSegmentMotionView, LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
+    CachedSpriteSlotView, CachedSpriteSlotViewMut, ChainChompHistoryState, DecodedMessageTextState,
+    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
+    DoorDebrisView, DualLayerTileCacheView, DungeonEntranceBackupViewMut, DungeonHeaderView,
+    DungeonHeaderViewMut, DungeonKeySlotsView, DungeonMapScratchView, DungeonMapScratchViewMut,
+    DungeonSecretState, DungeonStairList, DungeonStateView, DungeonStateViewMut, DungeonTorchView,
+    DungeonTorchViewMut, EffectAngleScratchState, EndingCreditState, EndingScratchView,
+    EndingScratchViewMut, EnemyDamageSubclassTableView, EnhancedFeaturesState, EtherOrbitView,
+    EtherOrbitViewMut, FollowerStateView, FollowerStateViewMut, FrameState, GameState,
+    GarnishSlotView, GarnishSlotViewMut, GarnishStateView, GarnishStateViewMut,
+    GraphicsScratchViewMut, HappinessPondRupeeView, HappinessPondRupeeViewMut,
+    HudInventoryOrderState, HudStateView, IntroActorView, IntroActorViewMut, IntroSceneState,
+    IntroSwordState, InventoryStateView, InventoryStateViewMut, LanmolaSegmentMotionView,
+    LanmolaSegmentMotionViewMut, LinkDmaSourceSlot, MazeGameTimerView, MemorizedTileState,
+    MessagingRenderBufferState, MessagingRuntimeState, MinigameState, MirrorWarpState,
+    MoldormHistoryView, MoldormHistoryViewMut, NativeArcheryGameBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeDiggingGamePrizeBridgeMut,
-    NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
+    NativeBlastWallBridgeMut, NativeBombosSpellBridgeMut, NativeChainChompHistoryBridgeMut,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
+    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeDungeonKeySlotsBridgeMut,
+    NativeDungeonMapDisplayBridgeMut, NativeDungeonSecretBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeFrameStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
@@ -3991,12 +3992,15 @@ impl ZeldaState {
         FollowerStateViewMut::new(&mut self.ram)
     }
 
-    pub(crate) fn chain_chomp_history_view(&self) -> ChainChompHistoryView<'_> {
-        ChainChompHistoryView::new(&self.ram)
+    pub(crate) fn chain_chomp_history_view(&self) -> &ChainChompHistoryState {
+        &self.game_state.sprites.chain_chomp_history
     }
 
-    pub(crate) fn chain_chomp_history_view_mut(&mut self) -> ChainChompHistoryViewMut<'_> {
-        ChainChompHistoryViewMut::new(&mut self.ram)
+    pub(crate) fn chain_chomp_history_view_mut(&mut self) -> NativeChainChompHistoryBridgeMut<'_> {
+        NativeChainChompHistoryBridgeMut::new(
+            &mut self.game_state.sprites.chain_chomp_history,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn ancilla_spawn_scratch_view_mut(&mut self) -> AncillaSpawnScratchViewMut<'_> {

@@ -5084,16 +5084,8 @@ mod tests {
         leash
             .sprite_workspace_view_mut()
             .set_current_sprite_y(0x0200);
-        write_le_u16(
-            &mut leash.ram,
-            CHAINCHOMP_X_HIST_PREP + (hist + 1) * 2,
-            0x0120,
-        );
-        write_le_u16(
-            &mut leash.ram,
-            CHAINCHOMP_Y_HIST_PREP + (hist + 1) * 2,
-            0x01e0,
-        );
+        leash.chain_chomp_history_view_mut().set_x(hist + 1, 0x0120);
+        leash.chain_chomp_history_view_mut().set_y(hist + 1, 0x01e0);
         leash.chain_chomp_handle_leash(k);
         assert_eq!(
             read_le_u16(&leash.ram, CHAINCHOMP_X_HIST_PREP + hist * 2),
@@ -5117,26 +5109,18 @@ mod tests {
         moving_chain.sprite_slot_view_mut(k).set_b(0x01);
         moving_chain.sprite_slot_view_mut(k).set_c(0x00);
         moving_chain.sprite_slot_view_mut(k).set_g(0x02);
-        write_le_u16(
-            &mut moving_chain.ram,
-            CHAINCHOMP_X_HIST_PREP + hist * 2,
-            0x0110,
-        );
-        write_le_u16(
-            &mut moving_chain.ram,
-            CHAINCHOMP_Y_HIST_PREP + hist * 2,
-            0x0220,
-        );
-        write_le_u16(
-            &mut moving_chain.ram,
-            CHAINCHOMP_X_HIST_PREP + (hist + 1) * 2,
-            0x0100,
-        );
-        write_le_u16(
-            &mut moving_chain.ram,
-            CHAINCHOMP_Y_HIST_PREP + (hist + 1) * 2,
-            0x0230,
-        );
+        moving_chain
+            .chain_chomp_history_view_mut()
+            .set_x(hist, 0x0110);
+        moving_chain
+            .chain_chomp_history_view_mut()
+            .set_y(hist, 0x0220);
+        moving_chain
+            .chain_chomp_history_view_mut()
+            .set_x(hist + 1, 0x0100);
+        moving_chain
+            .chain_chomp_history_view_mut()
+            .set_y(hist + 1, 0x0230);
         moving_chain.chain_chomp_move_chain(k);
         assert_eq!(
             read_le_u16(&moving_chain.ram, CHAINCHOMP_X_HIST_PREP + (hist + 1) * 2),

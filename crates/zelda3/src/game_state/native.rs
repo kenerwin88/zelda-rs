@@ -68,12 +68,12 @@ pub(crate) use player::{
     SwimAccelerationView,
 };
 pub(crate) use sprites::{
-    DualLayerTileCacheView, EnemyDamageSubclassTableView, MazeGameTimerView,
-    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView, SpriteHitboxWorkOffsetView,
-    SpriteState, TagalongSlotView,
+    ChainChompHistoryState, DualLayerTileCacheView, EnemyDamageSubclassTableView,
+    MazeGameTimerView, NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeTagalongSlotBridgeMut, SpriteDrawWorkPositionView,
+    SpriteHitboxWorkOffsetView, SpriteState, TagalongSlotView,
 };
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
@@ -1246,6 +1246,53 @@ mod tests {
 
         assert_eq!(trail.x(20), 0);
         assert_eq!(trail.z(20), 0);
+    }
+
+    #[test]
+    fn chain_chomp_history_state_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_X + 4, 0x1234);
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_Y + 4, 0x5678);
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_X + 0xfe, 0x9abc);
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_Y + 0xfe, 0xdef0);
+
+        let mut history = ChainChompHistoryState::load_from_ram(&ram);
+        assert_eq!(history.x(2), 0x1234);
+        assert_eq!(history.y(2), 0x5678);
+        assert_eq!(history.x(0x7f), 0x9abc);
+        assert_eq!(history.y(0x7f), 0xdef0);
+        assert_eq!(history.x(0x80), 0);
+        history.set_x(2, 0x1111);
+        history.set_y(2, 0x2222);
+        history.write_to_ram(&mut ram);
+
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_X + 4), 0x1111);
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_Y + 4), 0x2222);
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_X + 0xfe), 0x9abc);
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_Y + 0xfe), 0xdef0);
+    }
+
+    #[test]
+    fn native_chain_chomp_history_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_X, 0x1234);
+        write_le_u16(&mut ram, CHAIN_CHOMP_HISTORY_Y, 0x5678);
+
+        let mut history = ChainChompHistoryState::default();
+        {
+            let mut bridge = NativeChainChompHistoryBridgeMut::new(&mut history, &mut ram);
+            bridge.set_x(0, 0x1111);
+            bridge.set_y(0, 0x2222);
+            bridge.set_x(0x80, 0xffff);
+            bridge.set_y(0x80, 0xffff);
+        }
+
+        assert_eq!(history.x(0), 0x1111);
+        assert_eq!(history.y(0), 0x2222);
+        assert_eq!(history.x(0x80), 0);
+        assert_eq!(history.y(0x80), 0);
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_X), 0x1111);
+        assert_eq!(read_le_u16(&ram, CHAIN_CHOMP_HISTORY_Y), 0x2222);
     }
 
     #[test]

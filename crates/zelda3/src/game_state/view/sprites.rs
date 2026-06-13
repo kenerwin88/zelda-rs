@@ -230,10 +230,6 @@ impl<'a> FollowerStateViewMut<'a> {
     }
 }
 
-pub(crate) struct ChainChompHistoryView<'a> {
-    ram: &'a [u8],
-}
-
 pub(crate) struct AncillaSpawnScratchViewMut<'a> {
     ram: &'a mut [u8],
 }
@@ -252,38 +248,6 @@ impl<'a> AncillaSpawnScratchViewMut<'a> {
         self.ram[ANCILLA_X_HI - 1] = (x >> 8) as u8;
         self.ram[ANCILLA_Y_LO - 1] = y as u8;
         self.ram[ANCILLA_Y_HI - 1] = (y >> 8) as u8;
-    }
-}
-
-impl<'a> ChainChompHistoryView<'a> {
-    pub(crate) fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn x(&self, position: usize) -> u16 {
-        word(self.ram, CHAIN_CHOMP_HISTORY_X + position * 2)
-    }
-
-    pub(crate) fn y(&self, position: usize) -> u16 {
-        word(self.ram, CHAIN_CHOMP_HISTORY_Y + position * 2)
-    }
-}
-
-pub(crate) struct ChainChompHistoryViewMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> ChainChompHistoryViewMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_x(&mut self, position: usize, value: u16) {
-        write_le_u16(self.ram, CHAIN_CHOMP_HISTORY_X + position * 2, value);
-    }
-
-    pub(crate) fn set_y(&mut self, position: usize, value: u16) {
-        write_le_u16(self.ram, CHAIN_CHOMP_HISTORY_Y + position * 2, value);
     }
 }
 
