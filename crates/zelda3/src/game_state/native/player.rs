@@ -521,7 +521,6 @@ pub(crate) struct NativeTileDetectionBridgeMut<'a> {
 
 impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TileDetectionState, ram: &'a mut [u8]) -> Self {
-        *state = TileDetectionState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1215,7 +1214,6 @@ pub(crate) struct NativeBg1MovementAccumulatorBridgeMut<'a> {
 
 impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut Bg1MovementAccumulatorState, ram: &'a mut [u8]) -> Self {
-        *state = Bg1MovementAccumulatorState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1260,7 +1258,6 @@ pub(crate) struct NativePushedBlockBridgeMut<'a> {
 
 impl<'a> NativePushedBlockBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PushedBlockState, ram: &'a mut [u8]) -> Self {
-        *state = PushedBlockState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1438,7 +1435,6 @@ pub(crate) struct NativeSwimAccelerationBridgeMut<'a> {
 
 impl<'a> NativeSwimAccelerationBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SwimAccelerationState, ram: &'a mut [u8]) -> Self {
-        *state = SwimAccelerationState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -1514,7 +1510,6 @@ pub(crate) struct NativeSpecialExitPositionBridgeMut<'a> {
 
 impl<'a> NativeSpecialExitPositionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpecialExitPositionState, ram: &'a mut [u8]) -> Self {
-        *state = SpecialExitPositionState::load_from_ram(ram);
         Self { state, ram }
     }
 

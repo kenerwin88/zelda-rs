@@ -1804,8 +1804,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn bg1_move_calc(&self) -> Bg1MovementAccumulatorState {
-        Bg1MovementAccumulatorState::load_from_ram(&self.ram)
+    pub(crate) fn bg1_move_calc(&self) -> &Bg1MovementAccumulatorState {
+        &self.game_state.player.bg1_movement_accumulator
     }
 
     pub(crate) fn bg1_move_calc_mut(&mut self) -> NativeBg1MovementAccumulatorBridgeMut<'_> {
@@ -1815,8 +1815,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn tile_detect_position(&self) -> TileDetectionState {
-        TileDetectionState::load_from_ram(&self.ram)
+    pub(crate) fn tile_detect_position(&self) -> &TileDetectionState {
+        &self.game_state.player.tile_detection
     }
 
     pub(crate) fn tile_detect_position_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
@@ -8280,7 +8280,7 @@ mod tests {
         state.set_indoor_flag(0);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 3);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 3);
-        write_le_u16(&mut state.ram, TILEDETECT_DEEPWATER, 4);
+        state.tile_detect_position_mut().set_deepwater(4);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_LO, 0x34);
         set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0x12);
         set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_LO, 0x78);
@@ -8444,7 +8444,9 @@ mod tests {
     fn handle_nudging_reverts_perpendicular_step_when_probe_blocks() {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(1);
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         set_link_test_word(&mut state, LINK_X_COORD, 0x20);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x20);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
@@ -8482,7 +8484,7 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x05);
         state.tile_detect_position_mut().set_slope_collision_bits(1);
         state.tile_detect_position_mut().clear_diag_state();
-        state.ram[TILEDETECT_WHICH_Y_POS] = 1;
+        state.tile_detect_position_mut().set_y(1);
         set_link_test_byte(&mut state, LINK_Y_VEL, 0xff);
 
         state.flag_moving_into_slopes_y();
@@ -8497,8 +8499,8 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x41);
         state.tile_detect_position_mut().set_slope_collision_bits(4);
         state.tile_detect_position_mut().clear_diag_state();
-        write_le_u16(&mut state.ram, TILEDETECT_WHICH_Y_POS, 0);
-        write_le_u16(&mut state.ram, TILEDETECT_WHICH_Y_POS + 2, 4);
+        state.tile_detect_position_mut().set_y(0);
+        state.tile_detect_position_mut().set_x(4);
         set_link_test_byte(&mut state, LINK_X_VEL, 0xff);
 
         state.flag_moving_into_slopes_x();
@@ -9974,7 +9976,9 @@ mod tests {
     #[test]
     fn item_tile_behavior_routes_overworld_attr_to_tile_execute() {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         state.world_scroll_mut().set_overworld_offset_mask_y(0x1f);
         state.world_scroll_mut().set_overworld_offset_mask_x(0x3f);
         state.dungeon_room_tilemaps_mut().set_bg2_tile(16, 7);
@@ -9998,7 +10002,9 @@ mod tests {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 1);
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         state
             .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x09);
@@ -10019,7 +10025,9 @@ mod tests {
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
         set_link_test_word(&mut state, LINK_TIMER_TEMPBUNNY, 0x1234);
         set_link_test_byte(&mut state, LINK_NEED_FOR_POOF_FOR_TRANSFORM, 1);
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         state
             .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x0d);
@@ -10039,7 +10047,9 @@ mod tests {
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_DIRECTION, 4);
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         state
             .dungeon_bg2_attributes_mut()
             .set_bg2_attr(16 * 8 + 1, 0x0e);
@@ -10065,7 +10075,9 @@ mod tests {
     #[test]
     fn push_block_attempt_checks_both_target_tiles() {
         let mut state = ZeldaState::new();
-        write_le_u16(&mut state.ram, TILEMAP_LOCATION_CALC_MASK, 0x01ff);
+        state
+            .tile_detect_position_mut()
+            .set_location_calc_mask(0x01ff);
         set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
         state
             .dungeon_bg2_attributes_mut()

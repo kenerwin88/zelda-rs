@@ -1150,14 +1150,14 @@ mod tests {
     }
 
     #[test]
-    fn native_special_exit_position_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_special_exit_position_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, LINK_X_COORD_SPEXIT, 0x0100);
         write_le_u16(&mut ram, LINK_Y_COORD_SPEXIT, 0x0200);
         write_le_u16(&mut ram, LINK_X_COORD, 0x0300);
         write_le_u16(&mut ram, LINK_Y_COORD, 0x0400);
 
-        let mut position = SpecialExitPositionState::default();
+        let mut position = SpecialExitPositionState::load_from_ram(&ram);
         {
             let mut bridge = NativeSpecialExitPositionBridgeMut::new(&mut position, &mut ram);
             bridge.set_x(0x0500);
@@ -1211,7 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn native_swim_acceleration_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_swim_acceleration_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, SWIM_ACCELERATION_MODE, 0xffff);
         write_le_u16(&mut ram, SWIM_ACCELERATION_MODE + 2, 0xffff);
@@ -1220,7 +1220,7 @@ mod tests {
         write_le_u16(&mut ram, SWIM_ACCELERATION_DIRECTION + 2, 0xffff);
         write_le_u16(&mut ram, SWIM_ACCELERATION, 0xffff);
 
-        let mut swim = SwimAccelerationState::default();
+        let mut swim = SwimAccelerationState::load_from_ram(&ram);
         {
             let mut bridge = NativeSwimAccelerationBridgeMut::new(&mut swim, &mut ram);
             bridge.set_mode(0, 1);
@@ -1286,7 +1286,7 @@ mod tests {
     }
 
     #[test]
-    fn native_pushed_block_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_pushed_block_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[PUSHEDBLOCKS_X_LO + 1] = 0xff;
         ram[PUSHEDBLOCKS_X_HI + 1] = 0xff;
@@ -1295,7 +1295,7 @@ mod tests {
         ram[PUSHEDBLOCKS_TARGET + 1] = 0xff;
         ram[PUSHEDBLOCKS_SUBPIXEL + 1] = 0xff;
 
-        let mut pushed = PushedBlockState::default();
+        let mut pushed = PushedBlockState::load_from_ram(&ram);
         {
             let mut bridge = NativePushedBlockBridgeMut::new(&mut pushed, &mut ram);
             bridge.init_slot(0, 0x1234, 0x5678);
@@ -6575,11 +6575,11 @@ mod tests {
     }
 
     #[test]
-    fn native_bg1_movement_accumulator_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+    fn native_bg1_movement_accumulator_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, BG1_MOVE_CALC_BUFFER, 0x1203);
 
-        let mut accumulator = Bg1MovementAccumulatorState::default();
+        let mut accumulator = Bg1MovementAccumulatorState::load_from_ram(&ram);
         {
             let mut bridge = NativeBg1MovementAccumulatorBridgeMut::new(&mut accumulator, &mut ram);
             bridge.set_y_subpixel(0x44);
