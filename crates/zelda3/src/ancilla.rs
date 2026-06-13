@@ -443,7 +443,7 @@ impl ZeldaState {
             self.ancilla_slot_mut(k).set_oam_index(idx as u8);
         }
 
-        if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() != 0 {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() != 0 {
             self.ancilla_slot_mut(k).tick_timer();
         }
 
@@ -827,7 +827,7 @@ impl ZeldaState {
             println!(
                 "ancilla-trace kind=spawn-charge abs={} fc=0x{:02x} dst={} rng=0x{:02x} j={} off=0x{:02x}/0x{:02x} mask=0x{:02x}/0x{:02x} xy=0x{:04x}/0x{:04x} link=0x{:04x}/0x{:04x} face=0x{:02x} spin=0x{:02x} speed=0x{:02x}/0x{:02x} type=0x{:02x} timer=0x{:02x} floor=0x{:02x}",
                 self.state_recorder.replay_frame_counter,
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 r,
                 j,
@@ -950,7 +950,7 @@ impl ZeldaState {
                     ancilla.set_floor(floor);
                 }
                 self.blast_wall_fireball_mut(k).set_timer(16);
-                let j = (self.frame_state().frame_counter & 15) as usize;
+                let j = (self.game_state.frame.frame_counter & 15) as usize;
                 let velocity = BLAST_WALL_FIREBALL_VELOCITY[j];
                 {
                     let mut ancilla = self.ancilla_slot_mut(k);
@@ -1118,7 +1118,7 @@ impl ZeldaState {
 
     fn bomb_check_sprite_damage(&mut self, k: usize) {
         for j in (0..16).rev() {
-            if (((j as u8 ^ self.frame_state().frame_counter) & 3)
+            if (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
                 | self.sprite_slot(j).hit_timer()
                 | self.sprite_slot(j).ignore_projectile())
                 != 0
@@ -1248,8 +1248,8 @@ impl ZeldaState {
     }
 
     fn ancilla07_bomb(&mut self, k: usize) {
-        if self.frame_state().submodule != 0 {
-            if self.frame_state().submodule == 8 || self.frame_state().submodule == 16 {
+        if self.game_state.frame.submodule != 0 {
+            if self.game_state.frame.submodule == 8 || self.game_state.frame.submodule == 16 {
                 self.ancilla_handle_lift_logic(k);
             } else if k + 1 == self.player_state().ancilla_pickup_flag() as usize
                 && self.ancilla_slot(k).k() != 0
@@ -1272,7 +1272,7 @@ impl ZeldaState {
         self.ancilla_slot_mut(k).set_object_priority(0);
         let mut flag = self.ancilla_check_tile_collision_class2(k);
 
-        if self.world_location_state().is_indoors()
+        if self.game_state.world.location.is_indoors()
             && self.ancilla_slot(k).l() != 0
             && self.ancilla_slot(k).tile_attribute() == 0x1c
         {
@@ -1507,12 +1507,12 @@ impl ZeldaState {
                 return;
             }
         }
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             self.boomerang_draw(k);
             return;
         }
 
-        if self.frame_state().frame_counter & 7 == 0 {
+        if self.game_state.frame.frame_counter & 7 == 0 {
             self.ancilla_sfx2_pan(k, 9);
         }
 
@@ -1545,7 +1545,7 @@ impl ZeldaState {
             self.ancilla_slot_mut(k).add_aux_timer(1);
         }
 
-        if self.ancilla_slot(k).g() != 0 && self.frame_state().frame_counter & 1 == 0 {
+        if self.ancilla_slot(k).g() != 0 && self.game_state.frame.frame_counter & 1 == 0 {
             self.ancilla_add_sword_charge_sparkle(k);
         }
 
@@ -1581,13 +1581,13 @@ impl ZeldaState {
         self.ancilla_move_x(k);
         if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
             && k == 4
-            && self.frame_state().frame_counter >= 140
-            && self.frame_state().frame_counter <= 210
+            && self.game_state.frame.frame_counter >= 140
+            && self.game_state.frame.frame_counter <= 210
         {
             let boomerang = self.ancilla_slot(k);
             eprintln!(
                 "R boomerang-tick fc={} k={} x={:04x} y={:04x} xv={:02x} yv={:02x} step={:02x} aux={:02x} item={:02x} K={:02x} H={:02x} dir={:02x} work23={:02x} link={:04x}/{:04x} hook={:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.ancilla_get_x(k),
                 self.ancilla_get_y(k),
@@ -1616,12 +1616,12 @@ impl ZeldaState {
                 self.ancilla_slot_mut(k).set_item_to_link(item_to_link);
                 if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                     && k == 4
-                    && self.frame_state().frame_counter >= 130
-                    && self.frame_state().frame_counter <= 150
+                    && self.game_state.frame.frame_counter >= 130
+                    && self.game_state.frame.frame_counter <= 150
                 {
                     eprintln!(
                         "R boomerang-branch fc={} reason=hit hit={} pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         hit_spr.unwrap(),
                         trace_pre_item,
                         item_to_link,
@@ -1647,12 +1647,12 @@ impl ZeldaState {
                 self.ancilla_slot_mut(k).set_item_to_link(item_to_link);
                 if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                     && k == 4
-                    && self.frame_state().frame_counter >= 130
-                    && self.frame_state().frame_counter <= 150
+                    && self.game_state.frame.frame_counter >= 130
+                    && self.game_state.frame.frame_counter <= 150
                 {
                     eprintln!(
                         "R boomerang-branch fc={} reason=tile attr={:02x} pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         self.ancilla_slot(k).tile_attribute(),
                         trace_pre_item,
                         item_to_link,
@@ -1674,12 +1674,12 @@ impl ZeldaState {
                     self.ancilla_slot_mut(k).set_item_to_link(item_to_link);
                     if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                         && k == 4
-                        && self.frame_state().frame_counter >= 130
-                        && self.frame_state().frame_counter <= 150
+                        && self.game_state.frame.frame_counter >= 130
+                        && self.game_state.frame.frame_counter <= 150
                     {
                         eprintln!(
                             "R boomerang-branch fc={} reason=edge-step pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
-                            self.frame_state().frame_counter,
+                            self.game_state.frame.frame_counter,
                             trace_pre_item,
                             item_to_link,
                             trace_pre_step,
@@ -1694,12 +1694,12 @@ impl ZeldaState {
                     self.ancilla_slot_mut(k).retreat_k();
                     if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                         && k == 4
-                        && self.frame_state().frame_counter >= 130
-                        && self.frame_state().frame_counter <= 150
+                        && self.game_state.frame.frame_counter >= 130
+                        && self.game_state.frame.frame_counter <= 150
                     {
                         eprintln!(
                             "R boomerang-branch fc={} reason=outbound pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
-                            self.frame_state().frame_counter,
+                            self.game_state.frame.frame_counter,
                             trace_pre_item,
                             self.ancilla_slot(k).item_to_link(),
                             trace_pre_step,
@@ -1712,12 +1712,12 @@ impl ZeldaState {
                     }
                 } else if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
                     && k == 4
-                    && self.frame_state().frame_counter >= 130
-                    && self.frame_state().frame_counter <= 150
+                    && self.game_state.frame.frame_counter >= 130
+                    && self.game_state.frame.frame_counter <= 150
                 {
                     eprintln!(
                         "R boomerang-branch fc={} reason=outbound pre_item={:02x} item={:02x} pre_step={:02x} step={:02x} preK={:02x} K={:02x} x={:04x} y={:04x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         trace_pre_item,
                         self.ancilla_slot(k).item_to_link(),
                         trace_pre_step,
@@ -1748,8 +1748,8 @@ impl ZeldaState {
     fn ancilla01_somaria_bullet(&mut self, k: usize) {
         const SOMARIAN_BLAST_MASK: [u8; 6] = [7, 3, 1, 0, 0, 0];
 
-        if self.frame_state().submodule == 0 {
-            if self.frame_state().frame_counter
+        if self.game_state.frame.submodule == 0 {
+            if self.game_state.frame.frame_counter
                 & SOMARIAN_BLAST_MASK[self.ancilla_slot(k).step() as usize]
                 == 0
             {
@@ -1807,7 +1807,7 @@ impl ZeldaState {
     fn hookshot_should_i_even_bother_with_tiles(&self, k: usize) -> bool {
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             let area = (self.world_region().current_area_of_player() >> 1) as usize;
             let bound = self.overworld_right_bottom_scroll_bound();
             if self.ancilla_slot(k).direction() & 2 == 0 {
@@ -1854,7 +1854,7 @@ impl ZeldaState {
             self.oam_state_mut().set_priority_word(0x3000);
         }
 
-        if self.frame_state().submodule == 0 && self.ancilla_slot(k).aux_timer() != 0 {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).aux_timer() != 0 {
             if sign8(self.ancilla_slot_mut(k).tick_work_byte_3()) {
                 let frame_reset = BOOMERANG_FRAME_RESET_BY_TYPE[self.ancilla_slot(k).g() as usize];
                 self.ancilla_slot_mut(k).set_work_byte_3(frame_reset);
@@ -1914,7 +1914,7 @@ impl ZeldaState {
     }
 
     fn ancilla1_d_screen_shake(&mut self, k: usize) {
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let item_to_link = self.ancilla_slot(k).item_to_link().wrapping_sub(1);
             self.ancilla_slot_mut(k).set_item_to_link(item_to_link);
             if sign8(item_to_link) {
@@ -2349,7 +2349,7 @@ impl ZeldaState {
             0xa2, 0xe2,
         ];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(self.ancilla_slot(k).aux_timer()) {
                 let value = 1;
@@ -2442,7 +2442,7 @@ impl ZeldaState {
         const CANE_SPARK_CHAR: [u8; 4] = [0xd7, 0xb7, 0x80, 0x83];
 
         let mut flags = 2;
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.player_state().current_item_y() != 13 {
                 self.kill_byrna_spark(k);
                 return;
@@ -2511,7 +2511,7 @@ impl ZeldaState {
         let mut oam = self.oam_state().current_pointer_usize();
         let mut i = self.ancilla_slot(k).step() as usize;
         loop {
-            let angle = if self.frame_state().submodule == 0 {
+            let angle = if self.game_state.frame.submodule == 0 {
                 self.effect_angle_scratch_mut().add_angle_mod64(i, 3)
             } else {
                 self.effect_angle_scratch().angle(i)
@@ -2898,7 +2898,7 @@ impl ZeldaState {
     }
 
     fn ancilla18_ether_spell(&mut self, k: usize) {
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             return;
         }
 
@@ -3004,11 +3004,11 @@ impl ZeldaState {
 
     fn ether_spell_handle_radial_spin(&mut self, k: usize) {
         if self.ancilla_slot(k).step() == 4 {
-            if self.frame_state().frame_counter & 7 == 0 {
+            if self.game_state.frame.frame_counter & 7 == 0 {
                 self.system_signals_mut().set_sound_effect_2(0x2a);
-            } else if self.frame_state().frame_counter & 7 == 4 {
+            } else if self.game_state.frame.frame_counter & 7 == 4 {
                 self.system_signals_mut().set_sound_effect_2(0xaa);
-            } else if self.frame_state().frame_counter & 7 == 7 {
+            } else if self.game_state.frame.frame_counter & 7 == 7 {
                 self.system_signals_mut().set_sound_effect_2(0x6a);
             }
         } else {
@@ -3054,7 +3054,7 @@ impl ZeldaState {
         self.player_state_mut().clear_direction_lock();
         self.clear_modal_pause_flag();
 
-        if self.world_location_state().overworld_screen_index() == 0x70
+        if self.game_state.world.location.overworld_screen_index() == 0x70
             && self.overworld_event_info().event_info(0x70) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(2)
         {
@@ -3107,7 +3107,7 @@ impl ZeldaState {
         }
         self.ancilla_sfx2_near(0x2a);
 
-        let mut t = self.asset_u8(72, self.frame_state().frame_counter as usize);
+        let mut t = self.asset_u8(72, self.game_state.frame.frame_counter as usize);
         t = if t < 0xe0 { t } else { t & 0x7f };
         let link_x = self.player_state().x();
         let link_y = self.player_state().y();
@@ -3145,7 +3145,7 @@ impl ZeldaState {
 
     fn ancilla19_bombos_spell(&mut self, k: usize) {
         if self.bombos_spell_scratch().mode() == 0 {
-            if self.frame_state().submodule == 0 {
+            if self.game_state.frame.submodule == 0 {
                 self.bombos_spell_control_fire_columns(k);
                 return;
             }
@@ -3153,7 +3153,7 @@ impl ZeldaState {
                 self.ancilla_draw_bombos_fire_column(i);
             }
         } else if self.bombos_spell_scratch().mode() != 2 {
-            if self.frame_state().submodule == 0 {
+            if self.game_state.frame.submodule == 0 {
                 self.bombos_spell_finish_fire_columns(k);
                 return;
             }
@@ -3161,7 +3161,7 @@ impl ZeldaState {
                 self.ancilla_draw_bombos_fire_column(i);
             }
         } else {
-            if self.frame_state().submodule == 0 {
+            if self.game_state.frame.submodule == 0 {
                 self.bombos_spell_control_blasting(k);
                 return;
             }
@@ -3311,7 +3311,7 @@ impl ZeldaState {
                         self.bombos_blast_mut(uj).set_phase(0);
                         self.bombos_blast_mut(uj).set_timer(3);
 
-                        let idx = (self.frame_state().frame_counter & 0x3f) as usize;
+                        let idx = (self.game_state.frame.frame_counter & 0x3f) as usize;
                         let y = u16::from(BOMBOS_BLAST_POSITION_TABLE[idx]);
                         let x = u16::from(BOMBOS_BLAST_POSITION_TABLE[idx + 3]);
                         let bg2vofs_copy2 = self.world_scroll().bg2_y();
@@ -3493,7 +3493,7 @@ impl ZeldaState {
             .set_custom_spell_animation_active();
         self.blast_wall_explosion_mut(0).set_timer(3);
 
-        let mut j = self.blast_wall_scratch().direction() as usize;
+        let mut j = self.blast_wall_direction() as usize;
         let (blast_wall_center_x, blast_wall_center_y) =
             self.blast_wall_scratch_mut().offset_center(
                 BLAST_WALL_FRAGMENT_Y_OFFSET[j],
@@ -3805,13 +3805,13 @@ impl ZeldaState {
         }
         if std::env::var_os("ZELDA3_TRACE_BOOMERANG").is_some()
             && k == 4
-            && self.frame_state().frame_counter >= 140
-            && self.frame_state().frame_counter <= 210
+            && self.game_state.frame.frame_counter >= 140
+            && self.game_state.frame.frame_counter <= 210
         {
             let boomerang = self.ancilla_slot(k);
             eprintln!(
                 "R boomerang-add fc={} k={} s={} type=0x{:02x} x={:04x} y={:04x} xv={:02x} yv={:02x} step={:02x} aux={:02x} item={:02x} K={:02x} dir={:02x} work23={:02x} link={:04x}/{:04x} joy={:02x} bframes={:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 s,
                 boomerang.ancilla_type(),
@@ -4169,7 +4169,7 @@ impl ZeldaState {
 
     fn ancilla02_fire_rod_shot(&mut self, k: usize) {
         if self.ancilla_slot(k).step() == 0 {
-            if self.frame_state().submodule == 0 {
+            if self.game_state.frame.submodule == 0 {
                 let value = 0;
                 self.ancilla_slot_mut(k).set_l(value);
                 self.ancilla_move_x(k);
@@ -4222,7 +4222,7 @@ impl ZeldaState {
                 let old_type = self.ancilla_slot(k).ancilla_type();
                 self.ancilla_slot_mut(k).clear();
                 if old_type != 0x2f
-                    && self.world_location_state().overworld_screen_index() == 64
+                    && self.game_state.world.location.overworld_screen_index() == 64
                     && self.ancilla_slot(k).tile_attribute() == 0x43
                 {
                     self.fire_rod_shot_become_skull_woods_fire(k);
@@ -4262,8 +4262,8 @@ impl ZeldaState {
     }
 
     fn fire_rod_shot_become_skull_woods_fire(&mut self, _k: usize) {
-        if self.world_location_state().is_indoors()
-            || self.world_location_state().overworld_screen_index() & 0x40 == 0
+        if self.game_state.world.location.is_indoors()
+            || self.game_state.world.location.overworld_screen_index() & 0x40 == 0
         {
             return;
         }
@@ -4301,7 +4301,7 @@ impl ZeldaState {
     }
 
     fn ancilla0_b_ice_rod_shot(&mut self, k: usize) {
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let aux_timer = self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(aux_timer) {
                 let item_to_link = self.ancilla_slot_mut(k).advance_item_to_link();
@@ -4337,7 +4337,7 @@ impl ZeldaState {
         const ARROW_Y: [i8; 4] = [-4, 2, 0, 0];
         const ARROW_X: [i8; 4] = [0, 0, -4, 4];
 
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             self.arrow_draw(k);
             return;
         }
@@ -4352,7 +4352,9 @@ impl ZeldaState {
         }
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
-        if self.inventory_items().has_silver_arrows() && self.frame_state().frame_counter & 1 == 0 {
+        if self.inventory_items().has_silver_arrows()
+            && self.game_state.frame.frame_counter & 1 == 0
+        {
             self.ancilla_add_silver_arrow_sparkle(k);
         }
         let value = 255;
@@ -4448,7 +4450,7 @@ impl ZeldaState {
 
         let mut flags = 2;
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_set_xy(
                 k,
                 self.ether_orbit().swordbeam_temp_x(),
@@ -4498,7 +4500,7 @@ impl ZeldaState {
         let mut oam = oam_org;
         let s = self.ancilla_slot(k).s_player();
         for i in (0..=3).rev() {
-            let angle = if self.frame_state().submodule == 0 {
+            let angle = if self.game_state.frame.submodule == 0 {
                 self.effect_angle_scratch_mut().add_angle_mod64(i, s)
             } else {
                 self.effect_angle_scratch().angle(i)
@@ -4519,7 +4521,7 @@ impl ZeldaState {
             oam += 4;
         }
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let work_byte_3 = self.ancilla_slot_mut(k).tick_work_byte_3();
             if !sign8(work_byte_3) {
                 self.ancilla_sword_beam_check_offscreen(k, oam_org);
@@ -4681,12 +4683,12 @@ impl ZeldaState {
                 if self.ancilla_slot(k).step() == 0 {
                     self.player_state_mut().clear_animation_step();
                     self.player_state_mut().set_visibility_status(0);
-                    let bunny = if self.world_location_state().overworld_screen_index() & 0x40 != 0
-                    {
-                        1
-                    } else {
-                        0
-                    };
+                    let bunny =
+                        if self.game_state.world.location.overworld_screen_index() & 0x40 != 0 {
+                            1
+                        } else {
+                            0
+                        };
                     self.player_state_mut().set_bunny_state(bunny);
                     if self.player_state().is_bunny() {
                         self.LoadGearPalettes_bunny();
@@ -4748,9 +4750,7 @@ impl ZeldaState {
             2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0,
         ];
 
-        if self
-            .skull_woods_fire_scratch()
-            .has_started_entrance_opening()
+        if self.skull_woods_fire_has_started_entrance_opening()
             && self.ancilla_slot(k).item_to_link() != 4
             && sign8(self.ancilla_slot_mut(k).tick_aux_timer())
         {
@@ -4769,11 +4769,7 @@ impl ZeldaState {
                     if phase == 0 || phase == 4 {
                         self.skull_woods_fire_mut(i).set_phase(0);
                         let inner_y = self.skull_woods_fire_scratch_mut().retreat_inner_y(8);
-                        if inner_y < 200
-                            && !self
-                                .skull_woods_fire_scratch()
-                                .has_started_entrance_opening()
-                        {
+                        if inner_y < 200 && !self.skull_woods_fire_has_started_entrance_opening() {
                             self.skull_woods_fire_scratch_mut()
                                 .set_entrance_opening_started();
                             let pan =
@@ -4784,12 +4780,11 @@ impl ZeldaState {
                         if inner_y < 168 {
                             self.skull_woods_fire_mut(i).set_phase(128);
                         }
-                        let inner_x = self.skull_woods_fire_scratch().inner_x();
+                        let inner_x = self.skull_woods_fire_inner_x();
                         self.skull_woods_fire_mut(i).set_position(inner_x, inner_y);
                         if self.system_signals().sound_effect_1() == 0 {
                             let pan = (self
-                                .skull_woods_fire_scratch()
-                                .inner_x()
+                                .skull_woods_fire_inner_x()
                                 .wrapping_sub(self.world_scroll().bg2_x())
                                 as u8)
                                 >> 5;
@@ -4844,11 +4839,7 @@ impl ZeldaState {
         }
 
         let item_to_link = self.ancilla_slot(k).item_to_link();
-        if !self
-            .skull_woods_fire_scratch()
-            .has_started_entrance_opening()
-            || item_to_link == 4
-        {
+        if !self.skull_woods_fire_has_started_entrance_opening() || item_to_link == 4 {
             return;
         }
 
@@ -4885,7 +4876,7 @@ impl ZeldaState {
         if self.oam_state().has_sprite_sorting()
             && self.ancilla_slot(k).floor() != 0
             && (self.minigame_state().flag_boomerang_in_place() == 0
-                || self.frame_state().frame_counter & 1 == 0)
+                || self.game_state.frame.frame_counter & 1 == 0)
         {
             self.oam_state_mut().set_current_pointer(0x08d0);
             self.oam_state_mut()
@@ -5118,7 +5109,7 @@ impl ZeldaState {
         const SUPER_BOMB_EXPLODE_Y: [i8; 9] = [0, -16, -24, -16, 0, 0, 16, 24, 16];
         const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.ancilla_slot_mut(k).tick_work_byte_3() == 0 {
                 let bomb_phase = self.ancilla_slot_mut(k).advance_item_to_link();
                 if bomb_phase == 2 {
@@ -5267,7 +5258,7 @@ impl ZeldaState {
     fn ancilla2_a_spin_attack_sparkle_a(&mut self, k: usize) {
         const INITIAL_SPIN_SPARK_TIMER: [u8; 6] = [4, 2, 3, 3, 2, 1];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let aux_timer = self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(aux_timer) {
                 self.ancilla_slot_mut(k).set_aux_timer(0);
@@ -5345,7 +5336,7 @@ impl ZeldaState {
             return;
         }
         let mut flags = 2;
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let t = self.ancilla_slot(k).item_to_link().wrapping_sub(3);
             self.ancilla_slot_mut(k).set_item_to_link(t);
             if t < 13 {
@@ -5380,7 +5371,7 @@ impl ZeldaState {
         let mut oam = oam_org;
         let mut i = self.ancilla_slot(k).step() as usize;
         loop {
-            let angle = if self.frame_state().submodule == 0 {
+            let angle = if self.game_state.frame.submodule == 0 {
                 self.effect_angle_scratch_mut().add_angle_mod64(i, 4)
             } else {
                 self.effect_angle_scratch().angle(i)
@@ -5405,7 +5396,7 @@ impl ZeldaState {
             i -= 1;
         }
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let work_byte_3 = self.ancilla_slot_mut(k).tick_work_byte_3();
             if !sign8(work_byte_3) {
                 if self.ancilla_slot(k).item_to_link() == 7 {
@@ -5509,7 +5500,7 @@ impl ZeldaState {
     fn ancilla36_flute(&mut self, k: usize) {
         const FLUTE_VELS: [u8; 4] = [0x18, 0x10, 0x0a, 0];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.ancilla_slot(k).step() != 3 {
                 self.ancilla_slot_mut(k).add_z_velocity((-2i8) as u8);
                 self.ancilla_move_x(k);
@@ -5628,7 +5619,7 @@ impl ZeldaState {
         self.ancilla_slot_mut(k).set_g(0);
 
         if self.ancilla_slot(k).h() == 0 {
-            if matches!(self.frame_state().submodule, 0 | 8 | 16) {
+            if matches!(self.game_state.frame.submodule, 0 | 8 | 16) {
                 self.ancilla_handle_lift_logic(k);
             } else if k + 1 == self.player_state().ancilla_pickup_flag() as usize
                 && self.ancilla_slot(k).k() != 0
@@ -5640,13 +5631,13 @@ impl ZeldaState {
                 }
                 self.ancilla_latch_carried_position(k);
             }
-            if self.world_location_state().is_indoors() {
+            if self.game_state.world.location.is_indoors() {
                 if self.ancilla_slot(k).k() == 0
                     && !self.player_state().is_lifting_or_carrying()
                     && (self.ancilla_slot(k).z() == 0 || self.ancilla_slot(k).z() == 0xff)
                 {
                     if self.player_state().somaria_block_bg_check_flag() != 0 {
-                        let mut j = (self.frame_state().frame_counter & 3) as usize;
+                        let mut j = (self.game_state.frame.frame_counter & 3) as usize;
                         loop {
                             let bak = self.ancilla_slot(k).object_priority();
                             let x = self
@@ -5681,7 +5672,7 @@ impl ZeldaState {
                         .clear_somaria_block_switch_counter();
                 }
             }
-        } else if self.world_location_state().is_indoors()
+        } else if self.game_state.world.location.is_indoors()
             && self.player_state().ancilla_pickup_flag() == k as u8 + 1
         {
             self.dungeon_environment_mut()
@@ -5694,7 +5685,7 @@ impl ZeldaState {
         self.ancilla_slot_mut(k).set_object_priority(0);
         let mut flag = self.ancilla_check_tile_collision_class2(k);
 
-        if self.world_location_state().is_indoors()
+        if self.game_state.world.location.is_indoors()
             && self.ancilla_slot(k).l() != 0
             && self.ancilla_slot(k).tile_attribute() == 0x1c
         {
@@ -5832,7 +5823,7 @@ impl ZeldaState {
     }
 
     fn ancilla1_c_quake_spell(&mut self, k: usize) {
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             if self.quake_bolt(4).phase() != QUAKE_BOLT_TARGET_PHASES[4] {
                 self.ancilla_draw_quake_initial_bolts(k);
             }
@@ -5857,7 +5848,7 @@ impl ZeldaState {
         self.clear_modal_pause_flag();
         self.world_scroll_mut().set_bg1_x_offset(0);
         self.world_scroll_mut().set_bg1_y_offset(0);
-        if self.world_location_state().overworld_screen_index() == 0x47
+        if self.game_state.world.location.overworld_screen_index() == 0x47
             && self.overworld_event_info().event_info(0x47) & 0x20 == 0
             && self.ancilla_check_for_entrance_trigger(3)
         {
@@ -6005,7 +5996,7 @@ impl ZeldaState {
         const HOOKSHOT_DRAW_CHAR: [u8; 12] =
             [9, 0x0a, 0xff, 9, 0x0a, 0xff, 9, 0xff, 0x0a, 9, 0xff, 0x0a];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.ancilla_slot(k).timer() == 0 {
                 self.ancilla_slot_mut(k).set_timer(7);
                 self.ancilla_sfx2_pan(k, 0x0a);
@@ -6044,7 +6035,7 @@ impl ZeldaState {
                         self.hookshot_check_tile_collision(k as i32);
 
                         let mut r0 = 0u8;
-                        let contact = if self.world_location_state().is_indoors() {
+                        let contact = if self.game_state.world.location.is_indoors() {
                             if self.ancilla_slot(k).direction() & 2 == 0 {
                                 r0 = (self.tile_detect_position().vertical_ledge()
                                     | (self.tile_detect_position().vertical_ledge() >> 4))
@@ -6194,7 +6185,7 @@ impl ZeldaState {
                     x,
                     y,
                     0x19,
-                    (self.frame_state().frame_counter & 2) << 6
+                    (self.game_state.frame.frame_counter & 2) << 6
                         | 2
                         | self.oam_state().priority_high(),
                     0,
@@ -6472,7 +6463,7 @@ impl ZeldaState {
     }
 
     fn ancilla27_duck(&mut self, k: usize) {
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.ancilla_slot(k).timer() != 0 {
                 let xt: u16 = if self.enhanced_features().has(1) {
                     0x40
@@ -6536,9 +6527,9 @@ impl ZeldaState {
                     return;
                 }
             } else if self.ancilla_check_link_collision(k, 1)
-                && self.frame_state().main_module != 15
+                && self.game_state.frame.main_module != 15
             {
-                if self.world_location_state().is_outdoors() {
+                if self.game_state.world.location.is_outdoors() {
                     if self.player_state().handler_state() == 8
                         || self.player_state().handler_state() == 9
                         || self.player_state().handler_state() == 10
@@ -6586,8 +6577,8 @@ impl ZeldaState {
                 self.ancilla_slot_mut(k).set_step(value);
                 self.increment_modal_pause_flag();
                 self.player_state_mut().clear_given_damage();
-                if self.world_location_state().is_indoors() {
-                    let value = self.world_location_state().indoor_flag;
+                if self.game_state.world.location.is_indoors() {
+                    let value = self.game_state.world.location.indoor_flag();
                     self.player_state_mut().set_player_special_draw_flag(value);
                 }
             }
@@ -6645,7 +6636,7 @@ impl ZeldaState {
             let value = 0;
             self.ancilla_slot_mut(k).set_ancilla_type(value);
             if self.ancilla_slot(k).l() == 0 && self.ancilla_slot(k).step() != 0 {
-                let main_module = self.frame_state().main_module;
+                let main_module = self.game_state.frame.main_module;
                 self.set_submodule(10);
                 self.set_saved_module_for_menu(main_module);
                 self.set_main_module(14);
@@ -6663,7 +6654,7 @@ impl ZeldaState {
             return;
         }
         let oam = self.oam_state().current_pointer_usize()
-            + ((self.weather_vane_state().oam_offset >> 2) as usize) * 4;
+            + ((self.game_state.world.overworld.weather_vane.oam_offset >> 2) as usize) * 4;
         self.ancilla_set_oam(oam, x, y, WEATHERVANE_EXPLODE_CHAR[i as usize], 0x3c, 0);
         self.advance_weather_vane_oam_offset(4);
     }
@@ -6672,7 +6663,7 @@ impl ZeldaState {
         const TRAVEL_BIRD_INTRO_FLAGS_BY_DIRECTION: [u8; 2] = [0x40, 0];
         const TRAVEL_BIRD_INTRO_X_SPEED_LIMITS: [u8; 2] = [28, 60];
 
-        if self.frame_state().frame_counter & 31 == 0 {
+        if self.game_state.frame.frame_counter & 31 == 0 {
             self.ancilla_sfx3_pan(k, 0x1e);
         }
 
@@ -6784,7 +6775,7 @@ impl ZeldaState {
         let value = 0;
 
         self.ancilla_slot_mut(k).set_work_byte_3(value);
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(self.ancilla_slot(k).aux_timer()) {
                 let value = 0;
@@ -6917,7 +6908,7 @@ impl ZeldaState {
     }
 
     fn ancilla1_a_powder_dust(&mut self, k: usize) {
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.powder_apply_damage_to_sprites(k);
             self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(self.ancilla_slot(k).aux_timer()) {
@@ -6943,7 +6934,7 @@ impl ZeldaState {
 
     fn powder_apply_damage_to_sprites(&mut self, k: usize) {
         for j in (0..16).rev() {
-            if ((self.frame_state().frame_counter ^ j as u8) & 3) != 0
+            if ((self.game_state.frame.frame_counter ^ j as u8) & 3) != 0
                 || self.sprite_slot(j).state() != 9
                 || (self.sprite_slot(j).bump_damage() & 0x20) != 0
             {
@@ -6959,7 +6950,7 @@ impl ZeldaState {
             let mut a = self.sprite_slot(j).sprite_type();
             if a != 0x0b
                 || {
-                    a = self.world_location_state().indoor_flag;
+                    a = self.game_state.world.location.indoor_flag();
                     a == 0
                 }
                 || {
@@ -7075,11 +7066,11 @@ impl ZeldaState {
 
     fn ancilla22_item_receipt(&mut self, k: usize) {
         if self.player_state().immobilized_flag() != 2 {
-            if self.frame_state().submodule != 0
-                && self.frame_state().submodule != 43
-                && self.frame_state().submodule != 9
+            if self.game_state.frame.submodule != 0
+                && self.game_state.frame.submodule != 43
+                && self.game_state.frame.submodule != 9
             {
-                if self.frame_state().submodule == 2 {
+                if self.game_state.frame.submodule == 2 {
                     let value = 16;
                     self.ancilla_slot_mut(k).set_timer(value);
                 }
@@ -7210,8 +7201,8 @@ impl ZeldaState {
     }
 
     fn ancilla22_item_receipt_show_message(&mut self, k: usize) {
-        if self.world_location_state().is_indoors() {
-            let room = self.world_location_state().dungeon_room;
+        if self.game_state.world.location.is_indoors() {
+            let room = self.game_state.world.location.dungeon_room();
             if room == 0x00ff
                 || room == 0x010f
                 || room == 0x0110
@@ -7338,7 +7329,7 @@ impl ZeldaState {
             .wrapping_sub(self.ppu_scroll_copy().bg2_v_copy());
         if y < 0x49 {
             self.ancilla_set_y(k, 0x49u16.wrapping_add(self.ppu_scroll_copy().bg2_v_copy()));
-            if self.frame_state().submodule == 0 {
+            if self.game_state.frame.submodule == 0 {
                 let i = (self.save_progress().palace_index_x2() >> 1) as usize;
                 self.player_resources_mut()
                     .add_crystal_flags(DUNGEON_CRYSTAL_PENDANT_BIT[i]);
@@ -7403,7 +7394,7 @@ impl ZeldaState {
             self.ancilla_add_occasional_sparkle(k);
         }
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.ancilla_slot(k).z() < 24
                 && self.ancilla_check_link_collision(k, 2)
                 && !self.player_state().has_hookshot_interlock()
@@ -7456,7 +7447,7 @@ impl ZeldaState {
         }
 
         let t = if self.ancilla_slot(k).z() == 0 {
-            if self.world_location_state().dungeon_room == 6 {
+            if self.game_state.world.location.dungeon_room() == 6 {
                 self.ancilla_slot(k).l().wrapping_add(4)
             } else {
                 0
@@ -7472,7 +7463,7 @@ impl ZeldaState {
     fn ancilla28_wish_pond_item(&mut self, k: usize) {
         self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, 0x10);
 
-        if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() == 0 {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() == 0 {
             let mut player = self.player_state_mut();
             player.set_picking_throw_state(2);
             player.clear_state_bits();
@@ -7523,7 +7514,7 @@ impl ZeldaState {
         self.hapiness_pond_rupees_get_state(k, i);
 
         if self.ancilla_slot(k).step() != 0 {
-            if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() == 0 {
+            if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() == 0 {
                 let value = 6;
                 self.ancilla_slot_mut(k).set_timer(value);
                 let value = self.ancilla_slot(k).item_to_link().wrapping_add(1);
@@ -7536,7 +7527,7 @@ impl ZeldaState {
             } else {
                 self.object_splash_draw(k);
             }
-        } else if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() == 0 {
+        } else if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() == 0 {
             self.ancilla_slot_mut(k).add_z_velocity((-2i8) as u8);
             self.ancilla_move_y(k);
             self.ancilla_move_x(k);
@@ -7617,7 +7608,7 @@ impl ZeldaState {
         const SWORD_CHARGE_SPARK_CHAR: [u8; 3] = [0xb7, 0x80, 0x83];
         const SWORD_CHARGE_SPARK_FLAGS: [u8; 3] = [4, 4, 0x84];
 
-        if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() == 0 {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() == 0 {
             let value = 4;
             self.ancilla_slot_mut(k).set_timer(value);
             self.ancilla_slot_mut(k).add_item_to_link(1);
@@ -7734,17 +7725,19 @@ impl ZeldaState {
         const WATERFALL_SPLASH_FLAGS: [u8; 8] = [0x84, 0xff, 0x84, 0xc4, 0x84, 0xc4, 0x84, 0xc4];
         const WATERFALL_SPLASH_EXT: [u8; 8] = [2, 0xff, 2, 2, 2, 2, 0, 0];
 
-        if !self.ancilla_check_for_entrance_trigger(if self.world_location_state().is_indoors() {
-            0
-        } else {
-            1
-        }) {
+        if !self.ancilla_check_for_entrance_trigger(
+            if self.game_state.world.location.is_indoors() {
+                0
+            } else {
+                1
+            },
+        ) {
             let value = 0;
             self.ancilla_slot_mut(k).set_ancilla_type(value);
             return;
         }
 
-        if self.frame_state().submodule == 0 && self.frame_state().frame_counter & 7 == 0 {
+        if self.game_state.frame.submodule == 0 && self.game_state.frame.frame_counter & 7 == 0 {
             self.ancilla_sfx2_near(0x1c);
         }
 
@@ -7759,7 +7752,7 @@ impl ZeldaState {
             splash.set_item_to_link(item_to_link & 3);
         }
 
-        if self.world_location_state().is_indoors() && self.player_state().y_low() < 0x38 {
+        if self.game_state.world.location.is_indoors() && self.player_state().y_low() < 0x38 {
             self.ancilla_set_y(k, 0x0d38);
         } else {
             self.ancilla_set_y(k, self.player_state().y());
@@ -7790,7 +7783,7 @@ impl ZeldaState {
 
     fn ancilla3_d_item_splash(&mut self, k: usize) {
         self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, 8);
-        if self.frame_state().submodule == 0 && self.ancilla_slot(k).timer() == 0 {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot(k).timer() == 0 {
             let mut splash = self.ancilla_slot_mut(k);
             splash.set_timer(6);
             if splash.advance_item_to_link() == 5 {
@@ -7804,7 +7797,7 @@ impl ZeldaState {
     fn ancilla15_jump_splash(&mut self, k: usize) {
         const ANCILLA_JUMP_SPLASH_CHAR: [u8; 2] = [0xac, 0xae];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             let aux_timer = self.ancilla_slot_mut(k).tick_aux_timer();
             if sign8(aux_timer) {
                 let mut splash = self.ancilla_slot_mut(k);
@@ -7919,7 +7912,7 @@ impl ZeldaState {
             let value = 0;
             self.ancilla_slot_mut(k).set_ancilla_type(value);
         }
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_move_x(k);
             self.ancilla_move_y(k);
         }
@@ -7967,7 +7960,7 @@ impl ZeldaState {
         const ICE_SHOT_SPARKLE_XVEL: [i8; 4] = [0, 0, -4, 4];
         const ICE_SHOT_SPARKLE_YVEL: [i8; 4] = [-4, 4, 0, 0];
 
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             return;
         }
         self.ancilla_slot_mut(k).subtract_work_byte_4(1);
@@ -8119,7 +8112,8 @@ impl ZeldaState {
     }
 
     fn ancilla_check_tile_collision(&mut self, k: usize) -> u8 {
-        if self.world_location_state().is_outdoors() && self.ancilla_slot(k).object_priority() != 0
+        if self.game_state.world.location.is_outdoors()
+            && self.ancilla_slot(k).object_priority() != 0
         {
             let value = 0;
             self.ancilla_slot_mut(k).set_tile_attribute(value);
@@ -8154,7 +8148,7 @@ impl ZeldaState {
     }
 
     fn ancilla_check_tile_collision_staggered(&mut self, k: usize) -> u8 {
-        if (self.frame_state().frame_counter ^ k as u8) & 1 != 0 {
+        if (self.game_state.frame.frame_counter ^ k as u8) & 1 != 0 {
             self.ancilla_check_tile_collision(k)
         } else {
             0
@@ -8487,7 +8481,7 @@ impl ZeldaState {
                     }
 
                     if !self.player_state().picking_throw_state_has(2)
-                        && (self.frame_state().submodule != 0
+                        && (self.game_state.frame.submodule != 0
                             || ((self.player_state().filtered_joypad_l()
                                 | self.player_state().filtered_joypad_h())
                                 & 0x80)
@@ -8762,7 +8756,7 @@ impl ZeldaState {
             return false;
         }
 
-        let tile_attr = if self.world_location_state().is_outdoors() {
+        let tile_attr = if self.game_state.world.location.is_outdoors() {
             x >>= 3;
             self.overworld_get_tile_attribute_at_location(x, y)
         } else {
@@ -8823,12 +8817,12 @@ impl ZeldaState {
         {
             if std::env::var_os("ZELDA3_TRACE_TILE_COLL").is_some()
                 && k == 4
-                && self.frame_state().frame_counter >= 140
-                && self.frame_state().frame_counter <= 150
+                && self.game_state.frame.frame_counter >= 140
+                && self.game_state.frame.frame_counter <= 150
             {
                 eprintln!(
                     "R tile-target fc={} k={} offscreen x={:04x} y={:04x} bg2={:04x}/{:04x} floor={:02x} type={:02x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     trace_x,
                     trace_y,
@@ -8840,7 +8834,7 @@ impl ZeldaState {
             }
             return false;
         }
-        let tile_attr = if self.world_location_state().is_outdoors() {
+        let tile_attr = if self.game_state.world.location.is_outdoors() {
             x >>= 3;
             self.overworld_get_tile_attribute_at_location(x, y)
         } else {
@@ -8860,12 +8854,12 @@ impl ZeldaState {
         }
         if std::env::var_os("ZELDA3_TRACE_TILE_COLL").is_some()
             && k == 4
-            && self.frame_state().frame_counter >= 140
-            && self.frame_state().frame_counter <= 150
+            && self.game_state.frame.frame_counter >= 140
+            && self.game_state.frame.frame_counter <= 150
         {
             eprintln!(
                 "R tile-target fc={} k={} x={:04x} y={:04x} lookup={:04x}/{:04x} floor={:02x} floor2={:02x} obj={:02x} type={:02x} attr={:02x} t={:02x} u={:02x} indoors={:02x} hdr={:02x} bg1={:04x}/{:04x} bg2={:04x}/{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 trace_x,
                 trace_y,
@@ -8878,7 +8872,7 @@ impl ZeldaState {
                 tile_attr,
                 t,
                 self.ancilla_slot(k).u(),
-                self.world_location_state().indoor_flag,
+                self.game_state.world.location.indoor_flag(),
                 self.dungeon_room_load().header_collision(),
                 self.world_scroll().bg1_x(),
                 self.world_scroll().bg1_y(),
@@ -9083,7 +9077,7 @@ impl ZeldaState {
             println!(
                 "ancilla-trace kind=child-charge abs={} fc=0x{:02x} src={} dst={} rng=0x{:02x} base=0x{:04x}/0x{:04x} z=0x{:02x} xy=0x{:04x}/0x{:04x} type=0x{:02x} timer=0x{:02x} floor=0x{:02x} link=0x{:04x}/0x{:04x} face=0x{:02x} spin=0x{:02x} speed=0x{:02x}/0x{:02x}",
                 self.state_recorder.replay_frame_counter,
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 j,
                 rand,
@@ -9197,7 +9191,7 @@ impl ZeldaState {
                 println!(
                     "splash-trace abs={} fc=0x{:02x} a=0x{:02x} yarg=0x{:02x} slot=-1 caller={}:{} link=0x{:04x}/0x{:04x} state=0x{:02x} deep=0x{:04x} inwater=0x{:02x} indoors={} lower=0x{:02x} aux=0x{:02x} z=0x{:02x} vz=0x{:02x} tile=0x{:04x} normal=0x{:04x} joy=0x{:02x}/0x{:02x}",
                     self.state_recorder.replay_frame_counter,
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     a,
                     y,
                     caller.file(),
@@ -9207,7 +9201,7 @@ impl ZeldaState {
                     self.player_state().handler_state(),
                     self.tile_detect_position().deepwater(),
                     self.player_state().deep_water_state(),
-                    self.world_location_state().indoor_flag,
+                    self.game_state.world.location.indoor_flag(),
                     self.player_state().lower_level_state(),
                     self.player_state().auxiliary_state(),
                     self.player_state().z(),
@@ -9225,7 +9219,7 @@ impl ZeldaState {
             println!(
                 "splash-trace abs={} fc=0x{:02x} a=0x{:02x} yarg=0x{:02x} slot={} caller={}:{} link=0x{:04x}/0x{:04x} state=0x{:02x} deep=0x{:04x} inwater=0x{:02x} indoors={} lower=0x{:02x} aux=0x{:02x} z=0x{:02x} vz=0x{:02x} tile=0x{:04x} normal=0x{:04x} joy=0x{:02x}/0x{:02x}",
                 self.state_recorder.replay_frame_counter,
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 a,
                 y,
                 k,
@@ -9236,7 +9230,7 @@ impl ZeldaState {
                 self.player_state().handler_state(),
                 self.tile_detect_position().deepwater(),
                 self.player_state().deep_water_state(),
-                self.world_location_state().indoor_flag,
+                self.game_state.world.location.indoor_flag(),
                 self.player_state().lower_level_state(),
                 self.player_state().auxiliary_state(),
                 self.player_state().z(),
@@ -9253,7 +9247,7 @@ impl ZeldaState {
             splash.set_item_to_link(0);
             splash.set_aux_timer(2);
         }
-        if self.world_location_state().is_indoors() && !self.player_state().is_in_deep_water() {
+        if self.game_state.world.location.is_indoors() && !self.player_state().is_in_deep_water() {
             self.player_state_mut().set_lower_level_state(0);
         }
         self.ancilla_set_xy(
@@ -9326,7 +9320,7 @@ impl ZeldaState {
                 if self.dungeon_doors().door_open_counter_low() == 0x58 {
                     self.set_sound_effect_2_with_link_pan(0x1b);
                 } else if self.dungeon_doors().door_open_counter_low() == 0x38 {
-                    let screen = self.world_location_state().overworld_screen_index() as usize;
+                    let screen = self.game_state.world.location.overworld_screen_index() as usize;
                     self.overworld_event_info_mut().set_event_bits(screen, 0x20);
                     self.set_sound_effect_2_with_link_pan(0x1b);
                 }
@@ -9385,7 +9379,7 @@ impl ZeldaState {
     }
 
     fn ancilla_add_occasional_sparkle(&mut self, k: usize) {
-        if self.frame_state().frame_counter & 7 == 0 {
+        if self.game_state.frame.frame_counter & 7 == 0 {
             self.ancilla_add_sword_charge_sparkle(k);
         }
     }
@@ -9414,13 +9408,13 @@ impl ZeldaState {
                 self.dialogue_message_index_mut().set_value(0x013b);
                 self.main_show_text_message();
                 draw_ring = false;
-            } else if self.frame_state().submodule == 0 {
+            } else if self.game_state.frame.submodule == 0 {
                 draw_ring = false;
             }
         }
 
         if draw_ring {
-            if self.ancilla_slot(k).step() == 1 && self.frame_state().submodule == 0 {
+            if self.ancilla_slot(k).step() == 1 && self.game_state.frame.submodule == 0 {
                 let value = 16;
                 self.ancilla_slot_mut(k).set_x_velocity(value);
                 let bak0 = self.ancilla_slot(k).x_low();
@@ -9442,7 +9436,7 @@ impl ZeldaState {
                 }
             }
 
-            if self.frame_state().submodule == 0
+            if self.game_state.frame.submodule == 0
                 && self.ancilla_slot(k).step() != 0
                 && self.ancilla_slot(k).step() != 1
             {
@@ -9488,9 +9482,9 @@ impl ZeldaState {
             }
 
             for j in (0..=6).rev() {
-                if self.frame_state().submodule == 0
+                if self.game_state.frame.submodule == 0
                     && astep != 1
-                    && self.frame_state().frame_counter & 1 == 0
+                    && self.game_state.frame.frame_counter & 1 == 0
                 {
                     self.tower_seal_orbit_mut(j).advance_angle_mod64();
                 }
@@ -9528,7 +9522,7 @@ impl ZeldaState {
 
         if self.ancilla_slot(k).step() == 0 {
             self.ancilla_add_occasional_sparkle(k);
-        } else if self.frame_state().submodule == 0 {
+        } else if self.game_state.frame.submodule == 0 {
             self.gt_cutscene_activate_sparkle();
         }
     }
@@ -9648,7 +9642,7 @@ impl ZeldaState {
                     .wrapping_sub(u16::from(self.sprite_slot(j).z())),
             );
         }
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_slot_mut(k).tick_aux_timer();
             if self.ancilla_slot(k).aux_timer() == 0 {
                 let value = 2;
@@ -10010,7 +10004,7 @@ impl ZeldaState {
             if t != 0 {
                 t = t.wrapping_add(1);
             } else {
-                t = (self.frame_state().frame_counter >> 2) & 1;
+                t = (self.game_state.frame.frame_counter >> 2) & 1;
             }
             self.ancilla_set_oam(
                 oam,
@@ -10726,7 +10720,7 @@ impl ZeldaState {
         for j in (0..16).rev() {
             if (self.ancilla_slot(k).ancilla_type() == 9
                 || self.ancilla_slot(k).ancilla_type() == 0x1f
-                || (((j as u8 ^ self.frame_state().frame_counter) & 3)
+                || (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
                     | self.sprite_slot(j).pause())
                     == 0)
                 && self.sprite_slot(j).state() >= 9
@@ -10747,12 +10741,12 @@ impl ZeldaState {
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_ANCILLA_COLL").is_some()
             && j == 2
-            && self.frame_state().frame_counter >= 160
-            && self.frame_state().frame_counter <= 210
+            && self.game_state.frame.frame_counter >= 160
+            && self.game_state.frame.frame_counter <= 210
         {
             eprintln!(
                 "R ancilla-coll fc={} k={} atype=0x{:02x} j={} stype=0x{:02x} overlap={} ax={:04x} ay={:04x} az={:02x} hb={:02x}/{:02x} {:02x}/{:02x} size={:02x}/{:02x} spr={:02x}/{:02x} {:02x}/{:02x} ssize={:02x}/{:02x} dir={:02x} hit={:02x} pause={:02x} floor={:02x}/{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.ancilla_slot(k).ancilla_type(),
                 j,
@@ -10855,7 +10849,7 @@ impl ZeldaState {
 
     fn ancilla_check_basic_sprite_collision(&mut self, k: usize) -> Option<usize> {
         for j in (0..16).rev() {
-            if (((j as u8 ^ self.frame_state().frame_counter) & 3)
+            if (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
                 | self.sprite_slot(j).pause()
                 | self.sprite_slot(j).hit_timer())
                 != 0
@@ -10885,12 +10879,12 @@ impl ZeldaState {
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_ANCILLA_COLL").is_some()
             && j == 2
-            && self.frame_state().frame_counter >= 160
-            && self.frame_state().frame_counter <= 210
+            && self.game_state.frame.frame_counter >= 160
+            && self.game_state.frame.frame_counter <= 210
         {
             eprintln!(
                 "R ancilla-basic-coll fc={} k={} atype=0x{:02x} j={} stype=0x{:02x} overlap={} ax={:04x} ay={:04x} az={:02x} hb={:02x}/{:02x} {:02x}/{:02x} size={:02x}/{:02x} spr={:02x}/{:02x} {:02x}/{:02x} ssize={:02x}/{:02x} dir={:02x} hit={:02x} pause={:02x} floor={:02x}/{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.ancilla_slot(k).ancilla_type(),
                 j,
@@ -11119,7 +11113,7 @@ impl ZeldaState {
     fn ancilla32_blast_wall_fireball(&mut self, k: usize) {
         const BLAST_WALL_FIREBALL_CHAR: [u8; 3] = [0x9d, 0x9c, 0x8d];
 
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.ancilla_slot_mut(k).add_item_to_link(2);
             let value = self
                 .ancilla_slot(k)
@@ -11162,7 +11156,7 @@ impl ZeldaState {
     }
 
     fn ancilla33_blast_wall_explosion(&mut self, k: usize) {
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             if self.blast_wall_explosion(k).phase() != 0 {
                 let timer = self.blast_wall_explosion_mut(k).tick_timer();
                 if timer == 0 {
@@ -11188,7 +11182,7 @@ impl ZeldaState {
                     self.blast_wall_explosion_mut(k).set_timer(3);
                     for i in (0..=3).rev() {
                         let mut arr = [0i8, 0i8];
-                        let j = if self.blast_wall_scratch().direction() < 4 {
+                        let j = if self.blast_wall_direction() < 4 {
                             1
                         } else {
                             0
@@ -11256,7 +11250,7 @@ impl ZeldaState {
     }
 
     fn get_tile_attribute_for_ancilla(&mut self, floor: u8, mut x: u16, y: u16) -> u8 {
-        let tiletype = if self.world_location_state().is_indoors() {
+        let tiletype = if self.game_state.world.location.is_indoors() {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
@@ -11381,7 +11375,7 @@ impl ZeldaState {
         let j = self.ancilla_slot(k).direction();
         let y = 0u16.wrapping_sub(self.ancilla_get_y(k));
         self.ancilla_set_y(k, y);
-        if self.world_location_state().is_indoors() {
+        if self.game_state.world.location.is_indoors() {
             return y as i32;
         }
         if j == 2 {

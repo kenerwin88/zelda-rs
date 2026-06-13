@@ -11,8 +11,8 @@ use snes::{cpu_run_opcode, Cart, LoadRomError, Snes};
 
 use crate::game_state::constants::{RUN_MAIN_THREAD, RUN_POLY_THREAD};
 use crate::game_state::{
-    AncillaSlotView, DisplayState, FrameState, PlayerStateView, SpriteSlotView, WorldLocationState,
-    WorldState,
+    AncillaSlotSnapshot, DisplayState, FrameState, PlayerSnapshotState, SpriteSlotSnapshot,
+    WorldLocationState, WorldState,
 };
 use crate::types::{read_le_u16, write_le_u16};
 use crate::zelda_rtl::ZeldaState;
@@ -390,7 +390,7 @@ impl Snapshot {
 
     fn restore_game(&self, game: &mut ZeldaState) {
         game.ram.copy_from_slice(&self.ram);
-        game.sync_overworld_map16_load_from_ram();
+        game.sync_native_game_state_from_ram();
         let sram_len = game.sram.len();
         game.sram.copy_from_slice(&self.sram[..sram_len]);
         game.ppu.vram.copy_from_slice(&self.vram);
@@ -494,7 +494,7 @@ impl LockstepOracle {
         self.game.ppu = self.snes.ppu.clone();
         self.game.dma = self.snes.dma.clone();
         self.game.ram.copy_from_slice(&self.snes.ram);
-        self.game.sync_overworld_map16_load_from_ram();
+        self.game.sync_native_game_state_from_ram();
         self.game.sram.copy_from_slice(&self.snes.cart.ram);
     }
 
@@ -1257,7 +1257,7 @@ fn copy_graduated_map16_load_bytes(mine: &mut Snapshot, theirs: &Snapshot) {
 fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot {
     let frame = FrameState::load_from_ram(ram);
     let display = DisplayState::load_from_ram(ram);
-    let player = PlayerStateView::new(ram);
+    let player = PlayerSnapshotState::load_from_ram(ram);
     let world_location = WorldLocationState::load_from_ram(ram);
     let world = WorldState::load_from_ram(ram);
     let map16_load = OverworldMap16LoadState::load_from_ram(ram);
@@ -1274,26 +1274,26 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
             },
         },
         player: SemanticPlayer {
-            x: player.x(),
-            y: player.y(),
-            z: player.z(),
-            x_velocity: player.x_velocity(),
-            y_velocity: player.y_velocity(),
-            z_velocity: player.z_velocity(),
-            direction: player.direction(),
-            last_direction: player.last_direction(),
-            facing: player.facing(),
-            handler_state: player.handler_state(),
-            auxiliary_state: player.auxiliary_state(),
-            current_health: player.current_health(),
-            magic_power: player.magic_power(),
-            equipped_item: player.equipped_item(),
-            item_in_hand: player.item_in_hand(),
-            current_item_y: player.current_item_y(),
-            current_item_active: player.current_item_active(),
+            x: player.x,
+            y: player.y,
+            z: player.z,
+            x_velocity: player.x_velocity,
+            y_velocity: player.y_velocity,
+            z_velocity: player.z_velocity,
+            direction: player.direction,
+            last_direction: player.last_direction,
+            facing: player.facing,
+            handler_state: player.handler_state,
+            auxiliary_state: player.auxiliary_state,
+            current_health: player.current_health,
+            magic_power: player.magic_power,
+            equipped_item: player.equipped_item,
+            item_in_hand: player.item_in_hand,
+            current_item_y: player.current_item_y,
+            current_item_active: player.current_item_active,
         },
         world: SemanticWorld {
-            dungeon_room: world_location.dungeon_room,
+            dungeon_room: world_location.dungeon_room(),
             overworld_screen: world_location.overworld_screen_index(),
             overworld_area: world.region.overworld_area(),
             transition_direction: world.overworld.transition.direction_enum(),
@@ -1327,11 +1327,49 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
 
 fn semantic_snapshot_from_game(game: &ZeldaState, ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot {
     let mut snapshot = semantic_snapshot_from_parts(ram, ppu_regs);
-    let map16 = game.overworld_map16_load_state();
-    snapshot.world.map16_load_src = map16.src_off;
-    snapshot.world.map16_load_dst = map16.dst_off;
-    snapshot.world.map16_load_y_unit = map16.y_unit;
+    snapshot.frame = semantic_frame_from_native_game(game);
+    snapshot.world = semantic_world_from_native_game(game);
     snapshot
+}
+
+fn semantic_frame_from_native_game(game: &ZeldaState) -> SemanticFrame {
+    let frame = &game.game_state.frame;
+    let display = &game.game_state.display;
+    SemanticFrame {
+        main_module: frame.main_module,
+        submodule: frame.submodule,
+        subsubmodule: frame.subsubmodule,
+        nmi_thread_active: display.nmi_thread_active,
+        selected_run_thread: if display.nmi_thread_uses_poly_stack() {
+            RUN_POLY_THREAD
+        } else {
+            RUN_MAIN_THREAD
+        },
+    }
+}
+
+fn semantic_world_from_native_game(game: &ZeldaState) -> SemanticWorld {
+    let location = &game.game_state.world.location;
+    let region = game.world_region();
+    let scroll = game.world_scroll();
+    let map16 = game.game_state.world.overworld.map16.active_load;
+    SemanticWorld {
+        dungeon_room: location.dungeon_room(),
+        overworld_screen: location.overworld_screen_index(),
+        overworld_area: region.overworld_area(),
+        transition_direction: game.transition_direction_enum(),
+        overlay_index: region.overlay_index(),
+        map16_load_src: map16.src_off,
+        map16_load_dst: map16.dst_off,
+        map16_load_y_unit: map16.y_unit,
+        bg1_x: scroll.bg1_x(),
+        bg1_y: scroll.bg1_y(),
+        bg2_x: scroll.bg2_x(),
+        bg2_y: scroll.bg2_y(),
+        camera_x: scroll.camera_x(),
+        camera_y: scroll.camera_y(),
+        rng_seed: region.rng_seed(),
+    }
 }
 
 fn compare_semantic_snapshots(
@@ -1622,22 +1660,22 @@ fn push_semantic_diff<T: fmt::Debug + PartialEq>(
 fn semantic_sprite_slots(ram: &[u8]) -> Vec<SemanticSpriteSlot> {
     let mut slots = Vec::new();
     for slot in 0..16 {
-        let view = SpriteSlotView::new(ram, slot);
-        if !view.is_active() {
+        let slot = SpriteSlotSnapshot::load_from_ram(ram, slot);
+        if !slot.is_active() {
             continue;
         }
         slots.push(SemanticSpriteSlot {
-            slot: view.slot(),
-            sprite_type: view.sprite_type(),
-            state: view.state(),
-            x: view.x(),
-            y: view.y(),
-            x_velocity: view.x_velocity(),
-            y_velocity: view.y_velocity(),
-            ai_state: view.ai_state(),
-            delay_main: view.delay_main(),
-            health: view.health(),
-            hit_timer: view.hit_timer(),
+            slot: slot.slot,
+            sprite_type: slot.sprite_type,
+            state: slot.state,
+            x: slot.x,
+            y: slot.y,
+            x_velocity: slot.x_velocity,
+            y_velocity: slot.y_velocity,
+            ai_state: slot.ai_state,
+            delay_main: slot.delay_main,
+            health: slot.health,
+            hit_timer: slot.hit_timer,
         });
     }
     slots
@@ -1646,20 +1684,20 @@ fn semantic_sprite_slots(ram: &[u8]) -> Vec<SemanticSpriteSlot> {
 fn semantic_ancilla_slots(ram: &[u8]) -> Vec<SemanticAncillaSlot> {
     let mut slots = Vec::new();
     for slot in 0..10 {
-        let view = AncillaSlotView::new(ram, slot);
-        if !view.is_active() {
+        let slot = AncillaSlotSnapshot::load_from_ram(ram, slot);
+        if !slot.is_active() {
             continue;
         }
         slots.push(SemanticAncillaSlot {
-            slot: view.slot(),
-            ancilla_type: view.ancilla_type(),
-            x: view.x(),
-            y: view.y(),
-            x_velocity: view.x_velocity(),
-            y_velocity: view.y_velocity(),
-            item_to_link: view.item_to_link(),
-            timer: view.timer(),
-            direction: view.direction(),
+            slot: slot.slot,
+            ancilla_type: slot.ancilla_type,
+            x: slot.x,
+            y: slot.y,
+            x_velocity: slot.x_velocity,
+            y_velocity: slot.y_velocity,
+            item_to_link: slot.item_to_link,
+            timer: slot.timer,
+            direction: slot.direction,
         });
     }
     slots
@@ -1974,7 +2012,7 @@ mod tests {
     fn semantic_report_names_changed_fields() {
         let mut oracle = LockstepOracle::new();
         oracle.sync_game_from_oracle();
-        oracle.game.ram[0x10] = 3;
+        oracle.game.set_main_module(3);
         oracle.game.ram[0x22] = 0x44;
         oracle.game.ram[0x0e20] = 0x42;
         oracle.game.ram[0x0dd0] = 4;
@@ -2085,8 +2123,10 @@ mod tests {
 
         let game_snapshot = Snapshot::from_game(&oracle.game);
         oracle.game.ram[0x300] = 0x55;
+        oracle.game.set_main_module(0x33);
         game_snapshot.restore_game(&mut oracle.game);
         assert_eq!(oracle.game.ram[0x300], 0);
+        assert_eq!(oracle.game.game_state.frame.main_module, 0);
     }
 
     #[test]

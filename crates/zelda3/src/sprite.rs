@@ -402,7 +402,7 @@ impl ZeldaState {
         }
 
         let mut flags = THROWABLE_SCENERY_OAM_FLAGS[what as usize];
-        if what == 2 && self.world_location_state().is_indoors() {
+        if what == 2 && self.game_state.world.location.is_indoors() {
             let value = 0x80;
             self.sprite_slot_mut(k).set_oam_flags(value);
             flags = 0x50;
@@ -422,7 +422,7 @@ impl ZeldaState {
 
         if self.dungeon_secret_scratch().is_available() {
             if (self.dungeon_secret_scratch().pending_kind()
-                | self.world_location_state().indoor_flag)
+                | self.game_state.world.location.indoor_flag())
                 == 0
                 && self.sprite_slot(k).c().wrapping_sub(2) < 2
             {
@@ -561,7 +561,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_bump_damage(value);
         let value = sprite_init_value(SPRITE_INIT_FLAGS_TABLE, ty);
         self.sprite_slot_mut(k).set_flags(value);
-        let value = if self.world_location_state().is_indoors() {
+        let value = if self.game_state.world.location.is_indoors() {
             self.dungeon_room_tracking().room_index2_word() as u8
         } else {
             self.world_region().overworld_area() as u8
@@ -1462,7 +1462,7 @@ impl ZeldaState {
     pub(super) fn sprite_disable_all(&mut self) {
         for k in (0..16).rev() {
             if self.sprite_slot(k).state() != 0
-                && (self.world_location_state().is_indoors()
+                && (self.game_state.world.location.is_indoors()
                     || self.sprite_slot(k).sprite_type() != 0x6c)
             {
                 let value = 0;
@@ -1611,7 +1611,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_proximity_activation(&mut self) {
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             self.sprite_activate_when_proximal();
             self.sprite_activate_when_proximal_big();
         } else {
@@ -1749,7 +1749,7 @@ impl ZeldaState {
             if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
                     "ow-load frame={} blk=0x{:04x} raw=0x{:02x} type=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     blk,
                     sprite_to_spawn,
                     sprite_to_spawn.wrapping_sub(1),
@@ -1787,7 +1787,7 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_reset_sprites(&mut self) {
-        if self.world_location_state().is_indoors() {
+        if self.game_state.world.location.is_indoors() {
             self.dungeon_cache_trans_sprites();
         }
         {
@@ -1972,7 +1972,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_main(&mut self) {
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             for j in 0..5 {
                 self.ancilla_slot_mut(j).set_floor(0);
             }
@@ -1981,7 +1981,7 @@ impl ZeldaState {
         let dark_world = u8::from(self.save_progress().dark_world_state() != 0);
         self.world_region_mut()
             .set_dark_world_region_index(dark_world);
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.player_state_mut().set_drag_player_x(0);
             self.player_state_mut().set_drag_player_y(0);
         }
@@ -2027,8 +2027,8 @@ impl ZeldaState {
         self.clear_overworld_vertical_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0);
         self.execute_cached_sprites();
-        if self.display_state().has_chr_halfslot_request() {
-            let chr_halfslot_request = self.display_state().chr_halfslot_request;
+        if self.game_state.display.has_chr_halfslot_request() {
+            let chr_halfslot_request = self.game_state.display.chr_halfslot_request;
             self.sprite_system_mut()
                 .set_chr_halfslot_state(chr_halfslot_request);
         }
@@ -2066,9 +2066,9 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn execute_cached_sprites(&mut self) {
-        if self.world_location_state().is_outdoors()
-            || self.frame_state().submodule == 0
-            || self.frame_state().submodule == 14
+        if self.game_state.world.location.is_outdoors()
+            || self.game_state.frame.submodule == 0
+            || self.game_state.frame.submodule == 14
             || self.sprite_system().alt_sprites_flag() == 0
         {
             self.sprite_system_mut().clear_alt_sprites_flag();
@@ -2101,10 +2101,10 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn dungeon_cache_trans_sprites(&mut self) {
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             return;
         }
-        let value = self.world_location_state().indoor_flag;
+        let value = self.game_state.world.location.indoor_flag();
         self.sprite_system_mut().set_alt_sprites_flag(value);
         for k in (0..16usize).rev() {
             let slot = self.sprite_slot(k);
@@ -2176,7 +2176,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_a(num);
         }
 
-        if (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0 {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             if self.sprite_slot(k).delay_main() != 0 {
                 let value = self.sprite_slot(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_mut(k).set_delay_main(value);
@@ -2606,7 +2606,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn garnish_check_player_collision(&mut self, k: usize, x: i32, y: i32) {
-        if (((k as u8) ^ self.frame_state().frame_counter) & 7)
+        if (((k as u8) ^ self.game_state.frame.frame_counter) & 7)
             | self.player_state().blink_countdown()
             | self.player_state().sprite_damage_disable_timer()
             != 0
@@ -2711,7 +2711,7 @@ impl ZeldaState {
         }
         self.oam_state_mut().set_entry_y(oam, t);
         self.oam_state_mut().set_entry_char(oam, 0x5c);
-        let flags = (self.frame_state().frame_counter << 3) & 0xc0 | 0x34;
+        let flags = (self.game_state.frame.frame_counter << 3) & 0xc0 | 0x34;
         self.oam_state_mut().set_entry_flags(oam, flags);
         let ext_index = (oam - OAM_BUF) / 4;
         let value = 0;
@@ -2722,7 +2722,7 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn garnish11_withering_ganon_bat_flame(&mut self, k: usize) {
-        if (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0 {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             let y = self.garnish_get_y(k).wrapping_sub(1);
             self.garnish_set_y(k, y);
         }
@@ -2808,7 +2808,7 @@ impl ZeldaState {
         const TRINEXX_ICE_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
 
         if self.garnish_slot(k).countdown() == 0x50
-            && (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0
+            && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
             self.dungeon_update_tile_map_with_common_tile_for_garnish(
                 self.garnish_get_x(k),
@@ -2852,7 +2852,7 @@ impl ZeldaState {
             pt.x as u8,
             pt.y as u8,
             LIGHTNING_TRAIL_CHAR[j].wrapping_sub(room_offset),
-            (self.frame_state().frame_counter << 1) & 0x0e | LIGHTNING_TRAIL_FLAGS[j],
+            (self.game_state.frame.frame_counter << 1) & 0x0e | LIGHTNING_TRAIL_FLAGS[j],
             2,
         );
         self.garnish_check_player_collision(k, i32::from(pt.x), i32::from(pt.y));
@@ -2867,7 +2867,7 @@ impl ZeldaState {
 
         let mut j = self.garnish_slot(k).countdown();
         if j == 0x1e {
-            j = self.frame_state().submodule | self.frame_state().modal_pause_flag;
+            j = self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag;
             if j == 0 {
                 self.dungeon_update_tile_map_with_common_tile_for_garnish(
                     self.garnish_get_x(k),
@@ -3021,7 +3021,8 @@ impl ZeldaState {
         if type_ == 0 {
             return;
         }
-        if (type_ == 5 || (self.frame_state().submodule | self.frame_state().modal_pause_flag) == 0)
+        if (type_ == 5
+            || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0)
             && self.garnish_slot(k).countdown() != 0
         {
             let value = self.garnish_slot(k).countdown().wrapping_sub(1);
@@ -3090,7 +3091,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_inactive_sprite(&mut self, k: usize) {
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             self.sprite_slot_mut(k).set_n_word(0xffff);
         } else {
             let value = 0xff;
@@ -3117,7 +3118,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_kill_self(&mut self, k: usize) {
         if (self.sprite_slot(k).deflection_bits() & 0x40) == 0
-            && self.world_location_state().is_indoors()
+            && self.game_state.world.location.is_indoors()
         {
             return;
         }
@@ -3131,7 +3132,7 @@ impl ZeldaState {
             self.overworld_sprite_loaded_mut()
                 .clear_loaded_mask_wrapped(blk, loadedmask as u8);
         }
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             self.sprite_slot_mut(k).set_n_word(0xffff);
         } else {
             let value = 0xff;
@@ -3171,11 +3172,11 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_track_body_to_head(&mut self, k: usize) -> bool {
         if self.sprite_slot(k).head_direction() != self.sprite_slot(k).direction() {
-            if (self.frame_state().frame_counter & 0x1f) != 0 {
+            if (self.game_state.frame.frame_counter & 0x1f) != 0 {
                 return false;
             }
             if ((self.sprite_slot(k).head_direction() ^ self.sprite_slot(k).direction()) & 2) == 0 {
-                let value = ((((k as u8) ^ self.frame_state().frame_counter) >> 5) | 2) & 3
+                let value = ((((k as u8) ^ self.game_state.frame.frame_counter) >> 5) | 2) & 3
                     ^ (self.sprite_slot(k).head_direction() & 2);
                 self.sprite_slot_mut(k).set_direction(value);
                 return false;
@@ -3220,7 +3221,7 @@ impl ZeldaState {
         if self.sprite_slot(k).state() != 9 {
             return true;
         }
-        if self.frame_state().modal_pause_flag != 0 || self.frame_state().submodule != 0 {
+        if self.game_state.frame.modal_pause_flag != 0 || self.game_state.frame.submodule != 0 {
             return true;
         }
         (self.sprite_slot(k).deflection_bits() & 0x80) == 0 && self.sprite_slot(k).pause() != 0
@@ -3230,8 +3231,8 @@ impl ZeldaState {
     //   return (modal_pause_flag || submodule_index || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }
     pub(super) fn sprite_return_if_paused(&self, k: usize) -> bool {
-        self.frame_state().modal_pause_flag != 0
-            || self.frame_state().submodule != 0
+        self.game_state.frame.modal_pause_flag != 0
+            || self.game_state.frame.submodule != 0
             || ((self.sprite_slot(k).deflection_bits() & 0x80) == 0
                 && self.sprite_slot(k).pause() != 0)
     }
@@ -3252,11 +3253,11 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_return_if_phasing_out(&mut self, k: usize) -> bool {
         if self.sprite_slot(k).stunned() == 0
-            || (self.frame_state().submodule | self.frame_state().modal_pause_flag) != 0
+            || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0
         {
             return false;
         }
-        if (self.frame_state().frame_counter & 1) == 0 {
+        if (self.game_state.frame.frame_counter & 1) == 0 {
             let value = self.sprite_slot(k).stunned().wrapping_sub(1);
             self.sprite_slot_mut(k).set_stunned(value);
         }
@@ -3283,7 +3284,7 @@ impl ZeldaState {
         if transient && self.sprite_return_if_phasing_out(k) {
             return false;
         }
-        if !self.oam_state().has_sprite_sorting() && self.world_location_state().is_indoors() {
+        if !self.oam_state().has_sprite_sorting() && self.game_state.world.location.is_indoors() {
             let value = 0x30;
             self.sprite_slot_mut(k).set_object_priority(value);
         }
@@ -3423,7 +3424,7 @@ impl ZeldaState {
             self.sprite_spawn_secret(k);
             self.dungeon_secret_scratch_mut().clear_pending_kind();
         }
-        a = if self.world_location_state().is_indoors() {
+        a = if self.game_state.world.location.is_indoors() {
             0
         } else {
             self.sprite_slot(k).c()
@@ -3537,13 +3538,13 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_give_damage(&mut self, k: usize, dmg: u8, r0_hit_timer: u8) {
         if std::env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot(k).sprite_type() == 0xa7
             && k == 2
         {
             eprintln!(
                 "R give-damage entry fc={} k={} dmg=0x{:02x} hit=0x{:02x} type=0x{:02x} dmgtype=0x{:02x} x=0x{:04x} y=0x{:04x} f=0x{:02x} health=0x{:02x} give=0x{:02x} item=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 dmg,
                 r0_hit_timer,
@@ -3637,13 +3638,13 @@ impl ZeldaState {
         }
         self.sprite_set_damage_stun(k);
         if std::env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot(k).sprite_type() == 0xa7
             && k == 2
         {
             eprintln!(
                 "R give-damage set-f fc={} k={} f=0x{:02x} dmg=0x{:02x} hit=0x{:02x} dmgtype=0x{:02x} xr=0x{:02x} yr=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).f(),
                 dmg,
@@ -3833,9 +3834,9 @@ impl ZeldaState {
             self.sprite_active_main_for_death(k);
             return;
         }
-        if ((self.frame_state().frame_counter & 3)
-            | self.frame_state().submodule
-            | self.frame_state().modal_pause_flag)
+        if ((self.game_state.frame.frame_counter & 3)
+            | self.game_state.frame.submodule
+            | self.game_state.frame.modal_pause_flag)
             == 0
         {
             let value = self.sprite_slot(k).delay_main().wrapping_add(1);
@@ -4272,7 +4273,7 @@ impl ZeldaState {
             if self.sprite_return_if_paused(k) {
                 return;
             }
-            if self.frame_state().frame_counter & 1 == 0 {
+            if self.game_state.frame.frame_counter & 1 == 0 {
                 let value = self.sprite_slot(k).delay_main().wrapping_add(1);
                 self.sprite_slot_mut(k).set_delay_main(value);
             }
@@ -4599,8 +4600,8 @@ impl ZeldaState {
         if delay >= 0x40 {
             if self.sprite_slot(k).oam_flags() != 5 {
                 if ((delay & 7)
-                    | self.frame_state().submodule
-                    | self.frame_state().modal_pause_flag)
+                    | self.game_state.frame.submodule
+                    | self.game_state.frame.modal_pause_flag)
                     == 0
                 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
@@ -4635,9 +4636,9 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_graphics(value);
             self.sprite_draw_falling_humanoid(k);
         }
-        if (self.frame_state().frame_counter
+        if (self.game_state.frame.frame_counter
             & FALLING_TILE_CHECK_FRAME_MASKS[usize::from(self.sprite_slot(k).delay_main() >> 3)])
-            | self.frame_state().submodule
+            | self.game_state.frame.submodule
             != 0
         {
             return;
@@ -4752,7 +4753,7 @@ impl ZeldaState {
         const SPRITE_HELD_THROW_YVEL: [u8; 4] = [(-62i8) as u8, 63, 0, 0];
         const SPRITE_HELD_THROW_ZVEL: [u8; 4] = [4, 4, 4, 4];
 
-        if self.frame_state().main_module == 14 {
+        if self.game_state.frame.main_module == 14 {
             return;
         }
         if !self.player_state().near_pit_state_is(2) {
@@ -4970,7 +4971,7 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R stunned-before fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 self.world_region().rng_seed(),
                 k,
                 self.sprite_slot(k).sprite_type(),
@@ -4988,7 +4989,7 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R stunned-after-active fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 self.world_region().rng_seed(),
                 k,
                 self.sprite_slot(k).sprite_type(),
@@ -5007,14 +5008,14 @@ impl ZeldaState {
                 let value = (self.sprite_slot(k).oam_flags() & 0xf1) | 4;
                 self.sprite_slot_mut(k).set_oam_flags(value);
             }
-            let t = (((k as u8) << 4) ^ self.frame_state().frame_counter)
-                | self.frame_state().submodule;
+            let t = (((k as u8) << 4) ^ self.game_state.frame.frame_counter)
+                | self.game_state.frame.submodule;
             let mask =
                 SPRITE_STUNNED_MAIN_FUNC1_MASKS[usize::from(self.sprite_slot(k).delay_main() >> 4)];
             if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
                 eprintln!(
                     "R stunned-sparkle-check fc=0x{:02x} k={} t=0x{:02x} mask=0x{:02x} delay=0x{:02x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     t,
                     mask,
@@ -5030,9 +5031,9 @@ impl ZeldaState {
             return;
         }
 
-        if (self.frame_state().frame_counter & 1)
-            | self.frame_state().submodule
-            | self.frame_state().modal_pause_flag
+        if (self.game_state.frame.frame_counter & 1)
+            | self.game_state.frame.submodule
+            | self.game_state.frame.modal_pause_flag
             != 0
         {
             return;
@@ -5207,13 +5208,13 @@ impl ZeldaState {
         self.sprite_setup_hit_box(k, &mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_DAMAGE_FROM_LINK").is_some()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot(k).sprite_type() == 0xa7
             && k == 2
         {
             eprintln!(
                 "R damage-from-link fc={} k={} overlap={} type=0x{:02x} dmgtype=0x{:02x} link=0x{:04x},0x{:04x} spr=0x{:04x},0x{:04x} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x} item=0x{:02x} sword_delay=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 overlap,
                 self.sprite_slot(k).sprite_type(),
@@ -5350,7 +5351,7 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToLink_same_layer(k);
     // }
     pub(super) fn sprite_check_damage_to_player_1(&mut self, k: usize) -> bool {
-        (((k as u8) ^ self.frame_state().frame_counter) & 3) == 0
+        (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
             && self.sprite_slot(k).hit_timer() == 0
             && self.sprite_check_damage_to_link_same_layer(k)
     }
@@ -5389,12 +5390,12 @@ impl ZeldaState {
             return carry;
         }
         if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.world_location_state().is_indoors()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.is_indoors()
+            && self.game_state.world.location.dungeon_room() == 0x00a8
         {
             eprintln!(
                 "R sprite-ignore-layer fc={} k={} type=0x{:02x} carry={} flags2=0x{:02x} flags4=0x{:02x} flags5=0x{:02x} shield=0x{:02x} bunny=0x{:02x} statebits=0x{:02x} facing=0x{:02x} d=0x{:02x} aux=0x{:02x} link=0x{:04x},0x{:04x} cur=0x{:04x},0x{:04x} z=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).sprite_type(),
                 carry,
@@ -5475,7 +5476,7 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_attempt_damage_to_link_with_collision_check(&mut self, k: usize) {
-        if (((k as u8) ^ self.frame_state().frame_counter) & 1) != 0 {
+        if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) != 0 {
             return;
         }
         let mut hb = empty_sprite_hit_box();
@@ -5483,12 +5484,12 @@ impl ZeldaState {
         self.link_setup_hit_box_conditional(&mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.world_location_state().is_indoors()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.is_indoors()
+            && self.game_state.world.location.dungeon_room() == 0x00a8
         {
             eprintln!(
                 "R sprite-damage-check fc={} k={} type=0x{:02x} st=0x{:02x} bump=0x{:02x} link=0x{:04x},0x{:04x} overlap={} blink=0x{:02x} disable=0x{:02x} aux=0x{:02x} incap=0x{:02x} hp=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).sprite_type(),
                 self.sprite_slot(k).state(),
@@ -5532,13 +5533,13 @@ impl ZeldaState {
         let button_neg = sign8(self.player_state().button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot(k).sprite_type() == 0xa7
             && k == 2
         {
             eprintln!(
                 "R guard-parry action fc={} k={} button=0x{:02x} neg={} overlap={} link=0x{:04x},0x{:04x} spr=0x{:04x},0x{:04x} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.player_state().button_b_frames(),
                 button_neg,
@@ -5565,13 +5566,13 @@ impl ZeldaState {
             self.sprite_setup_hit_box(k, &mut hb);
             let body_overlap = self.check_if_hit_boxes_overlap(&hb);
             if std::env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
-                && self.world_location_state().dungeon_room == 0x00a8
+                && self.game_state.world.location.dungeon_room() == 0x00a8
                 && self.sprite_slot(k).sprite_type() == 0xa7
                 && k == 2
             {
                 eprintln!(
                     "R guard-parry body fc={} k={} overlap={} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     body_overlap,
                     hb.r0_xlo,
@@ -5619,12 +5620,12 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_attempt_damage_to_link_plus_recoil(&mut self, k: usize) {
         if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.world_location_state().is_indoors()
-            && self.world_location_state().dungeon_room == 0x00a8
+            && self.game_state.world.location.is_indoors()
+            && self.game_state.world.location.dungeon_room() == 0x00a8
         {
             eprintln!(
                 "R sprite-damage-plus entry fc={} k={} type=0x{:02x} blink=0x{:02x} disable=0x{:02x} aux=0x{:02x} incap=0x{:02x} vx=0x{:02x} vy=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).sprite_type(),
                 self.player_state().blink_countdown(),
@@ -5706,7 +5707,7 @@ impl ZeldaState {
                         s.parse::<u8>().ok()
                     }
                 })
-                .map_or(true, |target| self.frame_state().frame_counter == target);
+                .map_or(true, |target| self.game_state.frame.frame_counter == target);
         if trace_tile_matches {
             if let Ok(value) = std::env::var("ZELDA3_TRACE_TILE_COLLISION_TYPE") {
                 let target = value
@@ -5762,7 +5763,7 @@ impl ZeldaState {
         let mut x;
         let y;
         let in_bounds;
-        if self.world_location_state().is_indoors() {
+        if self.game_state.world.location.is_indoors() {
             x = (self.sprite_workspace().current_sprite_x().wrapping_add(8) & 0x01ff)
                 .wrapping_add(FUNC5_X[j] as i16 as u16)
                 .wrapping_sub(8);
@@ -5788,7 +5789,7 @@ impl ZeldaState {
             if trace_tile_matches {
                 eprintln!(
                     "R tile fc={} k={} orig={} j={} x=0x{:04x} y=0x{:04x} in=0 floor=0x{:02x} flags2=0x{:02x} ret={}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     orig_j,
                     j,
@@ -5814,7 +5815,7 @@ impl ZeldaState {
         if trace_tile_matches {
             eprintln!(
                 "R tile fc={} k={} orig={} j={} x=0x{:04x} y=0x{:04x} in=1 floor=0x{:02x} b=0x{:02x} tile=0x{:02x} defl=0x{:02x} flags5=0x{:02x} tab3=0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 orig_j,
                 j,
@@ -5831,7 +5832,7 @@ impl ZeldaState {
         if self.sprite_slot(k).deflection_bits() & 8 != 0 {
             let a = SIMPLIFIED_TILE_ATTR[usize::from(b)];
             if a == 4 {
-                if self.world_location_state().is_outdoors() {
+                if self.game_state.world.location.is_outdoors() {
                     let value = 4;
                     self.sprite_slot_mut(k).set_e(value);
                 }
@@ -5983,7 +5984,7 @@ impl ZeldaState {
             if i != self.sprite_system().cur_object_index() as usize
                 && self.sprite_slot(k).sprite_type() != 0xd2
                 && self.sprite_slot(i).state() >= 9
-                && ((((i as u8) ^ self.frame_state().frame_counter) & 3)
+                && ((((i as u8) ^ self.game_state.frame.frame_counter) & 3)
                     | self.sprite_slot(i).ignore_projectile()
                     | self.sprite_slot(i).hit_timer())
                     == 0
@@ -6028,7 +6029,7 @@ impl ZeldaState {
         } else {
             let a = if self.sprite_slot(k).sprite_type() == 0xec
                 && self.sprite_slot(k).c() == 2
-                && self.world_location_state().is_outdoors()
+                && self.game_state.world.location.is_outdoors()
             {
                 1
             } else {
@@ -6153,18 +6154,18 @@ impl ZeldaState {
             16, 0, 0, 16, 0, 0, 16, 16, 16, 16, 0, 16, 10, 16, 0, 0, 0, 0, 16, 0, 0, 0,
         ];
 
-        if self.world_location_state().is_outdoors() {
+        if self.game_state.world.location.is_outdoors() {
             let before_rng = self.world_region().rng_seed();
             let roll = self.get_random_number();
             if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
                     "secret-spawn frame={} parent={} before=0x{:02x} roll=0x{:02x} b=0x{:02x} indoors={}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     before_rng,
                     roll,
                     self.dungeon_secret_scratch().pending_kind(),
-                    self.world_location_state().indoor_flag,
+                    self.game_state.world.location.indoor_flag(),
                 );
             }
             if (roll & 8) != 0 {
@@ -6372,7 +6373,7 @@ impl ZeldaState {
         }
 
         if ty == 0x40 {
-            let screen = self.world_location_state().overworld_screen_index() as usize;
+            let screen = self.game_state.world.location.overworld_screen_index() as usize;
             self.overworld_event_info_mut().set_event_bits(screen, 0x40);
         } else if ty == 0xec {
             if self.sprite_slot(k).c() == 2 {
@@ -6531,7 +6532,7 @@ impl ZeldaState {
                         trimmed.parse::<u8>().ok()
                     }
                 })
-                .is_none_or(|frame| frame == self.frame_state().frame_counter);
+                .is_none_or(|frame| frame == self.game_state.frame.frame_counter);
         if self.sprite_slot(k).f() == 0 {
             return false;
         }
@@ -6545,7 +6546,7 @@ impl ZeldaState {
         if trace_recoil_matches {
             eprintln!(
                 "R recoil fc={} entry k={} f=0x{:02x} xr=0x{:02x} yr=0x{:02x} xv=0x{:02x} yv=0x{:02x} bump=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).f(),
                 self.sprite_slot(k).x_recoil(),
@@ -6570,7 +6571,8 @@ impl ZeldaState {
         let i = self.sprite_slot(k).f();
         // !sign8(i) -> top bit clear
         if (i & 0x80) == 0
-            && (self.frame_state().frame_counter & SPRITE_RECOIL_DIRECTION_MASKS[(i >> 2) as usize])
+            && (self.game_state.frame.frame_counter
+                & SPRITE_RECOIL_DIRECTION_MASKS[(i >> 2) as usize])
                 == 0
         {
             let value = self.sprite_slot(k).y_recoil();
@@ -6586,7 +6588,7 @@ impl ZeldaState {
             if trace_recoil_matches {
                 eprintln!(
                     "R recoil fc={} collide k={} i=0x{:02x} mask=0x{:02x} t=0x{:02x} xv=0x{:02x} yv=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     i,
                     SPRITE_RECOIL_DIRECTION_MASKS[(i >> 2) as usize],
@@ -6614,7 +6616,7 @@ impl ZeldaState {
                 if trace_recoil_matches {
                     eprintln!(
                         "R recoil fc={} move k={} x=0x{:04x} y=0x{:04x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         k,
                         self.sprite_get_x(k),
                         self.sprite_get_y(k),
@@ -6629,7 +6631,7 @@ impl ZeldaState {
         if trace_recoil_matches {
             eprintln!(
                 "R recoil fc={} exit k={} ret={} f=0x{:02x} xr=0x{:02x} yr=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).sprite_type() != 0x7a,
                 self.sprite_slot(k).f(),
@@ -7098,7 +7100,7 @@ impl ZeldaState {
         self.temp_counter_mut().set(garnish_sprite);
         let mut base = ((self.garnish_slot(k).countdown() >> 2) ^ 7) << 2;
         if self.temp_counter().value() == 4
-            || (self.temp_counter().value() == 2 && self.world_location_state().is_outdoors())
+            || (self.temp_counter().value() == 2 && self.game_state.world.location.is_outdoors())
         {
             base = base.wrapping_add(0x20);
         }
@@ -7147,9 +7149,9 @@ impl ZeldaState {
 
     // bool Sprite_ReturnIfLifted(int k) — sprite.c:2602
     pub(super) fn sprite_return_if_lifted(&mut self, k: usize) -> bool {
-        if self.frame_state().submodule != 0
+        if self.game_state.frame.submodule != 0
             || self.player_state().button_b_frames() != 0
-            || self.frame_state().modal_pause_flag != 0
+            || self.game_state.frame.modal_pause_flag != 0
             || self.sprite_slot(k).floor() != self.player_state().lower_level_state()
         {
             return false;
@@ -7332,7 +7334,7 @@ impl ZeldaState {
                 if std::env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
                     println!(
                         "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         k,
                         what,
                         ju,
@@ -7345,7 +7347,7 @@ impl ZeldaState {
                 if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                     println!(
                         "dyn-spawn frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                        self.frame_state().frame_counter,
+                        self.game_state.frame.frame_counter,
                         k,
                         what,
                         ju,
@@ -7365,7 +7367,7 @@ impl ZeldaState {
                 info.r5_overlord_x = self.overlord_slot(k).x();
                 info.r7_overlord_y = self.overlord_slot(k).y();
                 self.sprite_prep_load_properties_for_helpers(ju);
-                if self.world_location_state().is_outdoors() {
+                if self.game_state.world.location.is_outdoors() {
                     self.sprite_slot_mut(ju).set_n_word(0xffff);
                 } else {
                     let value = 0xff;
@@ -7385,7 +7387,7 @@ impl ZeldaState {
                 let ju = j as usize;
                 println!(
                     "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                    self.frame_state().frame_counter,
+                    self.game_state.frame.frame_counter,
                     k,
                     what,
                     ju,
@@ -7548,7 +7550,7 @@ impl ZeldaState {
             }
             0x20 => {
                 if self.sprite_slot(k).flags() & 1 != 0 {
-                    if self.world_location_state().is_outdoors() {
+                    if self.game_state.world.location.is_outdoors() {
                         self.sprite_func8(k);
                     } else {
                         let value = 5;
@@ -7599,7 +7601,7 @@ impl ZeldaState {
     // }
     #[allow(non_snake_case)]
     pub(super) fn GetTileAttribute(&mut self, floor: u8, x: &mut u16, y: u16) -> u8 {
-        let tiletype = if self.world_location_state().is_indoors() {
+        let tiletype = if self.game_state.world.location.is_indoors() {
             let mut t = if floor >= 1 { 0x1000 } else { 0 };
             t += ((*x & 0x01f8) >> 3) as usize;
             t += ((y & 0x01f8) << 3) as usize;
@@ -7736,7 +7738,7 @@ impl ZeldaState {
         self.world_transient_mut()
             .clear_tile_interaction_shared_flag();
         self.messaging_state_mut().clear_module();
-        let main_module = self.frame_state().main_module;
+        let main_module = self.game_state.frame.main_module;
         self.set_submodule(2);
         self.set_saved_module_for_menu(main_module);
         self.set_main_module(14);
@@ -7762,7 +7764,7 @@ impl ZeldaState {
         self.world_transient_mut()
             .clear_tile_interaction_shared_flag();
         self.messaging_state_mut().clear_module();
-        let main_module = self.frame_state().main_module;
+        let main_module = self.game_state.frame.main_module;
         self.set_submodule(2);
         self.set_saved_module_for_menu(main_module);
         self.set_main_module(14);
@@ -7780,7 +7782,7 @@ impl ZeldaState {
         const CONVEYOR_TILE_X_ADJUSTMENTS: [i8; 4] = [0, 0, -1, 1];
         const CONVEYOR_TILE_Y_ADJUSTMENTS: [i8; 4] = [-1, 1, 0, 0];
 
-        if (self.frame_state().frame_counter & 1) == 0 {
+        if (self.game_state.frame.frame_counter & 1) == 0 {
             return;
         }
         let idx = (j - 0x68) as usize;
@@ -7850,9 +7852,9 @@ impl ZeldaState {
         if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R garnish-spawn fc=0x{:02x} rng=0x{:02x} room=0x{:04x} k={} type=0x{:02x} state=0x{:02x} delay=0x{:02x} xarg=0x{:04x} yarg=0x{:04x} limit={} slot={} sx=0x{:04x} sy=0x{:04x} z=0x{:02x} r12=0x{:04x} r14=0x{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 self.world_region().rng_seed(),
-                self.world_location_state().dungeon_room,
+                self.game_state.world.location.dungeon_room(),
                 k,
                 self.sprite_slot(k).sprite_type(),
                 self.sprite_slot(k).state(),
@@ -8003,7 +8005,7 @@ impl ZeldaState {
     //   sprite_where_in_room[dungeon_room_index2] |= 1 << sprite_N[k];
     // }
     pub(super) fn sprite_manually_set_death_flag_uw(&mut self, k: usize) {
-        if self.world_location_state().is_outdoors()
+        if self.game_state.world.location.is_outdoors()
             || (self.sprite_slot(k).deflection_bits() & 1) != 0
             || sign8(self.sprite_slot(k).n())
         {
@@ -9172,7 +9174,7 @@ mod tests {
 
         assert_eq!(s.dialogue_message_index().value(), 0x0140);
         assert_eq!(s.ram[SUBMODULE_INDEX], 2);
-        assert_eq!(s.frame_state().saved_module_for_menu, 7);
+        assert_eq!(s.game_state.frame.saved_module_for_menu, 7);
         assert_eq!(s.ram[MAIN_MODULE_INDEX], 14);
 
         let mut dark = fresh_state();

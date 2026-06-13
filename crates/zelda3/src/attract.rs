@@ -2,9 +2,6 @@
 
 use super::*;
 
-const ATTRACT_LOW_RAM_CLEAR_START: usize = 0x20;
-const ATTRACT_LOW_RAM_CLEAR_LEN: usize = 0x51;
-
 pub(super) const SOLDIER_DRAW1_CHAR: [u8; 4] = [0x42, 0x42, 0x40, 0x44];
 pub(super) const SOLDIER_DRAW1_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
 pub(super) const SOLDIER_DRAW1_YD: [i8; 26] = [
@@ -68,8 +65,8 @@ pub(super) const SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
 impl ZeldaState {
     pub(super) fn module14_attract(&mut self) {
         let mut state = self.attract_scene().state();
-        if self.display_state().screen_brightness != 0
-            && self.display_state().screen_brightness != 128
+        if self.game_state.display.screen_brightness != 0
+            && self.game_state.display.screen_brightness != 128
             && state != 0
             && state != 2
             && state != 6
@@ -95,7 +92,7 @@ impl ZeldaState {
         self.attract_scene_mut().clear_intro_did_run_step();
         self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
-        if self.display_state().screen_brightness != 0 {
+        if self.game_state.display.screen_brightness != 0 {
             self.decrement_screen_brightness();
             return;
         }
@@ -108,7 +105,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_init_graphics(&mut self) {
-        self.fill_ram(ATTRACT_LOW_RAM_CLEAR_START, ATTRACT_LOW_RAM_CLEAR_LEN, 0);
+        self.clear_attract_low_work_area();
         self.erase_tile_maps_normal();
         self.Attract_LoadBG3GFX();
         self.palette_buffer_mut().set_overworld_palette_mode(4);
@@ -187,7 +184,8 @@ impl ZeldaState {
         self.clear_hdma_enable_mask();
         self.palette_filter_mut().set_color_window_selection(2);
         self.palette_filter_mut().set_color_math_control(0x20);
-        self.sprite_system_mut().set_misc_sprites_graphics_index(10);
+        self.world_palette_theme_mut()
+            .set_misc_sprites_graphics_index(10);
         self.load_common_sprites();
 
         let attract_bg2_vofs_backup = self.attract_scene().bg2_vofs_backup();
@@ -329,7 +327,7 @@ impl ZeldaState {
 
     pub(super) fn attract_skip_to_file_select(&mut self) {
         self.decrement_screen_brightness();
-        if self.display_state().screen_brightness != 0 {
+        if self.game_state.display.screen_brightness != 0 {
             return;
         }
         self.enable_force_blank();
@@ -384,7 +382,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_in_sequence(&mut self) {
-        if self.display_state().screen_brightness != 15 {
+        if self.game_state.display.screen_brightness != 15 {
             if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
                 self.player_state_mut().set_speed_setting(1);
@@ -395,7 +393,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_out_sequence(&mut self) {
-        if self.display_state().screen_brightness != 0 {
+        if self.game_state.display.screen_brightness != 0 {
             if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.decrement_screen_brightness();
                 self.player_state_mut().set_speed_setting(1);
@@ -457,7 +455,7 @@ impl ZeldaState {
 
         self.attract_scene_mut().set_oam_index(0);
         if self.attract_scene().fade_in_complete_flag() == 0 {
-            if self.display_state().screen_brightness != 15 {
+            if self.game_state.display.screen_brightness != 15 {
                 self.increment_screen_brightness();
             } else {
                 self.attract_scene_mut().increment_fade_in_complete_flag();
@@ -734,7 +732,7 @@ impl ZeldaState {
         ];
         const NUM: [usize; 8] = [2, 2, 2, 6, 6, 10, 10, 14];
 
-        let k = (self.frame_state().frame_counter >> 2) as usize & 1;
+        let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
         let n = NUM[(self.attract_scene().maiden_warp_step() >> 1) as usize & 7];
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
@@ -796,7 +794,7 @@ impl ZeldaState {
 
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
-        let k = (self.frame_state().frame_counter >> 2) as usize & 1;
+        let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
         let n = NUM[(self.attract_scene().maiden_warp_step() >> 1) as usize & 7];
         self.attract_draw_sprite_set2_slice(&OAMS[k * 14 + (14 - n)..k * 14 + 14]);
 
@@ -920,7 +918,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_fade_in_step(&mut self) {
-        if self.display_state().screen_brightness != 15 {
+        if self.game_state.display.screen_brightness != 15 {
             if (self.player_state_mut().decrement_speed_setting() as i8) < 0 {
                 self.increment_screen_brightness();
                 self.player_state_mut().set_speed_setting(1);
@@ -1027,7 +1025,7 @@ impl ZeldaState {
         if self.attract_scene().prison_soldier_x_lo() == 0 {
             self.attract_scene_mut().increment_scene_substep();
         }
-        if self.frame_state().frame_counter & 1 != 0 {
+        if self.game_state.frame.frame_counter & 1 != 0 {
             self.decrement_attract_vram_destination_address();
         }
         self.attract_scene_mut().set_x_base(0x58);
@@ -1083,7 +1081,7 @@ impl ZeldaState {
             return;
         };
 
-        if self.frame_state().frame_counter & 1 != 0 {
+        if self.game_state.frame.frame_counter & 1 != 0 {
             self.decrement_attract_vram_destination_address();
         }
         self.attract_scene_mut().set_x_base(0x58);
@@ -1170,7 +1168,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_polka_dots(&mut self) {
-        if self.frame_state().frame_counter & 3 == 0 {
+        if self.game_state.frame.frame_counter & 3 == 0 {
             self.ppu_scroll_copy_mut().add_bg1_v_copy_low(1);
             self.ppu_scroll_copy_mut().add_bg1_h_copy_low(1);
             self.ppu_scroll_copy_mut().add_bg2_v_copy_low(1);
@@ -1206,11 +1204,7 @@ impl ZeldaState {
             3 => &ATTRACT_LEGEND_TILEMAP_BYTES_3[..],
             _ => &[],
         };
-        let len = data.len().min(
-            self.ram
-                .len()
-                .saturating_sub(self.display_state().vram_upload_buffer_base()),
-        );
+        let len = data.len().min(self.vram_upload_buffer_remaining_len());
         self.copy_vram_upload_buffer_bytes(0, &data[..len]);
         self.set_bg_vram_load_mode(1);
     }

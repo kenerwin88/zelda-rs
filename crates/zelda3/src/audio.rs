@@ -10,9 +10,6 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 
-const MSU_RESUME_INFO_ALT: usize = 0x1db20;
-const MSU_RESUME_INFO: usize = 0x1db60;
-
 const MSU_TRACK_REPEATS: [u8; 48] = [
     1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
     1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -44,18 +41,6 @@ const MSU_DELUXE_ENTRANCE_TRACKS: [u8; 133] = [
 const MSU_VOLUME_TRANSITION_TARGETS: [u8; 4] = [0, 64, 255, 255];
 const MSU_VOLUME_TRANSITION_STEPS: [u8; 4] = [7, 3, 3, 24];
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct MsuPlayerResumeInfo {
-    tag: u32,
-    offset: u32,
-    samples_until_repeat: u32,
-    range_cur: u16,
-    range_repeat: u16,
-    initial_packet_bytes: u64,
-    orig_track: u8,
-    actual_track: u8,
-}
-
 pub(super) struct MsuPlayer {
     buffer_size: u32,
     buffer_pos: u32,
@@ -64,7 +49,7 @@ pub(super) struct MsuPlayer {
     total_samples_in_file: u32,
     repeat_position: u32,
     cur_file_offs: u32,
-    resume_info: MsuPlayerResumeInfo,
+    resume_info: MsuResumeInfoState,
     enabled: u8,
     state: u8,
     volume: f32,
@@ -118,7 +103,7 @@ impl Default for MsuPlayer {
             total_samples_in_file: 0,
             repeat_position: 0,
             cur_file_offs: 0,
-            resume_info: MsuPlayerResumeInfo::default(),
+            resume_info: MsuResumeInfoState::default(),
             enabled: 0,
             state: MSU_STATE_IDLE,
             volume: 0.0,
@@ -323,7 +308,7 @@ impl ZeldaState {
         if mp.state != MSU_STATE_FINISHED_PLAYING {
             mp.state = MSU_STATE_IDLE;
         }
-        mp.resume_info = MsuPlayerResumeInfo::default();
+        mp.resume_info = MsuResumeInfoState::default();
     }
 
     fn msu_player_open(&mut self, orig_track: i32, resume_from_snapshot: bool) {
@@ -333,24 +318,22 @@ impl ZeldaState {
         };
 
         let resume = if !resume_from_snapshot {
-            let mut resume = MsuPlayerResumeInfo::default();
-            if self.frame_state().main_module == 9
-                && actual_track
-                    == Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO_ALT).actual_track
+            let mut resume = MsuResumeInfoState::default();
+            if self.game_state.frame.main_module == 9
+                && actual_track == self.msu_resume_info(MsuResumeSlot::Alternate).actual_track
                 && self.audio.config_resume_msu
             {
-                resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO_ALT);
+                resume = self.msu_resume_info(MsuResumeSlot::Alternate);
             }
             if self.audio.msu_player.state >= MSU_STATE_RESUMING {
-                Self::write_msu_resume_info(
-                    &mut self.ram,
-                    MSU_RESUME_INFO_ALT,
+                self.save_msu_resume_info(
+                    MsuResumeSlot::Alternate,
                     self.audio.msu_player.resume_info,
                 );
             }
             resume
         } else {
-            Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO)
+            self.msu_resume_info(MsuResumeSlot::Primary)
         };
 
         let volume_target = self.audio.volume_transition_target_float[3];
@@ -977,7 +960,7 @@ impl ZeldaState {
         }
         if self.audio.msu_player.enabled != 0 {
             self.audio.msu_player.volume = 0.0;
-            let resume = Self::read_msu_resume_info(&self.ram, MSU_RESUME_INFO);
+            let resume = self.msu_resume_info(MsuResumeSlot::Primary);
             let system_signals = self.system_signals();
             let current_music_control = system_signals.current_music_control();
             let last_music_control = system_signals.last_music_control();
@@ -1015,11 +998,7 @@ impl ZeldaState {
         }
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
         self.system_signals_mut().set_msu_volume(msu_volume);
-        Self::write_msu_resume_info(
-            &mut self.ram,
-            MSU_RESUME_INFO,
-            self.audio.msu_player.resume_info,
-        );
+        self.save_msu_resume_info(MsuResumeSlot::Primary, self.audio.msu_player.resume_info);
     }
 
     pub fn zelda_enable_msu(&mut self, enable: u8) {
@@ -1096,55 +1075,18 @@ impl ZeldaState {
         crate::spc_player::spc_player_load_dsp_c_saveload(self.audio.spc_player, data)
     }
 
-    fn read_msu_resume_info(ram: &[u8], offset: usize) -> MsuPlayerResumeInfo {
-        if offset + 28 > ram.len() {
-            return MsuPlayerResumeInfo::default();
-        }
-        MsuPlayerResumeInfo {
-            tag: read_le_u32(ram, offset).unwrap_or(0),
-            offset: read_le_u32(ram, offset + 4).unwrap_or(0),
-            samples_until_repeat: read_le_u32(ram, offset + 8).unwrap_or(0),
-            range_cur: read_le_u16(ram, offset + 12),
-            range_repeat: read_le_u16(ram, offset + 14),
-            initial_packet_bytes: read_le_u64(ram, offset + 16).unwrap_or(0),
-            orig_track: ram[offset + 24],
-            actual_track: ram[offset + 25],
-        }
+    fn msu_resume_info(&self, slot: MsuResumeSlot) -> MsuResumeInfoState {
+        self.system_signals().msu_resume_info(slot)
     }
 
-    fn write_msu_resume_info(ram: &mut [u8], offset: usize, info: MsuPlayerResumeInfo) {
-        if offset + 28 > ram.len() {
-            return;
-        }
-        write_le_u32(ram, offset, info.tag);
-        write_le_u32(ram, offset + 4, info.offset);
-        write_le_u32(ram, offset + 8, info.samples_until_repeat);
-        write_le_u16(ram, offset + 12, info.range_cur);
-        write_le_u16(ram, offset + 14, info.range_repeat);
-        write_le_u64(ram, offset + 16, info.initial_packet_bytes);
-        ram[offset + 24] = info.orig_track;
-        ram[offset + 25] = info.actual_track;
+    fn save_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
+        self.system_signals_mut().set_msu_resume_info(slot, info);
     }
 }
 
 fn read_le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     let slice = bytes.get(offset..offset + 4)?;
     Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-}
-
-fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    let slice = bytes.get(offset..offset + 8)?;
-    Some(u64::from_le_bytes([
-        slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
-    ]))
-}
-
-fn write_le_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-}
-
-fn write_le_u64(bytes: &mut [u8], offset: usize, value: u64) {
-    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
 }
 
 #[cfg(test)]
@@ -1176,8 +1118,8 @@ mod tests {
         dir
     }
 
-    fn resume_info(tag: u32, actual_track: u8) -> MsuPlayerResumeInfo {
-        MsuPlayerResumeInfo {
+    fn resume_info(tag: u32, actual_track: u8) -> MsuResumeInfoState {
+        MsuResumeInfoState {
             tag,
             offset: 0x1122_3344,
             samples_until_repeat: 0x5566_7788,
@@ -1199,7 +1141,7 @@ mod tests {
         state.msu_player_open(5, false);
 
         assert_eq!(
-            ZeldaState::read_msu_resume_info(&state.ram, MSU_RESUME_INFO_ALT),
+            state.msu_resume_info(MsuResumeSlot::Alternate),
             resume_info(0x1234_5678, 5)
         );
         assert_eq!(state.audio.msu_player.state, MSU_STATE_IDLE);

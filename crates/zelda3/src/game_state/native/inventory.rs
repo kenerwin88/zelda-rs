@@ -83,6 +83,24 @@ impl InventoryItemsState {
         self.item_slots.get(index).copied().unwrap_or(0)
     }
 
+    pub(crate) fn item_memory_value(&self, ram: &[u8], item_memory_addr: usize) -> u8 {
+        if (LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT).contains(&item_memory_addr) {
+            self.inventory_item(item_memory_addr - LINK_ITEM_BOW)
+        } else if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT)
+            .contains(&item_memory_addr)
+        {
+            self.bottle(item_memory_addr - LINK_BOTTLE_INFO)
+        } else {
+            match item_memory_addr {
+                HUD_CUR_ITEM => self.equipped_button_item(0),
+                HUD_CUR_ITEM_X => self.equipped_button_item(1),
+                HUD_CUR_ITEM_L => self.equipped_button_item(2),
+                HUD_CUR_ITEM_R => self.equipped_button_item(3),
+                _ => ram.get(item_memory_addr).copied().unwrap_or(0),
+            }
+        }
+    }
+
     pub(crate) fn has_inventory_item(&self, index: usize) -> bool {
         self.inventory_item(index) != 0
     }
@@ -850,6 +868,10 @@ impl SaveProgressState {
         );
     }
 
+    pub(crate) fn set_progress_indicator_3(&mut self, value: u8) {
+        self.set_save_byte(SRAM_PROGRESS_INDICATOR_3, value);
+    }
+
     pub(crate) fn clear_progress_indicator_3_bits(&mut self, bits: u8) {
         self.set_save_byte(
             SRAM_PROGRESS_INDICATOR_3,
@@ -1024,6 +1046,11 @@ impl<'a> NativeSaveProgressBridgeMut<'a> {
 
     pub(crate) fn or_progress_indicator_3(&mut self, bits: u8) {
         self.state.or_progress_indicator_3(bits);
+        self.sync_byte(SRAM_PROGRESS_INDICATOR_3, self.state.progress_indicator_3());
+    }
+
+    pub(crate) fn set_progress_indicator_3(&mut self, value: u8) {
+        self.state.set_progress_indicator_3(value);
         self.sync_byte(SRAM_PROGRESS_INDICATOR_3, self.state.progress_indicator_3());
     }
 

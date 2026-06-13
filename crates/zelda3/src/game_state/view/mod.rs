@@ -9,18 +9,15 @@ fn copy_word(ram: &mut [u8], dst: usize, src: usize) {
 
 use crate::game_state::constants::*;
 
-mod effects;
+mod compatibility;
+mod frame;
 mod player;
-mod poly;
-mod raw;
 mod sprites;
 
+pub(crate) use compatibility::*;
 #[allow(unused_imports)]
-pub(crate) use effects::*;
+pub(crate) use frame::*;
 pub(crate) use player::*;
-#[allow(unused_imports)]
-pub(crate) use poly::*;
-pub(crate) use raw::*;
 pub(crate) use sprites::*;
 
 fn byte(ram: &[u8], offset: usize) -> u8 {

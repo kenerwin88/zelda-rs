@@ -180,7 +180,6 @@ def direct_ram_findings() -> list[Finding]:
 
 
 ALLOWED_NATIVE_BRIDGE_FUNCTIONS = {
-    "sync_overworld_map16_load_from_ram",
     "set_rom_startup_timing",
     "run_frame_internal",
     "emu_sync_memory_region",

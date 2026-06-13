@@ -30,7 +30,7 @@ impl ZeldaState {
             let world = self.world_scroll();
             eprintln!(
                 "tile-probe frame={} x=0x{:04x} y=0x{:04x} pos=0x{:04x} map16=0x{:04x} map8=0x{:04x} attr=0x{:02x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 x,
                 y,
                 pos,
@@ -150,7 +150,7 @@ impl ZeldaState {
 
     pub(super) fn hookshot_check_tile_collision(&mut self, k: i32) {
         let k = k as usize;
-        let bak0 = self.world_location_state().dungeon_room_index();
+        let bak0 = self.game_state.world.location.dungeon_room_index();
         let bak1 = self.player_state().lower_level_state();
         if self.ancilla_slot(k).work_byte_1() != 0 {
             if self.dungeon_stair_movement().kind_of_in_room_staircase() == 0 {
@@ -307,7 +307,7 @@ impl ZeldaState {
 
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
         let mut offset = 0usize;
-        let is_indoors = self.world_location_state().is_indoors();
+        let is_indoors = self.game_state.world.location.is_indoors();
         let trace = env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame();
         let r14_before = self.tile_detect_position().collision_bits();
@@ -339,11 +339,11 @@ impl ZeldaState {
         if trace {
             eprintln!(
                 "tile-exec frame={} x=0x{:04x} y=0x{:04x} bits=0x{:04x} indoors={} lower={} offs=0x{:04x} tile=0x{:02x} link=0x{:04x}/0x{:04x} speed=0x{:02x}/0x{:02x} r14=0x{:04x}->0x{:04x} r12=0x{:04x}->0x{:04x} misc=0x{:04x}->0x{:04x} normal=0x{:04x}->0x{:04x} pit=0x{:02x}->0x{:02x} diag=0x{:04x}->0x{:04x} below=0x{:02x}->0x{:02x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 x,
                 y,
                 bits,
-                self.world_location_state().indoor_flag,
+                self.game_state.world.location.indoor_flag(),
                 self.player_state().lower_level_state(),
                 offset,
                 tile,

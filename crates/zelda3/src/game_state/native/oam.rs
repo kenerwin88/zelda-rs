@@ -172,6 +172,66 @@ impl OamState {
         self.turtle_rock_priority_flag
     }
 
+    pub(crate) fn set_priority_word(&mut self, value: u16) {
+        self.priority_value = value;
+    }
+
+    pub(crate) fn subtract_priority_word(&mut self, value: u16) {
+        self.priority_value = self.priority_value.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_priority_high(&mut self, value: u8) {
+        self.priority_value = (self.priority_value & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    pub(crate) fn set_current_pointer(&mut self, value: u16) {
+        self.current_pointer = value;
+    }
+
+    pub(crate) fn add_current_pointer(&mut self, value: u16) {
+        self.current_pointer = self.current_pointer.wrapping_add(value);
+    }
+
+    pub(crate) fn subtract_current_pointer(&mut self, value: u16) {
+        self.current_pointer = self.current_pointer.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_current_extended_pointer(&mut self, value: u16) {
+        self.current_extended_pointer = value;
+    }
+
+    pub(crate) fn add_current_extended_pointer(&mut self, value: u16) {
+        self.current_extended_pointer = self.current_extended_pointer.wrapping_add(value);
+    }
+
+    pub(crate) fn subtract_current_extended_pointer(&mut self, value: u16) {
+        self.current_extended_pointer = self.current_extended_pointer.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_sprite_sorting_setting(&mut self, value: u8) {
+        self.sprite_sorting_setting = value;
+    }
+
+    pub(crate) fn clear_sprite_sorting_setting(&mut self) {
+        self.sprite_sorting_setting = 0;
+    }
+
+    pub(crate) fn set_priority_value_2(&mut self, value: u16) {
+        self.priority_value_2 = value;
+    }
+
+    pub(crate) fn set_sort_sprites_offset(&mut self, value: u16) {
+        self.sort_sprites_offset = value;
+    }
+
+    pub(crate) fn clear_sort_sprites_offset(&mut self) {
+        self.sort_sprites_offset = 0;
+    }
+
+    pub(crate) fn set_player_oam_computed_value(&mut self, value: u8) {
+        self.player_oam_computed_value = value;
+    }
+
     pub(crate) fn entry_x(&self, addr: usize) -> u8 {
         self.shadow_byte(addr)
     }
@@ -267,71 +327,78 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_priority_word(&mut self, value: u16) {
-        self.state.priority_value = value;
+        self.state.set_priority_word(value);
         self.sync();
     }
 
     pub(crate) fn subtract_priority_word(&mut self, value: u16) {
-        self.set_priority_word(self.state.priority_value.wrapping_sub(value));
+        self.state.subtract_priority_word(value);
+        self.sync();
     }
 
     pub(crate) fn set_priority_high(&mut self, value: u8) {
-        self.state.priority_value = (self.state.priority_value & 0x00ff) | (u16::from(value) << 8);
+        self.state.set_priority_high(value);
         self.sync();
     }
 
     pub(crate) fn set_current_pointer(&mut self, value: u16) {
-        self.state.current_pointer = value;
+        self.state.set_current_pointer(value);
         self.sync();
     }
 
     pub(crate) fn add_current_pointer(&mut self, value: u16) {
-        self.set_current_pointer(self.state.current_pointer.wrapping_add(value));
+        self.state.add_current_pointer(value);
+        self.sync();
     }
 
     pub(crate) fn subtract_current_pointer(&mut self, value: u16) {
-        self.set_current_pointer(self.state.current_pointer.wrapping_sub(value));
+        self.state.subtract_current_pointer(value);
+        self.sync();
     }
 
     pub(crate) fn set_current_extended_pointer(&mut self, value: u16) {
-        self.state.current_extended_pointer = value;
+        self.state.set_current_extended_pointer(value);
         self.sync();
     }
 
     pub(crate) fn set_sprite_sorting_setting(&mut self, value: u8) {
-        self.state.sprite_sorting_setting = value;
+        self.state.set_sprite_sorting_setting(value);
         self.sync();
     }
 
     pub(crate) fn set_priority_value_2(&mut self, value: u16) {
-        self.state.priority_value_2 = value;
+        self.state.set_priority_value_2(value);
         self.sync();
     }
 
     pub(crate) fn set_sort_sprites_offset(&mut self, value: u16) {
-        self.state.sort_sprites_offset = value;
+        self.state.set_sort_sprites_offset(value);
         self.sync();
     }
 
     pub(crate) fn clear_sort_sprites_offset(&mut self) {
-        self.set_sort_sprites_offset(0);
+        self.state.clear_sort_sprites_offset();
+        self.sync();
     }
 
     pub(crate) fn set_player_oam_computed_value(&mut self, value: u8) {
-        self.state.player_oam_computed_value = value;
+        self.state.set_player_oam_computed_value(value);
         self.sync();
     }
 
     pub(crate) fn clear_sprite_sorting_setting(&mut self) {
-        self.set_sprite_sorting_setting(0);
+        self.state.clear_sprite_sorting_setting();
+        self.sync();
     }
 
     pub(crate) fn add_current_extended_pointer(&mut self, value: u16) {
-        self.set_current_extended_pointer(self.state.current_extended_pointer.wrapping_add(value));
+        self.state.add_current_extended_pointer(value);
+        self.sync();
     }
 
     pub(crate) fn subtract_current_extended_pointer(&mut self, value: u16) {
-        self.set_current_extended_pointer(self.state.current_extended_pointer.wrapping_sub(value));
+        self.state.subtract_current_extended_pointer(value);
+        self.sync();
     }
 
     pub(crate) fn set_extended_byte(&mut self, index: usize, value: u8) {

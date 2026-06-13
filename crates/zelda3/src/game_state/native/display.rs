@@ -229,6 +229,105 @@ impl PaletteFilterState {
             _ => 0,
         }
     }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.countdown = value;
+    }
+
+    pub(crate) fn increment_countdown(&mut self) {
+        self.countdown = self.countdown.wrapping_add(1);
+    }
+
+    pub(crate) fn decrement_countdown(&mut self) {
+        self.countdown = self.countdown.wrapping_sub(1);
+    }
+
+    pub(crate) fn set_countdown_word(&mut self, value: u16) {
+        self.countdown = value as u8;
+        self.countdown_high = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.darkening_or_lightening_screen = value;
+    }
+
+    pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.darkening_or_lightening_screen ^= value;
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
+        self.darkening_or_lightening_screen = value as u8;
+        self.darkening_or_lightening_screen_high = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_color_window_selection(&mut self, value: u8) {
+        self.color_window_selection = value;
+    }
+
+    pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
+        self.color_window_selection = value as u8;
+        self.color_math_control = (value >> 8) as u8;
+    }
+
+    pub(crate) fn set_color_math_control(&mut self, value: u8) {
+        self.color_math_control = value;
+    }
+
+    pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
+        self.fixed_color_red = value;
+    }
+
+    pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
+        self.fixed_color_red |= value;
+    }
+
+    pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
+        self.fixed_color_red = self.fixed_color_red.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
+        self.fixed_color_green = value;
+    }
+
+    pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
+        self.fixed_color_green |= value;
+    }
+
+    pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
+        self.fixed_color_green = self.fixed_color_green.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
+        self.fixed_color_blue = value;
+    }
+
+    pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
+        self.fixed_color_blue |= value;
+    }
+
+    pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
+        self.fixed_color_blue = self.fixed_color_blue.wrapping_sub(value);
+    }
+
+    pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) -> bool {
+        match index {
+            0 => self.fixed_color_red = value,
+            1 => self.fixed_color_green = value,
+            2 => self.fixed_color_blue = value,
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) -> bool {
+        match index {
+            0 => self.fixed_color_red |= value,
+            1 => self.fixed_color_green |= value,
+            2 => self.fixed_color_blue |= value,
+            _ => return false,
+        }
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -371,6 +470,67 @@ impl HudRuntimeState {
 
     pub(crate) fn tick_counter(&self) -> u8 {
         self.module_tick_counter
+    }
+
+    pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
+        self.super_bomb_indicator_timer = value;
+    }
+
+    pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
+        self.super_bomb_indicator_counter = value;
+    }
+
+    pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
+        self.rupee_sfx_sound_delay = value;
+    }
+
+    pub(crate) fn set_heart_animation_active(&mut self, value: u8) {
+        self.heart_animation_active = value;
+    }
+
+    pub(crate) fn clear_heart_animation_active(&mut self) {
+        self.set_heart_animation_active(0);
+    }
+
+    pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
+        self.heart_refill_countdown = value;
+    }
+
+    pub(crate) fn set_heart_refill_animation_subpixel(&mut self, value: u8) {
+        self.heart_refill_animation_subpixel = value;
+    }
+
+    pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
+        self.flashing_circle_timer = value;
+    }
+
+    pub(crate) fn set_previous_menu_joypad_h(&mut self, value: u8) {
+        self.previous_menu_joypad_h = value;
+    }
+
+    pub(crate) fn clear_previous_menu_joypad_h(&mut self) {
+        self.set_previous_menu_joypad_h(0);
+    }
+
+    pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
+        self.equipment_menu_exit_state = value;
+    }
+
+    pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
+        self.bottle_menu_row = value;
+    }
+
+    pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
+        self.bottle_menu_row = self.bottle_menu_row.wrapping_sub(1);
+        self.bottle_menu_row
+    }
+
+    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
+        self.dungeon_dark_with_lantern = 1;
+    }
+
+    pub(crate) fn set_tick_counter(&mut self, value: u8) {
+        self.module_tick_counter = value;
     }
 }
 
@@ -533,6 +693,22 @@ impl TrinexxPaletteState {
         ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.blue_shell_delay;
         ram[TRINEXX_RED_SHELL_PALETTE_STEP] = self.red_shell_step;
         ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = self.blue_shell_step;
+    }
+
+    pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
+        self.red_shell_delay = value;
+    }
+
+    pub(crate) fn set_blue_shell_delay(&mut self, value: u8) {
+        self.blue_shell_delay = value;
+    }
+
+    pub(crate) fn set_red_shell_step(&mut self, value: u8) {
+        self.red_shell_step = value;
+    }
+
+    pub(crate) fn set_blue_shell_step(&mut self, value: u8) {
+        self.blue_shell_step = value;
     }
 
     pub(crate) fn decrement_red_shell_delay(&mut self) {
@@ -849,6 +1025,158 @@ impl PaletteBufferState {
     pub(crate) fn overworld_aux_or_main_offset(&self) -> u16 {
         self.overworld_aux_or_main_offset
     }
+
+    pub(crate) fn sprite_palette_0_left(&self) -> u8 {
+        self.sprite_palette_0_left
+    }
+
+    pub(crate) fn sprite_palette_5_left(&self) -> u8 {
+        self.sprite_palette_5_left
+    }
+
+    pub(crate) fn sprite_palette_6_left(&self) -> u8 {
+        self.sprite_palette_6_left
+    }
+
+    pub(crate) fn main_palette_indoors(&self) -> u8 {
+        self.main_palette_indoors
+    }
+
+    pub(crate) fn hud_palette(&self) -> u8 {
+        self.hud_palette
+    }
+
+    pub(crate) fn sprite_palette_6_right_indoors(&self) -> u8 {
+        self.sprite_palette_6_right_indoors
+    }
+
+    pub(crate) fn overworld_palette_aux2_hi(&self) -> u8 {
+        self.overworld_aux2_bg_palettes_5_to_7_high
+    }
+
+    pub(crate) fn overworld_palette_aux3_lo(&self) -> u8 {
+        self.overworld_aux3_bg_palette_7_low
+    }
+
+    pub(crate) fn overworld_palette_mode(&self) -> u8 {
+        self.overworld_palette_mode
+    }
+
+    pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
+        self.aux[VISIBLE_SUBPALETTE_CLEAR_START
+            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_main_visible_subpalettes(&mut self) {
+        self.main[VISIBLE_SUBPALETTE_CLEAR_START
+            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
+        self.aux[SPRITE_SUBPALETTE_CLEAR_START
+            ..SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
+        write_palette_word(&mut self.main, index, value);
+    }
+
+    pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
+        write_palette_word(&mut self.aux, index, value);
+    }
+
+    pub(crate) fn set_overworld_aux_or_main_offset(&mut self, value: u16) {
+        self.overworld_aux_or_main_offset = value;
+    }
+
+    pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
+        self.set_overworld_aux_or_main_offset(0);
+    }
+
+    pub(crate) fn select_overworld_aux_palette_offset(&mut self) {
+        self.set_overworld_aux_or_main_offset(0x0200);
+    }
+
+    pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
+        self.overworld_aux_or_main_offset &= 0x00ff;
+    }
+
+    pub(crate) fn clear_main_full(&mut self) {
+        self.main.fill(0);
+    }
+
+    pub(crate) fn copy_aux_range_from(&mut self, start: usize, len: usize, src: &[u8]) -> usize {
+        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
+        self.aux[start..start + len].copy_from_slice(&src[..len]);
+        len
+    }
+
+    pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) -> usize {
+        self.copy_aux_range_from(0, PALETTE_VISIBLE_BYTES, palette)
+    }
+
+    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) -> usize {
+        self.copy_aux_range_from(0, PALETTE_BANK_BYTES, palette)
+    }
+
+    pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) -> usize {
+        let len = palette.len().min(PALETTE_BANK_BYTES);
+        self.overworld_backup[..len].copy_from_slice(&palette[..len]);
+        len
+    }
+
+    pub(crate) fn copy_main_range_from(&mut self, start: usize, len: usize, src: &[u8]) -> usize {
+        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
+        self.main[start..start + len].copy_from_slice(&src[..len]);
+        len
+    }
+
+    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) -> usize {
+        self.copy_main_range_from(0, PALETTE_BANK_BYTES, palette)
+    }
+
+    pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) -> usize {
+        self.copy_main_range_from(0, len.min(PALETTE_BANK_BYTES), src)
+    }
+
+    pub(crate) fn set_sprite_palette_0_left(&mut self, value: u8) {
+        self.sprite_palette_0_left = value;
+    }
+
+    pub(crate) fn set_sprite_palette_5_left(&mut self, value: u8) {
+        self.sprite_palette_5_left = value;
+    }
+
+    pub(crate) fn set_sprite_palette_6_left(&mut self, value: u8) {
+        self.sprite_palette_6_left = value;
+    }
+
+    pub(crate) fn set_main_palette_indoors(&mut self, value: u8) {
+        self.main_palette_indoors = value;
+    }
+
+    pub(crate) fn set_hud_palette(&mut self, value: u8) {
+        self.hud_palette = value;
+    }
+
+    pub(crate) fn set_sprite_palette_6_right_indoors(&mut self, value: u8) {
+        self.sprite_palette_6_right_indoors = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
+        self.overworld_aux2_bg_palettes_5_to_7_high = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
+        self.overworld_aux3_bg_palette_7_low = value;
+    }
+
+    pub(crate) fn set_overworld_palette_mode(&mut self, value: u8) {
+        self.overworld_palette_mode = value;
+    }
 }
 
 fn read_palette_bank(ram: &[u8], base: usize) -> Vec<u8> {
@@ -890,62 +1218,70 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     }
 
     pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
-        self.display.palette_buffer.aux[VISIBLE_SUBPALETTE_CLEAR_START
-            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.display.palette_buffer.clear_aux_visible_subpalettes();
         self.ram[AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
             ..AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
     }
 
     pub(crate) fn clear_main_visible_subpalettes(&mut self) {
-        self.display.palette_buffer.main[VISIBLE_SUBPALETTE_CLEAR_START
-            ..VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.display.palette_buffer.clear_main_visible_subpalettes();
         self.ram[MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
             ..MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
     }
 
     pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
-        self.display.palette_buffer.aux[SPRITE_SUBPALETTE_CLEAR_START
-            ..SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.display.palette_buffer.clear_aux_sprite_subpalettes();
         self.ram[AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START
             ..AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
     }
 
     pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
-        write_palette_word(&mut self.display.palette_buffer.main, index, value);
+        self.display.palette_buffer.set_main_color(index, value);
         write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
     }
 
     pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
-        write_palette_word(&mut self.display.palette_buffer.aux, index, value);
+        self.display.palette_buffer.set_aux_color(index, value);
         write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
     }
 
     pub(crate) fn set_overworld_aux_or_main_offset(&mut self, value: u16) {
-        self.display.palette_buffer.overworld_aux_or_main_offset = value;
+        self.display
+            .palette_buffer
+            .set_overworld_aux_or_main_offset(value);
         write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, value);
     }
 
     pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
-        self.set_overworld_aux_or_main_offset(0);
+        self.display
+            .palette_buffer
+            .clear_overworld_aux_or_main_offset();
+        write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
     }
 
     pub(crate) fn select_overworld_aux_palette_offset(&mut self) {
-        self.set_overworld_aux_or_main_offset(0x0200);
+        self.display
+            .palette_buffer
+            .select_overworld_aux_palette_offset();
+        write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
     }
 
     pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
-        let value = self.display.palette_buffer.overworld_aux_or_main_offset & 0x00ff;
-        self.set_overworld_aux_or_main_offset(value);
+        self.display
+            .palette_buffer
+            .keep_overworld_aux_or_main_low_byte();
+        write_le_u16(
+            self.ram,
+            OVERWORLD_PALETTE_AUX_OR_MAIN,
+            self.display.palette_buffer.overworld_aux_or_main_offset(),
+        );
     }
 
     pub(crate) fn clear_main_full(&mut self) {
-        self.display.palette_buffer.main.fill(0);
+        self.display.palette_buffer.clear_main_full();
         self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
     }
 
@@ -958,8 +1294,10 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     }
 
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
-        let len = palette.len().min(PALETTE_BANK_BYTES);
-        self.display.palette_buffer.overworld_backup[..len].copy_from_slice(&palette[..len]);
+        let len = self
+            .display
+            .palette_buffer
+            .backup_overworld_palette_from(palette);
         self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
     }
 
@@ -972,67 +1310,77 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     }
 
     pub(crate) fn set_sp0l(&mut self, value: u8) {
-        self.display.palette_buffer.sprite_palette_0_left = value;
+        self.display.palette_buffer.set_sprite_palette_0_left(value);
         self.ram[PALETTE_SP0L] = value;
     }
 
     pub(crate) fn set_sp5l(&mut self, value: u8) {
-        self.display.palette_buffer.sprite_palette_5_left = value;
+        self.display.palette_buffer.set_sprite_palette_5_left(value);
         self.ram[PALETTE_SP5L] = value;
     }
 
     pub(crate) fn set_sp6l(&mut self, value: u8) {
-        self.display.palette_buffer.sprite_palette_6_left = value;
+        self.display.palette_buffer.set_sprite_palette_6_left(value);
         self.ram[PALETTE_SP6L] = value;
     }
 
     pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
-        self.display.palette_buffer.main_palette_indoors = value;
+        self.display.palette_buffer.set_main_palette_indoors(value);
         self.ram[PALETTE_MAIN_INDOORS] = value;
     }
 
     pub(crate) fn set_hud_palette(&mut self, value: u8) {
-        self.display.palette_buffer.hud_palette = value;
+        self.display.palette_buffer.set_hud_palette(value);
         self.ram[HUD_PALETTE] = value;
     }
 
     pub(crate) fn set_sp6r_indoors(&mut self, value: u8) {
-        self.display.palette_buffer.sprite_palette_6_right_indoors = value;
+        self.display
+            .palette_buffer
+            .set_sprite_palette_6_right_indoors(value);
         self.ram[PALETTE_SP6R_INDOORS] = value;
     }
 
     pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
         self.display
             .palette_buffer
-            .overworld_aux2_bg_palettes_5_to_7_high = value;
+            .set_overworld_palette_aux2_hi(value);
         self.ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = value;
     }
 
     pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
-        self.display.palette_buffer.overworld_aux3_bg_palette_7_low = value;
+        self.display
+            .palette_buffer
+            .set_overworld_palette_aux3_lo(value);
         self.ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = value;
     }
 
     pub(crate) fn set_bg_tile_animation_countdown(&mut self, value: u16) {
-        self.display.bg_tile_animation_countdown = value;
+        self.display.reset_bg_tile_animation_countdown(value);
         write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
     }
 
     pub(crate) fn set_overworld_palette_mode(&mut self, value: u8) {
-        self.display.palette_buffer.overworld_palette_mode = value;
+        self.display
+            .palette_buffer
+            .set_overworld_palette_mode(value);
         self.ram[OVERWORLD_PALETTE_MODE] = value;
     }
 
     fn copy_aux_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
-        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
-        self.display.palette_buffer.aux[start..start + len].copy_from_slice(&src[..len]);
+        let len = self
+            .display
+            .palette_buffer
+            .copy_aux_range_from(start, len, src);
         self.ram[AUX_PALETTE_BUFFER + start..AUX_PALETTE_BUFFER + start + len]
             .copy_from_slice(&src[..len]);
     }
 
     fn copy_main_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
-        let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
-        self.display.palette_buffer.main[start..start + len].copy_from_slice(&src[..len]);
+        let len = self
+            .display
+            .palette_buffer
+            .copy_main_range_from(start, len, src);
         self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
             .copy_from_slice(&src[..len]);
     }
@@ -1210,6 +1558,11 @@ impl SpotlightHdmaState {
         for entry in &mut self.dynamic_table[start.min(end)..end] {
             *entry = 0;
         }
+    }
+
+    pub(crate) fn copy_hdma_table_dynamic_from_words(&mut self, words: &[u16]) {
+        let len = words.len().min(self.dynamic_table.len());
+        self.dynamic_table[..len].copy_from_slice(&words[..len]);
     }
 }
 
@@ -2070,6 +2423,7 @@ pub(crate) struct DisplayState {
     pub(crate) nmi_thread_stack_pointer: u16,
     pub(crate) irq_control_flag: u8,
     pub(crate) vertical_irq_trigger: u8,
+    pub(crate) crystal_rotation_counter: u8,
     pub(crate) sprite_dma_head_pointer: u8,
     pub(crate) sprite_dma_body_pointer: u8,
     pub(crate) hdma_enable_mask: u8,
@@ -2129,6 +2483,7 @@ impl DisplayState {
             nmi_thread_stack_pointer: read_le_u16(ram, POLY_THREAD_STACK),
             irq_control_flag: ram_byte(ram, IRQ_FLAG),
             vertical_irq_trigger: ram_byte(ram, VIRQ_TRIGGER),
+            crystal_rotation_counter: ram_byte(ram, CRYSTAL_ROTATION_COUNTER),
             sprite_dma_head_pointer: ram_byte(ram, DMA_HEAD_POINTER),
             sprite_dma_body_pointer: ram_byte(ram, DMA_BODY_POINTER),
             hdma_enable_mask: ram_byte(ram, HDMAEN_COPY),
@@ -2191,6 +2546,7 @@ impl DisplayState {
         write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
         ram[IRQ_FLAG] = self.irq_control_flag;
         ram[VIRQ_TRIGGER] = self.vertical_irq_trigger;
+        ram[CRYSTAL_ROTATION_COUNTER] = self.crystal_rotation_counter;
         ram[DMA_HEAD_POINTER] = self.sprite_dma_head_pointer;
         ram[DMA_BODY_POINTER] = self.sprite_dma_body_pointer;
         ram[HDMAEN_COPY] = self.hdma_enable_mask;
@@ -2257,8 +2613,82 @@ impl DisplayState {
         self.bg_vram_load_mode != 0
     }
 
+    pub(crate) fn set_screen_brightness(&mut self, value: u8) {
+        self.screen_brightness = value;
+    }
+
+    pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
+        self.screen_brightness = self.screen_brightness.wrapping_add(1);
+        self.screen_brightness
+    }
+
+    pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
+        self.screen_brightness = self.screen_brightness.wrapping_sub(1);
+        self.screen_brightness
+    }
+
+    pub(crate) fn set_nmi_update_latch(&mut self, value: u8) {
+        self.nmi_update_latch = value;
+    }
+
+    pub(crate) fn latch_nmi_update(&mut self) {
+        self.nmi_update_latch = 1;
+    }
+
+    pub(crate) fn clear_nmi_update_latch(&mut self) {
+        self.nmi_update_latch = 0;
+    }
+
+    pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
+        self.core_update_disable_flag = value;
+    }
+
+    pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
+        self.core_update_disable_flag = value as u8;
+    }
+
+    pub(crate) fn clear_core_update_disable_flag(&mut self) {
+        self.core_update_disable_flag = 0;
+    }
+
+    pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
+        self.core_update_disable_flag = self.core_update_disable_flag.wrapping_add(1);
+        self.core_update_disable_flag
+    }
+
+    pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
+        self.pending_nmi_subroutine = value;
+    }
+
+    pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
+        self.pending_nmi_subroutine = 0;
+    }
+
+    pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
+        let value = self.pending_nmi_subroutine;
+        self.clear_pending_nmi_subroutine();
+        value
+    }
+
+    pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
+        self.bg_vram_load_mode = value;
+    }
+
+    pub(crate) fn clear_bg_vram_load_mode(&mut self) {
+        self.bg_vram_load_mode = 0;
+    }
+
     pub(crate) fn has_pending_tilemap_update(&self) -> bool {
         self.pending_tilemap_update_destination_page != 0
+    }
+
+    pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
+        self.pending_tilemap_update_destination_page = destination_page;
+        self.pending_tilemap_update_source_offset = source_offset;
+    }
+
+    pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
+        self.pending_tilemap_update_destination_page = 0;
     }
 
     pub(crate) fn pending_tilemap_update_vram_destination(&self) -> usize {
@@ -2278,6 +2708,100 @@ impl DisplayState {
         u16::from(self.main_screen_layers) | (u16::from(self.sub_screen_layers) << 8)
     }
 
+    pub(crate) fn set_bg_mode(&mut self, value: u8) {
+        self.bg_mode = value;
+    }
+
+    pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
+        self.main_screen_layers = value;
+    }
+
+    pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
+        self.main_screen_layers &= value;
+    }
+
+    pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
+        self.main_screen_layers |= value;
+    }
+
+    pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
+        self.sub_screen_layers = value;
+    }
+
+    pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
+        self.sub_screen_layers &= value;
+    }
+
+    pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
+        self.sub_screen_layers |= value;
+    }
+
+    pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
+        self.main_screen_layers = value as u8;
+        self.sub_screen_layers = (value >> 8) as u8;
+    }
+
+    pub(crate) fn clear_sub_screen_layers_word_alias(&mut self) {
+        self.sub_screen_layers = 0;
+        self.main_screen_window_layers = 0;
+    }
+
+    pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
+        self.bg12_window_selection = value;
+    }
+
+    pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
+        self.bg34_window_selection = value;
+    }
+
+    pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
+        self.object_color_window_selection = value;
+    }
+
+    pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
+        self.main_screen_window_layers = value;
+    }
+
+    pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
+        self.sub_screen_window_layers = value;
+    }
+
+    pub(crate) fn set_window_layer_masks(
+        &mut self,
+        bg12_window_selection: u8,
+        bg34_window_selection: u8,
+        object_color_window_selection: u8,
+        main_screen_window_layers: u8,
+        sub_screen_window_layers: u8,
+    ) {
+        self.bg12_window_selection = bg12_window_selection;
+        self.bg34_window_selection = bg34_window_selection;
+        self.object_color_window_selection = object_color_window_selection;
+        self.main_screen_window_layers = main_screen_window_layers;
+        self.sub_screen_window_layers = sub_screen_window_layers;
+    }
+
+    pub(crate) fn clear_window_layer_masks(&mut self) {
+        self.set_window_layer_masks(0, 0, 0, 0, 0);
+    }
+
+    pub(crate) fn clear_window_main_sub_masks(&mut self) {
+        self.main_screen_window_layers = 0;
+        self.sub_screen_window_layers = 0;
+    }
+
+    pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
+        self.nmi_copy_packets_request = value;
+    }
+
+    pub(crate) fn request_nmi_copy_packets(&mut self) {
+        self.nmi_copy_packets_request = 1;
+    }
+
+    pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
+        self.nmi_copy_packets_request = 0;
+    }
+
     pub(crate) fn has_nmi_copy_packets_request(&self) -> bool {
         self.nmi_copy_packets_request != 0
     }
@@ -2286,12 +2810,53 @@ impl DisplayState {
         self.pending_polyhedral_update != 0
     }
 
+    pub(crate) fn set_pending_polyhedral_update(&mut self, value: u8) {
+        self.pending_polyhedral_update = value;
+    }
+
+    pub(crate) fn request_polyhedral_nmi_update(&mut self) {
+        self.pending_polyhedral_update = 0xff;
+    }
+
+    pub(crate) fn clear_pending_polyhedral_update(&mut self) {
+        self.pending_polyhedral_update = 0;
+    }
+
     pub(crate) fn has_chr_halfslot_request(&self) -> bool {
         self.chr_halfslot_request != 0
     }
 
+    pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
+        self.chr_halfslot_request = value;
+    }
+
+    pub(crate) fn clear_chr_halfslot_request(&mut self) {
+        self.chr_halfslot_request = 0;
+    }
+
+    pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
+        self.chr_halfslot_request = self.chr_halfslot_request.wrapping_add(1);
+        self.chr_halfslot_request
+    }
+
     pub(crate) fn nmi_thread_uses_poly_stack(&self) -> bool {
         self.nmi_thread_active && self.nmi_thread_stack_pointer != 0x1f31
+    }
+
+    pub(crate) fn set_nmi_thread_active(&mut self, active: bool) {
+        self.nmi_thread_active = active;
+    }
+
+    pub(crate) fn activate_nmi_thread(&mut self) {
+        self.nmi_thread_active = true;
+    }
+
+    pub(crate) fn deactivate_nmi_thread(&mut self) {
+        self.nmi_thread_active = false;
+    }
+
+    pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
+        self.nmi_thread_stack_pointer = value;
     }
 
     pub(crate) fn has_irq_control_flag(&self) -> bool {
@@ -2300,6 +2865,59 @@ impl DisplayState {
 
     pub(crate) fn irq_control_has_vcounter_marker(&self) -> bool {
         self.irq_control_flag & 0x80 != 0
+    }
+
+    pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
+        self.irq_control_flag = value;
+    }
+
+    pub(crate) fn clear_irq_control_flag(&mut self) {
+        self.irq_control_flag = 0;
+    }
+
+    pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
+        self.vertical_irq_trigger = value;
+    }
+
+    pub(crate) fn advance_crystal_rotation_counter(&mut self, amount: u8) -> bool {
+        let total = u16::from(self.crystal_rotation_counter).wrapping_add(u16::from(amount));
+        self.crystal_rotation_counter = total as u8;
+        total > 0xff
+    }
+
+    pub(crate) fn copy_watergate_spotlight_to_spotlight_upper(&mut self) -> u16 {
+        let value = self.water_hdma_window.watergate_spotlight_y_upper();
+        self.spotlight_hdma.set_y_upper(value);
+        value
+    }
+
+    pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
+        self.copy_watergate_spotlight_to_spotlight_upper();
+        self.spotlight_hdma.increment_window_y_buffer_byte();
+        let x_radius_minus_margin =
+            (self.water_hdma_window.window_x_radius() as u8).wrapping_sub(8);
+        let value = self
+            .spotlight_hdma
+            .window_y_buffer_byte()
+            .wrapping_add(x_radius_minus_margin);
+        self.water_hdma_window.set_window_y_radius_byte(value);
+        value
+    }
+
+    pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
+        self.sprite_dma_head_pointer = value;
+    }
+
+    pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
+        self.sprite_dma_body_pointer = value;
+    }
+
+    pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
+        self.hdma_enable_mask = value;
+    }
+
+    pub(crate) fn clear_hdma_enable_mask(&mut self) {
+        self.hdma_enable_mask = 0;
     }
 
     pub(crate) fn is_hdma_channel_enabled(&self, channel: usize) -> bool {
@@ -2314,8 +2932,70 @@ impl DisplayState {
         u16::from(self.mosaic_target_level)
     }
 
+    pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
+        self.mosaic_copy = value;
+    }
+
+    pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
+        self.mosaic_copy = self.mosaic_level | mask;
+    }
+
+    pub(crate) fn set_mosaic_level(&mut self, value: u8) {
+        self.mosaic_level = value;
+    }
+
+    pub(crate) fn clear_mosaic_level(&mut self) {
+        self.mosaic_level = 0;
+    }
+
+    pub(crate) fn clear_mosaic_level_word_alias(&mut self) {
+        self.mosaic_level = 0;
+    }
+
+    pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
+        self.mosaic_level = self.mosaic_level.wrapping_add(value);
+        self.mosaic_level
+    }
+
+    pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
+        self.mosaic_level = self.mosaic_level.wrapping_sub(value);
+        self.mosaic_level
+    }
+
+    pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
+        self.mosaic_target_level = value;
+    }
+
+    pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
+        self.mosaic_target_level = value as u8;
+    }
+
+    pub(crate) fn clear_mosaic_target_level(&mut self) {
+        self.mosaic_target_level = 0;
+    }
+
+    pub(crate) fn clear_mosaic_target_level_word_alias(&mut self) {
+        self.mosaic_target_level = 0;
+    }
+
+    pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
+        self.mosaic_direction = value;
+    }
+
+    pub(crate) fn clear_mosaic_direction(&mut self) {
+        self.mosaic_direction = 0;
+    }
+
     pub(crate) fn nmi_load_target_page(&self) -> u8 {
         self.nmi_load_target_address as u8
+    }
+
+    pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
+        self.nmi_load_target_address = (self.nmi_load_target_address & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
+        self.nmi_load_target_address = value;
     }
 
     pub(crate) fn vram_upload_cursor_usize(&self) -> usize {
@@ -2458,6 +3138,70 @@ impl DisplayState {
         usize::from(self.incremental_vram_upload_counter)
     }
 
+    pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
+        self.vram_upload_cursor = value;
+    }
+
+    pub(crate) fn clear_vram_upload_cursor(&mut self) {
+        self.vram_upload_cursor = 0;
+    }
+
+    pub(crate) fn apply_tilemap_upload_prefix_to_vram_cursor(&mut self, bytes: &[u8]) -> u16 {
+        match bytes {
+            [] => {}
+            [lo] => {
+                self.vram_upload_cursor = (self.vram_upload_cursor & 0xff00) | u16::from(*lo);
+            }
+            [lo, hi, ..] => {
+                self.vram_upload_cursor = u16::from(*lo) | (u16::from(*hi) << 8);
+            }
+        }
+        self.vram_upload_cursor
+    }
+
+    pub(crate) fn advance_vram_upload_cursor_by(&mut self, value: u16) -> u16 {
+        self.vram_upload_cursor = self.vram_upload_cursor.wrapping_add(value);
+        self.vram_upload_cursor
+    }
+
+    pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
+        self.incremental_vram_upload_counter = 0;
+    }
+
+    pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
+        self.incremental_vram_upload_counter = self.incremental_vram_upload_counter.wrapping_add(1);
+        self.incremental_vram_upload_counter
+    }
+
+    pub(crate) fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
+        self.link_dma_sources.set_source(slot, value);
+    }
+
+    pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
+        self.bg_tile_animation_countdown = value;
+    }
+
+    pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
+        self.bg_tile_animation_countdown = self.bg_tile_animation_countdown.wrapping_sub(1);
+        self.bg_tile_animation_countdown
+    }
+
+    pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
+        self.message_dma_destination_address = value;
+    }
+
+    pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
+        self.message_dma_tile_base = value;
+    }
+
+    pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
+        self.message_dma_tile_limit = value;
+    }
+
+    pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
+        self.message_dma_tile_sentinel = value;
+    }
+
     pub(crate) fn message_dma_destination_address_usize(&self) -> usize {
         usize::from(self.message_dma_destination_address)
     }
@@ -2468,6 +3212,18 @@ impl DisplayState {
 
     pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
         self.travel_bird_tile_offset != 0
+    }
+
+    pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
+        self.overworld_fixed_color_adjustment = value;
+    }
+
+    pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
+        self.travel_bird_tile_offset = value;
+    }
+
+    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
+        self.star_tile_restore_phase = 0;
     }
 
     pub(crate) fn star_tile_restore_source_offsets(&self) -> (usize, usize) {
@@ -2482,7 +3238,11 @@ impl DisplayState {
         usize::from(self.animated_tile_data_source_address)
     }
 
-    pub(crate) fn animated_tile_data<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
+    pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
+        self.animated_tile_data_source_address = value;
+    }
+
+    pub(crate) fn animated_tile_dma_source_bytes<'a>(&self, ram: &'a [u8]) -> &'a [u8] {
         &ram[self.animated_tile_data_source_usize().min(ram.len())..]
     }
 
@@ -2494,12 +3254,41 @@ impl DisplayState {
         usize::from(self.animated_tile_vram_destination_address)
     }
 
+    pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
+        self.animated_tile_vram_destination_address = value;
+    }
+
     pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
         self.attract_vram_destination_address < 0x0100
     }
 
     pub(crate) fn attract_vram_destination_page_offset(&self) -> u8 {
         self.attract_vram_destination_address as u8
+    }
+
+    pub(crate) fn set_attract_vram_destination_address(&mut self, value: u16) {
+        self.attract_vram_destination_address = value;
+    }
+
+    pub(crate) fn clear_attract_vram_destination_address(&mut self) {
+        self.set_attract_vram_destination_address(0);
+    }
+
+    pub(crate) fn set_attract_vram_destination_page_offset(&mut self, value: u8) {
+        self.attract_vram_destination_address =
+            (self.attract_vram_destination_address & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn decrement_attract_vram_destination_page_offset(&mut self) -> u8 {
+        let next = self.attract_vram_destination_page_offset().wrapping_sub(1);
+        self.set_attract_vram_destination_page_offset(next);
+        next
+    }
+
+    pub(crate) fn decrement_attract_vram_destination_address(&mut self) -> u16 {
+        self.attract_vram_destination_address =
+            self.attract_vram_destination_address.wrapping_sub(1);
+        self.attract_vram_destination_address
     }
 }
 
@@ -2521,18 +3310,19 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
     }
 
     pub(crate) fn set_address(&mut self, value: u16) {
-        self.display.attract_vram_destination_address = value;
+        self.display.set_attract_vram_destination_address(value);
         write_le_u16(self.ram, ATTRACT_VRAM_DST, value);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn clear_address(&mut self) {
-        self.set_address(0);
+        self.display.clear_attract_vram_destination_address();
+        write_le_u16(self.ram, ATTRACT_VRAM_DST, 0);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_page_offset(&mut self, value: u8) {
-        self.display.attract_vram_destination_address =
-            (self.display.attract_vram_destination_address & 0xff00) | u16::from(value);
+        self.display.set_attract_vram_destination_page_offset(value);
         write_le_u16(
             self.ram,
             ATTRACT_VRAM_DST,
@@ -2542,19 +3332,20 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
     }
 
     pub(crate) fn decrement_page_offset(&mut self) {
-        let next = self
-            .display
-            .attract_vram_destination_page_offset()
-            .wrapping_sub(1);
-        self.set_page_offset(next);
+        self.display
+            .decrement_attract_vram_destination_page_offset();
+        write_le_u16(
+            self.ram,
+            ATTRACT_VRAM_DST,
+            self.display.attract_vram_destination_address,
+        );
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn decrement_address(&mut self) -> u16 {
-        let next = self
-            .display
-            .attract_vram_destination_address
-            .wrapping_sub(1);
-        self.set_address(next);
+        let next = self.display.decrement_attract_vram_destination_address();
+        write_le_u16(self.ram, ATTRACT_VRAM_DST, next);
+        self.debug_assert_matches_ram();
         next
     }
 }
@@ -2582,137 +3373,130 @@ impl<'a> NativePaletteFilterBridgeMut<'a> {
     }
 
     pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.display.palette_filter.countdown = value;
+        self.display.palette_filter.set_countdown(value);
         self.sync();
     }
 
     pub(crate) fn increment_countdown(&mut self) {
-        self.display.palette_filter.countdown =
-            self.display.palette_filter.countdown.wrapping_add(1);
+        self.display.palette_filter.increment_countdown();
         self.sync();
     }
 
     pub(crate) fn decrement_countdown(&mut self) {
-        self.display.palette_filter.countdown =
-            self.display.palette_filter.countdown.wrapping_sub(1);
+        self.display.palette_filter.decrement_countdown();
         self.sync();
     }
 
     pub(crate) fn set_countdown_word(&mut self, value: u16) {
-        self.display.palette_filter.countdown = value as u8;
-        self.display.palette_filter.countdown_high = (value >> 8) as u8;
+        self.display.palette_filter.set_countdown_word(value);
         self.sync();
     }
 
     pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.display.palette_filter.darkening_or_lightening_screen = value;
+        self.display
+            .palette_filter
+            .set_darkening_or_lightening_screen(value);
         self.sync();
     }
 
     pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.display.palette_filter.darkening_or_lightening_screen ^= value;
+        self.display
+            .palette_filter
+            .xor_darkening_or_lightening_screen(value);
         self.sync();
     }
 
     pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
-        self.display.palette_filter.darkening_or_lightening_screen = value as u8;
         self.display
             .palette_filter
-            .darkening_or_lightening_screen_high = (value >> 8) as u8;
+            .set_darkening_or_lightening_screen_word(value);
         self.sync();
     }
 
     pub(crate) fn set_color_window_selection(&mut self, value: u8) {
-        self.display.palette_filter.color_window_selection = value;
+        self.display
+            .palette_filter
+            .set_color_window_selection(value);
         self.sync();
     }
 
     pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
-        self.display.palette_filter.color_window_selection = value as u8;
-        self.display.palette_filter.color_math_control = (value >> 8) as u8;
+        self.display
+            .palette_filter
+            .set_color_window_and_math_word(value);
         self.sync();
     }
 
     pub(crate) fn set_color_math_control(&mut self, value: u8) {
-        self.display.palette_filter.color_math_control = value;
+        self.display.palette_filter.set_color_math_control(value);
         self.sync();
     }
 
     pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_red = value;
+        self.display.palette_filter.set_fixed_color_red(value);
         self.sync();
     }
 
     pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_red |= value;
+        self.display.palette_filter.or_fixed_color_red(value);
         self.sync();
     }
 
     pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_red = self
-            .display
-            .palette_filter
-            .fixed_color_red
-            .wrapping_sub(value);
+        self.display.palette_filter.subtract_fixed_color_red(value);
         self.sync();
     }
 
     pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_green = value;
+        self.display.palette_filter.set_fixed_color_green(value);
         self.sync();
     }
 
     pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_green |= value;
+        self.display.palette_filter.or_fixed_color_green(value);
         self.sync();
     }
 
     pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_green = self
-            .display
+        self.display
             .palette_filter
-            .fixed_color_green
-            .wrapping_sub(value);
+            .subtract_fixed_color_green(value);
         self.sync();
     }
 
     pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_blue = value;
+        self.display.palette_filter.set_fixed_color_blue(value);
         self.sync();
     }
 
     pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_blue |= value;
+        self.display.palette_filter.or_fixed_color_blue(value);
         self.sync();
     }
 
     pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.fixed_color_blue = self
-            .display
-            .palette_filter
-            .fixed_color_blue
-            .wrapping_sub(value);
+        self.display.palette_filter.subtract_fixed_color_blue(value);
         self.sync();
     }
 
     pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
-        match index {
-            0 => self.display.palette_filter.fixed_color_red = value,
-            1 => self.display.palette_filter.fixed_color_green = value,
-            2 => self.display.palette_filter.fixed_color_blue = value,
-            _ => return,
+        if self
+            .display
+            .palette_filter
+            .set_fixed_color_component(index, value)
+        {
+            self.sync();
         }
-        self.sync();
     }
 
     pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) {
-        match index {
-            0 => self.display.palette_filter.fixed_color_red |= value,
-            1 => self.display.palette_filter.fixed_color_green |= value,
-            2 => self.display.palette_filter.fixed_color_blue |= value,
-            _ => return,
+        if self
+            .display
+            .palette_filter
+            .or_fixed_color_component(index, value)
+        {
+            self.sync();
         }
-        self.sync();
     }
 }
 
@@ -2783,22 +3567,26 @@ impl<'a> NativeHudStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
-        self.display.hud_runtime.super_bomb_indicator_timer = value;
+        self.display
+            .hud_runtime
+            .set_super_bomb_indicator_timer(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
-        self.display.hud_runtime.super_bomb_indicator_counter = value;
+        self.display
+            .hud_runtime
+            .set_super_bomb_indicator_counter(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
-        self.display.hud_runtime.rupee_sfx_sound_delay = value;
+        self.display.hud_runtime.set_rupee_sfx_sound_delay(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_is_doing_heart_animation(&mut self, value: u8) {
-        self.display.hud_runtime.heart_animation_active = value;
+        self.display.hud_runtime.set_heart_animation_active(value);
         self.sync_runtime();
     }
 
@@ -2811,56 +3599,62 @@ impl<'a> NativeHudStateBridgeMut<'a> {
     }
 
     pub(crate) fn clear_is_doing_heart_animation(&mut self) {
-        self.set_is_doing_heart_animation(0);
+        self.display.hud_runtime.clear_heart_animation_active();
+        self.sync_runtime();
     }
 
     pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
-        self.display.hud_runtime.heart_refill_countdown = value;
+        self.display.hud_runtime.set_heart_refill_countdown(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_heart_refill_anim_subpos(&mut self, value: u8) {
-        self.display.hud_runtime.heart_refill_animation_subpixel = value;
+        self.display
+            .hud_runtime
+            .set_heart_refill_animation_subpixel(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
-        self.display.hud_runtime.flashing_circle_timer = value;
+        self.display.hud_runtime.set_flashing_circle_timer(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
-        self.display.hud_runtime.previous_menu_joypad_h = value;
+        self.display.hud_runtime.set_previous_menu_joypad_h(value);
         self.sync_runtime();
     }
 
     pub(crate) fn clear_prev_joypad_h(&mut self) {
-        self.set_prev_joypad_h(0);
+        self.display.hud_runtime.clear_previous_menu_joypad_h();
+        self.sync_runtime();
     }
 
     pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
-        self.display.hud_runtime.equipment_menu_exit_state = value;
+        self.display
+            .hud_runtime
+            .set_equipment_menu_exit_state(value);
         self.sync_runtime();
     }
 
     pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
-        self.display.hud_runtime.bottle_menu_row = value;
+        self.display.hud_runtime.set_bottle_menu_row(value);
         self.sync_runtime();
     }
 
     pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
-        let row = self.display.hud_runtime.bottle_menu_row.wrapping_sub(1);
-        self.set_bottle_menu_row(row);
+        let row = self.display.hud_runtime.decrement_bottle_menu_row();
+        self.sync_runtime();
         row
     }
 
     pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.display.hud_runtime.dungeon_dark_with_lantern = 1;
+        self.display.hud_runtime.set_dungeon_dark_with_lantern();
         self.sync_runtime();
     }
 
     pub(crate) fn set_tick_counter(&mut self, value: u8) {
-        self.display.hud_runtime.module_tick_counter = value;
+        self.display.hud_runtime.set_tick_counter(value);
         self.sync_runtime();
     }
 
@@ -2888,55 +3682,51 @@ impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
     }
 
     pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
-        self.display.trinexx_palette.red_shell_delay = value;
+        self.display.trinexx_palette.set_red_shell_delay(value);
         self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = value;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_blue_shell_delay(&mut self, value: u8) {
-        self.display.trinexx_palette.blue_shell_delay = value;
+        self.display.trinexx_palette.set_blue_shell_delay(value);
         self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = value;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_red_shell_step(&mut self, value: u8) {
-        self.display.trinexx_palette.red_shell_step = value;
+        self.display.trinexx_palette.set_red_shell_step(value);
         self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = value;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_blue_shell_step(&mut self, value: u8) {
-        self.display.trinexx_palette.blue_shell_step = value;
+        self.display.trinexx_palette.set_blue_shell_step(value);
         self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = value;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn decrement_red_shell_delay(&mut self) {
         self.display.trinexx_palette.decrement_red_shell_delay();
-        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] =
-            self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = self.display.trinexx_palette.red_shell_delay;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn decrement_blue_shell_delay(&mut self) {
         self.display.trinexx_palette.decrement_blue_shell_delay();
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] =
-            self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY].wrapping_sub(1);
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.display.trinexx_palette.blue_shell_delay;
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
         let value = self.display.trinexx_palette.increment_red_shell_step();
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] =
-            self.ram[TRINEXX_RED_SHELL_PALETTE_STEP].wrapping_add(1);
+        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = value;
         self.debug_assert_matches_ram();
         value
     }
 
     pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
         let value = self.display.trinexx_palette.increment_blue_shell_step();
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] =
-            self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP].wrapping_add(1);
+        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = value;
         self.debug_assert_matches_ram();
         value
     }
@@ -3039,20 +3829,18 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
     }
 
     pub(crate) fn copy_watergate_spotlight_to_spotlight_upper(&mut self) {
-        let value = read_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER);
-        self.display.spotlight_hdma.set_y_upper(value);
+        let value = self.display.copy_watergate_spotlight_to_spotlight_upper();
         write_le_u16(self.ram, SPOTLIGHT_Y_UPPER, value);
     }
 
     pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
-        self.copy_watergate_spotlight_to_spotlight_upper();
-        self.display.spotlight_hdma.increment_window_y_buffer_byte();
+        let value = self.display.advance_watergate_window_y_radius();
+        write_le_u16(
+            self.ram,
+            SPOTLIGHT_Y_UPPER,
+            self.display.spotlight_hdma.y_upper(),
+        );
         self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = self.display.spotlight_hdma.window_y_buffer_byte();
-        let x_radius_minus_margin = self.ram[WATER_HDMA_WINDOW_X_RADIUS].wrapping_sub(8);
-        let value = self.ram[SPOTLIGHT_WINDOW_Y_BUFFER].wrapping_add(x_radius_minus_margin);
-        self.display
-            .water_hdma_window
-            .set_window_y_radius_byte(value);
         self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
         self.debug_assert_matches_ram();
         value
@@ -3077,7 +3865,7 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     }
 
     pub(crate) fn set_offset(&mut self, value: u16) {
-        self.display.vram_upload_cursor = value;
+        self.display.set_vram_upload_cursor(value);
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, value);
         self.debug_assert_matches_ram();
     }
@@ -3087,8 +3875,9 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     }
 
     pub(crate) fn advance_offset_by(&mut self, value: u16) -> u16 {
-        let next = self.display.vram_upload_cursor.wrapping_add(value);
-        self.set_offset(next);
+        let next = self.display.advance_vram_upload_cursor_by(value);
+        write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, next);
+        self.debug_assert_matches_ram();
         next
     }
 
@@ -3257,12 +4046,6 @@ impl<'a> NativeGraphicsScratchBridgeMut<'a> {
         }
     }
 
-    pub(crate) fn copy_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
-        let bytes = count * 2;
-        let src = self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + bytes].to_vec();
-        self.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + bytes].copy_from_slice(&src);
-    }
-
     pub(crate) fn clear_agahnim_palette_settings(&mut self, len: usize) {
         self.ram[AGAHNIM_PAL_SETTING..AGAHNIM_PAL_SETTING + len].fill(0);
     }
@@ -3424,6 +4207,39 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
     pub(crate) fn clear_hdma_table_dynamic_range(&mut self, start: usize, count: usize) {
         self.state.clear_hdma_table_dynamic_range(start, count);
         self.sync();
+    }
+
+    fn sync_dynamic_table_words_from_ram(&mut self, source: usize, count: usize) {
+        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
+        let mut words = vec![0; count];
+        for (index, word) in words.iter_mut().enumerate() {
+            *word = read_le_u16(self.ram, source + index * 2);
+        }
+        self.state.copy_hdma_table_dynamic_from_words(&words);
+        self.sync();
+    }
+
+    fn project_dynamic_table_words_to_ram(&mut self, destination: usize, count: usize) {
+        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
+        for index in 0..count {
+            write_le_u16(
+                self.ram,
+                destination + index * 2,
+                self.state.hdma_table_dynamic_entry(index),
+            );
+        }
+    }
+
+    pub(crate) fn restore_dynamic_table_from_saveload_buffer(&mut self, count: usize) {
+        self.sync_dynamic_table_words_from_ram(SAVELOAD_HDMA_TABLE, count);
+    }
+
+    pub(crate) fn backup_dynamic_table_to_saveload_buffer(&mut self, count: usize) {
+        self.project_dynamic_table_words_to_ram(SAVELOAD_HDMA_TABLE, count);
+    }
+
+    pub(crate) fn project_dynamic_table_to_reserved_hdma_table(&mut self, count: usize) {
+        self.project_dynamic_table_words_to_ram(RESERVED_HDMA_TABLE, count);
     }
 }
 
@@ -3672,6 +4488,10 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
             self.display.vertical_irq_trigger,
             ram_byte(self.ram, VIRQ_TRIGGER)
         );
+        debug_assert_eq!(
+            self.display.crystal_rotation_counter,
+            ram_byte(self.ram, CRYSTAL_ROTATION_COUNTER)
+        );
     }
 
     fn debug_assert_sprite_dma_pointers_match_ram(&self) {
@@ -3790,178 +4610,194 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
-        self.display.screen_brightness = value;
+        self.display.set_screen_brightness(value);
         self.ram[INIDISP_COPY] = value;
         self.debug_assert_screen_brightness_matches_ram();
     }
 
     pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
-        let value = self.display.screen_brightness.wrapping_add(1);
-        self.set_screen_brightness(value);
+        let value = self.display.increment_screen_brightness();
+        self.ram[INIDISP_COPY] = value;
+        self.debug_assert_screen_brightness_matches_ram();
         value
     }
 
     pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
-        let value = self.display.screen_brightness.wrapping_sub(1);
-        self.set_screen_brightness(value);
+        let value = self.display.decrement_screen_brightness();
+        self.ram[INIDISP_COPY] = value;
+        self.debug_assert_screen_brightness_matches_ram();
         value
     }
 
     pub(crate) fn set_nmi_update_latch(&mut self, value: u8) {
-        self.display.nmi_update_latch = value;
+        self.display.set_nmi_update_latch(value);
         self.ram[NMI_BOOLEAN] = value;
         self.debug_assert_nmi_update_latch_matches_ram();
     }
 
     pub(crate) fn latch_nmi_update(&mut self) {
-        self.set_nmi_update_latch(1);
+        self.display.latch_nmi_update();
+        self.ram[NMI_BOOLEAN] = 1;
+        self.debug_assert_nmi_update_latch_matches_ram();
     }
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
-        self.set_nmi_update_latch(0);
+        self.display.clear_nmi_update_latch();
+        self.ram[NMI_BOOLEAN] = 0;
+        self.debug_assert_nmi_update_latch_matches_ram();
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
-        self.display.core_update_disable_flag = value;
+        self.display.set_core_update_disable_flag(value);
         self.ram[NMI_DISABLE_CORE_UPDATES] = value;
         self.debug_assert_core_update_disable_flag_matches_ram();
     }
 
     pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
-        self.display.core_update_disable_flag = value as u8;
+        self.display.set_core_update_disable_flag_word(value);
         write_le_u16(self.ram, NMI_DISABLE_CORE_UPDATES, value);
         self.debug_assert_core_update_disable_flag_matches_ram();
     }
 
     pub(crate) fn clear_core_update_disable_flag(&mut self) {
-        self.set_core_update_disable_flag(0);
+        self.display.clear_core_update_disable_flag();
+        self.ram[NMI_DISABLE_CORE_UPDATES] = 0;
+        self.debug_assert_core_update_disable_flag_matches_ram();
     }
 
     pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
-        let value = self.display.core_update_disable_flag.wrapping_add(1);
-        self.set_core_update_disable_flag(value);
+        let value = self.display.increment_core_update_disable_flag();
+        self.ram[NMI_DISABLE_CORE_UPDATES] = value;
+        self.debug_assert_core_update_disable_flag_matches_ram();
         value
     }
 
     pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
-        self.display.pending_nmi_subroutine = value;
+        self.display.set_pending_nmi_subroutine(value);
         self.ram[NMI_SUBROUTINE_INDEX] = value;
         self.debug_assert_pending_nmi_subroutine_matches_ram();
     }
 
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
-        self.set_pending_nmi_subroutine(0);
+        self.display.clear_pending_nmi_subroutine();
+        self.ram[NMI_SUBROUTINE_INDEX] = 0;
+        self.debug_assert_pending_nmi_subroutine_matches_ram();
     }
 
     pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
-        let value = self.display.pending_nmi_subroutine;
-        self.clear_pending_nmi_subroutine();
+        let value = self.display.take_pending_nmi_subroutine();
+        self.ram[NMI_SUBROUTINE_INDEX] = 0;
+        self.debug_assert_pending_nmi_subroutine_matches_ram();
         value
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
-        self.display.bg_vram_load_mode = value;
+        self.display.set_bg_vram_load_mode(value);
         self.ram[NMI_LOAD_BG_FROM_VRAM] = value;
         self.debug_assert_bg_vram_load_mode_matches_ram();
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
-        self.set_bg_vram_load_mode(0);
+        self.display.clear_bg_vram_load_mode();
+        self.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+        self.debug_assert_bg_vram_load_mode_matches_ram();
     }
 
     pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
-        self.display.pending_tilemap_update_destination_page = destination_page;
-        self.display.pending_tilemap_update_source_offset = source_offset;
+        self.display
+            .queue_tilemap_update(destination_page, source_offset);
         self.ram[NMI_UPDATE_TILEMAP_DST] = destination_page;
         write_le_u16(self.ram, NMI_UPDATE_TILEMAP_SRC, source_offset);
         self.debug_assert_pending_tilemap_update_matches_ram();
     }
 
     pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
-        self.display.pending_tilemap_update_destination_page = 0;
+        self.display.clear_pending_tilemap_update_destination();
         self.ram[NMI_UPDATE_TILEMAP_DST] = 0;
         self.debug_assert_pending_tilemap_update_matches_ram();
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
-        self.display.bg_mode = value;
+        self.display.set_bg_mode(value);
         self.ram[BGMODE_COPY] = value;
         self.debug_assert_bg_mode_matches_ram();
     }
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
-        self.display.main_screen_layers = value;
+        self.display.set_main_screen_layers(value);
         self.ram[TM_COPY] = value;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
-        let layers = self.display.main_screen_layers & value;
-        self.set_main_screen_layers(layers);
+        self.display.and_main_screen_layers(value);
+        self.ram[TM_COPY] = self.display.main_screen_layers;
+        self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
-        let layers = self.display.main_screen_layers | value;
-        self.set_main_screen_layers(layers);
+        self.display.or_main_screen_layers(value);
+        self.ram[TM_COPY] = self.display.main_screen_layers;
+        self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
-        self.display.sub_screen_layers = value;
+        self.display.set_sub_screen_layers(value);
         self.ram[TS_COPY] = value;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
-        self.display.sub_screen_layers = 0;
-        self.display.main_screen_window_layers = 0;
+        self.display.clear_sub_screen_layers_word_alias();
         write_le_u16(self.ram, TS_COPY, 0);
         self.debug_assert_screen_layer_masks_match_ram();
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
-        let layers = self.display.sub_screen_layers & value;
-        self.set_sub_screen_layers(layers);
+        self.display.and_sub_screen_layers(value);
+        self.ram[TS_COPY] = self.display.sub_screen_layers;
+        self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
-        let layers = self.display.sub_screen_layers | value;
-        self.set_sub_screen_layers(layers);
+        self.display.or_sub_screen_layers(value);
+        self.ram[TS_COPY] = self.display.sub_screen_layers;
+        self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
-        self.display.main_screen_layers = value as u8;
-        self.display.sub_screen_layers = (value >> 8) as u8;
+        self.display.set_layer_masks_word(value);
         write_le_u16(self.ram, TM_COPY, value);
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
-        self.display.bg12_window_selection = value;
+        self.display.set_bg12_window_selection(value);
         self.ram[W12SEL_COPY] = value;
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
-        self.display.bg34_window_selection = value;
+        self.display.set_bg34_window_selection(value);
         self.ram[W34SEL_COPY] = value;
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
-        self.display.object_color_window_selection = value;
+        self.display.set_object_color_window_selection(value);
         self.ram[WOBJSEL_COPY] = value;
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
-        self.display.main_screen_window_layers = value;
+        self.display.set_main_screen_window_layers(value);
         self.ram[TMW_COPY] = value;
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
-        self.display.sub_screen_window_layers = value;
+        self.display.set_sub_screen_window_layers(value);
         self.ram[TSW_COPY] = value;
         self.debug_assert_window_layer_masks_match_ram();
     }
@@ -3974,11 +4810,13 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         main_screen_window_layers: u8,
         sub_screen_window_layers: u8,
     ) {
-        self.display.bg12_window_selection = bg12_window_selection;
-        self.display.bg34_window_selection = bg34_window_selection;
-        self.display.object_color_window_selection = object_color_window_selection;
-        self.display.main_screen_window_layers = main_screen_window_layers;
-        self.display.sub_screen_window_layers = sub_screen_window_layers;
+        self.display.set_window_layer_masks(
+            bg12_window_selection,
+            bg34_window_selection,
+            object_color_window_selection,
+            main_screen_window_layers,
+            sub_screen_window_layers,
+        );
         self.ram[W12SEL_COPY] = bg12_window_selection;
         self.ram[W34SEL_COPY] = bg34_window_selection;
         self.ram[WOBJSEL_COPY] = object_color_window_selection;
@@ -3988,217 +4826,256 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
     }
 
     pub(crate) fn clear_window_layer_masks(&mut self) {
-        self.set_window_layer_masks(0, 0, 0, 0, 0);
+        self.display.clear_window_layer_masks();
+        self.ram[W12SEL_COPY] = 0;
+        self.ram[W34SEL_COPY] = 0;
+        self.ram[WOBJSEL_COPY] = 0;
+        self.ram[TMW_COPY] = 0;
+        self.ram[TSW_COPY] = 0;
+        self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn clear_window_main_sub_masks(&mut self) {
-        self.display.main_screen_window_layers = 0;
-        self.display.sub_screen_window_layers = 0;
+        self.display.clear_window_main_sub_masks();
         write_le_u16(self.ram, TMW_COPY, 0);
         self.debug_assert_window_layer_masks_match_ram();
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
-        self.display.nmi_copy_packets_request = value;
+        self.display.set_nmi_copy_packets_request(value);
         self.ram[NMI_COPY_PACKETS_FLAG] = value;
         self.debug_assert_nmi_copy_packets_request_matches_ram();
     }
 
     pub(crate) fn request_nmi_copy_packets(&mut self) {
-        self.set_nmi_copy_packets_request(1);
+        self.display.request_nmi_copy_packets();
+        self.ram[NMI_COPY_PACKETS_FLAG] = 1;
+        self.debug_assert_nmi_copy_packets_request_matches_ram();
     }
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
-        self.set_nmi_copy_packets_request(0);
+        self.display.clear_nmi_copy_packets_request();
+        self.ram[NMI_COPY_PACKETS_FLAG] = 0;
+        self.debug_assert_nmi_copy_packets_request_matches_ram();
     }
 
     pub(crate) fn set_pending_polyhedral_update(&mut self, value: u8) {
-        self.display.pending_polyhedral_update = value;
+        self.display.set_pending_polyhedral_update(value);
         self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = value;
         self.debug_assert_pending_polyhedral_update_matches_ram();
     }
 
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
-        self.set_pending_polyhedral_update(0xff);
+        self.display.request_polyhedral_nmi_update();
+        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
+        self.debug_assert_pending_polyhedral_update_matches_ram();
     }
 
     pub(crate) fn clear_pending_polyhedral_update(&mut self) {
-        self.set_pending_polyhedral_update(0);
+        self.display.clear_pending_polyhedral_update();
+        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0;
+        self.debug_assert_pending_polyhedral_update_matches_ram();
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
-        self.display.chr_halfslot_request = value;
+        self.display.set_chr_halfslot_request(value);
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = value;
         self.debug_assert_chr_halfslot_request_matches_ram();
     }
 
     pub(crate) fn clear_chr_halfslot_request(&mut self) {
-        self.set_chr_halfslot_request(0);
+        self.display.clear_chr_halfslot_request();
+        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = 0;
+        self.debug_assert_chr_halfslot_request_matches_ram();
     }
 
     pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
-        let value = self.display.chr_halfslot_request.wrapping_add(1);
-        self.set_chr_halfslot_request(value);
+        let value = self.display.increment_chr_halfslot_request();
+        self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = value;
+        self.debug_assert_chr_halfslot_request_matches_ram();
         value
     }
 
     pub(crate) fn set_nmi_thread_active(&mut self, active: bool) {
-        self.display.nmi_thread_active = active;
+        self.display.set_nmi_thread_active(active);
         self.ram[NMI_THREAD_ACTIVE] = u8::from(active);
         self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
-        self.set_nmi_thread_active(true);
+        self.display.activate_nmi_thread();
+        self.ram[NMI_THREAD_ACTIVE] = 1;
+        self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn deactivate_nmi_thread(&mut self) {
-        self.set_nmi_thread_active(false);
+        self.display.deactivate_nmi_thread();
+        self.ram[NMI_THREAD_ACTIVE] = 0;
+        self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
-        self.display.nmi_thread_stack_pointer = value;
+        self.display.set_nmi_thread_stack_pointer(value);
         write_le_u16(self.ram, POLY_THREAD_STACK, value);
         self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
-        self.display.irq_control_flag = value;
+        self.display.set_irq_control_flag(value);
         self.ram[IRQ_FLAG] = value;
         self.debug_assert_irq_control_matches_ram();
     }
 
     pub(crate) fn clear_irq_control_flag(&mut self) {
-        self.set_irq_control_flag(0);
+        self.display.clear_irq_control_flag();
+        self.ram[IRQ_FLAG] = 0;
+        self.debug_assert_irq_control_matches_ram();
     }
 
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
-        self.display.vertical_irq_trigger = value;
+        self.display.set_vertical_irq_trigger(value);
         self.ram[VIRQ_TRIGGER] = value;
         self.debug_assert_irq_control_matches_ram();
     }
 
+    pub(crate) fn advance_crystal_rotation_counter(&mut self, amount: u8) -> bool {
+        let carry = self.display.advance_crystal_rotation_counter(amount);
+        self.ram[CRYSTAL_ROTATION_COUNTER] = self.display.crystal_rotation_counter;
+        self.debug_assert_irq_control_matches_ram();
+        carry
+    }
+
     pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
-        self.display.sprite_dma_head_pointer = value;
+        self.display.set_sprite_dma_head_pointer(value);
         self.ram[DMA_HEAD_POINTER] = value;
         self.debug_assert_sprite_dma_pointers_match_ram();
     }
 
     pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
-        self.display.sprite_dma_body_pointer = value;
+        self.display.set_sprite_dma_body_pointer(value);
         self.ram[DMA_BODY_POINTER] = value;
         self.debug_assert_sprite_dma_pointers_match_ram();
     }
 
     pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
-        self.display.hdma_enable_mask = value;
+        self.display.set_hdma_enable_mask(value);
         self.ram[HDMAEN_COPY] = value;
         self.debug_assert_hdma_enable_mask_matches_ram();
     }
 
     pub(crate) fn clear_hdma_enable_mask(&mut self) {
-        self.set_hdma_enable_mask(0);
+        self.display.clear_hdma_enable_mask();
+        self.ram[HDMAEN_COPY] = 0;
+        self.debug_assert_hdma_enable_mask_matches_ram();
     }
 
     pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
-        self.display.mosaic_copy = value;
+        self.display.set_mosaic_copy(value);
         self.ram[MOSAIC_COPY] = value;
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
-        self.set_mosaic_copy(self.display.mosaic_level | mask);
+        self.display.set_mosaic_copy_from_level_or(mask);
+        self.ram[MOSAIC_COPY] = self.display.mosaic_copy;
+        self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn set_mosaic_level(&mut self, value: u8) {
-        self.display.mosaic_level = value;
+        self.display.set_mosaic_level(value);
         self.ram[MOSAIC_LEVEL] = value;
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn clear_mosaic_level(&mut self) {
-        self.set_mosaic_level(0);
+        self.display.clear_mosaic_level();
+        self.ram[MOSAIC_LEVEL] = 0;
+        self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn clear_mosaic_level_word(&mut self) {
-        self.display.mosaic_level = 0;
+        self.display.clear_mosaic_level_word_alias();
         write_le_u16(self.ram, MOSAIC_LEVEL, 0);
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
-        let level = self.display.mosaic_level.wrapping_add(value);
-        self.set_mosaic_level(level);
+        let level = self.display.increment_mosaic_level_by(value);
+        self.ram[MOSAIC_LEVEL] = level;
+        self.debug_assert_mosaic_control_matches_ram();
         level
     }
 
     pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
-        let level = self.display.mosaic_level.wrapping_sub(value);
-        self.set_mosaic_level(level);
+        let level = self.display.decrement_mosaic_level_by(value);
+        self.ram[MOSAIC_LEVEL] = level;
+        self.debug_assert_mosaic_control_matches_ram();
         level
     }
 
     pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
-        self.display.mosaic_target_level = value;
+        self.display.set_mosaic_target_level(value);
         self.ram[MOSAIC_TARGET_LEVEL] = value;
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
-        self.display.mosaic_target_level = value as u8;
+        self.display.set_mosaic_target_level_word(value);
         write_le_u16(self.ram, MOSAIC_TARGET_LEVEL, value);
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn clear_mosaic_target_level(&mut self) {
-        self.set_mosaic_target_level(0);
+        self.display.clear_mosaic_target_level();
+        self.ram[MOSAIC_TARGET_LEVEL] = 0;
+        self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn clear_mosaic_target_level_word(&mut self) {
-        self.display.mosaic_target_level = 0;
+        self.display.clear_mosaic_target_level_word_alias();
         write_le_u16(self.ram, MOSAIC_TARGET_LEVEL, 0);
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
-        self.display.mosaic_direction = value;
+        self.display.set_mosaic_direction(value);
         self.ram[MOSAIC_INC_OR_DEC] = value;
         self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn clear_mosaic_direction(&mut self) {
-        self.set_mosaic_direction(0);
+        self.display.clear_mosaic_direction();
+        self.ram[MOSAIC_INC_OR_DEC] = 0;
+        self.debug_assert_mosaic_control_matches_ram();
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
-        self.display.nmi_load_target_address =
-            (self.display.nmi_load_target_address & 0xff00) | u16::from(value);
+        self.display.set_nmi_load_target_page(value);
         self.ram[NMI_LOAD_TARGET_ADDR] = value;
         self.debug_assert_nmi_load_target_address_matches_ram();
     }
 
     pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
-        self.display.nmi_load_target_address = value;
+        self.display.set_nmi_load_target_address(value);
         write_le_u16(self.ram, NMI_LOAD_TARGET_ADDR, value);
         self.debug_assert_nmi_load_target_address_matches_ram();
     }
 
     pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
-        self.display.incremental_vram_upload_counter = 0;
+        self.display.reset_incremental_vram_upload_counter();
         self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = 0;
         self.debug_assert_incremental_vram_upload_counter_matches_ram();
     }
 
     pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
-        let value = self.display.incremental_vram_upload_counter.wrapping_add(1);
-        self.display.incremental_vram_upload_counter = value;
+        let value = self.display.increment_vram_upload_counter();
         self.ram[INCREMENTAL_COUNTER_FOR_VRAM] = value;
         self.debug_assert_incremental_vram_upload_counter_matches_ram();
         value
     }
 
     fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
-        self.display.link_dma_sources.set_source(slot, value);
+        self.display.set_link_dma_source(slot, value);
         write_le_u16(self.ram, slot.address(), value);
         self.debug_assert_link_dma_sources_match_ram();
     }
@@ -4259,61 +5136,69 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
-        self.display.bg_tile_animation_countdown = value;
+        self.display.reset_bg_tile_animation_countdown(value);
         write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
         self.debug_assert_bg_tile_animation_countdown_matches_ram();
     }
 
+    pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
+        let next = self.display.decrement_bg_tile_animation_countdown();
+        write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, next);
+        self.debug_assert_bg_tile_animation_countdown_matches_ram();
+        next
+    }
+
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
-        self.display.message_dma_destination_address = value;
+        self.display.set_message_dma_destination_address(value);
         write_le_u16(self.ram, MESSAGE_DMA_DST_ADDR, value);
         self.debug_assert_message_dma_destination_address_matches_ram();
     }
 
     pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
-        self.display.message_dma_tile_base = value;
+        self.display.set_message_dma_tile_base(value);
         write_le_u16(self.ram, MESSAGE_DMA_TILE_BASE, value);
         self.debug_assert_message_dma_tile_range_matches_ram();
     }
 
     pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
-        self.display.message_dma_tile_limit = value;
+        self.display.set_message_dma_tile_limit(value);
         write_le_u16(self.ram, MESSAGE_DMA_TILE_LIMIT, value);
         self.debug_assert_message_dma_tile_range_matches_ram();
     }
 
     pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
-        self.display.message_dma_tile_sentinel = value;
+        self.display.set_message_dma_tile_sentinel(value);
         write_le_u16(self.ram, MESSAGE_DMA_TILE_SENTINEL, value);
         self.debug_assert_message_dma_tile_range_matches_ram();
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
-        self.display.overworld_fixed_color_adjustment = value;
+        self.display.set_overworld_fixed_color_adjustment(value);
         self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
         self.debug_assert_overworld_fixed_color_adjustment_matches_ram();
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
-        self.display.travel_bird_tile_offset = value;
+        self.display.set_travel_bird_tile_offset(value);
         self.ram[FLAG_TRAVEL_BIRD] = value;
         self.debug_assert_travel_bird_tile_offset_matches_ram();
     }
 
     pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.display.star_tile_restore_phase = 0;
+        self.display.clear_star_tile_restore_phase();
         self.ram[STAR_TILE_RESTORE_PHASE] = 0;
         self.debug_assert_star_tile_restore_phase_matches_ram();
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
-        self.display.animated_tile_data_source_address = value;
+        self.display.set_animated_tile_data_source_address(value);
         write_le_u16(self.ram, ANIMATED_TILE_DATA_SRC, value);
         self.debug_assert_animated_tile_upload_metadata_matches_ram();
     }
 
     pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
-        self.display.animated_tile_vram_destination_address = value;
+        self.display
+            .set_animated_tile_vram_destination_address(value);
         write_le_u16(self.ram, ANIMATED_TILE_VRAM_ADDR, value);
         self.debug_assert_animated_tile_upload_metadata_matches_ram();
     }
@@ -4344,10 +5229,10 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         let start = crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER;
         let len = bytes.len().min(self.ram.len().saturating_sub(start));
         self.ram[start..start + len].copy_from_slice(&bytes[..len]);
-
-        // This legacy upload buffer starts at the same word used as the VRAM
-        // upload cursor, so keep the native metadata synchronized after writes.
-        self.display.vram_upload_cursor = read_le_u16(self.ram, VRAM_UPLOAD_OFFSET);
+        let cursor = self
+            .display
+            .apply_tilemap_upload_prefix_to_vram_cursor(&bytes[..len]);
+        write_le_u16(self.ram, VRAM_UPLOAD_OFFSET, cursor);
         debug_assert_eq!(
             self.display.vram_upload_cursor,
             read_le_u16(self.ram, VRAM_UPLOAD_OFFSET)

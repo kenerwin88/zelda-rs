@@ -57,6 +57,8 @@ const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
 const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
+const DUNGEON_TORCH_DATA_SCAN_BYTES: usize = 0x0120;
+const DUNGEON_TORCH_DATA_SCAN_WORDS: usize = DUNGEON_TORCH_DATA_SCAN_BYTES / 2;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
@@ -81,6 +83,11 @@ const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_
 
 pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
     read_le_u16(ram, offset + index * 2)
+}
+
+fn door_info_word(door_info: &[u8], offset: usize) -> u16 {
+    u16::from(door_info.get(offset).copied().unwrap_or(0))
+        | (u16::from(door_info.get(offset + 1).copied().unwrap_or(0)) << 8)
 }
 
 #[derive(Clone, Copy)]
@@ -1003,6 +1010,10 @@ impl DungeonObjectTrackingState {
         self.replacement_tile_states.fill(0);
     }
 
+    fn clear_object_data_positions(&mut self) {
+        self.object_data_positions.fill(0);
+    }
+
     fn set_replacement_tile_state(&mut self, index: usize, value: u16) {
         if let Some(state) = self.replacement_tile_states.get_mut(index) {
             *state = value;
@@ -1225,6 +1236,17 @@ impl DungeonDoorState {
         }
     }
 
+    fn load_room_door_tilemap_addresses_from_info(&mut self, door_info: &[u8]) {
+        for door in 0..DUNGEON_DOOR_SLOT_COUNT {
+            let address = door_info_word(door_info, door * 2);
+            if address == 0xffff {
+                self.set_door_tilemap_address(door, 0);
+                return;
+            }
+            self.set_door_tilemap_address(door, address);
+        }
+    }
+
     fn clear_door_tables(&mut self) {
         self.door_types.fill(0);
         self.door_directions.fill(0);
@@ -1273,6 +1295,10 @@ impl DungeonDoorState {
 
     fn set_door_animation_step(&mut self, value: u16) {
         self.animation_step = value;
+    }
+
+    fn sync_door_animation_step_from_ram(&mut self, ram: &[u8]) {
+        self.animation_step = read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON);
     }
 
     fn set_door_animation_step_low(&mut self, value: u8) {
@@ -1749,6 +1775,17 @@ impl DungeonMovableBlockState {
             *record = [room, tilemap];
         }
     }
+
+    fn copy_records_from_bytes(&mut self, data: &[u8]) {
+        for (index, record) in self.records.iter_mut().enumerate() {
+            let base = index * 4;
+            if base + 3 >= data.len() {
+                break;
+            }
+            record[0] = read_le_u16(data, base);
+            record[1] = read_le_u16(data, base + 2);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1973,6 +2010,19 @@ impl DungeonRoomDoorSetupState {
     fn mark_no_adjacent_doors(&mut self) {
         self.set_adjacent_door(0, 0xffff);
     }
+
+    fn load_adjacent_doors_from_room_info(&mut self, door_info: &[u8]) {
+        for index in 0..DUNGEON_ADJACENT_DOOR_COUNT {
+            let door = door_info_word(door_info, index * 2);
+            self.set_adjacent_door(index, door);
+            if door == 0xffff {
+                break;
+            }
+            if (door & 0xff00) == 0x4000 || (door & 0xff00) < 0x0200 {
+                self.mark_adjacent_door_flag(index);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2085,6 +2135,10 @@ impl DungeonRoomParserState {
 
     pub(crate) fn pots_revealed_in_room(&self, room: usize) -> u16 {
         self.pot_reveal_masks.get(room).copied().unwrap_or(0)
+    }
+
+    fn clear_pot_reveal_masks(&mut self) {
+        self.pot_reveal_masks.fill(0);
     }
 
     pub(crate) fn toggle_floor_count_x2(&self) -> u16 {
@@ -2991,7 +3045,7 @@ impl DungeonSavegameState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonTorchState {
     timers: [u8; DUNGEON_TORCH_TIMER_COUNT],
     attr: u8,
@@ -3003,7 +3057,7 @@ pub(crate) struct DungeonTorchState {
     torches_start_index: u16,
     torch_index: u16,
     object_data_positions: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
-    torch_data_words: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
+    torch_data_words: Vec<u16>,
 }
 
 impl DungeonTorchState {
@@ -3018,7 +3072,7 @@ impl DungeonTorchState {
             *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
         }
 
-        let mut torch_data_words = [0; DUNGEON_TORCH_OBJECT_POS_COUNT];
+        let mut torch_data_words = vec![0; DUNGEON_TORCH_DATA_SCAN_WORDS];
         for (index, word) in torch_data_words.iter_mut().enumerate() {
             *word = read_le_u16(ram, DUNGEON_TORCH_DATA + index * 2);
         }
@@ -3104,8 +3158,11 @@ impl DungeonTorchState {
         self.torch_index
     }
 
-    pub(crate) fn torch_data_word(&self, index: usize) -> u16 {
-        self.torch_data_words.get(index).copied().unwrap_or(0)
+    pub(crate) fn torch_data_word_at_byte_offset(&self, byte_offset: usize) -> u16 {
+        self.torch_data_words
+            .get(byte_offset >> 1)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub(crate) fn torch_object_data_pos(&self, index: usize) -> u16 {
@@ -3116,6 +3173,10 @@ impl DungeonTorchState {
         if let Some(timer) = self.timers.get_mut(index) {
             *timer = 0;
         }
+    }
+
+    fn clear_timers(&mut self) {
+        self.timers.fill(0);
     }
 
     fn set_timer(&mut self, index: usize, value: u8) {
@@ -3183,7 +3244,7 @@ impl DungeonTorchState {
         self.torch_index = value;
     }
 
-    fn set_torch_data_word(&mut self, index: usize, value: u16) {
+    fn set_torch_data_word_index(&mut self, index: usize, value: u16) {
         if let Some(word) = self.torch_data_words.get_mut(index) {
             *word = value;
         }
@@ -3974,6 +4035,11 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn clear_object_data_positions(&mut self) {
+        self.state.clear_object_data_positions();
+        self.sync();
+    }
+
     pub(crate) fn set_replacement_tile_state(&mut self, index: usize, value: u16) {
         self.state.set_replacement_tile_state(index, value);
         self.sync();
@@ -4042,92 +4108,103 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    fn sync_preserving_animation_step(&mut self) {
+        self.state.sync_door_animation_step_from_ram(self.ram);
+        self.sync();
+    }
+
     fn debug_assert_matches_ram(&self) {
         debug_assert_eq!(*self.state, DungeonDoorState::load_from_ram(self.ram));
     }
 
     pub(crate) fn set_opened_doors(&mut self, value: u16) {
         self.state.set_opened_doors(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn or_opened_doors(&mut self, mask: u16) -> u16 {
         let opened = self.state.or_opened_doors(mask);
-        self.sync();
+        self.sync_preserving_animation_step();
         opened
     }
 
     pub(crate) fn mark_door_opened(&mut self, door: usize) -> u16 {
         let opened = self.state.mark_door_opened(door);
-        self.sync();
+        self.sync_preserving_animation_step();
         opened
     }
 
     pub(crate) fn set_opened_doors_including_adjacent(&mut self, value: u16) {
         self.state.set_opened_doors_including_adjacent(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
         let opened = self.state.mark_opened_door_mask(mask);
-        self.sync();
+        self.sync_preserving_animation_step();
         opened
     }
 
     pub(crate) fn clear_door_tilemap_addresses(&mut self) {
         self.state.clear_door_tilemap_addresses();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_door_tilemap_address(&mut self, door: usize, value: u16) {
         self.state.set_door_tilemap_address(door, value);
-        self.sync();
+        self.sync_preserving_animation_step();
+    }
+
+    pub(crate) fn load_room_door_tilemap_addresses_from_info(&mut self, door_info: &[u8]) {
+        self.state
+            .load_room_door_tilemap_addresses_from_info(door_info);
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_tables(&mut self) {
         self.state.clear_door_tables();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_door_type_word(&mut self, door: usize, value: u16) {
         self.state.set_door_type_word(door, value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_door_direction_word(&mut self, door: usize, value: u16) {
         self.state.set_door_direction_word(door, value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_direction(&mut self, door: usize) {
         self.state.clear_door_direction(door);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_current_door_index(&mut self, value: u16) {
         self.state.set_current_door_index(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {
         self.state.set_current_door_index_for_slot(door);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn advance_current_door_index_by(&mut self, value: u16) -> u16 {
         let next = self.state.advance_current_door_index_by(value);
-        self.sync();
+        self.sync_preserving_animation_step();
         next
     }
 
     pub(crate) fn set_current_door_pos(&mut self, value: u16) {
         self.state.set_current_door_pos(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_current_door_pos(&mut self) {
         self.state.clear_current_door_pos();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_animation_step(&mut self) {
@@ -4153,38 +4230,38 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
 
     pub(crate) fn set_door_open_counter(&mut self, value: u16) {
         self.state.set_door_open_counter(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn set_door_open_counter_low(&mut self, value: u8) {
         self.state.set_door_open_counter_low(value);
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_open_counter_low(&mut self) {
         self.state.clear_door_open_counter_low();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn increment_door_open_counter_low(&mut self) -> u8 {
         let value = self.state.increment_door_open_counter_low();
-        self.sync();
+        self.sync_preserving_animation_step();
         value
     }
 
     pub(crate) fn mark_door_switch_triggered(&mut self) {
         self.state.mark_door_switch_triggered();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_switch_triggered(&mut self) {
         self.state.clear_door_switch_triggered();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 
     pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
         self.state.clear_door_barrier_or_switch_flag();
-        self.sync();
+        self.sync_preserving_animation_step();
     }
 }
 
@@ -4861,6 +4938,11 @@ impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
         revealed
     }
 
+    pub(crate) fn clear_pot_reveal_masks(&mut self) {
+        self.state.clear_pot_reveal_masks();
+        self.sync();
+    }
+
     pub(crate) fn append_toggle_palace_pos(&mut self, pos: u16) -> usize {
         let index = self.state.append_toggle_palace_pos(pos);
         self.sync();
@@ -4936,12 +5018,6 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_room_door_info_word(&mut self, dst: usize, index: usize, value: u16) {
-        write_le_u16(self.ram, dst + index * 2, value);
-        *self.state = DungeonRoomDoorSetupState::load_from_ram(self.ram);
-        self.debug_assert_matches_ram();
-    }
-
     pub(crate) fn clear_invisible_door_marker(&mut self) {
         self.state.clear_invisible_door_marker();
         self.sync();
@@ -4992,6 +5068,11 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
 
     pub(crate) fn set_adjacent_door(&mut self, index: usize, value: u16) {
         self.state.set_adjacent_door(index, value);
+        self.sync();
+    }
+
+    pub(crate) fn load_adjacent_doors_from_room_info(&mut self, door_info: &[u8]) {
+        self.state.load_adjacent_doors_from_room_info(door_info);
         self.sync();
     }
 
@@ -5088,6 +5169,11 @@ impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
 
     pub(crate) fn set_movable_block_record(&mut self, index: usize, room: u16, tilemap: u16) {
         self.state.set_movable_block_record(index, room, tilemap);
+        self.sync();
+    }
+
+    pub(crate) fn copy_records_from_bytes(&mut self, data: &[u8]) {
+        self.state.copy_records_from_bytes(data);
         self.sync();
     }
 }
@@ -5219,9 +5305,18 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
             .copy_from_slice(&torch_init[..116]);
     }
 
+    pub(crate) fn copy_torch_data_table(&mut self, torch_init: &[u8]) {
+        self.ram[DUNGEON_TORCH_DATA..DUNGEON_TORCH_DATA + torch_init.len()]
+            .copy_from_slice(torch_init);
+        *self.torch = DungeonTorchState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn copy_torch_junk(&mut self, torch_junk: &[u8]) {
         self.ram[DUNGEON_TORCH_DATA + 144 * 2..DUNGEON_TORCH_DATA + 144 * 2 + torch_junk.len()]
             .copy_from_slice(torch_junk);
+        *self.torch = DungeonTorchState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn clear_timer(&mut self, index: usize) {
@@ -5229,6 +5324,12 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         if index < DUNGEON_TORCH_TIMER_COUNT {
             self.ram[TORCH_TIMERS + index] = 0;
         }
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_timers(&mut self) {
+        self.torch.clear_timers();
+        self.ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].fill(0);
         self.debug_assert_matches_ram();
     }
 
@@ -5327,8 +5428,8 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_torch_data_word(&mut self, index: usize, value: u16) {
-        self.torch.set_torch_data_word(index, value);
+    pub(crate) fn set_torch_data_word_index(&mut self, index: usize, value: u16) {
+        self.torch.set_torch_data_word_index(index, value);
         write_le_u16(self.ram, DUNGEON_TORCH_DATA + index * 2, value);
         self.debug_assert_matches_ram();
     }

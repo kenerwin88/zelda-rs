@@ -76,7 +76,7 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            if ((self.frame_state().frame_counter & 7) | self.sprite_slot(k).delay_aux1()) == 0 {
+            if ((self.game_state.frame.frame_counter & 7) | self.sprite_slot(k).delay_aux1()) == 0 {
                 self.sprite_slot_mut(k).xor_oam_flags(0x40);
             }
             self.sprite_move_xyz(k);
@@ -238,7 +238,7 @@ impl ZeldaState {
     // }
     pub(super) fn helmasaur_king_handle_movement(&mut self, k: usize) {
         let mut n: i32 = 1
-            + i32::from((self.frame_state().frame_counter & 3) == 0)
+            + i32::from((self.game_state.frame.frame_counter & 3) == 0)
             + i32::from(self.sprite_slot(k).c() >= 3);
         loop {
             self.sprite_slot_mut(k).increment_subtype2();
@@ -419,7 +419,7 @@ impl ZeldaState {
         } else {
             1
         };
-        if (self.frame_state().frame_counter & mask) == 0 {
+        if (self.game_state.frame.frame_counter & mask) == 0 {
             let j = (self.sprite_slot(k).direction() & 1) as usize;
             // overlord_gen2[0] += j ? -1 : 1
             let delta: u8 = if j != 0 { 0xffu8 } else { 1u8 };
@@ -543,7 +543,7 @@ impl ZeldaState {
     //     Sprite_AttemptDamageToLinkPlusRecoil(k);
     // }
     pub(super) fn helmasaur_king_attempt_damage(&mut self, k: usize) {
-        if (self.frame_state().frame_counter & 7) != 0 {
+        if (self.game_state.frame.frame_counter & 7) != 0 {
             return;
         }
         let link_x = self.player_state().x();

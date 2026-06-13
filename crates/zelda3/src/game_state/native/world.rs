@@ -10,7 +10,7 @@ const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
 const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
-const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
+pub(crate) const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
     (DOOR_ANIMATION_STEP_INDICATOR - DUNG_REPLACEMENT_TILE_STATE) / 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,12 +165,24 @@ impl WorldLocationState {
         ram[PLAYER_IS_INDOORS] = self.indoor_flag;
     }
 
+    pub(crate) fn dungeon_room(&self) -> u16 {
+        self.dungeon_room
+    }
+
     pub(crate) fn dungeon_room_index(&self) -> u8 {
         self.dungeon_room as u8
     }
 
+    pub(crate) fn overworld_screen(&self) -> u16 {
+        self.overworld_screen
+    }
+
     pub(crate) fn overworld_screen_index(&self) -> u8 {
         self.overworld_screen as u8
+    }
+
+    pub(crate) fn indoor_flag(&self) -> u8 {
+        self.indoor_flag
     }
 
     pub(crate) fn is_indoors(&self) -> bool {
@@ -179,6 +191,38 @@ impl WorldLocationState {
 
     pub(crate) fn is_outdoors(&self) -> bool {
         !self.is_indoors()
+    }
+
+    pub(crate) fn set_dungeon_room(&mut self, value: u16) {
+        self.dungeon_room = value;
+    }
+
+    pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
+        self.dungeon_room = (self.dungeon_room & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        let next = self.dungeon_room_index().wrapping_add(value);
+        self.set_dungeon_room_index(next);
+        next
+    }
+
+    pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
+        let next = self.dungeon_room_index().wrapping_sub(value);
+        self.set_dungeon_room_index(next);
+        next
+    }
+
+    pub(crate) fn set_overworld_screen(&mut self, value: u8) {
+        self.overworld_screen = (self.overworld_screen & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
+        self.overworld_screen = value;
+    }
+
+    pub(crate) fn set_indoor_flag(&mut self, value: u8) {
+        self.indoor_flag = value;
     }
 }
 
@@ -319,6 +363,88 @@ impl WorldScrollState {
     pub(crate) fn scroll_y_end(&self) -> u16 {
         self.scroll_y_end
     }
+
+    pub(crate) fn set_bg1_x(&mut self, value: u16) {
+        self.bg1_x = value;
+    }
+
+    pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
+        self.bg1_x = (self.bg1_x & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_bg1_y(&mut self, value: u16) {
+        self.bg1_y = value;
+    }
+
+    pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
+        self.bg1_y = (self.bg1_y & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_bg2_x(&mut self, value: u16) {
+        self.bg2_x = value;
+    }
+
+    pub(crate) fn add_bg2_x(&mut self, value: u16) -> u16 {
+        self.bg2_x = self.bg2_x.wrapping_add(value);
+        self.bg2_x
+    }
+
+    pub(crate) fn set_bg2_y(&mut self, value: u16) {
+        self.bg2_y = value;
+    }
+
+    pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
+        self.bg1_x_offset = value;
+    }
+
+    pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
+        self.bg1_y_offset = value;
+    }
+
+    pub(crate) fn set_bg1_offsets(&mut self, x: u16, y: u16) {
+        self.bg1_x_offset = x;
+        self.bg1_y_offset = y;
+    }
+
+    pub(crate) fn clear_bg1_offsets(&mut self) {
+        self.set_bg1_offsets(0, 0);
+    }
+
+    pub(crate) fn set_camera_x(&mut self, value: u16) {
+        self.camera_x = value;
+    }
+
+    pub(crate) fn set_camera_y(&mut self, value: u16) {
+        self.camera_y = value;
+    }
+
+    pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
+        self.overworld_offset_base_y = value;
+    }
+
+    pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
+        self.overworld_offset_base_x = value;
+    }
+
+    pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
+        self.overworld_offset_mask_y = value;
+    }
+
+    pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
+        self.overworld_offset_mask_x = value;
+    }
+
+    pub(crate) fn set_scroll_x_start(&mut self, value: u16) {
+        self.scroll_x_start = value;
+    }
+
+    pub(crate) fn set_scroll_x_end(&mut self, value: u16) {
+        self.scroll_x_end = value;
+    }
+
+    pub(crate) fn set_scroll_y_end(&mut self, value: u16) {
+        self.scroll_y_end = value;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -340,6 +466,10 @@ pub(crate) struct WorldCameraBoundariesState {
     pub(crate) exit_camera_x_low: u16,
     pub(crate) cached_camera_y_low: u16,
     pub(crate) cached_camera_x_low: u16,
+    pub(crate) exit_room_bounds_y_start: u16,
+    pub(crate) exit_room_bounds_y_end: u16,
+    pub(crate) exit_room_bounds_x_start: u16,
+    pub(crate) exit_room_bounds_x_end: u16,
     pub(crate) special_exit_room_bounds_y_start: u16,
     pub(crate) special_exit_room_bounds_y_end: u16,
     pub(crate) special_exit_room_bounds_x_start: u16,
@@ -374,6 +504,10 @@ impl WorldCameraBoundariesState {
             exit_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_EXIT),
             cached_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
             cached_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_CACHED),
+            exit_room_bounds_y_start: read_le_u16(ram, OW_SCROLL_VARS0_EXIT),
+            exit_room_bounds_y_end: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 2),
+            exit_room_bounds_x_start: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 4),
+            exit_room_bounds_x_end: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 6),
             special_exit_room_bounds_y_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START),
             special_exit_room_bounds_y_end: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_END),
             special_exit_room_bounds_x_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_X_START),
@@ -446,6 +580,10 @@ impl WorldCameraBoundariesState {
             CAMERA_X_COORD_SCROLL_LOW_CACHED,
             self.cached_camera_x_low,
         );
+        write_le_u16(ram, OW_SCROLL_VARS0_EXIT, self.exit_room_bounds_y_start);
+        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 2, self.exit_room_bounds_y_end);
+        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 4, self.exit_room_bounds_x_start);
+        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 6, self.exit_room_bounds_x_end);
         write_le_u16(
             ram,
             SPECIAL_EXIT_ROOM_BOUNDS_Y_START,
@@ -530,6 +668,220 @@ impl WorldCameraBoundariesState {
 
     pub(crate) fn spexit_room_bound_x_end(&self) -> u16 {
         self.special_exit_room_bounds_x_end
+    }
+
+    pub(crate) fn exit_room_bound_y_start(&self) -> u16 {
+        self.exit_room_bounds_y_start
+    }
+
+    pub(crate) fn exit_room_bound_y_end(&self) -> u16 {
+        self.exit_room_bounds_y_end
+    }
+
+    pub(crate) fn exit_room_bound_x_start(&self) -> u16 {
+        self.exit_room_bounds_x_start
+    }
+
+    pub(crate) fn exit_room_bound_x_end(&self) -> u16 {
+        self.exit_room_bounds_x_end
+    }
+
+    pub(crate) fn set_camera_y_coord_scroll_low(&mut self, value: u16) {
+        self.camera_y_low = value;
+    }
+
+    pub(crate) fn set_camera_y_coord_scroll_hi(&mut self, value: u16) {
+        self.camera_y_hi = value;
+    }
+
+    pub(crate) fn set_camera_x_coord_scroll_low(&mut self, value: u16) {
+        self.camera_x_low = value;
+    }
+
+    pub(crate) fn set_camera_x_coord_scroll_hi(&mut self, value: u16) {
+        self.camera_x_hi = value;
+    }
+
+    pub(crate) fn add_camera_scroll_for_axis(&mut self, horizontal: bool, delta: i16) -> u16 {
+        if horizontal {
+            self.camera_x_hi = self.camera_x_hi.wrapping_add_signed(delta);
+            self.camera_x_low = self.camera_x_hi.wrapping_add(2);
+            self.camera_x_hi
+        } else {
+            self.camera_y_hi = self.camera_y_hi.wrapping_add_signed(delta);
+            self.camera_y_low = self.camera_y_hi.wrapping_add(2);
+            self.camera_y_hi
+        }
+    }
+
+    pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
+        if horizontal {
+            self.camera_x_hi = value;
+            self.camera_x_low = value.wrapping_add(2);
+        } else {
+            self.camera_y_hi = value;
+            self.camera_y_low = value.wrapping_add(2);
+        }
+    }
+
+    pub(crate) fn set_scroll_target(&mut self, index: usize, value: u16) {
+        self.scroll_targets[index] = value;
+    }
+
+    pub(crate) fn set_up_down_scroll_target(&mut self, value: u16) {
+        self.set_scroll_target(0, value);
+    }
+
+    pub(crate) fn set_up_down_scroll_target_end(&mut self, value: u16) {
+        self.set_scroll_target(1, value);
+    }
+
+    pub(crate) fn set_left_right_scroll_target(&mut self, value: u16) {
+        self.set_scroll_target(2, value);
+    }
+
+    pub(crate) fn set_left_right_scroll_target_end(&mut self, value: u16) {
+        self.set_scroll_target(3, value);
+    }
+
+    pub(crate) fn cache_scroll_targets(&mut self) {
+        self.cached_scroll_targets = self.scroll_targets;
+    }
+
+    pub(crate) fn cache_camera_scroll(&mut self) {
+        self.cached_camera_y_low = self.camera_y_low;
+        self.cached_camera_x_low = self.camera_x_low;
+    }
+
+    pub(crate) fn restore_scroll_targets_from_cached(&mut self) {
+        self.scroll_targets = self.cached_scroll_targets;
+    }
+
+    pub(crate) fn set_overworld_scroll_counter_for_axis(&mut self, ya: usize, value: u16) {
+        self.scroll_counters[ya] = value;
+    }
+
+    pub(crate) fn set_overworld_scroll_up_counter(&mut self, value: u16) {
+        self.set_overworld_scroll_counter_for_axis(0, value);
+    }
+
+    pub(crate) fn set_overworld_scroll_down_counter(&mut self, value: u16) {
+        self.set_overworld_scroll_counter_for_axis(1, value);
+    }
+
+    pub(crate) fn set_overworld_scroll_left_counter(&mut self, value: u16) {
+        self.set_overworld_scroll_counter_for_axis(2, value);
+    }
+
+    pub(crate) fn set_overworld_scroll_right_counter(&mut self, value: u16) {
+        self.set_overworld_scroll_counter_for_axis(3, value);
+    }
+
+    pub(crate) fn clear_opposed_scroll_counters(&mut self, ya: usize) {
+        self.scroll_counters[ya] = 0;
+        self.scroll_counters[ya ^ 1] = 0;
+    }
+
+    pub(crate) fn set_opposed_scroll_counter_pair(&mut self, ya: usize, value: u16) {
+        self.scroll_counters[ya] = value;
+        self.scroll_counters[ya ^ 1] = (0u16).wrapping_sub(value);
+    }
+
+    pub(crate) fn set_special_exit_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.special_exit_room_bounds_y_start = y_start;
+        self.special_exit_room_bounds_y_end = y_end;
+        self.special_exit_room_bounds_x_start = x_start;
+        self.special_exit_room_bounds_x_end = x_end;
+    }
+
+    pub(crate) fn save_exit_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.exit_room_bounds_y_start = y_start;
+        self.exit_room_bounds_y_end = y_end;
+        self.exit_room_bounds_x_start = x_start;
+        self.exit_room_bounds_x_end = x_end;
+    }
+
+    pub(crate) fn copy_spexit_scroll_targets(&mut self) {
+        self.special_exit_scroll_targets = self.scroll_targets;
+    }
+
+    pub(crate) fn copy_spexit_scroll_counters(&mut self) {
+        self.special_exit_scroll_counters = self.scroll_counters;
+    }
+
+    pub(crate) fn restore_spexit_scroll_targets(&mut self) {
+        self.scroll_targets = self.special_exit_scroll_targets;
+    }
+
+    pub(crate) fn restore_spexit_scroll_counters(&mut self) {
+        self.scroll_counters = self.special_exit_scroll_counters;
+    }
+
+    pub(crate) fn copy_exit_scroll_targets(&mut self) {
+        self.exit_scroll_targets = self.scroll_targets;
+    }
+
+    pub(crate) fn copy_exit_scroll_counters(&mut self) {
+        self.exit_scroll_counters = self.scroll_counters;
+    }
+
+    pub(crate) fn restore_exit_scroll_targets(&mut self) {
+        self.scroll_targets = self.exit_scroll_targets;
+    }
+
+    pub(crate) fn restore_exit_scroll_counters(&mut self) {
+        self.scroll_counters = self.exit_scroll_counters;
+    }
+
+    pub(crate) fn save_spexit_camera_coords(&mut self) {
+        self.special_exit_camera_y_low = self.camera_y_low;
+        self.special_exit_camera_x_low = self.camera_x_low;
+    }
+
+    pub(crate) fn save_exit_camera_coords(&mut self) {
+        self.exit_camera_y_low = self.camera_y_low;
+        self.exit_camera_x_low = self.camera_x_low;
+    }
+
+    pub(crate) fn restore_exit_camera_scroll(&mut self) {
+        self.camera_y_low = self.exit_camera_y_low;
+        self.camera_y_hi = self.exit_camera_y_low.wrapping_sub(2);
+        self.camera_x_low = self.exit_camera_x_low;
+        self.camera_x_hi = self.exit_camera_x_low.wrapping_sub(2);
+    }
+
+    pub(crate) fn restore_special_exit_camera_scroll(&mut self) {
+        self.camera_y_low = self.special_exit_camera_y_low;
+        self.camera_y_hi = self.special_exit_camera_y_low.wrapping_sub(2);
+        self.camera_x_low = self.special_exit_camera_x_low;
+        self.camera_x_hi = self.special_exit_camera_x_low.wrapping_sub(2);
+    }
+
+    pub(crate) fn restore_camera_y_from_cached_indoor(&mut self) {
+        self.camera_y_low = self.cached_camera_y_low;
+        self.camera_y_hi = self.cached_camera_y_low.wrapping_add(2);
+    }
+
+    pub(crate) fn restore_camera_x_from_cached_indoor(&mut self) {
+        self.camera_x_low = self.cached_camera_x_low;
+        self.camera_x_hi = self.cached_camera_x_low.wrapping_add(2);
+    }
+
+    pub(crate) fn update_camera_hi_outdoor(&mut self) {
+        self.camera_y_hi = self.camera_y_low.wrapping_sub(2);
+        self.camera_x_hi = self.camera_x_low.wrapping_sub(2);
     }
 }
 
@@ -726,6 +1078,83 @@ impl WorldPaletteThemeState {
     pub(crate) fn aux_tile_theme_index(&self) -> u8 {
         self.aux_tile_theme_index
     }
+
+    pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
+        self.last_light_vs_dark_world = value;
+    }
+
+    pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
+        if let Some(subset) = self.aux_bg_subset.get_mut(index) {
+            *subset = value;
+        }
+    }
+
+    pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
+        self.overworld_palette_aux1_hi = value;
+    }
+
+    pub(crate) fn set_hud_palette(&mut self, value: u8) {
+        self.hud_palette = value;
+    }
+
+    pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
+        self.overworld_tile_theme_index = value;
+    }
+
+    pub(crate) fn set_main_tile_theme_index(&mut self, value: u8) {
+        self.main_tile_theme_index = value;
+    }
+
+    pub(crate) fn set_aux_tile_theme_index(&mut self, value: u8) {
+        self.aux_tile_theme_index = value;
+    }
+
+    pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
+        self.misc_sprites_graphics_index = value;
+    }
+
+    pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
+        self.palette_sp6r_indoors = value;
+    }
+
+    pub(crate) fn sync_shared_palette_aliases_from_ram(
+        &mut self,
+        ram: &[u8],
+        preserve_hud_palette: bool,
+        preserve_sp6r: bool,
+    ) {
+        self.overworld_palette_mode = ram_byte(ram, OVERWORLD_PALETTE_MODE);
+        self.palette_main_indoors = ram_byte(ram, PALETTE_MAIN_INDOORS);
+        self.palette_sp0l = ram_byte(ram, PALETTE_SP0L);
+        self.palette_sp5l = ram_byte(ram, PALETTE_SP5L);
+        self.palette_sp6l = ram_byte(ram, PALETTE_SP6L);
+        self.overworld_palette_aux2_hi = ram_byte(ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI);
+        self.overworld_palette_aux3_lo = ram_byte(ram, OVERWORLD_PALETTE_AUX3_BP7_LO);
+        if preserve_hud_palette {
+            self.hud_palette = ram_byte(ram, HUD_PALETTE);
+        }
+        if preserve_sp6r {
+            self.palette_sp6r_indoors = ram_byte(ram, PALETTE_SP6R_INDOORS);
+        }
+    }
+
+    pub(crate) fn restore_exit_tile_themes(&mut self) {
+        self.overworld_tile_theme_index = self.exit_overworld_tile_theme_index;
+        self.main_tile_theme_index = self.exit_main_tile_theme_index;
+        self.aux_tile_theme_index = self.exit_aux_tile_theme_index;
+    }
+
+    pub(crate) fn save_special_exit_tile_themes(&mut self) {
+        self.special_exit_overworld_tile_theme_index = self.overworld_tile_theme_index;
+        self.special_exit_main_tile_theme_index = self.main_tile_theme_index;
+        self.special_exit_aux_tile_theme_index = self.aux_tile_theme_index;
+    }
+
+    pub(crate) fn restore_special_exit_tile_themes(&mut self) {
+        self.overworld_tile_theme_index = self.special_exit_overworld_tile_theme_index;
+        self.main_tile_theme_index = self.special_exit_main_tile_theme_index;
+        self.aux_tile_theme_index = self.special_exit_aux_tile_theme_index;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -764,6 +1193,18 @@ impl WeatherVaneState {
 
     pub(crate) fn advance_oam_offset(&mut self, value: u8) {
         self.oam_offset = self.oam_offset.wrapping_add(value);
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u16) {
+        self.countdown = value;
+    }
+
+    pub(crate) fn set_music_latch(&mut self, value: u8) {
+        self.music_latch = value;
+    }
+
+    pub(crate) fn set_source_slot(&mut self, value: u8) {
+        self.source_slot = value;
     }
 }
 
@@ -920,6 +1361,26 @@ impl OverworldConfigTableState {
     pub(crate) fn copy_music_secondary(&mut self, data: &[u8]) {
         self.music[64..160].copy_from_slice(&data[..96]);
     }
+
+    pub(crate) fn copy_sprite_graphics_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.sprite_graphics[dst..dst + len].copy_from_slice(&data[src..src + len]);
+    }
+
+    pub(crate) fn copy_sprite_palette_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.sprite_palette[dst..dst + len].copy_from_slice(&data[src..src + len]);
+    }
 }
 
 impl Default for OverworldConfigTableState {
@@ -999,6 +1460,58 @@ impl OverworldMapUiState {
     pub(crate) fn birdtravel_status_word(&self) -> u16 {
         self.bird_travel_statuses.status_word()
     }
+
+    pub(crate) fn set_map_state(&mut self, value: u8) {
+        self.map_state = (self.map_state & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_map_state_word(&mut self, value: u16) {
+        self.map_state = value;
+    }
+
+    pub(crate) fn increment_map_state(&mut self) {
+        self.set_map_state(self.map_state().wrapping_add(1));
+    }
+
+    pub(crate) fn set_map_flags(&mut self, value: u8) {
+        self.map_flags = value;
+    }
+
+    pub(crate) fn and_map_flags(&mut self, value: u8) {
+        self.map_flags &= value;
+    }
+
+    pub(crate) fn or_map_flags(&mut self, value: u8) {
+        self.map_flags |= value;
+    }
+
+    pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
+        self.bird_travel_statuses.set_status(0, value);
+    }
+
+    pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
+        self.bird_travel_statuses.set_status_word(value);
+    }
+
+    pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
+        self.set_birdtravel_status(self.birdtravel_status() & value);
+    }
+
+    pub(crate) fn decrement_birdtravel_status(&mut self) {
+        self.set_birdtravel_status(self.birdtravel_status().wrapping_sub(1));
+    }
+
+    pub(crate) fn increment_birdtravel_status(&mut self) {
+        self.set_birdtravel_status(self.birdtravel_status().wrapping_add(1));
+    }
+
+    pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
+        self.bird_travel_statuses.clear_status(slot);
+    }
+
+    pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
+        self.bird_travel_statuses.increment_status(slot);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1077,6 +1590,19 @@ impl OverworldMapZoomState {
         ram[MODE7_ZOOM_STEP_COUNTER] = self.step_counter;
         ram[TIMER_FOR_MODE7_ZOOM] = self.timer;
     }
+
+    pub(crate) fn set_step_counter(&mut self, value: u8) {
+        self.step_counter = value;
+    }
+
+    pub(crate) fn set_timer(&mut self, value: u8) {
+        self.timer = value;
+    }
+
+    pub(crate) fn decrement_timer(&mut self) -> u8 {
+        self.timer = self.timer.wrapping_sub(1);
+        self.timer
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1115,6 +1641,28 @@ impl OverworldScreenSizeState {
 
     pub(crate) fn right_bottom_bound_word(&self) -> u16 {
         self.right_bottom_scroll_bound
+    }
+
+    pub(crate) fn clear_big_area_high(&mut self) {
+        self.big_area &= 0x00ff;
+    }
+
+    pub(crate) fn set_big_area_low(&mut self, value: u8) {
+        self.big_area = (self.big_area & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn backup_big_area_low(&mut self) {
+        self.big_area_backup = self.big_area as u8;
+    }
+
+    pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
+        self.right_bottom_scroll_bound =
+            (self.right_bottom_scroll_bound & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
+        self.right_bottom_scroll_bound =
+            (self.right_bottom_scroll_bound & 0x00ff) | (u16::from(value) << 8);
     }
 }
 
@@ -1308,6 +1856,32 @@ impl OverworldEntranceState {
         ram[TRIGGER_SPECIAL_ENTRANCE] = self.special_entrance_trigger;
         ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = self.sequence_counter;
     }
+
+    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
+        self.special_entrance_trigger = value;
+    }
+
+    pub(crate) fn clear_special_entrance_trigger(&mut self) {
+        self.set_special_entrance_trigger(0);
+    }
+
+    pub(crate) fn set_sequence_counter(&mut self, value: u8) {
+        self.sequence_counter = value;
+    }
+
+    pub(crate) fn clear_sequence_counter(&mut self) {
+        self.set_sequence_counter(0);
+    }
+
+    pub(crate) fn increment_sequence_counter(&mut self) -> u8 {
+        self.sequence_counter = self.sequence_counter.wrapping_add(1);
+        self.sequence_counter
+    }
+
+    pub(crate) fn decrement_sequence_counter(&mut self) -> u8 {
+        self.sequence_counter = self.sequence_counter.wrapping_sub(1);
+        self.sequence_counter
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1327,6 +1901,14 @@ impl OverworldExitState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, OVERWORLD_SCREEN_INDEX_EXIT, self.exit_screen);
         write_le_u16(ram, OVERWORLD_SCREEN_INDEX_SPEXIT, self.special_exit_screen);
+    }
+
+    pub(crate) fn set_exit_screen(&mut self, value: u16) {
+        self.exit_screen = value;
+    }
+
+    pub(crate) fn set_special_exit_screen(&mut self, value: u16) {
+        self.special_exit_screen = value;
     }
 }
 
@@ -1412,6 +1994,96 @@ impl OverworldTransitionState {
 
     pub(crate) fn countdown(&self) -> u8 {
         self.countdown
+    }
+
+    pub(crate) fn set_direction_bits(&mut self, value: u8) {
+        self.direction_bits = (self.direction_bits & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_direction_bits_word(&mut self, value: u16) {
+        self.direction_bits = value;
+    }
+
+    pub(crate) fn clear_direction_bits(&mut self) {
+        self.set_direction_bits(0);
+    }
+
+    pub(crate) fn clear_direction_bits_word(&mut self) {
+        self.set_direction_bits_word(0);
+    }
+
+    pub(crate) fn and_direction_bits(&mut self, value: u8) {
+        self.set_direction_bits(self.direction_bits() & value);
+    }
+
+    pub(crate) fn or_direction_bits(&mut self, value: u8) {
+        self.set_direction_bits(self.direction_bits() | value);
+    }
+
+    pub(crate) fn or_direction_bits_word(&mut self, value: u16) -> u16 {
+        let next = self.direction_bits_word() | value;
+        self.set_direction_bits_word(next);
+        next
+    }
+
+    pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
+        self.edge_direction_bits = (self.edge_direction_bits & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_edge_direction_bits_word(&mut self, value: u16) {
+        self.edge_direction_bits = value;
+    }
+
+    pub(crate) fn clear_edge_direction_bits(&mut self) {
+        self.set_edge_direction_bits(0);
+    }
+
+    pub(crate) fn set_direction_enum(&mut self, value: u8) {
+        self.direction_enum = value;
+    }
+
+    pub(crate) fn set_screen_transition(&mut self, value: u8) {
+        self.screen_transition = (self.screen_transition & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_screen_transition_word(&mut self, value: u16) {
+        self.screen_transition = value;
+    }
+
+    pub(crate) fn clear_screen_transition(&mut self) {
+        self.set_screen_transition(0);
+    }
+
+    pub(crate) fn set_transition_counter(&mut self, value: u8) {
+        self.transition_counter = value;
+    }
+
+    pub(crate) fn increment_transition_counter(&mut self) -> u8 {
+        self.transition_counter = self.transition_counter.wrapping_add(1);
+        self.transition_counter
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.countdown = value;
+    }
+
+    pub(crate) fn decrement_countdown(&mut self) -> u8 {
+        self.countdown = self.countdown.wrapping_sub(1);
+        self.countdown
+    }
+
+    pub(crate) fn save_previous_direction_bits(&mut self) {
+        self.previous_direction_bits = u16::from(self.edge_direction_bits());
+        self.previous_direction_bits2 = self.direction_bits_word();
+    }
+
+    pub(crate) fn restore_previous_direction_bits(&mut self) {
+        self.set_edge_direction_bits_word(self.previous_direction_bits);
+        self.set_direction_bits_word(self.previous_direction_bits2);
+    }
+
+    pub(crate) fn set_previous_screen_transition(&mut self, value: u8) {
+        self.previous_screen_transition = value;
     }
 }
 
@@ -1577,6 +2249,78 @@ impl WorldRegionState {
 
     pub(crate) fn ow_entrance_value(&self) -> u16 {
         self.overworld_entrance_value
+    }
+
+    pub(crate) fn set_rng_seed(&mut self, value: u8) {
+        self.rng_seed = value;
+    }
+
+    pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
+        self.dark_world_region_index = value;
+    }
+
+    pub(crate) fn set_which_entrance(&mut self, value: u16) {
+        self.entrance_id = value;
+    }
+
+    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
+        self.entrance_id = (self.entrance_id & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
+        self.overworld_area_index = (self.overworld_area_index & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
+        self.overworld_area_index = value;
+    }
+
+    pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
+        self.current_area_of_player = value;
+    }
+
+    pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
+        self.area_changed_flag = value;
+    }
+
+    pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
+        self.area_changed_flag = 0;
+    }
+
+    pub(crate) fn clear_overlay_index_word(&mut self) {
+        self.overlay_index = 0;
+    }
+
+    pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
+        self.overlay_index = value;
+    }
+
+    pub(crate) fn set_overlay_high(&mut self, value: u8) {
+        self.overlay_index = (self.overlay_index & 0x00ff) | (u16::from(value) << 8);
+    }
+
+    pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
+        self.previous_screen_index = value;
+    }
+
+    pub(crate) fn save_spexit_area_index(&mut self) {
+        self.special_exit_area_index = self.overworld_area_index;
+    }
+
+    pub(crate) fn restore_spexit_area_index(&mut self) {
+        self.overworld_area_index = self.special_exit_area_index;
+    }
+
+    pub(crate) fn save_exit_area_index(&mut self) {
+        self.exit_area_index = self.overworld_area_index;
+    }
+
+    pub(crate) fn restore_exit_area_index(&mut self) {
+        self.overworld_area_index = self.exit_area_index;
+    }
+
+    pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
+        self.overworld_entrance_value = value;
     }
 }
 
@@ -1798,6 +2542,22 @@ impl WorldTransientState {
         self.standing_in_doorway_cached
     }
 
+    pub(crate) fn cached_room_bounds_y_start(&self) -> u16 {
+        self.cached_room_bounds_y_start
+    }
+
+    pub(crate) fn cached_room_bounds_y_end(&self) -> u16 {
+        self.cached_room_bounds_y_end
+    }
+
+    pub(crate) fn cached_room_bounds_x_start(&self) -> u16 {
+        self.cached_room_bounds_x_start
+    }
+
+    pub(crate) fn cached_room_bounds_x_end(&self) -> u16 {
+        self.cached_room_bounds_x_end
+    }
+
     pub(crate) fn room_transitioning_flags(&self) -> u8 {
         self.room_transitioning_flags
     }
@@ -1847,6 +2607,220 @@ impl WorldTransientState {
 
     pub(crate) fn dung_replacement_tile_state(&self, index: usize) -> u16 {
         self.dungeon_replacement_tiles[index]
+    }
+
+    pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
+        self.room_transitioning_flags = value;
+    }
+
+    pub(crate) fn clear_custom_spell_animation(&mut self) {
+        self.custom_spell_animation_flag = 0;
+    }
+
+    pub(crate) fn set_custom_spell_animation_active(&mut self) {
+        self.custom_spell_animation_flag = 1;
+    }
+
+    pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
+        self.allow_scroll_z = value;
+    }
+
+    pub(crate) fn set_cached_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.cached_room_bounds_y_start = y_start;
+        self.cached_room_bounds_y_end = y_end;
+        self.cached_room_bounds_x_start = x_start;
+        self.cached_room_bounds_x_end = x_end;
+    }
+
+    pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
+        self.standing_in_doorway_cached = value;
+    }
+
+    pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
+        self.travel_bird_flag = value;
+    }
+
+    pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
+        self.tile_interaction_shared_flag = 0;
+    }
+
+    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
+        self.set_door_animation_step_word((self.door_animation_step & 0xff00) | u16::from(value));
+    }
+
+    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
+        self.door_animation_step = value;
+        self.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] = value;
+    }
+
+    pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
+        self.hud_floor_changed_timer = 0;
+    }
+
+    pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
+        self.cached_quadrant_fullsize_x = self.quadrant_fullsize_x;
+        self.cached_quadrant_fullsize_y = self.quadrant_fullsize_y;
+    }
+
+    pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
+        self.quadrant_fullsize_x = self.cached_quadrant_fullsize_x;
+        self.quadrant_fullsize_y = self.cached_quadrant_fullsize_y;
+    }
+
+    pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
+        self.quadrant_fullsize_x = value;
+    }
+
+    pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
+        self.quadrant_fullsize_y = value;
+    }
+
+    pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
+        self.quadrant_fullsize_x = 2;
+        self.quadrant_fullsize_y = 2;
+    }
+
+    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
+        self.quadrant_fullsize_x = value;
+    }
+
+    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
+        self.quadrant_fullsize_y = value;
+    }
+
+    pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        vertical_mask: u8,
+        blast_wall_x_open: bool,
+        blast_wall_y_open: bool,
+    ) {
+        self.apply_dungeon_layout_horizontal_fullsize(
+            layout_flags,
+            horizontal_mask,
+            blast_wall_x_open,
+        );
+        self.apply_dungeon_layout_vertical_fullsize(layout_flags, vertical_mask, blast_wall_y_open);
+    }
+
+    pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        blast_wall_x_open: bool,
+    ) {
+        self.quadrant_fullsize_x = if blast_wall_x_open || layout_flags & horizontal_mask == 0 {
+            2
+        } else {
+            0
+        };
+    }
+
+    pub(crate) fn apply_dungeon_layout_vertical_fullsize(
+        &mut self,
+        layout_flags: u8,
+        vertical_mask: u8,
+        blast_wall_y_open: bool,
+    ) {
+        self.quadrant_fullsize_y = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
+            2
+        } else {
+            0
+        };
+    }
+
+    pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
+        if reset_xy_flags as u8 != 0 {
+            self.quadrant_fullsize_x = reset_xy_flags as u8;
+        }
+        if (reset_xy_flags >> 8) as u8 != 0 {
+            self.quadrant_fullsize_y = (reset_xy_flags >> 8) as u8;
+        }
+    }
+
+    pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
+        self.quadrant_fullsize_x = 2;
+    }
+
+    pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
+        self.quadrant_fullsize_y = 2;
+    }
+
+    pub(crate) fn set_tilemap_layer_copy(&mut self, value: u16) {
+        self.tilemap_layer_copy = value;
+    }
+
+    pub(crate) fn save_spexit_tm_copy(&mut self) {
+        self.special_exit_tilemap_layer_copy = self.tilemap_layer_copy;
+    }
+
+    pub(crate) fn restore_spexit_layer_masks(&mut self) {
+        self.tilemap_layer_copy = self.special_exit_tilemap_layer_copy;
+    }
+
+    pub(crate) fn save_exit_tm_copy(&mut self) {
+        self.exit_tilemap_layer_copy = self.tilemap_layer_copy;
+    }
+
+    pub(crate) fn restore_exit_layer_masks(&mut self) {
+        self.tilemap_layer_copy = self.exit_tilemap_layer_copy;
+    }
+
+    pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
+        self.map_backup_subscreen_layer = value;
+    }
+
+    pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
+        self.map_backup_main_layer = value;
+    }
+
+    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
+        self.move_overlay_counter = self.move_overlay_counter.wrapping_add(1) & 3;
+        self.move_overlay_counter
+    }
+
+    pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
+        self.overworld_hole_scan_step = value;
+    }
+
+    pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
+        self.overworld_peg_puzzle_progress = value;
+    }
+
+    pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
+        self.overworld_hole_tilemap_position = value as u8;
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
+        self.overworld_bomb_tile_sweep_x = value;
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
+        self.overworld_bomb_tile_sweep_y_end = value;
+    }
+
+    pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
+        self.big_key_door_message_triggered = value;
+    }
+
+    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
+        self.savegame_master_sword_flags = value;
+    }
+
+    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
+        self.dungeon_replacement_tiles[index] = value;
+    }
+
+    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
+        self.milestone_item_graphics_countdown =
+            self.milestone_item_graphics_countdown.wrapping_sub(1);
     }
 }
 
@@ -1914,12 +2888,21 @@ impl RoomBoundsState {
         }
     }
 
-    pub(crate) fn set_packed_bound(&mut self, index: usize, value: u16) {
-        self.set_y_bound(index, value);
-    }
-
     pub(crate) fn set_packed_bounds(&mut self, top: u16, bottom: u16, left: u16, right: u16) {
         self.y_bounds = [top, bottom, left, right];
+    }
+
+    pub(crate) fn restore_from_cached_safe_return_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.set_y_bound(0, y_start);
+        self.set_y_bound(2, y_end);
+        self.set_x_bound(0, x_start);
+        self.set_x_bound(2, x_end);
     }
 
     pub(crate) fn add_y_bounds_a(&mut self, value: u16) {
@@ -2004,72 +2987,79 @@ impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
         debug_assert_eq!(*self.state, WorldPaletteThemeState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
-        self.state.last_light_vs_dark_world = value;
+    fn preserve_shared_palette_aliases(&mut self, preserve_hud_palette: bool, preserve_sp6r: bool) {
+        self.state.sync_shared_palette_aliases_from_ram(
+            self.ram,
+            preserve_hud_palette,
+            preserve_sp6r,
+        );
+    }
+
+    fn sync_preserving_shared_palette_aliases(&mut self) {
+        self.preserve_shared_palette_aliases(true, true);
         self.sync();
+    }
+
+    pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
+        self.state.set_last_light_vs_dark_world(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
-        if let Some(subset) = self.state.aux_bg_subset.get_mut(index) {
-            *subset = value;
-        }
-        self.sync();
+        self.state.set_aux_bg_subset(index, value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
-        self.state.overworld_palette_aux1_hi = value;
-        self.sync();
+        self.state.set_overworld_palette_aux1_hi(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_hud_palette(&mut self, value: u8) {
-        self.state.hud_palette = value;
+        self.state.set_hud_palette(value);
+        self.preserve_shared_palette_aliases(false, true);
         self.sync();
     }
 
     pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
-        self.state.overworld_tile_theme_index = value;
-        self.sync();
+        self.state.set_overworld_tile_theme_index(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_main_tile_theme_index(&mut self, value: u8) {
-        self.state.main_tile_theme_index = value;
-        self.sync();
+        self.state.set_main_tile_theme_index(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_aux_tile_theme_index(&mut self, value: u8) {
-        self.state.aux_tile_theme_index = value;
-        self.sync();
+        self.state.set_aux_tile_theme_index(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
-        self.state.misc_sprites_graphics_index = value;
-        self.sync();
+        self.state.set_misc_sprites_graphics_index(value);
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
-        self.state.palette_sp6r_indoors = value;
+        self.state.set_palette_sp6r_indoors(value);
+        self.preserve_shared_palette_aliases(true, false);
         self.sync();
     }
 
     pub(crate) fn restore_exit_tile_themes(&mut self) {
-        self.state.overworld_tile_theme_index = self.state.exit_overworld_tile_theme_index;
-        self.state.main_tile_theme_index = self.state.exit_main_tile_theme_index;
-        self.state.aux_tile_theme_index = self.state.exit_aux_tile_theme_index;
-        self.sync();
+        self.state.restore_exit_tile_themes();
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn save_special_exit_tile_themes(&mut self) {
-        self.state.special_exit_overworld_tile_theme_index = self.state.overworld_tile_theme_index;
-        self.state.special_exit_main_tile_theme_index = self.state.main_tile_theme_index;
-        self.state.special_exit_aux_tile_theme_index = self.state.aux_tile_theme_index;
-        self.sync();
+        self.state.save_special_exit_tile_themes();
+        self.sync_preserving_shared_palette_aliases();
     }
 
     pub(crate) fn restore_special_exit_tile_themes(&mut self) {
-        self.state.overworld_tile_theme_index = self.state.special_exit_overworld_tile_theme_index;
-        self.state.main_tile_theme_index = self.state.special_exit_main_tile_theme_index;
-        self.state.aux_tile_theme_index = self.state.special_exit_aux_tile_theme_index;
-        self.sync();
+        self.state.restore_special_exit_tile_themes();
+        self.sync_preserving_shared_palette_aliases();
     }
 }
 
@@ -2093,77 +3083,77 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
     }
 
     pub(crate) fn set_bg1_x(&mut self, value: u16) {
-        self.state.bg1_x = value;
+        self.state.set_bg1_x(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
-        self.state.bg1_x = (self.state.bg1_x & 0xff00) | u16::from(value);
+        self.state.set_bg1_x_low(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_y(&mut self, value: u16) {
-        self.state.bg1_y = value;
+        self.state.set_bg1_y(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
-        self.state.bg1_y = (self.state.bg1_y & 0xff00) | u16::from(value);
+        self.state.set_bg1_y_low(value);
         self.sync();
     }
 
     pub(crate) fn set_bg2_x(&mut self, value: u16) {
-        self.state.bg2_x = value;
+        self.state.set_bg2_x(value);
         self.sync();
     }
 
     pub(crate) fn add_bg2_x(&mut self, value: u16) {
-        self.state.bg2_x = self.state.bg2_x.wrapping_add(value);
+        self.state.add_bg2_x(value);
         self.sync();
     }
 
     pub(crate) fn set_bg2_y(&mut self, value: u16) {
-        self.state.bg2_y = value;
+        self.state.set_bg2_y(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
-        self.state.bg1_x_offset = value;
+        self.state.set_bg1_x_offset(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
-        self.state.bg1_y_offset = value;
+        self.state.set_bg1_y_offset(value);
         self.sync();
     }
 
     pub(crate) fn set_bg1_offsets(&mut self, x: u16, y: u16) {
-        self.state.bg1_x_offset = x;
-        self.state.bg1_y_offset = y;
+        self.state.set_bg1_offsets(x, y);
         self.sync();
     }
 
     pub(crate) fn clear_bg1_offsets(&mut self) {
-        self.set_bg1_offsets(0, 0);
+        self.state.clear_bg1_offsets();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
-        self.state.overworld_offset_base_y = value;
+        self.state.set_overworld_offset_base_y(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
-        self.state.overworld_offset_base_x = value;
+        self.state.set_overworld_offset_base_x(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
-        self.state.overworld_offset_mask_y = value;
+        self.state.set_overworld_offset_mask_y(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
-        self.state.overworld_offset_mask_x = value;
+        self.state.set_overworld_offset_mask_x(value);
         self.sync();
     }
 }
@@ -2191,120 +3181,104 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
     }
 
     pub(crate) fn set_camera_y_coord_scroll_low(&mut self, value: u16) {
-        self.state.camera_y_low = value;
+        self.state.set_camera_y_coord_scroll_low(value);
         self.sync();
     }
 
     pub(crate) fn set_camera_y_coord_scroll_hi(&mut self, value: u16) {
-        self.state.camera_y_hi = value;
+        self.state.set_camera_y_coord_scroll_hi(value);
         self.sync();
     }
 
     pub(crate) fn set_camera_x_coord_scroll_low(&mut self, value: u16) {
-        self.state.camera_x_low = value;
+        self.state.set_camera_x_coord_scroll_low(value);
         self.sync();
     }
 
     pub(crate) fn set_camera_x_coord_scroll_hi(&mut self, value: u16) {
-        self.state.camera_x_hi = value;
+        self.state.set_camera_x_coord_scroll_hi(value);
         self.sync();
     }
 
     pub(crate) fn add_camera_scroll_for_axis(&mut self, horizontal: bool, delta: i16) -> u16 {
-        let hi = if horizontal {
-            self.state.camera_x_hi = self.state.camera_x_hi.wrapping_add_signed(delta);
-            self.state.camera_x_low = self.state.camera_x_hi.wrapping_add(2);
-            self.state.camera_x_hi
-        } else {
-            self.state.camera_y_hi = self.state.camera_y_hi.wrapping_add_signed(delta);
-            self.state.camera_y_low = self.state.camera_y_hi.wrapping_add(2);
-            self.state.camera_y_hi
-        };
+        let hi = self.state.add_camera_scroll_for_axis(horizontal, delta);
         self.sync();
         hi
     }
 
     pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
-        if horizontal {
-            self.state.camera_x_hi = value;
-            self.state.camera_x_low = value.wrapping_add(2);
-        } else {
-            self.state.camera_y_hi = value;
-            self.state.camera_y_low = value.wrapping_add(2);
-        }
+        self.state
+            .set_camera_scroll_from_link_for_axis(horizontal, value);
         self.sync();
     }
 
     pub(crate) fn set_up_down_scroll_target(&mut self, value: u16) {
-        self.state.scroll_targets[0] = value;
+        self.state.set_up_down_scroll_target(value);
         self.sync();
     }
 
     pub(crate) fn set_up_down_scroll_target_end(&mut self, value: u16) {
-        self.state.scroll_targets[1] = value;
+        self.state.set_up_down_scroll_target_end(value);
         self.sync();
     }
 
     pub(crate) fn set_left_right_scroll_target(&mut self, value: u16) {
-        self.state.scroll_targets[2] = value;
+        self.state.set_left_right_scroll_target(value);
         self.sync();
     }
 
     pub(crate) fn set_left_right_scroll_target_end(&mut self, value: u16) {
-        self.state.scroll_targets[3] = value;
+        self.state.set_left_right_scroll_target_end(value);
         self.sync();
     }
 
     pub(crate) fn cache_scroll_targets(&mut self) {
-        self.state.cached_scroll_targets = self.state.scroll_targets;
+        self.state.cache_scroll_targets();
         self.sync();
     }
 
     pub(crate) fn cache_camera_scroll(&mut self) {
-        self.state.cached_camera_y_low = self.state.camera_y_low;
-        self.state.cached_camera_x_low = self.state.camera_x_low;
+        self.state.cache_camera_scroll();
         self.sync();
     }
 
     pub(crate) fn restore_scroll_targets_from_cached(&mut self) {
-        self.state.scroll_targets = self.state.cached_scroll_targets;
+        self.state.restore_scroll_targets_from_cached();
         self.sync();
     }
 
     pub(crate) fn set_overworld_scroll_up_counter(&mut self, value: u16) {
-        self.state.scroll_counters[0] = value;
+        self.state.set_overworld_scroll_up_counter(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_scroll_down_counter(&mut self, value: u16) {
-        self.state.scroll_counters[1] = value;
+        self.state.set_overworld_scroll_down_counter(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_scroll_left_counter(&mut self, value: u16) {
-        self.state.scroll_counters[2] = value;
+        self.state.set_overworld_scroll_left_counter(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_scroll_right_counter(&mut self, value: u16) {
-        self.state.scroll_counters[3] = value;
+        self.state.set_overworld_scroll_right_counter(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_scroll_counter_for_axis(&mut self, ya: usize, value: u16) {
-        self.state.scroll_counters[ya] = value;
+        self.state.set_overworld_scroll_counter_for_axis(ya, value);
         self.sync();
     }
 
     pub(crate) fn clear_opposed_scroll_counters(&mut self, ya: usize) {
-        self.state.scroll_counters[ya] = 0;
-        self.state.scroll_counters[ya ^ 1] = 0;
+        self.state.clear_opposed_scroll_counters(ya);
         self.sync();
     }
 
     pub(crate) fn set_opposed_scroll_counter_pair(&mut self, ya: usize, value: u16) {
-        self.state.scroll_counters[ya] = value;
-        self.state.scroll_counters[ya ^ 1] = (0u16).wrapping_sub(value);
+        self.state.set_opposed_scroll_counter_pair(ya, value);
         self.sync();
     }
 
@@ -2315,96 +3289,95 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         x_start: u16,
         x_end: u16,
     ) {
-        self.state.special_exit_room_bounds_y_start = y_start;
-        self.state.special_exit_room_bounds_y_end = y_end;
-        self.state.special_exit_room_bounds_x_start = x_start;
-        self.state.special_exit_room_bounds_x_end = x_end;
+        self.state
+            .set_special_exit_room_bounds(y_start, y_end, x_start, x_end);
+        self.sync();
+    }
+
+    pub(crate) fn save_exit_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.state
+            .save_exit_room_bounds(y_start, y_end, x_start, x_end);
         self.sync();
     }
 
     pub(crate) fn copy_spexit_scroll_targets(&mut self) {
-        self.state.special_exit_scroll_targets = self.state.scroll_targets;
+        self.state.copy_spexit_scroll_targets();
         self.sync();
     }
 
     pub(crate) fn copy_spexit_scroll_counters(&mut self) {
-        self.state.special_exit_scroll_counters = self.state.scroll_counters;
+        self.state.copy_spexit_scroll_counters();
         self.sync();
     }
 
     pub(crate) fn restore_spexit_scroll_targets(&mut self) {
-        self.state.scroll_targets = self.state.special_exit_scroll_targets;
+        self.state.restore_spexit_scroll_targets();
         self.sync();
     }
 
     pub(crate) fn restore_spexit_scroll_counters(&mut self) {
-        self.state.scroll_counters = self.state.special_exit_scroll_counters;
+        self.state.restore_spexit_scroll_counters();
         self.sync();
     }
 
     pub(crate) fn copy_exit_scroll_targets(&mut self) {
-        self.state.exit_scroll_targets = self.state.scroll_targets;
+        self.state.copy_exit_scroll_targets();
         self.sync();
     }
 
     pub(crate) fn copy_exit_scroll_counters(&mut self) {
-        self.state.exit_scroll_counters = self.state.scroll_counters;
+        self.state.copy_exit_scroll_counters();
         self.sync();
     }
 
     pub(crate) fn restore_exit_scroll_targets(&mut self) {
-        self.state.scroll_targets = self.state.exit_scroll_targets;
+        self.state.restore_exit_scroll_targets();
         self.sync();
     }
 
     pub(crate) fn restore_exit_scroll_counters(&mut self) {
-        self.state.scroll_counters = self.state.exit_scroll_counters;
+        self.state.restore_exit_scroll_counters();
         self.sync();
     }
 
     pub(crate) fn save_spexit_camera_coords(&mut self) {
-        self.state.special_exit_camera_y_low = self.state.camera_y_low;
-        self.state.special_exit_camera_x_low = self.state.camera_x_low;
+        self.state.save_spexit_camera_coords();
         self.sync();
     }
 
     pub(crate) fn save_exit_camera_coords(&mut self) {
-        self.state.exit_camera_y_low = self.state.camera_y_low;
-        self.state.exit_camera_x_low = self.state.camera_x_low;
+        self.state.save_exit_camera_coords();
         self.sync();
     }
 
     pub(crate) fn restore_exit_camera_scroll(&mut self) {
-        self.state.camera_y_low = self.state.exit_camera_y_low;
-        self.state.camera_y_hi = self.state.exit_camera_y_low.wrapping_sub(2);
-        self.state.camera_x_low = self.state.exit_camera_x_low;
-        self.state.camera_x_hi = self.state.exit_camera_x_low.wrapping_sub(2);
+        self.state.restore_exit_camera_scroll();
         self.sync();
     }
 
     pub(crate) fn restore_special_exit_camera_scroll(&mut self) {
-        self.state.camera_y_low = self.state.special_exit_camera_y_low;
-        self.state.camera_y_hi = self.state.special_exit_camera_y_low.wrapping_sub(2);
-        self.state.camera_x_low = self.state.special_exit_camera_x_low;
-        self.state.camera_x_hi = self.state.special_exit_camera_x_low.wrapping_sub(2);
+        self.state.restore_special_exit_camera_scroll();
         self.sync();
     }
 
     pub(crate) fn restore_camera_y_from_cached_indoor(&mut self) {
-        self.state.camera_y_low = self.state.cached_camera_y_low;
-        self.state.camera_y_hi = self.state.cached_camera_y_low.wrapping_add(2);
+        self.state.restore_camera_y_from_cached_indoor();
         self.sync();
     }
 
     pub(crate) fn restore_camera_x_from_cached_indoor(&mut self) {
-        self.state.camera_x_low = self.state.cached_camera_x_low;
-        self.state.camera_x_hi = self.state.cached_camera_x_low.wrapping_add(2);
+        self.state.restore_camera_x_from_cached_indoor();
         self.sync();
     }
 
     pub(crate) fn update_camera_hi_outdoor(&mut self) {
-        self.state.camera_y_hi = self.state.camera_y_low.wrapping_sub(2);
-        self.state.camera_x_hi = self.state.camera_x_low.wrapping_sub(2);
+        self.state.update_camera_hi_outdoor();
         self.sync();
     }
 }
@@ -2429,93 +3402,92 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
     }
 
     pub(crate) fn set_rng_seed(&mut self, value: u8) {
-        self.state.rng_seed = value;
+        self.state.set_rng_seed(value);
         self.sync();
     }
 
     pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
-        self.state.dark_world_region_index = value;
+        self.state.set_dark_world_region_index(value);
         self.sync();
     }
 
     pub(crate) fn set_which_entrance(&mut self, value: u16) {
-        self.state.entrance_id = value;
+        self.state.set_which_entrance(value);
         self.sync();
     }
 
     pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
-        self.state.entrance_id = (self.state.entrance_id & 0xff00) | u16::from(value);
+        self.state.set_which_entrance_byte(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
-        self.state.overworld_area_index =
-            (self.state.overworld_area_index & 0xff00) | u16::from(value);
+        self.state.set_overworld_area_index(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
-        self.state.overworld_area_index = value;
+        self.state.set_overworld_area_index_word(value);
         self.sync();
     }
 
     pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
-        self.state.current_area_of_player = value;
+        self.state.set_current_area_of_player_word(value);
         self.sync();
     }
 
     pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
-        self.state.area_changed_flag = value;
+        self.state.set_flag_overworld_area_changed(value);
         self.sync();
     }
 
     pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
-        self.state.area_changed_flag = 0;
+        self.state.clear_flag_overworld_area_changed();
         self.sync();
     }
 
     pub(crate) fn clear_overlay_index_word(&mut self) {
-        self.state.overlay_index = 0;
+        self.state.clear_overlay_index_word();
         self.sync();
     }
 
     pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
-        self.state.overlay_index = value;
+        self.state.set_overlay_index_word(value);
         self.sync();
     }
 
     pub(crate) fn set_overlay_high(&mut self, value: u8) {
-        self.state.overlay_index = (self.state.overlay_index & 0x00ff) | (u16::from(value) << 8);
+        self.state.set_overlay_high(value);
         self.sync();
     }
 
     pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
-        self.state.previous_screen_index = value;
+        self.state.set_prev_screen_index_word(value);
         self.sync();
     }
 
     pub(crate) fn save_spexit_area_index(&mut self) {
-        self.state.special_exit_area_index = self.state.overworld_area_index;
+        self.state.save_spexit_area_index();
         self.sync();
     }
 
     pub(crate) fn restore_spexit_area_index(&mut self) {
-        self.state.overworld_area_index = self.state.special_exit_area_index;
+        self.state.restore_spexit_area_index();
         self.sync();
     }
 
     pub(crate) fn save_exit_area_index(&mut self) {
-        self.state.exit_area_index = self.state.overworld_area_index;
+        self.state.save_exit_area_index();
         self.sync();
     }
 
     pub(crate) fn restore_exit_area_index(&mut self) {
-        self.state.overworld_area_index = self.state.exit_area_index;
+        self.state.restore_exit_area_index();
         self.sync();
     }
 
     pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
-        self.state.overworld_entrance_value = value;
+        self.state.set_ow_entrance_value(value);
         self.sync();
     }
 
@@ -2539,6 +3511,12 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    fn sync_preserving_projected_door_animation_step(&mut self) {
+        self.state
+            .set_door_animation_step_word(read_le_u16(self.ram, DOOR_ANIMATION_STEP_INDICATOR));
+        self.sync();
+    }
+
     fn debug_assert_matches_ram(&self) {
         let mut loaded = WorldTransientState::load_from_ram(self.ram);
         loaded.dungeon_replacement_tiles = self.state.dungeon_replacement_tiles.clone();
@@ -2546,23 +3524,23 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
-        self.state.room_transitioning_flags = value;
-        self.sync();
+        self.state.set_room_transitioning_flags(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn clear_custom_spell_animation(&mut self) {
-        self.state.custom_spell_animation_flag = 0;
-        self.sync();
+        self.state.clear_custom_spell_animation();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_custom_spell_animation_active(&mut self) {
-        self.state.custom_spell_animation_flag = 1;
-        self.sync();
+        self.state.set_custom_spell_animation_active();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
-        self.state.allow_scroll_z = value;
-        self.sync();
+        self.state.set_allow_scroll_z(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_cached_room_bounds(
@@ -2572,88 +3550,79 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         x_start: u16,
         x_end: u16,
     ) {
-        self.state.cached_room_bounds_y_start = y_start;
-        self.state.cached_room_bounds_y_end = y_end;
-        self.state.cached_room_bounds_x_start = x_start;
-        self.state.cached_room_bounds_x_end = x_end;
-        self.sync();
+        self.state
+            .set_cached_room_bounds(y_start, y_end, x_start, x_end);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
-        self.state.standing_in_doorway_cached = value;
-        self.sync();
+        self.state.set_standing_in_doorway_cached(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
-    pub(crate) fn cache_standing_in_doorway(&mut self) {
-        self.state.standing_in_doorway_cached = self.ram[IS_STANDING_IN_DOORWAY];
-        self.sync();
+    pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
+        self.state.set_standing_in_doorway_cached(doorway_state);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
-        self.state.travel_bird_flag = value;
-        self.sync();
+        self.state.set_flag_travel_bird(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
-        self.state.tile_interaction_shared_flag = 0;
-        self.sync();
+        self.state.clear_tile_interaction_shared_flag();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_door_animation_step(&mut self, value: u8) {
-        self.state.door_animation_step =
-            (self.state.door_animation_step & 0xff00) | u16::from(value);
-        self.state.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] =
-            self.state.door_animation_step;
+        self.state.set_door_animation_step(value);
         self.sync();
     }
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
-        self.state.door_animation_step = value;
-        self.state.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] = value;
+        self.state.set_door_animation_step_word(value);
         self.sync();
     }
 
     pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
-        self.state.hud_floor_changed_timer = 0;
-        self.sync();
+        self.state.clear_hud_floor_changed_timer();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
-        self.state.cached_quadrant_fullsize_x = self.state.quadrant_fullsize_x;
-        self.state.cached_quadrant_fullsize_y = self.state.quadrant_fullsize_y;
-        self.sync();
+        self.state.cache_quadrant_fullsize_state();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
-        self.state.quadrant_fullsize_x = self.state.cached_quadrant_fullsize_x;
-        self.state.quadrant_fullsize_y = self.state.cached_quadrant_fullsize_y;
-        self.sync();
+        self.state.restore_quadrant_fullsize_from_cached();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
-        self.state.quadrant_fullsize_x = value;
-        self.sync();
+        self.state.set_quadrant_fullsize_x(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
-        self.state.quadrant_fullsize_y = value;
-        self.sync();
+        self.state.set_quadrant_fullsize_y(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
-        self.state.quadrant_fullsize_x = 2;
-        self.state.quadrant_fullsize_y = 2;
-        self.sync();
+        self.state.set_fullsize_overworld_quadrants();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
-        self.state.quadrant_fullsize_x = value;
-        self.sync();
+        self.state.set_horizontal_room_fullsize_state(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
-        self.state.quadrant_fullsize_y = value;
-        self.sync();
+        self.state.set_vertical_room_fullsize_state(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
@@ -2664,18 +3633,14 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         blast_wall_x_open: bool,
         blast_wall_y_open: bool,
     ) {
-        self.state.quadrant_fullsize_x = if blast_wall_x_open || layout_flags & horizontal_mask == 0
-        {
-            2
-        } else {
-            0
-        };
-        self.state.quadrant_fullsize_y = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
-            2
-        } else {
-            0
-        };
-        self.sync();
+        self.state.apply_dungeon_layout_quadrant_fullsize(
+            layout_flags,
+            horizontal_mask,
+            vertical_mask,
+            blast_wall_x_open,
+            blast_wall_y_open,
+        );
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
@@ -2684,13 +3649,12 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         horizontal_mask: u8,
         blast_wall_x_open: bool,
     ) {
-        self.state.quadrant_fullsize_x = if blast_wall_x_open || layout_flags & horizontal_mask == 0
-        {
-            2
-        } else {
-            0
-        };
-        self.sync();
+        self.state.apply_dungeon_layout_horizontal_fullsize(
+            layout_flags,
+            horizontal_mask,
+            blast_wall_x_open,
+        );
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn apply_dungeon_layout_vertical_fullsize(
@@ -2699,116 +3663,109 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         vertical_mask: u8,
         blast_wall_y_open: bool,
     ) {
-        self.state.quadrant_fullsize_y = if blast_wall_y_open || layout_flags & vertical_mask == 0 {
-            2
-        } else {
-            0
-        };
-        self.sync();
+        self.state.apply_dungeon_layout_vertical_fullsize(
+            layout_flags,
+            vertical_mask,
+            blast_wall_y_open,
+        );
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
-        if reset_xy_flags as u8 != 0 {
-            self.state.quadrant_fullsize_x = reset_xy_flags as u8;
-        }
-        if (reset_xy_flags >> 8) as u8 != 0 {
-            self.state.quadrant_fullsize_y = (reset_xy_flags >> 8) as u8;
-        }
-        self.sync();
+        self.state.apply_reset_xy_quadrant_overrides(reset_xy_flags);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
-        self.state.quadrant_fullsize_x = 2;
-        self.sync();
+        self.state.force_horizontal_fullsize_for_blast_wall();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
-        self.state.quadrant_fullsize_y = 2;
-        self.sync();
+        self.state.force_vertical_fullsize_for_blast_wall();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn save_spexit_tm_copy(&mut self) {
-        self.state.special_exit_tilemap_layer_copy = self.state.tilemap_layer_copy;
-        self.sync();
+        self.state.save_spexit_tm_copy();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn restore_spexit_layer_masks(&mut self) {
-        self.state.tilemap_layer_copy = self.state.special_exit_tilemap_layer_copy;
-        self.sync();
+        self.state.restore_spexit_layer_masks();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn save_exit_tm_copy(&mut self) {
-        self.state.exit_tilemap_layer_copy = self.state.tilemap_layer_copy;
-        self.sync();
+        self.state.save_exit_tm_copy();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn restore_exit_layer_masks(&mut self) {
-        self.state.tilemap_layer_copy = self.state.exit_tilemap_layer_copy;
-        self.sync();
+        self.state.restore_exit_layer_masks();
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
-        self.state.map_backup_subscreen_layer = value;
-        self.sync();
+        self.state.set_mapbak_ts(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
-        self.state.map_backup_main_layer = value;
-        self.sync();
+        self.state.set_mapbak_tm(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
-        self.state.move_overlay_counter = self.state.move_overlay_counter.wrapping_add(1) & 3;
-        let value = self.state.move_overlay_counter;
-        self.sync();
+        let value = self.state.increment_move_overlay_ctr();
+        self.sync_preserving_projected_door_animation_step();
         value
     }
 
     pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
-        self.state.overworld_hole_scan_step = value;
-        self.sync();
+        self.state.set_overworld_hole_scan_step(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
-        self.state.overworld_peg_puzzle_progress = value;
-        self.sync();
+        self.state.set_overworld_peg_puzzle_progress(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
-        self.state.overworld_hole_tilemap_position = value as u8;
-        self.sync();
+        self.state.set_overworld_hole_tilemap_pos(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
-        self.state.overworld_bomb_tile_sweep_x = value;
-        self.sync();
+        self.state.set_overworld_bomb_tile_sweep_x(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
-        self.state.overworld_bomb_tile_sweep_y_end = value;
-        self.sync();
+        self.state.set_overworld_bomb_tile_sweep_y_end(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
-        self.state.big_key_door_message_triggered = value;
-        self.sync();
+        self.state.set_big_key_door_message_triggered(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
-        self.state.savegame_master_sword_flags = value;
-        self.sync();
+        self.state.set_savegame_has_master_sword_flags(value);
+        self.sync_preserving_projected_door_animation_step();
     }
 
     pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
-        self.state.dungeon_replacement_tiles[index] = value;
+        self.state.set_dung_replacement_tile_state(index, value);
         write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, value);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
-        self.state.milestone_item_graphics_countdown =
-            self.state.milestone_item_graphics_countdown.wrapping_sub(1);
-        self.sync();
+        self.state.decrement_milestone_item_gfx_swap_countdown();
+        self.sync_preserving_projected_door_animation_step();
     }
 }
 
@@ -2841,29 +3798,20 @@ impl<'a> NativeRoomBoundsBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_packed_bound(&mut self, index: usize, value: u16) {
-        self.state.set_packed_bound(index, value);
-        self.sync();
-    }
-
     pub(crate) fn set_packed_bounds(&mut self, top: u16, bottom: u16, left: u16, right: u16) {
         self.state.set_packed_bounds(top, bottom, left, right);
         self.sync();
     }
 
-    pub(crate) fn copy_y_bound_from(&mut self, index: usize, src: usize) {
-        self.state.set_y_bound(index, read_le_u16(self.ram, src));
-        self.sync();
-    }
-
-    pub(crate) fn copy_x_bound_from(&mut self, index: usize, src: usize) {
-        self.state.set_x_bound(index, read_le_u16(self.ram, src));
-        self.sync();
-    }
-
-    pub(crate) fn copy_packed_bound_from(&mut self, index: usize, src: usize) {
+    pub(crate) fn restore_from_cached_safe_return_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
         self.state
-            .set_packed_bound(index, read_le_u16(self.ram, src));
+            .restore_from_cached_safe_return_bounds(y_start, y_end, x_start, x_end);
         self.sync();
     }
 
@@ -2923,41 +3871,39 @@ impl<'a> NativeWorldLocationBridgeMut<'a> {
     }
 
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
-        self.world_location.dungeon_room = value;
+        self.world_location.set_dungeon_room(value);
         self.sync();
     }
 
     pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
-        self.world_location.dungeon_room =
-            (self.world_location.dungeon_room & 0xff00) | u16::from(value);
+        self.world_location.set_dungeon_room_index(value);
         self.sync();
     }
 
     pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self.world_location.dungeon_room_index().wrapping_add(value);
-        self.set_dungeon_room_index(next);
+        let next = self.world_location.increment_dungeon_room_index_by(value);
+        self.sync();
         next
     }
 
     pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self.world_location.dungeon_room_index().wrapping_sub(value);
-        self.set_dungeon_room_index(next);
+        let next = self.world_location.decrement_dungeon_room_index_by(value);
+        self.sync();
         next
     }
 
     pub(crate) fn set_overworld_screen(&mut self, value: u8) {
-        self.world_location.overworld_screen =
-            (self.world_location.overworld_screen & 0xff00) | u16::from(value);
+        self.world_location.set_overworld_screen(value);
         self.sync();
     }
 
     pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
-        self.world_location.overworld_screen = value;
+        self.world_location.set_overworld_screen_word(value);
         self.sync();
     }
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
-        self.world_location.indoor_flag = value;
+        self.world_location.set_indoor_flag(value);
         self.sync();
     }
 }
@@ -3054,6 +4000,30 @@ impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn copy_sprite_graphics_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.config_table
+            .copy_sprite_graphics_range(dst, data, src, len);
+        self.sync();
+    }
+
+    pub(crate) fn copy_sprite_palette_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.config_table
+            .copy_sprite_palette_range(dst, data, src, len);
+        self.sync();
+    }
+
     pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
         self.config_table.set_music(screen, value);
         self.sync();
@@ -3080,67 +4050,67 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
     }
 
     pub(crate) fn set_map_state(&mut self, value: u8) {
-        self.map_ui.map_state = (self.map_ui.map_state & 0xff00) | u16::from(value);
+        self.map_ui.set_map_state(value);
         self.sync();
     }
 
     pub(crate) fn set_map_state_word(&mut self, value: u16) {
-        self.map_ui.map_state = value;
+        self.map_ui.set_map_state_word(value);
         self.sync();
     }
 
     pub(crate) fn increment_map_state(&mut self) {
-        let next = self.map_ui.map_state().wrapping_add(1);
-        self.set_map_state(next);
+        self.map_ui.increment_map_state();
+        self.sync();
     }
 
     pub(crate) fn set_map_flags(&mut self, value: u8) {
-        self.map_ui.map_flags = value;
+        self.map_ui.set_map_flags(value);
         self.sync();
     }
 
     pub(crate) fn and_map_flags(&mut self, value: u8) {
-        let next = self.map_ui.map_flags & value;
-        self.set_map_flags(next);
+        self.map_ui.and_map_flags(value);
+        self.sync();
     }
 
     pub(crate) fn or_map_flags(&mut self, value: u8) {
-        let next = self.map_ui.map_flags | value;
-        self.set_map_flags(next);
+        self.map_ui.or_map_flags(value);
+        self.sync();
     }
 
     pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
-        self.map_ui.bird_travel_statuses.set_status(0, value);
+        self.map_ui.set_birdtravel_status(value);
         self.sync();
     }
 
     pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
-        self.map_ui.bird_travel_statuses.set_status_word(value);
+        self.map_ui.set_birdtravel_status_word(value);
         self.sync();
     }
 
     pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
-        let next = self.map_ui.birdtravel_status() & value;
-        self.set_birdtravel_status(next);
+        self.map_ui.and_birdtravel_status(value);
+        self.sync();
     }
 
     pub(crate) fn decrement_birdtravel_status(&mut self) {
-        let next = self.map_ui.birdtravel_status().wrapping_sub(1);
-        self.set_birdtravel_status(next);
+        self.map_ui.decrement_birdtravel_status();
+        self.sync();
     }
 
     pub(crate) fn increment_birdtravel_status(&mut self) {
-        let next = self.map_ui.birdtravel_status().wrapping_add(1);
-        self.set_birdtravel_status(next);
+        self.map_ui.increment_birdtravel_status();
+        self.sync();
     }
 
     pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
-        self.map_ui.bird_travel_statuses.clear_status(slot);
+        self.map_ui.clear_bird_travel_stop_status(slot);
         self.sync();
     }
 
     pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
-        self.map_ui.bird_travel_statuses.increment_status(slot);
+        self.map_ui.increment_bird_travel_stop_status(slot);
         self.sync();
     }
 }
@@ -3168,7 +4138,7 @@ impl<'a> NativeWeatherVaneBridgeMut<'a> {
     }
 
     pub(crate) fn set_countdown(&mut self, value: u16) {
-        self.weather_vane.countdown = value;
+        self.weather_vane.set_countdown(value);
         self.sync();
     }
 
@@ -3179,12 +4149,12 @@ impl<'a> NativeWeatherVaneBridgeMut<'a> {
     }
 
     pub(crate) fn set_music_latch(&mut self, value: u8) {
-        self.weather_vane.music_latch = value;
+        self.weather_vane.set_music_latch(value);
         self.sync();
     }
 
     pub(crate) fn set_source_slot(&mut self, value: u8) {
-        self.weather_vane.source_slot = value;
+        self.weather_vane.set_source_slot(value);
         self.sync();
     }
 
@@ -3254,18 +4224,18 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
     }
 
     pub(crate) fn set_step_counter(&mut self, value: u8) {
-        self.zoom.step_counter = value;
+        self.zoom.set_step_counter(value);
         self.sync();
     }
 
     pub(crate) fn set_timer(&mut self, value: u8) {
-        self.zoom.timer = value;
+        self.zoom.set_timer(value);
         self.sync();
     }
 
     pub(crate) fn decrement_timer(&mut self) {
-        let next = self.zoom.timer.wrapping_sub(1);
-        self.set_timer(next);
+        self.zoom.decrement_timer();
+        self.sync();
     }
 }
 
@@ -3292,29 +4262,27 @@ impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
     }
 
     pub(crate) fn clear_big_area_high(&mut self) {
-        self.screen_size.big_area &= 0x00ff;
+        self.screen_size.clear_big_area_high();
         self.sync();
     }
 
     pub(crate) fn set_big_area_low(&mut self, value: u8) {
-        self.screen_size.big_area = (self.screen_size.big_area & 0xff00) | u16::from(value);
+        self.screen_size.set_big_area_low(value);
         self.sync();
     }
 
     pub(crate) fn backup_big_area_low(&mut self) {
-        self.screen_size.big_area_backup = self.screen_size.big_area as u8;
+        self.screen_size.backup_big_area_low();
         self.sync();
     }
 
     pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
-        self.screen_size.right_bottom_scroll_bound =
-            (self.screen_size.right_bottom_scroll_bound & 0xff00) | u16::from(value);
+        self.screen_size.set_right_bottom_bound_low(value);
         self.sync();
     }
 
     pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
-        self.screen_size.right_bottom_scroll_bound =
-            (self.screen_size.right_bottom_scroll_bound & 0x00ff) | (u16::from(value) << 8);
+        self.screen_size.set_right_bottom_bound_high(value);
         self.sync();
     }
 }
@@ -3386,6 +4354,11 @@ impl<'a> NativeOverworldMap16BridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    pub(crate) fn sync_from_ram(&mut self) {
+        *self.map16 = OverworldMap16State::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_active_load(&mut self, state: OverworldMap16LoadState) {
         self.map16.active_load = state;
         self.sync();
@@ -3435,32 +4408,34 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
     }
 
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
-        self.entrance.special_entrance_trigger = value;
+        self.entrance.set_special_entrance_trigger(value);
         self.sync();
     }
 
     pub(crate) fn clear_special_entrance_trigger(&mut self) {
-        self.set_special_entrance_trigger(0);
+        self.entrance.clear_special_entrance_trigger();
+        self.sync();
     }
 
     pub(crate) fn set_sequence_counter(&mut self, value: u8) {
-        self.entrance.sequence_counter = value;
+        self.entrance.set_sequence_counter(value);
         self.sync();
     }
 
     pub(crate) fn clear_sequence_counter(&mut self) {
-        self.set_sequence_counter(0);
+        self.entrance.clear_sequence_counter();
+        self.sync();
     }
 
     pub(crate) fn increment_sequence_counter(&mut self) -> u8 {
-        let next = self.entrance.sequence_counter.wrapping_add(1);
-        self.set_sequence_counter(next);
+        let next = self.entrance.increment_sequence_counter();
+        self.sync();
         next
     }
 
     pub(crate) fn decrement_sequence_counter(&mut self) -> u8 {
-        let next = self.entrance.sequence_counter.wrapping_sub(1);
-        self.set_sequence_counter(next);
+        let next = self.entrance.decrement_sequence_counter();
+        self.sync();
         next
     }
 }
@@ -3485,12 +4460,12 @@ impl<'a> NativeOverworldExitBridgeMut<'a> {
     }
 
     pub(crate) fn set_exit_screen(&mut self, value: u16) {
-        self.exit.exit_screen = value;
+        self.exit.set_exit_screen(value);
         self.sync();
     }
 
     pub(crate) fn set_special_exit_screen(&mut self, value: u16) {
-        self.exit.special_exit_screen = value;
+        self.exit.set_special_exit_screen(value);
         self.sync();
     }
 }
@@ -3518,110 +4493,110 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
     }
 
     pub(crate) fn set_direction_bits(&mut self, value: u8) {
-        self.transition.direction_bits =
-            (self.transition.direction_bits & 0xff00) | u16::from(value);
+        self.transition.set_direction_bits(value);
         self.sync();
     }
 
     pub(crate) fn set_direction_bits_word(&mut self, value: u16) {
-        self.transition.direction_bits = value;
+        self.transition.set_direction_bits_word(value);
         self.sync();
     }
 
     pub(crate) fn clear_direction_bits(&mut self) {
-        self.set_direction_bits(0);
+        self.transition.clear_direction_bits();
+        self.sync();
     }
 
     pub(crate) fn clear_direction_bits_word(&mut self) {
-        self.set_direction_bits_word(0);
+        self.transition.clear_direction_bits_word();
+        self.sync();
     }
 
     pub(crate) fn and_direction_bits(&mut self, value: u8) {
-        let next = self.transition.direction_bits() & value;
-        self.set_direction_bits(next);
+        self.transition.and_direction_bits(value);
+        self.sync();
     }
 
     pub(crate) fn or_direction_bits(&mut self, value: u8) {
-        let next = self.transition.direction_bits() | value;
-        self.set_direction_bits(next);
+        self.transition.or_direction_bits(value);
+        self.sync();
     }
 
     pub(crate) fn or_direction_bits_word(&mut self, value: u16) -> u16 {
-        let next = self.transition.direction_bits_word() | value;
-        self.set_direction_bits_word(next);
+        let next = self.transition.or_direction_bits_word(value);
+        self.sync();
         next
     }
 
     pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
-        self.transition.edge_direction_bits =
-            (self.transition.edge_direction_bits & 0xff00) | u16::from(value);
+        self.transition.set_edge_direction_bits(value);
         self.sync();
     }
 
     pub(crate) fn set_edge_direction_bits_word(&mut self, value: u16) {
-        self.transition.edge_direction_bits = value;
+        self.transition.set_edge_direction_bits_word(value);
         self.sync();
     }
 
     pub(crate) fn clear_edge_direction_bits(&mut self) {
-        self.set_edge_direction_bits(0);
+        self.transition.clear_edge_direction_bits();
+        self.sync();
     }
 
     pub(crate) fn set_direction_enum(&mut self, value: u8) {
-        self.transition.direction_enum = value;
+        self.transition.set_direction_enum(value);
         self.sync();
     }
 
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
-        self.transition.screen_transition =
-            (self.transition.screen_transition & 0xff00) | u16::from(value);
+        self.transition.set_screen_transition(value);
         self.sync();
     }
 
     pub(crate) fn set_screen_transition_word(&mut self, value: u16) {
-        self.transition.screen_transition = value;
+        self.transition.set_screen_transition_word(value);
         self.sync();
     }
 
     pub(crate) fn clear_screen_transition(&mut self) {
-        self.set_screen_transition(0);
+        self.transition.clear_screen_transition();
+        self.sync();
     }
 
     pub(crate) fn set_transition_counter(&mut self, value: u8) {
-        self.transition.transition_counter = value;
+        self.transition.set_transition_counter(value);
         self.sync();
     }
 
     pub(crate) fn increment_transition_counter(&mut self) -> u8 {
-        let next = self.transition.transition_counter.wrapping_add(1);
-        self.set_transition_counter(next);
+        let next = self.transition.increment_transition_counter();
+        self.sync();
         next
     }
 
     pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.transition.countdown = value;
+        self.transition.set_countdown(value);
         self.sync();
     }
 
     pub(crate) fn decrement_countdown(&mut self) -> u8 {
-        let next = self.transition.countdown.wrapping_sub(1);
-        self.set_countdown(next);
+        let next = self.transition.decrement_countdown();
+        self.sync();
         next
     }
 
     pub(crate) fn save_previous_direction_bits(&mut self) {
-        self.transition.previous_direction_bits = u16::from(self.transition.edge_direction_bits());
-        self.transition.previous_direction_bits2 = self.transition.direction_bits_word();
+        self.transition.save_previous_direction_bits();
         self.sync();
     }
 
     pub(crate) fn restore_previous_direction_bits(&mut self) {
-        self.set_edge_direction_bits_word(self.transition.previous_direction_bits);
-        self.set_direction_bits_word(self.transition.previous_direction_bits2);
+        self.transition.restore_previous_direction_bits();
+        self.sync();
     }
 
     pub(crate) fn set_previous_screen_transition(&mut self, value: u8) {
-        self.transition.previous_screen_transition = value;
+        self.transition.set_previous_screen_transition(value);
         self.sync();
     }
 }

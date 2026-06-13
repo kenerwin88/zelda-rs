@@ -1,30 +1,33 @@
+use super::ram_byte;
 use crate::game_state::constants::{
     ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG,
     ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI,
-    ALT_SPRITE_Y_LO, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP,
-    ANCILLA_TIMER, ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_Y_HI, ANCILLA_Y_LO, AUX_TILE_THEME_INDEX,
-    BLIND_HEAD_ANIM_COUNTER, CACHED_SPRITE_ALT_FIELDS, CACHED_SPRITE_LIVE_FIELDS,
-    CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y,
-    DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE,
-    ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X,
-    ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, FOLLOWER_DROPPED,
+    ALT_SPRITE_Y_LO, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_DIRECTION,
+    ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_TYPE, ANCILLA_X_HI, ANCILLA_X_LO,
+    ANCILLA_X_VELOCITY, ANCILLA_Y_HI, ANCILLA_Y_LO, ANCILLA_Y_VELOCITY, BLIND_HEAD_ANIM_COUNTER,
+    CACHED_SPRITE_ALT_FIELDS, CACHED_SPRITE_LIVE_FIELDS, CHAIN_CHOMP_HISTORY_X,
+    CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y, DRAW_WORK_FLAGS_HI,
+    DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA,
+    ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X,
+    ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, FOLLOWER_DROPPED,
     FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR, FOLLOWER_JUMP_TIMER,
     FOLLOWER_KIKI_ANIM_COUNTER, FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR,
     FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX,
     GARNISH_ACTIVE, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET,
-    MAIN_TILE_THEME_INDEX, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
-    MAZE_GAME_TIMER_SNAPSHOT_LO, MISC_SPRITES_GRAPHICS_INDEX, OVERLORD_FLOOR, OVERLORD_GEN1,
-    OVERLORD_GEN2, OVERLORD_GEN3, OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO,
-    OVERWORLD_BOULDER_TRAP_COUNT, OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE,
-    OVERWORLD_SPRITE_WAS_LOADED, PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY,
-    REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER, REPULSESPARK_X_LO, REPULSESPARK_Y_LO,
-    SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE, SPRCOLL_Y_SIZE, SPRITE_ALERT_FLAG,
-    SPRITE_CHR_HALFSLOT_STATE, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_GFX_SUBSET_0,
-    SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT,
+    MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
+    MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN1, OVERLORD_GEN2, OVERLORD_GEN3,
+    OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO, OVERWORLD_BOULDER_TRAP_COUNT,
+    OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
+    PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER,
+    REPULSESPARK_X_LO, REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE,
+    SPRCOLL_Y_SIZE, SPRITE_AI_STATE, SPRITE_ALERT_FLAG, SPRITE_CHR_HALFSLOT_STATE,
+    SPRITE_DELAY_MAIN, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS_INDEX,
+    SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_HEALTH, SPRITE_HIT_TIMER,
     SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE, SPRITE_LOAD_BLOCK_STATE, SPRITE_OAM_PREP_X,
     SPRITE_OAM_PREP_Y, SPRITE_PICKUP_SLOT_CACHE, SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B,
     SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI, SPRITE_SHARED_WORK_A, SPRITE_STATE,
-    SPRITE_TILETYPE, SPRITE_WHERE_IN_ROOM, SPRITE_Y_LO, SPR_RANGED_BASED_TOGGLER,
+    SPRITE_TILETYPE, SPRITE_TYPE, SPRITE_WHERE_IN_ROOM, SPRITE_X_HI, SPRITE_X_LO,
+    SPRITE_X_VELOCITY, SPRITE_Y_HI, SPRITE_Y_LO, SPRITE_Y_VELOCITY, SPR_RANGED_BASED_TOGGLER,
     TAGALONG_ANIM_FRAME_COUNTER, TAGALONG_APPEARANCE_NONE_FLAG, TAGALONG_DATA_INDEX,
     TAGALONG_EVENT_FLAGS, TAGALONG_HOOKSHOT_INTERLOCK, TAGALONG_LAYERBITS, TAGALONG_SHARED_STATE_A,
     TAGALONG_X_HI, TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z,
@@ -43,6 +46,80 @@ const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
 const CACHED_SPRITE_SLOT_COUNT: usize = 0x1b;
 const BOSS_HOME_POSITION_COUNT: usize = 0x1b;
+
+fn packed_ram_position(ram: &[u8], low_offset: usize, high_offset: usize) -> u16 {
+    u16::from(ram_byte(ram, low_offset)) | (u16::from(ram_byte(ram, high_offset)) << 8)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpriteSlotSnapshot {
+    pub(crate) slot: u8,
+    pub(crate) sprite_type: u8,
+    pub(crate) state: u8,
+    pub(crate) x: u16,
+    pub(crate) y: u16,
+    pub(crate) x_velocity: u8,
+    pub(crate) y_velocity: u8,
+    pub(crate) ai_state: u8,
+    pub(crate) delay_main: u8,
+    pub(crate) health: u8,
+    pub(crate) hit_timer: u8,
+}
+
+impl SpriteSlotSnapshot {
+    pub(crate) fn load_from_ram(ram: &[u8], slot: usize) -> Self {
+        Self {
+            slot: slot as u8,
+            sprite_type: ram_byte(ram, SPRITE_TYPE + slot),
+            state: ram_byte(ram, SPRITE_STATE + slot),
+            x: packed_ram_position(ram, SPRITE_X_LO + slot, SPRITE_X_HI + slot),
+            y: packed_ram_position(ram, SPRITE_Y_LO + slot, SPRITE_Y_HI + slot),
+            x_velocity: ram_byte(ram, SPRITE_X_VELOCITY + slot),
+            y_velocity: ram_byte(ram, SPRITE_Y_VELOCITY + slot),
+            ai_state: ram_byte(ram, SPRITE_AI_STATE + slot),
+            delay_main: ram_byte(ram, SPRITE_DELAY_MAIN + slot),
+            health: ram_byte(ram, SPRITE_HEALTH + slot),
+            hit_timer: ram_byte(ram, SPRITE_HIT_TIMER + slot),
+        }
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.sprite_type != 0 || self.state != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AncillaSlotSnapshot {
+    pub(crate) slot: u8,
+    pub(crate) ancilla_type: u8,
+    pub(crate) x: u16,
+    pub(crate) y: u16,
+    pub(crate) x_velocity: u8,
+    pub(crate) y_velocity: u8,
+    pub(crate) item_to_link: u8,
+    pub(crate) timer: u8,
+    pub(crate) direction: u8,
+}
+
+impl AncillaSlotSnapshot {
+    pub(crate) fn load_from_ram(ram: &[u8], slot: usize) -> Self {
+        Self {
+            slot: slot as u8,
+            ancilla_type: ram_byte(ram, ANCILLA_TYPE + slot),
+            x: packed_ram_position(ram, ANCILLA_X_LO + slot, ANCILLA_X_HI + slot),
+            y: packed_ram_position(ram, ANCILLA_Y_LO + slot, ANCILLA_Y_HI + slot),
+            x_velocity: ram_byte(ram, ANCILLA_X_VELOCITY + slot),
+            y_velocity: ram_byte(ram, ANCILLA_Y_VELOCITY + slot),
+            item_to_link: ram_byte(ram, ANCILLA_ITEM_TO_LINK + slot),
+            timer: ram_byte(ram, ANCILLA_TIMER + slot),
+            direction: ram_byte(ram, ANCILLA_DIRECTION + slot),
+        }
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.ancilla_type != 0
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -184,7 +261,17 @@ impl BossHomePositionsState {
         }
     }
 
-    fn write_armos_knight_home_position_to_ram(&self, ram: &mut [u8], slot: usize) {
+    fn project_arrghus_puff_home_position_to_wram(&self, ram: &mut [u8], puff_slot: usize) {
+        if let Some(position) = self.arrghus_puff_home_positions.get(puff_slot).copied() {
+            let overlord_slot = puff_slot + 7;
+            ram[OVERLORD_X_LO + overlord_slot] = position.x_low;
+            ram[OVERLORD_Y_LO + overlord_slot] = position.x_high;
+            ram[OVERLORD_GEN1 + overlord_slot] = position.y_low;
+            ram[OVERLORD_GEN3 + overlord_slot] = position.y_high;
+        }
+    }
+
+    fn project_armos_knight_home_position_to_wram(&self, ram: &mut [u8], slot: usize) {
         if let Some(position) = self.armos_knight_home_positions.get(slot).copied() {
             ram[OVERLORD_X_HI + slot] = position.x_low;
             ram[OVERLORD_Y_HI + slot] = position.x_high;
@@ -203,31 +290,16 @@ impl BossHomePositionsState {
             };
         }
     }
-}
 
-pub(crate) fn arrghus_puff_home_position_from_ram(
-    ram: &[u8],
-    puff_slot: usize,
-) -> BossHomePositionRead {
-    let overlord_slot = puff_slot + 7;
-    BossHomePositionRead {
-        position: BossHomePosition {
-            x_low: ram.get(OVERLORD_X_LO + overlord_slot).copied().unwrap_or(0),
-            x_high: ram.get(OVERLORD_Y_LO + overlord_slot).copied().unwrap_or(0),
-            y_low: ram.get(OVERLORD_GEN1 + overlord_slot).copied().unwrap_or(0),
-            y_high: ram.get(OVERLORD_GEN3 + overlord_slot).copied().unwrap_or(0),
-        },
-    }
-}
-
-pub(crate) fn armos_knight_home_position_from_ram(ram: &[u8], slot: usize) -> BossHomePositionRead {
-    BossHomePositionRead {
-        position: BossHomePosition {
-            x_low: ram.get(OVERLORD_X_HI + slot).copied().unwrap_or(0),
-            x_high: ram.get(OVERLORD_Y_HI + slot).copied().unwrap_or(0),
-            y_low: ram.get(OVERLORD_GEN2 + slot).copied().unwrap_or(0),
-            y_high: ram.get(OVERLORD_FLOOR + slot).copied().unwrap_or(0),
-        },
+    fn set_arrghus_puff_home_position(&mut self, puff_slot: usize, x: u16, y: u16) {
+        if let Some(position) = self.arrghus_puff_home_positions.get_mut(puff_slot) {
+            *position = BossHomePosition {
+                x_low: x as u8,
+                x_high: (x >> 8) as u8,
+                y_low: y as u8,
+                y_high: (y >> 8) as u8,
+            };
+        }
     }
 }
 
@@ -262,6 +334,38 @@ impl BossHomePositionRead {
     }
 }
 
+pub(crate) struct NativeArrghusPuffHomePositionBridgeMut<'a> {
+    state: &'a mut BossHomePositionsState,
+    ram: &'a mut [u8],
+    puff_slot: usize,
+}
+
+impl<'a> NativeArrghusPuffHomePositionBridgeMut<'a> {
+    pub(crate) fn new(
+        state: &'a mut BossHomePositionsState,
+        ram: &'a mut [u8],
+        puff_slot: usize,
+    ) -> Self {
+        Self {
+            state,
+            ram,
+            puff_slot,
+        }
+    }
+
+    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
+        self.state
+            .set_arrghus_puff_home_position(self.puff_slot, x, y);
+        self.state
+            .project_arrghus_puff_home_position_to_wram(self.ram, self.puff_slot);
+        debug_assert_eq!(
+            self.state.arrghus_puff_home_position(self.puff_slot),
+            BossHomePositionsState::load_from_ram(self.ram)
+                .arrghus_puff_home_position(self.puff_slot),
+        );
+    }
+}
+
 pub(crate) struct NativeArmosKnightHomePositionBridgeMut<'a> {
     state: &'a mut BossHomePositionsState,
     ram: &'a mut [u8],
@@ -280,7 +384,7 @@ impl<'a> NativeArmosKnightHomePositionBridgeMut<'a> {
     pub(crate) fn set_position(&mut self, x: u16, y: u16) {
         self.state.set_armos_knight_home_position(self.slot, x, y);
         self.state
-            .write_armos_knight_home_position_to_ram(self.ram, self.slot);
+            .project_armos_knight_home_position_to_wram(self.ram, self.slot);
         debug_assert_eq!(
             self.state.armos_knight_home_position(self.slot),
             BossHomePositionsState::load_from_ram(self.ram).armos_knight_home_position(self.slot),
@@ -528,9 +632,6 @@ pub(crate) struct SpriteSystemState {
     ancilla_alloc_rotate: u8,
     alt_sprites_flag: u8,
     ranged_based_toggler: u8,
-    main_tile_theme: u8,
-    aux_tile_theme: u8,
-    misc_sprites_graphics_index: u8,
 }
 
 impl SpriteSystemState {
@@ -551,9 +652,6 @@ impl SpriteSystemState {
             ancilla_alloc_rotate: ram.get(ANCILLA_ALLOC_ROTATE).copied().unwrap_or(0),
             alt_sprites_flag: ram.get(ALT_SPRITES_FLAG).copied().unwrap_or(0),
             ranged_based_toggler: ram.get(SPR_RANGED_BASED_TOGGLER).copied().unwrap_or(0),
-            main_tile_theme: ram.get(MAIN_TILE_THEME_INDEX).copied().unwrap_or(0),
-            aux_tile_theme: ram.get(AUX_TILE_THEME_INDEX).copied().unwrap_or(0),
-            misc_sprites_graphics_index: ram.get(MISC_SPRITES_GRAPHICS_INDEX).copied().unwrap_or(0),
         }
     }
 
@@ -570,9 +668,6 @@ impl SpriteSystemState {
         ram[ANCILLA_ALLOC_ROTATE] = self.ancilla_alloc_rotate;
         ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
         ram[SPR_RANGED_BASED_TOGGLER] = self.ranged_based_toggler;
-        ram[MAIN_TILE_THEME_INDEX] = self.main_tile_theme;
-        ram[AUX_TILE_THEME_INDEX] = self.aux_tile_theme;
-        ram[MISC_SPRITES_GRAPHICS_INDEX] = self.misc_sprites_graphics_index;
     }
 
     pub(crate) fn limit_instance(&self) -> u8 {
@@ -621,10 +716,6 @@ impl SpriteSystemState {
 
     pub(crate) fn ranged_based_toggler(&self) -> u8 {
         self.ranged_based_toggler
-    }
-
-    pub(crate) fn main_tile_theme(&self) -> u8 {
-        self.main_tile_theme
     }
 
     fn set_limit_instance(&mut self, value: u8) {
@@ -680,18 +771,6 @@ impl SpriteSystemState {
 
     fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
         self.alt_sprite_spawned_flag = value;
-    }
-
-    fn set_main_tile_theme(&mut self, value: u8) {
-        self.main_tile_theme = value;
-    }
-
-    fn set_aux_tile_theme(&mut self, value: u8) {
-        self.aux_tile_theme = value;
-    }
-
-    fn set_misc_sprites_graphics_index(&mut self, value: u8) {
-        self.misc_sprites_graphics_index = value;
     }
 
     fn set_cur_object_index(&mut self, value: u8) {
@@ -816,21 +895,6 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
 
     pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
         self.state.set_alt_sprite_spawned_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_main_tile_theme(&mut self, value: u8) {
-        self.state.set_main_tile_theme(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_aux_tile_theme(&mut self, value: u8) {
-        self.state.set_aux_tile_theme(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
-        self.state.set_misc_sprites_graphics_index(value);
         self.sync();
     }
 
@@ -2998,6 +3062,38 @@ impl SpriteDrawHitboxWorkState {
     pub(crate) fn hitbox_y_low_offset(&self) -> u8 {
         self.hitbox_y_offset
     }
+
+    pub(crate) fn set_low_position(&mut self, x: u8, y: u8) {
+        self.draw_position_x = x;
+        self.draw_position_y = y;
+    }
+
+    pub(crate) fn set_low_position_word(&mut self, value: u16) {
+        self.set_low_position(value as u8, (value >> 8) as u8);
+    }
+
+    pub(crate) fn offset_low_position(&mut self, dx: u8, dy: u8) -> (u8, u8) {
+        self.draw_position_x = self.draw_position_x.wrapping_add(dx);
+        self.draw_position_y = self.draw_position_y.wrapping_add(dy);
+        (self.draw_position_x, self.draw_position_y)
+    }
+
+    pub(crate) fn set_flags_high(&mut self, value: u8) {
+        self.draw_flags_or_hitbox_x_offset = value;
+    }
+
+    pub(crate) fn set_x_high_offset(&mut self, value: u8) {
+        self.draw_flags_or_hitbox_x_offset = value;
+    }
+
+    pub(crate) fn set_y_low_offset(&mut self, value: u8) {
+        self.hitbox_y_offset = value;
+    }
+
+    pub(crate) fn set_offsets(&mut self, y_low: u8, x_high: u8) {
+        self.hitbox_y_offset = y_low;
+        self.draw_flags_or_hitbox_x_offset = x_high;
+    }
 }
 
 pub(crate) struct NativeSpriteDrawWorkPositionBridgeMut<'a> {
@@ -3011,14 +3107,12 @@ impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
     }
 
     pub(crate) fn set_low_position(&mut self, x: u8, y: u8) {
-        self.state.draw_position_x = x;
-        self.state.draw_position_y = y;
+        self.state.set_low_position(x, y);
         self.sync();
     }
 
     pub(crate) fn set_low_position_word(&mut self, value: u16) {
-        self.state.draw_position_x = value as u8;
-        self.state.draw_position_y = (value >> 8) as u8;
+        self.state.set_low_position_word(value);
         self.sync();
     }
 
@@ -3027,15 +3121,13 @@ impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
     }
 
     pub(crate) fn offset_low_position(&mut self, dx: u8, dy: u8) -> (u8, u8) {
-        self.state.draw_position_x = self.state.draw_position_x.wrapping_add(dx);
-        self.state.draw_position_y = self.state.draw_position_y.wrapping_add(dy);
-        let position = (self.state.draw_position_x, self.state.draw_position_y);
+        let position = self.state.offset_low_position(dx, dy);
         self.sync();
         position
     }
 
     pub(crate) fn set_flags_high(&mut self, value: u8) {
-        self.state.draw_flags_or_hitbox_x_offset = value;
+        self.state.set_flags_high(value);
         self.sync();
     }
 
@@ -3063,18 +3155,17 @@ impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
     }
 
     pub(crate) fn set_x_high_offset(&mut self, value: u8) {
-        self.state.draw_flags_or_hitbox_x_offset = value;
+        self.state.set_x_high_offset(value);
         self.sync();
     }
 
     pub(crate) fn set_y_low_offset(&mut self, value: u8) {
-        self.state.hitbox_y_offset = value;
+        self.state.set_y_low_offset(value);
         self.sync();
     }
 
     pub(crate) fn set_offsets(&mut self, y_low: u8, x_high: u8) {
-        self.state.hitbox_y_offset = y_low;
-        self.state.draw_flags_or_hitbox_x_offset = x_high;
+        self.state.set_offsets(y_low, x_high);
         self.sync();
     }
 
@@ -3114,6 +3205,14 @@ impl DualLayerTileCacheState {
     pub(crate) fn tile_type(&self, slot: usize) -> u8 {
         self.tile_types.get(slot).copied().unwrap_or(0)
     }
+
+    pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) -> bool {
+        let Some(tile_type) = self.tile_types.get_mut(slot) else {
+            return false;
+        };
+        *tile_type = value;
+        true
+    }
 }
 
 pub(crate) struct NativeDualLayerTileCacheBridgeMut<'a> {
@@ -3127,8 +3226,7 @@ impl<'a> NativeDualLayerTileCacheBridgeMut<'a> {
     }
 
     pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) {
-        if let Some(tile_type) = self.state.tile_types.get_mut(slot) {
-            *tile_type = value;
+        if self.state.set_tile_type(slot, value) {
             self.sync();
         }
     }
@@ -3169,6 +3267,15 @@ impl PrizeDropCycleState {
     pub(crate) fn next_index_for_slot(&self, slot: usize) -> u8 {
         self.next_indices.get(slot).copied().unwrap_or(0)
     }
+
+    pub(crate) fn take_next_index(&mut self, slot: usize) -> u8 {
+        let Some(index) = self.next_indices.get_mut(slot) else {
+            return 0;
+        };
+        let current = *index;
+        *index = current.wrapping_add(1) & 7;
+        current
+    }
 }
 
 pub(crate) struct NativePrizeDropCycleBridgeMut<'a> {
@@ -3182,11 +3289,7 @@ impl<'a> NativePrizeDropCycleBridgeMut<'a> {
     }
 
     pub(crate) fn take_next_index(&mut self, slot: usize) -> u8 {
-        let Some(index) = self.state.next_indices.get_mut(slot) else {
-            return 0;
-        };
-        let current = *index;
-        *index = current.wrapping_add(1) & 7;
+        let current = self.state.take_next_index(slot);
         self.sync();
         current
     }
@@ -3237,6 +3340,30 @@ impl MazeGameTimerState {
     pub(crate) fn snapshot_low(&self) -> u16 {
         self.snapshot_low
     }
+
+    pub(crate) fn snapshot_high(&self) -> u16 {
+        self.snapshot_high
+    }
+
+    pub(crate) fn clear_elapsed(&mut self) {
+        self.elapsed_low = 0;
+        self.elapsed_high = 0;
+    }
+
+    pub(crate) fn increment_elapsed_low(&mut self) -> u16 {
+        self.elapsed_low = self.elapsed_low.wrapping_add(1);
+        self.elapsed_low
+    }
+
+    pub(crate) fn increment_elapsed_high(&mut self) -> u16 {
+        self.elapsed_high = self.elapsed_high.wrapping_add(1);
+        self.elapsed_high
+    }
+
+    pub(crate) fn capture_snapshot(&mut self) {
+        self.snapshot_low = self.elapsed_low;
+        self.snapshot_high = self.elapsed_high;
+    }
 }
 
 pub(crate) struct NativeMazeGameTimerBridgeMut<'a> {
@@ -3250,26 +3377,24 @@ impl<'a> NativeMazeGameTimerBridgeMut<'a> {
     }
 
     pub(crate) fn clear_elapsed(&mut self) {
-        self.state.elapsed_low = 0;
-        self.state.elapsed_high = 0;
+        self.state.clear_elapsed();
         self.sync();
     }
 
     pub(crate) fn increment_elapsed_low(&mut self) -> u16 {
-        self.state.elapsed_low = self.state.elapsed_low.wrapping_add(1);
+        let elapsed_low = self.state.increment_elapsed_low();
         self.sync();
-        self.state.elapsed_low
+        elapsed_low
     }
 
     pub(crate) fn increment_elapsed_high(&mut self) -> u16 {
-        self.state.elapsed_high = self.state.elapsed_high.wrapping_add(1);
+        let elapsed_high = self.state.increment_elapsed_high();
         self.sync();
-        self.state.elapsed_high
+        elapsed_high
     }
 
     pub(crate) fn capture_snapshot(&mut self) {
-        self.state.snapshot_low = self.state.elapsed_low;
-        self.state.snapshot_high = self.state.elapsed_high;
+        self.state.capture_snapshot();
         self.sync();
     }
 

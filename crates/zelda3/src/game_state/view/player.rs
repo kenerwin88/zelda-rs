@@ -2,11 +2,11 @@ use super::*;
 
 const FALL_HOLE_SCAN_INDEX_LOCAL: usize = 0x02c9;
 
-pub(crate) struct PlayerStateView<'a> {
+pub(crate) struct RamPlayerStateView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> PlayerStateView<'a> {
+impl<'a> RamPlayerStateView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -1040,11 +1040,11 @@ impl<'a> PlayerStateView<'a> {
     }
 }
 
-pub(crate) struct PlayerStateViewMut<'a> {
+pub(crate) struct RamPlayerStateViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> PlayerStateViewMut<'a> {
+impl<'a> RamPlayerStateViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

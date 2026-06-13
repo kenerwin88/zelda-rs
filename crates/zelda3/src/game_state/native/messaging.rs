@@ -800,6 +800,10 @@ impl SharedMessageTimerState {
         write_le_u16(ram, SHARED_MESSAGE_TIMER, self.timer);
     }
 
+    pub(crate) fn value(&self) -> u16 {
+        self.timer
+    }
+
     pub(crate) fn tick(&mut self) -> u16 {
         self.timer = self.timer.wrapping_sub(1);
         self.timer

@@ -584,7 +584,7 @@ impl ZeldaState {
     pub(super) fn crystal_maiden_run_cutscene(&mut self, k: usize) {
         self.sprite_slot_mut(k).increment_e();
         self.poly_runtime_mut().add_angle_b(6);
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             return;
         }
 
@@ -705,7 +705,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_y_velocity(0);
                     self.system_signals_mut().set_music_control(25);
                 }
-                let graphics = self.frame_state().frame_counter >> 3 & 1;
+                let graphics = self.game_state.frame.frame_counter >> 3 & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
             }
             2 => {
@@ -759,7 +759,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k)
                         .set_y_velocity(ZELDA_YVEL[dir as usize] as u8);
                 }
-                let graphics = self.frame_state().frame_counter >> 3 & 1;
+                let graphics = self.game_state.frame.frame_counter >> 3 & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
             }
             1 => {
@@ -843,7 +843,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).increment_ai_state();
             }
             1 => {
-                if (self.frame_state().frame_counter & 3) != 0 {
+                if (self.game_state.frame.frame_counter & 3) != 0 {
                     return;
                 }
                 if self.palette_filter().fixed_color_red() != 32 {
@@ -864,7 +864,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).increment_ai_state();
             }
             3 => {
-                let graphics = (self.frame_state().frame_counter >> 3) & 1;
+                let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
                 if self.sprite_slot(k).delay_main() == 0 {
                     let j = usize::from(self.sprite_slot(k).a());
@@ -1121,7 +1121,7 @@ impl ZeldaState {
                 if self.sprite_slot(k).delay_aux2() == 0 {
                     self.sprite_slot_mut(k).increment_ai_state();
                 }
-                let a = self.frame_state().frame_counter & 2;
+                let a = self.game_state.frame.frame_counter & 2;
                 self.sprite_slot_mut(k).set_a(a);
                 if (self.sprite_slot(k).delay_aux2() & 7) == 0 {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x33);
@@ -1251,7 +1251,7 @@ impl ZeldaState {
         self.sprite_track_body_to_head(k);
         let head_direction = self.sprite_direction_to_face_link(k, None) ^ 3;
         self.sprite_slot_mut(k).set_head_direction(head_direction);
-        if (self.world_location_state().dungeon_room_index() & 1) == 0 {
+        if (self.game_state.world.location.dungeon_room_index() & 1) == 0 {
             self.sprite_show_solicited_message(k, 0x131);
         } else if (self.dungeon_doors().opened_doors() & 0xff00) == 0 {
             self.sprite_show_solicited_message(k, 0x12f);
@@ -1338,7 +1338,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_prep_uncle_and_priest_bounce(&mut self, k: usize) {
-        let room = self.world_location_state().dungeon_room_index();
+        let room = self.game_state.world.location.dungeon_room_index();
         if room == 18 {
             self.priest_spawn_mantle(k);
             if self.save_progress().progress_indicator() >= 3 {
@@ -1509,7 +1509,7 @@ impl ZeldaState {
                     let direction = self.sprite_slot(k).head_direction();
                     self.sprite_slot_mut(k).set_direction(direction);
                 }
-                if (((k as u8) ^ self.frame_state().frame_counter) & 3) == 0 {
+                if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
                     let j = usize::from(j);
                     let target_x = self.sprite_get_x(j);
                     let target_y = self.sprite_get_y(j);
@@ -1523,7 +1523,7 @@ impl ZeldaState {
     }
 
     fn thief_common(&mut self, k: usize) {
-        if (self.frame_state().frame_counter & 31) == 0 {
+        if (self.game_state.frame.frame_counter & 31) == 0 {
             let direction = self.sprite_slot(k).head_direction();
             self.sprite_slot_mut(k).set_direction(direction);
         }
@@ -1566,7 +1566,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_target_booty(&mut self, k: usize, j_in: usize) {
-        let fc = self.frame_state().frame_counter as usize;
+        let fc = self.game_state.frame.frame_counter as usize;
         if (k ^ fc) & 3 == 0 {
             let tx = self.sprite_get_x(j_in);
             let ty = self.sprite_get_y(j_in);
@@ -1755,7 +1755,7 @@ impl ZeldaState {
     //   Thief_Draw(k);
     // }
     pub(super) fn nice_thief_animate(&mut self, k: usize) {
-        if (self.frame_state().frame_counter & 3) == 0 {
+        if (self.game_state.frame.frame_counter & 3) == 0 {
             self.sprite_slot_mut(k).set_graphics(2);
             let dir = self.sprite_direction_to_face_link_for_dn(k);
             self.sprite_slot_mut(k)
@@ -1797,7 +1797,7 @@ impl ZeldaState {
         if gate != 0 || self.follower_state().indicator() == 10 {
             return;
         }
-        let scr = self.world_location_state().overworld_screen_index() as usize;
+        let scr = self.game_state.world.location.overworld_screen_index() as usize;
         if (self.overworld_event_info().event_info(scr) & 0x20) != 0 {
             return;
         }
@@ -1878,7 +1878,7 @@ impl ZeldaState {
             (self.sprite_slot(k).y_velocity() >> 7) ^ 1
         };
         self.sprite_slot_mut(k).set_direction(d);
-        let graphics = (self.frame_state().frame_counter >> 3) & 1;
+        let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
         self.sprite_slot_mut(k).set_graphics(graphics);
     }
 
@@ -1913,7 +1913,7 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_z_velocity(0);
             self.sprite_slot_mut(k).set_z(0);
         }
-        let graphics = (self.frame_state().frame_counter >> 3) & 1;
+        let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
         self.sprite_slot_mut(k).set_graphics(graphics);
         match self.sprite_slot(k).ai_state() {
             0 => {
@@ -1990,7 +1990,7 @@ impl ZeldaState {
                 }
             }
             s @ (2 | 4 | 6) => {
-                let graphics = (self.frame_state().frame_counter >> 3) & 1;
+                let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
                 let j = ((s >> 1) - 1) as usize;
                 let dx = KIKI_LEAVE_X[j]
@@ -2030,12 +2030,12 @@ impl ZeldaState {
                         .set_direction(((new_state >> 1) & 1) | 4);
                 } else {
                     self.sprite_slot_mut(k).set_direction(((s >> 1) & 1) | 6);
-                    let graphics = (self.frame_state().frame_counter >> 3) & 1;
+                    let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                     self.sprite_slot_mut(k).set_graphics(graphics);
                 }
             }
             7 => {
-                let graphics = (self.frame_state().frame_counter >> 3) & 1;
+                let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
                 if self.sprite_slot(k).z() != 0 || self.sprite_slot(k).delay_main() != 0 {
                     return;
@@ -2151,7 +2151,7 @@ impl ZeldaState {
     //   Chicken_IncrSubtype2(k, 4);
     // }
     pub(super) fn chicken_hopping(&mut self, k: usize) {
-        if ((k as u8) ^ self.frame_state().frame_counter) & 1 != 0
+        if ((k as u8) ^ self.game_state.frame.frame_counter) & 1 != 0
             && self.cucco_do_movement_xy(k) != 0
         {
             self.sprite_slot_mut(k).set_ai_state(0);
@@ -2184,7 +2184,7 @@ impl ZeldaState {
         self.sprite_return_if_lifted(k);
         self.cucco_do_movement_xy(k);
         self.sprite_slot_mut(k).set_z(0);
-        let fc = self.frame_state().frame_counter as usize;
+        let fc = self.game_state.frame.frame_counter as usize;
         if (k ^ fc) & 0x1f == 0 {
             let pt = self.sprite_project_speed_towards_link(k, 16);
             self.sprite_slot_mut(k)
@@ -2261,9 +2261,9 @@ impl ZeldaState {
     //   BawkBawk(k);
     // }
     pub(super) fn cucco_summon_avenger(&mut self, k: usize) {
-        let fc = self.frame_state().frame_counter as usize;
+        let fc = self.game_state.frame.frame_counter as usize;
         // Original uses `|` (bitwise OR) — preserve early exit semantics.
-        if ((k ^ fc) & 0xf) as u8 | self.world_location_state().indoor_flag != 0 {
+        if ((k ^ fc) & 0xf) as u8 | self.game_state.world.location.indoor_flag() != 0 {
             return;
         }
         let Some(j) = self.sprite_spawn_dynamically_ex_for_dn(k, 0xB, 10) else {
@@ -2337,7 +2337,7 @@ impl ZeldaState {
         match self.sprite_slot(k).ai_state() {
             0 => {
                 self.sprite_move_xy(k);
-                let graphics = (self.frame_state().frame_counter >> 3) & 1;
+                let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
                 if self.sprite_slot(k).delay_main() != 0 {
                     return;
@@ -2941,12 +2941,12 @@ mod tests {
         let mut s = fresh_state();
         let k = 0;
         s.sprite_slot_mut(k).set_delay_aux1(0);
-        s.ram[HUD_CUR_ITEM] = HUD_ITEM_HAMMER;
+        s.save_progress_mut().set_hud_current_item(HUD_ITEM_HAMMER);
         s.player_state_mut().set_item_in_hand(2);
         s.player_state_mut().set_action_handler_timer(2);
         assert!(s.smithy_listen_for_hammer(k));
         // With the hammer not selected we never reach the damage check.
-        s.ram[HUD_CUR_ITEM] = 0;
+        s.save_progress_mut().set_hud_current_item(0);
         assert!(!s.smithy_listen_for_hammer(k));
     }
 

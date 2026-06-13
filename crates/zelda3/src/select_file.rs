@@ -13,10 +13,10 @@ impl ZeldaState {
     pub(super) fn module01_file_select(&mut self) {
         if self.state_recorder.replay_mode
             && std::env::var_os("ZELDA3_SMV_SELECT_FILE_TIMING_HACKS").is_some()
-            && self.frame_state().saved_module_for_menu == 0
+            && self.game_state.frame.saved_module_for_menu == 0
             && self.dialogue_message_index().value() == 0x000a
         {
-            let stall = match self.frame_state().submodule {
+            let stall = match self.game_state.frame.submodule {
                 1 => 58,
                 2 => 1,
                 _ => 0,
@@ -34,7 +34,7 @@ impl ZeldaState {
                     println!(
                         "file-select-stall frame={} sub={} msg=0x{:04x} stall={} before={} seeded={} after={} return={} save_slot_flags={},{},{}",
                         self.frame_ctr_dbg,
-                        self.frame_state().submodule,
+                        self.game_state.frame.submodule,
                         self.dialogue_message_index().value(),
                         stall,
                         before,
@@ -56,7 +56,7 @@ impl ZeldaState {
                     println!(
                         "file-select-stall frame={} sub={} msg=0x{:04x} stall=0 before={} seeded={} after=0 return=0 save_slot_flags={},{},{}",
                         self.frame_ctr_dbg,
-                        self.frame_state().submodule,
+                        self.game_state.frame.submodule,
                         self.dialogue_message_index().value(),
                         self.replay_reload_file_select_stall,
                         self.replay_reload_file_select_stall,
@@ -74,7 +74,7 @@ impl ZeldaState {
                 println!(
                     "file-select-stall frame={} sub={} msg=0x{:04x} stall=0 before={} seeded={} after=0 return=0 save_slot_flags={},{},{}",
                     self.frame_ctr_dbg,
-                    self.frame_state().submodule,
+                    self.game_state.frame.submodule,
                     self.dialogue_message_index().value(),
                     self.replay_reload_file_select_stall,
                     self.replay_reload_file_select_stall,
@@ -88,7 +88,7 @@ impl ZeldaState {
 
         self.ppu_scroll_copy_mut().set_bg3_h_copy2(0);
         self.ppu_scroll_copy_mut().set_bg3_v_copy2(0);
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.module_select_file_0(),
             1 => self.file_select_re_init_save_flags_and_erase_triforce(),
             2 => self.module_erase_file_1(),
@@ -127,14 +127,14 @@ impl ZeldaState {
 
     pub(super) fn load_file_select_graphics(&mut self) {
         let data = self
-            .decomp_spr_data(0x5e)
+            .decompressed_sprite_graphics_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
         self.graphics_scratch_mut()
             .copy_to_primary_decompression_buffer(&data);
         self.do3_to_4_high_to_vram(0x5000, &data);
 
         let data = self
-            .decomp_spr_data(0x5f)
+            .decompressed_sprite_graphics_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
         self.graphics_scratch_mut()
             .copy_to_primary_decompression_buffer(&data);
@@ -143,7 +143,7 @@ impl ZeldaState {
         self.transfer_font_to_vram();
 
         let data = self
-            .decomp_spr_data(0x6b)
+            .decompressed_sprite_graphics_data(0x6b)
             .expect("file select sprite sheet 0x6b must decompress");
         self.graphics_scratch_mut()
             .copy_to_primary_decompression_buffer(&data);
@@ -216,7 +216,7 @@ impl ZeldaState {
         ];
 
         let mut dst = self.select_file_func1();
-        let upload_base = self.display_state().vram_upload_buffer_base();
+        let upload_base = self.game_state.display.vram_upload_buffer_base();
         self.copy_vram_upload_buffer_bytes(dst - upload_base, &SELECT_FILE_GFX0);
         dst += SELECT_FILE_GFX0.len();
 
@@ -237,7 +237,7 @@ impl ZeldaState {
 
     pub(super) fn select_file_func1(&mut self) -> usize {
         const BACKGROUND_CHECKERBOARD_TILES: [u16; 4] = [0x3581, 0x3582, 0x3591, 0x3592];
-        let mut dst = self.display_state().vram_upload_buffer_base();
+        let mut dst = self.game_state.display.vram_upload_buffer_base();
         self.write_vram_upload_absolute_word(dst, 0x0010);
         dst += 2;
         self.write_vram_upload_absolute_word(dst, 0xff07);
@@ -364,7 +364,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_draw_fairy(&mut self, x: u8, y: u8) {
-        let charnum = if self.frame_state().frame_counter & 8 != 0 {
+        let charnum = if self.game_state.frame.frame_counter & 8 != 0 {
             0xaa
         } else {
             0xa8
@@ -482,7 +482,8 @@ impl ZeldaState {
         let sram_base = k * 0x500;
 
         let mut dst = self
-            .display_state()
+            .game_state
+            .display
             .vram_upload_buffer_address(NAME_VRAM_OFFS[k]);
         for i in 0..6 {
             let t =
@@ -494,7 +495,8 @@ impl ZeldaState {
 
         let mut health = self.sram[sram_base + KSRM_OFFS_HEALTH] >> 3;
         let mut dst = self
-            .display_state()
+            .game_state
+            .display
             .vram_upload_buffer_address(HEALTH_VRAM_OFFS[k]);
         let dst_org = dst;
         let mut row = 10u8;
@@ -535,7 +537,7 @@ impl ZeldaState {
             if self.select_file_scratch().cursor() == 0 {
                 self.system_signals_mut().set_sound_effect_2(0x22);
                 self.system_signals_mut().set_sound_effect_1(0);
-                let k = self.frame_state().subsubmodule as usize;
+                let k = self.game_state.frame.subsubmodule as usize;
                 self.select_file_scratch_mut().clear_save_slot_flag(k);
                 let base = k * 0x500;
                 self.sram[base..base + 0x500].fill(0);
@@ -549,7 +551,7 @@ impl ZeldaState {
 
     pub(super) fn module02_copy_file(&mut self) {
         self.select_file_scratch_mut().clear_remembered_cursor();
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
             2 => self.module_copy_file_2(),
@@ -574,7 +576,7 @@ impl ZeldaState {
 
     pub(super) fn copy_file_choose_selection(&mut self) {
         self.copy_file_selection_and_blinker();
-        if self.frame_state().submodule == 3 && self.frame_state().frame_counter & 0x30 == 0 {
+        if self.game_state.frame.submodule == 3 && self.game_state.frame.frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
         self.set_bg_vram_load_mode(1);
@@ -582,7 +584,7 @@ impl ZeldaState {
 
     pub(super) fn copy_file_choose_target(&mut self) {
         self.copy_file_target_selection_and_blink();
-        if self.frame_state().submodule == 4 && self.frame_state().frame_counter & 0x30 == 0 {
+        if self.game_state.frame.submodule == 4 && self.game_state.frame.frame_counter & 0x30 == 0 {
             self.file_picker_delete_header_stripe();
         }
         self.set_bg_vram_load_mode(1);
@@ -596,7 +598,7 @@ impl ZeldaState {
     pub(super) fn file_picker_delete_header_stripe(&mut self) {
         const DST: [usize; 2] = [4, 0x1e];
         for j in (0..2).rev() {
-            let dst = self.display_state().vram_upload_buffer_address(DST[j]);
+            let dst = self.game_state.display.vram_upload_buffer_address(DST[j]);
             for i in 0..11 {
                 self.write_vram_upload_absolute_word(dst + i * 2, 0x00a9);
             }
@@ -634,7 +636,7 @@ impl ZeldaState {
 
         for k in 0..3 {
             if self.select_file_scratch().save_slot_flag(k) & 1 != 0 {
-                let mut dst = self.display_state().vram_upload_buffer_address(DST[k]);
+                let mut dst = self.game_state.display.vram_upload_buffer_address(DST[k]);
                 for i in 0..6 {
                     let t = read_le_u16(&self.sram, k * 0x500 + KSRM_OFFS_NAME + i * 2)
                         .wrapping_add(0x1800);
@@ -687,7 +689,8 @@ impl ZeldaState {
             self.copy_vram_upload_buffer_bytes(52, &COPY_TARGET_HEADER_STRIPE);
             if self.select_file_scratch().cursor() != 2 {
                 let dst = self
-                    .display_state()
+                    .game_state
+                    .display
                     .vram_upload_buffer_address(self.select_file_scratch().cursor_usize() * 12);
                 self.write_vram_upload_absolute_word(dst + 52, 0x2762);
                 self.write_vram_upload_absolute_word(dst + 58, 0x4762);
@@ -739,7 +742,7 @@ impl ZeldaState {
             if k * 2 == self.select_file_scratch().copy_source_slot_x2() as usize {
                 continue;
             }
-            let mut dst = self.display_state().vram_upload_buffer_address(DST[j]);
+            let mut dst = self.game_state.display.vram_upload_buffer_address(DST[j]);
             j += 1;
             let t = COPY_TARGET_SLOT_BLANK_TILES[k];
             self.write_vram_upload_absolute_word(dst, t);
@@ -834,7 +837,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module03_kill_file(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
             2 => self.kill_file_set_up(),
@@ -954,7 +957,8 @@ impl ZeldaState {
             self.increment_submodule();
             if self.select_file_scratch().cursor() != 2 {
                 let dst = self
-                    .display_state()
+                    .game_state
+                    .display
                     .vram_upload_buffer_address(self.select_file_scratch().cursor_usize() * 12);
                 self.write_vram_upload_absolute_word(dst, 0x6762);
                 self.write_vram_upload_absolute_word(dst + 6, 0x8762);
@@ -966,7 +970,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module04_name_file(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.name_file_erase_save(),
             1 => self.module_name_player_1(),
             2 => self.module_name_player_2(),

@@ -5,34 +5,12 @@ use crate::types::{abs16, sign16, sign8, OamEnt, ProjectSpeedRet};
 
 const MAIN_MODULE_INDEX_TAGALONG: usize = 0x10;
 const SUBMODULE_INDEX_TAGALONG: usize = 0x11;
-const LINK_Y_COORD_TAGALONG: usize = 0x20;
-const LINK_X_COORD_TAGALONG: usize = 0x22;
-const LINK_Z_COORD_TAGALONG: usize = 0x24;
-const LINK_Y_VEL_TAGALONG: usize = 0x30;
-const LINK_X_VEL_TAGALONG: usize = 0x31;
-const BUTTON_MASK_B_Y_TAGALONG: usize = 0x3a;
-// NES_Ver2: HIKUFG, "pull set flag".
-const LINK_PULL_ACTION_STATE_TAGALONG: usize = 0x377;
-const LINK_STATE_BITS_TAGALONG: usize = 0x308;
-const LINK_GRABBING_WALL_TAGALONG: usize = 0x376;
-const LINK_SPEED_SETTING_TAGALONG: usize = 0x5e;
-const LINK_DIRECTION_FACING_TAGALONG: usize = 0x2f;
-const LINK_IS_RUNNING_TAGALONG: usize = 0x372;
 const PLAYER_IS_INDOORS_TAGALONG: usize = 0x1b;
-const LINK_IS_ON_LOWER_LEVEL_TAGALONG: usize = 0xee;
-const LINK_PLAYER_HANDLER_STATE_TAGALONG: usize = 0x5d;
-const LINK_AUXILIARY_STATE_TAGALONG: usize = 0x4d;
-const LINK_POSITION_MODE_TAGALONG: usize = 0x37a;
-const LINK_ITEM_IN_HAND_TAGALONG: usize = 0x301;
-const FLAG_IS_LINK_IMMOBILIZED_TAGALONG: usize = 0x2e4;
-const LINK_DISABLE_SPRITE_DAMAGE_TAGALONG: usize = 0x37b;
 const FILTERED_JOYPAD_L_TAGALONG: usize = 0xf6;
 const FRAME_COUNTER_TAGALONG: usize = 0x1a;
 const TAGALONG_MESSAGE_TIMER: usize = 0x2cd;
 const TAGALONG_JUMP_TIMER_TAGALONG: usize = 0x2d6;
 const TAGALONG_DRAW_ANIM_FRAME: usize = 0x2d7;
-const FLAG_IS_ANCILLA_TO_PICK_UP_TAGALONG: usize = 0x2ec;
-const FLAG_IS_SPRITE_TO_PICK_UP_TAGALONG: usize = 0x314;
 const COUNTDOWN_FOR_BLINK_TAGALONG: usize = 0x31f;
 const OAM_PRIORITY_VALUE_TAGALONG: usize = 0x64;
 const OAM_CUR_PTR_TAGALONG: usize = 0x90;
@@ -92,18 +70,9 @@ const SAVED_TAGALONG_FLOOR_TAGALONG: usize = 0x0f3d2;
 const OVERWORLD_SCREEN_INDEX_TAGALONG: usize = 0x8a;
 const ENHANCED_FEATURES0_TAGALONG: usize = 0x064c;
 
-const PLAYER_HANDLER_STATE_GROUND: u8 = 0;
-const PLAYER_HANDLER_STATE_SWIMMING: u8 = 4;
-const PLAYER_HANDLER_STATE_RECOIL_OTHER: u8 = 6;
-const PLAYER_HANDLER_STATE_START_DASH: u8 = 17;
-const PLAYER_HANDLER_STATE_HOOKSHOT: u8 = 19;
-const PLAYER_HANDLER_STATE_ETHER: u8 = 8;
-const PLAYER_HANDLER_STATE_BOMBOS: u8 = 9;
-const PLAYER_HANDLER_STATE_QUAKE: u8 = 10;
 const FEATURES0_MISC_BUG_FIXES_TAGALONG: u32 = 4096;
 const FEATURES0_TURN_WHILE_DASHING_TAGALONG: u32 = 4;
 
-const TAGALONG_FLAGS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
 const TAGALONG_SLOWDOWN_INDICATOR_BY_FOLLOWER: [u8; 15] =
     [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const TAGALONG_RELEASE_INDICATOR_BY_FOLLOWER: [u8; 15] =
@@ -111,201 +80,6 @@ const TAGALONG_RELEASE_INDICATOR_BY_FOLLOWER: [u8; 15] =
 const TAGALONG_MESSAGE_FOLLOWER_INDICATORS: [u8; 3] = [5, 9, 0x0a];
 const TAGALONG_MESSAGE_TIMERS: [u16; 3] = [0x0df3, 0x06f9, 0x0df3];
 const TAGALONG_MSG: [u16; 3] = [0x20, 0x108, 0x11d];
-
-fn tagalong_link_byte(ram: &[u8], addr: usize) -> u8 {
-    ram[addr]
-}
-
-fn tagalong_link_word(ram: &[u8], addr: usize) -> u16 {
-    read_le_u16(ram, addr)
-}
-
-fn set_tagalong_link_byte(ram: &mut [u8], addr: usize, value: u8) {
-    ram[addr] = value;
-}
-
-struct TagalongLinkState<'a> {
-    ram: &'a [u8],
-}
-
-impl<'a> TagalongLinkState<'a> {
-    fn new(ram: &'a [u8]) -> Self {
-        Self { ram }
-    }
-
-    fn x(&self) -> u16 {
-        tagalong_link_word(self.ram, LINK_X_COORD_TAGALONG)
-    }
-
-    fn y(&self) -> u16 {
-        tagalong_link_word(self.ram, LINK_Y_COORD_TAGALONG)
-    }
-
-    fn z_for_follow(&self) -> u8 {
-        let z = tagalong_link_byte(self.ram, LINK_Z_COORD_TAGALONG);
-        if z >= 0xf0 {
-            0
-        } else {
-            z
-        }
-    }
-
-    fn x_velocity(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_X_VEL_TAGALONG)
-    }
-
-    fn y_velocity(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_Y_VEL_TAGALONG)
-    }
-
-    fn is_moving(&self) -> bool {
-        (self.x_velocity() | self.y_velocity()) != 0
-    }
-
-    fn floor(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_IS_ON_LOWER_LEVEL_TAGALONG)
-    }
-
-    fn floor_layer_bits(&self) -> u8 {
-        TAGALONG_FLAGS[self.floor() as usize] >> 2
-    }
-
-    fn facing_layer_bits(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_DIRECTION_FACING_TAGALONG) >> 1
-    }
-
-    fn speed_setting(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_SPEED_SETTING_TAGALONG)
-    }
-
-    fn handler_state(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_PLAYER_HANDLER_STATE_TAGALONG)
-    }
-
-    fn is_ground_swim_or_dash_start(&self) -> bool {
-        matches!(
-            self.handler_state(),
-            PLAYER_HANDLER_STATE_GROUND
-                | PLAYER_HANDLER_STATE_SWIMMING
-                | PLAYER_HANDLER_STATE_START_DASH
-        )
-    }
-
-    fn is_using_medallion(&self) -> bool {
-        matches!(
-            self.handler_state(),
-            PLAYER_HANDLER_STATE_ETHER | PLAYER_HANDLER_STATE_BOMBOS | PLAYER_HANDLER_STATE_QUAKE
-        )
-    }
-
-    fn is_swimming(&self) -> bool {
-        self.handler_state() == PLAYER_HANDLER_STATE_SWIMMING
-    }
-
-    fn is_immobilized(&self) -> bool {
-        tagalong_link_byte(self.ram, FLAG_IS_LINK_IMMOBILIZED_TAGALONG) != 0
-    }
-
-    fn is_hookshot(&self) -> bool {
-        self.handler_state() == PLAYER_HANDLER_STATE_HOOKSHOT
-    }
-
-    fn is_recoiling_from_other_source(&self) -> bool {
-        self.handler_state() == PLAYER_HANDLER_STATE_RECOIL_OTHER
-    }
-
-    fn has_action_state(&self) -> bool {
-        tagalong_link_byte(self.ram, LINK_STATE_BITS_TAGALONG) != 0
-    }
-
-    fn is_lifting_or_carrying(&self) -> bool {
-        tagalong_link_byte(self.ram, LINK_STATE_BITS_TAGALONG) & 0x80 != 0
-    }
-
-    fn auxiliary_state(&self) -> u8 {
-        tagalong_link_byte(self.ram, LINK_AUXILIARY_STATE_TAGALONG)
-    }
-
-    fn has_auxiliary_state(&self) -> bool {
-        self.auxiliary_state() != 0
-    }
-
-    fn is_running(&self) -> bool {
-        tagalong_link_byte(self.ram, LINK_IS_RUNNING_TAGALONG) != 0
-    }
-
-    fn can_open_follower_message(&self) -> bool {
-        let blocked = (tagalong_link_byte(self.ram, BUTTON_MASK_B_Y_TAGALONG) & 0x80)
-            | tagalong_link_byte(self.ram, LINK_PULL_ACTION_STATE_TAGALONG)
-            | tagalong_link_byte(self.ram, LINK_ITEM_IN_HAND_TAGALONG)
-            | tagalong_link_byte(self.ram, LINK_POSITION_MODE_TAGALONG)
-            | tagalong_link_byte(self.ram, FLAG_IS_ANCILLA_TO_PICK_UP_TAGALONG)
-            | tagalong_link_byte(self.ram, FLAG_IS_SPRITE_TO_PICK_UP_TAGALONG)
-            | tagalong_link_byte(self.ram, LINK_STATE_BITS_TAGALONG)
-            | tagalong_link_byte(self.ram, LINK_GRABBING_WALL_TAGALONG);
-        self.is_ground_swim_or_dash_start() && blocked == 0
-    }
-
-    fn can_drop_follower(&self) -> bool {
-        self.auxiliary_state() != 1 && !self.is_lifting_or_carrying()
-    }
-
-    fn should_transform_old_man_from_recoil(&self) -> bool {
-        (self.auxiliary_state() & 1) != 0 && self.is_recoiling_from_other_source()
-    }
-
-    fn should_transform_old_man_from_auxiliary_state(&self) -> bool {
-        self.auxiliary_state() & 2 != 0
-    }
-
-    fn can_reacquire_old_man(&self) -> bool {
-        !self.is_running() && !self.has_auxiliary_state() && !self.is_swimming()
-    }
-}
-
-struct TagalongLinkStateMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> TagalongLinkStateMut<'a> {
-    fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    fn set_speed_setting(&mut self, value: u8) {
-        set_tagalong_link_byte(self.ram, LINK_SPEED_SETTING_TAGALONG, value);
-    }
-
-    fn set_ground_state(&mut self) {
-        set_tagalong_link_byte(
-            self.ram,
-            LINK_PLAYER_HANDLER_STATE_TAGALONG,
-            PLAYER_HANDLER_STATE_GROUND,
-        );
-    }
-
-    fn clear_running(&mut self) {
-        set_tagalong_link_byte(self.ram, LINK_IS_RUNNING_TAGALONG, 0);
-    }
-
-    fn immobilize(&mut self) {
-        set_tagalong_link_byte(self.ram, FLAG_IS_LINK_IMMOBILIZED_TAGALONG, 1);
-    }
-
-    fn enable_cutscene_immunity(&mut self) {
-        set_tagalong_link_byte(self.ram, LINK_DISABLE_SPRITE_DAMAGE_TAGALONG, 1);
-    }
-}
-
-impl ZeldaState {
-    fn tagalong_link_state(&self) -> TagalongLinkState<'_> {
-        TagalongLinkState::new(&self.ram)
-    }
-
-    fn tagalong_link_state_mut(&mut self) -> TagalongLinkStateMut<'_> {
-        TagalongLinkStateMut::new(&mut self.ram)
-    }
-}
 
 #[derive(Clone, Copy)]
 pub(super) struct TagalongMessageInfo {
@@ -901,16 +675,16 @@ const TAGALONG_DRAW_SPR_OFFS1: [u16; 2] = [0x1c0, 0x110];
 
 impl ZeldaState {
     pub(super) fn tagalong_is_following(&self) -> bool {
-        let main = self.frame_state().main_module;
-        let sub = self.frame_state().submodule;
-        !self.tagalong_link_state().is_immobilized()
+        let main = self.game_state.frame.main_module;
+        let sub = self.game_state.frame.submodule;
+        !self.follower_link_state().is_immobilized()
             && sub != 10
             && !(main == 9 && sub == 0x23)
             && !(main == 14 && (sub == 1 || sub == 2))
     }
 
     pub(super) fn follower_validate_message_freedom(&self) -> bool {
-        self.tagalong_link_state().can_open_follower_message()
+        self.follower_link_state().can_open_follower_message()
     }
 
     pub(super) fn follower_move_towards_link(&mut self) {
@@ -931,7 +705,7 @@ impl ZeldaState {
 
             let x = self.Ancilla_GetX(k);
             let y = self.Ancilla_GetY(k);
-            let link = self.tagalong_link_state();
+            let link = self.follower_link_state();
             if abs16(x.wrapping_sub(link.x())) < 2 && abs16(y.wrapping_sub(link.y())) < 2 {
                 return;
             }
@@ -940,7 +714,7 @@ impl ZeldaState {
             if k == 18 {
                 return;
             }
-            let layer_bits = self.tagalong_link_state().floor_layer_bits() | 1;
+            let layer_bits = self.follower_link_state().floor_layer_bits() | 1;
             let mut follower = self.tagalong_slot_mut(k);
             follower.set_position(x, y);
             follower.set_layer_bits(layer_bits);
@@ -958,7 +732,7 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_initialize(&mut self) {
-        let link = self.tagalong_link_state();
+        let link = self.follower_link_state();
         let y = link.y();
         let x = link.x();
         let layer_bits = link.floor_layer_bits() | link.facing_layer_bits();
@@ -970,12 +744,12 @@ impl ZeldaState {
         self.follower_state_mut().set_tail_write_index(0);
         self.follower_state_mut().clear_hookshot_interlock();
         self.follower_state_mut().clear_jump_timer();
-        self.tagalong_link_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
         if self
             .enhanced_features()
             .has(FEATURES0_TURN_WHILE_DASHING_TAGALONG)
         {
-            let mut link = self.tagalong_link_state_mut();
+            let mut link = self.follower_link_state_mut();
             link.set_ground_state();
             link.clear_running();
         }
@@ -985,7 +759,7 @@ impl ZeldaState {
         self.follower_state_mut().set_appearance_none_flag(0);
         let y = self.Tagalong_Sprite_GetY(k).wrapping_sub(6);
         let x = self.Tagalong_Sprite_GetX(k).wrapping_add(1);
-        let layer_bits = self.tagalong_link_state().floor_layer_bits() | 1;
+        let layer_bits = self.follower_link_state().floor_layer_bits() | 1;
         let mut follower = self.tagalong_slot_mut(0);
         follower.set_position(x, y);
         follower.set_layer_bits(layer_bits);
@@ -994,7 +768,7 @@ impl ZeldaState {
         self.follower_state_mut().set_data_index(0);
         self.follower_state_mut().clear_hookshot_interlock();
         self.follower_state_mut().clear_jump_timer();
-        self.tagalong_link_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
         self.follower_state_mut().set_appearance_none_flag(0);
         self.follower_state_mut().set_dropped(0);
         self.follower_move_towards_link();
@@ -1014,8 +788,8 @@ impl ZeldaState {
             .map(|v| v as i32)
             .unwrap_or(-1);
         if j >= 0
-            && self.frame_state().submodule == 0
-            && !(j == 2 && self.world_location_state().overworld_screen_index() & 0x40 != 0)
+            && self.game_state.frame.submodule == 0
+            && !(j == 2 && self.game_state.world.location.overworld_screen_index() & 0x40 != 0)
         {
             let timer = self.tick_shared_message_timer();
             if sign16(timer) {
@@ -1040,14 +814,14 @@ impl ZeldaState {
             return;
         }
         if self.follower_state().indicator() == 12 {
-            if !self.tagalong_link_state().has_auxiliary_state() {
+            if !self.follower_link_state().has_auxiliary_state() {
                 if self.follower_can_drop() {
                     self.follower_drop();
                     return;
                 }
             }
         } else if self.follower_state().indicator() == 13 {
-            if self.tagalong_link_state().auxiliary_state() == 2
+            if self.follower_link_state().auxiliary_state() == 2
                 || self.player_state().near_pit_state_is(2)
             {
                 self.follower_drop();
@@ -1062,8 +836,8 @@ impl ZeldaState {
     }
 
     fn follower_can_drop(&self) -> bool {
-        self.frame_state().submodule == 0
-            && self.tagalong_link_state().can_drop_follower()
+        self.game_state.frame.submodule == 0
+            && self.follower_link_state().can_drop_follower()
             && self.follower_state().appearance_none_flag() == 0
             && self.follower_state().hookshot_interlock_is_clear()
             && self
@@ -1074,8 +848,10 @@ impl ZeldaState {
     }
 
     fn follower_drop(&mut self) {
-        if self.follower_state().indicator() == 13 && self.world_location_state().indoor_flag == 0 {
-            if self.tagalong_link_state().is_using_medallion() {
+        if self.follower_state().indicator() == 13
+            && self.game_state.world.location.indoor_flag() == 0
+        {
+            if self.follower_link_state().is_using_medallion() {
                 self.follower_check_game_mode();
                 return;
             }
@@ -1087,8 +863,8 @@ impl ZeldaState {
         let k = self.follower_state().data_index() as usize;
         let y = self.tagalong_y(k);
         let x = self.tagalong_x(k);
-        let floor = self.tagalong_link_state().floor();
-        let indoor = self.world_location_state().indoor_flag;
+        let floor = self.follower_link_state().floor();
+        let indoor = self.game_state.world.location.indoor_flag();
         self.follower_state_mut().set_saved_y(y);
         self.follower_state_mut().set_saved_x(x);
         self.follower_state_mut().set_saved_floor(floor);
@@ -1097,13 +873,13 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_check_game_mode(&mut self) {
-        if self.tagalong_is_following() && self.tagalong_link_state().is_moving() {
+        if self.tagalong_is_following() && self.follower_link_state().is_moving() {
             let mut k = self.follower_state().tail_write_index().wrapping_add(1);
             if k == 20 {
                 k = 0;
             }
             self.follower_state_mut().set_tail_write_index(k);
-            let link = self.tagalong_link_state();
+            let link = self.follower_link_state();
             let z = link.z_for_follow();
             let k = k as usize;
             let y = link.y().wrapping_sub(z as u16);
@@ -1140,7 +916,7 @@ impl ZeldaState {
         }
         self.follower_handle_trigger();
         if self.follower_state().indicator() == 10
-            && self.tagalong_link_state().has_auxiliary_state()
+            && self.follower_link_state().has_auxiliary_state()
             && self.player_state().blink_countdown() != 0
         {
             let k = if self.follower_state().data_index().wrapping_add(1) == 20 {
@@ -1153,7 +929,7 @@ impl ZeldaState {
             return;
         }
         if self.follower_state().indicator() == 6
-            && self.world_location_state().dungeon_room == 0x0ac
+            && self.game_state.world.location.dungeon_room() == 0x0ac
             && self.save_progress().dungeon_info_word(101) & 0x100 != 0
             && self.follower_check_blind_trigger()
         {
@@ -1171,7 +947,7 @@ impl ZeldaState {
             return;
         }
         if self.follower_state().hookshot_interlock_is_clear() {
-            if self.tagalong_link_state().is_hookshot()
+            if self.follower_link_state().is_hookshot()
                 && self.player_state().has_hookshot_interlock()
             {
                 self.follower_state_mut().set_hookshot_interlock();
@@ -1180,7 +956,7 @@ impl ZeldaState {
                 return;
             }
         } else {
-            if self.tagalong_link_state().is_hookshot() {
+            if self.follower_link_state().is_hookshot() {
                 self.advance_follower_tail();
                 self.tagalong_draw();
                 return;
@@ -1203,14 +979,14 @@ impl ZeldaState {
                 self.tagalong_draw();
                 return;
             }
-            let link = self.tagalong_link_state();
+            let link = self.follower_link_state();
             let y = link.y();
             let x = link.x();
             let mut follower = self.tagalong_slot_mut(k);
             follower.set_z(0);
             follower.set_position(x, y);
         }
-        if self.tagalong_link_state().is_moving() {
+        if self.follower_link_state().is_moving() {
             self.advance_follower_tail();
         }
         self.tagalong_draw();
@@ -1228,12 +1004,13 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_not_following(&mut self) {
-        if self.follower_state().saved_indoor_flag() != self.world_location_state().indoor_flag {
+        if self.follower_state().saved_indoor_flag() != self.game_state.world.location.indoor_flag()
+        {
             return;
         }
-        if !self.tagalong_link_state().is_running() && !self.follower_check_proximity_to_link() {
+        if !self.follower_link_state().is_running() && !self.follower_check_proximity_to_link() {
             self.follower_initialize();
-            let indoor = self.world_location_state().indoor_flag;
+            let indoor = self.game_state.world.location.indoor_flag();
             self.follower_state_mut().set_saved_indoor_flag(indoor);
             if self.follower_state().indicator() == 13 {
                 self.hud_state_mut().set_super_bomb_indicator_timer(254);
@@ -1243,7 +1020,7 @@ impl ZeldaState {
             self.tagalong_draw();
         } else {
             if self.follower_state().indicator() == 13
-                && self.world_location_state().indoor_flag == 0
+                && self.game_state.world.location.indoor_flag() == 0
                 && self.hud_state().super_bomb_indicator_timer() == 0
             {
                 if self.AncillaAdd_SuperBombExplosion(0x3a, 0).is_some() {
@@ -1268,8 +1045,8 @@ impl ZeldaState {
             self.tagalong_draw();
             return;
         }
-        if self.tagalong_link_state().speed_setting() != 4 {
-            self.tagalong_link_state_mut().set_speed_setting(12);
+        if self.follower_link_state().speed_setting() != 4 {
+            self.follower_link_state_mut().set_speed_setting(12);
         }
         self.follower_handle_trigger();
         if self.follower_state().indicator() == 0 {
@@ -1286,7 +1063,7 @@ impl ZeldaState {
             }
         } else {
             if self
-                .tagalong_link_state()
+                .follower_link_state()
                 .should_transform_old_man_from_recoil()
             {
                 if self.follower_state().tail_write_index() == self.follower_state().data_index() {
@@ -1297,14 +1074,14 @@ impl ZeldaState {
                 return;
             }
             if self
-                .tagalong_link_state()
+                .follower_link_state()
                 .should_transform_old_man_from_auxiliary_state()
             {
                 self.transform_old_man();
                 return;
             }
         }
-        if self.tagalong_link_state().is_moving() {
+        if self.follower_link_state().is_moving() {
             let mut t = self.follower_state().tail_write_index().wrapping_sub(20);
             if sign8(t) {
                 t = t.wrapping_add(20);
@@ -1313,7 +1090,7 @@ impl ZeldaState {
                 self.follower_state_mut()
                     .advance_data_index_wrapping_at_20();
             }
-        } else if self.frame_state().frame_counter & 3 == 0
+        } else if self.game_state.frame.frame_counter & 3 == 0
             && self.follower_state().tail_write_index() != self.follower_state().data_index()
         {
             let mut t = self.follower_state().tail_write_index().wrapping_sub(9);
@@ -1336,7 +1113,7 @@ impl ZeldaState {
         let k = self.follower_state().data_index() as usize;
         let y = self.tagalong_y(k);
         let x = self.tagalong_x(k);
-        let floor = self.tagalong_link_state().floor();
+        let floor = self.follower_link_state().floor();
         self.follower_state_mut().set_saved_y(y);
         self.follower_state_mut().set_saved_x(x);
         self.follower_state_mut().set_saved_floor(floor);
@@ -1344,10 +1121,10 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_old_man_unused(&mut self) {
-        self.tagalong_link_state_mut().set_speed_setting(16);
-        if self.tagalong_link_state().can_reacquire_old_man() {
-            self.tagalong_link_state_mut().set_speed_setting(0);
-            if !self.tagalong_link_state().is_hookshot() && !self.follower_check_proximity_to_link()
+        self.follower_link_state_mut().set_speed_setting(16);
+        if self.follower_link_state().can_reacquire_old_man() {
+            self.follower_link_state_mut().set_speed_setting(0);
+            if !self.follower_link_state().is_hookshot() && !self.follower_check_proximity_to_link()
             {
                 self.follower_initialize();
                 let indicator = TAGALONG_SLOWDOWN_INDICATOR_BY_FOLLOWER
@@ -1360,9 +1137,10 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_do_layers(&mut self) {
-        let floor = self.follower_state().saved_floor() as usize;
+        let priority =
+            FollowerLinkState::oam_priority_for_floor_value(self.follower_state().saved_floor());
         self.oam_state_mut()
-            .set_priority_word((TAGALONG_FLAGS[floor] as u16) << 8);
+            .set_priority_word((priority as u16) << 8);
         let a =
             if self.follower_state().indicator() == 12 || self.follower_state().indicator() == 13 {
                 2
@@ -1384,7 +1162,7 @@ impl ZeldaState {
         self.follower_state_mut().set_reacquire_timer_low(0);
         let y = self.follower_state().saved_y();
         let x = self.follower_state().saved_x();
-        let link = self.tagalong_link_state();
+        let link = self.follower_link_state();
         let ly = link.y();
         let lx = link.x();
         y.wrapping_sub(1) >= ly
@@ -1394,11 +1172,11 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_handle_trigger(&mut self) {
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             return;
         }
-        let (infos, start, end) = if self.world_location_state().is_indoors() {
-            let room = self.world_location_state().dungeon_room;
+        let (infos, start, end) = if self.game_state.world.location.is_indoors() {
+            let room = self.game_state.world.location.dungeon_room();
             let Some(j) = TAGALONG_INDOOR_ROOMS.iter().position(|&v| v == room) else {
                 return;
             };
@@ -1408,7 +1186,7 @@ impl ZeldaState {
                 TAGALONG_INDOOR_OFFSETS[j + 1] as usize,
             )
         } else {
-            let screen = self.world_location_state().overworld_screen;
+            let screen = self.game_state.world.location.overworld_screen();
             let Some(j) = TAGALONG_OUTDOOR_ROOMS.iter().position(|&v| v == screen) else {
                 return;
             };
@@ -1437,7 +1215,7 @@ impl ZeldaState {
                         self.kiki_revert_to_sprite(st as usize);
                     } else if self
                         .overworld_event_info()
-                        .event_info(self.world_location_state().overworld_screen_index() as usize)
+                        .event_info(self.game_state.world.location.overworld_screen_index() as usize)
                         & 1
                         == 0
                     {
@@ -1461,10 +1239,11 @@ impl ZeldaState {
             return;
         }
         let current_follower = self.tagalong_slot(self.follower_state().data_index() as usize);
-        let priority = if current_follower.z() != 0 && !self.world_location_state().is_indoors() {
+        let priority = if current_follower.z() != 0 && !self.game_state.world.location.is_indoors()
+        {
             0x20
-        } else if self.frame_state().submodule == 14 {
-            TAGALONG_FLAGS[self.tagalong_link_state().floor() as usize]
+        } else if self.game_state.frame.submodule == 14 {
+            self.follower_link_state().oam_priority_for_floor()
         } else {
             (current_follower.layer_bits() & 0x0c) << 2
         };
@@ -1515,42 +1294,42 @@ impl ZeldaState {
         {
             yt = 8;
             av = if self.swim_acceleration().acceleration(0) != 0 {
-                (self.frame_state().frame_counter >> 1) & 4
+                (self.game_state.frame.frame_counter >> 1) & 4
             } else {
-                (self.frame_state().frame_counter >> 2) & 4
+                (self.game_state.frame.frame_counter >> 2) & 4
             };
-        } else if self.frame_state().submodule == 8
-            || self.frame_state().submodule == 14
-            || self.frame_state().submodule == 16
+        } else if self.game_state.frame.submodule == 8
+            || self.game_state.frame.submodule == 14
+            || self.game_state.frame.submodule == 16
         {
-            av = if self.tagalong_link_state().is_running() {
-                self.frame_state().frame_counter & 4
+            av = if self.follower_link_state().is_running() {
+                self.game_state.frame.frame_counter & 4
             } else {
-                (self.frame_state().frame_counter >> 1) & 4
+                (self.game_state.frame.frame_counter >> 1) & 4
             };
         } else if self.follower_state().indicator() == 11 {
-            av = (self.frame_state().frame_counter >> 1) & 4;
+            av = (self.game_state.frame.frame_counter >> 1) & 4;
         } else if ((self.follower_state().indicator() == 12
             || self.follower_state().indicator() == 13)
             && self.follower_state().dropped() != 0)
-            || self.tagalong_link_state().is_immobilized()
-            || self.frame_state().submodule == 10
-            || (self.frame_state().main_module == 9 && self.frame_state().submodule == 0x23)
-            || (self.frame_state().main_module == 14
-                && (self.frame_state().submodule == 1 || self.frame_state().submodule == 2))
-            || !self.tagalong_link_state().is_moving()
+            || self.follower_link_state().is_immobilized()
+            || self.game_state.frame.submodule == 10
+            || (self.game_state.frame.main_module == 9 && self.game_state.frame.submodule == 0x23)
+            || (self.game_state.frame.main_module == 14
+                && (self.game_state.frame.submodule == 1 || self.game_state.frame.submodule == 2))
+            || !self.follower_link_state().is_moving()
         {
             av = 4;
             sc = 4;
         } else {
-            av = if self.tagalong_link_state().is_running() {
-                self.frame_state().frame_counter & 4
+            av = if self.follower_link_state().is_running() {
+                self.game_state.frame.frame_counter & 4
             } else {
-                (self.frame_state().frame_counter >> 1) & 4
+                (self.game_state.frame.frame_counter >> 1) & 4
             };
         }
         let frame = (ain & 3).wrapping_add(av).wrapping_add(yt) as usize;
-        let link_y = self.tagalong_link_state().y();
+        let link_y = self.follower_link_state().y();
         let spr_offs = if (link_y == yin && (ain & 3) == 0) || link_y < yin {
             TAGALONG_DRAW_SPR_OFFS0[self.oam_state().sprite_sorting_offset_index()] >> 2
         } else {
@@ -1575,15 +1354,15 @@ impl ZeldaState {
                 sk_index += 12;
                 if sc != 0 {
                     self.follower_state_mut().clear_draw_anim_frame();
-                } else if self.frame_state().frame_counter & 7 == 0 {
+                } else if self.game_state.frame.frame_counter & 7 == 0 {
                     self.follower_state_mut()
                         .increment_and_cycle_draw_anim_frame();
                 }
-            } else if self.frame_state().frame_counter & 7 == 0 {
+            } else if self.game_state.frame.frame_counter & 7 == 0 {
                 self.follower_state_mut()
                     .increment_and_cycle_draw_anim_frame();
             }
-        } else if self.frame_state().frame_counter & 7 == 0 {
+        } else if self.game_state.frame.frame_counter & 7 == 0 {
             self.follower_state_mut()
                 .increment_and_cycle_draw_anim_frame();
         }
@@ -1621,7 +1400,7 @@ impl ZeldaState {
                 self.hud_state().super_bomb_indicator_timer() == 1
             };
             if colorful {
-                pal = self.frame_state().frame_counter & 7;
+                pal = self.game_state.frame.frame_counter & 7;
             }
         }
         let sprd = TAGALONG_DRAW_SPR_XY[frame
@@ -1651,7 +1430,7 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_check_for_trigger(&self, info: &TagalongMessageInfo) -> bool {
-        let link = self.tagalong_link_state();
+        let link = self.follower_link_state();
         let mut x = link
             .x()
             .wrapping_add(12)
@@ -1712,12 +1491,12 @@ impl ZeldaState {
         let y = self.tagalong_y(k);
         self.Tagalong_Sprite_SetX(j, x.wrapping_add(2));
         self.Tagalong_Sprite_SetY(j, y.wrapping_add(2));
-        let floor = self.tagalong_link_state().floor();
+        let floor = self.follower_link_state().floor();
         let mut monke = self.sprite_slot_mut(j);
         monke.set_floor(floor);
         monke.set_ignore_projectile(1);
         monke.set_floor(2);
-        self.tagalong_link_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
         Some(j)
     }
 
@@ -1754,7 +1533,7 @@ impl ZeldaState {
     }
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
-        if self.frame_state().main_module != 14 {
+        if self.game_state.frame.main_module != 14 {
             self.world_transient_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_mut().clear_module();
@@ -1795,7 +1574,7 @@ impl ZeldaState {
                 ydiff: 0,
             };
         }
-        let link = self.tagalong_link_state();
+        let link = self.follower_link_state();
         let below = link.y().wrapping_sub(self.Ancilla_GetY(k));
         let right = link.x().wrapping_sub(self.Ancilla_GetX(k));
         let below_b = below as u8;
@@ -1899,7 +1678,7 @@ impl ZeldaState {
             spawned.set_sprite_type(sprite);
         }
         self.SpritePrep_LoadProperties(j);
-        if !self.world_location_state().is_indoors() {
+        if !self.game_state.world.location.is_indoors() {
             self.set_sprite_room_marker_word(j, 0xffff);
         } else {
             self.sprite_slot_mut(j).set_n(0xff);
@@ -1933,7 +1712,7 @@ impl ZeldaState {
             old_man.set_head_direction(layer);
             self.Tagalong_Sprite_SetY(j, self.tagalong_y(k).wrapping_add(2));
             self.Tagalong_Sprite_SetX(j, self.tagalong_x(k).wrapping_add(2));
-            let floor = self.tagalong_link_state().floor();
+            let floor = self.follower_link_state().floor();
             let mut old_man = self.sprite_slot_mut(j);
             old_man.set_floor(floor);
             old_man.set_ignore_projectile(1);
@@ -1941,11 +1720,11 @@ impl ZeldaState {
         }
         self.OldMan_EnableCutscene();
         self.follower_state_mut().set_indicator(0);
-        self.tagalong_link_state_mut().set_speed_setting(0);
+        self.follower_link_state_mut().set_speed_setting(0);
     }
 
     fn OldMan_EnableCutscene(&mut self) {
-        self.tagalong_link_state_mut().immobilize();
-        self.tagalong_link_state_mut().enable_cutscene_immunity();
+        self.follower_link_state_mut().immobilize();
+        self.follower_link_state_mut().enable_cutscene_immunity();
     }
 }

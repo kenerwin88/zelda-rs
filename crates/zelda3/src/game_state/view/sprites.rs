@@ -1,11 +1,11 @@
 use super::*;
 
-pub(crate) struct SpriteSlotView<'a> {
+pub(crate) struct RamSpriteSlotView<'a> {
     ram: &'a [u8],
     slot: usize,
 }
 
-impl<'a> SpriteSlotView<'a> {
+impl<'a> RamSpriteSlotView<'a> {
     pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -267,12 +267,12 @@ impl<'a> SpriteSlotView<'a> {
     }
 }
 
-pub(crate) struct SpriteSlotViewMut<'a> {
+pub(crate) struct RamSpriteSlotViewMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> SpriteSlotViewMut<'a> {
+impl<'a> RamSpriteSlotViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -1137,12 +1137,12 @@ impl<'a> SpriteSlotViewMut<'a> {
     }
 }
 
-pub(crate) struct AncillaSlotView<'a> {
+pub(crate) struct RamAncillaSlotView<'a> {
     ram: &'a [u8],
     slot: usize,
 }
 
-impl<'a> AncillaSlotView<'a> {
+impl<'a> RamAncillaSlotView<'a> {
     pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -1334,12 +1334,12 @@ impl<'a> AncillaSlotView<'a> {
     }
 }
 
-pub(crate) struct AncillaSlotViewMut<'a> {
+pub(crate) struct RamAncillaSlotViewMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> AncillaSlotViewMut<'a> {
+impl<'a> RamAncillaSlotViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -1866,12 +1866,12 @@ impl<'a> AncillaSlotViewMut<'a> {
     }
 }
 
-pub(crate) struct OverlordSlotView<'a> {
+pub(crate) struct RamOverlordSlotView<'a> {
     ram: &'a [u8],
     slot: usize,
 }
 
-impl<'a> OverlordSlotView<'a> {
+impl<'a> RamOverlordSlotView<'a> {
     pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -1961,12 +1961,12 @@ impl<'a> OverlordSlotView<'a> {
     }
 }
 
-pub(crate) struct OverlordSlotViewMut<'a> {
+pub(crate) struct RamOverlordSlotViewMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> OverlordSlotViewMut<'a> {
+impl<'a> RamOverlordSlotViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -2111,12 +2111,12 @@ impl<'a> OverlordSlotViewMut<'a> {
     }
 }
 
-pub(crate) struct GarnishSlotView<'a> {
+pub(crate) struct RamGarnishSlotView<'a> {
     ram: &'a [u8],
     slot: usize,
 }
 
-impl<'a> GarnishSlotView<'a> {
+impl<'a> RamGarnishSlotView<'a> {
     pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
         Self { ram, slot }
     }
@@ -2186,12 +2186,12 @@ impl<'a> GarnishSlotView<'a> {
     }
 }
 
-pub(crate) struct GarnishSlotViewMut<'a> {
+pub(crate) struct RamGarnishSlotViewMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> GarnishSlotViewMut<'a> {
+impl<'a> RamGarnishSlotViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
         Self { ram, slot }
     }

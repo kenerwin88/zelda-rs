@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) struct RawRamView<'a> {
+pub(crate) struct CompatibilityBytesView<'a> {
     ram: &'a [u8],
 }
 
-impl<'a> RawRamView<'a> {
+impl<'a> CompatibilityBytesView<'a> {
     pub(crate) fn new(ram: &'a [u8]) -> Self {
         Self { ram }
     }
@@ -24,7 +24,7 @@ impl<'a> RawRamView<'a> {
             | (u32::from(byte(self.ram, offset + 3)) << 24)
     }
 
-    pub(crate) fn range(&self, offset: usize, len: usize) -> &[u8] {
+    pub(crate) fn range(&self, offset: usize, len: usize) -> &'a [u8] {
         &self.ram[offset..offset + len]
     }
 
@@ -33,11 +33,11 @@ impl<'a> RawRamView<'a> {
     }
 }
 
-pub(crate) struct RawRamViewMut<'a> {
+pub(crate) struct CompatibilityBytesViewMut<'a> {
     ram: &'a mut [u8],
 }
 
-impl<'a> RawRamViewMut<'a> {
+impl<'a> CompatibilityBytesViewMut<'a> {
     pub(crate) fn new(ram: &'a mut [u8]) -> Self {
         Self { ram }
     }

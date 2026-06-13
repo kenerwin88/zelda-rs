@@ -2021,10 +2021,6 @@ fn oam_addr(oam_pos: usize) -> usize {
     OAM_BUF + oam_pos * 4
 }
 
-fn zcoord_for_oam(ram: &[u8]) -> u8 {
-    PlayerStateView::new(ram).z_for_oam()
-}
-
 fn read_u16_from_u8_table(table: &[u8], idx: usize) -> u16 {
     table[idx] as u16 | ((table[idx + 1] as u16) << 8)
 }
@@ -2101,7 +2097,7 @@ impl ZeldaState {
 
     pub(crate) fn link_oam_main(&mut self) {
         let y_coord_backup = self.player_state().y();
-        let submodule = self.frame_state().submodule;
+        let submodule = self.game_state.frame.submodule;
 
         if submodule == 18 || submodule == 19 {
             let mut t = if submodule == 18 { 0 } else { 12 };
@@ -2157,7 +2153,7 @@ impl ZeldaState {
                 0
             };
 
-            if submodule == 14 && self.frame_state().main_module != 18 && {
+            if submodule == 14 && self.game_state.frame.main_module != 18 && {
                 yt = 10;
                 self.player_state().actual_x_velocity() != 0
             } {
@@ -2219,7 +2215,7 @@ impl ZeldaState {
                 if self.player_state().is_in_auxiliary_state(4) {
                     yt = 0x13;
                     rt = SWIMMING_SPLASH_FRAME_BY_DIRECTION
-                        [((self.frame_state().frame_counter & 0x18) >> 3) as usize];
+                        [((self.game_state.frame.frame_counter & 0x18) >> 3) as usize];
                     continue_after_set = true;
                 } else if self.player_state().is_in_auxiliary_state(1) {
                     if handler_state == PLAYER_HANDLER_STATE_TURTLE_ROCK {
@@ -2364,7 +2360,7 @@ impl ZeldaState {
                 } as u16
                     + sort_sprites_offset_into_oam_buffer)
                     >> 2) as usize;
-                let zt = zcoord_for_oam(&self.ram);
+                let zt = self.follower_link_state().z_for_oam();
                 self.oam_state_mut().set_entry_y(
                     oam_addr(oam_pos),
                     add_i8(ycoord, kPlayerOam_Spr1Y[j]).wrapping_sub(zt),
@@ -2395,7 +2391,7 @@ impl ZeldaState {
                 } as u16
                     + sort_sprites_offset_into_oam_buffer)
                     >> 2) as usize;
-                let zt = zcoord_for_oam(&self.ram);
+                let zt = self.follower_link_state().z_for_oam();
                 self.oam_state_mut().set_entry_y(
                     oam_addr(oam_pos),
                     add_i8(ycoord, kPlayerOam_Spr2Y[j]).wrapping_sub(zt),
@@ -2421,7 +2417,7 @@ impl ZeldaState {
         } else if self.player_oam_want_invoke_sword()
             && !self.link_oam_set_weapon_vram_offsets(r2, &mut sr)
         {
-            let zcoord = zcoord_for_oam(&self.ram);
+            let zcoord = self.follower_link_state().z_for_oam();
             let mut oam_y = add_i8(ycoord, kDrawSword_y[r2]).wrapping_sub(zcoord);
             let mut oam_x = add_i8(xcoord, kDrawSword_x[r2]);
             if if self.player_state().item_in_hand_has(2) {
@@ -2487,7 +2483,7 @@ impl ZeldaState {
             && self.save_progress().progress_indicator() != 0
             && !self.link_oam_set_equipment_vram_offsets(r2, &mut sr)
         {
-            let zcoord = zcoord_for_oam(&self.ram);
+            let zcoord = self.follower_link_state().z_for_oam();
             let mut oam_y = add_i8(ycoord, kShieldStuff_y[r2])
                 .wrapping_sub(1)
                 .wrapping_sub(zcoord);
@@ -2594,7 +2590,7 @@ impl ZeldaState {
         self.player_state_mut()
             .set_link_dma_graphics_index_word((j as u16) * 2);
         if self.player_state().visibility_status() != 12 {
-            let zcoord = zcoord_for_oam(&self.ram);
+            let zcoord = self.follower_link_state().z_for_oam();
             let sp = kLinkSpriteBodys[j];
             let oam_y = add_i8(ycoord, sp.y).wrapping_sub(zcoord);
             let oam_x = add_i8(xcoord, sp.x);

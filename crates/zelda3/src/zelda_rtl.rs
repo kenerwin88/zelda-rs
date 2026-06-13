@@ -21,34 +21,35 @@ use crate::game_state::constants::messaging::MODULE as MESSAGING_MODULE;
 use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
-use crate::game_state::constants::player::LAYER_COLLISION_FLAGS as PLAYER_LAYER_COLLISION_FLAGS;
 use crate::game_state::constants::{
-    OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
+    CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
+    OVERWORLD_SCROLL_Y_END,
 };
+#[cfg(test)]
+use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 use crate::game_state::{
-    armos_knight_home_position_from_ram, arrghus_puff_home_position_from_ram,
-    loaded_room_data_word, AncillaSlotView, AncillaSlotViewMut, ArcheryGameState,
-    AttractSceneState, Bg1MovementAccumulatorState, BirdTravelDestinationState,
-    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
-    BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState, DecodedMessageTextState,
-    DialogueMessageIndexState, DialogueNumberState, DiggingGamePrizeState, DisplayState,
-    DoorDebrisState, DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState,
-    DungeonEnvironmentState, DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState,
-    DungeonMovableBlockState, DungeonMovingFloorState, DungeonObjectTrackingState,
-    DungeonRoomDoorSetupState, DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState,
-    DungeonRoomParserState, DungeonRoomRuntimeState, DungeonRoomTilemapState,
-    DungeonRoomTrackingState, DungeonSavegameState, DungeonScratchWordState, DungeonSecretState,
-    DungeonStairList, DungeonStairListsState, DungeonStairMovementState, DungeonTorchState,
-    EffectAngleScratchState, EndingCreditState, EnemyDamageSubclassTableState,
-    EnhancedFeaturesState, EtherOrbitState, FollowerRuntimeState, FrameState, GameState,
-    GarnishRuntimeState, GarnishSlotView, GarnishSlotViewMut, GraphicsDecompressionScratch,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
-    HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState, IntroSwordState,
-    InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot, MazeGameTimerState,
-    MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState, MinigameState,
-    MirrorWarpState, MultiselectChoiceRead, NativeArcheryGameBridgeMut,
-    NativeArmosKnightHomePositionBridgeMut, NativeAttractSceneBridgeMut,
+    loaded_room_data_word, ArcheryGameState, AttractSceneState, Bg1MovementAccumulatorState,
+    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
+    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BombosSpellState,
+    BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState, CompatibilityBytesView,
+    CompatibilityBytesViewMut, DecodedMessageTextState, DialogueMessageIndexState,
+    DialogueNumberState, DiggingGamePrizeState, DisplayState, DoorDebrisState,
+    DualLayerTileCacheState, DungeonBg2AttributeState, DungeonDoorState, DungeonEnvironmentState,
+    DungeonHeaderState, DungeonKeySlotsState, DungeonMapDisplayState, DungeonMovableBlockState,
+    DungeonMovingFloorState, DungeonObjectTrackingState, DungeonRoomDoorSetupState,
+    DungeonRoomEffectsState, DungeonRoomItemState, DungeonRoomLoadState, DungeonRoomParserState,
+    DungeonRoomRuntimeState, DungeonRoomTilemapState, DungeonRoomTrackingState,
+    DungeonSavegameState, DungeonScratchWordState, DungeonSecretState, DungeonStairList,
+    DungeonStairListsState, DungeonStairMovementState, DungeonTorchState, EffectAngleScratchState,
+    EndingCreditState, EnemyDamageSubclassTableState, EnhancedFeaturesState, EtherOrbitState,
+    FollowerLinkState, FollowerRuntimeState, FrameState, GameState, GarnishRuntimeState,
+    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
+    HistoryPositionState, HudInventoryOrderState, HudStateRead, IntroActorRead, IntroSceneState,
+    IntroSwordState, InventoryItemsState, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    MazeGameTimerState, MemorizedTileState, MessagingRenderBufferState, MessagingRuntimeState,
+    MinigameState, MirrorWarpState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
+    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
+    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
     NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
@@ -71,7 +72,7 @@ use crate::game_state::{
     NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
     NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
+    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
     NativeGraphicsScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
     NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroActorBridgeMut,
@@ -99,28 +100,29 @@ use crate::game_state::{
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut,
     NativeSwamolaTargetBridgeMut, NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut,
-    NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut,
-    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
+    NativeSystemWorkAreaBridgeMut, NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut,
+    NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OamState, OverlordSlotView, OverlordSlotViewMut,
-    OverworldConfigTableRead, OverworldEventInfoState, OverworldMap16Decode,
-    OverworldMap16LoadState, OverworldMap16SourcePage, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, PaletteBufferState, PaletteFilterState, PlayerResourcesState,
-    PlayerStateView, PlayerStateViewMut, PlayerTileAttributeTableState, PolyFaceCoordsState,
+    NativeWorldTransientBridgeMut, OamState, OverworldConfigTableRead, OverworldEventInfoState,
+    OverworldMap16Decode, OverworldMap16LoadState, OverworldMap16SourcePage,
+    OverworldSpriteLoadedState, OverworldSpritePresenceState, PaletteBufferState,
+    PaletteFilterState, PlayerResourcesState, PlayerTileAttributeTableState, PolyFaceCoordsState,
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PpuScrollCopyState,
-    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RawRamView, RawRamViewMut,
-    RoomBoundsState, SaveLoadTransferState, SaveProgressState, ScratchCounterState,
-    SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState, SkullWoodsFireState,
+    PushedBlockState, QuakeBoltSlotState, QuakeSpellState, RamAncillaSlotView,
+    RamAncillaSlotViewMut, RamGarnishSlotView, RamGarnishSlotViewMut, RamOverlordSlotView,
+    RamOverlordSlotViewMut, RamPlayerStateView, RamPlayerStateViewMut, RamSpriteSlotView,
+    RamSpriteSlotViewMut, RoomBoundsState, SaveLoadTransferState, SaveProgressState,
+    ScratchCounterState, SelectFileMenuState, SharedMessageTimerState, SkullWoodsFireSlotState,
     SmallOverworldMap16ScrollBackupState, SpecialExitPositionState, SpotlightHdmaState,
-    SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSlotView, SpriteSlotViewMut,
-    SpriteSystemState, SpriteWorkspaceState, SwimAccelerationState, SystemSignalsState,
-    TagalongSlotRead, TileDetectionState, TowerSealOrbitState, TowerSealSparkleState,
-    TowerSealState, TrinexxPaletteState, VwfRenderState, WaterHdmaWindowState,
-    WeatherVaneDebrisSlotState, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
-    WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldTransientState,
+    SpriteBattleState, SpriteDrawHitboxWorkState, SpriteSystemState, SpriteWorkspaceState,
+    SwimAccelerationState, SystemSignalsState, TagalongSlotRead, TileDetectionState,
+    TowerSealOrbitState, TowerSealSparkleState, TowerSealState, TrinexxPaletteState,
+    VwfRenderState, WaterHdmaWindowState, WeatherVaneDebrisSlotState, WeatherVaneState,
+    WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState, WorldRegionState,
+    WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -621,9 +623,6 @@ const OVERWORLD_OFFSET_BASE_Y: usize = 0x708;
 const OVERWORLD_OFFSET_MASK_Y: usize = 0x70a;
 const OVERWORLD_OFFSET_BASE_X: usize = 0x70c;
 const OVERWORLD_OFFSET_MASK_X: usize = 0x70e;
-const RESERVED_HDMA_TABLE: usize = 0x17000;
-const HDMA_TABLE_DYNAMIC: usize = 0x1dba0;
-const SAVELOAD_HDMA_TABLE: usize = 0x1b00;
 const SPRITE_LIMIT_INSTANCE: usize = 0x0b6a;
 const SPRITE_STUNNED: usize = 0x0b58;
 const LINK_PREVENT_FROM_MOVING: usize = 0x0b7b;
@@ -633,7 +632,6 @@ const DUNGEON_ROOM_HISTORY: usize = 0x0b80;
 const ARCHERY_GAME_HIT_COUNTER: usize = 0x0b88;
 const ITEM_DROP_COUNTER: usize = 0x0b9b;
 const ENHANCED_FEATURES0: usize = 0x064c;
-const RAM_CRYSTAL_ROTATE_COUNTER: usize = 0x0649;
 const RAM_BUGS_FIXED: usize = 0x064a;
 const DUNG_FLAG_SOMARIA_BLOCK_SWITCH: usize = 0x646;
 const BUGFIX_POLY_RENDERER: u8 = 1;
@@ -1441,6 +1439,8 @@ pub struct ZeldaState {
     replay_reload_file_select_stall: u8,
     #[serde(skip)]
     replay_loadfile_stall: u8,
+    #[serde(skip)]
+    replay_reopened_lamp_prompt: bool,
     ending_coords: sprite::PrepOamCoordsRet,
     #[serde(skip)]
     intro_poly_vram_history: Vec<(u8, Vec<u16>, Vec<u16>)>,
@@ -1477,16 +1477,16 @@ fn default_gloves_color() -> [u16; 2] {
     [0x52f6, 0x0376]
 }
 
-const SEMANTIC_MAP16_LOAD_SRC_OFF: usize = 0x0084;
-const SEMANTIC_MAP16_LOAD_DST_OFF: usize = 0x0086;
-const SEMANTIC_MAP16_LOAD_Y_UNIT: usize = 0x0088;
-
 fn wram_patch_addr(addr: usize) -> u32 {
     debug_assert!(addr < WRAM_SIZE);
     addr as u32
 }
 
 impl ZeldaState {
+    pub(crate) fn compatibility_state_len(&self) -> usize {
+        self.ram.len()
+    }
+
     fn replay_trace_col(&self, label: &str) {
         let Some(target) = env::var("ZELDA3_REPLAY_TRACE_COL_FRAME")
             .ok()
@@ -1497,7 +1497,7 @@ impl ZeldaState {
         if self.frame_ctr_dbg != target {
             return;
         }
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         eprintln!(
             "replay-col frame={} {label} main={} sub={} subsub={} col=0x{:02x},0x{:02x} door=0x{:02x} last=0x{:02x} dlast=0x{:02x} speed=0x{:02x}/0x{:02x} dir=0x{:02x} state=0x{:02x} x=0x{:04x} y=0x{:04x}",
             self.frame_ctr_dbg,
@@ -1527,7 +1527,7 @@ impl ZeldaState {
         }
         let watched_addr = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_ADDR")
             .and_then(|addr| self.ram.get(addr as usize).map(|value| (addr, *value)));
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         eprintln!(
             "ram-watch frame={} {label} fc=0x{:02x} main={} sub={} subsub={} watch={} d340={:02x} d341={:02x} d342={:02x} d343={:02x} d344={:02x} d345={:02x} d346={:02x} d347={:02x} deep=0x{:04x} normal=0x{:04x} inwater=0x{:02x} link=0x{:04x}/0x{:04x} state=0x{:02x}",
             self.frame_ctr_dbg,
@@ -1564,7 +1564,7 @@ impl ZeldaState {
             return;
         }
         let caller = std::panic::Location::caller();
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         eprintln!(
             "sfx-trace frame={} local={} fc=0x{:02x} func={} caller={}:{} k={} raw=0x{:02x} out=0x{:02x} se=0x{:02x}/0x{:02x}/0x{:02x} cf8=0x{:02x}",
             self.state_recorder.replay_frame_counter,
@@ -1600,7 +1600,7 @@ impl ZeldaState {
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_FRAME") else {
             return false;
         };
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         if frame.frame_counter as u32 != target {
             return false;
         }
@@ -1610,7 +1610,7 @@ impl ZeldaState {
             }
         }
         if let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_OW") {
-            if u32::from(self.world_location_state().overworld_screen) != target {
+            if u32::from(self.game_state.world.location.overworld_screen()) != target {
                 return false;
             }
         }
@@ -1653,8 +1653,8 @@ impl ZeldaState {
         if !self.replay_trace_filter_matches_current_frame() {
             return;
         }
-        let frame = self.frame_state();
-        let world_location = self.world_location_state();
+        let frame = &self.game_state.frame;
+        let world_location = &self.game_state.world.location;
         eprintln!(
             "replay-sub frame={} {label} main={} sub={} subsub={} state=0x{:02x} nearpit=0x{:02x} pit=0x{:02x} water=0x{:04x} deep=0x{:04x} flippers=0x{:02x} bunny=0x{:02x} pearl=0x{:02x} indoors={} ow=0x{:04x} vis=0x{:02x} x=0x{:04x} y=0x{:04x} subpix=0x{:02x}/0x{:02x} vel=0x{:02x}/0x{:02x} yvel=0x{:02x} dir=0x{:02x} last=0x{:02x} dlast=0x{:02x} r14=0x{:04x} r12=0x{:04x} normal=0x{:04x} vledge=0x{:02x} stair=0x{:02x} drag=0x{:02x} hp=0x{:02x}",
             frame.frame_counter,
@@ -1669,8 +1669,8 @@ impl ZeldaState {
             self.player_state().flippers(),
             self.player_state().is_bunny_mirror() as u8,
             self.player_state().moon_pearl(),
-            world_location.indoor_flag,
-            world_location.overworld_screen,
+            world_location.indoor_flag(),
+            world_location.overworld_screen(),
             self.player_state().visibility_status(),
             self.player_state().x(),
             self.player_state().y(),
@@ -1720,12 +1720,20 @@ impl ZeldaState {
         self.bsnes_intro_step_hold_alternate
     }
 
-    pub(crate) fn player_state(&self) -> PlayerStateView<'_> {
-        PlayerStateView::new(&self.ram)
+    pub(crate) fn player_state(&self) -> RamPlayerStateView<'_> {
+        RamPlayerStateView::new(&self.ram)
     }
 
-    pub(crate) fn player_state_mut(&mut self) -> PlayerStateViewMut<'_> {
-        PlayerStateViewMut::new(&mut self.ram)
+    pub(crate) fn player_state_mut(&mut self) -> RamPlayerStateViewMut<'_> {
+        RamPlayerStateViewMut::new(&mut self.ram)
+    }
+
+    pub(crate) fn follower_link_state(&self) -> FollowerLinkState {
+        self.game_state.player.follower_link
+    }
+
+    pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
+        NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
     }
 
     pub(crate) fn enhanced_features(&self) -> &EnhancedFeaturesState {
@@ -1744,12 +1752,16 @@ impl ZeldaState {
         NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
-    pub(crate) fn raw_ram(&self) -> RawRamView<'_> {
-        RawRamView::new(&self.ram)
+    pub(crate) fn system_work_area_mut(&mut self) -> NativeSystemWorkAreaBridgeMut<'_> {
+        NativeSystemWorkAreaBridgeMut::new(&mut self.ram)
     }
 
-    pub(crate) fn raw_ram_mut(&mut self) -> RawRamViewMut<'_> {
-        RawRamViewMut::new(&mut self.ram)
+    fn compatibility_ram_range(&self, offset: usize, len: usize) -> &[u8] {
+        CompatibilityBytesView::new(&self.ram).range(offset, len)
+    }
+
+    fn set_compatibility_ram_byte(&mut self, offset: usize, value: u8) {
+        CompatibilityBytesViewMut::new(&mut self.ram).set_byte_at(offset, value);
     }
 
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
@@ -1823,8 +1835,8 @@ impl ZeldaState {
         NativeTileDetectionBridgeMut::new(&mut self.game_state.player.tile_detection, &mut self.ram)
     }
 
-    pub(crate) fn ppu_scroll_copy(&self) -> PpuScrollCopyState {
-        self.game_state.display.ppu_scroll_copy.clone()
+    pub(crate) fn ppu_scroll_copy(&self) -> &PpuScrollCopyState {
+        &self.game_state.display.ppu_scroll_copy
     }
 
     pub(crate) fn ppu_scroll_copy_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
@@ -1834,8 +1846,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn attract_scene(&self) -> AttractSceneState {
-        self.game_state.ending.attract_scene
+    pub(crate) fn attract_scene(&self) -> &AttractSceneState {
+        &self.game_state.ending.attract_scene
     }
 
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
@@ -1875,24 +1887,25 @@ impl ZeldaState {
         NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
     }
 
-    pub(crate) fn player_tile_attributes(&self) -> PlayerTileAttributeTableState {
-        PlayerTileAttributeTableState::load_from_ram(&self.ram)
+    pub(crate) fn player_tile_attributes(&self) -> &PlayerTileAttributeTableState {
+        &self.game_state.player.tile_attributes
     }
 
-    pub(crate) fn inventory_items(&self) -> InventoryItemsState {
-        self.game_state.inventory.items
+    pub(crate) fn inventory_items(&self) -> &InventoryItemsState {
+        &self.game_state.inventory.items
     }
 
     pub(crate) fn item_memory_value(&self, item_memory_addr: usize) -> u8 {
-        self.ram.get(item_memory_addr).copied().unwrap_or(0)
+        self.inventory_items()
+            .item_memory_value(&self.ram, item_memory_addr)
     }
 
     pub(crate) fn inventory_items_mut(&mut self) -> NativeInventoryItemsBridgeMut<'_> {
         NativeInventoryItemsBridgeMut::new(&mut self.game_state.inventory.items, &mut self.ram)
     }
 
-    pub(crate) fn player_resources(&self) -> PlayerResourcesState {
-        self.game_state.inventory.player_resources
+    pub(crate) fn player_resources(&self) -> &PlayerResourcesState {
+        &self.game_state.inventory.player_resources
     }
 
     pub(crate) fn player_resources_mut(&mut self) -> NativePlayerResourcesBridgeMut<'_> {
@@ -1979,8 +1992,8 @@ impl ZeldaState {
         self.frame_state_bridge_mut().increment_modal_pause_flag()
     }
 
-    pub(crate) fn world_location_state(&self) -> WorldLocationState {
-        self.game_state.world.location
+    pub(crate) fn world_location_state(&self) -> &WorldLocationState {
+        &self.game_state.world.location
     }
 
     fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
@@ -2019,16 +2032,16 @@ impl ZeldaState {
         self.world_location_bridge_mut().set_indoor_flag(value);
     }
 
-    pub(crate) fn world_scroll(&self) -> WorldScrollState {
-        self.game_state.world.scroll
+    pub(crate) fn world_scroll(&self) -> &WorldScrollState {
+        &self.game_state.world.scroll
     }
 
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
         NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
     }
 
-    pub(crate) fn world_camera_boundaries(&self) -> WorldCameraBoundariesState {
-        self.game_state.world.camera_boundaries
+    pub(crate) fn world_camera_boundaries(&self) -> &WorldCameraBoundariesState {
+        &self.game_state.world.camera_boundaries
     }
 
     pub(crate) fn world_camera_boundaries_mut(
@@ -2040,8 +2053,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn world_palette_theme(&self) -> WorldPaletteThemeState {
-        self.game_state.world.palette_theme
+    pub(crate) fn world_palette_theme(&self) -> &WorldPaletteThemeState {
+        &self.game_state.world.palette_theme
     }
 
     pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {
@@ -2051,16 +2064,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn world_region(&self) -> WorldRegionState {
-        self.game_state.world.region
+    pub(crate) fn world_region(&self) -> &WorldRegionState {
+        &self.game_state.world.region
     }
 
     pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
         NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
     }
 
-    pub(crate) fn world_transient(&self) -> WorldTransientState {
-        self.game_state.world.transient.clone()
+    pub(crate) fn world_transient(&self) -> &WorldTransientState {
+        &self.game_state.world.transient
     }
 
     pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
@@ -2926,6 +2939,11 @@ impl ZeldaState {
             .set_vertical_irq_trigger(value);
     }
 
+    pub(crate) fn advance_crystal_rotation_counter(&mut self, amount: u8) -> bool {
+        self.display_state_bridge_mut()
+            .advance_crystal_rotation_counter(amount)
+    }
+
     pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
         self.display_state_bridge_mut()
             .set_sprite_dma_head_pointer(value);
@@ -3082,6 +3100,11 @@ impl ZeldaState {
             .reset_bg_tile_animation_countdown(value);
     }
 
+    pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
+        self.display_state_bridge_mut()
+            .decrement_bg_tile_animation_countdown()
+    }
+
     pub(crate) fn clear_star_tile_restore_phase(&mut self) {
         self.display_state_bridge_mut()
             .clear_star_tile_restore_phase();
@@ -3098,7 +3121,8 @@ impl ZeldaState {
     }
 
     pub(crate) fn overworld_tile_attribute_word(&self, index: usize) -> u16 {
-        self.display_state()
+        self.game_state
+            .display
             .overworld_tile_attribute_word(&self.ram, index)
     }
 
@@ -3152,8 +3176,8 @@ impl ZeldaState {
             .set_travel_bird_tile_offset(value);
     }
 
-    pub(crate) fn save_progress(&self) -> SaveProgressState {
-        SaveProgressState::load_from_ram(&self.ram)
+    pub(crate) fn save_progress(&self) -> &SaveProgressState {
+        &self.game_state.inventory.save_progress
     }
 
     pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
@@ -3317,8 +3341,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn dungeon_room_tilemaps(&self) -> DungeonRoomTilemapState {
-        DungeonRoomTilemapState::load_from_ram(&self.ram)
+    pub(crate) fn dungeon_room_tilemaps(&self) -> &DungeonRoomTilemapState {
+        &self.game_state.dungeon.room_tilemaps
     }
 
     pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
@@ -3507,8 +3531,8 @@ impl ZeldaState {
         NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn hud_inventory_order_state(&self) -> HudInventoryOrderState {
-        self.game_state.display.hud_inventory_order
+    pub(crate) fn hud_inventory_order_state(&self) -> &HudInventoryOrderState {
+        &self.game_state.display.hud_inventory_order
     }
 
     fn hud_inventory_order_bridge_mut(&mut self) -> NativeHudInventoryOrderBridgeMut<'_> {
@@ -3541,16 +3565,16 @@ impl ZeldaState {
         NativeMinigameBridgeMut::new(&mut self.game_state.minigame, &mut self.ram)
     }
 
-    pub(crate) fn sprite_battle(&self) -> SpriteBattleState {
-        self.game_state.sprite_battle
+    pub(crate) fn sprite_battle(&self) -> &SpriteBattleState {
+        &self.game_state.sprite_battle
     }
 
     pub(crate) fn sprite_battle_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
         NativeSpriteBattleBridgeMut::new(&mut self.game_state.sprite_battle, &mut self.ram)
     }
 
-    pub(crate) fn shared_message_timer_state(&self) -> SharedMessageTimerState {
-        self.game_state.messaging.shared_message_timer
+    pub(crate) fn shared_message_timer_state(&self) -> &SharedMessageTimerState {
+        &self.game_state.messaging.shared_message_timer
     }
 
     fn shared_message_timer_bridge_mut(&mut self) -> NativeSharedMessageTimerBridgeMut<'_> {
@@ -3572,8 +3596,8 @@ impl ZeldaState {
         self.shared_message_timer_bridge_mut().tick()
     }
 
-    pub(crate) fn intro_scene_state(&self) -> IntroSceneState {
-        self.game_state.ending.intro_scene
+    pub(crate) fn intro_scene_state(&self) -> &IntroSceneState {
+        &self.game_state.ending.intro_scene
     }
 
     fn intro_scene_bridge_mut(&mut self) -> NativeIntroSceneBridgeMut<'_> {
@@ -3605,8 +3629,8 @@ impl ZeldaState {
         self.intro_scene_bridge_mut().decrement_triforce_countdown();
     }
 
-    pub(crate) fn ending_credit_state(&self) -> EndingCreditState {
-        self.game_state.ending.credits
+    pub(crate) fn ending_credit_state(&self) -> &EndingCreditState {
+        &self.game_state.ending.credits
     }
 
     fn ending_credit_bridge_mut(&mut self) -> NativeEndingCreditBridgeMut<'_> {
@@ -3653,8 +3677,8 @@ impl ZeldaState {
         NativeOverworldMap16DecodeBridgeMut::new(&mut self.ram)
     }
 
-    pub(crate) fn room_bounds(&self) -> RoomBoundsState {
-        self.game_state.world.room_bounds.clone()
+    pub(crate) fn room_bounds(&self) -> &RoomBoundsState {
+        &self.game_state.world.room_bounds
     }
 
     pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
@@ -3662,22 +3686,139 @@ impl ZeldaState {
     }
 
     pub(crate) fn vram_upload_buffer_word(&self, offset: usize) -> u16 {
-        self.display_state()
+        self.game_state
+            .display
             .vram_upload_buffer_word(&self.ram, offset)
     }
 
     pub(crate) fn vram_upload_tilemap_word(&self, offset: usize) -> u16 {
-        self.display_state()
+        self.game_state
+            .display
             .vram_upload_tilemap_word(&self.ram, offset)
     }
 
     pub(crate) fn vram_upload_buffer_byte(&self, offset: usize) -> u8 {
-        self.display_state()
+        self.game_state
+            .display
             .vram_upload_buffer_byte(&self.ram, offset)
     }
 
     pub(crate) fn vram_upload_buffer_remaining(&self) -> &[u8] {
-        self.display_state().vram_upload_buffer_remaining(&self.ram)
+        self.game_state
+            .display
+            .vram_upload_buffer_remaining(&self.ram)
+    }
+
+    pub(crate) fn vram_upload_buffer_remaining_len(&self) -> usize {
+        self.ram
+            .len()
+            .saturating_sub(self.game_state.display.vram_upload_buffer_base())
+    }
+
+    pub(crate) fn animated_tile_dma_source_bytes(&self) -> &[u8] {
+        self.game_state
+            .display
+            .animated_tile_dma_source_bytes(&self.ram)
+    }
+
+    pub(crate) fn message_dma_tile_indices(&self) -> &[u8] {
+        self.game_state.display.message_dma_tile_indices(&self.ram)
+    }
+
+    pub(crate) fn sprite_oam_shadow_buffer(&self) -> &[u8] {
+        self.game_state.display.sprite_oam_shadow_buffer(&self.ram)
+    }
+
+    pub(crate) fn tilemap_upload_stripe_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .tilemap_upload_stripe_buffer(&self.ram)
+    }
+
+    pub(crate) fn secondary_stripe_upload_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .secondary_stripe_upload_buffer(&self.ram)
+    }
+
+    pub(crate) fn pending_tilemap_update_source_data(&self) -> &[u8] {
+        self.game_state
+            .display
+            .pending_tilemap_update_source_data(&self.ram)
+    }
+
+    pub(crate) fn nmi_vram_packet_buffer(&self) -> &[u8] {
+        self.game_state.display.nmi_vram_packet_buffer(&self.ram)
+    }
+
+    pub(crate) fn dungeon_bg2_attribute_table(&self) -> &[u8] {
+        self.game_state
+            .display
+            .dungeon_bg2_attribute_table(&self.ram)
+    }
+
+    pub(crate) fn dungeon_bg1_attribute_table(&self) -> &[u8] {
+        self.game_state
+            .display
+            .dungeon_bg1_attribute_table(&self.ram)
+    }
+
+    pub(crate) fn arbitrary_tilemap_destination(&self, slot: usize) -> u16 {
+        self.game_state
+            .display
+            .arbitrary_tilemap_destination(&self.ram, slot)
+    }
+
+    pub(crate) fn bg1_wall_top_tilemap_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .bg1_wall_top_tilemap_buffer(&self.ram)
+    }
+
+    pub(crate) fn bg1_wall_bottom_tilemap_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .bg1_wall_bottom_tilemap_buffer(&self.ram)
+    }
+
+    pub(crate) fn background_character_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .background_character_buffer(&self.ram)
+    }
+
+    pub(crate) fn background_character_secondary_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .background_character_secondary_buffer(&self.ram)
+    }
+
+    pub(crate) fn background_character_half_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .background_character_half_buffer(&self.ram)
+    }
+
+    pub(crate) fn game_over_text_tile_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .game_over_text_tile_buffer(&self.ram)
+    }
+
+    pub(crate) fn game_over_text_tail_tile_buffer(&self) -> &[u8] {
+        self.game_state
+            .display
+            .game_over_text_tail_tile_buffer(&self.ram)
+    }
+
+    pub(crate) fn polyhedral_tile_buffer(&self) -> &[u8] {
+        self.game_state.display.polyhedral_tile_buffer(&self.ram)
+    }
+
+    pub(crate) fn vram_dma_source_bytes(&self, source_addr: usize, len: usize) -> &[u8] {
+        self.game_state
+            .display
+            .vram_dma_source_bytes(&self.ram, source_addr, len)
     }
 
     fn vram_upload_buffer_bridge_mut(&mut self) -> NativeVramUploadBufferBridgeMut<'_> {
@@ -3771,16 +3912,16 @@ impl ZeldaState {
             .advance_offset_by(value)
     }
 
-    pub(crate) fn poly_runtime(&self) -> PolyRuntimeState {
-        self.game_state.poly.runtime
+    pub(crate) fn poly_runtime(&self) -> &PolyRuntimeState {
+        &self.game_state.poly.runtime
     }
 
     pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
         NativePolyRuntimeBridgeMut::new(&mut self.game_state.poly.runtime, &mut self.ram)
     }
 
-    pub(crate) fn poly_projected_vertex(&self) -> PolyProjectedVerticesState {
-        self.game_state.poly.projected_vertices.clone()
+    pub(crate) fn poly_projected_vertex(&self) -> &PolyProjectedVerticesState {
+        &self.game_state.poly.projected_vertices
     }
 
     pub(crate) fn poly_projected_vertex_mut(&mut self) -> NativePolyProjectedVerticesBridgeMut<'_> {
@@ -3790,16 +3931,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn poly_face_coords(&self) -> PolyFaceCoordsState {
-        self.game_state.poly.face_coords.clone()
+    pub(crate) fn poly_face_coords(&self) -> &PolyFaceCoordsState {
+        &self.game_state.poly.face_coords
     }
 
     pub(crate) fn poly_face_coords_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
         NativePolyFaceCoordsBridgeMut::new(&mut self.game_state.poly.face_coords, &mut self.ram)
     }
 
-    pub(crate) fn poly_raster_edge(&self) -> PolyRasterEdgeState {
-        self.game_state.poly.raster_edge
+    pub(crate) fn poly_raster_edge(&self) -> &PolyRasterEdgeState {
+        &self.game_state.poly.raster_edge
     }
 
     pub(crate) fn poly_raster_edge_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
@@ -3976,8 +4117,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn blast_wall_scratch(&self) -> BlastWallState {
-        self.game_state.effects.entrance_effects.blast_wall()
+    pub(crate) fn blast_wall_direction(&self) -> u8 {
+        self.game_state
+            .effects
+            .entrance_effects
+            .blast_wall_direction()
     }
 
     pub(crate) fn blast_wall_scratch_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
@@ -4002,8 +4146,18 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn skull_woods_fire_scratch(&self) -> SkullWoodsFireState {
-        self.game_state.effects.entrance_effects.skull_woods_fire()
+    pub(crate) fn skull_woods_fire_has_started_entrance_opening(&self) -> bool {
+        self.game_state
+            .effects
+            .entrance_effects
+            .skull_woods_fire_has_started_entrance_opening()
+    }
+
+    pub(crate) fn skull_woods_fire_inner_x(&self) -> u16 {
+        self.game_state
+            .effects
+            .entrance_effects
+            .skull_woods_fire_inner_x()
     }
 
     pub(crate) fn skull_woods_fire_scratch_mut(&mut self) -> NativeSkullWoodsFireBridgeMut<'_> {
@@ -4028,8 +4182,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn weather_vane_state(&self) -> WeatherVaneState {
-        self.game_state.world.overworld.weather_vane
+    pub(crate) fn weather_vane_state(&self) -> &WeatherVaneState {
+        &self.game_state.world.overworld.weather_vane
     }
 
     fn weather_vane_bridge_mut(&mut self) -> NativeWeatherVaneBridgeMut<'_> {
@@ -4300,11 +4454,28 @@ impl ZeldaState {
     }
 
     pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
-        arrghus_puff_home_position_from_ram(&self.ram, puff_slot)
+        self.game_state
+            .sprites
+            .boss_home_positions
+            .arrghus_puff_home_position(puff_slot)
     }
 
     pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
-        armos_knight_home_position_from_ram(&self.ram, slot)
+        self.game_state
+            .sprites
+            .boss_home_positions
+            .armos_knight_home_position(slot)
+    }
+
+    pub(crate) fn arrghus_puff_home_position_mut(
+        &mut self,
+        puff_slot: usize,
+    ) -> NativeArrghusPuffHomePositionBridgeMut<'_> {
+        NativeArrghusPuffHomePositionBridgeMut::new(
+            &mut self.game_state.sprites.boss_home_positions,
+            &mut self.ram,
+            puff_slot,
+        )
     }
 
     pub(crate) fn armos_knight_home_position_mut(
@@ -4434,12 +4605,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn sprite_slot(&self, slot: usize) -> SpriteSlotView<'_> {
-        SpriteSlotView::new(&self.ram, slot)
+    pub(crate) fn sprite_slot(&self, slot: usize) -> RamSpriteSlotView<'_> {
+        RamSpriteSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn sprite_slot_mut(&mut self, slot: usize) -> SpriteSlotViewMut<'_> {
-        SpriteSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn sprite_slot_mut(&mut self, slot: usize) -> RamSpriteSlotViewMut<'_> {
+        RamSpriteSlotViewMut::new(&mut self.ram, slot)
     }
 
     pub(crate) fn sprite_system(&self) -> &SpriteSystemState {
@@ -4458,28 +4629,28 @@ impl ZeldaState {
         NativeSpriteWorkspaceBridgeMut::new(&mut self.game_state.sprites.workspace, &mut self.ram)
     }
 
-    pub(crate) fn ancilla_slot(&self, slot: usize) -> AncillaSlotView<'_> {
-        AncillaSlotView::new(&self.ram, slot)
+    pub(crate) fn ancilla_slot(&self, slot: usize) -> RamAncillaSlotView<'_> {
+        RamAncillaSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn ancilla_slot_mut(&mut self, slot: usize) -> AncillaSlotViewMut<'_> {
-        AncillaSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn ancilla_slot_mut(&mut self, slot: usize) -> RamAncillaSlotViewMut<'_> {
+        RamAncillaSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn overlord_slot(&self, slot: usize) -> OverlordSlotView<'_> {
-        OverlordSlotView::new(&self.ram, slot)
+    pub(crate) fn overlord_slot(&self, slot: usize) -> RamOverlordSlotView<'_> {
+        RamOverlordSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn overlord_slot_mut(&mut self, slot: usize) -> OverlordSlotViewMut<'_> {
-        OverlordSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn overlord_slot_mut(&mut self, slot: usize) -> RamOverlordSlotViewMut<'_> {
+        RamOverlordSlotViewMut::new(&mut self.ram, slot)
     }
 
-    pub(crate) fn garnish_slot(&self, slot: usize) -> GarnishSlotView<'_> {
-        GarnishSlotView::new(&self.ram, slot)
+    pub(crate) fn garnish_slot(&self, slot: usize) -> RamGarnishSlotView<'_> {
+        RamGarnishSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn garnish_slot_mut(&mut self, slot: usize) -> GarnishSlotViewMut<'_> {
-        GarnishSlotViewMut::new(&mut self.ram, slot)
+    pub(crate) fn garnish_slot_mut(&mut self, slot: usize) -> RamGarnishSlotViewMut<'_> {
+        RamGarnishSlotViewMut::new(&mut self.ram, slot)
     }
 
     pub(crate) fn garnish_state(&self) -> &GarnishRuntimeState {
@@ -4535,8 +4706,8 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn trinexx_palette_state(&self) -> TrinexxPaletteState {
-        self.game_state.display.trinexx_palette
+    pub(crate) fn trinexx_palette_state(&self) -> &TrinexxPaletteState {
+        &self.game_state.display.trinexx_palette
     }
 
     fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {
@@ -4579,8 +4750,8 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    pub(crate) fn spotlight_hdma(&self) -> SpotlightHdmaState {
-        self.game_state.display.spotlight_hdma.clone()
+    pub(crate) fn spotlight_hdma(&self) -> &SpotlightHdmaState {
+        &self.game_state.display.spotlight_hdma
     }
 
     pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
@@ -4588,6 +4759,21 @@ impl ZeldaState {
             &mut self.game_state.display.spotlight_hdma,
             &mut self.ram,
         )
+    }
+
+    fn restore_spotlight_hdma_from_saveload_buffer(&mut self) {
+        self.spotlight_hdma_mut()
+            .restore_dynamic_table_from_saveload_buffer(224);
+    }
+
+    fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
+        self.spotlight_hdma_mut()
+            .backup_dynamic_table_to_saveload_buffer(224);
+    }
+
+    pub(crate) fn project_spotlight_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
+        self.spotlight_hdma_mut()
+            .project_dynamic_table_to_reserved_hdma_table(count);
     }
 
     pub(crate) fn water_hdma_window(&self) -> &WaterHdmaWindowState {
@@ -4676,7 +4862,7 @@ impl ZeldaState {
         self.game_state = GameState::load_from_ram(&self.ram);
     }
 
-    pub(crate) fn write_native_game_state_to_ram(&mut self) {
+    pub(crate) fn project_native_game_state_to_ram(&mut self) {
         self.game_state.write_to_ram(&mut self.ram);
     }
 
@@ -4685,7 +4871,7 @@ impl ZeldaState {
         debug_assert_eq!(
             self.game_state.frame,
             crate::game_state::FrameState::load_from_ram(&self.ram),
-            "native frame state diverged from RAM projection",
+            "native frame state diverged from compatibility RAM",
         );
     }
 
@@ -4694,7 +4880,7 @@ impl ZeldaState {
         debug_assert_eq!(
             self.game_state.world.location,
             crate::game_state::WorldLocationState::load_from_ram(&self.ram),
-            "native world location state diverged from RAM projection",
+            "native world location state diverged from compatibility RAM",
         );
     }
 
@@ -4703,13 +4889,25 @@ impl ZeldaState {
         debug_assert_eq!(
             self.game_state.display,
             crate::game_state::DisplayState::load_from_ram(&self.ram),
-            "native display state diverged from RAM projection",
+            "native display state diverged from compatibility RAM",
         );
     }
 
-    pub fn sync_overworld_map16_load_from_ram(&mut self) {
-        self.game_state.world.overworld.map16 =
-            crate::game_state::OverworldMap16State::load_from_ram(&self.ram);
+    #[track_caller]
+    pub(crate) fn assert_native_save_progress_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.inventory.save_progress,
+            crate::game_state::SaveProgressState::load_from_ram(&self.ram),
+            "native save-progress state diverged from compatibility RAM",
+        );
+    }
+
+    pub fn sync_overworld_map16_state_from_ram(&mut self) {
+        NativeOverworldMap16BridgeMut::new(
+            &mut self.game_state.world.overworld.map16,
+            &mut self.ram,
+        )
+        .sync_from_ram();
     }
 
     pub fn new() -> Self {
@@ -4749,6 +4947,7 @@ impl ZeldaState {
             bsnes_intro_step_hold_alternate: false,
             replay_reload_file_select_stall: 0,
             replay_loadfile_stall: 0,
+            replay_reopened_lamp_prompt: false,
             ending_coords: sprite::PrepOamCoordsRet::default(),
             intro_poly_vram_history: Vec::new(),
             intro_poly_presented_vram: None,
@@ -4761,6 +4960,7 @@ impl ZeldaState {
         state.sync_native_game_state_from_ram();
         state.assert_native_frame_state_matches_ram();
         state.assert_native_world_location_state_matches_ram();
+        state.assert_native_save_progress_matches_ram();
         state
     }
 
@@ -4809,7 +5009,7 @@ impl ZeldaState {
         self.bsnes_intro_step_hold_alternate = false;
         self.intro_poly_vram_history.clear();
         self.intro_poly_presented_vram = None;
-        self.sync_overworld_map16_load_from_ram();
+        self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
         self.visible_display_snapshot = None;
         self.emu_synchronize_whole_state();
@@ -4836,7 +5036,7 @@ impl ZeldaState {
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
-        } else if !self.display_state().has_animated_tile_data_source() {
+        } else if !self.game_state.display.has_animated_tile_data_source() {
             self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
         }
     }
@@ -4858,7 +5058,7 @@ impl ZeldaState {
             obj_vram_latch_generation: self.obj_vram_latch_generation,
             bsnes_poly_scheduler_counter: self.bsnes_poly_scheduler_counter,
         });
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         if frame.main_module == 0 && matches!(frame.submodule, 3 | 4) {
             self.intro_poly_vram_history.push((
                 frame.frame_counter,
@@ -4967,14 +5167,14 @@ impl ZeldaState {
             self.capture_display_snapshot();
             return;
         }
-        if !self.display_state().has_animated_tile_data_source() {
+        if !self.game_state.display.has_animated_tile_data_source() {
             self.zelda_initialization_code();
         }
         if run_what & crate::RUN_POLY != 0 {
             self.zelda_run_poly_loop();
         }
         if self.rom_startup_timing() && self.intro_memory_darken_frame_delay != 0 {
-            let frame = self.frame_state();
+            let frame = &self.game_state.frame;
             if frame.main_module == 0 && frame.submodule == 3 {
                 self.intro_animate_triforce();
             }
@@ -4987,12 +5187,12 @@ impl ZeldaState {
             self.interrupt_nmi(input);
             return;
         }
-        let frame = *self.frame_state();
+        let frame = self.game_state.frame;
         if self.rom_startup_timing
             && frame.main_module == 0
             && matches!(frame.submodule, 3 | 4)
             && frame.frame_counter >= 0x85
-            && self.display_state().has_pending_polyhedral_update()
+            && self.game_state.display.has_pending_polyhedral_update()
         {
             self.nmi_poly_upload_from_deferred = true;
             self.nmi_update_irqgfx();
@@ -5019,7 +5219,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
-        self.sync_overworld_map16_load_from_ram();
+        self.sync_overworld_map16_state_from_ram();
     }
 
     pub fn zelda_run_frame_internal(&mut self, input: u16, run_what: u8) {
@@ -5046,7 +5246,7 @@ impl ZeldaState {
     fn emu_sync_memory_region(&mut self, offset: usize, n: usize) {
         debug_assert!(offset < WRAM_SIZE);
         debug_assert!(offset + n <= WRAM_SIZE);
-        let bytes = self.raw_ram().range(offset, n).to_vec();
+        let bytes = self.compatibility_ram_range(offset, n).to_vec();
         if let Some(emu_memory_ptr) = self.emu_memory_ptr.as_mut() {
             if emu_memory_ptr.len() < WRAM_SIZE {
                 emu_memory_ptr.resize(WRAM_SIZE, 0);
@@ -5195,7 +5395,7 @@ impl ZeldaState {
     /// by HDMA so the actual render call (`zelda_draw_ppu_frame`) is unaffected.
     pub fn cgram_after_first_hdma_line(&mut self) -> Vec<u16> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
 
         let saved_cgram = self.ppu.cgram.clone();
@@ -5254,10 +5454,10 @@ impl ZeldaState {
     ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]); 224]> {
         let saved_channels: [_; 8] = std::array::from_fn(|i| self.dma.channel[i]);
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
 
-        let saved_irq_control_flag = self.display_state().irq_control_flag;
+        let saved_irq_control_flag = self.game_state.display.irq_control_flag;
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
         let saved_cgram_second_write = self.ppu.cgram_second_write;
@@ -5281,13 +5481,13 @@ impl ZeldaState {
         let mut result =
             Box::new([(0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8]); 224]);
         for line in 0..=224usize {
-            if line == 128 && self.display_state().has_irq_control_flag() {
+            if line == 128 && self.game_state.display.has_irq_control_flag() {
                 let name_scroll_x = self.select_file_scratch().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.display_state().irq_control_has_vcounter_marker() {
+                if self.game_state.display.irq_control_has_vcounter_marker() {
                     self.clear_irq_control_flag();
                 }
             }
@@ -5336,7 +5536,7 @@ impl ZeldaState {
     /// per scanline.  Used for GPU color math parity diagnostics.
     pub fn ppu_scanline_fixed_color(&mut self) -> Box<[(u8, u8, u8); 224]> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
@@ -5391,7 +5591,7 @@ impl ZeldaState {
     /// Simulate 224 HDMA scanlines and capture a full CGRAM snapshot per scanline.
     pub fn ppu_scanline_cgram(&mut self) -> Vec<Vec<u16>> {
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
@@ -5445,10 +5645,10 @@ impl ZeldaState {
         let mut extra_left = 0u16;
         let mut extra_right = 0u16;
         let mut extra_bottom = 0u16;
-        let frame = *self.frame_state();
+        let frame = self.game_state.frame;
         let mut module = frame.main_module;
         if module == 14 {
-            module = self.frame_state().saved_module_for_menu;
+            module = self.game_state.frame.saved_module_for_menu;
         }
 
         if module == 9 {
@@ -5465,7 +5665,7 @@ impl ZeldaState {
             }
         } else if module == 7 {
             if !(self.dungeon_torch_state().dungeon_dark_with_lantern()
-                && self.display_state().sub_screen_layers != 0)
+                && self.game_state.display.sub_screen_layers != 0)
             {
                 let qm = (self.world_transient().quadrant_fullsize_x() >> 1) as usize;
                 let bg2x = self.world_scroll().bg2_x();
@@ -5522,7 +5722,7 @@ impl ZeldaState {
         }
 
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.display_state().is_hdma_channel_enabled(i);
+            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
         let mut hdma_chans = [SimpleHdma::default(), SimpleHdma::default()];
         self.simple_hdma_init(&mut hdma_chans[0], &self.dma.channel[6]);
@@ -5553,13 +5753,13 @@ impl ZeldaState {
         }
 
         for line in 0..=output_height {
-            if line == 128 && self.display_state().has_irq_control_flag() {
+            if line == 128 && self.game_state.display.has_irq_control_flag() {
                 let name_scroll_x = self.select_file_scratch().name_scroll_x();
                 self.zelda_ppu_write(0x2111, name_scroll_x as u8);
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.display_state().irq_control_has_vcounter_marker() {
+                if self.game_state.display.irq_control_has_vcounter_marker() {
                     self.clear_irq_control_flag();
                 }
             }
@@ -5707,18 +5907,16 @@ impl ZeldaState {
 
     fn load_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
         self.internal_save_load(func);
-        let src = self.ram_bytes(SAVELOAD_HDMA_TABLE, 224 * 2);
-        self.raw_ram_mut().copy_to(HDMA_TABLE_DYNAMIC, &src);
+        self.restore_spotlight_hdma_from_saveload_buffer();
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
-        self.sync_overworld_map16_load_from_ram();
+        self.sync_overworld_map16_state_from_ram();
         self.emu_synchronize_whole_state();
     }
 
     fn save_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
-        let src = self.ram_bytes(HDMA_TABLE_DYNAMIC, 224 * 2);
-        self.raw_ram_mut().copy_to(SAVELOAD_HDMA_TABLE, &src);
+        self.backup_spotlight_hdma_to_saveload_buffer();
         self.zelda_save_music_state_to_ram_locked();
         self.internal_save_load(func);
     }
@@ -5837,8 +6035,7 @@ impl ZeldaState {
                     replay_pos += 1;
                     while nb != 0 {
                         let offset = (addr & 0x1ffff) as usize;
-                        self.raw_ram_mut()
-                            .set_byte_at(offset, sr.log.data[replay_pos]);
+                        self.set_compatibility_ram_byte(offset, sr.log.data[replay_pos]);
                         replay_pos += 1;
                         self.emu_sync_memory_region(offset, 1);
                         addr = addr.wrapping_add(1);
@@ -6027,7 +6224,7 @@ impl ZeldaState {
                     1,
                 );
             }
-            if self.display_state().has_animated_tile_data_source() {
+            if self.game_state.display.has_animated_tile_data_source() {
                 if self.system_signals().bugs_fixed() < BUGFIX_LATEST {
                     if !self.rom_startup_timing {
                         self.system_signals_mut().set_bugs_fixed(BUGFIX_LATEST);
@@ -6060,7 +6257,7 @@ impl ZeldaState {
         self.sync_native_game_state_from_ram();
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
-        let frame = self.frame_state();
+        let frame = &self.game_state.frame;
         let use_bsnes_poly_scheduler = self.rom_startup_timing
             && frame.main_module == 0
             && matches!(frame.submodule, 3 | 4)
@@ -6069,14 +6266,14 @@ impl ZeldaState {
         let run_what = if self.system_signals().bugs_fixed() < BUGFIX_POLY_RENDERER
             && !use_bsnes_poly_scheduler
         {
-            if self.display_state().nmi_thread_uses_poly_stack() {
+            if self.game_state.display.nmi_thread_uses_poly_stack() {
                 2
             } else {
                 1
             }
         } else {
-            let virq = self.display_state().vertical_irq_trigger;
-            let carry = if self.display_state().nmi_thread_active {
+            let virq = self.game_state.display.vertical_irq_trigger;
+            let carry = if self.game_state.display.nmi_thread_active {
                 if use_bsnes_poly_scheduler {
                     let previous_counter = self.bsnes_poly_scheduler_counter;
                     let step_waiting = self.attract_scene().intro_step_index() == 1
@@ -6099,14 +6296,8 @@ impl ZeldaState {
                         self.bsnes_poly_scheduler_counter.wrapping_add(virq);
                     self.attract_scene().intro_did_run_step() != 0
                 } else {
-                    let carry = Self::increment_crystal_countdown(
-                        self.raw_ram_mut()
-                            .range_mut(RAM_CRYSTAL_ROTATE_COUNTER, 1)
-                            .first_mut()
-                            .expect("crystal rotate counter byte exists"),
-                        virq,
-                    ) != 0;
-                    self.emu_sync_memory_region(RAM_CRYSTAL_ROTATE_COUNTER, 1);
+                    let carry = self.advance_crystal_rotation_counter(virq);
+                    self.emu_sync_memory_region(CRYSTAL_ROTATION_COUNTER, 1);
                     carry
                 }
             } else {
@@ -6247,7 +6438,7 @@ impl ZeldaState {
         }
         mp.vals[mp.count as usize] = value;
         mp.count += 1;
-        self.raw_ram_mut().set_byte_at(addr as usize, value);
+        self.set_compatibility_ram_byte(addr as usize, value);
         self.emu_sync_memory_region(addr as usize, 1);
     }
 
@@ -6423,16 +6614,14 @@ impl ZeldaState {
         self.sound_load_intro_song_bank();
         self.startup_initialize_memory();
         self.set_animated_tile_data_source_address(0xa680);
-        self.raw_ram_mut().set_word_at(DMA_SOURCE_ADDR_9, 0xb280);
-        self.raw_ram_mut()
-            .set_word_at(DMA_SOURCE_ADDR_14, 0xb280 + 0x60);
+        self.set_link_animated_tile_dma_sources(0xb280, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
     }
 
     fn startup_initialize_memory(&mut self) {
-        self.raw_ram_mut().fill(0, 0x2000, 0);
-        self.raw_ram_mut().set_word_at(MAIN_PALETTE_BUFFER, 0);
+        self.system_work_area_mut().clear_startup_low_memory();
+        self.palette_buffer_mut().set_main_color(0, 0);
         self.clear_selected_save_slot();
 
         for offset in [0x03e5, 0x08e5, 0x0de5] {
@@ -6449,18 +6638,12 @@ impl ZeldaState {
 
     fn zelda_run_poly_loop(&mut self) {
         let can_run_poly = self.attract_scene().intro_did_run_step() != 0
-            && !self.display_state().has_pending_polyhedral_update();
+            && !self.game_state.display.has_pending_polyhedral_update();
         if can_run_poly {
             self.poly_run_frame();
             self.attract_scene_mut().clear_intro_did_run_step();
             self.request_polyhedral_nmi_update();
         }
-    }
-
-    fn increment_crystal_countdown(a: &mut u8, v: u8) -> i32 {
-        let t = (*a as u16).wrapping_add(v as u16);
-        *a = t as u8;
-        (t >> 8) as i32
     }
 
     fn zelda_run_game_loop(&mut self) {
@@ -6483,7 +6666,7 @@ impl ZeldaState {
     }
 
     fn run_dungeon_submodule(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.module07_00_player_control(),
             1 => self.Module07_01_SubtileTransition(),
             2 => self.Module07_02_SupertileTransition(),
@@ -6707,8 +6890,8 @@ impl ZeldaState {
                 .wrapping_sub(self.world_scroll().bg2_y()) as u8;
             self.player_state_mut().clear_state_item_and_grab_flags();
             self.player_state_mut().set_y_button_action_timer(0);
-            if self.world_location_state().is_indoors() {
-                let room = self.world_location_state().dungeon_room_index();
+            if self.game_state.world.location.is_indoors() {
+                let room = self.game_state.world.location.dungeon_room_index();
                 self.dungeon_room_tracking_mut().set_room_index_prev(room);
                 self.Dungeon_FlagRoomData_Quadrants();
                 if self.Dungeon_IsPitThatHurtsPlayer() {
@@ -6716,7 +6899,7 @@ impl ZeldaState {
                     return;
                 }
             }
-            let previous_room = self.world_location_state().dungeon_room_index();
+            let previous_room = self.game_state.world.location.dungeon_room_index();
             self.dungeon_room_tracking_mut()
                 .set_room_index_prev(previous_room);
             let room = self.dungeon_header().travel_destination(0);
@@ -6729,9 +6912,9 @@ impl ZeldaState {
                 .wrapping_sub(y as u16)
                 .wrapping_sub(0x10);
             self.player_state_mut().set_y(new_y);
-            if self.world_location_state().is_indoors() {
+            if self.game_state.world.location.is_indoors() {
                 self.handle_layer_of_destination();
-            } else if self.world_location_state().overworld_screen_index() != 5 {
+            } else if self.game_state.world.location.overworld_screen_index() != 5 {
                 self.Overworld_GetPitDestination();
                 self.set_main_module(17);
                 self.set_submodule(0);
@@ -6816,7 +6999,7 @@ impl ZeldaState {
                 .set_bg2_attr(tile_pos as usize, attr);
         }
 
-        let dst = self.display_state().current_vram_upload_data_address();
+        let dst = self.game_state.display.current_vram_upload_data_address();
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
             let addr = self.Dungeon_MapVramAddr(tile_pos);
@@ -6835,9 +7018,10 @@ impl ZeldaState {
     }
 
     fn cache_camera_properties_for_player(&mut self) {
-        let scroll = self.world_scroll();
+        let bg2_x = self.world_scroll().bg2_x();
+        let bg2_y = self.world_scroll().bg2_y();
         self.ppu_scroll_copy_mut()
-            .cache_bg2_live_scroll_from(scroll.bg2_x(), scroll.bg2_y());
+            .cache_bg2_live_scroll_from(bg2_x, bg2_y);
         self.player_state_mut().cache_current_position();
         let y_start = self.room_bounds().y_bound(0);
         let y_end = self.room_bounds().y_bound(2);
@@ -6851,18 +7035,10 @@ impl ZeldaState {
         self.player_state_mut().cache_current_quadrants();
         self.player_state_mut().cache_facing();
         self.player_state_mut().cache_lower_level_states();
-        self.world_transient_mut().cache_standing_in_doorway();
+        let doorway_state = self.player_state().doorway_state();
+        self.world_transient_mut()
+            .cache_standing_in_doorway(doorway_state);
         self.dungeon_stair_movement_mut().cache_current_floor();
-    }
-
-    fn move_link_coord(&mut self, subpixel: usize, coord: usize, vel: u8) -> u16 {
-        self.raw_ram_mut()
-            .move_link_axis_by_velocity(subpixel, coord, vel)
-    }
-
-    fn move_link_coord_subpixel_delta(&mut self, subpixel: usize, coord: usize, delta: u16) -> u16 {
-        self.raw_ram_mut()
-            .move_link_axis_by_subpixel_delta(subpixel, coord, delta)
     }
 
     fn store_link_safe_return_position(&mut self, x: u16, y: u16) {
@@ -7023,68 +7199,45 @@ impl ZeldaState {
             .unwrap_or(0)
     }
 
-    fn decrement_word(&mut self, offset: usize) -> u16 {
-        let value = self.raw_ram().word_at(offset).wrapping_sub(1);
-        self.raw_ram_mut().set_word_at(offset, value);
-        value
+    fn clear_attract_low_work_area(&mut self) {
+        self.system_work_area_mut().clear_attract_low_work_area();
     }
 
-    fn ram_byte(&self, offset: usize) -> u8 {
-        self.raw_ram().byte_at(offset)
+    fn clear_poly_thread_work_area(&mut self) {
+        self.system_work_area_mut().clear_poly_thread_work_area();
     }
 
-    fn set_ram_byte(&mut self, offset: usize, value: u8) {
-        self.raw_ram_mut().set_byte_at(offset, value);
+    fn write_poly_thread_init_bytes(&mut self) {
+        self.system_work_area_mut()
+            .write_poly_thread_bootstrap_bytes();
     }
 
-    fn copy_to_ram(&mut self, offset: usize, data: &[u8]) {
-        self.raw_ram_mut().copy_to(offset, data);
-    }
-
-    fn fill_ram(&mut self, offset: usize, len: usize, value: u8) {
-        self.raw_ram_mut().fill(offset, len, value);
+    fn clear_intro_wram_block_columns(&mut self, start_offset: u16, stop_offset: u16) -> u16 {
+        self.system_work_area_mut()
+            .clear_intro_wram_block_columns(start_offset, stop_offset)
     }
 
     fn has_player_layer_collision(&self, mask: u8) -> bool {
-        self.ram_byte(PLAYER_LAYER_COLLISION_FLAGS) & mask == mask
+        self.tile_detect_position().has_layer_collision(mask)
     }
 
     fn set_player_layer_collision(&mut self, mask: u8, enabled: bool) {
-        let flags = self.ram_byte(PLAYER_LAYER_COLLISION_FLAGS);
-        let flags = if enabled { flags | mask } else { flags & !mask };
-        self.set_ram_byte(PLAYER_LAYER_COLLISION_FLAGS, flags);
+        self.tile_detect_position_mut()
+            .set_layer_collision(mask, enabled);
     }
 
-    fn read_u8_ram(&self, offset: usize) -> u8 {
-        self.raw_ram().byte_at(offset)
+    fn set_player_layer_collision_flags(&mut self, value: u8) {
+        self.tile_detect_position_mut()
+            .set_layer_collision_flags(value);
     }
 
-    fn write_u8_ram(&mut self, offset: usize, value: u8) {
-        self.raw_ram_mut().set_byte_at(offset, value);
-    }
-
-    fn read_u16_ram(&self, offset: usize) -> u16 {
-        self.raw_ram().word_at(offset)
-    }
-
-    fn write_u16_ram(&mut self, offset: usize, value: u16) {
-        self.raw_ram_mut().set_word_at(offset, value);
-    }
-
-    fn read_u32_ram(&self, offset: usize) -> u32 {
-        self.raw_ram().long_at(offset)
-    }
-
-    fn write_u32_ram(&mut self, offset: usize, value: u32) {
-        self.raw_ram_mut().set_long_at(offset, value);
-    }
-
-    fn read_i16_ram(&self, offset: usize) -> i16 {
-        self.read_u16_ram(offset) as i16
-    }
-
-    fn write_i16_ram(&mut self, offset: usize, value: i16) {
-        self.write_u16_ram(offset, value as u16);
+    #[cfg(test)]
+    fn debug_compatibility_ram_u32(&self, offset: usize) -> u32 {
+        let bytes = self.compatibility_ram_range(offset, 4);
+        u32::from(bytes[0])
+            | (u32::from(bytes[1]) << 8)
+            | (u32::from(bytes[2]) << 16)
+            | (u32::from(bytes[3]) << 24)
     }
 }
 
@@ -7119,11 +7272,6 @@ fn read_le_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {
         .get(offset..end)
         .ok_or_else(|| "asset header truncated".to_string())?;
     Ok(u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
-}
-
-fn copy_le_u16(bytes: &mut [u8], dst: usize, src: usize) {
-    let value = read_le_u16(bytes, src);
-    write_le_u16(bytes, dst, value);
 }
 
 fn main_tileset(index: usize) -> [u8; 8] {
@@ -7392,7 +7540,7 @@ mod tests {
         assert_eq!(state.scratch_word_mut().decrement_high(), 1);
 
         assert_eq!(state.scratch_word().word(), 0x0100);
-        assert_eq!(state.display_state().pending_nmi_subroutine, 11);
+        assert_eq!(state.game_state.display.pending_nmi_subroutine, 11);
     }
 
     #[test]
@@ -7478,13 +7626,16 @@ mod tests {
     #[test]
     fn player_layer_collision_helpers_preserve_unrelated_flags() {
         let mut state = ZeldaState::new();
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] = 0xf0;
+        state.set_player_layer_collision_flags(0xf0);
 
         state.set_player_layer_collision(
             crate::game_state::constants::player::LAYER_COLLISION_BG1,
             true,
         );
-        assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf1);
+        assert_eq!(
+            state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+            0xf1
+        );
         assert!(!state.has_player_layer_collision(
             crate::game_state::constants::player::LAYER_COLLISION_BOTH
         ));
@@ -7493,7 +7644,10 @@ mod tests {
             crate::game_state::constants::player::LAYER_COLLISION_BG2,
             true,
         );
-        assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf3);
+        assert_eq!(
+            state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+            0xf3
+        );
         assert!(state.has_player_layer_collision(
             crate::game_state::constants::player::LAYER_COLLISION_BOTH
         ));
@@ -7502,7 +7656,10 @@ mod tests {
             crate::game_state::constants::player::LAYER_COLLISION_BG1,
             false,
         );
-        assert_eq!(state.ram[PLAYER_LAYER_COLLISION_FLAGS], 0xf2);
+        assert_eq!(
+            state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+            0xf2
+        );
         assert!(!state.has_player_layer_collision(
             crate::game_state::constants::player::LAYER_COLLISION_BOTH
         ));
@@ -7517,8 +7674,8 @@ mod tests {
 
         state.intro_initialize_background_settings();
 
-        assert_eq!(state.display_state().bg_mode, 9);
-        assert_eq!(state.display_state().mosaic_copy, 0);
+        assert_eq!(state.game_state.display.bg_mode, 9);
+        assert_eq!(state.game_state.display.mosaic_copy, 0);
         assert_eq!(state.ppu.bg_layer[0].tilemap_adr, 0x1000);
         assert!(state.ppu.bg_layer[0].tilemap_wider);
         assert!(state.ppu.bg_layer[0].tilemap_higher);
@@ -7615,7 +7772,7 @@ mod tests {
 
         state.credits_handle_scene_fade();
 
-        assert_eq!(state.display_state().screen_brightness, 1);
+        assert_eq!(state.game_state.display.screen_brightness, 1);
         assert_eq!(state.ending_scratch().primary_word(), 0x0301);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);
     }
@@ -7629,7 +7786,7 @@ mod tests {
 
         state.credits_handle_scene_fade();
 
-        assert_eq!(state.display_state().screen_brightness, 0);
+        assert_eq!(state.game_state.display.screen_brightness, 0);
         assert_eq!(state.ending_scratch().primary_word(), 0x0300);
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
     }
@@ -7704,11 +7861,11 @@ mod tests {
             ("tile_detect.rs", include_str!("tile_detect.rs")),
         ] {
             for needle in [
-                "self.raw_ram().word_at(LINK_X_COORD)",
-                "self.raw_ram().word_at(LINK_Y_COORD)",
-                "self.raw_ram().word_at(LINK_Z_COORD)",
-                "self.raw_ram().word_at(OVERWORLD_SCREEN_INDEX)",
-                "self.raw_ram().word_at(DUNGEON_ROOM_INDEX)",
+                concat!("self.", "raw_", "ram().word_at(LINK_X_COORD)"),
+                concat!("self.", "raw_", "ram().word_at(LINK_Y_COORD)"),
+                concat!("self.", "raw_", "ram().word_at(LINK_Z_COORD)"),
+                concat!("self.", "raw_", "ram().word_at(OVERWORLD_SCREEN_INDEX)"),
+                concat!("self.", "raw_", "ram().word_at(DUNGEON_ROOM_INDEX)"),
             ] {
                 assert!(
                     !source.contains(needle),
@@ -7740,9 +7897,9 @@ mod tests {
             ("zelda_rtl.rs", include_str!("zelda_rtl.rs")),
         ] {
             for needle in [
-                concat!("self.raw_ram_mut().set_word_at(", "LINK_X_COORD,"),
-                concat!("self.raw_ram_mut().set_word_at(", "LINK_Y_COORD,"),
-                concat!("self.raw_ram_mut().set_word_at(", "LINK_Z_COORD,"),
+                concat!("self.", "raw_", "ram_mut().set_word_at(", "LINK_X_COORD,"),
+                concat!("self.", "raw_", "ram_mut().set_word_at(", "LINK_Y_COORD,"),
+                concat!("self.", "raw_", "ram_mut().set_word_at(", "LINK_Z_COORD,"),
             ] {
                 assert!(
                     !source.contains(needle),
@@ -7869,11 +8026,13 @@ mod tests {
     fn snes_state_save_load_roundtrips_runtime_regions() {
         let mut state = ZeldaState::new();
         state.ram[0x100] = 0x12;
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_SRC_OFF, 0x1390);
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_DST_OFF, 0x001f);
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_Y_UNIT, 0x000e);
-        state.sync_overworld_map16_load_from_ram();
-        state.ram[HDMA_TABLE_DYNAMIC] = 0xab;
+        write_le_u16(&mut state.ram, MAP16_LOAD_SRC_OFF, 0x1390);
+        write_le_u16(&mut state.ram, MAP16_LOAD_DST_OFF, 0x001f);
+        write_le_u16(&mut state.ram, MAP16_LOAD_Y_UNIT, 0x000e);
+        state.sync_overworld_map16_state_from_ram();
+        state
+            .spotlight_hdma_mut()
+            .set_hdma_table_dynamic_entry(0, 0x00ab);
         state.sram[0x22] = 0x34;
         state.ppu.cgram[7] = 0x2468;
         state.ppu.bg_layer[1].tilemap_higher = true;
@@ -7886,11 +8045,13 @@ mod tests {
         assert_eq!(state.ram[0x1b00], 0xab);
 
         state.ram[0x100] = 0;
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_SRC_OFF, 0);
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_DST_OFF, 0);
-        write_le_u16(&mut state.ram, SEMANTIC_MAP16_LOAD_Y_UNIT, 0);
-        state.sync_overworld_map16_load_from_ram();
-        state.ram[HDMA_TABLE_DYNAMIC] = 0;
+        write_le_u16(&mut state.ram, MAP16_LOAD_SRC_OFF, 0);
+        write_le_u16(&mut state.ram, MAP16_LOAD_DST_OFF, 0);
+        write_le_u16(&mut state.ram, MAP16_LOAD_Y_UNIT, 0);
+        state.sync_overworld_map16_state_from_ram();
+        state
+            .spotlight_hdma_mut()
+            .set_hdma_table_dynamic_entry(0, 0);
         state.sram[0x22] = 0;
         state.ppu.cgram[7] = 0;
         state.ppu.bg_layer[1].tilemap_higher = false;
@@ -7903,7 +8064,7 @@ mod tests {
 
         assert_eq!(state.ram[0x100], 0x12);
         assert_eq!(
-            state.overworld_map16_load_state(),
+            state.game_state.world.overworld.map16.active_load,
             OverworldMap16LoadState {
                 src_off: 0x1390,
                 dst_off: 0x001f,
@@ -8117,7 +8278,10 @@ mod tests {
         assert_eq!(state.frame_ctr_dbg, 1);
         assert_eq!(state.state_recorder.last_inputs, 1);
         assert_eq!(state.ram[RAM_BUGS_FIXED], BUGFIX_LATEST);
-        assert_eq!(state.read_u32_ram(ENHANCED_FEATURES0), 0x1000);
+        assert_eq!(
+            state.debug_compatibility_ram_u32(ENHANCED_FEATURES0),
+            0x1000
+        );
     }
 
     #[test]
@@ -8609,8 +8773,9 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
         state.dungeon_room_load_mut().set_header_collision(1);
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
-            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
+        state.set_player_layer_collision_flags(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH,
+        );
         state.dungeon_moving_floor_mut().set_floor_x_velocity(2);
         state
             .dungeon_moving_floor_mut()
@@ -8925,7 +9090,7 @@ mod tests {
 
         state.dungeon_handle_layer_change();
 
-        assert_eq!(state.world_location_state().dungeon_room, 0x0114);
+        assert_eq!(state.game_state.world.location.dungeon_room(), 0x0114);
         assert_eq!(link_test_byte(&state, LINK_IS_ON_LOWER_LEVEL_MIRROR), 1);
         assert_eq!(state.player_state().lower_level_state(), 1);
         assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
@@ -8950,7 +9115,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
         state.world_scroll_mut().set_bg1_y_offset(0x1234);
         state.world_scroll_mut().set_bg1_x_offset(0x5678);
-        state.ram[SAVEGAME_IS_DARKWORLD] = 1;
+        state.save_progress_mut().set_dark_world_state(1);
 
         state.link_initialize();
 
@@ -9323,8 +9488,9 @@ mod tests {
     fn halt_link_when_using_items_stops_floor_and_platform_motion() {
         let mut state = ZeldaState::new();
         state.dungeon_room_load_mut().set_header_collision_2(2);
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
-            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
+        state.set_player_layer_collision_flags(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH,
+        );
         set_link_test_byte(&mut state, LINK_Y_VEL, 0x80);
         set_link_test_byte(&mut state, LINK_X_VEL, 0x40);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
@@ -9342,7 +9508,7 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0);
 
         state.ram[DUNG_HDR_COLLISION_2] = 0;
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] = 0;
+        state.set_player_layer_collision_flags(0);
         state.player_state_mut().set_somaria_platform_state(1);
         set_link_test_byte(&mut state, LINK_Y_VEL, 7);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
@@ -9460,8 +9626,9 @@ mod tests {
         set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 2);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
         state.dungeon_room_load_mut().set_header_collision_2(2);
-        state.ram[PLAYER_LAYER_COLLISION_FLAGS] =
-            crate::game_state::constants::player::LAYER_COLLISION_BOTH;
+        state.set_player_layer_collision_flags(
+            crate::game_state::constants::player::LAYER_COLLISION_BOTH,
+        );
         set_link_test_byte(&mut state, LINK_Y_VEL, 7);
 
         state.link_item_cape();
@@ -9577,7 +9744,7 @@ mod tests {
         assert_eq!(prayer.ram[SUBMODULE_INDEX], 5);
         assert_eq!(prayer.ram[SAVED_MODULE_FOR_MENU], 9);
         assert_eq!(prayer.ram[MAIN_MODULE_INDEX], 14);
-        assert_eq!(prayer.frame_state().modal_pause_flag, 1);
+        assert_eq!(prayer.game_state.frame.modal_pause_flag, 1);
         assert_eq!(prayer.player_state().y_button_action_timer(), 22);
         assert_eq!(prayer.player_state().state_bits(), 2);
         assert_eq!(link_test_byte(&prayer, LINK_DIRECTION), 0);
@@ -9877,16 +10044,16 @@ mod tests {
 
         state.LinkZap_HandleMosaic();
 
-        assert_eq!(state.display_state().mosaic_level, 0xc0);
-        assert_eq!(state.display_state().mosaic_direction, 1);
-        assert_eq!(state.display_state().mosaic_copy, 0x63);
-        assert_eq!(state.display_state().bg_mode, 9);
+        assert_eq!(state.game_state.display.mosaic_level, 0xc0);
+        assert_eq!(state.game_state.display.mosaic_direction, 1);
+        assert_eq!(state.game_state.display.mosaic_copy, 0x63);
+        assert_eq!(state.game_state.display.bg_mode, 9);
 
         state.set_mosaic_level(0x10);
         state.LinkZap_HandleMosaic();
-        assert_eq!(state.display_state().mosaic_level, 0);
-        assert_eq!(state.display_state().mosaic_direction, 0);
-        assert_eq!(state.display_state().mosaic_copy, 3);
+        assert_eq!(state.game_state.display.mosaic_level, 0);
+        assert_eq!(state.game_state.display.mosaic_direction, 0);
+        assert_eq!(state.game_state.display.mosaic_copy, 3);
     }
 
     #[test]
@@ -9908,9 +10075,9 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
         assert_eq!(state.player_state().auxiliary_state(), 0);
-        assert_eq!(state.display_state().mosaic_level, 0);
-        assert_eq!(state.display_state().mosaic_copy, 3);
-        assert_eq!(state.display_state().bg_mode, 9);
+        assert_eq!(state.game_state.display.mosaic_level, 0);
+        assert_eq!(state.game_state.display.mosaic_copy, 3);
+        assert_eq!(state.game_state.display.bg_mode, 9);
     }
 
     #[test]
@@ -10127,12 +10294,12 @@ mod tests {
 
         assert_eq!(read_le_u16(&state.ram, ANIMATED_TILE_DATA_SRC), 0xa680);
         assert_eq!(
-            state.display_state().animated_tile_data_source_address,
+            state.game_state.display.animated_tile_data_source_address,
             0xa680
         );
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0xb280);
         assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0xb2e0);
-        assert_eq!(state.display_state().screen_brightness, 15);
+        assert_eq!(state.game_state.display.screen_brightness, 15);
         assert_eq!(state.ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
         assert_eq!(read_le_u16(&state.sram, 0x03e5), 0x55aa);
         assert_eq!(read_le_u16(&state.sram, 0x08e5), 0);
@@ -10147,8 +10314,8 @@ mod tests {
 
         state.run_frame_internal(0, crate::RUN_MAIN);
 
-        assert_eq!(state.frame_state().frame_counter, 1);
-        assert!(state.display_state().nmi_update_is_latched());
+        assert_eq!(state.game_state.frame.frame_counter, 1);
+        assert!(state.game_state.display.nmi_update_is_latched());
         for i in 4..128 {
             assert_eq!(state.ram[OAM_BUF + i * 4 + 1], 0xf0);
         }
@@ -10256,7 +10423,7 @@ mod tests {
 
         state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
 
-        assert_eq!(state.display_state().irq_control_flag, 0);
+        assert_eq!(state.game_state.display.irq_control_flag, 0);
         assert!(state.ppu.forced_blank);
         assert_eq!(state.ppu.brightness, 0x0f);
         assert_eq!(state.ppu.render_pitch, (PPU_X_PIXELS * 4) as u32);
@@ -10294,17 +10461,17 @@ mod tests {
 
         assert_eq!(state.ram[SUBMODULE_INDEX], 1);
         assert_eq!(state.ram[SUBSUBMODULE_INDEX], 1);
-        assert_eq!(state.display_state().screen_brightness, 15);
-        assert_eq!(state.display_state().main_screen_layers, 16);
-        assert_eq!(state.display_state().bg_mode, 9);
+        assert_eq!(state.game_state.display.screen_brightness, 15);
+        assert_eq!(state.game_state.display.main_screen_layers, 16);
+        assert_eq!(state.game_state.display.bg_mode, 9);
         assert_eq!(state.palette_filter().color_window_selection(), 0x20);
         assert_eq!(state.palette_filter().color_math_control(), 0x20);
         assert_eq!(state.palette_filter().fixed_color_red(), 0x20);
         assert_eq!(state.palette_filter().fixed_color_green(), 0x40);
         assert_eq!(state.palette_filter().fixed_color_blue(), 0x80);
-        assert_eq!(state.display_state().core_update_disable_flag, 0x80);
-        assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
-        assert_eq!(state.display_state().pending_nmi_subroutine, 0);
+        assert_eq!(state.game_state.display.core_update_disable_flag, 0x80);
+        assert_eq!(state.game_state.display.nmi_load_target_page(), 0x46);
+        assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
         assert_eq!(state.system_signals().sound_effect_2(), 0);
         assert_eq!(state.ending_scratch().primary_word(), 0x1bfe);
         assert_eq!(state.ending_scratch().secondary_word(), 0x17fe);
@@ -10362,8 +10529,8 @@ mod tests {
         state.set_chr_halfslot_request(20);
         state.graphics_load_chr_half_slot();
 
-        assert_eq!(state.display_state().nmi_load_target_page(), 0x46);
-        assert_eq!(state.display_state().pending_nmi_subroutine, 11);
+        assert_eq!(state.game_state.display.nmi_load_target_page(), 0x46);
+        assert_eq!(state.game_state.display.pending_nmi_subroutine, 11);
         assert_eq!(&state.ram[0x11000..0x11004], &[0, 1, 2, 3]);
         assert_eq!(&state.ram[0x11010..0x11014], &[16, 17, 17, 19]);
         assert_eq!(&state.ram[0x11020..0x11024], &[24, 25, 26, 27]);
@@ -10381,7 +10548,7 @@ mod tests {
 
         assert_eq!(state.ppu.vram[0x4600], 0x1234);
         assert_eq!(state.ppu.vram[0x4601], 0xabcd);
-        assert_eq!(state.display_state().pending_nmi_subroutine, 0);
+        assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     }
 
     #[test]
@@ -10414,14 +10581,14 @@ mod tests {
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_Y_COORD, 0x12);
         state.ram[LINK_Y_COORD + 0x6f] = 0x34;
-        state.ram[SAVE_DUNG_INFO] = 0x56;
+        state.save_progress_mut().set_dungeon_info_word(0, 0x56);
 
         state.module00_intro();
 
-        assert_eq!(state.display_state().irq_control_flag, 0xff);
-        assert_eq!(state.display_state().main_screen_layers, 0x15);
-        assert_eq!(state.display_state().sub_screen_layers, 0);
-        assert_eq!(state.world_location_state().indoor_flag, 0);
+        assert_eq!(state.game_state.display.irq_control_flag, 0xff);
+        assert_eq!(state.game_state.display.main_screen_layers, 0x15);
+        assert_eq!(state.game_state.display.sub_screen_layers, 0);
+        assert_eq!(state.game_state.world.location.indoor_flag(), 0);
         assert_eq!(state.system_signals().music_control(), 0xf1);
         assert_eq!(state.ram[MAIN_MODULE_INDEX], 1);
         assert_eq!(state.ram[SUBMODULE_INDEX], 0);

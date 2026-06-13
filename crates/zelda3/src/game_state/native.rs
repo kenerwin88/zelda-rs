@@ -16,6 +16,7 @@ mod oam;
 mod player;
 mod poly;
 mod sprites;
+mod system;
 mod world;
 
 pub(crate) use display::{
@@ -49,30 +50,29 @@ pub(crate) use dungeon::{
 };
 pub(crate) use effects::{
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BlastWallState, BombosBlastState, BombosFireColumnState, BombosSpellState,
-    DiggingGamePrizeState, DoorDebrisState, EffectAngleScratchState, EffectState,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
-    LanmolaSegmentMotionState, NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
-    NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
-    NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
-    NativeLanmolaSegmentMotionBridgeMut, NativeMoldormHistoryBridgeMut, NativeQuakeBoltBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    BombosBlastState, BombosFireColumnState, BombosSpellState, DiggingGamePrizeState,
+    DoorDebrisState, EffectAngleScratchState, EffectState, HappinessPondRupeeSlotState,
+    HappinessPondRupeeSnapshot, HistoryPositionState, LanmolaSegmentMotionState,
+    NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut,
+    NativeBlastWallFireballBridgeMut, NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut,
+    NativeBombosFireColumnBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
+    NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
+    NativeHappinessPondRupeeBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
+    NativeMoldormHistoryBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut, NativeTowerSealBridgeMut,
     NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
     NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, QuakeSpellState, SkullWoodsFireSlotState,
-    SkullWoodsFireState, TowerSealOrbitState, TowerSealSparkleState, TowerSealState,
-    WeatherVaneDebrisSlotState,
+    TowerSealOrbitState, TowerSealSparkleState, TowerSealState, WeatherVaneDebrisSlotState,
 };
+#[cfg(test)]
+use effects::{BlastWallState, SkullWoodsFireState};
 pub(crate) use ending::{
     AttractSceneState, EndingCreditState, EndingState, IntroActorRead, IntroSceneState,
     NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut,
     NativeIntroSceneBridgeMut,
 };
-pub(crate) use frame::{
-    FrameState, NativeFrameStateBridgeMut, NativeSystemSignalsBridgeMut, SystemSignalsState,
-};
+pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use inventory::{
     DungeonKeySlotsState, InventoryItemsState, InventoryState, MirrorWarpState,
     NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut,
@@ -99,10 +99,11 @@ pub(crate) use misc::{
 };
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 pub(crate) use player::{
-    Bg1MovementAccumulatorState, NativeBg1MovementAccumulatorBridgeMut, NativePushedBlockBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSwimAccelerationBridgeMut,
-    NativeTileDetectionBridgeMut, PlayerState, PlayerTileAttributeTableState, PushedBlockState,
-    SpecialExitPositionState, SwimAccelerationState, TileDetectionState,
+    Bg1MovementAccumulatorState, FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut,
+    NativeFollowerLinkBridgeMut, NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerSnapshotState,
+    PlayerState, PlayerTileAttributeTableState, PushedBlockState, SpecialExitPositionState,
+    SwimAccelerationState, TileDetectionState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
@@ -110,10 +111,10 @@ pub(crate) use poly::{
     PolyProjectedVerticesState, PolyRasterEdgeState, PolyRuntimeState, PolyState,
 };
 pub(crate) use sprites::{
-    armos_knight_home_position_from_ram, arrghus_puff_home_position_from_ram, BossHomePositionRead,
-    CachedSpriteRead, ChainChompHistoryState, DualLayerTileCacheState,
-    EnemyDamageSubclassTableState, EtherOrbitState, FollowerRuntimeState, GarnishRuntimeState,
-    MazeGameTimerState, NativeArmosKnightHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
+    AncillaSlotSnapshot, BossHomePositionRead, CachedSpriteRead, ChainChompHistoryState,
+    DualLayerTileCacheState, EnemyDamageSubclassTableState, EtherOrbitState, FollowerRuntimeState,
+    GarnishRuntimeState, MazeGameTimerState, NativeArmosKnightHomePositionBridgeMut,
+    NativeArrghusPuffHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
     NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
     NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
@@ -122,9 +123,15 @@ pub(crate) use sprites::{
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, SpriteDrawHitboxWorkState, SpriteState, SpriteSystemState,
-    SpriteWorkspaceState, TagalongSlotRead,
+    OverworldSpritePresenceState, SpriteDrawHitboxWorkState, SpriteSlotSnapshot, SpriteState,
+    SpriteSystemState, SpriteWorkspaceState, TagalongSlotRead,
 };
+pub(crate) use system::{
+    MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, NativeSystemWorkAreaBridgeMut,
+    SystemSignalsState,
+};
+#[cfg(test)]
+use world::OverworldMap16State;
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
@@ -135,9 +142,9 @@ pub(crate) use world::{
     NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
     NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
     NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableRead,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16SourcePage, OverworldMap16State,
-    RoomBoundsState, WeatherVaneState, WorldCameraBoundariesState, WorldLocationState,
-    WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldState, WorldTransientState,
+    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16SourcePage, RoomBoundsState,
+    WeatherVaneState, WorldCameraBoundariesState, WorldLocationState, WorldPaletteThemeState,
+    WorldRegionState, WorldScrollState, WorldState, WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -255,6 +262,7 @@ impl GameState {
 mod tests {
     use super::*;
     use crate::game_state::constants::messaging as messaging_constants;
+    use crate::game_state::native::world::DOOR_ANIMATION_REPLACEMENT_TILE_INDEX;
     use snes::WRAM_SIZE;
 
     #[test]
@@ -276,12 +284,11 @@ mod tests {
         assert_eq!(frame.saved_module_for_menu, 5);
         assert_eq!(frame.modal_pause_flag, 1);
 
-        frame.main_module = 14;
-        frame.submodule = 3;
-        frame.subsubmodule = 1;
-        frame.frame_counter = 0x80;
-        frame.saved_module_for_menu = 7;
-        frame.modal_pause_flag = 2;
+        frame.set_main_module_word(0x030e);
+        frame.set_subsubmodule(1);
+        frame.set_frame_counter(0x80);
+        frame.set_saved_module_for_menu(7);
+        frame.set_modal_pause_flag(2);
         frame.write_to_ram(&mut ram);
 
         assert_eq!(ram[MAIN_MODULE], 14);
@@ -290,6 +297,36 @@ mod tests {
         assert_eq!(ram[FRAME_COUNTER], 0x80);
         assert_eq!(ram[SAVED_MODULE_FOR_MENU], 7);
         assert_eq!(ram[MODAL_PAUSE_FLAG], 2);
+    }
+
+    #[test]
+    fn frame_state_owns_module_and_pause_behavior() {
+        let mut frame = FrameState {
+            main_module: 0xfe,
+            submodule: 0xff,
+            subsubmodule: 0,
+            frame_counter: 0xff,
+            saved_module_for_menu: 0x44,
+            modal_pause_flag: 0xff,
+        };
+
+        frame.increment_submodule();
+        frame.decrement_submodule();
+        frame.increment_subsubmodule();
+        frame.decrement_subsubmodule();
+        frame.increment_frame_counter();
+        frame.clear_saved_module_for_menu();
+        frame.save_main_module_for_menu();
+        frame.save_submodule_for_menu();
+        frame.clear_modal_pause_flag();
+        let modal_pause_flag = frame.increment_modal_pause_flag();
+
+        assert_eq!(frame.submodule, 0xff);
+        assert_eq!(frame.subsubmodule, 0);
+        assert_eq!(frame.frame_counter, 0);
+        assert_eq!(frame.saved_module_for_menu, 0xff);
+        assert_eq!(frame.modal_pause_flag, 1);
+        assert_eq!(modal_pause_flag, 1);
     }
 
     #[test]
@@ -401,8 +438,41 @@ mod tests {
         assert_eq!(system_signals.death_backup_current_music(), 0x22);
         assert_eq!(system_signals.death_backup_ambient_sound(), 0x33);
 
+        let primary_resume = MsuResumeInfoState {
+            tag: 0x1122_3344,
+            offset: 0x5566_7788,
+            samples_until_repeat: 0x99aa_bbcc,
+            range_cur: 0x1234,
+            range_repeat: 0x5678,
+            initial_packet_bytes: 0x1122_3344_5566_7788,
+            orig_track: 0x12,
+            actual_track: 0x34,
+        };
+        let alternate_resume = MsuResumeInfoState {
+            tag: 0xaabb_ccdd,
+            offset: 0xeeff_0011,
+            samples_until_repeat: 0x2233_4455,
+            range_cur: 0x6677,
+            range_repeat: 0x8899,
+            initial_packet_bytes: 0x8877_6655_4433_2211,
+            orig_track: 0x56,
+            actual_track: 0x78,
+        };
+        let mut system_signals = system_signals;
+        system_signals.set_msu_resume_info(MsuResumeSlot::Primary, primary_resume);
+        system_signals.set_msu_resume_info(MsuResumeSlot::Alternate, alternate_resume);
+
         let mut projected = vec![0; WRAM_SIZE];
         system_signals.write_to_ram(&mut projected);
+        let reloaded = SystemSignalsState::load_from_ram(&projected);
+        assert_eq!(
+            reloaded.msu_resume_info(MsuResumeSlot::Primary),
+            primary_resume
+        );
+        assert_eq!(
+            reloaded.msu_resume_info(MsuResumeSlot::Alternate),
+            alternate_resume
+        );
         for offset in [
             MUSIC_CONTROL,
             CURRENT_MUSIC_CONTROL,
@@ -425,6 +495,44 @@ mod tests {
         ] {
             assert_eq!(projected[offset], ram[offset]);
         }
+    }
+
+    #[test]
+    fn system_signals_state_owns_sound_and_update_behavior() {
+        let mut system_signals = SystemSignalsState::default();
+        system_signals.set_current_music_control(0x12);
+        system_signals.set_ambient_sound_effect(0x05);
+
+        assert!(system_signals.queue_sound_effect_1_if_empty(0x2d));
+        assert!(!system_signals.queue_sound_effect_1_if_empty(0x33));
+        assert!(system_signals.queue_sound_effect_2_if_empty(0x1b));
+
+        system_signals.set_sound_effect_1_word(0x3412);
+        system_signals.set_ambient_sound_effect_word(0x5607);
+        system_signals.save_current_music_as_last();
+        system_signals.save_ambient_sound_effect_as_last();
+        system_signals.set_game_over_check_flag(0xff);
+        system_signals.increment_game_over_check_flag();
+        system_signals.set_restart_check_flag(0x44);
+        system_signals.clear_restart_check_flag();
+        system_signals.clear_sound_effect_2();
+        system_signals.clear_ambient_sound_effect();
+        system_signals.set_raw_sfx_pan_value(0x80);
+
+        assert_eq!(system_signals.sound_effect_1(), 0x56);
+        assert_eq!(system_signals.sound_effect_2(), 0);
+        assert_eq!(system_signals.ambient_sound_effect(), 0);
+        assert_eq!(system_signals.last_music_control(), 0x12);
+        assert_eq!(system_signals.last_ambient_sound_effect(), 0x07);
+        assert_eq!(system_signals.game_over_check_flag(), 0);
+        assert_eq!(system_signals.restart_check_flag(), 0);
+        assert_eq!(system_signals.raw_sfx_pan_value(), 0x80);
+        assert_eq!(system_signals.increment_cgram_update_flag(), 1);
+        assert_eq!(system_signals.increment_hud_update_flag(), 1);
+        system_signals.clear_cgram_update_flag();
+        system_signals.clear_hud_update_flag();
+        assert!(!system_signals.should_update_cgram());
+        assert!(!system_signals.should_update_hud());
     }
 
     #[test]
@@ -481,6 +589,128 @@ mod tests {
     }
 
     #[test]
+    fn native_system_work_area_bridge_clears_startup_work_ranges() {
+        const STARTUP_LOW_MEMORY_START: usize = 0;
+        const STARTUP_LOW_MEMORY_LEN: usize = 0x2000;
+        const ATTRACT_LOW_WORK_AREA_START: usize = 0x20;
+        const ATTRACT_LOW_WORK_AREA_LEN: usize = 0x51;
+        const POLY_THREAD_WORK_AREA_START: usize = 0x1f00;
+        const POLY_THREAD_WORK_AREA_LEN: usize = 0x100;
+
+        let mut ram = vec![0xff; WRAM_SIZE];
+        {
+            let mut bridge = NativeSystemWorkAreaBridgeMut::new(&mut ram);
+            bridge.clear_startup_low_memory();
+        }
+
+        assert!(
+            ram[STARTUP_LOW_MEMORY_START..STARTUP_LOW_MEMORY_START + STARTUP_LOW_MEMORY_LEN]
+                .iter()
+                .all(|&value| value == 0)
+        );
+        assert_eq!(ram[STARTUP_LOW_MEMORY_START + STARTUP_LOW_MEMORY_LEN], 0xff);
+
+        ram.fill(0xff);
+        {
+            let mut bridge = NativeSystemWorkAreaBridgeMut::new(&mut ram);
+            bridge.clear_attract_low_work_area();
+            bridge.clear_poly_thread_work_area();
+        }
+
+        assert!(ram
+            [ATTRACT_LOW_WORK_AREA_START..ATTRACT_LOW_WORK_AREA_START + ATTRACT_LOW_WORK_AREA_LEN]
+            .iter()
+            .all(|&value| value == 0));
+        assert_eq!(ram[ATTRACT_LOW_WORK_AREA_START - 1], 0xff);
+        assert_eq!(
+            ram[ATTRACT_LOW_WORK_AREA_START + ATTRACT_LOW_WORK_AREA_LEN],
+            0xff
+        );
+        assert!(ram
+            [POLY_THREAD_WORK_AREA_START..POLY_THREAD_WORK_AREA_START + POLY_THREAD_WORK_AREA_LEN]
+            .iter()
+            .all(|&value| value == 0));
+        assert_eq!(ram[POLY_THREAD_WORK_AREA_START - 1], 0xff);
+    }
+
+    #[test]
+    fn native_system_work_area_bridge_writes_poly_thread_bootstrap() {
+        const POLY_THREAD_BOOTSTRAP_BYTES_OFFSET: usize = 0x1f32;
+        const POLY_THREAD_BOOTSTRAP_BYTES: [u8; 13] =
+            [9, 0, 0x1f, 0, 0, 0, 0, 0, 0, 0x30, 0x1d, 0xf8, 9];
+
+        let mut ram = vec![0; WRAM_SIZE];
+        NativeSystemWorkAreaBridgeMut::new(&mut ram).write_poly_thread_bootstrap_bytes();
+
+        assert_eq!(
+            &ram[POLY_THREAD_BOOTSTRAP_BYTES_OFFSET
+                ..POLY_THREAD_BOOTSTRAP_BYTES_OFFSET + POLY_THREAD_BOOTSTRAP_BYTES.len()],
+            &POLY_THREAD_BOOTSTRAP_BYTES
+        );
+    }
+
+    #[test]
+    fn native_system_work_area_bridge_clears_intro_wram_block_columns() {
+        const INTRO_CLEAR_BLOCK_BASE: usize = 0x2000;
+        const INTRO_CLEAR_BLOCK_STRIDE: usize = 0x2000;
+
+        let mut ram = vec![0xff; WRAM_SIZE];
+        let result =
+            NativeSystemWorkAreaBridgeMut::new(&mut ram).clear_intro_wram_block_columns(4, 0);
+
+        assert_eq!(result, 0);
+        for block in 0..15 {
+            let base = INTRO_CLEAR_BLOCK_BASE + block * INTRO_CLEAR_BLOCK_STRIDE;
+            assert_eq!(&ram[base + 2..base + 6], &[0, 0, 0, 0]);
+            assert_eq!(ram[base], 0xff);
+            assert_eq!(ram[base + 1], 0xff);
+            assert_eq!(ram[base + 6], 0xff);
+        }
+    }
+
+    #[test]
+    fn native_dungeon_door_bridge_loads_room_tilemap_addresses_from_door_info() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut doors = DungeonDoorState::default();
+        let door_info = [0x34, 0x12, 0x78, 0x56, 0xff, 0xff, 0xaa, 0xaa];
+
+        {
+            let mut bridge = NativeDungeonDoorBridgeMut::new(&mut doors, &mut ram);
+            bridge.load_room_door_tilemap_addresses_from_info(&door_info);
+        }
+
+        assert_eq!(doors.door_tilemap_address(0), 0x1234);
+        assert_eq!(doors.door_tilemap_address(1), 0x5678);
+        assert_eq!(doors.door_tilemap_address(2), 0);
+        assert_eq!(read_le_u16(&ram, DUNG_DOOR_TILEMAP_ADDRESS), 0x1234);
+        assert_eq!(read_le_u16(&ram, DUNG_DOOR_TILEMAP_ADDRESS + 2), 0x5678);
+        assert_eq!(read_le_u16(&ram, DUNG_DOOR_TILEMAP_ADDRESS + 4), 0);
+    }
+
+    #[test]
+    fn native_dungeon_room_door_setup_bridge_loads_adjacent_doors_from_door_info() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut setup = DungeonRoomDoorSetupState::default();
+        let door_info = [0x10, 0x00, 0x01, 0x40, 0x00, 0x02, 0xff, 0xff, 0xaa, 0xaa];
+
+        {
+            let mut bridge = NativeDungeonRoomDoorSetupBridgeMut::new(&mut setup, &mut ram);
+            bridge.load_adjacent_doors_from_room_info(&door_info);
+        }
+
+        assert_eq!(setup.adjacent_door(0), 0x0010);
+        assert_eq!(setup.adjacent_door(1), 0x4001);
+        assert_eq!(setup.adjacent_door(2), 0x0200);
+        assert_eq!(setup.adjacent_door(3), 0xffff);
+        assert_eq!(setup.adjacent_door_flags(), 0xc000);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS), 0x0010);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS + 2), 0x4001);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS + 4), 0x0200);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS + 6), 0xffff);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS_FLAGS), 0xc000);
+    }
+
+    #[test]
     fn oam_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OAM_PRIORITY_VALUE, 0x2100);
@@ -523,6 +753,43 @@ mod tests {
         let mut projected = vec![0; WRAM_SIZE];
         oam.write_to_ram(&mut projected);
         assert_eq!(OamState::load_from_ram(&projected), oam);
+    }
+
+    #[test]
+    fn oam_state_owns_scalar_pointer_behavior() {
+        let mut oam = OamState::default();
+
+        oam.set_priority_word(0x2201);
+        oam.subtract_priority_word(0x0001);
+        oam.set_priority_high(0x30);
+        oam.set_current_pointer(OAM_BUF as u16 + 4);
+        oam.add_current_pointer(4);
+        oam.subtract_current_pointer(2);
+        oam.set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16 + 1);
+        oam.add_current_extended_pointer(2);
+        oam.subtract_current_extended_pointer(1);
+        oam.set_sprite_sorting_setting(2);
+        oam.set_priority_value_2(0x1100);
+        oam.set_sort_sprites_offset(0x0030);
+        oam.set_player_oam_computed_value(0x44);
+
+        assert_eq!(oam.priority_word(), 0x3000);
+        assert_eq!(oam.current_pointer(), OAM_BUF as u16 + 6);
+        assert_eq!(
+            oam.current_extended_pointer(),
+            BYTEWISE_EXTENDED_OAM as u16 + 2
+        );
+        assert_eq!(oam.sprite_sorting_setting(), 2);
+        assert!(oam.has_sprite_sorting());
+        assert_eq!(oam.priority_value_2(), 0x1100);
+        assert_eq!(oam.sort_sprites_offset(), 0x0030);
+        assert_eq!(oam.player_oam_computed_value(), 0x44);
+
+        oam.clear_sprite_sorting_setting();
+        oam.clear_sort_sprites_offset();
+        assert_eq!(oam.sprite_sorting_setting(), 0);
+        assert!(!oam.has_sprite_sorting());
+        assert_eq!(oam.sort_sprites_offset(), 0);
     }
 
     #[test]
@@ -1469,6 +1736,145 @@ mod tests {
     }
 
     #[test]
+    fn tile_detection_state_owns_tile_probe_behavior() {
+        let mut detection = TileDetectionState::default();
+
+        detection.set_y(0x1200);
+        detection.set_y_high(0x34);
+        detection.set_x(0x5678);
+        detection.set_location_calc_mask(0x00ff);
+        detection.set_interacting_tile(0xab00);
+        detection.set_interacting_tile_low(0xcd);
+        detection.set_interaction_scratch_y_bytes(0x11, 0x22);
+        detection.set_tile_probe_anchor(0x3344);
+        detection.set_diagonal_tile(0x0001);
+        detection.or_diagonal_tile(0x0002);
+        detection.set_stair_tile(0x04);
+        detection.or_stair_tile(0x08);
+        detection.or_block_flags(0x0100);
+        detection.or_deepwater(0x0002);
+        detection.or_normal_tiles(0x0004);
+        detection.or_misc_tiles(0x0008);
+        detection.or_thick_grass(0x0010);
+        detection.or_vertical_ledge(0x20);
+        detection.or_horizontal_ledge(0x40);
+        detection.or_chest(0x0080);
+        detection.set_key_lock_gravestones(0x55);
+        detection.or_spike_cactus_tiles(0xaa);
+        detection.set_tile_type(0x1234);
+        detection.or_spike_floor_and_triggers(0x01);
+        detection.or_dashable_tiles(0x02);
+        detection.set_staircase_cache(0x03);
+        detection.or_slope_collision_bits(0x0004);
+        detection.or_collision_bits(0x0008);
+        detection.or_inroom_staircase(0x0010);
+        detection.set_liftable_tile_index(0x12);
+        detection.set_tile_collision_bits_primary(0x34);
+        detection.set_liftable_action_index_primary(0x56);
+        detection.set_liftable_action_index_secondary(0x78);
+
+        assert_eq!(detection.y(), 0x3400);
+        assert_eq!(detection.x(), 0x5678);
+        assert_eq!(detection.location_calc_mask(), 0x00ff);
+        assert_eq!(detection.interacting_tile(), 0xabcd);
+        assert_eq!(detection.interaction_scratch_y(), 0x2211);
+        assert_eq!(detection.interaction_scratch_x(), 0x3344);
+        assert_eq!(detection.diagonal_tile(), 0x0003);
+        assert_eq!(detection.stair_tile(), 0x0c);
+        assert_eq!(detection.block_flags(), 0x0100);
+        assert_eq!(detection.deepwater(), 0x0002);
+        assert_eq!(detection.normal_tiles(), 0x0004);
+        assert_eq!(detection.misc_tiles(), 0x0008);
+        assert_eq!(detection.thick_grass(), 0x0010);
+        assert_eq!(detection.ledge_mask(), 0x60);
+        assert_eq!(detection.chest(), 0x0080);
+        assert_eq!(detection.key_lock_gravestones_low(), 0x55);
+        assert_eq!(detection.spike_cactus_tiles(), 0xaa);
+        assert_eq!(detection.tile_type(), 0x1234);
+        assert_eq!(detection.spike_floor_and_triggers(), 0x01);
+        assert_eq!(detection.dashable_tiles(), 0x02);
+        assert_eq!(detection.staircase_cache(), 0x03);
+        assert_eq!(detection.slope_collision_bits(), 0x0004);
+        assert_eq!(detection.collision_bits(), 0x0008);
+        assert_eq!(detection.inroom_staircase(), 0x0010);
+        assert_eq!(detection.liftable_tile_index(), 0x12);
+        assert_eq!(detection.tile_collision_bits_primary(), 0x34);
+        assert_eq!(detection.liftable_action_index_primary(), 0x56);
+    }
+
+    #[test]
+    fn follower_link_state_owns_tagalong_link_semantics() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, LINK_X_COORD, 0x1234);
+        write_le_u16(&mut ram, LINK_Y_COORD, 0x5678);
+        ram[LINK_Z_COORD] = 0xf1;
+        ram[LINK_X_VELOCITY] = 0x04;
+        ram[LINK_Y_VELOCITY] = 0;
+        ram[LINK_IS_ON_LOWER_LEVEL] = 2;
+        ram[LINK_FACING] = 8;
+        ram[LINK_SPEED_SETTING] = 4;
+        ram[LINK_HANDLER_STATE] = 17;
+        ram[LINK_AUXILIARY_STATE] = 0;
+        ram[LINK_IS_RUNNING] = 0;
+
+        let link = FollowerLinkState::load_from_ram(&ram);
+
+        assert_eq!(link.x(), 0x1234);
+        assert_eq!(link.y(), 0x5678);
+        assert_eq!(link.z_for_follow(), 0);
+        assert_eq!(link.z_for_oam(), 0xf1);
+        assert!(link.is_moving());
+        assert_eq!(link.floor(), 2);
+        assert_eq!(link.floor_layer_bits(), 0x0c);
+        assert_eq!(link.oam_priority_for_floor(), 0x30);
+        assert_eq!(link.facing_layer_bits(), 4);
+        assert_eq!(link.speed_setting(), 4);
+        assert!(link.is_ground_swim_or_dash_start());
+        assert!(link.can_open_follower_message());
+        assert!(link.can_drop_follower());
+
+        link.write_to_ram(&mut ram);
+        assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x1234);
+        assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x5678);
+        assert_eq!(ram[LINK_SPEED_SETTING], 4);
+
+        ram[LINK_Z_COORD] = 0xf1;
+        ram[LINK_Z_COORD + 1] = 0xff;
+        assert_eq!(FollowerLinkState::load_from_ram(&ram).z_for_oam(), 0);
+    }
+
+    #[test]
+    fn native_follower_link_bridge_refreshes_projection_before_dual_writes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, LINK_X_COORD, 0x1234);
+        write_le_u16(&mut ram, LINK_Y_COORD, 0x5678);
+        ram[LINK_SPEED_SETTING] = 4;
+        ram[LINK_HANDLER_STATE] = 17;
+        ram[LINK_IS_RUNNING] = 1;
+        let mut link = FollowerLinkState::default();
+
+        {
+            let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
+            bridge.set_speed_setting(12);
+            bridge.set_ground_state();
+            bridge.clear_running();
+            bridge.immobilize();
+            bridge.enable_cutscene_immunity();
+        }
+
+        assert_eq!(link.x(), 0x1234);
+        assert_eq!(link.y(), 0x5678);
+        assert_eq!(link.speed_setting(), 12);
+        assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x1234);
+        assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x5678);
+        assert_eq!(ram[LINK_SPEED_SETTING], 12);
+        assert_eq!(ram[LINK_HANDLER_STATE], 0);
+        assert_eq!(ram[LINK_IS_RUNNING], 0);
+        assert_eq!(ram[FLAG_IS_LINK_IMMOBILIZED], 1);
+        assert_eq!(ram[LINK_DISABLE_SPRITE_DAMAGE], 1);
+    }
+
+    #[test]
     fn special_exit_position_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, LINK_X_COORD_SPEXIT, 0x0900);
@@ -1479,6 +1885,21 @@ mod tests {
         assert_eq!(position.y(), 0x0500);
         assert_eq!(position.map_zoom_x_offset(), 0x0010);
         assert_eq!(position.map_zoom_y(), 0x0008);
+
+        write_le_u16(&mut ram, LINK_X_COORD, 0x0300);
+        write_le_u16(&mut ram, LINK_Y_COORD, 0x0400);
+        position.set_x(0x0500);
+        position.set_y(0x0600);
+        position.offset_position(0x0010, 0x0020);
+        assert_eq!(position.x(), 0x0510);
+        assert_eq!(position.y(), 0x0620);
+        position.store_from_player_ram(&ram);
+        assert_eq!(position.x(), 0x0300);
+        assert_eq!(position.y(), 0x0400);
+        position.set_position(0x0700, 0x0800);
+        position.restore_player_position_to_ram(&mut ram);
+        assert_eq!(read_le_u16(&ram, LINK_X_COORD), 0x0700);
+        assert_eq!(read_le_u16(&ram, LINK_Y_COORD), 0x0800);
 
         position = SpecialExitPositionState::load_from_ram(&[0]);
         let mut projected = vec![0; WRAM_SIZE];
@@ -1528,7 +1949,7 @@ mod tests {
         write_le_u16(&mut ram, SWIM_ACCELERATION, 7);
         write_le_u16(&mut ram, SWIM_ACCELERATION + 2, 8);
 
-        let swim = SwimAccelerationState::load_from_ram(&ram);
+        let mut swim = SwimAccelerationState::load_from_ram(&ram);
         assert_eq!(swim.mode(0), 1);
         assert_eq!(swim.mode(2), 2);
         assert_eq!(swim.mode(1), 0);
@@ -1542,6 +1963,26 @@ mod tests {
         assert_eq!(swim.acceleration(0), 7);
         assert_eq!(swim.acceleration(2), 8);
         assert!(swim.has_any_acceleration());
+        assert!(swim.set_mode(0, 0x10));
+        assert!(swim.set_mode(2, 0x20));
+        assert!(!swim.set_mode(1, 0x30));
+        swim.clear_mode_low_axis();
+        assert!(swim.set_speed_active_flag(0, 0x40));
+        swim.set_max_speed_both_axes(0x0180);
+        assert!(swim.set_max_speed(2, 0x0240));
+        assert!(swim.set_acceleration_direction(2, 0x50));
+        assert!(swim.set_acceleration(0, 0x60));
+        assert!(swim.set_acceleration(2, 0x70));
+        assert!(swim.clear_axis_motion(0));
+        assert!(!swim.clear_axis_motion(1));
+        assert_eq!(swim.mode(0), 0);
+        assert_eq!(swim.mode(2), 0x20);
+        assert_eq!(swim.speed_active_flag(0), 0);
+        assert_eq!(swim.max_speed(0), 0);
+        assert_eq!(swim.max_speed(2), 0x0240);
+        assert_eq!(swim.acceleration_direction(2), 0x50);
+        assert_eq!(swim.acceleration(0), 0);
+        assert_eq!(swim.acceleration(2), 0x70);
 
         let mut projected = vec![0; WRAM_SIZE];
         swim.write_to_ram(&mut projected);
@@ -1606,7 +2047,7 @@ mod tests {
         ram[PUSHED_BLOCK_ANIMATION_TIMER] = 7;
         ram[PUSH_BLOCK_DIRECTION] = 6;
 
-        let pushed = PushedBlockState::load_from_ram(&ram);
+        let mut pushed = PushedBlockState::load_from_ram(&ram);
         assert_eq!(pushed.x(0), 0x1234);
         assert_eq!(pushed.y(1), 0x5678);
         assert_eq!(pushed.y_fixed24(1), 0x56789a);
@@ -1617,6 +2058,26 @@ mod tests {
         assert_eq!(pushed.push_direction(), 6);
         assert_eq!(pushed.push_direction_index(), 3);
         assert_eq!(pushed.x(2), 0);
+        pushed.init_slot(0, 0x2345, 0x6789);
+        assert!(pushed.set_facing_player(1, 5));
+        assert!(pushed.set_target_low(1, 0x0c));
+        pushed.set_push_direction(4);
+        pushed.set_animation_mode(2);
+        pushed.reset_animation_timer();
+        assert_eq!(pushed.decrement_animation_timer(), 8);
+        assert_eq!(pushed.advance_animation_mode(), 3);
+        assert!(pushed.set_x_fixed24(1, 0x00abcd));
+        assert!(pushed.set_y_fixed24(1, 0x001234));
+        assert!(!pushed.set_target_low(4, 0xff));
+        assert_eq!(pushed.x(0), 0x2345);
+        assert_eq!(pushed.y(0), 0x6789);
+        assert_eq!(pushed.x_fixed24(1), 0x00ab34);
+        assert_eq!(pushed.y_fixed24(1), 0x001234);
+        assert_eq!(pushed.target_low(1), 0x0c);
+        assert_eq!(pushed.facing_player(1), 5);
+        assert_eq!(pushed.push_direction(), 4);
+        assert_eq!(pushed.animation_mode(), 3);
+        assert_eq!(pushed.animation_timer(), 9);
 
         let mut projected = vec![0; WRAM_SIZE];
         pushed.write_to_ram(&mut projected);
@@ -1678,10 +2139,19 @@ mod tests {
         write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0x0056);
         write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0x0078);
 
-        let timer = MazeGameTimerState::load_from_ram(&ram);
+        let mut timer = MazeGameTimerState::load_from_ram(&ram);
         assert_eq!(timer.elapsed_low(), 0x0012);
         assert_eq!(timer.elapsed_high(), 0x0034);
         assert_eq!(timer.snapshot_low(), 0x0056);
+        assert_eq!(timer.snapshot_high(), 0x0078);
+        assert_eq!(timer.increment_elapsed_low(), 0x0013);
+        assert_eq!(timer.increment_elapsed_high(), 0x0035);
+        timer.capture_snapshot();
+        assert_eq!(timer.snapshot_low(), 0x0013);
+        assert_eq!(timer.snapshot_high(), 0x0035);
+        timer.clear_elapsed();
+        assert_eq!(timer.elapsed_low(), 0);
+        assert_eq!(timer.elapsed_high(), 0);
 
         let mut projected = vec![0; WRAM_SIZE];
         timer.write_to_ram(&mut projected);
@@ -1720,16 +2190,20 @@ mod tests {
         ram[PRIZE_DROP_CYCLE] = 2;
         ram[PRIZE_DROP_CYCLE + 15] = 7;
 
-        let cycle = PrizeDropCycleState::load_from_ram(&ram);
+        let mut cycle = PrizeDropCycleState::load_from_ram(&ram);
         assert_eq!(cycle.next_index_for_slot(0), 2);
         assert_eq!(cycle.next_index_for_slot(15), 7);
         assert_eq!(cycle.next_index_for_slot(16), 0);
+        assert_eq!(cycle.take_next_index(15), 7);
+        assert_eq!(cycle.take_next_index(15), 0);
+        assert_eq!(cycle.next_index_for_slot(15), 1);
+        assert_eq!(cycle.take_next_index(16), 0);
 
         let mut projected = vec![0; WRAM_SIZE];
         cycle.write_to_ram(&mut projected);
         assert_eq!(PrizeDropCycleState::load_from_ram(&projected), cycle);
         assert_eq!(projected[PRIZE_DROP_CYCLE], 2);
-        assert_eq!(projected[PRIZE_DROP_CYCLE + 15], 7);
+        assert_eq!(projected[PRIZE_DROP_CYCLE + 15], 1);
     }
 
     #[test]
@@ -1756,16 +2230,20 @@ mod tests {
         ram[DUAL_LAYER_TILE_CACHE] = 0x1c;
         ram[DUAL_LAYER_TILE_CACHE + 15] = 0x2a;
 
-        let cache = DualLayerTileCacheState::load_from_ram(&ram);
+        let mut cache = DualLayerTileCacheState::load_from_ram(&ram);
         assert_eq!(cache.tile_type(0), 0x1c);
         assert_eq!(cache.tile_type(15), 0x2a);
+        assert_eq!(cache.tile_type(16), 0);
+        assert!(cache.set_tile_type(15, 0x3b));
+        assert!(!cache.set_tile_type(16, 0x4c));
+        assert_eq!(cache.tile_type(15), 0x3b);
         assert_eq!(cache.tile_type(16), 0);
 
         let mut projected = vec![0; WRAM_SIZE];
         cache.write_to_ram(&mut projected);
         assert_eq!(DualLayerTileCacheState::load_from_ram(&projected), cache);
         assert_eq!(projected[DUAL_LAYER_TILE_CACHE], 0x1c);
-        assert_eq!(projected[DUAL_LAYER_TILE_CACHE + 15], 0x2a);
+        assert_eq!(projected[DUAL_LAYER_TILE_CACHE + 15], 0x3b);
     }
 
     #[test]
@@ -2023,18 +2501,27 @@ mod tests {
         ram[HITBOX_WORK_Y_OFFSET] = 0xfc;
         ram[DRAW_WORK_FLAGS_HI] = 0x80;
 
-        let work = SpriteDrawHitboxWorkState::load_from_ram(&ram);
+        let mut work = SpriteDrawHitboxWorkState::load_from_ram(&ram);
         assert_eq!(work.x_low(), 0x34);
         assert_eq!(work.y_low(), 0x12);
         assert_eq!(work.low_position_word(), 0x1234);
         assert_eq!(work.hitbox_y_low_offset(), 0xfc);
         assert_eq!(work.hitbox_x_high_offset(), 0x80);
+        work.set_low_position_word(0x9abc);
+        assert_eq!(work.offset_low_position(1, 2), (0xbd, 0x9c));
+        work.set_flags_high(0x7f);
+        work.set_offsets(0xfc, 0x08);
+        assert_eq!(work.low_position_word(), 0x9cbd);
+        assert_eq!(work.hitbox_y_low_offset(), 0xfc);
+        assert_eq!(work.hitbox_x_high_offset(), 0x08);
 
         let mut projected = vec![0; WRAM_SIZE];
         work.write_to_ram(&mut projected);
         assert_eq!(SpriteDrawHitboxWorkState::load_from_ram(&projected), work);
-        assert_eq!(projected[DRAW_WORK_FLAGS_HI], 0x80);
-        assert_eq!(projected[HITBOX_WORK_X_OFFSET], 0x80);
+        assert_eq!(projected[DRAW_WORK_POSITION_X], 0xbd);
+        assert_eq!(projected[DRAW_WORK_POSITION_Y], 0x9c);
+        assert_eq!(projected[DRAW_WORK_FLAGS_HI], 0x08);
+        assert_eq!(projected[HITBOX_WORK_X_OFFSET], 0x08);
     }
 
     #[test]
@@ -2809,6 +3296,25 @@ mod tests {
         assert_eq!(ram[SWAMOLA_TARGET_X_LO + 2], 0xef);
         assert_eq!(ram[SWAMOLA_TARGET_X_HI + 2], 0x23);
         assert_eq!(ram[BEAMOS_LASER_HISTORY_X_HI + 9], 0x55);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        effects
+            .sprite_histories
+            .write_moldorm_history_to_ram(&mut projected);
+        effects
+            .sprite_histories
+            .write_swamola_target_to_ram(&mut projected);
+        effects
+            .sprite_histories
+            .write_lanmola_segment_motion_to_ram(&mut projected);
+        assert_eq!(projected[MOLDORM_HISTORY_X_LO + 7], 0xaa);
+        assert_eq!(projected[MOLDORM_HISTORY_X_HI + 7], 0x12);
+        assert_eq!(projected[MOLDORM_HISTORY_Y_LO + 7], 0xbb);
+        assert_eq!(projected[MOLDORM_HISTORY_Y_HI + 7], 0x56);
+        assert_eq!(projected[SWAMOLA_TARGET_X_LO + 2], 0xef);
+        assert_eq!(projected[SWAMOLA_TARGET_X_HI + 2], 0x23);
+        assert_eq!(projected[BEAMOS_LASER_HISTORY_X_LO + 9], 0x67);
+        assert_eq!(projected[BEAMOS_LASER_HISTORY_X_HI + 9], 0x55);
     }
 
     #[test]
@@ -2939,6 +3445,24 @@ mod tests {
         assert_eq!(puff_home.y(), 0x5678);
 
         {
+            let mut home = NativeArrghusPuffHomePositionBridgeMut::new(
+                &mut state.boss_home_positions,
+                &mut ram,
+                puff_slot,
+            );
+            home.set_position(0x1357, 0x2468);
+        }
+        let puff_home = state
+            .boss_home_positions
+            .arrghus_puff_home_position(puff_slot);
+        assert_eq!(puff_home.x(), 0x1357);
+        assert_eq!(puff_home.y(), 0x2468);
+        assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0x57);
+        assert_eq!(ram[OVERLORD_Y_LO + puff_overlord_slot], 0x13);
+        assert_eq!(ram[OVERLORD_GEN1 + puff_overlord_slot], 0x68);
+        assert_eq!(ram[OVERLORD_GEN3 + puff_overlord_slot], 0x24);
+
+        {
             let mut home = NativeArmosKnightHomePositionBridgeMut::new(
                 &mut state.boss_home_positions,
                 &mut ram,
@@ -2972,6 +3496,15 @@ mod tests {
         let mut state = SpriteState::load_from_ram(&native_ram);
 
         {
+            let mut home = NativeArrghusPuffHomePositionBridgeMut::new(
+                &mut state.boss_home_positions,
+                &mut ram,
+                puff_slot,
+            );
+            home.set_position(0x1357, 0x2468);
+        }
+
+        {
             let mut home = NativeArmosKnightHomePositionBridgeMut::new(
                 &mut state.boss_home_positions,
                 &mut ram,
@@ -2984,11 +3517,14 @@ mod tests {
             .boss_home_positions
             .arrghus_puff_home_position(puff_slot);
         let armos_home = state.boss_home_positions.armos_knight_home_position(3);
-        assert_eq!(puff_home.x(), 0x1234);
-        assert_eq!(puff_home.y(), 0x5678);
+        assert_eq!(puff_home.x(), 0x1357);
+        assert_eq!(puff_home.y(), 0x2468);
         assert_eq!(armos_home.x(), 0x9abc);
         assert_eq!(armos_home.y(), 0xdef0);
-        assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0xff);
+        assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0x57);
+        assert_eq!(ram[OVERLORD_Y_LO + puff_overlord_slot], 0x13);
+        assert_eq!(ram[OVERLORD_GEN1 + puff_overlord_slot], 0x68);
+        assert_eq!(ram[OVERLORD_GEN3 + puff_overlord_slot], 0x24);
         assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
         assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
         assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
@@ -4231,6 +4767,74 @@ mod tests {
     }
 
     #[test]
+    fn world_camera_boundaries_state_owns_camera_target_and_cache_behavior() {
+        let mut boundaries = WorldCameraBoundariesState::default();
+
+        boundaries.set_camera_y_coord_scroll_low(0x0101);
+        boundaries.set_camera_y_coord_scroll_hi(0x0202);
+        boundaries.set_camera_x_coord_scroll_low(0x0303);
+        boundaries.set_camera_x_coord_scroll_hi(0x0404);
+        assert_eq!(boundaries.add_camera_scroll_for_axis(true, 0x10), 0x0414);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0416);
+        boundaries.set_camera_scroll_from_link_for_axis(false, 0x1200);
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x1202);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x1200);
+
+        boundaries.set_up_down_scroll_target(0x0505);
+        boundaries.set_up_down_scroll_target_end(0x1515);
+        boundaries.set_left_right_scroll_target(0x0606);
+        boundaries.set_left_right_scroll_target_end(0x1616);
+        boundaries.cache_scroll_targets();
+        boundaries.set_up_down_scroll_target(0xaaaa);
+        boundaries.restore_scroll_targets_from_cached();
+        assert_eq!(boundaries.up_down_scroll_target(0), 0x0505);
+        assert_eq!(boundaries.up_down_scroll_target(1), 0x1515);
+        assert_eq!(boundaries.up_down_scroll_target(2), 0x0606);
+        assert_eq!(boundaries.up_down_scroll_target(3), 0x1616);
+
+        boundaries.set_overworld_scroll_up_counter(0x0707);
+        boundaries.set_overworld_scroll_left_counter(0x0808);
+        boundaries.set_opposed_scroll_counter_pair(2, 0x0010);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(2), 0x0010);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(3), 0xfff0);
+        boundaries.clear_opposed_scroll_counters(2);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(2), 0);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(3), 0);
+
+        boundaries.set_special_exit_room_bounds(0x0909, 0x0a0a, 0x0b0b, 0x0c0c);
+        boundaries.save_spexit_camera_coords();
+        boundaries.save_exit_camera_coords();
+        boundaries.copy_spexit_scroll_targets();
+        boundaries.copy_spexit_scroll_counters();
+        boundaries.copy_exit_scroll_targets();
+        boundaries.copy_exit_scroll_counters();
+        assert_eq!(boundaries.spexit_camera_y_scroll_low(), 0x1202);
+        assert_eq!(boundaries.spexit_camera_x_scroll_low(), 0x0416);
+        assert_eq!(boundaries.spexit_room_bound_y_start(), 0x0909);
+        assert_eq!(boundaries.spexit_room_bound_x_end(), 0x0c0c);
+
+        boundaries.set_camera_scroll_from_link_for_axis(true, 0x2222);
+        boundaries.restore_special_exit_camera_scroll();
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x1202);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x1200);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0416);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0414);
+
+        boundaries.cache_camera_scroll();
+        boundaries.set_camera_scroll_from_link_for_axis(false, 0x3333);
+        boundaries.set_camera_scroll_from_link_for_axis(true, 0x4444);
+        boundaries.restore_camera_y_from_cached_indoor();
+        boundaries.restore_camera_x_from_cached_indoor();
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x1202);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x1204);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0416);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0418);
+        boundaries.update_camera_hi_outdoor();
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x1200);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0414);
+    }
+
+    #[test]
     fn native_world_camera_boundaries_bridge_projects_native_state_over_stale_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut boundaries = WorldCameraBoundariesState::default();
@@ -4361,6 +4965,55 @@ mod tests {
     }
 
     #[test]
+    fn world_palette_theme_state_owns_theme_save_restore_behavior() {
+        let mut theme = WorldPaletteThemeState::default();
+        theme.set_aux_bg_subset(2, 0x22);
+        theme.set_overworld_tile_theme_index(0x55);
+        theme.set_main_tile_theme_index(0x66);
+        theme.set_aux_tile_theme_index(0x77);
+        theme.set_misc_sprites_graphics_index(0x88);
+        theme.set_hud_palette(0x99);
+        theme.set_palette_sp6r_indoors(0xaa);
+        theme.save_special_exit_tile_themes();
+        theme.set_overworld_tile_theme_index(0x11);
+        theme.set_main_tile_theme_index(0x12);
+        theme.set_aux_tile_theme_index(0x13);
+        theme.restore_special_exit_tile_themes();
+
+        assert_eq!(theme.aux_bg_subset(2), 0x22);
+        assert_eq!(theme.overworld_tile_theme_index, 0x55);
+        assert_eq!(theme.main_tile_theme_index(), 0x66);
+        assert_eq!(theme.aux_tile_theme_index(), 0x77);
+        assert_eq!(theme.misc_sprites_graphics_index(), 0x88);
+
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[OVERWORLD_PALETTE_MODE] = 0x20;
+        ram[PALETTE_MAIN_INDOORS] = 0x21;
+        ram[PALETTE_SP0L] = 0x22;
+        ram[PALETTE_SP5L] = 0x23;
+        ram[PALETTE_SP6L] = 0x24;
+        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = 0x25;
+        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = 0x26;
+        ram[HUD_PALETTE] = 0x27;
+        ram[PALETTE_SP6R_INDOORS] = 0x28;
+
+        theme.sync_shared_palette_aliases_from_ram(&ram, false, false);
+        assert_eq!(theme.overworld_palette_mode(), 0x20);
+        assert_eq!(theme.palette_main_indoors(), 0x21);
+        assert_eq!(theme.palette_sp0l(), 0x22);
+        assert_eq!(theme.palette_sp5l(), 0x23);
+        assert_eq!(theme.palette_sp6l(), 0x24);
+        assert_eq!(theme.overworld_palette_aux2_hi(), 0x25);
+        assert_eq!(theme.overworld_palette_aux3_lo(), 0x26);
+        assert_eq!(theme.hud_palette(), 0x99);
+        assert_eq!(theme.palette_sp6r_indoors(), 0xaa);
+
+        theme.sync_shared_palette_aliases_from_ram(&ram, true, true);
+        assert_eq!(theme.hud_palette(), 0x27);
+        assert_eq!(theme.palette_sp6r_indoors(), 0x28);
+    }
+
+    #[test]
     fn native_world_palette_theme_bridge_projects_native_state_over_stale_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut theme = WorldPaletteThemeState::default();
@@ -4378,6 +5031,8 @@ mod tests {
         ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = 0xcc;
         ram[HUD_PALETTE] = 0xdd;
         ram[OVERWORLD_TILE_THEME_INDEX] = 0xee;
+        ram[PALETTE_MAIN_INDOORS] = 0x06;
+        ram[OVERWORLD_PALETTE_MODE] = 0x05;
 
         {
             let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
@@ -4387,9 +5042,33 @@ mod tests {
         assert_eq!(theme.last_light_vs_dark_world(), 0x40);
         assert_eq!(theme.aux_bg_subset(1), 0x12);
         assert_eq!(theme.overworld_palette_aux1_hi(), 0x34);
-        assert_eq!(theme.hud_palette(), 0x56);
+        assert_eq!(theme.hud_palette(), 0xdd);
         assert_eq!(theme.main_tile_theme_index(), 0x9a);
+        assert_eq!(theme.palette_main_indoors(), 0x06);
+        assert_eq!(theme.overworld_palette_mode(), 0x05);
         assert_eq!(WorldPaletteThemeState::load_from_ram(&ram), theme);
+    }
+
+    #[test]
+    fn sprite_system_projection_preserves_world_palette_theme_fields() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[SPRITE_GRAPHICS_INDEX] = 0x12;
+        ram[MAIN_TILE_THEME_INDEX] = 0x34;
+        ram[AUX_TILE_THEME_INDEX] = 0x56;
+        ram[MISC_SPRITES_GRAPHICS_INDEX] = 0x78;
+
+        let system = SpriteSystemState::load_from_ram(&ram);
+        let mut projected = ram.clone();
+        projected[MAIN_TILE_THEME_INDEX] = 0x9a;
+        projected[AUX_TILE_THEME_INDEX] = 0xbc;
+        projected[MISC_SPRITES_GRAPHICS_INDEX] = 0xde;
+
+        system.write_to_ram(&mut projected);
+
+        assert_eq!(projected[SPRITE_GRAPHICS_INDEX], 0x12);
+        assert_eq!(projected[MAIN_TILE_THEME_INDEX], 0x9a);
+        assert_eq!(projected[AUX_TILE_THEME_INDEX], 0xbc);
+        assert_eq!(projected[MISC_SPRITES_GRAPHICS_INDEX], 0xde);
     }
 
     #[test]
@@ -4455,6 +5134,49 @@ mod tests {
         assert_eq!(region.which_entrance(), 0x0c0d);
         assert_eq!(region.ow_entrance_value(), 0x0e0f);
         assert_eq!(WorldRegionState::load_from_ram(&ram), region);
+    }
+
+    #[test]
+    fn world_region_state_owns_area_and_entrance_behavior() {
+        let mut region = WorldRegionState::default();
+
+        region.set_current_area_of_player_word(0x0102);
+        region.set_overworld_area_index_word(0x0304);
+        region.save_spexit_area_index();
+        region.save_exit_area_index();
+        region.set_overworld_area_index(0x05);
+        assert_eq!(region.overworld_area_index_word(), 0x0305);
+        region.restore_spexit_area_index();
+        assert_eq!(region.overworld_area_index_word(), 0x0304);
+        region.set_overworld_area_index_word(0x0607);
+        region.restore_exit_area_index();
+        assert_eq!(region.overworld_area_index_word(), 0x0304);
+
+        region.set_prev_screen_index_word(0x0506);
+        region.set_overlay_index_word(0x0708);
+        region.set_overlay_high(0x09);
+        region.set_rng_seed(0x0a);
+        region.set_dark_world_region_index(0x0b);
+        region.set_flag_overworld_area_changed(1);
+        region.set_which_entrance(0x0c0d);
+        region.set_which_entrance_byte(0x0e);
+        region.set_ow_entrance_value(0x0f10);
+
+        assert_eq!(region.current_area_of_player_word(), 0x0102);
+        assert_eq!(region.spexit_area_index(), 0x0304);
+        assert_eq!(region.prev_screen_index_word(), 0x0506);
+        assert_eq!(region.overlay_index(), 0x08);
+        assert_eq!(region.overlay_index, 0x0908);
+        assert_eq!(region.rng_seed(), 0x0a);
+        assert_eq!(region.dark_world_region_index(), 0x0b);
+        assert!(region.flag_overworld_area_changed());
+        assert_eq!(region.which_entrance(), 0x0c0e);
+        assert_eq!(region.ow_entrance_value(), 0x0f10);
+
+        region.clear_flag_overworld_area_changed();
+        region.clear_overlay_index_word();
+        assert!(!region.flag_overworld_area_changed());
+        assert_eq!(region.overlay_index, 0);
     }
 
     #[test]
@@ -4537,6 +5259,74 @@ mod tests {
     }
 
     #[test]
+    fn world_transient_state_owns_transient_behavior() {
+        let mut transient = WorldTransientState::default();
+
+        transient.set_custom_spell_animation_active();
+        transient.set_allow_scroll_z(0x02);
+        transient.set_room_transitioning_flags(0x03);
+        transient.set_cached_room_bounds(0x0405, 0x0607, 0x0809, 0x0a0b);
+        transient.set_standing_in_doorway_cached(0x0c);
+        transient.set_door_animation_step_word(0x0d0e);
+        transient.set_quadrant_fullsize_x(0x0f);
+        transient.set_quadrant_fullsize_y(0x10);
+        transient.cache_quadrant_fullsize_state();
+        transient.set_quadrant_fullsize_x(0x20);
+        transient.set_quadrant_fullsize_y(0x21);
+        transient.restore_quadrant_fullsize_from_cached();
+        transient.set_mapbak_tm(0x11);
+        transient.set_mapbak_ts(0x12);
+        transient.set_overworld_peg_puzzle_progress(0x1314);
+        transient.set_dung_replacement_tile_state(2, 0x1516);
+
+        assert_eq!(transient.flag_custom_spell_anim_active(), 1);
+        assert_eq!(transient.allow_scroll_z(), 0x02);
+        assert_eq!(transient.room_transitioning_flags(), 0x03);
+        assert_eq!(transient.is_standing_in_doorway_cached(), 0x0c);
+        assert_eq!(transient.door_animation_step(), 0x0d0e);
+        assert_eq!(
+            transient.dung_replacement_tile_state(DOOR_ANIMATION_REPLACEMENT_TILE_INDEX),
+            0x0d0e
+        );
+        assert_eq!(transient.quadrant_fullsize_x(), 0x0f);
+        assert_eq!(transient.quadrant_fullsize_y(), 0x10);
+        assert_eq!(transient.overworld_peg_puzzle_progress(), 0x1314);
+        assert_eq!(transient.dung_replacement_tile_state(2), 0x1516);
+
+        transient.clear_custom_spell_animation();
+        transient.clear_tile_interaction_shared_flag();
+        transient.clear_hud_floor_changed_timer();
+        assert_eq!(transient.flag_custom_spell_anim_active(), 0);
+
+        transient.set_fullsize_overworld_quadrants();
+        assert_eq!(transient.quadrant_fullsize_x(), 2);
+        assert_eq!(transient.quadrant_fullsize_y(), 2);
+
+        transient.apply_dungeon_layout_quadrant_fullsize(0xff, 0x01, 0x02, false, true);
+        assert_eq!(transient.quadrant_fullsize_x(), 0);
+        assert_eq!(transient.quadrant_fullsize_y(), 2);
+
+        transient.apply_reset_xy_quadrant_overrides(0x4433);
+        assert_eq!(transient.quadrant_fullsize_x(), 0x33);
+        assert_eq!(transient.quadrant_fullsize_y(), 0x44);
+
+        transient.set_tilemap_layer_copy(0x1234);
+        transient.save_spexit_tm_copy();
+        transient.set_tilemap_layer_copy(0);
+        transient.restore_spexit_layer_masks();
+        assert_eq!(transient.tilemap_layer_copy, 0x1234);
+
+        transient.save_exit_tm_copy();
+        transient.set_tilemap_layer_copy(0);
+        transient.restore_exit_layer_masks();
+        assert_eq!(transient.tilemap_layer_copy, 0x1234);
+
+        assert_eq!(transient.increment_move_overlay_ctr(), 1);
+        transient.decrement_milestone_item_gfx_swap_countdown();
+        assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0xff);
+    }
+
+    #[test]
     fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut transient = WorldTransientState::default();
@@ -4602,11 +5392,11 @@ mod tests {
         assert_eq!(transient.flag_custom_spell_anim_active(), 0);
         assert_eq!(transient.allow_scroll_z(), 0x02);
         assert_eq!(transient.room_transitioning_flags(), 0x03);
-        assert_eq!(transient.door_animation_step(), 0x0405);
+        assert_eq!(transient.door_animation_step(), 0xdddd);
         assert_eq!(ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 0);
         assert_eq!(ram[ALLOW_SCROLL_Z], 0x02);
         assert_eq!(ram[ROOM_TRANSITIONING_FLAGS], 0x03);
-        assert_eq!(read_le_u16(&ram, DOOR_ANIMATION_STEP_INDICATOR), 0x0405);
+        assert_eq!(read_le_u16(&ram, DOOR_ANIMATION_STEP_INDICATOR), 0xdddd);
     }
 
     #[test]
@@ -4645,21 +5435,21 @@ mod tests {
         assert_eq!(scroll.scroll_x_end(), 0x0e0e);
         assert_eq!(scroll.scroll_y_end(), 0x0f0f);
 
-        scroll.bg1_x = 0x1111;
-        scroll.bg1_y = 0x2222;
-        scroll.bg2_x = 0x3333;
-        scroll.bg2_y = 0x4444;
-        scroll.bg1_x_offset = 0x5555;
-        scroll.bg1_y_offset = 0x6666;
-        scroll.camera_x = 0x7777;
-        scroll.camera_y = 0x8888;
-        scroll.overworld_offset_base_x = 0x9999;
-        scroll.overworld_offset_base_y = 0xaaaa;
-        scroll.overworld_offset_mask_x = 0xbbbb;
-        scroll.overworld_offset_mask_y = 0xcccc;
-        scroll.scroll_x_start = 0xdddd;
-        scroll.scroll_x_end = 0xeeee;
-        scroll.scroll_y_end = 0xffff;
+        scroll.set_bg1_x(0x1111);
+        scroll.set_bg1_y(0x2222);
+        scroll.set_bg2_x(0x3333);
+        scroll.set_bg2_y(0x4444);
+        scroll.set_bg1_x_offset(0x5555);
+        scroll.set_bg1_y_offset(0x6666);
+        scroll.set_camera_x(0x7777);
+        scroll.set_camera_y(0x8888);
+        scroll.set_overworld_offset_base_x(0x9999);
+        scroll.set_overworld_offset_base_y(0xaaaa);
+        scroll.set_overworld_offset_mask_x(0xbbbb);
+        scroll.set_overworld_offset_mask_y(0xcccc);
+        scroll.set_scroll_x_start(0xdddd);
+        scroll.set_scroll_x_end(0xeeee);
+        scroll.set_scroll_y_end(0xffff);
         scroll.write_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, BG1_X_SCROLL), 0x1111);
@@ -4677,6 +5467,45 @@ mod tests {
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0xdddd);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0xeeee);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0xffff);
+    }
+
+    #[test]
+    fn world_scroll_state_owns_scroll_and_offset_behavior() {
+        let mut scroll = WorldScrollState {
+            bg1_x: 0x1200,
+            bg1_y: 0x3400,
+            bg2_x: 0xfff0,
+            ..WorldScrollState::default()
+        };
+
+        scroll.set_bg1_x_low(0x56);
+        scroll.set_bg1_y_low(0x78);
+        assert_eq!(scroll.add_bg2_x(0x20), 0x0010);
+        scroll.set_bg2_y(0x4444);
+        scroll.set_bg1_offsets(0x1111, 0x2222);
+        assert_eq!(scroll.bg1_offset_mask(), 0x3333);
+        scroll.clear_bg1_offsets();
+        scroll.set_overworld_offset_base_x(0x9999);
+        scroll.set_overworld_offset_base_y(0xaaaa);
+        scroll.set_overworld_offset_mask_x(0xbbbb);
+        scroll.set_overworld_offset_mask_y(0xcccc);
+        scroll.set_scroll_x_start(0xdddd);
+        scroll.set_scroll_x_end(0xeeee);
+        scroll.set_scroll_y_end(0xffff);
+
+        assert_eq!(scroll.bg1_x(), 0x1256);
+        assert_eq!(scroll.bg1_y(), 0x3478);
+        assert_eq!(scroll.bg2_x(), 0x0010);
+        assert_eq!(scroll.bg2_y(), 0x4444);
+        assert_eq!(scroll.bg1_x_offset(), 0);
+        assert_eq!(scroll.bg1_y_offset(), 0);
+        assert_eq!(scroll.overworld_offset_base_x(), 0x9999);
+        assert_eq!(scroll.overworld_offset_base_y(), 0xaaaa);
+        assert_eq!(scroll.overworld_offset_mask_x(), 0xbbbb);
+        assert_eq!(scroll.overworld_offset_mask_y(), 0xcccc);
+        assert_eq!(scroll.scroll_x_start(), 0xdddd);
+        assert_eq!(scroll.scroll_x_end(), 0xeeee);
+        assert_eq!(scroll.scroll_y_end(), 0xffff);
     }
 
     #[test]
@@ -5061,6 +5890,92 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BIRDTRAVEL_STATUS), 0x0004);
         assert_eq!(ram[BIRD_TRAVEL_STATUS + 15], 0xff);
         assert_eq!(ram[BIRD_TRAVEL_STATUS + 1], 0);
+    }
+
+    #[test]
+    fn compact_world_substates_own_simple_behavior() {
+        let mut location = WorldLocationState {
+            dungeon_room: 0x1200,
+            overworld_screen: 0x3400,
+            indoor_flag: 0,
+        };
+        location.set_dungeon_room_index(0x56);
+        assert_eq!(location.increment_dungeon_room_index_by(0x10), 0x66);
+        assert_eq!(location.decrement_dungeon_room_index_by(0x20), 0x46);
+        location.set_overworld_screen(0x78);
+        location.set_indoor_flag(1);
+        assert_eq!(location.dungeon_room, 0x1246);
+        assert_eq!(location.overworld_screen, 0x3478);
+        assert!(location.is_indoors());
+
+        let mut map_ui = OverworldMapUiState::default();
+        map_ui.set_map_state_word(0x0205);
+        map_ui.increment_map_state();
+        map_ui.set_map_flags(0x81);
+        map_ui.and_map_flags(!0x80);
+        map_ui.or_map_flags(0x02);
+        map_ui.set_birdtravel_status_word(0x0307);
+        map_ui.increment_birdtravel_status();
+        map_ui.and_birdtravel_status(7);
+        map_ui.set_birdtravel_status_word(0x0004);
+        map_ui.increment_bird_travel_stop_status(15);
+        map_ui.clear_bird_travel_stop_status(1);
+        assert_eq!(map_ui.map_state_word(), 0x0206);
+        assert_eq!(map_ui.map_flags, 0x03);
+        assert_eq!(map_ui.birdtravel_status_word(), 0x0004);
+        assert_eq!(map_ui.bird_travel_statuses.status(15), 1);
+        assert_eq!(map_ui.bird_travel_statuses.status(1), 0);
+
+        let mut weather_vane = WeatherVaneState::default();
+        assert_eq!(weather_vane.tick_countdown(), 0xffff);
+        weather_vane.set_countdown(0x0280);
+        weather_vane.set_music_latch(1);
+        weather_vane.set_source_slot(5);
+        weather_vane.reset_oam_offset();
+        weather_vane.advance_oam_offset(4);
+        assert_eq!(weather_vane.countdown, 0x0280);
+        assert_eq!(weather_vane.music_latch, 1);
+        assert_eq!(weather_vane.source_slot, 5);
+        assert_eq!(weather_vane.oam_offset, 4);
+
+        let mut zoom = OverworldMapZoomState::default();
+        zoom.set_step_counter(4);
+        zoom.decrement_timer();
+        zoom.set_timer(12);
+        assert_eq!(zoom.step_counter, 4);
+        assert_eq!(zoom.timer, 12);
+
+        let mut screen_size = OverworldScreenSizeState {
+            big_area: 0x0120,
+            big_area_backup: 0x11,
+            right_bottom_scroll_bound: 0x02c0,
+        };
+        screen_size.backup_big_area_low();
+        screen_size.clear_big_area_high();
+        screen_size.set_big_area_low(0x20);
+        screen_size.set_right_bottom_bound_low(0xe4);
+        screen_size.set_right_bottom_bound_high(0x01);
+        assert_eq!(screen_size.big_area, 0x0020);
+        assert_eq!(screen_size.big_area_backup, 0x20);
+        assert_eq!(screen_size.right_bottom_scroll_bound, 0x01e4);
+
+        let mut entrance = OverworldEntranceState {
+            special_entrance_trigger: 5,
+            sequence_counter: 0xff,
+        };
+        entrance.set_special_entrance_trigger(3);
+        assert_eq!(entrance.increment_sequence_counter(), 0);
+        assert_eq!(entrance.decrement_sequence_counter(), 0xff);
+        entrance.clear_special_entrance_trigger();
+        entrance.clear_sequence_counter();
+        assert_eq!(entrance.special_entrance_trigger, 0);
+        assert_eq!(entrance.sequence_counter, 0);
+
+        let mut exit = OverworldExitState::default();
+        exit.set_exit_screen(0x0033);
+        exit.set_special_exit_screen(0x0044);
+        assert_eq!(exit.exit_screen, 0x0033);
+        assert_eq!(exit.special_exit_screen, 0x0044);
     }
 
     #[test]
@@ -5542,6 +6457,34 @@ mod tests {
     }
 
     #[test]
+    fn native_overworld_map16_bridge_syncs_from_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut map16 = OverworldMap16State::default();
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF, 0x1234);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF, 0x0056);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT, 0x0007);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_PREV, 0x2345);
+        write_le_u16(&mut ram, MAP16_LOAD_DST_OFF_PREV, 0x0067);
+        write_le_u16(&mut ram, MAP16_LOAD_Y_UNIT_PREV, 0x0008);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_SPEXIT, 0x3456);
+        write_le_u16(&mut ram, MAP16_LOAD_SRC_OFF_EXIT, 0x4567);
+
+        {
+            let mut bridge = NativeOverworldMap16BridgeMut::new(&mut map16, &mut ram);
+            bridge.sync_from_ram();
+        }
+
+        assert_eq!(map16.active_load.src_off, 0x1234);
+        assert_eq!(map16.active_load.dst_off, 0x0056);
+        assert_eq!(map16.active_load.y_unit, 0x0007);
+        assert_eq!(map16.previous_load.src_off, 0x2345);
+        assert_eq!(map16.previous_load.dst_off, 0x0067);
+        assert_eq!(map16.previous_load.y_unit, 0x0008);
+        assert_eq!(map16.special_exit_src_off, 0x3456);
+        assert_eq!(map16.exit_src_off, 0x4567);
+    }
+
+    #[test]
     fn overworld_entrance_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[TRIGGER_SPECIAL_ENTRANCE] = 5;
@@ -5669,6 +6612,44 @@ mod tests {
     }
 
     #[test]
+    fn overworld_transition_state_owns_direction_and_countdown_behavior() {
+        let mut transition = OverworldTransitionState {
+            edge_direction_bits: 0x0102,
+            direction_bits: 0x0108,
+            direction_enum: 6,
+            screen_transition: 0x0203,
+            transition_counter: 9,
+            countdown: 1,
+            ..OverworldTransitionState::default()
+        };
+
+        transition.and_direction_bits(0x0b);
+        transition.or_direction_bits(0x04);
+        assert_eq!(transition.or_direction_bits_word(0x0100), 0x010c);
+        transition.set_direction_enum(4);
+        transition.set_screen_transition(5);
+        assert_eq!(transition.increment_transition_counter(), 10);
+        assert_eq!(transition.decrement_countdown(), 0);
+        transition.set_countdown(12);
+        transition.save_previous_direction_bits();
+        transition.set_edge_direction_bits(0x04);
+        transition.clear_direction_bits_word();
+        transition.restore_previous_direction_bits();
+        transition.set_previous_screen_transition(6);
+
+        assert_eq!(transition.edge_direction_bits(), 2);
+        assert_eq!(transition.edge_direction_bits, 2);
+        assert_eq!(transition.direction_bits_word(), 0x010c);
+        assert_eq!(transition.direction_enum(), 4);
+        assert_eq!(transition.screen_transition_word(), 0x0205);
+        assert_eq!(transition.transition_counter, 10);
+        assert_eq!(transition.countdown(), 12);
+        assert_eq!(transition.previous_direction_bits, 2);
+        assert_eq!(transition.previous_direction_bits2, 0x010c);
+        assert_eq!(transition.previous_screen_transition, 6);
+    }
+
+    #[test]
     fn native_overworld_transition_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OVERWORLD_SCREEN_TRANS_DIR_BITS, 0x0102);
@@ -5745,6 +6726,7 @@ mod tests {
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         ram[IRQ_FLAG] = 0x80;
         ram[VIRQ_TRIGGER] = 0x90;
+        ram[CRYSTAL_ROTATION_COUNTER] = 0xf0;
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
         ram[OAM_BUF] = 0xca;
@@ -5859,6 +6841,7 @@ mod tests {
         assert!(display.has_irq_control_flag());
         assert!(display.irq_control_has_vcounter_marker());
         assert_eq!(display.vertical_irq_trigger, 0x90);
+        assert_eq!(display.crystal_rotation_counter, 0xf0);
         assert_eq!(display.sprite_dma_head_pointer, 0x20);
         assert_eq!(display.sprite_dma_body_pointer, 0xa0);
         assert_eq!(&display.sprite_oam_shadow_buffer(&ram)[..2], &[0xca, 0xfe]);
@@ -5941,7 +6924,10 @@ mod tests {
         assert_eq!(display.star_tile_restore_source_offsets(), (32, 0));
         assert_eq!(display.animated_tile_data_source_address, 0xa680);
         assert_eq!(display.animated_tile_data_source_usize(), 0xa680);
-        assert_eq!(&display.animated_tile_data(&ram)[..2], &[0xde, 0xad]);
+        assert_eq!(
+            &display.animated_tile_dma_source_bytes(&ram)[..2],
+            &[0xde, 0xad]
+        );
         assert!(display.has_animated_tile_data_source());
         assert_eq!(display.animated_tile_vram_destination_address, 0x3b00);
         assert_eq!(display.animated_tile_vram_destination_usize(), 0x3b00);
@@ -5980,6 +6966,7 @@ mod tests {
         display.nmi_thread_stack_pointer = 0x1f31;
         display.irq_control_flag = 0;
         display.vertical_irq_trigger = 0x70;
+        display.crystal_rotation_counter = 0x10;
         display.sprite_dma_head_pointer = 0x40;
         display.sprite_dma_body_pointer = 0x80;
         display.hdma_enable_mask = 0x80;
@@ -6048,6 +7035,7 @@ mod tests {
         assert_eq!(read_le_u16(&ram, POLY_THREAD_STACK), 0x1f31);
         assert_eq!(ram[IRQ_FLAG], 0);
         assert_eq!(ram[VIRQ_TRIGGER], 0x70);
+        assert_eq!(ram[CRYSTAL_ROTATION_COUNTER], 0x10);
         assert_eq!(ram[DMA_HEAD_POINTER], 0x40);
         assert_eq!(ram[DMA_BODY_POINTER], 0x80);
         assert_eq!(ram[HDMAEN_COPY], 0x80);
@@ -6089,6 +7077,29 @@ mod tests {
         assert_eq!(display.attract_vram_destination_address, 0x0068);
         assert!(display.attract_vram_destination_high_is_clear());
         assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+    }
+
+    #[test]
+    fn display_state_owns_attract_vram_destination_behavior() {
+        let mut display = DisplayState {
+            attract_vram_destination_address: 0x01ff,
+            ..DisplayState::default()
+        };
+
+        assert_eq!(display.attract_vram_destination_page_offset(), 0xff);
+        assert_eq!(
+            display.decrement_attract_vram_destination_page_offset(),
+            0xfe
+        );
+        assert_eq!(display.attract_vram_destination_address, 0x01fe);
+
+        display.set_attract_vram_destination_page_offset(0x34);
+        assert_eq!(display.attract_vram_destination_address, 0x0134);
+        assert_eq!(display.decrement_attract_vram_destination_address(), 0x0133);
+
+        display.clear_attract_vram_destination_address();
+        assert_eq!(display.attract_vram_destination_address, 0);
+        assert!(display.attract_vram_destination_high_is_clear());
     }
 
     #[test]
@@ -6258,6 +7269,50 @@ mod tests {
     }
 
     #[test]
+    fn native_spotlight_hdma_bridge_projects_dynamic_table_to_reserved_hdma_table() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut spotlight = SpotlightHdmaState::default();
+        spotlight.set_hdma_table_dynamic_entry(0, 0x1111);
+        spotlight.set_hdma_table_dynamic_entry(1, 0x2222);
+        write_le_u16(&mut ram, RESERVED_HDMA_TABLE, 0xaaaa);
+        write_le_u16(&mut ram, RESERVED_HDMA_TABLE + 2, 0xbbbb);
+
+        {
+            let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
+            bridge.project_dynamic_table_to_reserved_hdma_table(2);
+        }
+
+        assert_eq!(read_le_u16(&ram, RESERVED_HDMA_TABLE), 0x1111);
+        assert_eq!(read_le_u16(&ram, RESERVED_HDMA_TABLE + 2), 0x2222);
+    }
+
+    #[test]
+    fn native_spotlight_hdma_bridge_restores_and_backs_up_saveload_table() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, SAVELOAD_HDMA_TABLE, 0x3333);
+        write_le_u16(&mut ram, SAVELOAD_HDMA_TABLE + 2, 0x4444);
+        let mut spotlight = SpotlightHdmaState::default();
+
+        {
+            let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
+            bridge.restore_dynamic_table_from_saveload_buffer(2);
+        }
+        assert_eq!(spotlight.hdma_table_dynamic_entry(0), 0x3333);
+        assert_eq!(spotlight.hdma_table_dynamic_entry(1), 0x4444);
+        assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC), 0x3333);
+        assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC + 2), 0x4444);
+
+        spotlight.set_hdma_table_dynamic_entry(0, 0x5555);
+        spotlight.set_hdma_table_dynamic_entry(1, 0x6666);
+        {
+            let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
+            bridge.backup_dynamic_table_to_saveload_buffer(2);
+        }
+        assert_eq!(read_le_u16(&ram, SAVELOAD_HDMA_TABLE), 0x5555);
+        assert_eq!(read_le_u16(&ram, SAVELOAD_HDMA_TABLE + 2), 0x6666);
+    }
+
+    #[test]
     fn overworld_palette_backup_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = 0x12;
@@ -6356,6 +7411,54 @@ mod tests {
         assert_eq!(PaletteBufferState::load_from_ram(&projected), palette);
         assert_eq!(projected[PALETTE_SP0L], 1);
         assert_eq!(projected[OVERWORLD_PALETTE_MODE], 9);
+    }
+
+    #[test]
+    fn palette_buffer_state_owns_color_and_palette_metadata_behavior() {
+        let mut palette = PaletteBufferState::default();
+
+        palette.set_main_color(2, 0x1234);
+        palette.set_aux_color(3, 0x5678);
+        palette.set_overworld_aux_or_main_offset(0x12ab);
+        palette.keep_overworld_aux_or_main_low_byte();
+        palette.select_overworld_aux_palette_offset();
+
+        palette.copy_aux_visible_from(&vec![0x22; 256]);
+        palette.copy_main_palette_bytes(&[0x11, 0x22, 0x33, 0x44], 4);
+        palette.backup_overworld_palette_from(&vec![0x77; 512]);
+        palette.clear_aux_sprite_subpalettes();
+
+        palette.set_sprite_palette_0_left(1);
+        palette.set_sprite_palette_5_left(2);
+        palette.set_sprite_palette_6_left(3);
+        palette.set_main_palette_indoors(4);
+        palette.set_hud_palette(5);
+        palette.set_sprite_palette_6_right_indoors(6);
+        palette.set_overworld_palette_aux2_hi(7);
+        palette.set_overworld_palette_aux3_lo(8);
+        palette.set_overworld_palette_mode(9);
+
+        assert_eq!(palette.main_color(0), 0x2211);
+        assert_eq!(palette.main_color(1), 0x4433);
+        assert_eq!(palette.main_color(2), 0x1234);
+        assert_eq!(palette.aux_color(3), 0x2222);
+        assert_eq!(palette.aux_full_slice()[0x180..0x200], [0; 0x80]);
+        assert_eq!(palette.overworld_palette_backup()[511], 0x77);
+        assert_eq!(palette.overworld_aux_or_main_offset(), 0x0200);
+        assert_eq!(palette.sprite_palette_0_left(), 1);
+        assert_eq!(palette.sprite_palette_5_left(), 2);
+        assert_eq!(palette.sprite_palette_6_left(), 3);
+        assert_eq!(palette.main_palette_indoors(), 4);
+        assert_eq!(palette.hud_palette(), 5);
+        assert_eq!(palette.sprite_palette_6_right_indoors(), 6);
+        assert_eq!(palette.overworld_palette_aux2_hi(), 7);
+        assert_eq!(palette.overworld_palette_aux3_lo(), 8);
+        assert_eq!(palette.overworld_palette_mode(), 9);
+
+        palette.clear_overworld_aux_or_main_offset();
+        palette.clear_main_full();
+        assert_eq!(palette.overworld_aux_or_main_offset(), 0);
+        assert_eq!(palette.main_color(0), 0);
     }
 
     #[test]
@@ -6458,6 +7561,44 @@ mod tests {
     }
 
     #[test]
+    fn palette_filter_state_owns_screen_filter_behavior() {
+        let mut filter = PaletteFilterState::default();
+        filter.set_countdown(0xff);
+        filter.set_fixed_color_red(0x20);
+        filter.set_fixed_color_green(0x40);
+        filter.set_fixed_color_blue(0x80);
+
+        filter.increment_countdown();
+        filter.decrement_countdown();
+        filter.set_countdown_word(0x5607);
+        filter.xor_darkening_or_lightening_screen(0xff);
+        filter.set_darkening_or_lightening_screen_word(0x7809);
+        filter.set_color_window_and_math_word(0x3322);
+        filter.set_color_window_selection(0x24);
+        filter.set_color_math_control(0x35);
+        filter.or_fixed_color_red(0x01);
+        filter.subtract_fixed_color_red(2);
+        filter.set_fixed_color_green(0x50);
+        filter.or_fixed_color_green(0x0f);
+        filter.subtract_fixed_color_green(1);
+        filter.set_fixed_color_blue(0x90);
+        filter.or_fixed_color_blue(0x0f);
+        filter.subtract_fixed_color_blue(1);
+        assert!(filter.set_fixed_color_component(2, 0x88));
+        assert!(filter.or_fixed_color_component(0, 0x10));
+        assert!(!filter.set_fixed_color_component(3, 0xaa));
+        assert!(!filter.or_fixed_color_component(3, 0xaa));
+        filter.set_fixed_color_red(0x22);
+
+        assert_eq!(filter.countdown_word(), 0x5607);
+        assert_eq!(filter.darkening_or_lightening_screen_word(), 0x7809);
+        assert_eq!(filter.color_window_and_math_word(), 0x3524);
+        assert_eq!(filter.fixed_color_red(), 0x22);
+        assert_eq!(filter.fixed_color_green(), 0x5e);
+        assert_eq!(filter.fixed_color_blue(), 0x88);
+    }
+
+    #[test]
     fn native_palette_filter_bridge_syncs_seeded_ram_and_dual_writes_changes() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, PALETTE_FILTER_COUNTDOWN, 0x1200);
@@ -6542,6 +7683,33 @@ mod tests {
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY], 3);
         assert_eq!(ram[TRINEXX_RED_SHELL_PALETTE_STEP], 7);
         assert_eq!(ram[TRINEXX_BLUE_SHELL_PALETTE_STEP], 9);
+    }
+
+    #[test]
+    fn trinexx_palette_state_owns_delay_and_step_behavior() {
+        let mut palette = TrinexxPaletteState::default();
+
+        palette.set_red_shell_delay(3);
+        palette.set_blue_shell_delay(4);
+        palette.decrement_red_shell_delay();
+        palette.decrement_blue_shell_delay();
+        palette.set_red_shell_step(0xff);
+        palette.set_blue_shell_step(0xfe);
+
+        assert_eq!(palette.increment_red_shell_step(), 0);
+        assert_eq!(palette.increment_blue_shell_step(), 0xff);
+
+        palette.set_red_shell_step(2);
+        palette.set_blue_shell_step(5);
+        assert_eq!(
+            palette,
+            TrinexxPaletteState {
+                red_shell_delay: 2,
+                blue_shell_delay: 3,
+                red_shell_step: 2,
+                blue_shell_step: 5,
+            }
+        );
     }
 
     #[test]
@@ -7367,6 +8535,40 @@ mod tests {
     }
 
     #[test]
+    fn hud_runtime_state_owns_runtime_counter_behavior() {
+        let mut runtime = HudRuntimeState::default();
+
+        runtime.set_super_bomb_indicator_timer(8);
+        runtime.set_super_bomb_indicator_counter(3);
+        runtime.set_rupee_sfx_sound_delay(4);
+        runtime.set_heart_animation_active(1);
+        runtime.set_heart_refill_countdown(7);
+        runtime.set_heart_refill_animation_subpixel(0x20);
+        runtime.set_flashing_circle_timer(0x10);
+        runtime.set_previous_menu_joypad_h(0x80);
+        runtime.set_equipment_menu_exit_state(2);
+        runtime.set_bottle_menu_row(5);
+        assert_eq!(runtime.decrement_bottle_menu_row(), 4);
+        runtime.set_dungeon_dark_with_lantern();
+        runtime.set_tick_counter(0x44);
+        runtime.clear_heart_animation_active();
+        runtime.clear_previous_menu_joypad_h();
+
+        assert_eq!(runtime.super_bomb_indicator_timer(), 8);
+        assert_eq!(runtime.super_bomb_indicator_counter(), 3);
+        assert_eq!(runtime.rupee_sfx_sound_delay(), 4);
+        assert!(!runtime.is_doing_heart_animation());
+        assert_eq!(runtime.heart_refill_countdown(), 7);
+        assert_eq!(runtime.heart_refill_anim_subpos(), 0x20);
+        assert_eq!(runtime.flashing_circle_timer(), 0x10);
+        assert_eq!(runtime.prev_joypad_h(), 0);
+        assert_eq!(runtime.equipment_menu_exit_state(), 2);
+        assert_eq!(runtime.bottle_menu_row(), 4);
+        assert!(runtime.dungeon_dark_with_lantern());
+        assert_eq!(runtime.tick_counter(), 0x44);
+    }
+
+    #[test]
     fn hud_tilemap_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, HUD_FLOOR_CHANGED_TIMER, 0x1234);
@@ -7688,6 +8890,246 @@ mod tests {
     }
 
     #[test]
+    fn display_state_owns_vram_upload_cursor_and_counter_behavior() {
+        let mut display = DisplayState {
+            nmi_load_target_address: 0xab00,
+            vram_upload_cursor: 0xfff0,
+            incremental_vram_upload_counter: 0xfe,
+            ..DisplayState::default()
+        };
+
+        display.set_nmi_load_target_page(0xcd);
+        assert_eq!(display.nmi_load_target_address, 0xabcd);
+        display.set_nmi_load_target_address(0x1234);
+        assert_eq!(display.nmi_load_target_address, 0x1234);
+        assert_eq!(display.nmi_load_target_page(), 0x34);
+
+        assert_eq!(display.advance_vram_upload_cursor_by(0x20), 0x0010);
+        display.set_vram_upload_cursor(0x1234);
+        assert_eq!(
+            display.apply_tilemap_upload_prefix_to_vram_cursor(&[0xab]),
+            0x12ab
+        );
+        assert_eq!(
+            display.apply_tilemap_upload_prefix_to_vram_cursor(&[0xcd, 0xef, 0x99]),
+            0xefcd
+        );
+        display.clear_vram_upload_cursor();
+        assert_eq!(display.vram_upload_cursor, 0);
+
+        assert_eq!(display.increment_vram_upload_counter(), 0xff);
+        assert_eq!(display.increment_vram_upload_counter(), 0);
+        display.reset_incremental_vram_upload_counter();
+        assert_eq!(display.incremental_vram_upload_counter, 0);
+    }
+
+    #[test]
+    fn display_state_owns_dma_and_upload_metadata_behavior() {
+        let mut display = DisplayState {
+            star_tile_restore_phase: 7,
+            ..DisplayState::default()
+        };
+
+        display.set_link_dma_source(LinkDmaSourceSlot::BodyTop, 0x9000);
+        assert_eq!(display.link_dma_source(LinkDmaSourceSlot::BodyTop), 0x9000);
+
+        display.reset_bg_tile_animation_countdown(0xffff);
+        assert_eq!(display.bg_tile_animation_countdown, 0xffff);
+
+        display.set_message_dma_destination_address(0x6080);
+        display.set_message_dma_tile_base(0x4841);
+        display.set_message_dma_tile_limit(0x007f);
+        display.set_message_dma_tile_sentinel(0xffff);
+        assert_eq!(display.message_dma_destination_address_usize(), 0x6080);
+        assert_eq!(display.message_dma_tile_base, 0x4841);
+        assert_eq!(display.message_dma_tile_limit, 0x007f);
+        assert_eq!(display.message_dma_tile_sentinel, 0xffff);
+
+        display.set_overworld_fixed_color_adjustment(0x30);
+        display.set_travel_bird_tile_offset(0x08);
+        assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
+        assert!(display.has_travel_bird_tile_upload());
+
+        display.clear_star_tile_restore_phase();
+        assert_eq!(display.star_tile_restore_phase, 0);
+
+        display.set_animated_tile_data_source_address(0xac80);
+        display.set_animated_tile_vram_destination_address(0x3c00);
+        assert_eq!(display.animated_tile_data_source_usize(), 0xac80);
+        assert!(display.has_animated_tile_data_source());
+        assert_eq!(display.animated_tile_vram_destination_usize(), 0x3c00);
+    }
+
+    #[test]
+    fn display_state_owns_basic_nmi_control_behavior() {
+        let mut display = DisplayState {
+            screen_brightness: 0xff,
+            core_update_disable_flag: 0xff,
+            pending_nmi_subroutine: 0x42,
+            bg_vram_load_mode: 3,
+            ..DisplayState::default()
+        };
+
+        assert_eq!(display.increment_screen_brightness(), 0);
+        assert_eq!(display.decrement_screen_brightness(), 0xff);
+        display.set_screen_brightness(0x80);
+        assert_eq!(display.screen_brightness, 0x80);
+
+        display.latch_nmi_update();
+        assert!(display.nmi_update_is_latched());
+        display.clear_nmi_update_latch();
+        assert!(!display.nmi_update_is_latched());
+
+        assert_eq!(display.increment_core_update_disable_flag(), 0);
+        display.set_core_update_disable_flag_word(0x1234);
+        assert_eq!(display.core_update_disable_flag, 0x34);
+        display.clear_core_update_disable_flag();
+        assert!(!display.core_updates_are_disabled());
+
+        assert_eq!(display.take_pending_nmi_subroutine(), 0x42);
+        assert_eq!(display.pending_nmi_subroutine, 0);
+        display.clear_bg_vram_load_mode();
+        assert!(!display.has_bg_vram_load());
+
+        display.queue_tilemap_update(0x54, 0x0800);
+        assert!(display.has_pending_tilemap_update());
+        assert_eq!(display.pending_tilemap_update_vram_destination(), 0x5400);
+        assert_eq!(
+            display.pending_tilemap_update_source_address(),
+            crate::game_state::constants::nmi::BG_CHAR_BUFFER + 0x0800
+        );
+        display.clear_pending_tilemap_update_destination();
+        assert!(!display.has_pending_tilemap_update());
+        assert_eq!(display.pending_tilemap_update_source_offset, 0x0800);
+    }
+
+    #[test]
+    fn display_state_owns_layer_and_window_mask_behavior() {
+        let mut display = DisplayState::default();
+
+        display.set_bg_mode(9);
+        display.set_layer_masks_word(0x0211);
+        display.and_main_screen_layers(0x0f);
+        display.or_main_screen_layers(0x80);
+        display.and_sub_screen_layers(0x01);
+        display.or_sub_screen_layers(0x40);
+        display.set_window_layer_masks(0x10, 0x20, 0x30, 0x40, 0x50);
+
+        assert_eq!(display.bg_mode, 9);
+        assert_eq!(display.main_screen_layers, 0x81);
+        assert_eq!(display.sub_screen_layers, 0x40);
+        assert_eq!(display.layer_masks_word(), 0x4081);
+        assert_eq!(display.bg12_window_selection, 0x10);
+        assert_eq!(display.bg34_window_selection, 0x20);
+        assert_eq!(display.object_color_window_selection, 0x30);
+        assert_eq!(display.main_screen_window_layers, 0x40);
+        assert_eq!(display.sub_screen_window_layers, 0x50);
+
+        display.clear_window_main_sub_masks();
+        assert_eq!(display.main_screen_window_layers, 0);
+        assert_eq!(display.sub_screen_window_layers, 0);
+        display.clear_window_layer_masks();
+        assert_eq!(display.bg12_window_selection, 0);
+        assert_eq!(display.bg34_window_selection, 0);
+        assert_eq!(display.object_color_window_selection, 0);
+
+        display.set_sub_screen_layers(0x77);
+        display.set_main_screen_window_layers(0x88);
+        display.clear_sub_screen_layers_word_alias();
+        assert_eq!(display.sub_screen_layers, 0);
+        assert_eq!(display.main_screen_window_layers, 0);
+    }
+
+    #[test]
+    fn display_state_owns_nmi_request_thread_irq_and_hdma_behavior() {
+        let mut display = DisplayState {
+            chr_halfslot_request: 0xff,
+            irq_control_flag: 0x80,
+            hdma_enable_mask: 0xc0,
+            ..DisplayState::default()
+        };
+
+        display.request_nmi_copy_packets();
+        assert!(display.has_nmi_copy_packets_request());
+        display.clear_nmi_copy_packets_request();
+        assert!(!display.has_nmi_copy_packets_request());
+        display.set_nmi_copy_packets_request(3);
+        assert_eq!(display.nmi_copy_packets_request, 3);
+
+        display.request_polyhedral_nmi_update();
+        assert!(display.has_pending_polyhedral_update());
+        display.clear_pending_polyhedral_update();
+        assert!(!display.has_pending_polyhedral_update());
+
+        assert_eq!(display.increment_chr_halfslot_request(), 0);
+        display.set_chr_halfslot_request(12);
+        assert!(display.has_chr_halfslot_request());
+        display.clear_chr_halfslot_request();
+        assert!(!display.has_chr_halfslot_request());
+
+        display.activate_nmi_thread();
+        display.set_nmi_thread_stack_pointer(0x1f31);
+        assert!(!display.nmi_thread_uses_poly_stack());
+        display.set_nmi_thread_stack_pointer(0x1f30);
+        assert!(display.nmi_thread_uses_poly_stack());
+        display.deactivate_nmi_thread();
+        assert!(!display.nmi_thread_uses_poly_stack());
+
+        assert!(display.has_irq_control_flag());
+        assert!(display.irq_control_has_vcounter_marker());
+        display.clear_irq_control_flag();
+        assert!(!display.has_irq_control_flag());
+        display.set_irq_control_flag(0x7f);
+        assert!(!display.irq_control_has_vcounter_marker());
+        display.set_vertical_irq_trigger(0x70);
+        assert_eq!(display.vertical_irq_trigger, 0x70);
+        display.crystal_rotation_counter = 0xf0;
+        assert!(display.advance_crystal_rotation_counter(0x20));
+        assert_eq!(display.crystal_rotation_counter, 0x10);
+
+        display.set_sprite_dma_head_pointer(0x40);
+        display.set_sprite_dma_body_pointer(0x80);
+        assert_eq!(display.sprite_dma_head_pointer, 0x40);
+        assert_eq!(display.sprite_dma_body_pointer, 0x80);
+
+        assert!(display.is_hdma_channel_enabled(6));
+        assert!(display.is_hdma_channel_enabled(7));
+        display.clear_hdma_enable_mask();
+        assert!(!display.is_hdma_channel_enabled(7));
+        display.set_hdma_enable_mask(0x80);
+        assert!(display.is_hdma_channel_enabled(7));
+    }
+
+    #[test]
+    fn display_state_owns_mosaic_control_behavior() {
+        let mut display = DisplayState {
+            mosaic_level: 0xf0,
+            mosaic_target_level: 0xff,
+            mosaic_direction: 1,
+            ..DisplayState::default()
+        };
+
+        assert_eq!(display.increment_mosaic_level_by(0x20), 0x10);
+        assert_eq!(display.decrement_mosaic_level_by(0x30), 0xe0);
+        display.set_mosaic_copy_from_level_or(0x03);
+        assert_eq!(display.mosaic_copy, 0xe3);
+        display.set_mosaic_copy(0x40);
+        assert_eq!(display.mosaic_copy, 0x40);
+
+        display.set_mosaic_target_level_word(0x1234);
+        assert_eq!(display.mosaic_target_level, 0x34);
+        assert_eq!(display.mosaic_target_level_word(), 0x34);
+        display.clear_mosaic_target_level_word_alias();
+        assert_eq!(display.mosaic_target_level, 0);
+
+        display.clear_mosaic_level_word_alias();
+        assert_eq!(display.mosaic_level, 0);
+        display.set_mosaic_direction(1);
+        display.clear_mosaic_direction();
+        assert_eq!(display.mosaic_direction, 0);
+    }
+
+    #[test]
     fn link_dma_source_slots_read_named_source_addresses() {
         let mut ram = vec![0; WRAM_SIZE];
         let slots = [
@@ -7756,6 +9198,7 @@ mod tests {
         write_le_u16(&mut ram, POLY_THREAD_STACK, 0x01f2);
         ram[IRQ_FLAG] = 0x80;
         ram[VIRQ_TRIGGER] = 0x90;
+        ram[CRYSTAL_ROTATION_COUNTER] = 0xf0;
         ram[DMA_HEAD_POINTER] = 0x20;
         ram[DMA_BODY_POINTER] = 0xa0;
         ram[HDMAEN_COPY] = 0xc0;
@@ -7821,6 +9264,7 @@ mod tests {
             bridge.clear_irq_control_flag();
             bridge.set_irq_control_flag(0xff);
             bridge.set_vertical_irq_trigger(0x70);
+            assert!(bridge.advance_crystal_rotation_counter(0x20));
             bridge.set_sprite_dma_head_pointer(0x40);
             bridge.set_sprite_dma_body_pointer(0x80);
             bridge.clear_hdma_enable_mask();
@@ -7898,6 +9342,8 @@ mod tests {
         assert_eq!(display.irq_control_flag, 0xff);
         assert!(display.irq_control_has_vcounter_marker());
         assert_eq!(display.vertical_irq_trigger, 0x70);
+        assert_eq!(display.crystal_rotation_counter, 0x10);
+        assert_eq!(ram[CRYSTAL_ROTATION_COUNTER], 0x10);
         assert_eq!(display.sprite_dma_head_pointer, 0x40);
         assert_eq!(display.sprite_dma_body_pointer, 0x80);
         assert_eq!(display.hdma_enable_mask, 0x80);
@@ -8255,8 +9701,6 @@ mod tests {
     #[test]
     fn native_room_bounds_bridge_dual_writes_changes_from_native_state() {
         let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, SCRATCH_0, 0x0aaa);
-        write_le_u16(&mut ram, SCRATCH_1, 0x0bbb);
 
         let mut bounds = RoomBoundsState::default();
         bounds.set_y_bound(0, 0x0010);
@@ -8272,8 +9716,8 @@ mod tests {
             let mut bridge = NativeRoomBoundsBridgeMut::new(&mut bounds, &mut ram);
             bridge.add_y_bounds_a(0x0005);
             bridge.add_x_bounds_b(0x0007);
-            bridge.copy_y_bound_from(1, SCRATCH_0);
-            bridge.copy_x_bound_from(0, SCRATCH_1);
+            bridge.set_y_bound(1, 0x0aaa);
+            bridge.set_x_bound(0, 0x0bbb);
             bridge.set_packed_bounds(0x1000, 0x2000, 0x3000, 0x4000);
         }
 

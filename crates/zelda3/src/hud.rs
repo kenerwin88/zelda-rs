@@ -320,7 +320,7 @@ impl ZeldaState {
         let mut k = 0usize;
         let j = if (self.dungeon_stair_movement().current_floor() as i8) >= 0 {
             if self.dungeon_stair_movement().current_floor_word() == 0
-                && self.world_location_state().dungeon_room != 2
+                && self.game_state.world.location.dungeon_room() != 2
                 && self.save_progress().progress_indicator() < 2
             {
                 self.system_signals_mut().set_ambient_sound_effect(3);
@@ -410,7 +410,7 @@ impl ZeldaState {
                     resources.decrement_magic_filler();
                     resources.increment_magic_power();
                 }
-                if self.frame_state().frame_counter & 3 == 0
+                if self.game_state.frame.frame_counter & 3 == 0
                     && !self.system_signals().has_sound_effect_1()
                 {
                     self.system_signals_mut().set_sound_effect_1(45);
@@ -818,9 +818,9 @@ impl ZeldaState {
         self.hud_rebuild();
         self.set_overworld_map_state(0);
         self.set_submodule(0);
-        let saved_module = self.frame_state().saved_module_for_menu;
+        let saved_module = self.game_state.frame.saved_module_for_menu;
         self.set_main_module(saved_module);
-        if self.frame_state().submodule != 0 {
+        if self.game_state.frame.submodule != 0 {
             self.hud_restore_torch_background();
         }
         if self.player_state().current_item_y() != 5 && self.player_state().current_item_y() != 6 {

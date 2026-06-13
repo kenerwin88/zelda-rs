@@ -91,6 +91,8 @@ impl EffectState {
         self.tower_seal.write_to_ram(ram);
         self.happiness_pond_rupees.write_to_ram(ram);
         self.weather_vane_debris.write_to_ram(ram);
+        // Sprite-history scratch banks overlap entrance/digging effect scratch banks.
+        // Project them explicitly through SpriteHistoryScratchState when that domain is active.
         self.entrance_effects.write_to_ram(ram);
         self.digging_game_prize.write_to_ram(ram);
     }
@@ -1493,6 +1495,71 @@ impl SpriteHistoryScratchState {
         }
     }
 
+    pub(crate) fn write_moldorm_history_to_ram(&self, ram: &mut [u8]) {
+        write_split_word_bank(
+            ram,
+            MOLDORM_HISTORY_X_LO,
+            MOLDORM_HISTORY_X_HI,
+            &self.moldorm_x,
+        );
+        write_split_word_bank(
+            ram,
+            MOLDORM_HISTORY_Y_LO,
+            MOLDORM_HISTORY_Y_HI,
+            &self.moldorm_y,
+        );
+    }
+
+    pub(crate) fn write_swamola_target_to_ram(&self, ram: &mut [u8]) {
+        write_split_word_bank(
+            ram,
+            SWAMOLA_TARGET_X_LO,
+            SWAMOLA_TARGET_X_HI,
+            &self.swamola_target_x,
+        );
+        write_split_word_bank(
+            ram,
+            SWAMOLA_TARGET_Y_LO,
+            SWAMOLA_TARGET_Y_HI,
+            &self.swamola_target_y,
+        );
+    }
+
+    pub(crate) fn write_swamola_history_to_ram(&self, ram: &mut [u8]) {
+        write_split_word_bank(
+            ram,
+            SWAMOLA_HISTORY_X_LO,
+            SWAMOLA_HISTORY_X_HI,
+            &self.swamola_history_x,
+        );
+        write_split_word_bank(
+            ram,
+            SWAMOLA_HISTORY_Y_LO,
+            SWAMOLA_HISTORY_Y_HI,
+            &self.swamola_history_y,
+        );
+    }
+
+    pub(crate) fn write_beamos_laser_history_to_ram(&self, ram: &mut [u8]) {
+        write_split_word_bank(
+            ram,
+            BEAMOS_LASER_HISTORY_X_LO,
+            BEAMOS_LASER_HISTORY_X_HI,
+            &self.beamos_laser_x,
+        );
+        write_split_word_bank(
+            ram,
+            BEAMOS_LASER_HISTORY_Y_LO,
+            BEAMOS_LASER_HISTORY_Y_HI,
+            &self.beamos_laser_y,
+        );
+    }
+
+    pub(crate) fn write_lanmola_segment_motion_to_ram(&self, ram: &mut [u8]) {
+        write_byte_bank(ram, BEAMOS_LASER_HISTORY_X_HI, &self.lanmola_z_offsets);
+        write_byte_bank(ram, BEAMOS_LASER_HISTORY_Y_HI, &self.lanmola_directions);
+    }
+
     pub(crate) fn moldorm_history(&self, slot: usize) -> HistoryPositionState {
         history_position(&self.moldorm_x, &self.moldorm_y, slot)
     }
@@ -2375,6 +2442,18 @@ impl EntranceEffectState {
         }
     }
 
+    pub(crate) fn blast_wall_direction(&self) -> u8 {
+        self.direction
+    }
+
+    pub(crate) fn skull_woods_fire_has_started_entrance_opening(&self) -> bool {
+        self.state != 0
+    }
+
+    pub(crate) fn skull_woods_fire_inner_x(&self) -> u16 {
+        self.center_x
+    }
+
     pub(crate) fn skull_woods_fire_slot(&self, slot: usize) -> SkullWoodsFireSlotState {
         SkullWoodsFireSlotState {
             phase: self.phases.get(slot).copied().unwrap_or(0),
@@ -3105,6 +3184,18 @@ fn read_byte_bank(ram: &[u8], base: usize, len: usize) -> Vec<u8> {
         bank.push(ram.get(base + slot).copied().unwrap_or(0));
     }
     bank
+}
+
+fn write_split_word_bank(ram: &mut [u8], low_base: usize, high_base: usize, values: &[u16]) {
+    for (slot, value) in values.iter().copied().enumerate() {
+        write_split_u16(ram, low_base, high_base, slot, value);
+    }
+}
+
+fn write_byte_bank(ram: &mut [u8], base: usize, values: &[u8]) {
+    for (slot, value) in values.iter().copied().enumerate() {
+        ram[base + slot] = value;
+    }
 }
 
 fn write_split_u16(ram: &mut [u8], low_base: usize, high_base: usize, slot: usize, value: u16) {

@@ -83,7 +83,7 @@ impl ZeldaState {
         let mut t = self
             .world_region()
             .rng_seed()
-            .wrapping_add(self.frame_state().frame_counter);
+            .wrapping_add(self.game_state.frame.frame_counter);
         t = if t & 1 != 0 { t >> 1 } else { (t >> 1) ^ 0xb8 };
         self.world_region_mut().set_rng_seed(t);
         let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
@@ -97,12 +97,12 @@ impl ZeldaState {
                     trimmed.parse::<u8>().ok()
                 }
             })
-            .is_none_or(|frame| frame == self.frame_state().frame_counter);
+            .is_none_or(|frame| frame == self.game_state.frame.frame_counter);
         if trace_rng && trace_frame_matches {
             let loc = std::panic::Location::caller();
             eprintln!(
                 "R rng fc={} before=0x{:02x} after=0x{:02x} site={}:{} link=0x{:04x},0x{:04x}",
-                self.frame_state().frame_counter,
+                self.game_state.frame.frame_counter,
                 before,
                 t,
                 loc.file(),
@@ -228,7 +228,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func3(&mut self) {
         self.MirrorWarp_BuildWavingHDMATable();
-        if self.frame_state().subsubmodule != 0 {
+        if self.game_state.frame.subsubmodule != 0 {
             self.set_subsubmodule(0);
             self.increment_submodule();
         }
@@ -236,7 +236,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func4(&mut self) {
         self.MirrorWarp_BuildDewavingHDMATable();
-        if self.frame_state().subsubmodule != 0 {
+        if self.game_state.frame.subsubmodule != 0 {
             self.set_subsubmodule(0);
             self.increment_submodule();
         }
@@ -263,7 +263,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func6(&mut self) {
         self.decrement_subsubmodule();
-        if self.frame_state().subsubmodule == 0 {
+        if self.game_state.frame.subsubmodule == 0 {
             self.increment_submodule();
             self.system_signals_mut().set_ambient_sound_effect(9);
         }
@@ -271,7 +271,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func7(&mut self) {
         self.RenderText();
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.set_overworld_map_state(0);
             self.system_signals_mut().set_ambient_sound_effect(5);
             if !self.inventory_items().has_moon_pearl() {
@@ -288,7 +288,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func8(&mut self) {
         self.RenderText();
-        if self.frame_state().submodule == 0 {
+        if self.game_state.frame.submodule == 0 {
             self.set_subsubmodule(32);
             self.set_submodule(12);
         }
@@ -296,7 +296,7 @@ impl ZeldaState {
 
     fn kill_aghanim_func12(&mut self) {
         self.decrement_subsubmodule();
-        if self.frame_state().subsubmodule != 0 {
+        if self.game_state.frame.subsubmodule != 0 {
             return;
         }
         self.ResetAncillaAndCutscene();
@@ -323,7 +323,7 @@ impl ZeldaState {
             return;
         }
 
-        let r8 = if (self.world_location_state().dungeon_room as u8) == 0 {
+        let r8 = if (self.game_state.world.location.dungeon_room() as u8) == 0 {
             0x80
         } else {
             0xc0
@@ -340,7 +340,7 @@ impl ZeldaState {
             .set_object_tilemap_pos(i, tilemap_pos);
         if r8 == 0 {
             self.dungeon_torch_mut()
-                .set_torch_data_word(opos, tilemap_pos);
+                .set_torch_data_word_index(opos, tilemap_pos);
         }
 
         let x = tilemap_pos & 0x3fff;
@@ -428,9 +428,9 @@ impl ZeldaState {
     pub(super) fn module05_load_file(&mut self) {
         if self.state_recorder.replay_mode
             && std::env::var_os("ZELDA3_SMV_LOADFILE_TIMING_HACKS").is_some()
-            && self.frame_state().main_module == 5
-            && self.frame_state().submodule == 0
-            && self.frame_state().saved_module_for_menu == 0
+            && self.game_state.frame.main_module == 5
+            && self.game_state.frame.submodule == 0
+            && self.game_state.frame.saved_module_for_menu == 0
             && self.dialogue_message_index().value() == 0x000a
         {
             if self.replay_loadfile_stall == 0 {
@@ -468,7 +468,7 @@ impl ZeldaState {
         self.set_vertical_irq_trigger(48);
 
         if self.save_progress().dark_world_state() != 0 {
-            if self.world_location_state().is_indoors() {
+            if self.game_state.world.location.is_indoors() {
                 self.load_dungeon_room_rebuild_hud();
                 return;
             }
@@ -481,7 +481,7 @@ impl ZeldaState {
             self.set_submodule(0);
             self.set_subsubmodule(0);
             self.system_signals_mut().clear_restart_check_flag();
-        } else if self.display_state().mosaic_level != 0
+        } else if self.game_state.display.mosaic_level != 0
             || (self.system_signals().game_over_check_flag() != 0
                 && self.system_signals().restart_check_flag() == 0)
             || self.save_progress().progress_indicator() < 2
@@ -562,7 +562,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module13_boss_victory_pendant(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.boss_victory_heal(),
             1 => self.dungeon_start_victory_spin(),
             2 => self.dungeon_run_victory_spin(),
@@ -598,7 +598,7 @@ impl ZeldaState {
 
     pub(super) fn dungeon_start_victory_spin(&mut self) {
         self.decrement_subsubmodule();
-        if self.frame_state().subsubmodule != 0 {
+        if self.game_state.frame.subsubmodule != 0 {
             return;
         }
         self.player_state_mut().clear_immobilized();
@@ -624,7 +624,7 @@ impl ZeldaState {
 
     pub(super) fn dungeon_close_victory_spin(&mut self) {
         self.decrement_subsubmodule();
-        if self.frame_state().subsubmodule != 0 {
+        if self.game_state.frame.subsubmodule != 0 {
             return;
         }
         self.increment_submodule();
@@ -633,7 +633,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module15_mirror_warp_from_aga(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.kill_agahnim_load_music(),
             1 => self.kill_aghanim_init(),
             2 => self.kill_aghanim_func2(),
@@ -649,14 +649,14 @@ impl ZeldaState {
             12 => self.kill_aghanim_func12(),
             _ => {}
         }
-        if self.frame_state().submodule < 2 || self.frame_state().submodule >= 5 {
+        if self.game_state.frame.submodule < 2 || self.game_state.frame.submodule >= 5 {
             self.sprite_main();
             self.link_oam_main();
         }
     }
 
     pub(super) fn module16_boss_victory_crystal(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => self.boss_victory_heal(),
             1 => self.dungeon_start_victory_spin(),
             2 => self.dungeon_run_victory_spin(),
@@ -670,7 +670,7 @@ impl ZeldaState {
 
     pub(super) fn module16_04_fade_and_end(&mut self) {
         self.decrement_screen_brightness();
-        if self.display_state().screen_brightness != 0 {
+        if self.game_state.display.screen_brightness != 0 {
             return;
         }
         self.world_scroll_mut().set_bg1_x_offset(0);
@@ -685,7 +685,7 @@ impl ZeldaState {
             player.clear_item_hold_pose();
             player.clear_sprite_damage_disable_timer();
         }
-        let saved_module = self.frame_state().saved_module_for_menu;
+        let saved_module = self.game_state.frame.saved_module_for_menu;
         self.set_main_module(saved_module);
         self.set_submodule(0);
         self.set_subsubmodule(0);
@@ -926,16 +926,16 @@ impl ZeldaState {
     }
 
     pub(super) fn module17_save_and_quit(&mut self) {
-        match self.frame_state().submodule {
+        match self.game_state.frame.submodule {
             0 => {
                 self.increment_submodule();
             }
             1 => {}
             _ => {}
         }
-        if self.frame_state().submodule == 1 {
+        if self.game_state.frame.submodule == 1 {
             self.decrement_screen_brightness();
-            if self.display_state().screen_brightness == 0 {
+            if self.game_state.display.screen_brightness == 0 {
                 self.set_mosaic_copy(15);
                 self.set_subsubmodule(1);
                 self.Death_Func15(false);
@@ -976,7 +976,7 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_item_tile_action_overworld(&mut self, x: u16, y: u16) -> u8 {
-        if self.world_location_state().is_indoors() {
+        if self.game_state.world.location.is_indoors() {
             self.HandleItemTileAction_Dungeon(x, y)
         } else {
             self.Overworld_ToolAndTileInteraction(x, y) as u8
@@ -1067,7 +1067,7 @@ impl ZeldaState {
     }
 
     pub(super) fn main_show_text_message(&mut self) {
-        if self.frame_state().main_module != 14 {
+        if self.game_state.frame.main_module != 14 {
             self.world_transient_mut()
                 .clear_tile_interaction_shared_flag();
             self.messaging_state_mut().clear_module();
@@ -1258,7 +1258,7 @@ impl ZeldaState {
         let source10 = LINK_DMA_SOURCES8[(self.player_state().pushed_block_mode() & 3) as usize];
         self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
 
-        if self.decrement_word(BG_TILE_ANIMATION_COUNTDOWN) == 0 {
+        if self.decrement_bg_tile_animation_countdown() == 0 {
             let overlay = self.world_region().overlay_index() as u16;
             let countdown = if overlay == 0xb5 || overlay == 0xbc {
                 0x17
@@ -1289,12 +1289,12 @@ impl ZeldaState {
         self.set_link_body_pointer_dma_sources(source17, source17.wrapping_add(0x200));
 
         let source20 = 0xb540u16
-            .wrapping_add((self.display_state().travel_bird_tile_offset as u16).wrapping_mul(2));
+            .wrapping_add((self.game_state.display.travel_bird_tile_offset as u16).wrapping_mul(2));
         self.set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
     }
 
     pub(super) fn module_main_routing(&mut self) {
-        match self.frame_state().main_module {
+        match self.game_state.frame.main_module {
             0 => self.Module00_Intro(),
             1 => self.module01_file_select(),
             2 => self.module02_copy_file(),
