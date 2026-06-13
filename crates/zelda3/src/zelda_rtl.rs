@@ -2028,7 +2028,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn world_camera_boundaries(&self) -> WorldCameraBoundariesState {
-        WorldCameraBoundariesState::load_from_ram(&self.ram)
+        self.game_state.world.camera_boundaries
     }
 
     pub(crate) fn world_camera_boundaries_mut(
@@ -8840,9 +8840,15 @@ mod tests {
         set_link_test_word(&mut state, LINK_X_COORD, 0x4444);
         state.room_bounds_mut().set_y_bound(0, 0x5555);
         state.room_bounds_mut().set_x_bound(2, 0x6666);
-        write_le_u16(&mut state.ram, UP_DOWN_SCROLL_TARGET, 0x7777);
-        write_le_u16(&mut state.ram, LEFT_RIGHT_SCROLL_TARGET_END, 0x8888);
-        write_le_u16(&mut state.ram, CAMERA_Y_COORD_SCROLL_LOW, 0x9999);
+        state
+            .world_camera_boundaries_mut()
+            .set_up_down_scroll_target(0x7777);
+        state
+            .world_camera_boundaries_mut()
+            .set_left_right_scroll_target_end(0x8888);
+        state
+            .world_camera_boundaries_mut()
+            .set_camera_y_coord_scroll_low(0x9999);
         state.ram[QUADRANT_FULLSIZE_Y] = 2;
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 2);
         state.player_state_mut().set_facing(8);

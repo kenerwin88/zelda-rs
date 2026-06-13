@@ -2169,7 +2169,6 @@ pub(crate) struct NativeWorldCameraBoundariesBridgeMut<'a> {
 
 impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut WorldCameraBoundariesState, ram: &'a mut [u8]) -> Self {
-        *state = WorldCameraBoundariesState::load_from_ram(ram);
         Self { state, ram }
     }
 

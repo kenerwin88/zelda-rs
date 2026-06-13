@@ -3023,6 +3023,110 @@ mod tests {
     }
 
     #[test]
+    fn world_camera_boundaries_loads_from_and_projects_to_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW, 0x0101);
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_HI, 0x0202);
+        write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW, 0x0303);
+        write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_HI, 0x0404);
+        write_le_u16(&mut ram, UP_DOWN_SCROLL_TARGET, 0x0505);
+        write_le_u16(&mut ram, LEFT_RIGHT_SCROLL_TARGET, 0x0606);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_UP_COUNTER, 0x0707);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_LEFT_COUNTER, 0x0808);
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW_SPEXIT, 0x0909);
+        write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT, 0x0a0a);
+        write_le_u16(&mut ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START, 0x0b0b);
+        write_le_u16(&mut ram, SPECIAL_EXIT_ROOM_BOUNDS_X_END, 0x0c0c);
+
+        let boundaries = WorldCameraBoundariesState::load_from_ram(&ram);
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x0101);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x0202);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0303);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0404);
+        assert_eq!(boundaries.up_down_scroll_target(0), 0x0505);
+        assert_eq!(boundaries.up_down_scroll_target(2), 0x0606);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(0), 0x0707);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(2), 0x0808);
+        assert_eq!(boundaries.spexit_camera_y_scroll_low(), 0x0909);
+        assert_eq!(boundaries.spexit_camera_x_scroll_low(), 0x0a0a);
+        assert_eq!(boundaries.spexit_room_bound_y_start(), 0x0b0b);
+        assert_eq!(boundaries.spexit_room_bound_x_end(), 0x0c0c);
+
+        let mut projected = vec![0; WRAM_SIZE];
+        boundaries.write_to_ram(&mut projected);
+        assert_eq!(
+            WorldCameraBoundariesState::load_from_ram(&projected),
+            boundaries
+        );
+    }
+
+    #[test]
+    fn native_world_camera_boundaries_bridge_dual_writes_changes_from_native_state() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut boundaries = WorldCameraBoundariesState::load_from_ram(&ram);
+        {
+            let mut bridge = NativeWorldCameraBoundariesBridgeMut::new(&mut boundaries, &mut ram);
+            bridge.set_camera_y_coord_scroll_low(0x0101);
+            bridge.set_camera_y_coord_scroll_hi(0x0202);
+            bridge.set_camera_x_coord_scroll_low(0x0303);
+            bridge.set_camera_x_coord_scroll_hi(0x0404);
+            bridge.set_up_down_scroll_target(0x0505);
+            bridge.set_left_right_scroll_target(0x0606);
+            bridge.set_overworld_scroll_up_counter(0x0707);
+            bridge.set_overworld_scroll_left_counter(0x0808);
+            bridge.set_special_exit_room_bounds(0x0909, 0x0a0a, 0x0b0b, 0x0c0c);
+            bridge.save_spexit_camera_coords();
+        }
+
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x0101);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x0202);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0303);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0404);
+        assert_eq!(boundaries.up_down_scroll_target(0), 0x0505);
+        assert_eq!(boundaries.up_down_scroll_target(2), 0x0606);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(0), 0x0707);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(2), 0x0808);
+        assert_eq!(boundaries.spexit_camera_y_scroll_low(), 0x0101);
+        assert_eq!(boundaries.spexit_camera_x_scroll_low(), 0x0303);
+        assert_eq!(boundaries.spexit_room_bound_y_start(), 0x0909);
+        assert_eq!(boundaries.spexit_room_bound_x_end(), 0x0c0c);
+        assert_eq!(WorldCameraBoundariesState::load_from_ram(&ram), boundaries);
+    }
+
+    #[test]
+    fn native_world_camera_boundaries_bridge_projects_native_state_over_stale_ram() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut boundaries = WorldCameraBoundariesState::default();
+        {
+            let mut bridge = NativeWorldCameraBoundariesBridgeMut::new(&mut boundaries, &mut ram);
+            bridge.set_camera_y_coord_scroll_low(0x0101);
+            bridge.set_camera_y_coord_scroll_hi(0x0202);
+            bridge.set_camera_x_coord_scroll_low(0x0303);
+            bridge.set_up_down_scroll_target(0x0404);
+            bridge.set_overworld_scroll_up_counter(0x0505);
+        }
+
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW, 0xaaaa);
+        write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_HI, 0xbbbb);
+        write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW, 0xcccc);
+        write_le_u16(&mut ram, UP_DOWN_SCROLL_TARGET, 0xdddd);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_UP_COUNTER, 0xeeee);
+
+        {
+            let mut bridge = NativeWorldCameraBoundariesBridgeMut::new(&mut boundaries, &mut ram);
+            bridge.set_camera_x_coord_scroll_hi(0x0606);
+        }
+
+        assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x0101);
+        assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x0202);
+        assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0303);
+        assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0606);
+        assert_eq!(boundaries.up_down_scroll_target(0), 0x0404);
+        assert_eq!(boundaries.overworld_scroll_counter_for_axis(0), 0x0505);
+        assert_eq!(WorldCameraBoundariesState::load_from_ram(&ram), boundaries);
+    }
+
+    #[test]
     fn world_palette_theme_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[LAST_LIGHT_VS_DARK_WORLD] = 0x01;
