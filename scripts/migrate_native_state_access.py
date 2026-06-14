@@ -127,6 +127,7 @@ MANUAL_ACCESSORS: tuple[AccessorMapping, ...] = (
     AccessorMapping("dungeon_room_parser", "game_state.dungeon.room_parser"),
     AccessorMapping("swim_acceleration", "game_state.player.swim_acceleration"),
     AccessorMapping("tile_detect_position", "game_state.player.tile_detection"),
+    AccessorMapping("follower_link_state", "game_state.player.follower_link"),
     AccessorMapping(
         "small_overworld_map16_scroll_backup_state",
         "game_state.world.overworld.map16.small_scroll_backup",

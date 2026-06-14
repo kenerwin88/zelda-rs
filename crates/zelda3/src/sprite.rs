@@ -312,11 +312,19 @@ impl ZeldaState {
         const APPLY_RUMBLE_X: [i8; 4] = [-32, -32, -32, 16];
         const APPLY_RUMBLE_Y: [i8; 4] = [-32, 32, -24, -24];
         const APPLY_RUMBLE_WH: [u8; 6] = [0x50, 0x50, 0x20, 0x20, 0x50, 0x50];
-
-        let player = self.player_state();
-        let j = player.facing_index();
-        let x = player.x().wrapping_add(APPLY_RUMBLE_X[j] as i16 as u16);
-        let y = player.y().wrapping_add(APPLY_RUMBLE_Y[j] as i16 as u16);
+        let j = self.game_state.player.follower_link.facing_index();
+        let x = self
+            .game_state
+            .player
+            .follower_link
+            .x()
+            .wrapping_add(APPLY_RUMBLE_X[j] as i16 as u16);
+        let y = self
+            .game_state
+            .player
+            .follower_link
+            .y()
+            .wrapping_add(APPLY_RUMBLE_Y[j] as i16 as u16);
         let mut hb = SpriteHitBox {
             r0_xlo: x as u8,
             r1_ylo: y as u8,
@@ -354,14 +362,14 @@ impl ZeldaState {
     //   flag_is_sprite_to_pick_up = bak1;
     // }
     pub(super) fn sprite_spawn_immediately_smashed_terrain(&mut self, what: u8, x: u16, y: u16) {
-        let bak1 = self.player_state().sprite_pickup_flag();
+        let bak1 = self.game_state.player.follower_link.sprite_pickup_flag();
         let bak2 = self.game_state.sprites.workspace.pickup_slot_cache();
         let k = self.sprite_spawn_throwable_terrain_silently(what, x, y);
         if k >= 0 {
             self.throwable_scenery_transmute_to_debris(k as usize);
         }
         self.sprite_workspace_mut().set_pickup_slot_cache(bak2);
-        self.player_state_mut().set_sprite_pickup_flag(bak1);
+        self.follower_link_state_mut().set_sprite_pickup_flag(bak1);
     }
 
     // void Sprite_SpawnThrowableTerrain(uint8 what, uint16 x, uint16 y) {  // 86814b
@@ -395,7 +403,7 @@ impl ZeldaState {
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
         self.sprite_prep_load_properties_for_helpers(k);
-        let value = self.player_state().lower_level_state();
+        let value = self.game_state.player.follower_link.lower_level_state();
         self.sprite_slot_mut(k).set_floor(value);
         let value = what;
         self.sprite_slot_mut(k).set_c(value);
@@ -414,11 +422,11 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_oam_flags(value);
         let value = 9;
         self.sprite_slot_mut(k).set_draw_work_byte_4(value);
-        self.player_state_mut().set_sprite_pickup_flag(2);
+        self.follower_link_state_mut().set_sprite_pickup_flag(2);
         self.sprite_workspace_mut().set_pickup_slot_cache(2);
         let value = 16;
         self.sprite_slot_mut(k).set_delay_main(value);
-        let value = self.player_state().lower_level_state();
+        let value = self.game_state.player.follower_link.lower_level_state();
         self.sprite_slot_mut(k).set_floor(value);
         let value = 0;
         self.sprite_slot_mut(k).set_graphics(value);
@@ -497,7 +505,7 @@ impl ZeldaState {
             }
             let value = 0;
             self.sprite_slot_mut(j).set_e(value);
-            self.system_signals_mut().set_sound_effect_2(0x30);
+            self.set_sound_effect_2(0x30);
             let value = 0x30;
             self.sprite_slot_mut(j).set_z_velocity(value);
             let value = 0x10;
@@ -530,15 +538,20 @@ impl ZeldaState {
     pub(super) fn sprite_nullify_hookshot_drag(&mut self) {
         for i in (0..5).rev() {
             if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() & 0x1f == 0
-                && self.player_state().has_hookshot_interlock()
+                && self
+                    .game_state
+                    .player
+                    .follower_link
+                    .has_hookshot_interlock()
             {
-                self.player_state_mut().clear_hookshot_interlock();
+                self.follower_link_state_mut().clear_hookshot_interlock();
                 break;
             }
         }
-        let mut player = self.player_state_mut();
-        player.cache_safe_return_high_from_current();
-        player.restore_position_from_previous();
+        self.follower_link_state_mut()
+            .cache_safe_return_high_from_current();
+        self.follower_link_state_mut()
+            .restore_position_from_previous();
         self.handle_indoor_camera_and_doors();
     }
 
@@ -672,7 +685,12 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_is_right_of_link(&self, k: usize) -> PairU8 {
-        let x = self.player_state().x().wrapping_sub(self.sprite_get_x(k));
+        let x = self
+            .game_state
+            .player
+            .follower_link
+            .x()
+            .wrapping_sub(self.sprite_get_x(k));
         PairU8 {
             a: u8::from(sign16(x)),
             b: x as u8,
@@ -680,7 +698,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_is_below_link(&self, k: usize) -> PairU8 {
-        let link_y = self.player_state().y();
+        let link_y = self.game_state.player.follower_link.y();
         let t = (link_y as u8) as i32 + 8;
         let u = (t & 0xff) + self.sprite_slot(k).z() as i32;
         let v = (u & 0xff) - self.sprite_slot(k).y_low() as i32;
@@ -898,13 +916,17 @@ impl ZeldaState {
     //          (uint16)(link_y_coord - cur_sprite_y + sprite_z[k] + 16) < 24;
     // }
     pub(super) fn sprite_setup_hit_box00(&self, k: usize) -> bool {
-        let player = self.player_state();
-        player
+        self.game_state
+            .player
+            .follower_link
             .x()
             .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
             .wrapping_add(11)
             < 23
-            && player
+            && self
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                 .wrapping_add(self.sprite_slot(k).z() as u16)
@@ -972,12 +994,14 @@ impl ZeldaState {
             return;
         }
         self.garnish_state_mut().set_repulsespark_timer(5);
-        let player = self.player_state();
-        let t = u16::from(player.x() as u8) + u16::from(player.oam_x_offset());
-        let y = u16::from(player.y() as u8) + u16::from(player.oam_y_offset()) + (t >> 8);
+        let t = u16::from(self.game_state.player.follower_link.x() as u8)
+            + u16::from(self.game_state.player.follower_link.oam_x_offset());
+        let y = u16::from(self.game_state.player.follower_link.y() as u8)
+            + u16::from(self.game_state.player.follower_link.oam_y_offset())
+            + (t >> 8);
         self.garnish_state_mut().set_repulsespark_x_lo(t as u8);
         self.garnish_state_mut().set_repulsespark_y_lo(y as u8);
-        let floor = self.player_state().lower_level_state();
+        let floor = self.game_state.player.follower_link.lower_level_state();
         self.garnish_state_mut()
             .set_repulsespark_floor_status(floor);
         self.set_sound_effect_1_with_link_pan(5);
@@ -995,10 +1019,11 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_xy(pt.x, pt.y);
         {
-            let mut player = self.player_state_mut();
-            player.set_actual_z_velocity(vel >> 1);
-            player.set_recoil_z_velocity(vel >> 1);
-            player.set_z(0);
+            self.follower_link_state_mut()
+                .set_actual_z_velocity(vel >> 1);
+            self.follower_link_state_mut()
+                .set_recoil_z_velocity(vel >> 1);
+            self.follower_link_state_mut().set_z(0);
         }
     }
 
@@ -1023,14 +1048,14 @@ impl ZeldaState {
             4, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 12, 4, 4, 4, 6, 6, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 12,
             4, 4, 4, 6, 6, 0, 0, 0, 0, 0,
         ];
-
-        let player = self.player_state();
-        let mut x = player
-            .x()
-            .wrapping_add(X[t].wrapping_add(player.oam_x_offset_signed()) as i16 as u16);
-        let mut y = player
-            .y()
-            .wrapping_add(Y[t].wrapping_add(player.oam_y_offset_signed()) as i16 as u16);
+        let mut x = self.game_state.player.follower_link.x().wrapping_add(
+            X[t].wrapping_add(self.game_state.player.follower_link.oam_x_offset_signed()) as i16
+                as u16,
+        );
+        let mut y = self.game_state.player.follower_link.y().wrapping_add(
+            Y[t].wrapping_add(self.game_state.player.follower_link.oam_y_offset_signed()) as i16
+                as u16,
+        );
         let mut w = W[t];
         let mut h = H[t];
         if shrink {
@@ -1061,13 +1086,18 @@ impl ZeldaState {
         const RUN_X_LO: [u8; 4] = [0, 0, 0xf8, 8];
         const SWORD_ACTION_INACTIVE_FRAMES: [u8; 13] = [1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1];
 
-        let player = self.player_state();
         if self.game_state.player.follower_link.is_running() {
-            let j = player.facing_index();
-            let x = player
+            let j = self.game_state.player.follower_link.facing_index();
+            let x = self
+                .game_state
+                .player
+                .follower_link
                 .x()
                 .wrapping_add(u16::from(RUN_X_LO[j]) | (u16::from(RUN_X_HI[j]) << 8));
-            let y = player
+            let y = self
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_add(u16::from(RUN_Y_LO[j]) | (u16::from(RUN_Y_HI[j]) << 8));
             hb.r0_xlo = x as u8;
@@ -1080,10 +1110,12 @@ impl ZeldaState {
         }
 
         let mut t = 0usize;
-        if !player.item_in_hand_has(10) && !player.position_mode_has(0x10) {
-            if sign8(self.player_state().button_b_frames()) {
-                let x = player.x().wrapping_sub(14);
-                let y = player.y().wrapping_sub(10);
+        if !self.game_state.player.follower_link.item_in_hand_has(10)
+            && !self.game_state.player.follower_link.position_mode_has(0x10)
+        {
+            if sign8(self.game_state.player.follower_link.button_b_frames()) {
+                let x = self.game_state.player.follower_link.x().wrapping_sub(14);
+                let y = self.game_state.player.follower_link.y().wrapping_sub(10);
                 hb.r0_xlo = x as u8;
                 hb.r8_xhi = (x >> 8) as u8;
                 hb.r1_ylo = y as u8;
@@ -1092,14 +1124,14 @@ impl ZeldaState {
                 hb.r3 = 45;
                 return;
             } else if SWORD_ACTION_INACTIVE_FRAMES
-                [usize::from(self.player_state().button_b_frames())]
+                [usize::from(self.game_state.player.follower_link.button_b_frames())]
                 != 0
             {
                 hb.r8_xhi = 0x80;
                 return;
             }
-            t = usize::from(player.facing()) * 8
-                + usize::from(self.player_state().button_b_frames())
+            t = usize::from(self.game_state.player.follower_link.facing()) * 8
+                + usize::from(self.game_state.player.follower_link.button_b_frames())
                 + 1;
         }
         self.player_action_hit_box_from_table(hb, t, false);
@@ -1109,15 +1141,21 @@ impl ZeldaState {
     pub(super) fn link_update_hit_box_with_sword(&self, hb: &mut SpriteHitBox) {
         const SWORD_ACTION_INACTIVE_FRAMES: [u8; 13] = [1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1];
 
-        let player = self.player_state();
-        if player.spin_attack_step_counter() != 0
-            || sign8(player.button_b_frames())
-            || SWORD_ACTION_INACTIVE_FRAMES[usize::from(player.button_b_frames())] != 0
+        if self
+            .game_state
+            .player
+            .follower_link
+            .spin_attack_step_counter()
+            != 0
+            || sign8(self.game_state.player.follower_link.button_b_frames())
+            || SWORD_ACTION_INACTIVE_FRAMES
+                [usize::from(self.game_state.player.follower_link.button_b_frames())]
+                != 0
         {
             return;
         }
-        let t = usize::from(self.player_state().facing()) * 8
-            + usize::from(player.button_b_frames())
+        let t = usize::from(self.game_state.player.follower_link.facing()) * 8
+            + usize::from(self.game_state.player.follower_link.button_b_frames())
             + 1;
         self.player_action_hit_box_from_table(hb, t, true);
     }
@@ -1228,7 +1266,13 @@ impl ZeldaState {
     //     Link_SetupHitBox(hb);
     // }
     pub(super) fn link_setup_hit_box_conditional(&self, hb: &mut SpriteHitBox) {
-        if self.player_state().sprite_damage_disable_timer() != 0 {
+        if self
+            .game_state
+            .player
+            .follower_link
+            .sprite_damage_disable_timer()
+            != 0
+        {
             hb.r9_yhi = 0x80;
         } else {
             self.link_setup_hit_box(hb);
@@ -1247,11 +1291,10 @@ impl ZeldaState {
     pub(super) fn link_setup_hit_box(&self, hb: &mut SpriteHitBox) {
         hb.r2 = 8;
         hb.r3 = 8;
-        let player = self.player_state();
-        let x = player.x().wrapping_add(4);
+        let x = self.game_state.player.follower_link.x().wrapping_add(4);
         hb.r0_xlo = x as u8;
         hb.r8_xhi = (x >> 8) as u8;
-        let y = player.y().wrapping_add(8);
+        let y = self.game_state.player.follower_link.y().wrapping_add(8);
         hb.r1_ylo = y as u8;
         hb.r9_yhi = (y >> 8) as u8;
     }
@@ -1406,9 +1449,8 @@ impl ZeldaState {
             }
             if st == 10 {
                 if ty != 0xec && ty != 0xd2 {
-                    let mut player = self.player_state_mut();
-                    player.clear_picking_throw_state();
-                    player.clear_state_bits();
+                    self.follower_link_state_mut().clear_picking_throw_state();
+                    self.follower_link_state_mut().clear_state_bits();
                     let value = 0;
                     self.sprite_slot_mut(k).set_state(value);
                 }
@@ -1516,7 +1558,7 @@ impl ZeldaState {
                 .clear();
         }
 
-        self.player_state_mut().clear_ancilla_pickup_flag();
+        self.follower_link_state_mut().clear_ancilla_pickup_flag();
         self.sprite_system_mut().set_limit_instance(0);
         self.sprite_battle_mut().clear_item_drop_counter();
         self.archery_game_mut().clear_hit_counter();
@@ -1528,7 +1570,7 @@ impl ZeldaState {
         self.attract_scene_mut().clear_intro_palette_flash_count();
         self.sprite_workspace_mut().set_reset_scratch_a(0);
         self.sprite_workspace_mut().set_reset_scratch_b(0);
-        self.player_state_mut().clear_menu_block();
+        self.follower_link_state_mut().clear_menu_block();
         self.garnish_state_mut().clear_boulder_trap_count();
         self.sprite_system_mut().set_chr_halfslot_state(0);
         self.minigame_state_mut().clear_is_archer_or_shovel_game();
@@ -1574,10 +1616,10 @@ impl ZeldaState {
         self.sprite_system_mut().set_limit_instance(0);
         self.oam_state_mut().clear_sprite_sorting_setting();
         if self.game_state.sprites.follower_runtime.indicator() != 13 {
-            self.hud_state_mut().set_super_bomb_indicator_timer(0xfe);
+            self.set_super_bomb_indicator_timer(0xfe);
         }
         self.sprite_workspace_mut().clear_where_in_room();
-        self.overworld_sprite_loaded_mut().clear_all();
+        self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }
 
@@ -1633,7 +1675,7 @@ impl ZeldaState {
             let r5 = (sprites[src + 1] & 0x0f) | (sprites[src] << 4);
             let idx = usize::from(r5) | (usize::from(r6) << 8);
             let value = sprites[src + 2].wrapping_add(1);
-            self.overworld_sprite_presence_mut().set_marker(idx, value);
+            self.set_overworld_sprite_presence_marker(idx, value);
             src += 3;
         }
     }
@@ -1652,14 +1694,14 @@ impl ZeldaState {
         } else {
             0
         };
-        self.world_scroll_mut().set_bg2_x(bak0.wrapping_sub(xt));
+        self.set_bg2_x(bak0.wrapping_sub(xt));
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_activate_when_proximal();
             let bg = self.game_state.world.scroll.bg2_x().wrapping_add(16);
-            self.world_scroll_mut().set_bg2_x(bg);
+            self.set_bg2_x(bg);
         }
         self.set_overworld_horizontal_scroll_delta_low(bak1);
-        self.world_scroll_mut().set_bg2_x(bak0);
+        self.set_bg2_x(bak0);
     }
 
     pub(super) fn sprite_proximity_activation(&mut self) {
@@ -1779,8 +1821,7 @@ impl ZeldaState {
                 return;
             }
             let k = k as usize;
-            self.overworld_sprite_loaded_mut()
-                .set_loaded_mask(blk, loadedmask);
+            self.set_overworld_sprite_loaded_mask(blk, loadedmask);
             self.game_state
                 .sprites
                 .overlord_slots
@@ -1867,8 +1908,7 @@ impl ZeldaState {
                     self.sprite_slot(k).bump_damage(),
                 );
             }
-            self.overworld_sprite_loaded_mut()
-                .set_loaded_mask(blk, loadedmask);
+            self.set_overworld_sprite_loaded_mask(blk, loadedmask);
             self.sprite_slot_mut(k).set_n_word(blk);
             let value = sprite_to_spawn.wrapping_sub(1);
             self.sprite_slot_mut(k).set_sprite_type(value);
@@ -1900,9 +1940,8 @@ impl ZeldaState {
             self.dungeon_cache_trans_sprites();
         }
         {
-            let mut player = self.player_state_mut();
-            player.clear_picking_throw_state();
-            player.clear_state_bits();
+            self.follower_link_state_mut().clear_picking_throw_state();
+            self.follower_link_state_mut().clear_state_bits();
         }
         self.sprite_disable_all();
         self.garnish_state_mut().set_sprcoll_x_size(0xffff);
@@ -2161,11 +2200,10 @@ impl ZeldaState {
             self.sprite_proximity_activation();
         }
         let dark_world = u8::from(self.game_state.inventory.save_progress.dark_world_state() != 0);
-        self.world_region_mut()
-            .set_dark_world_region_index(dark_world);
+        self.set_dark_world_region_index(dark_world);
         if self.game_state.frame.submodule == 0 {
-            self.player_state_mut().set_drag_player_x(0);
-            self.player_state_mut().set_drag_player_y(0);
+            self.follower_link_state_mut().set_drag_player_x(0);
+            self.follower_link_state_mut().set_drag_player_y(0);
         }
         self.oam_reset_region_bases();
         self.replay_trace_ram_watch("sprite-after-oam-reset");
@@ -2173,17 +2211,17 @@ impl ZeldaState {
         self.replay_trace_ram_watch("sprite-after-garnish-upper");
         self.follower_main();
         self.replay_trace_ram_watch("sprite-after-follower");
-        let pickup_slot_cache = self.player_state().sprite_pickup_flag();
+        let pickup_slot_cache = self.game_state.player.follower_link.sprite_pickup_flag();
         self.sprite_workspace_mut()
             .set_pickup_slot_cache(pickup_slot_cache);
-        self.player_state_mut().clear_sprite_pickup_flag();
+        self.follower_link_state_mut().clear_sprite_pickup_flag();
         self.hitbox_scratch_offset_mut().set_x_high_offset(0x80);
         self.sprite_battle_mut().tick_damaging_enemies_timer();
-        self.player_state_mut().clear_player_pose_draw_counter();
+        self.follower_link_state_mut()
+            .clear_player_pose_draw_counter();
         {
-            let mut player = self.player_state_mut();
-            player.set_pull_action_state(0);
-            player.clear_prevent_movement();
+            self.follower_link_state_mut().set_pull_action_state(0);
+            self.follower_link_state_mut().clear_prevent_movement();
         }
         if self.game_state.sprites.system.alert_flag() != 0 {
             self.sprite_system_mut().decrement_alert_flag();
@@ -2405,7 +2443,7 @@ impl ZeldaState {
         }
 
         const SPRITE_PRIOS: [u8; 4] = [0x20, 0x10, 0x30, 0x30];
-        let mut floor = self.player_state().lower_level_state() as usize;
+        let mut floor = self.game_state.player.follower_link.lower_level_state() as usize;
         if floor != 3 {
             floor = self.sprite_slot(k).floor() as usize;
         }
@@ -2810,15 +2848,19 @@ impl ZeldaState {
     // }
     pub(super) fn garnish_check_player_collision(&mut self, k: usize, x: i32, y: i32) {
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 7)
-            | self.player_state().blink_countdown()
-            | self.player_state().sprite_damage_disable_timer()
+            | self.game_state.player.follower_link.blink_countdown()
+            | self
+                .game_state
+                .player
+                .follower_link
+                .sprite_damage_disable_timer()
             != 0
         {
             return;
         }
 
-        let link_x = self.player_state().x();
-        let link_y = self.player_state().y();
+        let link_x = self.game_state.player.follower_link.x();
+        let link_y = self.game_state.player.follower_link.y();
         let bg_x = self.game_state.world.scroll.bg2_x();
         let bg_y = self.game_state.world.scroll.bg2_y();
         if (link_x
@@ -2833,8 +2875,8 @@ impl ZeldaState {
                 < 28
         {
             self.follower_link_state_mut().set_auxiliary_state(1);
-            self.player_state_mut().set_incapacitated_timer(16);
-            self.player_state_mut().set_given_damage(16);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
+            self.follower_link_state_mut().set_given_damage(16);
             self.follower_link_state_mut().xor_actual_velocity_xy(255);
         }
     }
@@ -3404,8 +3446,7 @@ impl ZeldaState {
             .set_killed_sprite_load_block(blk);
         let loadedmask = 0x80 >> (blk & 7);
         if blk < 0xffff {
-            self.overworld_sprite_loaded_mut()
-                .clear_loaded_mask_wrapped(blk, loadedmask as u8);
+            self.clear_overworld_sprite_loaded_mask_wrapped(blk, loadedmask as u8);
         }
         if self.game_state.world.location.is_outdoors() {
             self.sprite_slot_mut(k).set_n_word(0xffff);
@@ -3474,10 +3515,13 @@ impl ZeldaState {
     //   return false;
     // }
     pub(super) fn sprite_check_if_link_is_busy(&self) -> bool {
-        let player = self.player_state();
-        if player.has_auxiliary_state()
-            || self.player_state().item_hold_pose() != 0
-            || player.is_lifting_or_carrying()
+        if self.game_state.player.follower_link.has_auxiliary_state()
+            || self.game_state.player.follower_link.item_hold_pose() != 0
+            || self
+                .game_state
+                .player
+                .follower_link
+                .is_lifting_or_carrying()
         {
             return true;
         }
@@ -3707,7 +3751,7 @@ impl ZeldaState {
         } else {
             self.sprite_slot(k).c()
         };
-        self.system_signals_mut().set_sound_effect_1(0);
+        self.set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, THROWN_SPRITE_IMPACT_SFX[a as usize]);
         self.sprite_schedule_for_breakage(k);
     }
@@ -3726,7 +3770,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_sprite_type(value);
         self.sprite_prep_load_properties_for_helpers(k);
         self.sprite_spawn_poof_garnish(k);
-        self.system_signals_mut().set_sound_effect_2(0);
+        self.set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
         let value = 0;
         self.sprite_slot_mut(k).set_hit_timer(value);
@@ -3763,14 +3807,20 @@ impl ZeldaState {
             return;
         }
         let is_running = self.game_state.player.follower_link.is_running();
-        let item_in_hand_has_sword_mask = self.player_state().item_in_hand_has(10);
+        let item_in_hand_has_sword_mask = self.game_state.player.follower_link.item_in_hand_has(10);
         let value = u8::from(is_running);
         self.sprite_slot_mut(k).set_draw_work_byte_1(value);
         let mut a = self.game_state.inventory.items.sword_type().wrapping_sub(1);
         if !is_running {
-            a |= if sign8(self.player_state().button_b_frames()) {
+            a |= if sign8(self.game_state.player.follower_link.button_b_frames()) {
                 4
-            } else if sign8(self.player_state().button_b_frames().wrapping_sub(9)) {
+            } else if sign8(
+                self.game_state
+                    .player
+                    .follower_link
+                    .button_b_frames()
+                    .wrapping_sub(9),
+            ) {
                 0
             } else {
                 8
@@ -3781,7 +3831,7 @@ impl ZeldaState {
         if item_in_hand_has_sword_mask {
             self.sprite_battle_mut().set_damage_type_determiner(3);
         }
-        self.player_state_mut().set_sword_delay_timer(4);
+        self.follower_link_state_mut().set_sword_delay_timer(4);
         self.sprite_battle_mut().set_damaging_enemies_timer(16);
         self.sprite_apply_calculated_damage(k, 0x9d);
     }
@@ -3837,7 +3887,7 @@ impl ZeldaState {
                 self.sprite_slot(k).f(),
                 self.sprite_slot(k).health(),
                 self.sprite_slot(k).incoming_damage(),
-                self.player_state().item_in_hand(),
+                self.game_state.player.follower_link.item_in_hand(),
             );
         }
         if dmg == 249 {
@@ -3874,7 +3924,7 @@ impl ZeldaState {
                     self.sprite_set_damage_stun(k);
                     return;
                 }
-                self.player_state_mut().clear_sword_delay_timer();
+                self.follower_link_state_mut().clear_sword_delay_timer();
             }
             let value = 0;
             self.sprite_slot_mut(k).set_hit_timer(value);
@@ -4058,7 +4108,7 @@ impl ZeldaState {
         self.sprite_set_spawned_coordinates(j, &info);
         let value = 32;
         self.sprite_slot_mut(j).set_z_velocity(value);
-        let value = self.player_state().lower_level_state();
+        let value = self.game_state.player.follower_link.lower_level_state();
         self.sprite_slot_mut(j).set_floor(value);
         let value = if j == 9 { 2 } else { 6 };
         self.sprite_slot_mut(j).set_a(value);
@@ -4068,9 +4118,8 @@ impl ZeldaState {
             return;
         }
         if self.game_state.scratch_counter.value() == 0xcb {
-            let player = self.player_state();
-            let link_x_hi = (player.x() >> 8) as u8;
-            let link_y_hi = (player.y() >> 8) as u8;
+            let link_x_hi = (self.game_state.player.follower_link.x() >> 8) as u8;
+            let link_y_hi = (self.game_state.player.follower_link.y() >> 8) as u8;
             let value = 0x78;
             self.sprite_slot_mut(j).set_y_low(value);
             let value = 0x78;
@@ -4183,7 +4232,7 @@ impl ZeldaState {
             && self.game_state.inventory.save_progress.progress_indicator() == 2
             && self.game_state.world.region.overworld_area_low() == 0x18
         {
-            self.system_signals_mut().set_music_control(7);
+            self.set_music_control(7);
         }
 
         let drop_item = self.sprite_slot(k).die_action();
@@ -4786,7 +4835,7 @@ impl ZeldaState {
                 if !(0..16).any(|j| self.sprite_slot(j).state() == 4) {
                     self.set_chr_halfslot_request(1);
                     if !self.sprite_check_if_screen_is_clear() {
-                        self.player_state_mut().clear_menu_block();
+                        self.follower_link_state_mut().clear_menu_block();
                     }
                 }
             } else {
@@ -4801,9 +4850,11 @@ impl ZeldaState {
             let value = 0;
             self.sprite_slot_mut(k).set_state(value);
             self.follower_link_state_mut().clear_immobilized();
-            if !self.player_state().near_pit_state_is(2) && self.sprite_check_if_screen_is_clear() {
+            if !self.game_state.player.follower_link.near_pit_state_is(2)
+                && self.sprite_check_if_screen_is_clear()
+            {
                 if self.sprite_slot(k).sprite_type() >= 0xd6 {
-                    self.system_signals_mut().set_music_control(0x13);
+                    self.set_music_control(0x13);
                 } else if self.sprite_slot(k).sprite_type() == 0x7a {
                     self.prepare_dungeon_exit_from_boss_fight();
                 } else {
@@ -4980,13 +5031,15 @@ impl ZeldaState {
         let t = self.sprite_slot(k).delay_aux4().wrapping_sub(1);
         let r0 = u16::from(t < 63 && (t & 2) != 0);
         let j = usize::from(
-            self.player_state()
+            self.game_state
+                .player
+                .follower_link
                 .facing()
                 .wrapping_mul(2)
                 .wrapping_add(self.sprite_slot(k).draw_work_byte_3())
                 & 0x0f,
         );
-        let link_x = self.player_state().x();
+        let link_x = self.game_state.player.follower_link.x();
         let offset = SPRITE_HELD_X[j] as i16 as u16;
         let t0 = u16::from(link_x as u8) + u16::from(offset as u8);
         let t1 = u16::from(t0 as u8) + ((t0 >> 8) & 1) + r0;
@@ -5000,18 +5053,28 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_x_high(value);
         let value = SPRITE_HELD_Z[j];
         self.sprite_slot_mut(k).set_z(value);
-        let an = if self.player_state().animation_step() < 6 {
-            self.player_state().animation_step_index()
+        let an = if self.game_state.player.follower_link.animation_step() < 6 {
+            self.game_state.player.follower_link.animation_step_index()
         } else {
             0
         };
         let z = self
-            .player_state()
+            .game_state
+            .player
+            .follower_link
             .z()
             .wrapping_add(1)
             .wrapping_add(u16::from(SPRITE_HELD_Z_FOR_FRAME[an]));
-        self.sprite_set_y(k, self.player_state().y().wrapping_add(8).wrapping_sub(z));
-        let value = self.player_state().lower_level_state() & 1;
+        self.sprite_set_y(
+            k,
+            self.game_state
+                .player
+                .follower_link
+                .y()
+                .wrapping_add(8)
+                .wrapping_sub(z),
+        );
+        let value = self.game_state.player.follower_link.lower_level_state() & 1;
         self.sprite_slot_mut(k).set_floor(value);
 
         self.carried_sprite_check_for_throw(k);
@@ -5028,7 +5091,7 @@ impl ZeldaState {
                 let value = 32;
                 self.sprite_slot_mut(k).set_z_velocity(value);
                 self.sprite_slot_mut(k).or_flags3(0x10);
-                self.player_state_mut().set_picking_throw_state(2);
+                self.follower_link_state_mut().set_picking_throw_state(2);
             }
         } else {
             self.sprite_stunned_main_func1(k);
@@ -5046,15 +5109,21 @@ impl ZeldaState {
         if self.game_state.frame.main_module == 14 {
             return;
         }
-        if !self.player_state().near_pit_state_is(2) {
-            let t = (self.player_state().auxiliary_state() & 1)
-                | self.player_state().deep_water_state()
-                | u8::from(self.player_state().is_bunny_mirror())
-                | self.player_state().item_hold_pose()
-                | if self.player_state().sprite_damage_disable_timer() != 0 {
+        if !self.game_state.player.follower_link.near_pit_state_is(2) {
+            let t = (self.game_state.player.follower_link.auxiliary_state() & 1)
+                | self.game_state.player.follower_link.deep_water_state()
+                | u8::from(self.game_state.player.follower_link.is_bunny_mirror())
+                | self.game_state.player.follower_link.item_hold_pose()
+                | if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .sprite_damage_disable_timer()
+                    != 0
+                {
                     0
                 } else {
-                    self.player_state().incapacitated_timer()
+                    self.game_state.player.follower_link.incapacitated_timer()
                 };
             if t == 0 {
                 if self.sprite_slot(k).draw_work_byte_3() != 3
@@ -5071,7 +5140,7 @@ impl ZeldaState {
         }
 
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
-        self.player_state_mut().set_picking_throw_state(2);
+        self.follower_link_state_mut().set_picking_throw_state(2);
         let value = self.sprite_slot(k).draw_work_byte_4();
         self.sprite_slot_mut(k).set_state(value);
         let value = 0;
@@ -5082,7 +5151,7 @@ impl ZeldaState {
             | (sprite_init_value(SPRITE_INIT_FLAGS3_TABLE, self.sprite_slot(k).sprite_type())
                 & 0x10);
         self.sprite_slot_mut(k).set_flags3(value);
-        let j = self.player_state().facing_index() & 3;
+        let j = self.game_state.player.follower_link.facing_index() & 3;
         let value = SPRITE_HELD_THROW_XVEL[j];
         self.sprite_slot_mut(k).set_x_velocity(value);
         let value = SPRITE_HELD_THROW_YVEL[j];
@@ -5460,7 +5529,7 @@ impl ZeldaState {
                 self.finish_absorbed_key_or_big_key(k, &ABSORB_BIG_KEY);
             }
             13 => {
-                self.player_state_mut().set_item_receipt_method(0);
+                self.follower_link_state_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x32, 0);
                 self.finish_absorbed_key_or_big_key(k, &ABSORB_BIG_KEY);
             }
@@ -5491,8 +5560,13 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_check_damage_from_link(&mut self, k: usize) -> u8 {
         if (self.sprite_slot(k).hit_timer() & 0x80) != 0
-            || self.sprite_slot(k).floor() != self.player_state().lower_level_state()
-            || self.player_state().has_disabled_oam_offsets()
+            || self.sprite_slot(k).floor()
+                != self.game_state.player.follower_link.lower_level_state()
+            || self
+                .game_state
+                .player
+                .follower_link
+                .has_disabled_oam_offsets()
         {
             return 0;
         }
@@ -5513,8 +5587,8 @@ impl ZeldaState {
                 overlap,
                 self.sprite_slot(k).sprite_type(),
                 self.game_state.sprite_battle.damage_type_determiner(),
-                self.player_state().x(),
-                self.player_state().y(),
+                self.game_state.player.follower_link.x(),
+                self.game_state.player.follower_link.y(),
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 hb.r0_xlo,
@@ -5529,8 +5603,8 @@ impl ZeldaState {
                 hb.r11_spr_yhi,
                 hb.r6_spr_xsize,
                 hb.r7_spr_ysize,
-                self.player_state().item_in_hand(),
-                self.player_state().sword_delay_timer(),
+                self.game_state.player.follower_link.item_in_hand(),
+                self.game_state.player.follower_link.sword_delay_timer(),
             );
         }
         if !overlap {
@@ -5538,11 +5612,11 @@ impl ZeldaState {
         }
 
         self.sprite_battle_mut().clear_damaging_enemies_timer();
-        if self.player_state().position_mode_has(0x10) {
+        if self.game_state.player.follower_link.position_mode_has(0x10) {
             return CHECK_DAMAGE_FROM_PLAYER_CARRY | CHECK_DAMAGE_FROM_PLAYER_NON_ELEMENTAL;
         }
 
-        if self.player_state().item_in_hand_has(10) {
+        if self.game_state.player.follower_link.item_in_hand_has(10) {
             if self.sprite_slot(k).sprite_type() >= 0xd6 {
                 return 0;
             }
@@ -5560,14 +5634,20 @@ impl ZeldaState {
 
         let ty = self.sprite_slot(k).sprite_type();
         if ty == 0x7b {
-            if !sign8(self.player_state().button_b_frames().wrapping_sub(9)) {
+            if !sign8(
+                self.game_state
+                    .player
+                    .follower_link
+                    .button_b_frames()
+                    .wrapping_sub(9),
+            ) {
                 return 0;
             }
         } else if ty == 9 {
             if self.sprite_slot(k).a() == 0 {
                 self.sprite_apply_recoil_to_link(k, 48);
                 self.sprite_battle_mut().set_damaging_enemies_timer(144);
-                self.player_state_mut().set_incapacitated_timer(16);
+                self.follower_link_state_mut().set_incapacitated_timer(16);
                 self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
                 let value = 48;
                 self.sprite_slot_mut(k).set_delay_aux1(value);
@@ -5584,7 +5664,7 @@ impl ZeldaState {
             if self.sprite_slot(k).c() >= 3 {
                 self.sprite_apply_recoil_to_link(k, 32);
                 self.sprite_battle_mut().set_damaging_enemies_timer(144);
-                self.player_state_mut().set_incapacitated_timer(16);
+                self.follower_link_state_mut().set_incapacitated_timer(16);
             } else {
                 return self.sprite_check_damage_from_link_getting_out(k);
             }
@@ -5593,12 +5673,12 @@ impl ZeldaState {
             let cond = (ty == 0x13
                 && SPRITE_DAMAGE_FACING_BY_DIRECTION
                     [usize::from(self.sprite_slot(k).direction() & 3)]
-                    == self.player_state().facing())
+                    == self.game_state.player.follower_link.facing())
                 || ty == 2;
             self.sprite_attempt_zap_damage(k);
             self.sprite_apply_recoil_to_link(k, 32);
             self.sprite_battle_mut().set_damaging_enemies_timer(16);
-            self.player_state_mut().set_incapacitated_timer(16);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
             if cond {
                 let value = 0;
                 self.sprite_slot_mut(k).set_hit_timer(value);
@@ -5608,7 +5688,7 @@ impl ZeldaState {
         } else if matches!(ty, 0xcb | 0xcd | 0xcc | 0xd6 | 0xd7 | 0xce | 0x54) {
             self.sprite_apply_recoil_to_link(k, 32);
             self.sprite_battle_mut().set_damaging_enemies_timer(144);
-            self.player_state_mut().set_incapacitated_timer(16);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
         }
 
         if (self.sprite_slot(k).deflection_bits() & 4) == 0 {
@@ -5622,7 +5702,7 @@ impl ZeldaState {
     fn sprite_check_damage_from_link_getting_out(&mut self, k: usize) -> u8 {
         if self.game_state.sprite_battle.damaging_enemies_timer() == 0 {
             self.sprite_apply_recoil_to_link(k, 4);
-            self.player_state_mut().set_incapacitated_timer(16);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
             self.sprite_battle_mut().set_damaging_enemies_timer(16);
         }
         self.link_place_weapon_tink();
@@ -5635,7 +5715,11 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToPlayer_1(k);
     // }
     pub(super) fn sprite_check_damage_to_link(&mut self, k: usize) -> bool {
-        self.player_state().sprite_damage_disable_timer() == 0
+        self.game_state
+            .player
+            .follower_link
+            .sprite_damage_disable_timer()
+            == 0
             && self.sprite_check_damage_to_player_1(k)
     }
 
@@ -5656,7 +5740,7 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToLink_ignore_layer(k);
     // }
     pub(super) fn sprite_check_damage_to_link_same_layer(&mut self, k: usize) -> bool {
-        self.player_state().lower_level_state() == self.sprite_slot(k).floor()
+        self.game_state.player.follower_link.lower_level_state() == self.sprite_slot(k).floor()
             && self.sprite_check_damage_to_link_ignore_layer(k)
     }
 
@@ -5698,35 +5782,40 @@ impl ZeldaState {
                 self.sprite_slot(k).flags4(),
                 self.sprite_slot(k).flags5(),
                 self.game_state.inventory.items.shield_type(),
-                u8::from(self.player_state().is_bunny_mirror()),
-                self.player_state().state_bits(),
-                self.player_state().facing(),
+                u8::from(self.game_state.player.follower_link.is_bunny_mirror()),
+                self.game_state.player.follower_link.state_bits(),
+                self.game_state.player.follower_link.facing(),
                 self.sprite_slot(k).direction(),
-                self.player_state().auxiliary_state(),
-                self.player_state().x(),
-                self.player_state().y(),
+                self.game_state.player.follower_link.auxiliary_state(),
+                self.game_state.player.follower_link.x(),
+                self.game_state.player.follower_link.y(),
                 self.game_state.sprites.workspace.current_sprite_x(),
                 self.game_state.sprites.workspace.current_sprite_y(),
                 self.sprite_slot(k).z(),
             );
         }
-        if !carry || self.player_state().has_auxiliary_state() {
+        if !carry || self.game_state.player.follower_link.has_auxiliary_state() {
             return false;
         }
 
         const SHIELD_BLOCK_FACING_TO_DIRECTION: [u8; 4] = [6, 4, 0, 0];
         const SPRITE_DAMAGE_FACING_BY_DIRECTION: [u8; 4] = [4, 6, 0, 2];
-        if !self.player_state().is_bunny_mirror()
-            && !self.player_state().is_lifting_or_carrying()
+        if !self.game_state.player.follower_link.is_bunny_mirror()
+            && !self
+                .game_state
+                .player
+                .follower_link
+                .is_lifting_or_carrying()
             && (self.sprite_slot(k).flags5() & 0x20) != 0
             && self.game_state.inventory.items.shield_type() != 0
         {
             let value = 0;
             self.sprite_slot_mut(k).set_state(value);
-            let t = if self.player_state().button_b_frames() != 0 {
-                SHIELD_BLOCK_FACING_TO_DIRECTION[self.player_state().facing_index() & 3]
+            let t = if self.game_state.player.follower_link.button_b_frames() != 0 {
+                SHIELD_BLOCK_FACING_TO_DIRECTION
+                    [self.game_state.player.follower_link.facing_index() & 3]
             } else {
-                self.player_state().facing()
+                self.game_state.player.follower_link.facing()
             };
             if t == SPRITE_DAMAGE_FACING_BY_DIRECTION
                 [usize::from(self.sprite_slot(k).direction() & 3)]
@@ -5789,13 +5878,13 @@ impl ZeldaState {
                 self.sprite_slot(k).sprite_type(),
                 self.sprite_slot(k).state(),
                 self.sprite_slot(k).bump_damage(),
-                self.player_state().x(),
-                self.player_state().y(),
+                self.game_state.player.follower_link.x(),
+                self.game_state.player.follower_link.y(),
                 overlap,
-                self.player_state().blink_countdown(),
-                self.player_state().sprite_damage_disable_timer(),
-                self.player_state().auxiliary_state(),
-                self.player_state().incapacitated_timer(),
+                self.game_state.player.follower_link.blink_countdown(),
+                self.game_state.player.follower_link.sprite_damage_disable_timer(),
+                self.game_state.player.follower_link.auxiliary_state(),
+                self.game_state.player.follower_link.incapacitated_timer(),
                 self.game_state.inventory.player_resources.current_health(),
             );
         }
@@ -5809,23 +5898,27 @@ impl ZeldaState {
         const GUARD_PARRY_HITBOX_SIZE_BY_DIRECTION: [u8; 8] = [15, 15, 24, 15, 15, 19, 15, 15];
         const GUARD_PARRY_SWORD_STEP_BY_DIRECTION: [u8; 8] = [6, 6, 6, 12, 6, 6, 6, 15];
 
-        if self.player_state().lower_level_state() != self.sprite_slot(k).floor()
-            || self.player_state().incapacitated_timer() != 0
-            || self.player_state().has_auxiliary_state()
+        if self.game_state.player.follower_link.lower_level_state() != self.sprite_slot(k).floor()
+            || self.game_state.player.follower_link.incapacitated_timer() != 0
+            || self.game_state.player.follower_link.has_auxiliary_state()
             || sign8(self.sprite_slot(k).hit_timer())
         {
             return;
         }
         let mut hb = empty_sprite_hit_box();
         self.sprite_do_hit_boxes_fast(k, &mut hb);
-        if self.player_state().position_mode_has(0x10)
-            || self.player_state().has_disabled_oam_offsets()
+        if self.game_state.player.follower_link.position_mode_has(0x10)
+            || self
+                .game_state
+                .player
+                .follower_link
+                .has_disabled_oam_offsets()
         {
             self.sprite_attempt_damage_to_link_with_collision_check(k);
             return;
         }
         self.player_setup_action_hit_box(&mut hb);
-        let button_neg = sign8(self.player_state().button_b_frames());
+        let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);
         if std::env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
             && self.game_state.world.location.dungeon_room() == 0x00a8
@@ -5836,11 +5929,11 @@ impl ZeldaState {
                 "R guard-parry action fc={} k={} button=0x{:02x} neg={} overlap={} link=0x{:04x},0x{:04x} spr=0x{:04x},0x{:04x} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x}",
                 self.game_state.frame.frame_counter,
                 k,
-                self.player_state().button_b_frames(),
+                self.game_state.player.follower_link.button_b_frames(),
                 button_neg,
                 action_overlap,
-                self.player_state().x(),
-                self.player_state().y(),
+                self.game_state.player.follower_link.x(),
+                self.game_state.player.follower_link.y(),
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 hb.r0_xlo,
@@ -5897,9 +5990,15 @@ impl ZeldaState {
             self.sprite_slot_mut(k).set_f(value);
         }
         let j = usize::from(self.get_random_number() & 7);
-        self.player_state_mut()
+        self.follower_link_state_mut()
             .set_incapacitated_timer(GUARD_PARRY_SWORD_STEP_BY_DIRECTION[j]);
-        let fast_sword = sign8(self.player_state().button_b_frames().wrapping_sub(9));
+        let fast_sword = sign8(
+            self.game_state
+                .player
+                .follower_link
+                .button_b_frames()
+                .wrapping_sub(9),
+        );
         let pt = self.sprite_project_speed_towards_link(k, if fast_sword { 32 } else { 24 });
         let value = 0u8.wrapping_sub(pt.x);
         self.sprite_slot_mut(k).set_x_recoil(value);
@@ -5923,16 +6022,20 @@ impl ZeldaState {
                 self.game_state.frame.frame_counter,
                 k,
                 self.sprite_slot(k).sprite_type(),
-                self.player_state().blink_countdown(),
-                self.player_state().sprite_damage_disable_timer(),
-                self.player_state().auxiliary_state(),
-                self.player_state().incapacitated_timer(),
+                self.game_state.player.follower_link.blink_countdown(),
+                self.game_state.player.follower_link.sprite_damage_disable_timer(),
+                self.game_state.player.follower_link.auxiliary_state(),
+                self.game_state.player.follower_link.incapacitated_timer(),
                 self.game_state.player.follower_link.actual_x_velocity(),
                 self.game_state.player.follower_link.actual_y_velocity(),
             );
         }
-        if (self.player_state().blink_countdown()
-            | self.player_state().sprite_damage_disable_timer())
+        if (self.game_state.player.follower_link.blink_countdown()
+            | self
+                .game_state
+                .player
+                .follower_link
+                .sprite_damage_disable_timer())
             != 0
         {
             return;
@@ -5941,12 +6044,12 @@ impl ZeldaState {
             2, 1, 1, 4, 4, 4, 0, 0, 0, 8, 4, 2, 8, 8, 8, 16, 8, 4, 32, 16, 8, 32, 24, 16, 24, 16,
             8, 64, 48, 24,
         ];
-        self.player_state_mut().set_incapacitated_timer(19);
+        self.follower_link_state_mut().set_incapacitated_timer(19);
         self.sprite_apply_recoil_to_link(k, 24);
         self.follower_link_state_mut().set_auxiliary_state(1);
         let idx = 3 * usize::from(self.sprite_slot(k).bump_damage() & 0x0f)
             + usize::from(self.game_state.inventory.items.armor());
-        self.player_state_mut()
+        self.follower_link_state_mut()
             .set_given_damage(PLAYER_DAMAGES[idx]);
         if self.sprite_slot(k).sprite_type() == 0x61 && self.sprite_slot(k).c() != 0 {
             let actual_x_velocity = self.sprite_slot(k).x_velocity().wrapping_mul(2);
@@ -5966,14 +6069,20 @@ impl ZeldaState {
             || ((ty == 0x24 || ty == 0x23) && self.sprite_slot(k).delay_main() != 0))
             && self.sprite_slot(k).state() == 9;
         if electric {
-            if self.player_state().blink_countdown() == 0 {
+            if self.game_state.player.follower_link.blink_countdown() == 0 {
                 let value = 64;
                 self.sprite_slot_mut(k).set_delay_aux1(value);
-                self.player_state_mut().set_electrocute_on_touch(64);
+                self.follower_link_state_mut().set_electrocute_on_touch(64);
                 self.sprite_attempt_damage_to_link_plus_recoil(k);
             }
         } else {
-            let vel = if sign8(self.player_state().button_b_frames().wrapping_sub(9)) {
+            let vel = if sign8(
+                self.game_state
+                    .player
+                    .follower_link
+                    .button_b_frames()
+                    .wrapping_sub(9),
+            ) {
                 0x50
             } else {
                 0x40
@@ -6422,7 +6531,7 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_state(value);
         let value = 0x1f;
         self.sprite_slot_mut(k).set_delay_main(value);
-        self.system_signals_mut().set_sound_effect_1(0);
+        self.set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x20);
     }
 
@@ -6545,7 +6654,7 @@ impl ZeldaState {
             let value = 255;
             self.sprite_slot_mut(ju).set_stunned(value);
         } else if ty == 0x0b {
-            self.system_signals_mut().set_sound_effect_1(0x30);
+            self.set_sound_effect_1(0x30);
             if self.game_state.dungeon.room_tracking.room_index2() == 1 {
                 let value = 1;
                 self.sprite_slot_mut(ju).set_subtype(value);
@@ -6553,7 +6662,7 @@ impl ZeldaState {
             let value = 255;
             self.sprite_slot_mut(ju).set_stunned(value);
         } else if ty == 0x41 || ty == 0x42 {
-            self.system_signals_mut().set_sound_effect_2(4);
+            self.set_sound_effect_2(4);
             let value = 0;
             self.sprite_slot_mut(ju).set_incoming_damage(value);
             let value = 160;
@@ -6615,10 +6724,10 @@ impl ZeldaState {
         self.garnish_state_mut().set_repulsespark_x_lo(x_low);
         let y_low = self.game_state.sprites.ancilla_slots.slot(j).y_low();
         self.garnish_state_mut().set_repulsespark_y_lo(y_low);
-        let floor = self.player_state().lower_level_state();
+        let floor = self.game_state.player.follower_link.lower_level_state();
         self.garnish_state_mut()
             .set_repulsespark_floor_status(floor);
-        self.system_signals_mut().set_sound_effect_1(0);
+        self.set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, 5);
     }
 
@@ -6708,7 +6817,7 @@ impl ZeldaState {
 
         if ty == 0x40 {
             let screen = self.game_state.world.location.overworld_screen_index() as usize;
-            self.overworld_event_info_mut().set_event_bits(screen, 0x40);
+            self.set_overworld_event_bits(screen, 0x40);
         } else if ty == 0xec {
             if self.sprite_slot(k).c() == 2 {
                 self.throwable_scenery_transmute_to_debris(k);
@@ -6717,9 +6826,8 @@ impl ZeldaState {
         }
 
         if self.sprite_slot(k).state() == 10 {
-            let mut player = self.player_state_mut();
-            player.clear_state_bits();
-            player.clear_picking_throw_state();
+            self.follower_link_state_mut().clear_state_bits();
+            self.follower_link_state_mut().clear_picking_throw_state();
         }
         let value = 6;
         self.sprite_slot_mut(k).set_state(value);
@@ -6841,12 +6949,12 @@ impl ZeldaState {
     }
 
     fn sprite_mini_moldorm_recoil_out_common(&mut self, k: usize) {
-        self.player_state_mut().increment_menu_block_flag();
+        self.follower_link_state_mut().increment_menu_block_flag();
         self.sprite_mini_moldorm_recoil_out_common2(k);
     }
 
     fn sprite_mini_moldorm_recoil_out_common2(&mut self, k: usize) {
-        self.system_signals_mut().set_sound_effect_2(0);
+        self.set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x22);
     }
 
@@ -7469,7 +7577,7 @@ impl ZeldaState {
 
     // void Oam_AllocateDeferToPlayer(int k) — sprite.c:2920
     pub(super) fn oam_allocate_defer_to_player(&mut self, k: usize) {
-        if self.sprite_slot(k).floor() != self.player_state().lower_level_state() {
+        if self.sprite_slot(k).floor() != self.game_state.player.follower_link.lower_level_state() {
             return;
         }
         let right = self.sprite_is_right_of_link(k);
@@ -7491,9 +7599,10 @@ impl ZeldaState {
     // bool Sprite_ReturnIfLifted(int k) — sprite.c:2602
     pub(super) fn sprite_return_if_lifted(&mut self, k: usize) -> bool {
         if self.game_state.frame.submodule != 0
-            || self.player_state().button_b_frames() != 0
+            || self.game_state.player.follower_link.button_b_frames() != 0
             || self.game_state.frame.modal_pause_flag != 0
-            || self.sprite_slot(k).floor() != self.player_state().lower_level_state()
+            || self.sprite_slot(k).floor()
+                != self.game_state.player.follower_link.lower_level_state()
         {
             return false;
         }
@@ -7521,7 +7630,9 @@ impl ZeldaState {
             return false;
         }
         if self
-            .player_state()
+            .game_state
+            .player
+            .follower_link
             .sprite_pickup_flag_cached()
             .wrapping_sub(1)
             != self.game_state.sprites.system.cur_object_index()
@@ -7545,7 +7656,7 @@ impl ZeldaState {
             if self.check_if_hit_boxes_overlap(&hb) {
                 let v = (k as u8).wrapping_add(1);
                 self.sprite_workspace_mut().set_pickup_slot_cache(v);
-                self.player_state_mut().set_sprite_pickup_flag(v);
+                self.follower_link_state_mut().set_sprite_pickup_flag(v);
             }
             false
         } else {
@@ -7763,10 +7874,13 @@ impl ZeldaState {
         let j = self.sprite_spawn_dynamically(0, 0xe3, &mut info);
         if j >= 0 {
             let ju = j as usize;
-            let value = self.player_state().lower_level_state();
+            let value = self.game_state.player.follower_link.lower_level_state();
             self.sprite_slot_mut(ju).set_floor(value);
-            self.sprite_set_x(ju, self.player_state().x().wrapping_add(8));
-            self.sprite_set_y(ju, self.player_state().y().wrapping_add(16));
+            self.sprite_set_x(ju, self.game_state.player.follower_link.x().wrapping_add(8));
+            self.sprite_set_y(
+                ju,
+                self.game_state.player.follower_link.y().wrapping_add(16),
+            );
             let value = 0;
             self.sprite_slot_mut(ju).set_direction(value);
             let value = 96;
@@ -7989,12 +8103,18 @@ impl ZeldaState {
             || self.sprite_check_if_link_is_busy_for_helpers()
             || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
             || self.sprite_slot(k).delay_aux4() != 0
-            || self.player_state().is_in_auxiliary_state(2)
+            || self
+                .game_state
+                .player
+                .follower_link
+                .is_in_auxiliary_state(2)
         {
             return u16::from(self.sprite_slot(k).direction());
         }
         let dir = self.sprite_direction_to_face_link_for_helpers(k);
-        if self.player_state().facing() != MESSAGE_FACING_BY_DIRECTION[(dir & 3) as usize] {
+        if self.game_state.player.follower_link.facing()
+            != MESSAGE_FACING_BY_DIRECTION[(dir & 3) as usize]
+        {
             return u16::from(self.sprite_slot(k).direction());
         }
         let msg_index = self.game_state.messaging.dialogue_message_index.value();
@@ -8014,7 +8134,11 @@ impl ZeldaState {
     pub(super) fn sprite_show_message_on_contact(&mut self, k: usize, msg: u16) -> u16 {
         self.dialogue_message_index_mut().set_value(msg);
         if !self.sprite_check_damage_to_link_same_layer(k)
-            || self.player_state().is_in_auxiliary_state(2)
+            || self
+                .game_state
+                .player
+                .follower_link
+                .is_in_auxiliary_state(2)
         {
             return u16::from(self.sprite_slot(k).direction());
         }
@@ -8049,7 +8173,7 @@ impl ZeldaState {
         self.sprite_nullify_hookshot_drag();
         self.follower_link_state_mut().clear_running();
         self.follower_link_state_mut().set_speed_setting(0);
-        if !self.player_state().has_auxiliary_state() {
+        if !self.game_state.player.follower_link.has_auxiliary_state() {
             self.sprite_show_message_minimal_c();
         }
         true
@@ -8077,8 +8201,7 @@ impl ZeldaState {
         const PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL: u8 = 13;
         const PLAYER_HANDLER_STATE_GROUND_LOCAL: u8 = 0;
         self.dialogue_message_index_mut().set_value(msg);
-        self.world_transient_mut()
-            .clear_tile_interaction_shared_flag();
+        self.clear_tile_interaction_shared_flag();
         self.messaging_state_mut().clear_module();
         let main_module = self.game_state.frame.main_module;
         self.set_submodule(2);
@@ -8088,8 +8211,10 @@ impl ZeldaState {
         self.follower_link_state_mut().set_speed_setting(0);
         self.link_cancel_dash();
         self.follower_link_state_mut().clear_auxiliary_state();
-        self.player_state_mut().set_incapacitated_timer(0);
-        if self.player_state().handler_state() == PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL {
+        self.follower_link_state_mut().set_incapacitated_timer(0);
+        if self.game_state.player.follower_link.handler_state()
+            == PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL
+        {
             self.follower_link_state_mut()
                 .set_handler_state(PLAYER_HANDLER_STATE_GROUND_LOCAL);
         }
@@ -8103,8 +8228,7 @@ impl ZeldaState {
     //   main_module_index = 14;
     // }
     pub(super) fn sprite_show_message_minimal_c(&mut self) {
-        self.world_transient_mut()
-            .clear_tile_interaction_shared_flag();
+        self.clear_tile_interaction_shared_flag();
         self.messaging_state_mut().clear_module();
         let main_module = self.game_state.frame.main_module;
         self.set_submodule(2);
@@ -8496,11 +8620,11 @@ mod tests {
     fn sprite_func8_resets_sound_then_queues_panned_sfx2() {
         let mut s = fresh_state();
         let k = 4;
-        s.system_signals_mut().set_sound_effect_1(0xff);
+        s.set_sound_effect_1(0xff);
         s.sprite_slot_mut(k).set_state(9);
         s.sprite_slot_mut(k).set_delay_main(0);
         s.sprite_set_x(k, 0x0170);
-        s.world_scroll_mut().set_bg2_x(0x0100);
+        s.set_bg2_x(0x0100);
         let expected_sfx = s.sprite_calculate_sfx_pan(k) | 0x20;
 
         s.sprite_func8(k);
@@ -8519,7 +8643,7 @@ mod tests {
         s.sprite_slot_mut(k).set_ai_state(0xbb);
         s.sprite_slot_mut(k).set_flags2(0xcc);
         s.sprite_set_x(k, 0x0040);
-        s.world_scroll_mut().set_bg2_x(0x0000);
+        s.set_bg2_x(0x0000);
         let expected_sfx = s.sprite_calculate_sfx_pan(k) | 0x28;
 
         s.sprite_func22(k);
@@ -8591,7 +8715,7 @@ mod tests {
         s.sprite_slot_mut(k).set_sprite_type(0x12);
         s.sprite_slot_mut(k).set_subtype(0xaa);
         s.sprite_slot_mut(k).set_die_action(0xbb);
-        s.system_signals_mut().set_sound_effect_2(0xff);
+        s.set_sound_effect_2(0xff);
         s.sprite_slot_mut(k).set_hit_timer(0xcc);
         s.sprite_slot_mut(k).set_incoming_damage(0xdd);
         s.sprite_set_x(k, 0x0123);
@@ -8766,7 +8890,7 @@ mod tests {
             .set_overlord_type(1);
         s.sprite_workspace_mut().set_room_origin_y_high(0x20);
         s.sprite_workspace_mut().set_room_origin_x_high(0x10);
-        s.world_region_mut().set_overworld_area_index_word(0x1234);
+        s.set_overworld_area_index_word(0x1234);
 
         s.dungeon_load_single_overlord(&[0x83, 0xe4, 10]);
 
@@ -8802,8 +8926,8 @@ mod tests {
     #[test]
     fn sprite_initialize_slots_clears_stale_sprite_and_overlord_slots() {
         let mut s = fresh_state();
-        s.world_region_mut().set_overworld_area_index(0x34);
-        s.player_state_mut().set_picking_throw_state(7);
+        s.set_overworld_area_index(0x34);
+        s.follower_link_state_mut().set_picking_throw_state(7);
         s.follower_link_state_mut().set_state_bits(0x80);
 
         s.sprite_slot_mut(1).set_state(10);
@@ -8843,8 +8967,8 @@ mod tests {
         s.sprite_initialize_slots();
 
         assert_eq!(s.sprite_slot(1).state(), 0);
-        assert!(!s.player_state().has_picking_throw_state());
-        assert!(!s.player_state().has_action_state());
+        assert!(!s.game_state.player.follower_link.has_picking_throw_state());
+        assert!(!s.game_state.player.follower_link.has_action_state());
         assert_eq!(s.sprite_slot(2).state(), 10);
         assert_eq!(s.sprite_slot(3).state(), 0);
         assert_eq!(s.sprite_slot(4).state(), 9);
@@ -9029,8 +9153,8 @@ mod tests {
     #[test]
     fn link_setup_hit_box_matches_c_offsets_and_disabled_sentinel() {
         let mut s = fresh_state();
-        s.player_state_mut().set_x(0x12fc);
-        s.player_state_mut().set_y(0x34f9);
+        s.follower_link_state_mut().set_x(0x12fc);
+        s.follower_link_state_mut().set_y(0x34f9);
         let mut hb = empty_hit_box();
 
         s.link_setup_hit_box(&mut hb);
@@ -9069,19 +9193,19 @@ mod tests {
         let k = 5;
         s.sprite_workspace_mut().set_current_sprite_x(0x0100);
         s.sprite_workspace_mut().set_current_sprite_y(0x0200);
-        s.player_state_mut().set_x(0x0100);
-        s.player_state_mut().set_y(0x0200);
+        s.follower_link_state_mut().set_x(0x0100);
+        s.follower_link_state_mut().set_y(0x0200);
 
         assert!(s.sprite_setup_hit_box00(k));
 
-        s.player_state_mut().set_x(0x010c);
+        s.follower_link_state_mut().set_x(0x010c);
         assert!(!s.sprite_setup_hit_box00(k));
 
-        s.player_state_mut().set_x(0x0100);
-        s.player_state_mut().set_y(0x0208);
+        s.follower_link_state_mut().set_x(0x0100);
+        s.follower_link_state_mut().set_y(0x0208);
         assert!(!s.sprite_setup_hit_box00(k));
 
-        s.player_state_mut().set_y(0x01f9);
+        s.follower_link_state_mut().set_y(0x01f9);
         s.sprite_slot_mut(k).set_z(7);
         assert!(s.sprite_setup_hit_box00(k));
     }
@@ -9090,8 +9214,8 @@ mod tests {
     fn sprite_place_rupulse_spark_2_sets_visible_sprite_position() {
         let mut s = fresh_state();
         let k = 5;
-        s.world_scroll_mut().set_bg2_x(0x0100);
-        s.world_scroll_mut().set_bg2_y(0x0200);
+        s.set_bg2_x(0x0100);
+        s.set_bg2_y(0x0200);
         s.sprite_set_x(k, 0x0184);
         s.sprite_set_y(k, 0x027f);
         s.sprite_slot_mut(k).set_floor(2);
@@ -9115,7 +9239,7 @@ mod tests {
         let mut active = fresh_state();
         let k = 5;
         active.garnish_state_mut().set_repulsespark_timer(3);
-        active.system_signals_mut().set_sound_effect_1(0);
+        active.set_sound_effect_1(0);
         active.sprite_place_weapon_tink(k);
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
         assert_eq!(active.game_state.system_signals.sound_effect_1(), 0);
@@ -9136,19 +9260,19 @@ mod tests {
     fn link_place_weapon_tink_uses_link_oam_offsets_and_x_carry() {
         let mut active = fresh_state();
         active.garnish_state_mut().set_repulsespark_timer(3);
-        active.player_state_mut().set_x(0x00f0);
-        active.player_state_mut().set_oam_x_offset(0x20);
+        active.follower_link_state_mut().set_x(0x00f0);
+        active.follower_link_state_mut().set_oam_x_offset(0x20);
         active.link_place_weapon_tink();
         assert_eq!(active.ram[REPULSESPARK_TIMER_SPRITE], 3);
         assert_eq!(active.ram[REPULSESPARK_X_LO_SPRITE], 0);
         assert_eq!(active.game_state.system_signals.sound_effect_1(), 0);
 
         let mut s = fresh_state();
-        s.player_state_mut().set_x(0x01f0);
-        s.player_state_mut().set_y(0x0020);
-        s.player_state_mut().set_oam_x_offset(0x20);
-        s.player_state_mut().set_oam_y_offset(0x30);
-        s.player_state_mut().set_lower_level_state(2);
+        s.follower_link_state_mut().set_x(0x01f0);
+        s.follower_link_state_mut().set_y(0x0020);
+        s.follower_link_state_mut().set_oam_x_offset(0x20);
+        s.follower_link_state_mut().set_oam_y_offset(0x30);
+        s.follower_link_state_mut().set_lower_level_state(2);
 
         s.link_place_weapon_tink();
 
@@ -9168,8 +9292,8 @@ mod tests {
         let k = 4;
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
-        s.player_state_mut().set_x(0x0140);
-        s.player_state_mut().set_y(0x01d0);
+        s.follower_link_state_mut().set_x(0x0140);
+        s.follower_link_state_mut().set_y(0x01d0);
         s.sprite_slot_mut(k).set_z(4);
         s.follower_link_state_mut().set_z(0x1234);
 
@@ -9184,9 +9308,15 @@ mod tests {
             s.game_state.player.follower_link.actual_y_velocity(),
             expected.y
         );
-        assert_eq!(s.player_state().actual_z_velocity(), 0x18);
-        assert_eq!(s.player_state().recoil_z_velocity_for_dungeon_reset(), 0x18);
-        assert_eq!(s.player_state().z(), 0);
+        assert_eq!(s.game_state.player.follower_link.actual_z_velocity(), 0x18);
+        assert_eq!(
+            s.game_state
+                .player
+                .follower_link
+                .recoil_z_velocity_for_dungeon_reset(),
+            0x18
+        );
+        assert_eq!(s.game_state.player.follower_link.z(), 0);
     }
 
     #[test]
@@ -9195,16 +9325,16 @@ mod tests {
         let k = 4;
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
-        s.player_state_mut().set_x(0x0120);
-        s.player_state_mut().set_y(0x0204);
+        s.follower_link_state_mut().set_x(0x0120);
+        s.follower_link_state_mut().set_y(0x0204);
         let mut coords = PointU8 { x: 0, y: 0 };
 
         assert_eq!(s.sprite_direction_to_face_link(k, Some(&mut coords)), 0);
         assert_eq!(coords, PointU8 { x: 0x20, y: 0x0c });
         assert_eq!(s.game_state.scratch_counter.value(), 0x0c);
 
-        s.player_state_mut().set_x(0x00f8);
-        s.player_state_mut().set_y(0x0240);
+        s.follower_link_state_mut().set_x(0x00f8);
+        s.follower_link_state_mut().set_y(0x0240);
         s.sprite_slot_mut(k).set_z(0);
         assert_eq!(s.sprite_direction_to_face_link(k, None), 2);
         assert_eq!(s.game_state.scratch_counter.value(), 0x48);
@@ -9250,8 +9380,8 @@ mod tests {
         let k = 4;
         s.sprite_set_x(k, 0x0120);
         s.sprite_set_y(k, 0x0200);
-        s.world_scroll_mut().set_bg2_x(0x0100);
-        s.world_scroll_mut().set_bg2_y(0x0200);
+        s.set_bg2_x(0x0100);
+        s.set_bg2_y(0x0200);
         s.oam_state_mut().set_current_pointer(OAM_BUF as u16);
         s.oam_state_mut()
             .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
@@ -9353,8 +9483,8 @@ mod tests {
         let mut visible = fresh_state();
         visible.sprite_workspace_mut().set_current_sprite_x(0x0120);
         visible.sprite_workspace_mut().set_current_sprite_y(0x0230);
-        visible.world_scroll_mut().set_bg2_x(0x0100);
-        visible.world_scroll_mut().set_bg2_y(0x0200);
+        visible.set_bg2_x(0x0100);
+        visible.set_bg2_y(0x0200);
         visible.sprite_slot_mut(k).set_z(3);
         visible.sprite_slot_mut(k).set_oam_flags(0x0a);
         visible.sprite_slot_mut(k).set_object_priority(0x03);
@@ -9447,9 +9577,9 @@ mod tests {
     #[test]
     fn release_fairy_spawns_fairy_at_link_position_or_returns_negative_one() {
         let mut s = fresh_state();
-        s.player_state_mut().set_x(0x0100);
-        s.player_state_mut().set_y(0x0200);
-        s.player_state_mut().mark_lower_level();
+        s.follower_link_state_mut().set_x(0x0100);
+        s.follower_link_state_mut().set_y(0x0200);
+        s.follower_link_state_mut().mark_lower_level();
         s.sprite_slot_mut(0).set_direction(3);
 
         assert_eq!(s.release_fairy(), 15);
@@ -9602,7 +9732,7 @@ mod tests {
         let mut s = fresh_state();
         let k = 3;
         s.sprite_system_mut().set_cur_object_index(k as u8);
-        s.player_state_mut()
+        s.follower_link_state_mut()
             .set_sprite_pickup_flag_cached((k as u8).wrapping_add(1));
         s.sprite_slot_mut(k).set_state(9);
         s.follower_link_state_mut().set_filtered_joypad_l(0xff);
@@ -9650,7 +9780,7 @@ mod tests {
         dark.sprite_slot_mut(k).set_sprite_type(0x7a);
         dark.sprite_slot_mut(k).set_health(1);
         dark.sprite_slot_mut(k).set_incoming_damage(1);
-        dark.world_region_mut().set_dark_world_region_index(1);
+        dark.set_dark_world_region_index(1);
         dark.sprite_hit_timer31(k);
         assert_eq!(dark.game_state.messaging.dialogue_message_index.value(), 0);
     }
@@ -9726,18 +9856,19 @@ mod tests {
             .ancilla_slots
             .slot_mut(&mut s.ram, 4)
             .set_ancilla_type(0);
-        s.player_state_mut().set_hookshot_interlock(1);
-        s.player_state_mut().set_position(0x1234, 0x5678);
-        s.player_state_mut().set_previous_position(0x9abc, 0xdef0);
+        s.follower_link_state_mut().set_hookshot_interlock(1);
+        s.follower_link_state_mut().set_position(0x1234, 0x5678);
+        s.follower_link_state_mut()
+            .set_previous_position(0x9abc, 0xdef0);
         s.follower_link_state_mut().set_speed_setting(7);
 
         s.sprite_halt_all_movement();
 
-        assert_eq!(s.player_state().hookshot_interlock(), 0);
-        assert_eq!(s.player_state().safe_return_x_high(), 0x12);
-        assert_eq!(s.player_state().safe_return_y_high(), 0x56);
-        assert_eq!(s.player_state().x(), 0x9abc);
-        assert_eq!(s.player_state().y(), 0xdef0);
+        assert_eq!(s.game_state.player.follower_link.hookshot_interlock(), 0);
+        assert_eq!(s.game_state.player.follower_link.safe_return_x_high(), 0x12);
+        assert_eq!(s.game_state.player.follower_link.safe_return_y_high(), 0x56);
+        assert_eq!(s.game_state.player.follower_link.x(), 0x9abc);
+        assert_eq!(s.game_state.player.follower_link.y(), 0xdef0);
         assert_eq!(s.game_state.player.follower_link.speed_setting(), 0);
     }
 
@@ -9750,7 +9881,7 @@ mod tests {
         assert!(aux.sprite_check_if_link_is_busy());
 
         let mut item_pose = fresh_state();
-        item_pose.player_state_mut().set_item_hold_pose(2);
+        item_pose.follower_link_state_mut().set_item_hold_pose(2);
         assert!(item_pose.sprite_check_if_link_is_busy());
 
         let mut lifted = fresh_state();
@@ -9836,8 +9967,8 @@ mod tests {
         let mut s = fresh_state();
         let k = 5;
 
-        s.world_scroll_mut().set_bg2_x(0);
-        s.world_scroll_mut().set_bg2_y(0);
+        s.set_bg2_x(0);
+        s.set_bg2_y(0);
         s.sprite_slot_mut(k).set_state(9);
         s.sprite_set_x(k, 0x00f0);
         s.sprite_set_y(k, 0x00f0);

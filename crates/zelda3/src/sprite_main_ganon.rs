@@ -551,7 +551,9 @@ impl ZeldaState {
             return;
         }
 
-        if (self.sprite_slot(k).ignore_projectile() | self.player_state().immobilized_flag()) == 0
+        if (self.sprite_slot(k).ignore_projectile()
+            | self.game_state.player.follower_link.immobilized_flag())
+            == 0
             && self.game_state.dungeon.torch.ganon_torch_count() == 2
         {
             self.sprite_check_damage_to_and_from_link(k);
@@ -564,7 +566,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_ai_state(1);
                     self.sprite_slot_mut(k).set_delay_main(128);
                 } else if self.sprite_slot(k).delay_main() == 32 {
-                    self.system_signals_mut().set_music_control(0x1f);
+                    self.set_music_control(0x1f);
                 } else if self.sprite_slot(k).delay_main() == 64 {
                     self.dialogue_message_index_mut().set_value(0x16f);
                     self.sprite_show_message_minimal_c();
@@ -870,10 +872,10 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_graphics(graphics);
             }
             16 => {
-                self.world_scroll_mut().set_bg1_y_offset(0);
+                self.set_bg1_y_offset(0);
                 if self.sprite_slot(k).delay_main() != 0 {
                     if self.sprite_slot(k).delay_main() == 1 {
-                        self.system_signals_mut().set_ambient_sound_effect(5);
+                        self.set_ambient_sound_effect(5);
                         self.ganon_select_warp_location(k, 13);
                         self.follower_link_state_mut().clear_immobilized();
                         self.ganon_spawn_falling_tiles_overlord(k);
@@ -890,7 +892,7 @@ impl ZeldaState {
                         } else {
                             1
                         };
-                        self.world_scroll_mut().set_bg1_y_offset(offs);
+                        self.set_bg1_y_offset(offs);
                         self.follower_link_state_mut().immobilize();
                     }
                 } else {
@@ -900,7 +902,7 @@ impl ZeldaState {
                         self.sprite_slot_mut(k).set_z_velocity(0);
                         self.sprite_slot_mut(k).set_z(0);
                         self.sprite_slot_mut(k).set_delay_main(96);
-                        self.system_signals_mut().set_ambient_sound_effect(7);
+                        self.set_ambient_sound_effect(7);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                     }
                     let graphics = GFX16[(self.sprite_slot(k).direction() & 1) as usize];
@@ -1049,8 +1051,8 @@ impl ZeldaState {
                         self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
                     }
                 }
-                let x = self.player_state().x() & 0xff00 | 0x78;
-                let y = self.player_state().y() & 0xff00 | 0x50;
+                let x = self.game_state.player.follower_link.x() & 0xff00 | 0x78;
+                let y = self.game_state.player.follower_link.y() & 0xff00 | 0x50;
                 let pt = self.sprite_project_speed_towards_location(k, x, y, 5);
                 let xvel = self.sprite_slot(k).x_velocity();
                 let yvel = self.sprite_slot(k).y_velocity();
@@ -1253,7 +1255,7 @@ impl ZeldaState {
             .slot_mut(&mut self.ram, j)
             .set_x_low(GANON_FALLING_TILE_OVERLORD_X_LOW[ti]);
         // overlord_x_hi[j] = link_x_coord >> 8  — read the high byte of the 16-bit link_x_coord.
-        let x_high = self.player_state().x_high();
+        let x_high = self.game_state.player.follower_link.x_high();
         self.game_state
             .sprites
             .overlord_slots
@@ -1264,7 +1266,7 @@ impl ZeldaState {
             .overlord_slots
             .slot_mut(&mut self.ram, j)
             .set_y_low(GANON_FALLING_TILE_OVERLORD_Y_LOW[ti]);
-        let y_high = self.player_state().y_high();
+        let y_high = self.game_state.player.follower_link.y_high();
         self.game_state
             .sprites
             .overlord_slots
@@ -1830,8 +1832,8 @@ mod tests {
             .clear();
         s.sprite_slot_mut(k).set_anim_clock(0);
         // Seed link coords so we can verify the high-byte copy.
-        s.player_state_mut().set_x(0x0234);
-        s.player_state_mut().set_y(0x0588);
+        s.follower_link_state_mut().set_x(0x0234);
+        s.follower_link_state_mut().set_y(0x0588);
         s.ganon_spawn_falling_tiles_overlord(k);
         assert_eq!(s.sprite_slot(k).anim_clock(), 1);
         assert_eq!(

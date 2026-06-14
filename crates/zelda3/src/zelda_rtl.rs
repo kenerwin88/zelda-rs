@@ -22,8 +22,13 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
-    OVERWORLD_SCROLL_Y_END,
+    BG_DECOMP_BUFFER_LOAD_GFX, BG_TILE_ANIMATION_COUNTDOWN, CRYSTAL_ROTATION_COUNTER,
+    DOOR_ANIMATION_STEP_INDICATOR, GRAPHICS_DECOMP_BUFFER_END, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE,
+    MESSAGING_BUF_LOAD_GFX, MESSAGING_RENDER_BUFFER, MOVING_WALL_REPLACEMENT_BUFFER,
+    OVERWORLD_PALETTE_AUX_OR_MAIN, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
+    OVERWORLD_SCROLL_Y_END, PRIMARY_DECOMP_BUFFER_LOAD_GFX, RESERVED_HDMA_TABLE,
+    SAVELOAD_HDMA_TABLE, SPRITE_DECOMP_BUFFER_LOAD_GFX, UVRAM_DATA, VRAM_UPLOAD_DATA,
+    VRAM_UPLOAD_OFFSET,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -31,11 +36,12 @@ use crate::game_state::{
     loaded_room_data_word, Bg1MovementAccumulatorState, BirdTravelDestinationState,
     BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
     BombosBlastState, BombosFireColumnState, BossHomePositionRead, CachedSpriteRead,
-    CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList, FollowerLinkState,
-    GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
-    HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, IntroActorRead,
-    LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot,
-    MultiselectChoiceRead, NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
+    CompatibilityBytesView, CompatibilityBytesViewMut, DisplayState, DungeonMapDisplayState,
+    DungeonStairList, FollowerLinkState, FrameState, GameState, GraphicsDecompressionScratch,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState,
+    HudStateRead, HudTilemapState, IntroActorRead, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    MessagingRenderBufferState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
+    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
     NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
     NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
@@ -44,11 +50,10 @@ use crate::game_state::{
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
-    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
-    NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonEnvironmentBridgeMut,
+    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovableBlockBridgeMut, NativeDungeonMovingFloorBridgeMut,
     NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomDoorSetupBridgeMut,
     NativeDungeonRoomEffectsBridgeMut, NativeDungeonRoomItemBridgeMut,
@@ -60,45 +65,42 @@ use crate::game_state::{
     NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
-    NativeGraphicsScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
-    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroActorBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut,
+    NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroActorBridgeMut,
     NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
     NativeLanmolaSegmentMotionBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
-    NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
+    NativeOamStateBridgeMut, NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
     NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
     NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
     NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
     NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
-    NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeSystemWorkAreaBridgeMut,
-    NativeTagalongSlotBridgeMut, NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut,
-    NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
+    NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut,
+    NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut, NativeWaterHdmaWindowBridgeMut,
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
-    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
-    OverworldMap16LoadState, OverworldMap16SourcePage, PpuScrollCopyState, QuakeBoltSlotState,
-    RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
-    SmallOverworldMap16ScrollBackupState, SystemSignalsState, TagalongSlotRead,
-    TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
+    NativeWorldScrollBridgeMut, OverworldConfigTableRead, OverworldEventInfoState,
+    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16LoadState,
+    OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState,
+    RamPlayerStateView, RamPlayerStateViewMut, SelectFileMenuState, SkullWoodsFireSlotState,
+    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
+    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, VwfRenderState,
+    WeatherVaneDebrisSlotState, WorldCameraBoundariesState, WorldRegionState, WorldScrollState,
+    WorldTransientState, PALETTE_BANK_BYTES, PALETTE_VISIBLE_BYTES, SPOTLIGHT_HDMA_WORD_COUNT,
+    SPRITE_SUBPALETTE_CLEAR_LEN, SPRITE_SUBPALETTE_CLEAR_START, VISIBLE_SUBPALETTE_CLEAR_LEN,
+    VISIBLE_SUBPALETTE_CLEAR_START,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1415,6 +1417,34 @@ fn wram_patch_addr(addr: usize) -> u32 {
     addr as u32
 }
 
+macro_rules! zelda_ppu_scroll_copy_methods {
+    (
+        $(
+            fn $name:ident($($arg:ident: $ty:ty),*);
+        )*
+    ) => {
+        $(
+            pub(crate) fn $name(&mut self, $($arg: $ty),*) {
+                self.mutate_ppu_scroll_copy(|scroll| scroll.$name($($arg),*));
+            }
+        )*
+    };
+}
+
+macro_rules! zelda_world_camera_boundary_methods {
+    (
+        $(
+            fn $name:ident($($arg:ident: $ty:ty),*) $(-> $ret:ty)?;
+        )*
+    ) => {
+        $(
+            pub(crate) fn $name(&mut self, $($arg: $ty),*) $(-> $ret)? {
+                self.mutate_world_camera_boundaries(|camera| camera.$name($($arg),*))
+            }
+        )*
+    };
+}
+
 impl ZeldaState {
     pub(crate) fn compatibility_state_len(&self) -> usize {
         self.ram.len()
@@ -1440,14 +1470,14 @@ impl ZeldaState {
             self.game_state.player.tile_detection.tile_collision_bits_primary(),
             self.game_state.player.tile_detection.tile_collision_bits_secondary(),
             self.game_state.dungeon.doors.door_open_counter_low(),
-            self.player_state().last_direction(),
-            self.player_state().swim_direction_flags(),
+            self.game_state.player.follower_link.last_direction(),
+            self.game_state.player.follower_link.swim_direction_flags(),
             self.game_state.player.follower_link.speed_setting(),
             self.game_state.player.follower_link.speed_modifier(),
-            self.player_state().direction(),
-            self.player_state().handler_state(),
-            self.player_state().x(),
-            self.player_state().y(),
+            self.game_state.player.follower_link.direction(),
+            self.game_state.player.follower_link.handler_state(),
+            self.game_state.player.follower_link.x(),
+            self.game_state.player.follower_link.y(),
         );
     }
 
@@ -1471,20 +1501,20 @@ impl ZeldaState {
             watched_addr
                 .map(|(addr, value)| format!("0x{addr:05x}=0x{value:02x}"))
                 .unwrap_or_else(|| "none".to_string()),
-            self.player_state().swim_direction_flags(),
+            self.game_state.player.follower_link.swim_direction_flags(),
             self.game_state.player.tile_detection.deepwater() as u8,
             self.game_state.player.tile_detection.deepwater_high(),
             self.game_state.player.tile_detection.normal_tiles() as u8,
             self.game_state.player.tile_detection.normal_tiles_high(),
-            self.player_state().deep_water_state(),
-            self.player_state().palette_bits_of_oam(),
+            self.game_state.player.follower_link.deep_water_state(),
+            self.game_state.player.follower_link.palette_bits_of_oam(),
             self.game_state.player.tile_detection.palette_bits_high(),
             self.game_state.player.tile_detection.deepwater(),
             self.game_state.player.tile_detection.normal_tiles(),
-            self.player_state().deep_water_state(),
-            self.player_state().x(),
-            self.player_state().y(),
-            self.player_state().handler_state(),
+            self.game_state.player.follower_link.deep_water_state(),
+            self.game_state.player.follower_link.x(),
+            self.game_state.player.follower_link.y(),
+            self.game_state.player.follower_link.handler_state(),
         );
     }
 
@@ -1594,33 +1624,33 @@ impl ZeldaState {
             frame.main_module,
             frame.submodule,
             frame.subsubmodule,
-            self.player_state().handler_state(),
-            self.player_state().near_pit_state(),
+            self.game_state.player.follower_link.handler_state(),
+            self.game_state.player.follower_link.near_pit_state(),
             self.game_state.player.tile_detection.pit_tile(),
             self.game_state.player.tile_detection.water_staircase(),
             self.game_state.player.tile_detection.deepwater(),
-            self.player_state().flippers(),
-            self.player_state().is_bunny_mirror() as u8,
-            self.player_state().moon_pearl(),
+            self.game_state.player.follower_link.flippers(),
+            self.game_state.player.follower_link.is_bunny_mirror() as u8,
+            self.game_state.player.follower_link.moon_pearl(),
             world_location.indoor_flag(),
             world_location.overworld_screen(),
-            self.player_state().visibility_status(),
-            self.player_state().x(),
-            self.player_state().y(),
-            self.player_state().x_subpixel(),
-            self.player_state().y_subpixel(),
+            self.game_state.player.follower_link.visibility_status(),
+            self.game_state.player.follower_link.x(),
+            self.game_state.player.follower_link.y(),
+            self.game_state.player.follower_link.x_subpixel(),
+            self.game_state.player.follower_link.y_subpixel(),
             self.game_state.player.follower_link.actual_x_velocity(),
             self.game_state.player.follower_link.actual_y_velocity(),
             self.game_state.player.follower_link.y_velocity(),
-            self.player_state().direction(),
-            self.player_state().last_direction(),
-            self.player_state().last_direction_moved_towards(),
+            self.game_state.player.follower_link.direction(),
+            self.game_state.player.follower_link.last_direction(),
+            self.game_state.player.follower_link.last_direction_moved_towards(),
             self.game_state.player.tile_detection.collision_bits(),
             self.game_state.player.tile_detection.slope_collision_bits(),
             self.game_state.player.tile_detection.normal_tiles(),
             self.game_state.player.tile_detection.vertical_ledge(),
             self.game_state.player.tile_detection.stair_tile(),
-            self.player_state().defense_flags(),
+            self.game_state.player.follower_link.defense_flags(),
             self.game_state.inventory.player_resources.current_health(),
         );
     }
@@ -1683,8 +1713,160 @@ impl ZeldaState {
         NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
-    pub(crate) fn system_work_area_mut(&mut self) -> NativeSystemWorkAreaBridgeMut<'_> {
-        NativeSystemWorkAreaBridgeMut::new(&mut self.ram)
+    fn sync_system_signals_to_ram(&mut self) {
+        self.game_state.system_signals.write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.system_signals,
+            SystemSignalsState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_system_signals<T>(&mut self, mutate: impl FnOnce(&mut SystemSignalsState) -> T) -> T {
+        let result = mutate(&mut self.game_state.system_signals);
+        self.sync_system_signals_to_ram();
+        result
+    }
+
+    pub(crate) fn set_music_control(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_music_control(value));
+    }
+
+    pub(crate) fn set_current_music_control(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_current_music_control(value));
+    }
+
+    pub(crate) fn set_last_music_control(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_last_music_control(value));
+    }
+
+    pub(crate) fn set_queued_music_control(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_queued_music_control(value));
+    }
+
+    pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_ambient_sound_effect(value));
+    }
+
+    pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_sound_effect_1(value));
+    }
+
+    pub(crate) fn set_sound_effect_2(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_sound_effect_2(value));
+    }
+
+    pub(crate) fn set_apui00(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_apui00(value));
+    }
+
+    pub(crate) fn set_msu_volume(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_msu_volume(value));
+    }
+
+    pub(crate) fn set_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
+        self.mutate_system_signals(|signals| signals.set_msu_resume_info(slot, info));
+    }
+
+    pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {
+        self.mutate_system_signals(|signals| signals.set_sound_effect_1_word(value));
+    }
+
+    pub(crate) fn set_ambient_sound_effect_word(&mut self, value: u16) {
+        self.mutate_system_signals(|signals| signals.set_ambient_sound_effect_word(value));
+    }
+
+    pub(crate) fn clear_sound_effect_1(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_sound_effect_1());
+    }
+
+    pub(crate) fn clear_sound_effect_2(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_sound_effect_2());
+    }
+
+    pub(crate) fn clear_ambient_sound_effect(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_ambient_sound_effect());
+    }
+
+    pub(crate) fn queue_sound_effect_1_if_empty(&mut self, value: u8) -> bool {
+        let queued = self
+            .game_state
+            .system_signals
+            .queue_sound_effect_1_if_empty(value);
+        if queued {
+            self.sync_system_signals_to_ram();
+        }
+        queued
+    }
+
+    pub(crate) fn queue_sound_effect_2_if_empty(&mut self, value: u8) -> bool {
+        let queued = self
+            .game_state
+            .system_signals
+            .queue_sound_effect_2_if_empty(value);
+        if queued {
+            self.sync_system_signals_to_ram();
+        }
+        queued
+    }
+
+    pub(crate) fn increment_hud_update_flag(&mut self) -> u8 {
+        self.mutate_system_signals(|signals| signals.increment_hud_update_flag())
+    }
+
+    pub(crate) fn clear_hud_update_flag(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_hud_update_flag());
+    }
+
+    pub(crate) fn increment_cgram_update_flag(&mut self) -> u8 {
+        self.mutate_system_signals(|signals| signals.increment_cgram_update_flag())
+    }
+
+    pub(crate) fn clear_cgram_update_flag(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_cgram_update_flag());
+    }
+
+    pub(crate) fn set_bugs_fixed(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_bugs_fixed(value));
+    }
+
+    pub(crate) fn save_current_music_as_last(&mut self) {
+        self.mutate_system_signals(|signals| signals.save_current_music_as_last());
+    }
+
+    pub(crate) fn save_ambient_sound_effect_as_last(&mut self) {
+        self.mutate_system_signals(|signals| signals.save_ambient_sound_effect_as_last());
+    }
+
+    pub(crate) fn clear_game_over_check_flag(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_game_over_check_flag());
+    }
+
+    pub(crate) fn clear_restart_check_flag(&mut self) {
+        self.mutate_system_signals(|signals| signals.clear_restart_check_flag());
+    }
+
+    pub(crate) fn set_restart_check_flag(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_restart_check_flag(value));
+    }
+
+    pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_raw_sfx_pan_value(value));
+    }
+
+    pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_game_over_check_flag(value));
+    }
+
+    pub(crate) fn increment_game_over_check_flag(&mut self) {
+        self.mutate_system_signals(|signals| signals.increment_game_over_check_flag());
+    }
+
+    pub(crate) fn set_death_backup_current_music(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_death_backup_current_music(value));
+    }
+
+    pub(crate) fn set_death_backup_ambient_sound(&mut self, value: u8) {
+        self.mutate_system_signals(|signals| signals.set_death_backup_ambient_sound(value));
     }
 
     fn compatibility_ram_range(&self, offset: usize, len: usize) -> &[u8] {
@@ -1697,32 +1879,32 @@ impl ZeldaState {
 
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
         let sound_effect = self.link_calculate_sfx_pan() | effect;
-        self.system_signals_mut().set_sound_effect_1(sound_effect);
+        self.set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_link_pan(&mut self, effect: u8) {
         let sound_effect = self.link_calculate_sfx_pan() | effect;
-        self.system_signals_mut().set_sound_effect_2(sound_effect);
+        self.set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_1_with_ancilla_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.ancilla_calculate_sfx_pan(slot) | effect;
-        self.system_signals_mut().set_sound_effect_1(sound_effect);
+        self.set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_ancilla_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.ancilla_calculate_sfx_pan(slot) | effect;
-        self.system_signals_mut().set_sound_effect_2(sound_effect);
+        self.set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_1_with_sprite_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.sprite_calculate_sfx_pan(slot) | effect;
-        self.system_signals_mut().set_sound_effect_1(sound_effect);
+        self.set_sound_effect_1(sound_effect);
     }
 
     pub(crate) fn set_sound_effect_2_with_sprite_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.sprite_calculate_sfx_pan(slot) | effect;
-        self.system_signals_mut().set_sound_effect_2(sound_effect);
+        self.set_sound_effect_2(sound_effect);
     }
 
     pub(crate) fn special_exit_position_mut(&mut self) -> NativeSpecialExitPositionBridgeMut<'_> {
@@ -1759,6 +1941,107 @@ impl ZeldaState {
             &mut self.game_state.display.ppu_scroll_copy,
             &mut self.ram,
         )
+    }
+
+    fn sync_ppu_scroll_copy_to_ram(&mut self) {
+        self.game_state
+            .display
+            .ppu_scroll_copy
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.display.ppu_scroll_copy,
+            PpuScrollCopyState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_ppu_scroll_copy<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut PpuScrollCopyState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.display.ppu_scroll_copy);
+        self.sync_ppu_scroll_copy_to_ram();
+        result
+    }
+
+    zelda_ppu_scroll_copy_methods! {
+        fn set_mapbak_tm(value: u8);
+        fn set_mapbak_ts(value: u8);
+        fn set_mapbak_tm_word(value: u16);
+        fn set_bg1_h_high(value: u8);
+        fn set_bg1_h_copy(value: u16);
+        fn set_bg1_v_copy(value: u16);
+        fn set_bg2_h_copy(value: u16);
+        fn set_bg2_v_copy(value: u16);
+        fn set_bg1_h_copy_low(value: u8);
+        fn set_bg1_v_copy_low(value: u8);
+        fn set_bg2_h_copy_low(value: u8);
+        fn set_bg2_v_copy_low(value: u8);
+        fn set_bg1_h_copy2(value: u16);
+        fn set_bg1_v_copy2(value: u16);
+        fn set_bg2_h_copy2(value: u16);
+        fn set_bg2_v_copy2(value: u16);
+        fn set_bg3_h_copy2(value: u16);
+        fn set_bg3_v_copy2(value: u16);
+        fn set_bg3_v_copy2_low(value: u8);
+        fn set_mode7_center_x(value: u16);
+        fn set_mode7_center_y(value: u16);
+        fn set_mode7_center(x: u16, y: u16);
+        fn set_bg1_h_live_and_copy(value: u16);
+        fn set_bg1_v_live_and_copy(value: u16);
+        fn set_bg2_h_live_and_copy(value: u16);
+        fn set_bg2_v_live_and_copy(value: u16);
+        fn set_bg1_bg2_h_live_and_copy(value: u16);
+        fn set_bg1_bg2_v_live_and_copy(value: u16);
+        fn set_bg1_bg2_live_and_copy(bg2_h: u16, bg2_v: u16, bg1_h: u16, bg1_v: u16);
+        fn set_bg2_h_copy2_cached(value: u16);
+        fn set_bg2_v_copy2_cached(value: u16);
+        fn cache_bg2_live_scroll();
+        fn cache_bg2_live_scroll_from(bg2_h: u16, bg2_v: u16);
+        fn save_special_exit_bg2_live_scroll();
+        fn save_exit_bg2_live_scroll();
+        fn restore_special_exit_bg2_scroll_to_all_layers();
+        fn restore_exit_bg2_scroll_to_all_layers();
+        fn set_all_layer_h_scrolls(value: u16);
+        fn set_all_layer_v_scrolls(value: u16);
+        fn set_map_backup_scrolls(bg1_h: u16, bg2_h: u16, bg1_v: u16, bg2_v: u16);
+        fn clear_bg3_h_copy2();
+        fn clear_bg3_v_copy2();
+        fn add_bg1_h_copy_low(value: u8);
+        fn add_bg1_v_copy_low(value: u8);
+        fn add_bg2_v_copy_low(value: u8);
+        fn subtract_bg2_h_copy_low(value: u8);
+        fn add_bg2_h_copy2_signed(value: i8);
+        fn add_bg2_v_copy2_signed(value: i8);
+        fn add_bg3_v_copy2_signed(value: i8);
+        fn clear_bg1_scroll_subpixels();
+        fn add_bg1_h_live_subpixel(subpixel: u16, scroll: u16);
+        fn add_bg1_v_live_subpixel(subpixel: u16, scroll: u16);
+        fn subtract_bg1_v_live_subpixel(value: u32);
+        fn add_bg1_h_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn add_bg1_v_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn subtract_bg1_v_copy2_subpixel(subpixel: u16, scroll: u16);
+        fn set_bg1_h_subpixel(value: u16);
+        fn set_bg1_v_subpixel(value: u16);
+        fn step_bg2_h_copy2_toward_cached();
+        fn step_bg2_v_copy2_toward_cached();
+        fn add_bg2_h_copy2(value: u16);
+        fn add_bg2_v_copy2(value: u16);
+        fn add_bg2_copy2_for_axis_signed(vertical: bool, value: i16);
+        fn copy_bg1_live_to_ppu_copy();
+        fn copy_bg2_live_to_ppu_copy();
+        fn copy_live_to_ppu_copy();
+        fn copy_bg2_live_to_bg1_live();
+        fn copy_bg2_h_live_to_bg1_h_live();
+        fn copy_bg2_v_live_to_bg1_v_live();
+        fn set_mapbak_main_tile_theme_index(value: u8);
+        fn set_mapbak_sprite_graphics_index(value: u8);
+        fn set_mapbak_aux_tile_theme_index(value: u8);
+        fn set_mapbak_bg1_x_offset(value: u16);
+        fn set_mapbak_bg1_y_offset(value: u16);
+        fn set_mapbak_cgwsel(value: u8);
+        fn set_mapbak_cgwsel_word(value: u16);
+        fn set_mapbak_hdmaen(value: u8);
+        fn copy_mapbak_palette_from(palette: &[u8]);
     }
 
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
@@ -1808,117 +2091,205 @@ impl ZeldaState {
         )
     }
 
-    fn frame_state_bridge_mut(&mut self) -> NativeFrameStateBridgeMut<'_> {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
+    fn sync_frame_state_to_ram(&mut self) {
+        self.game_state.frame.write_to_ram(&mut self.ram);
+        self.assert_native_frame_state_matches_ram();
+    }
+
+    fn mutate_frame_state<T>(&mut self, mutate: impl FnOnce(&mut FrameState) -> T) -> T {
+        let result = mutate(&mut self.game_state.frame);
+        self.sync_frame_state_to_ram();
+        result
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
-        self.frame_state_bridge_mut().set_main_module(value);
+        self.mutate_frame_state(|frame| frame.set_main_module(value));
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
-        self.frame_state_bridge_mut().set_main_module_word(value);
+        self.mutate_frame_state(|frame| frame.set_main_module_word(value));
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
-        self.frame_state_bridge_mut().set_submodule(value);
+        self.mutate_frame_state(|frame| frame.set_submodule(value));
     }
 
     pub(crate) fn increment_submodule(&mut self) {
-        self.frame_state_bridge_mut().increment_submodule();
+        self.mutate_frame_state(FrameState::increment_submodule);
     }
 
     pub(crate) fn decrement_submodule(&mut self) {
-        self.frame_state_bridge_mut().decrement_submodule();
+        self.mutate_frame_state(FrameState::decrement_submodule);
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
-        self.frame_state_bridge_mut().set_subsubmodule(value);
+        self.mutate_frame_state(|frame| frame.set_subsubmodule(value));
     }
 
     pub(crate) fn increment_subsubmodule(&mut self) {
-        self.frame_state_bridge_mut().increment_subsubmodule();
+        self.mutate_frame_state(FrameState::increment_subsubmodule);
     }
 
     pub(crate) fn decrement_subsubmodule(&mut self) {
-        self.frame_state_bridge_mut().decrement_subsubmodule();
+        self.mutate_frame_state(FrameState::decrement_subsubmodule);
     }
 
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        self.frame_state_bridge_mut().set_frame_counter(value);
+        self.mutate_frame_state(|frame| frame.set_frame_counter(value));
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
-        self.frame_state_bridge_mut().increment_frame_counter();
+        self.mutate_frame_state(FrameState::increment_frame_counter);
     }
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        self.frame_state_bridge_mut()
-            .set_saved_module_for_menu(value);
+        self.mutate_frame_state(|frame| frame.set_saved_module_for_menu(value));
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        self.frame_state_bridge_mut().clear_saved_module_for_menu();
+        self.mutate_frame_state(FrameState::clear_saved_module_for_menu);
     }
 
     pub(crate) fn save_main_module_for_menu(&mut self) {
-        self.frame_state_bridge_mut().save_main_module_for_menu();
+        self.mutate_frame_state(FrameState::save_main_module_for_menu);
     }
 
     pub(crate) fn save_submodule_for_menu(&mut self) {
-        self.frame_state_bridge_mut().save_submodule_for_menu();
+        self.mutate_frame_state(FrameState::save_submodule_for_menu);
     }
 
     pub(crate) fn clear_modal_pause_flag(&mut self) {
-        self.frame_state_bridge_mut().clear_modal_pause_flag();
+        self.mutate_frame_state(FrameState::clear_modal_pause_flag);
     }
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        self.frame_state_bridge_mut().set_modal_pause_flag(value);
+        self.mutate_frame_state(|frame| frame.set_modal_pause_flag(value));
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        self.frame_state_bridge_mut().increment_modal_pause_flag()
+        self.mutate_frame_state(FrameState::increment_modal_pause_flag)
     }
 
-    fn world_location_bridge_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
-        NativeWorldLocationBridgeMut::new(&mut self.game_state.world.location, &mut self.ram)
+    fn sync_world_location_to_ram(&mut self) {
+        self.game_state.world.location.write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.location,
+            crate::game_state::WorldLocationState::load_from_ram(&self.ram)
+        );
     }
 
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
-        self.world_location_bridge_mut().set_dungeon_room(value);
+        self.game_state.world.location.set_dungeon_room(value);
+        self.sync_world_location_to_ram();
     }
 
     pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
-        self.world_location_bridge_mut()
-            .set_dungeon_room_index(value);
+        self.game_state.world.location.set_dungeon_room_index(value);
+        self.sync_world_location_to_ram();
     }
 
     pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        self.world_location_bridge_mut()
-            .increment_dungeon_room_index_by(value)
+        let next = self
+            .game_state
+            .world
+            .location
+            .increment_dungeon_room_index_by(value);
+        self.sync_world_location_to_ram();
+        next
     }
 
     pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        self.world_location_bridge_mut()
-            .decrement_dungeon_room_index_by(value)
+        let next = self
+            .game_state
+            .world
+            .location
+            .decrement_dungeon_room_index_by(value);
+        self.sync_world_location_to_ram();
+        next
     }
 
     pub(crate) fn set_overworld_screen(&mut self, value: u8) {
-        self.world_location_bridge_mut().set_overworld_screen(value);
+        self.game_state.world.location.set_overworld_screen(value);
+        self.sync_world_location_to_ram();
     }
 
     pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
-        self.world_location_bridge_mut()
+        self.game_state
+            .world
+            .location
             .set_overworld_screen_word(value);
+        self.sync_world_location_to_ram();
     }
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
-        self.world_location_bridge_mut().set_indoor_flag(value);
+        self.game_state.world.location.set_indoor_flag(value);
+        self.sync_world_location_to_ram();
     }
 
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
         NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
+    }
+
+    fn sync_world_scroll_to_ram(&mut self) {
+        self.game_state.world.scroll.write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.scroll,
+            WorldScrollState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_world_scroll<T>(&mut self, mutate: impl FnOnce(&mut WorldScrollState) -> T) -> T {
+        let result = mutate(&mut self.game_state.world.scroll);
+        self.sync_world_scroll_to_ram();
+        result
+    }
+
+    pub(crate) fn set_bg1_x(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_x(value));
+    }
+
+    pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_x_low(value));
+    }
+
+    pub(crate) fn set_bg1_y(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_y(value));
+    }
+
+    pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_y_low(value));
+    }
+
+    pub(crate) fn set_bg2_x(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg2_x(value));
+    }
+
+    pub(crate) fn set_bg2_y(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg2_y(value));
+    }
+
+    pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_x_offset(value));
+    }
+
+    pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_bg1_y_offset(value));
+    }
+
+    pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_base_y(value));
+    }
+
+    pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_base_x(value));
+    }
+
+    pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_mask_y(value));
+    }
+
+    pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
+        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_mask_x(value));
     }
 
     pub(crate) fn world_camera_boundaries_mut(
@@ -1930,6 +2301,66 @@ impl ZeldaState {
         )
     }
 
+    fn sync_world_camera_boundaries_to_ram(&mut self) {
+        self.game_state
+            .world
+            .camera_boundaries
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.camera_boundaries,
+            WorldCameraBoundariesState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_world_camera_boundaries<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut WorldCameraBoundariesState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.world.camera_boundaries);
+        self.sync_world_camera_boundaries_to_ram();
+        result
+    }
+
+    zelda_world_camera_boundary_methods! {
+        fn set_camera_y_coord_scroll_low(value: u16);
+        fn set_camera_y_coord_scroll_hi(value: u16);
+        fn set_camera_x_coord_scroll_low(value: u16);
+        fn set_camera_x_coord_scroll_hi(value: u16);
+        fn add_camera_scroll_for_axis(horizontal: bool, delta: i16) -> u16;
+        fn set_camera_scroll_from_link_for_axis(horizontal: bool, value: u16);
+        fn set_up_down_scroll_target(value: u16);
+        fn set_up_down_scroll_target_end(value: u16);
+        fn set_left_right_scroll_target(value: u16);
+        fn set_left_right_scroll_target_end(value: u16);
+        fn cache_scroll_targets();
+        fn cache_camera_scroll();
+        fn restore_scroll_targets_from_cached();
+        fn set_overworld_scroll_up_counter(value: u16);
+        fn set_overworld_scroll_down_counter(value: u16);
+        fn set_overworld_scroll_left_counter(value: u16);
+        fn set_overworld_scroll_right_counter(value: u16);
+        fn set_overworld_scroll_counter_for_axis(ya: usize, value: u16);
+        fn clear_opposed_scroll_counters(ya: usize);
+        fn set_opposed_scroll_counter_pair(ya: usize, value: u16);
+        fn set_special_exit_room_bounds(y_start: u16, y_end: u16, x_start: u16, x_end: u16);
+        fn save_exit_room_bounds(y_start: u16, y_end: u16, x_start: u16, x_end: u16);
+        fn copy_spexit_scroll_targets();
+        fn copy_spexit_scroll_counters();
+        fn restore_spexit_scroll_targets();
+        fn restore_spexit_scroll_counters();
+        fn copy_exit_scroll_targets();
+        fn copy_exit_scroll_counters();
+        fn restore_exit_scroll_targets();
+        fn restore_exit_scroll_counters();
+        fn save_spexit_camera_coords();
+        fn save_exit_camera_coords();
+        fn restore_exit_camera_scroll();
+        fn restore_special_exit_camera_scroll();
+        fn restore_camera_y_from_cached_indoor();
+        fn restore_camera_x_from_cached_indoor();
+        fn update_camera_hi_outdoor();
+    }
+
     pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {
         NativeWorldPaletteThemeBridgeMut::new(
             &mut self.game_state.world.palette_theme,
@@ -1937,12 +2368,414 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
-        NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
+    fn sync_world_region_to_ram(&mut self) {
+        self.game_state.world.region.write_to_ram(&mut self.ram);
+        self.debug_assert_world_region_matches_ram();
     }
 
-    pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
-        NativeWorldTransientBridgeMut::new(&mut self.game_state.world.transient, &mut self.ram)
+    fn debug_assert_world_region_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.world.region,
+            WorldRegionState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_world_region<T>(&mut self, f: impl FnOnce(&mut WorldRegionState) -> T) -> T {
+        let value = f(&mut self.game_state.world.region);
+        self.sync_world_region_to_ram();
+        value
+    }
+
+    pub(crate) fn set_rng_seed(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_rng_seed(value));
+    }
+
+    pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_dark_world_region_index(value));
+    }
+
+    pub(crate) fn set_which_entrance(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_which_entrance(value));
+    }
+
+    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_which_entrance_byte(value));
+    }
+
+    pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_overworld_area_index(value));
+    }
+
+    pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_overworld_area_index_word(value));
+    }
+
+    pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_current_area_of_player_word(value));
+    }
+
+    pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_flag_overworld_area_changed(value));
+    }
+
+    pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
+        self.mutate_world_region(|region| region.clear_flag_overworld_area_changed());
+    }
+
+    pub(crate) fn clear_overlay_index_word(&mut self) {
+        self.mutate_world_region(|region| region.clear_overlay_index_word());
+    }
+
+    pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_overlay_index_word(value));
+    }
+
+    pub(crate) fn set_overlay_high(&mut self, value: u8) {
+        self.mutate_world_region(|region| region.set_overlay_high(value));
+    }
+
+    pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_prev_screen_index_word(value));
+    }
+
+    pub(crate) fn save_spexit_area_index(&mut self) {
+        self.mutate_world_region(|region| region.save_spexit_area_index());
+    }
+
+    pub(crate) fn restore_spexit_area_index(&mut self) {
+        self.mutate_world_region(|region| region.restore_spexit_area_index());
+    }
+
+    pub(crate) fn save_exit_area_index(&mut self) {
+        self.mutate_world_region(|region| region.save_exit_area_index());
+    }
+
+    pub(crate) fn restore_exit_area_index(&mut self) {
+        self.mutate_world_region(|region| region.restore_exit_area_index());
+    }
+
+    pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
+        self.mutate_world_region(|region| region.set_ow_entrance_value(value));
+    }
+
+    pub(crate) fn ow_entrance_value(&self) -> u16 {
+        self.game_state.world.region.ow_entrance_value()
+    }
+
+    fn sync_world_transient_scalars_to_ram(&mut self) {
+        self.game_state
+            .world
+            .transient
+            .write_scalar_fields_to_ram(&mut self.ram);
+        self.debug_assert_world_transient_matches_ram();
+    }
+
+    fn sync_world_transient_preserving_projected_door_animation_step(&mut self) {
+        let projected = read_le_u16(&self.ram, DOOR_ANIMATION_STEP_INDICATOR);
+        self.game_state
+            .world
+            .transient
+            .set_door_animation_step_word(projected);
+        self.sync_world_transient_scalars_to_ram();
+    }
+
+    fn debug_assert_world_transient_matches_ram(&self) {
+        let mut loaded = WorldTransientState::load_from_ram(&self.ram);
+        loaded.dungeon_replacement_tiles = self
+            .game_state
+            .world
+            .transient
+            .dungeon_replacement_tiles
+            .clone();
+        debug_assert_eq!(self.game_state.world.transient, loaded);
+    }
+
+    fn mutate_world_transient_preserving_door_step<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut WorldTransientState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.world.transient);
+        self.sync_world_transient_preserving_projected_door_animation_step();
+        result
+    }
+
+    fn mutate_world_transient<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut WorldTransientState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.world.transient);
+        self.sync_world_transient_scalars_to_ram();
+        result
+    }
+
+    pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_room_transitioning_flags(value)
+        });
+    }
+
+    pub(crate) fn clear_custom_spell_animation(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.clear_custom_spell_animation()
+        });
+    }
+
+    pub(crate) fn set_custom_spell_animation_active(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_custom_spell_animation_active()
+        });
+    }
+
+    pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| state.set_allow_scroll_z(value));
+    }
+
+    pub(crate) fn set_cached_room_bounds(
+        &mut self,
+        y_start: u16,
+        y_end: u16,
+        x_start: u16,
+        x_end: u16,
+    ) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_cached_room_bounds(y_start, y_end, x_start, x_end)
+        });
+    }
+
+    pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_standing_in_doorway_cached(value)
+        });
+    }
+
+    pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_standing_in_doorway_cached(doorway_state)
+        });
+    }
+
+    pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| state.set_flag_travel_bird(value));
+    }
+
+    pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.clear_tile_interaction_shared_flag()
+        });
+    }
+
+    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
+        self.mutate_world_transient(|state| state.set_door_animation_step(value));
+    }
+
+    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
+        self.mutate_world_transient(|state| state.set_door_animation_step_word(value));
+    }
+
+    pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.clear_hud_floor_changed_timer()
+        });
+    }
+
+    pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.cache_quadrant_fullsize_state()
+        });
+    }
+
+    pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.restore_quadrant_fullsize_from_cached()
+        });
+    }
+
+    pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_quadrant_fullsize_x(value)
+        });
+    }
+
+    pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_quadrant_fullsize_y(value)
+        });
+    }
+
+    pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_fullsize_overworld_quadrants()
+        });
+    }
+
+    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_horizontal_room_fullsize_state(value)
+        });
+    }
+
+    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_vertical_room_fullsize_state(value)
+        });
+    }
+
+    pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        vertical_mask: u8,
+        blast_wall_x_open: bool,
+        blast_wall_y_open: bool,
+    ) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.apply_dungeon_layout_quadrant_fullsize(
+                layout_flags,
+                horizontal_mask,
+                vertical_mask,
+                blast_wall_x_open,
+                blast_wall_y_open,
+            )
+        });
+    }
+
+    pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
+        &mut self,
+        layout_flags: u8,
+        horizontal_mask: u8,
+        blast_wall_x_open: bool,
+    ) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.apply_dungeon_layout_horizontal_fullsize(
+                layout_flags,
+                horizontal_mask,
+                blast_wall_x_open,
+            )
+        });
+    }
+
+    pub(crate) fn apply_dungeon_layout_vertical_fullsize(
+        &mut self,
+        layout_flags: u8,
+        vertical_mask: u8,
+        blast_wall_y_open: bool,
+    ) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.apply_dungeon_layout_vertical_fullsize(
+                layout_flags,
+                vertical_mask,
+                blast_wall_y_open,
+            )
+        });
+    }
+
+    pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.apply_reset_xy_quadrant_overrides(reset_xy_flags)
+        });
+    }
+
+    pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.force_horizontal_fullsize_for_blast_wall()
+        });
+    }
+
+    pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.force_vertical_fullsize_for_blast_wall()
+        });
+    }
+
+    pub(crate) fn save_spexit_tm_copy(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| state.save_spexit_tm_copy());
+    }
+
+    pub(crate) fn restore_spexit_layer_masks(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.restore_spexit_layer_masks()
+        });
+    }
+
+    pub(crate) fn save_exit_tm_copy(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| state.save_exit_tm_copy());
+    }
+
+    pub(crate) fn restore_exit_layer_masks(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| state.restore_exit_layer_masks());
+    }
+
+    pub(crate) fn set_world_transient_map_backup_subscreen_layer(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| state.set_mapbak_ts(value));
+    }
+
+    pub(crate) fn set_world_transient_map_backup_main_layer(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| state.set_mapbak_tm(value));
+    }
+
+    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
+        self.mutate_world_transient_preserving_door_step(|state| state.increment_move_overlay_ctr())
+    }
+
+    pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_overworld_hole_scan_step(value)
+        });
+    }
+
+    pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_overworld_peg_puzzle_progress(value)
+        });
+    }
+
+    pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_overworld_hole_tilemap_pos(value)
+        });
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_overworld_bomb_tile_sweep_x(value)
+        });
+    }
+
+    pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_overworld_bomb_tile_sweep_y_end(value)
+        });
+    }
+
+    pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_big_key_door_message_triggered(value)
+        });
+    }
+
+    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.set_savegame_has_master_sword_flags(value)
+        });
+    }
+
+    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
+        self.game_state
+            .world
+            .transient
+            .set_dung_replacement_tile_state(index, value);
+        write_le_u16(
+            &mut self.ram,
+            DUNG_REPLACEMENT_TILE_STATE + index * 2,
+            value,
+        );
+        self.debug_assert_world_transient_matches_ram();
+    }
+
+    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
+        self.mutate_world_transient_preserving_door_step(|state| {
+            state.decrement_milestone_item_gfx_swap_countdown()
+        });
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {
@@ -2177,36 +3010,61 @@ impl ZeldaState {
             .vertical_delta_word()
     }
 
-    fn overworld_scroll_delta_bridge_mut(&mut self) -> NativeOverworldScrollDeltaBridgeMut<'_> {
-        NativeOverworldScrollDeltaBridgeMut::new(
-            &mut self.game_state.world.overworld.scroll_delta,
-            &mut self.ram,
-        )
+    fn sync_overworld_scroll_delta_to_ram(&mut self) {
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.overworld.scroll_delta,
+            crate::game_state::OverworldScrollDeltaState::load_from_ram(&self.ram)
+        );
     }
 
     pub(crate) fn set_overworld_vertical_scroll_delta_low(&mut self, value: u8) {
-        self.overworld_scroll_delta_bridge_mut()
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
             .set_vertical_delta_low_byte(value);
+        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_horizontal_scroll_delta_low(&mut self, value: u8) {
-        self.overworld_scroll_delta_bridge_mut()
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
             .set_horizontal_delta_low_byte(value);
+        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_vertical_scroll_delta(&mut self, value: u16) {
-        self.overworld_scroll_delta_bridge_mut()
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
             .set_vertical_delta_word(value);
+        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_horizontal_scroll_delta(&mut self, value: u16) {
-        self.overworld_scroll_delta_bridge_mut()
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
             .set_horizontal_delta_word(value);
+        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn clear_overworld_vertical_scroll_delta_low(&mut self) {
-        self.overworld_scroll_delta_bridge_mut()
+        self.game_state
+            .world
+            .overworld
+            .scroll_delta
             .clear_vertical_delta_low_byte();
+        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn special_entrance_trigger(&self) -> u8 {
@@ -2559,151 +3417,139 @@ impl ZeldaState {
             .decrement_address()
     }
 
-    fn display_state_bridge_mut(&mut self) -> NativeDisplayStateBridgeMut<'_> {
-        NativeDisplayStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
-    pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u16) {
-        self.hud_state_mut().set_floor_changed_timer(value);
-    }
-
     pub(crate) fn loaded_room_data_word(&self, offset: usize, index: usize) -> u16 {
         loaded_room_data_word(&self.ram, offset, index)
     }
 
+    fn sync_display_core_to_ram(&mut self) {
+        self.game_state.display.write_core_to_ram(&mut self.ram);
+        self.game_state
+            .display
+            .debug_assert_core_matches_ram(&self.ram);
+    }
+
+    fn mutate_display_core<T>(&mut self, mutate: impl FnOnce(&mut DisplayState) -> T) -> T {
+        let result = mutate(&mut self.game_state.display);
+        self.sync_display_core_to_ram();
+        result
+    }
+
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_screen_brightness(value);
+        self.mutate_display_core(|display| display.set_screen_brightness(value));
     }
 
     pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .increment_screen_brightness()
+        self.mutate_display_core(|display| display.increment_screen_brightness())
     }
 
     pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .decrement_screen_brightness()
+        self.mutate_display_core(|display| display.decrement_screen_brightness())
     }
 
     pub(crate) fn latch_nmi_update(&mut self) {
-        self.display_state_bridge_mut().latch_nmi_update();
+        self.mutate_display_core(|display| display.latch_nmi_update());
     }
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
-        self.display_state_bridge_mut().clear_nmi_update_latch();
+        self.mutate_display_core(|display| display.clear_nmi_update_latch());
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_core_update_disable_flag(value);
+        self.mutate_display_core(|display| display.set_core_update_disable_flag(value));
     }
 
     pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_core_update_disable_flag_word(value);
+        self.mutate_display_core(|display| display.set_core_update_disable_flag_word(value));
     }
 
     pub(crate) fn clear_core_update_disable_flag(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_core_update_disable_flag();
+        self.mutate_display_core(|display| display.clear_core_update_disable_flag());
     }
 
     pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .increment_core_update_disable_flag()
+        self.mutate_display_core(|display| display.increment_core_update_disable_flag())
     }
 
     pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_pending_nmi_subroutine(value);
+        self.mutate_display_core(|display| display.set_pending_nmi_subroutine(value));
     }
 
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_pending_nmi_subroutine();
+        self.mutate_display_core(|display| display.clear_pending_nmi_subroutine());
     }
 
     pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .take_pending_nmi_subroutine()
+        self.mutate_display_core(|display| display.take_pending_nmi_subroutine())
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_bg_vram_load_mode(value);
+        self.mutate_display_core(|display| display.set_bg_vram_load_mode(value));
     }
 
     pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
-        self.display_state_bridge_mut()
-            .queue_tilemap_update(destination_page, source_offset);
+        self.mutate_display_core(|display| {
+            display.queue_tilemap_update(destination_page, source_offset)
+        });
     }
 
     pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_pending_tilemap_update_destination();
+        self.mutate_display_core(|display| display.clear_pending_tilemap_update_destination());
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_bg_mode(value);
+        self.mutate_display_core(|display| display.set_bg_mode(value));
     }
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_main_screen_layers(value);
+        self.mutate_display_core(|display| display.set_main_screen_layers(value));
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .and_main_screen_layers(value);
+        self.mutate_display_core(|display| display.and_main_screen_layers(value));
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut().or_main_screen_layers(value);
+        self.mutate_display_core(|display| display.or_main_screen_layers(value));
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_sub_screen_layers(value);
+        self.mutate_display_core(|display| display.set_sub_screen_layers(value));
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_sub_screen_layers_word();
+        self.mutate_display_core(|display| display.clear_sub_screen_layers_word());
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut().and_sub_screen_layers(value);
+        self.mutate_display_core(|display| display.and_sub_screen_layers(value));
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut().or_sub_screen_layers(value);
+        self.mutate_display_core(|display| display.or_sub_screen_layers(value));
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
-        self.display_state_bridge_mut().set_layer_masks_word(value);
+        self.mutate_display_core(|display| display.set_layer_masks_word(value));
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_bg12_window_selection(value);
+        self.mutate_display_core(|display| display.set_bg12_window_selection(value));
     }
 
     pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_bg34_window_selection(value);
+        self.mutate_display_core(|display| display.set_bg34_window_selection(value));
     }
 
     pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_object_color_window_selection(value);
+        self.mutate_display_core(|display| display.set_object_color_window_selection(value));
     }
 
     pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_main_screen_window_layers(value);
+        self.mutate_display_core(|display| display.set_main_screen_window_layers(value));
     }
 
     pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_sub_screen_window_layers(value);
+        self.mutate_display_core(|display| display.set_sub_screen_window_layers(value));
     }
 
     pub(crate) fn set_window_layer_masks(
@@ -2714,271 +3560,239 @@ impl ZeldaState {
         main_screen_window_layers: u8,
         sub_screen_window_layers: u8,
     ) {
-        self.display_state_bridge_mut().set_window_layer_masks(
-            bg12_window_selection,
-            bg34_window_selection,
-            object_color_window_selection,
-            main_screen_window_layers,
-            sub_screen_window_layers,
-        );
+        self.mutate_display_core(|display| {
+            display.set_window_layer_masks(
+                bg12_window_selection,
+                bg34_window_selection,
+                object_color_window_selection,
+                main_screen_window_layers,
+                sub_screen_window_layers,
+            )
+        });
     }
 
     pub(crate) fn clear_window_layer_masks(&mut self) {
-        self.display_state_bridge_mut().clear_window_layer_masks();
+        self.mutate_display_core(|display| display.clear_window_layer_masks());
     }
 
     pub(crate) fn clear_window_main_sub_masks(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_window_main_sub_masks();
+        self.mutate_display_core(|display| display.clear_window_main_sub_masks());
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
-        self.display_state_bridge_mut().clear_bg_vram_load_mode();
+        self.mutate_display_core(|display| display.clear_bg_vram_load_mode());
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_nmi_copy_packets_request(value);
+        self.mutate_display_core(|display| display.set_nmi_copy_packets_request(value));
     }
 
     pub(crate) fn request_nmi_copy_packets(&mut self) {
-        self.display_state_bridge_mut().request_nmi_copy_packets();
+        self.mutate_display_core(|display| display.request_nmi_copy_packets());
     }
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_nmi_copy_packets_request();
+        self.mutate_display_core(|display| display.clear_nmi_copy_packets_request());
     }
 
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
-        self.display_state_bridge_mut()
-            .request_polyhedral_nmi_update();
+        self.mutate_display_core(|display| display.request_polyhedral_nmi_update());
     }
 
     pub(crate) fn clear_pending_polyhedral_update(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_pending_polyhedral_update();
+        self.mutate_display_core(|display| display.clear_pending_polyhedral_update());
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_chr_halfslot_request(value);
+        self.mutate_display_core(|display| display.set_chr_halfslot_request(value));
     }
 
     pub(crate) fn clear_chr_halfslot_request(&mut self) {
-        self.display_state_bridge_mut().clear_chr_halfslot_request();
+        self.mutate_display_core(|display| display.clear_chr_halfslot_request());
     }
 
     pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .increment_chr_halfslot_request()
+        self.mutate_display_core(|display| display.increment_chr_halfslot_request())
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
-        self.display_state_bridge_mut().activate_nmi_thread();
+        self.mutate_display_core(|display| display.activate_nmi_thread());
     }
 
     pub(crate) fn deactivate_nmi_thread(&mut self) {
-        self.display_state_bridge_mut().deactivate_nmi_thread();
+        self.mutate_display_core(|display| display.deactivate_nmi_thread());
     }
 
     pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_nmi_thread_stack_pointer(value);
+        self.mutate_display_core(|display| display.set_nmi_thread_stack_pointer(value));
     }
 
     pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_irq_control_flag(value);
+        self.mutate_display_core(|display| display.set_irq_control_flag(value));
     }
 
     pub(crate) fn clear_irq_control_flag(&mut self) {
-        self.display_state_bridge_mut().clear_irq_control_flag();
+        self.mutate_display_core(|display| display.clear_irq_control_flag());
     }
 
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_vertical_irq_trigger(value);
+        self.mutate_display_core(|display| display.set_vertical_irq_trigger(value));
     }
 
     pub(crate) fn advance_crystal_rotation_counter(&mut self, amount: u8) -> bool {
-        self.display_state_bridge_mut()
-            .advance_crystal_rotation_counter(amount)
+        self.mutate_display_core(|display| display.advance_crystal_rotation_counter(amount))
     }
 
     pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_sprite_dma_head_pointer(value);
+        self.mutate_display_core(|display| display.set_sprite_dma_head_pointer(value));
     }
 
     pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_sprite_dma_body_pointer(value);
+        self.mutate_display_core(|display| display.set_sprite_dma_body_pointer(value));
     }
 
     pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_hdma_enable_mask(value);
+        self.mutate_display_core(|display| display.set_hdma_enable_mask(value));
     }
 
     pub(crate) fn clear_hdma_enable_mask(&mut self) {
-        self.display_state_bridge_mut().clear_hdma_enable_mask();
+        self.mutate_display_core(|display| display.clear_hdma_enable_mask());
     }
 
     pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_mosaic_copy(value);
+        self.mutate_display_core(|display| display.set_mosaic_copy(value));
     }
 
     pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
-        self.display_state_bridge_mut()
-            .set_mosaic_copy_from_level_or(mask);
+        self.mutate_display_core(|display| display.set_mosaic_copy_from_level_or(mask));
     }
 
     pub(crate) fn set_mosaic_level(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_mosaic_level(value);
+        self.mutate_display_core(|display| display.set_mosaic_level(value));
     }
 
     pub(crate) fn clear_mosaic_level(&mut self) {
-        self.display_state_bridge_mut().clear_mosaic_level();
+        self.mutate_display_core(|display| display.clear_mosaic_level());
     }
 
     pub(crate) fn clear_mosaic_level_word(&mut self) {
-        self.display_state_bridge_mut().clear_mosaic_level_word();
+        self.mutate_display_core(|display| display.clear_mosaic_level_word());
     }
 
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
-        self.display_state_bridge_mut()
-            .increment_mosaic_level_by(value)
+        self.mutate_display_core(|display| display.increment_mosaic_level_by(value))
     }
 
     pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
-        self.display_state_bridge_mut()
-            .decrement_mosaic_level_by(value)
+        self.mutate_display_core(|display| display.decrement_mosaic_level_by(value))
     }
 
     pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_mosaic_target_level(value);
+        self.mutate_display_core(|display| display.set_mosaic_target_level(value));
     }
 
     pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_mosaic_target_level_word(value);
+        self.mutate_display_core(|display| display.set_mosaic_target_level_word(value));
     }
 
     pub(crate) fn clear_mosaic_target_level(&mut self) {
-        self.display_state_bridge_mut().clear_mosaic_target_level();
+        self.mutate_display_core(|display| display.clear_mosaic_target_level());
     }
 
     pub(crate) fn clear_mosaic_target_level_word(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_mosaic_target_level_word();
+        self.mutate_display_core(|display| display.clear_mosaic_target_level_word());
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
-        self.display_state_bridge_mut().set_mosaic_direction(value);
+        self.mutate_display_core(|display| display.set_mosaic_direction(value));
     }
 
     pub(crate) fn clear_mosaic_direction(&mut self) {
-        self.display_state_bridge_mut().clear_mosaic_direction();
+        self.mutate_display_core(|display| display.clear_mosaic_direction());
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_nmi_load_target_page(value);
+        self.mutate_display_core(|display| display.set_nmi_load_target_page(value));
     }
 
     pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_nmi_load_target_address(value);
+        self.mutate_display_core(|display| display.set_nmi_load_target_address(value));
     }
 
     pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
-        self.display_state_bridge_mut()
-            .reset_incremental_vram_upload_counter();
+        self.mutate_display_core(|display| display.reset_incremental_vram_upload_counter());
     }
 
     pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
-        self.display_state_bridge_mut()
-            .increment_vram_upload_counter()
+        self.mutate_display_core(|display| display.increment_vram_upload_counter())
     }
 
     pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.display_state_bridge_mut()
-            .set_link_body_dma_sources(top, bottom);
+        self.mutate_display_core(|display| display.set_link_body_dma_sources(top, bottom));
     }
 
     pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.display_state_bridge_mut()
-            .set_link_head_dma_sources(top, bottom);
+        self.mutate_display_core(|display| display.set_link_head_dma_sources(top, bottom));
     }
 
     pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
-        self.display_state_bridge_mut()
-            .set_link_hand_dma_sources(left, right);
+        self.mutate_display_core(|display| display.set_link_hand_dma_sources(left, right));
     }
 
     pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_sword_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_sword_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_shield_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_shield_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_aux_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_aux_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_push_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_push_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_animated_tile_dma_sources(upper, lower);
+        self.mutate_display_core(|display| {
+            display.set_link_animated_tile_dma_sources(upper, lower)
+        });
     }
 
     pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_head_pointer_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_head_pointer_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_link_body_pointer_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_link_body_pointer_dma_sources(upper, lower));
     }
 
     pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.display_state_bridge_mut()
-            .set_travel_bird_dma_sources(upper, lower);
+        self.mutate_display_core(|display| display.set_travel_bird_dma_sources(upper, lower));
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .reset_bg_tile_animation_countdown(value);
+        self.mutate_display_core(|display| display.reset_bg_tile_animation_countdown(value));
     }
 
     pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
-        self.display_state_bridge_mut()
-            .decrement_bg_tile_animation_countdown()
+        self.mutate_display_core(|display| display.decrement_bg_tile_animation_countdown())
     }
 
     pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.display_state_bridge_mut()
-            .clear_star_tile_restore_phase();
+        self.mutate_display_core(|display| display.clear_star_tile_restore_phase());
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_animated_tile_data_source_address(value);
+        self.mutate_display_core(|display| display.set_animated_tile_data_source_address(value));
     }
 
     pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_animated_tile_vram_destination_address(value);
+        self.mutate_display_core(|display| {
+            display.set_animated_tile_vram_destination_address(value)
+        });
     }
 
     pub(crate) fn overworld_tile_attribute_word(&self, index: usize) -> u16 {
@@ -2988,53 +3802,75 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_overworld_tile_attribute_word(&mut self, index: usize, value: u16) {
-        self.display_state_bridge_mut()
-            .set_overworld_tile_attribute_word(index, value);
+        let address = crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + index * 2;
+        write_le_u16(&mut self.ram, address, value);
+        debug_assert_eq!(
+            self.game_state
+                .display
+                .overworld_tile_attribute_word(&self.ram, index),
+            value
+        );
     }
 
     pub(crate) fn set_overworld_tile_upload_word(&mut self, index: usize, value: u16) {
-        self.display_state_bridge_mut()
-            .set_overworld_tile_upload_word(index, value);
+        let address = crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF + index * 2;
+        write_le_u16(&mut self.ram, address, value);
+        debug_assert_eq!(
+            self.game_state
+                .display
+                .overworld_tile_upload_word(&self.ram, index),
+            value
+        );
     }
 
     pub(crate) fn terminate_overworld_tile_upload_words(&mut self, index: usize) {
-        self.display_state_bridge_mut()
-            .terminate_overworld_tile_upload_words(index);
+        self.set_overworld_tile_upload_word(index, 0xffff);
     }
 
     pub(crate) fn copy_tilemap_upload_stripe_bytes(&mut self, bytes: &[u8]) {
-        self.display_state_bridge_mut()
-            .copy_tilemap_upload_stripe_bytes(bytes);
+        let start = crate::game_state::constants::nmi::TILEMAP_UPLOAD_BUFFER;
+        let len = bytes.len().min(self.ram.len().saturating_sub(start));
+        self.ram[start..start + len].copy_from_slice(&bytes[..len]);
+        let cursor = self
+            .game_state
+            .display
+            .apply_tilemap_upload_prefix_to_vram_cursor(&bytes[..len]);
+        write_le_u16(
+            &mut self.ram,
+            crate::game_state::constants::nmi::VRAM_UPLOAD_OFFSET,
+            cursor,
+        );
+        debug_assert_eq!(
+            self.game_state.display.vram_upload_cursor,
+            read_le_u16(
+                &self.ram,
+                crate::game_state::constants::nmi::VRAM_UPLOAD_OFFSET
+            )
+        );
     }
 
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_message_dma_destination_address(value);
+        self.mutate_display_core(|display| display.set_message_dma_destination_address(value));
     }
 
     pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_message_dma_tile_base(value);
+        self.mutate_display_core(|display| display.set_message_dma_tile_base(value));
     }
 
     pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_message_dma_tile_limit(value);
+        self.mutate_display_core(|display| display.set_message_dma_tile_limit(value));
     }
 
     pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
-        self.display_state_bridge_mut()
-            .set_message_dma_tile_sentinel(value);
+        self.mutate_display_core(|display| display.set_message_dma_tile_sentinel(value));
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_overworld_fixed_color_adjustment(value);
+        self.mutate_display_core(|display| display.set_overworld_fixed_color_adjustment(value));
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
-        self.display_state_bridge_mut()
-            .set_travel_bird_tile_offset(value);
+        self.mutate_display_core(|display| display.set_travel_bird_tile_offset(value));
     }
 
     pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
@@ -3216,11 +4052,109 @@ impl ZeldaState {
         NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
     }
 
-    pub(crate) fn dungeon_map_scratch_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
-        NativeDungeonMapDisplayBridgeMut::new(
-            &mut self.game_state.dungeon_map_display,
-            &mut self.ram,
-        )
+    fn sync_dungeon_map_display_to_ram(&mut self) {
+        self.game_state
+            .dungeon_map_display
+            .write_to_ram(&mut self.ram);
+        self.assert_native_dungeon_map_display_matches_ram();
+    }
+
+    fn mutate_dungeon_map_display<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut DungeonMapDisplayState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.dungeon_map_display);
+        self.sync_dungeon_map_display_to_ram();
+        result
+    }
+
+    pub(crate) fn increment_dungeon_map_init_state(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::increment_dungmap_init_state);
+    }
+
+    pub(crate) fn clear_dungeon_map_init_state(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_init_state);
+    }
+
+    pub(crate) fn set_dungeon_map_current_floor(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_dungmap_cur_floor(value));
+    }
+
+    pub(crate) fn decrement_dungeon_map_current_floor_byte(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::decrement_dungmap_cur_floor_byte);
+    }
+
+    pub(crate) fn increment_dungeon_map_current_floor_byte(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::increment_dungmap_cur_floor_byte);
+    }
+
+    pub(crate) fn clear_dungeon_map_floor_scroll_step(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_floor_scroll_step);
+    }
+
+    pub(crate) fn increment_dungeon_map_floor_scroll_step(&mut self) {
+        self.mutate_dungeon_map_display(
+            DungeonMapDisplayState::increment_dungmap_floor_scroll_step,
+        );
+    }
+
+    pub(crate) fn set_dungeon_map_scroll_draw_offset(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_scroll_draw_offset(value));
+    }
+
+    pub(crate) fn set_dungeon_map_scroll_input(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_scroll_input(value));
+    }
+
+    pub(crate) fn set_dungeon_map_scroll_target_y(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_dungmap_scroll_target_y(value));
+    }
+
+    pub(crate) fn clear_dungeon_map_scroll_state(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_scroll_state);
+    }
+
+    pub(crate) fn set_dungeon_map_idx(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_dungmap_idx(value));
+    }
+
+    pub(crate) fn clear_dungeon_map_idx(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_idx);
+    }
+
+    pub(crate) fn set_dungeon_map_player_marker_x(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_dungmap_player_marker_x(value));
+    }
+
+    pub(crate) fn set_dungeon_map_player_marker_y(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_dungmap_player_marker_y(value));
+    }
+
+    pub(crate) fn set_dungeon_map_location_marker_base_y(&mut self, value: u8) {
+        self.mutate_dungeon_map_display(|display| display.set_location_marker_base_y(value));
+    }
+
+    pub(crate) fn reset_dungeon_map_marker_offsets(&mut self) {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::reset_marker_offsets);
+    }
+
+    pub(crate) fn shift_dungeon_map_marker_x_left(&mut self) -> u16 {
+        self.mutate_dungeon_map_display(DungeonMapDisplayState::shift_marker_x_left)
+    }
+
+    pub(crate) fn reset_dungeon_map_marker_x_and_shift_marker_y_low_up(&mut self) {
+        self.mutate_dungeon_map_display(|display| {
+            display.reset_marker_x_offset();
+            display.shift_marker_y_low_up();
+        });
+    }
+
+    pub(crate) fn set_dungeon_map_marker_y_offset(&mut self, value: u16) {
+        self.mutate_dungeon_map_display(|display| display.set_marker_y_offset(value));
+    }
+
+    pub(crate) fn add_dungeon_map_marker_y_offset_signed(&mut self, value: i16) -> u16 {
+        self.mutate_dungeon_map_display(|display| display.add_marker_y_offset_signed(value))
     }
 
     pub(crate) fn dungeon_secret_scratch_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
@@ -3238,6 +4172,45 @@ impl ZeldaState {
         )
     }
 
+    fn sync_overworld_event_info_to_ram(&mut self) {
+        self.game_state
+            .world
+            .overworld
+            .event_info
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.overworld.event_info,
+            OverworldEventInfoState::load_from_ram(&self.ram)
+        );
+    }
+
+    pub(crate) fn set_overworld_event_bits(&mut self, screen: usize, mask: u8) {
+        self.game_state
+            .world
+            .overworld
+            .event_info
+            .set_event_bits(screen, mask);
+        self.sync_overworld_event_info_to_ram();
+    }
+
+    pub(crate) fn set_overworld_event_info(&mut self, screen: usize, value: u8) {
+        self.game_state
+            .world
+            .overworld
+            .event_info
+            .set_event_info(screen, value);
+        self.sync_overworld_event_info_to_ram();
+    }
+
+    pub(crate) fn clear_overworld_event_bits(&mut self, screen: usize, mask: u8) {
+        self.game_state
+            .world
+            .overworld
+            .event_info
+            .clear_event_bits(screen, mask);
+        self.sync_overworld_event_info_to_ram();
+    }
+
     pub(crate) fn overworld_config_table(&self) -> OverworldConfigTableRead<'_> {
         OverworldConfigTableRead::new(
             &self.game_state.world.overworld.config_table,
@@ -3245,19 +4218,402 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn overworld_config_table_mut(&mut self) -> NativeOverworldConfigTableBridgeMut<'_> {
-        NativeOverworldConfigTableBridgeMut::new(
-            &mut self.game_state.world.overworld.config_table,
-            &mut self.ram,
-        )
+    fn sync_overworld_config_table_to_ram(&mut self) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.world.overworld.config_table,
+            crate::game_state::OverworldConfigTableState::load_from_ram(&self.ram)
+        );
+    }
+
+    pub(crate) fn copy_overworld_music_primary(&mut self, data: &[u8]) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .copy_music_primary(data);
+        self.sync_overworld_config_table_to_ram();
+    }
+
+    pub(crate) fn copy_overworld_music_secondary(&mut self, data: &[u8]) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .copy_music_secondary(data);
+        self.sync_overworld_config_table_to_ram();
+    }
+
+    pub(crate) fn set_overworld_music(&mut self, screen: usize, value: u8) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .set_music(screen, value);
+        self.sync_overworld_config_table_to_ram();
+    }
+
+    pub(crate) fn copy_overworld_sprite_graphics_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .copy_sprite_graphics_range(dst, data, src, len);
+        self.sync_overworld_config_table_to_ram();
+    }
+
+    pub(crate) fn copy_overworld_sprite_palette_range(
+        &mut self,
+        dst: usize,
+        data: &[u8],
+        src: usize,
+        len: usize,
+    ) {
+        self.game_state
+            .world
+            .overworld
+            .config_table
+            .copy_sprite_palette_range(dst, data, src, len);
+        self.sync_overworld_config_table_to_ram();
     }
 
     pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
         NativePaletteBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
+    pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .clear_aux_visible_subpalettes();
+        self.ram[AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
+            ..AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_main_visible_subpalettes(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .clear_main_visible_subpalettes();
+        self.ram[MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
+            ..MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .clear_aux_sprite_subpalettes();
+        self.ram[AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START
+            ..AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_main_color(index, value);
+        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+    }
+
+    pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_aux_color(index, value);
+        write_le_u16(&mut self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+    }
+
+    pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .clear_overworld_aux_or_main_offset();
+        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
+    }
+
+    pub(crate) fn select_overworld_aux_palette_offset(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .select_overworld_aux_palette_offset();
+        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
+    }
+
+    pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
+        self.game_state
+            .display
+            .palette_buffer
+            .keep_overworld_aux_or_main_low_byte();
+        write_le_u16(
+            &mut self.ram,
+            OVERWORLD_PALETTE_AUX_OR_MAIN,
+            self.game_state
+                .display
+                .palette_buffer
+                .overworld_aux_or_main_offset(),
+        );
+    }
+
+    pub(crate) fn clear_main_full(&mut self) {
+        self.game_state.display.palette_buffer.clear_main_full();
+        self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
+    }
+
+    pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
+        self.copy_aux_palette_range_from(0, PALETTE_VISIBLE_BYTES, palette);
+    }
+
+    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
+        self.copy_aux_palette_range_from(0, PALETTE_BANK_BYTES, palette);
+    }
+
+    pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
+        let len = self
+            .game_state
+            .display
+            .palette_buffer
+            .backup_overworld_palette_from(palette);
+        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
+    }
+
+    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
+        self.copy_main_palette_range_from(0, PALETTE_BANK_BYTES, palette);
+    }
+
+    pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
+        self.copy_main_palette_range_from(0, len.min(PALETTE_BANK_BYTES), src);
+    }
+
+    pub(crate) fn set_sp0l(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_sprite_palette_0_left(value);
+        self.ram[PALETTE_SP0L] = value;
+    }
+
+    pub(crate) fn set_sp5l(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_sprite_palette_5_left(value);
+        self.ram[PALETTE_SP5L] = value;
+    }
+
+    pub(crate) fn set_sp6l(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_sprite_palette_6_left(value);
+        self.ram[PALETTE_SP6L] = value;
+    }
+
+    pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_main_palette_indoors(value);
+        self.ram[PALETTE_MAIN_INDOORS] = value;
+    }
+
+    pub(crate) fn set_hud_palette(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_hud_palette(value);
+        self.ram[HUD_PALETTE] = value;
+    }
+
+    pub(crate) fn set_sp6r_indoors(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_sprite_palette_6_right_indoors(value);
+        self.ram[PALETTE_SP6R_INDOORS] = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_overworld_palette_aux2_hi(value);
+        self.ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = value;
+    }
+
+    pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_overworld_palette_aux3_lo(value);
+        self.ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = value;
+    }
+
+    pub(crate) fn set_bg_tile_animation_countdown(&mut self, value: u16) {
+        self.game_state
+            .display
+            .reset_bg_tile_animation_countdown(value);
+        write_le_u16(&mut self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
+    }
+
+    pub(crate) fn set_overworld_palette_mode(&mut self, value: u8) {
+        self.game_state
+            .display
+            .palette_buffer
+            .set_overworld_palette_mode(value);
+        self.ram[OVERWORLD_PALETTE_MODE] = value;
+    }
+
+    fn copy_aux_palette_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+        let len = self
+            .game_state
+            .display
+            .palette_buffer
+            .copy_aux_range_from(start, len, src);
+        self.ram[AUX_PALETTE_BUFFER + start..AUX_PALETTE_BUFFER + start + len]
+            .copy_from_slice(&src[..len]);
+    }
+
+    fn copy_main_palette_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+        let len = self
+            .game_state
+            .display
+            .palette_buffer
+            .copy_main_range_from(start, len, src);
+        self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
+            .copy_from_slice(&src[..len]);
+    }
+
     pub(crate) fn palette_filter_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
         NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    }
+
+    fn sync_palette_filter_to_ram(&mut self) {
+        self.game_state
+            .display
+            .palette_filter
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.display.palette_filter,
+            PaletteFilterState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_palette_filter<T>(&mut self, mutate: impl FnOnce(&mut PaletteFilterState) -> T) -> T {
+        let result = mutate(&mut self.game_state.display.palette_filter);
+        self.sync_palette_filter_to_ram();
+        result
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_countdown(value));
+    }
+
+    pub(crate) fn increment_countdown(&mut self) {
+        self.mutate_palette_filter(|filter| filter.increment_countdown());
+    }
+
+    pub(crate) fn decrement_countdown(&mut self) {
+        self.mutate_palette_filter(|filter| filter.decrement_countdown());
+    }
+
+    pub(crate) fn set_countdown_word(&mut self, value: u16) {
+        self.mutate_palette_filter(|filter| filter.set_countdown_word(value));
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_darkening_or_lightening_screen(value));
+    }
+
+    pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.xor_darkening_or_lightening_screen(value));
+    }
+
+    pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
+        self.mutate_palette_filter(|filter| filter.set_darkening_or_lightening_screen_word(value));
+    }
+
+    pub(crate) fn set_color_window_selection(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_color_window_selection(value));
+    }
+
+    pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
+        self.mutate_palette_filter(|filter| filter.set_color_window_and_math_word(value));
+    }
+
+    pub(crate) fn set_color_math_control(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_color_math_control(value));
+    }
+
+    pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_fixed_color_red(value));
+    }
+
+    pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.or_fixed_color_red(value));
+    }
+
+    pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_red(value));
+    }
+
+    pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_fixed_color_green(value));
+    }
+
+    pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.or_fixed_color_green(value));
+    }
+
+    pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_green(value));
+    }
+
+    pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.set_fixed_color_blue(value));
+    }
+
+    pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.or_fixed_color_blue(value));
+    }
+
+    pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
+        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_blue(value));
+    }
+
+    pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
+        if self
+            .game_state
+            .display
+            .palette_filter
+            .set_fixed_color_component(index, value)
+        {
+            self.sync_palette_filter_to_ram();
+        }
+    }
+
+    pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) {
+        if self
+            .game_state
+            .display
+            .palette_filter
+            .or_fixed_color_component(index, value)
+        {
+            self.sync_palette_filter_to_ram();
+        }
     }
 
     pub(crate) fn hud_state(&self) -> HudStateRead<'_> {
@@ -3267,8 +4623,122 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn hud_state_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
-        NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    fn sync_hud_runtime_to_ram(&mut self) {
+        self.game_state
+            .display
+            .hud_runtime
+            .write_to_ram(&mut self.ram);
+        self.debug_assert_hud_runtime_matches_ram();
+    }
+
+    fn debug_assert_hud_runtime_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.display.hud_runtime,
+            HudRuntimeState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn debug_assert_hud_tilemap_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.display.hud_tilemap,
+            HudTilemapState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_hud_runtime<T>(&mut self, f: impl FnOnce(&mut HudRuntimeState) -> T) -> T {
+        let value = f(&mut self.game_state.display.hud_runtime);
+        self.sync_hud_runtime_to_ram();
+        value
+    }
+
+    pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_super_bomb_indicator_timer(value));
+    }
+
+    pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_super_bomb_indicator_counter(value));
+    }
+
+    pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_rupee_sfx_sound_delay(value));
+    }
+
+    pub(crate) fn set_is_doing_heart_animation(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_heart_animation_active(value));
+    }
+
+    pub(crate) fn clear_is_doing_heart_animation(&mut self) {
+        self.mutate_hud_runtime(|hud| hud.clear_heart_animation_active());
+    }
+
+    pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_heart_refill_countdown(value));
+    }
+
+    pub(crate) fn set_heart_refill_anim_subpos(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_heart_refill_animation_subpixel(value));
+    }
+
+    pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_flashing_circle_timer(value));
+    }
+
+    pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_previous_menu_joypad_h(value));
+    }
+
+    pub(crate) fn clear_prev_joypad_h(&mut self) {
+        self.mutate_hud_runtime(|hud| hud.clear_previous_menu_joypad_h());
+    }
+
+    pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_equipment_menu_exit_state(value));
+    }
+
+    pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_bottle_menu_row(value));
+    }
+
+    pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
+        self.mutate_hud_runtime(|hud| hud.decrement_bottle_menu_row())
+    }
+
+    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
+        self.mutate_hud_runtime(|hud| hud.set_dungeon_dark_with_lantern());
+    }
+
+    pub(crate) fn set_tick_counter(&mut self, value: u8) {
+        self.mutate_hud_runtime(|hud| hud.set_tick_counter(value));
+    }
+
+    pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u16) {
+        self.game_state
+            .display
+            .hud_tilemap
+            .set_floor_changed_timer(value);
+        write_le_u16(&mut self.ram, HUD_FLOOR_CHANGED_TIMER, value);
+        self.debug_assert_hud_tilemap_matches_ram();
+    }
+
+    pub(crate) fn clear_floor_changed_timer_low(&mut self) {
+        self.game_state
+            .display
+            .hud_tilemap
+            .clear_floor_changed_timer_low();
+        self.ram[HUD_FLOOR_CHANGED_TIMER] = 0;
+        self.debug_assert_hud_tilemap_matches_ram();
+    }
+
+    pub(crate) fn set_hud_tile_word(&mut self, tile: usize, value: u16) {
+        let offset = tile * 2;
+        if offset + 1 < MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER {
+            self.game_state
+                .display
+                .hud_tilemap
+                .set_tile_word(tile, value);
+            write_le_u16(&mut self.ram, HUD_TILE_INDICES_BUFFER + offset, value);
+            self.debug_assert_hud_tilemap_matches_ram();
+        }
     }
 
     fn hud_inventory_order_bridge_mut(&mut self) -> NativeHudInventoryOrderBridgeMut<'_> {
@@ -3373,16 +4843,153 @@ impl ZeldaState {
         NativeIntroSwordBridgeMut::new(&mut self.game_state.intro_sword, &mut self.ram)
     }
 
-    pub(crate) fn graphics_scratch_mut(&mut self) -> NativeGraphicsScratchBridgeMut<'_> {
-        NativeGraphicsScratchBridgeMut::new(&mut self.ram)
+    pub(crate) fn set_aux_bg_subset_pack(&mut self, index: usize, value: u8) {
+        self.ram[AUX_BG_SUBSET_0 + index] = value;
+    }
+
+    pub(crate) fn graphics_primary_decompression_buffer(&self, len: usize) -> Vec<u8> {
+        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len].to_vec()
+    }
+
+    pub(crate) fn graphics_combined_decompression_buffers(&self) -> Vec<u8> {
+        self.graphics_primary_decompression_buffer(0x0c00)
+    }
+
+    pub(crate) fn copy_to_primary_decompression_buffer(&mut self, data: &[u8]) {
+        let len = data.len().min(
+            self.ram
+                .len()
+                .saturating_sub(PRIMARY_DECOMP_BUFFER_LOAD_GFX),
+        );
+        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len]
+            .copy_from_slice(&data[..len]);
+    }
+
+    pub(crate) fn copy_decompressed_graphics_to(&mut self, dst: usize, data: &[u8]) -> usize {
+        let len = data.len().min(self.ram.len().saturating_sub(dst));
+        self.ram[dst..dst + len].copy_from_slice(&data[..len]);
+        len
+    }
+
+    pub(crate) fn rotate_animated_dungeon_tile_planes(&mut self) {
+        for i in 0..256 {
+            let base = 0x9000 + i * 2;
+            let x = read_le_u16(&self.ram, base + 0x1880);
+            let a = read_le_u16(&self.ram, base + 0x1c80);
+            let b = read_le_u16(&self.ram, base + 0x1e80);
+            let c = read_le_u16(&self.ram, base + 0x1a80);
+            write_le_u16(&mut self.ram, base + 0x1880, a);
+            write_le_u16(&mut self.ram, base + 0x1c80, b);
+            write_le_u16(&mut self.ram, base + 0x1e80, c);
+            write_le_u16(&mut self.ram, base + 0x1a80, x);
+        }
+    }
+
+    pub(crate) fn write_expanded_graphics_tile_row(
+        &mut self,
+        dst: usize,
+        low_plane: u8,
+        high_plane: u8,
+        upper_plane: u8,
+        composite_plane: u8,
+    ) {
+        self.ram[dst] = low_plane;
+        self.ram[dst + 1] = high_plane;
+        self.ram[dst + 0x10] = upper_plane;
+        self.ram[dst + 0x11] = composite_plane;
+    }
+
+    pub(crate) fn set_dungeon_line_pointer_row0(&mut self, index: usize, value: u16) {
+        write_le_u16(&mut self.ram, DUNG_LINE_PTRS_ROW0 + index * 2, value);
+    }
+
+    pub(crate) fn copy_graphics_message_rows(
+        &mut self,
+        dst: usize,
+        src0: usize,
+        src1: usize,
+        len: usize,
+    ) {
+        for i in 0..len {
+            self.ram[MESSAGING_RENDER_BUFFER + dst + i] = self.ram[src0 + i];
+            self.ram[MESSAGING_RENDER_BUFFER + dst + len + i] = self.ram[src1 + i];
+        }
+    }
+
+    pub(crate) fn copy_peg_tile_graphics_to_message_buffer(&mut self, first: usize, second: usize) {
+        for i in 0..64 {
+            let color = read_le_u16(&self.ram, PEG_TILE_GFX_BUFFER + (first >> 1) * 2 + i * 2);
+            write_le_u16(&mut self.ram, MESSAGING_BUF_LOAD_GFX + i * 2, color);
+        }
+        for i in 0..64 {
+            let color = read_le_u16(&self.ram, PEG_TILE_GFX_BUFFER + (second >> 1) * 2 + i * 2);
+            write_le_u16(&mut self.ram, MESSAGING_BUF_LOAD_GFX + (64 + i) * 2, color);
+        }
+    }
+
+    pub(crate) fn clear_agahnim_palette_settings(&mut self, len: usize) {
+        self.ram[AGAHNIM_PAL_SETTING..AGAHNIM_PAL_SETTING + len].fill(0);
+    }
+
+    pub(crate) fn agahnim_palette_word(&self, index: usize) -> u16 {
+        read_le_u16(&self.ram, AGAHNIM_PAL_SETTING + index * 2)
+    }
+
+    pub(crate) fn set_agahnim_palette_word(&mut self, index: usize, value: u16) {
+        write_le_u16(&mut self.ram, AGAHNIM_PAL_SETTING + index * 2, value);
+    }
+
+    pub(crate) fn graphics_sprite_decompression_buffer_tail(&self) -> Vec<u8> {
+        self.ram[SPRITE_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
+    }
+
+    pub(crate) fn staged_bg_and_sprite_decompression_buffers(&self) -> Vec<u8> {
+        self.ram[BG_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
     }
 
     pub(crate) fn overworld_map16_decode(&self) -> OverworldMap16Decode<'_> {
         OverworldMap16Decode::new(&self.ram)
     }
 
-    pub(crate) fn overworld_map16_decode_mut(&mut self) -> NativeOverworldMap16DecodeBridgeMut<'_> {
-        NativeOverworldMap16DecodeBridgeMut::new(&mut self.ram)
+    pub(crate) fn copy_overworld_map16_decode_source_from(&mut self, data: &[u8]) {
+        OverworldMap16DecodeScratch::copy_source_from(&mut self.ram, data);
+    }
+
+    pub(crate) fn copy_overworld_map16_scratch_to_source_words_high(&mut self, len: usize) {
+        OverworldMap16DecodeScratch::copy_scratch_to_source_words_high(&mut self.ram, len);
+    }
+
+    pub(crate) fn copy_overworld_map16_scratch_to_source_words_low(&mut self, len: usize) {
+        OverworldMap16DecodeScratch::copy_scratch_to_source_words_low(&mut self.ram, len);
+    }
+
+    pub(crate) fn write_overworld_map16_decompressed_byte(&mut self, dst: usize, value: u8) {
+        OverworldMap16DecodeScratch::write_decompressed_byte(&mut self.ram, dst, value);
+    }
+
+    pub(crate) fn copy_overworld_map16_decompressed_byte(
+        &mut self,
+        dst_org: usize,
+        dst: usize,
+        offset: usize,
+    ) {
+        OverworldMap16DecodeScratch::copy_decompressed_byte(&mut self.ram, dst_org, dst, offset);
+    }
+
+    pub(crate) fn fill_overworld_map16_decode_block(&mut self, dst: usize, table: &[u8], x: usize) {
+        OverworldMap16DecodeScratch::decode_block_fill(&mut self.ram, dst, table, x);
+    }
+
+    pub(crate) fn set_overworld_map16_decode_last(&mut self, value: u16) {
+        OverworldMap16DecodeScratch::set_decode_last(&mut self.ram, value);
+    }
+
+    pub(crate) fn set_overworld_map16_decode_tmp(&mut self, value: u16) {
+        OverworldMap16DecodeScratch::set_decode_tmp(&mut self.ram, value);
+    }
+
+    pub(crate) fn write_decoded_overworld_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {
+        OverworldMap16DecodeScratch::write_decoded_map32_to_bg2_tilemap(&mut self.ram, dst, idx);
     }
 
     pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
@@ -3525,48 +5132,45 @@ impl ZeldaState {
             .vram_dma_source_bytes(&self.ram, source_addr, len)
     }
 
-    fn vram_upload_buffer_bridge_mut(&mut self) -> NativeVramUploadBufferBridgeMut<'_> {
-        NativeVramUploadBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
+    fn assert_vram_upload_cursor_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.display.vram_upload_cursor,
+            read_le_u16(&self.ram, VRAM_UPLOAD_OFFSET),
+            "native VRAM upload cursor diverged from compatibility RAM",
+        );
     }
 
     pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_buffer_byte(offset, value);
+        self.ram[VRAM_UPLOAD_DATA + offset] = value;
     }
 
     pub(crate) fn write_vram_upload_buffer_word(&mut self, offset: usize, value: u16) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_buffer_word(offset, value);
+        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offset, value);
     }
 
     pub(crate) fn write_vram_upload_tilemap_word(&mut self, offset: usize, value: u16) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_tilemap_word(offset, value);
+        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET + offset, value);
     }
 
     pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_overworld_vram_word(word_index, value);
+        write_le_u16(&mut self.ram, UVRAM_DATA + word_index * 2, value);
     }
 
     pub(crate) fn write_vram_upload_absolute_byte(&mut self, address: usize, value: u8) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_absolute_byte(address, value);
+        self.ram[address] = value;
     }
 
     pub(crate) fn write_vram_upload_absolute_word(&mut self, address: usize, value: u16) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_absolute_word(address, value);
+        write_le_u16(&mut self.ram, address, value);
     }
 
     pub(crate) fn copy_vram_upload_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
-        self.vram_upload_buffer_bridge_mut()
-            .copy_buffer_bytes(offset, data);
+        self.ram[VRAM_UPLOAD_DATA + offset..VRAM_UPLOAD_DATA + offset + data.len()]
+            .copy_from_slice(data);
     }
 
     pub(crate) fn terminate_vram_upload_buffer_at(&mut self, offset: usize) {
-        self.vram_upload_buffer_bridge_mut()
-            .terminate_buffer_at(offset);
+        self.ram[VRAM_UPLOAD_DATA + offset] = 0xff;
     }
 
     pub(crate) fn write_vram_upload_level_label_tiles(
@@ -3574,8 +5178,11 @@ impl ZeldaState {
         left: &[u8; 14],
         right: &[u8; 14],
     ) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_level_label_tiles(left, right);
+        self.ram[VRAM_UPLOAD_DATA + 32] = 0xff;
+        for i in (0..14).rev() {
+            self.ram[VRAM_UPLOAD_DATA + i] = left[i];
+            self.ram[VRAM_UPLOAD_DATA + i + 16] = right[i];
+        }
     }
 
     pub(crate) fn write_vram_upload_map16_update_packet(
@@ -3584,8 +5191,19 @@ impl ZeldaState {
         vram_pos: u16,
         tiles: [u16; 4],
     ) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_map16_update_packet(address, vram_pos, tiles);
+        write_le_u16(&mut self.ram, address, vram_pos.swap_bytes());
+        write_le_u16(&mut self.ram, address + 2, 0x0300);
+        write_le_u16(&mut self.ram, address + 4, tiles[0]);
+        write_le_u16(&mut self.ram, address + 6, tiles[1]);
+        write_le_u16(
+            &mut self.ram,
+            address + 8,
+            vram_pos.wrapping_add(0x20).swap_bytes(),
+        );
+        write_le_u16(&mut self.ram, address + 10, 0x0300);
+        write_le_u16(&mut self.ram, address + 12, tiles[2]);
+        write_le_u16(&mut self.ram, address + 14, tiles[3]);
+        write_le_u16(&mut self.ram, address + 16, 0xffff);
     }
 
     pub(crate) fn write_vram_upload_single_tile_stripe_packet(
@@ -3594,26 +5212,30 @@ impl ZeldaState {
         stripe: u16,
         tile: u16,
     ) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_single_tile_stripe_packet(address, stripe, tile);
+        write_le_u16(&mut self.ram, address, stripe);
+        write_le_u16(&mut self.ram, address + 2, 0x0100);
+        write_le_u16(&mut self.ram, address + 4, tile);
     }
 
     pub(crate) fn write_vram_upload_tile_stripe_sentinel(&mut self, address: usize) {
-        self.vram_upload_buffer_bridge_mut()
-            .write_tile_stripe_sentinel(address);
+        write_le_u16(&mut self.ram, address, 0xffff);
     }
 
     pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
-        self.vram_upload_buffer_bridge_mut().set_offset(value);
+        self.game_state.display.set_vram_upload_cursor(value);
+        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, value);
+        self.assert_vram_upload_cursor_matches_ram();
     }
 
     pub(crate) fn clear_vram_upload_cursor(&mut self) {
-        self.vram_upload_buffer_bridge_mut().clear_offset();
+        self.set_vram_upload_cursor(0);
     }
 
     pub(crate) fn advance_vram_upload_cursor_by(&mut self, value: u16) -> u16 {
-        self.vram_upload_buffer_bridge_mut()
-            .advance_offset_by(value)
+        let next = self.game_state.display.advance_vram_upload_cursor_by(value);
+        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, next);
+        self.assert_vram_upload_cursor_matches_ram();
+        next
     }
 
     pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
@@ -4054,17 +5676,108 @@ impl ZeldaState {
         NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    pub(crate) fn messaging_render_buffer_mut(
-        &mut self,
-    ) -> NativeMessagingRenderBufferBridgeMut<'_> {
-        NativeMessagingRenderBufferBridgeMut::new(
-            &mut self.game_state.messaging.render_buffer,
-            &mut self.ram,
-        )
+    fn sync_messaging_render_buffer_to_ram(&mut self) {
+        self.game_state
+            .messaging
+            .render_buffer
+            .write_to_ram(&mut self.ram);
+        self.assert_native_messaging_render_buffer_matches_ram();
     }
 
-    pub(crate) fn vwf_glyph_spacing_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
-        NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
+    fn mutate_messaging_render_buffer<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut MessagingRenderBufferState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.messaging.render_buffer);
+        self.sync_messaging_render_buffer_to_ram();
+        result
+    }
+
+    pub(crate) fn set_messaging_render_buffer_word(&mut self, index: usize, value: u16) {
+        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.set_word(index, value));
+    }
+
+    pub(crate) fn set_messaging_render_buffer_word_at_byte_offset(
+        &mut self,
+        byte_offset: usize,
+        value: u16,
+    ) {
+        self.mutate_messaging_render_buffer(|render_buffer| {
+            render_buffer.set_word_at_byte_offset(byte_offset, value);
+        });
+    }
+
+    pub(crate) fn xor_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
+        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.xor_mask(offset, mask));
+    }
+
+    pub(crate) fn clear_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
+        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.clear_mask(offset, mask));
+    }
+
+    pub(crate) fn clear_messaging_render_buffer_range(&mut self, byte_count: usize) {
+        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.clear_range(byte_count));
+    }
+
+    pub(crate) fn fill_messaging_render_buffer_word_range(
+        &mut self,
+        start_index: usize,
+        count: usize,
+        value: u16,
+    ) {
+        self.mutate_messaging_render_buffer(|render_buffer| {
+            render_buffer.fill_word_range(start_index, count, value);
+        });
+    }
+
+    fn sync_vwf_render_to_ram(&mut self) {
+        self.game_state
+            .messaging
+            .vwf_render
+            .write_to_ram(&mut self.ram);
+        self.assert_native_vwf_render_matches_ram();
+    }
+
+    fn mutate_vwf_render<T>(&mut self, mutate: impl FnOnce(&mut VwfRenderState) -> T) -> T {
+        let result = mutate(&mut self.game_state.messaging.vwf_render);
+        self.sync_vwf_render_to_ram();
+        result
+    }
+
+    pub(crate) fn set_vwf_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
+        self.mutate_vwf_render(|vwf| vwf.set_next_glyph_advance_prefix_sum(index, value));
+    }
+
+    pub(crate) fn set_vwf_glyph_cursor(&mut self, value: u16) {
+        self.mutate_vwf_render(|vwf| vwf.set_glyph_cursor(value));
+    }
+
+    pub(crate) fn clear_vwf_glyph_cursor(&mut self) {
+        self.mutate_vwf_render(VwfRenderState::clear_glyph_cursor);
+    }
+
+    pub(crate) fn increment_vwf_glyph_cursor(&mut self) -> u16 {
+        self.mutate_vwf_render(VwfRenderState::increment_glyph_cursor)
+    }
+
+    pub(crate) fn request_vwf_next_line(&mut self, value: u16) {
+        self.mutate_vwf_render(|vwf| vwf.request_next_line(value));
+    }
+
+    pub(crate) fn clear_vwf_next_line_request(&mut self) {
+        self.mutate_vwf_render(VwfRenderState::clear_next_line_request);
+    }
+
+    pub(crate) fn set_vwf_current_line(&mut self, value: u16) {
+        self.mutate_vwf_render(|vwf| vwf.set_current_line(value));
+    }
+
+    pub(crate) fn set_vwf_line_render_offset(&mut self, value: u16) {
+        self.mutate_vwf_render(|vwf| vwf.set_line_render_offset(value));
+    }
+
+    pub(crate) fn set_vwf_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
+        self.mutate_vwf_render(|vwf| vwf.set_tile_word_at_byte_offset(byte_offset, value));
     }
 
     pub(crate) fn dialogue_source_offset_mut(&mut self) -> NativeDialogueSourceOffsetBridgeMut<'_> {
@@ -4074,11 +5787,129 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn select_file_scratch_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
-        NativeSelectFileMenuBridgeMut::new(
-            &mut self.game_state.messaging.select_file_menu,
-            &mut self.ram,
-        )
+    fn sync_select_file_menu_to_ram(&mut self) {
+        self.game_state
+            .messaging
+            .select_file_menu
+            .write_to_ram(&mut self.ram);
+        self.assert_native_select_file_menu_matches_ram();
+    }
+
+    fn mutate_select_file_menu<T>(
+        &mut self,
+        mutate: impl FnOnce(&mut SelectFileMenuState) -> T,
+    ) -> T {
+        let result = mutate(&mut self.game_state.messaging.select_file_menu);
+        self.sync_select_file_menu_to_ram();
+        result
+    }
+
+    pub(crate) fn set_select_file_choice(&mut self, index: usize, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_choice(index, value));
+    }
+
+    pub(crate) fn set_select_file_cursor(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_cursor(value));
+    }
+
+    pub(crate) fn clear_select_file_cursor(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_cursor);
+    }
+
+    pub(crate) fn clear_select_file_transition_scratch(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_transition_scratch);
+    }
+
+    pub(crate) fn increment_select_file_cursor(&mut self) -> u8 {
+        self.mutate_select_file_menu(SelectFileMenuState::increment_cursor)
+    }
+
+    pub(crate) fn decrement_select_file_cursor(&mut self) -> u8 {
+        self.mutate_select_file_menu(SelectFileMenuState::decrement_cursor)
+    }
+
+    pub(crate) fn clear_select_file_remembered_cursor(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_remembered_cursor);
+    }
+
+    pub(crate) fn remember_select_file_cursor(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::remember_current_cursor);
+    }
+
+    pub(crate) fn restore_select_file_remembered_cursor(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::restore_remembered_cursor);
+    }
+
+    pub(crate) fn set_select_file_target_word(&mut self, value: u16) {
+        self.mutate_select_file_menu(|menu| menu.set_target_word(value));
+    }
+
+    pub(crate) fn set_select_file_copy_source_slot(&mut self, slot: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_copy_source_slot(slot));
+    }
+
+    pub(crate) fn set_select_file_name_scroll_x(&mut self, value: u16) {
+        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x(value));
+    }
+
+    pub(crate) fn clear_select_file_name_entry_state(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_name_entry_state);
+    }
+
+    pub(crate) fn set_select_file_name_column(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_name_column(value));
+    }
+
+    pub(crate) fn set_select_file_name_cursor_y(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_name_cursor_y(value));
+    }
+
+    pub(crate) fn step_select_file_name_cursor_y_toward(&mut self, target_y: u8) -> bool {
+        self.mutate_select_file_menu(|menu| menu.step_name_cursor_y_toward(target_y))
+    }
+
+    pub(crate) fn move_select_file_name_slot_left_wrapped(&mut self) -> u8 {
+        self.mutate_select_file_menu(SelectFileMenuState::move_name_slot_left_wrapped)
+    }
+
+    pub(crate) fn move_select_file_name_slot_right_wrapped(&mut self) -> u8 {
+        self.mutate_select_file_menu(SelectFileMenuState::move_name_slot_right_wrapped)
+    }
+
+    pub(crate) fn set_select_file_name_scroll_x_step(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x_step(value));
+    }
+
+    pub(crate) fn advance_select_file_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
+        self.mutate_select_file_menu(|menu| menu.advance_name_scroll_x_step_by(value))
+    }
+
+    pub(crate) fn clear_select_file_name_scroll_y_step(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_name_scroll_y_step);
+    }
+
+    pub(crate) fn increment_select_file_name_scroll_y_step(&mut self) -> u8 {
+        self.mutate_select_file_menu(SelectFileMenuState::increment_name_scroll_y_step)
+    }
+
+    pub(crate) fn set_select_file_name_row(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_name_row(value));
+    }
+
+    pub(crate) fn set_select_file_name_scroll_x_direction(&mut self, value: u8) {
+        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x_direction(value));
+    }
+
+    pub(crate) fn mark_select_file_save_slot_present(&mut self, slot: usize) {
+        self.mutate_select_file_menu(|menu| menu.mark_save_slot_present(slot));
+    }
+
+    pub(crate) fn clear_select_file_save_slot_flag(&mut self, slot: usize) {
+        self.mutate_select_file_menu(|menu| menu.clear_save_slot_flag(slot));
+    }
+
+    pub(crate) fn clear_select_file_save_slot_flags(&mut self) {
+        self.mutate_select_file_menu(SelectFileMenuState::clear_save_slot_flags);
     }
 
     pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
@@ -4243,26 +6074,76 @@ impl ZeldaState {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_presence_mut(
-        &mut self,
-    ) -> NativeOverworldSpritePresenceBridgeMut<'_> {
-        NativeOverworldSpritePresenceBridgeMut::new(
-            &mut self.game_state.sprites.overworld_sprite_presence,
-            &mut self.ram,
-        )
+    fn sync_overworld_sprite_presence_to_ram(&mut self) {
+        self.game_state
+            .sprites
+            .overworld_sprite_presence
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.sprites.overworld_sprite_presence,
+            crate::game_state::OverworldSpritePresenceState::load_from_ram(&self.ram)
+        );
+    }
+
+    pub(crate) fn set_overworld_sprite_presence_marker(&mut self, index: usize, value: u8) {
+        self.game_state
+            .sprites
+            .overworld_sprite_presence
+            .set_marker(index, value);
+        self.sync_overworld_sprite_presence_to_ram();
     }
 
     pub(crate) fn memorized_tile_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
-    pub(crate) fn overworld_sprite_loaded_mut(
+    fn sync_overworld_sprite_loaded_to_ram(&mut self) {
+        self.game_state
+            .sprites
+            .overworld_sprite_loaded
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.sprites.overworld_sprite_loaded,
+            crate::game_state::OverworldSpriteLoadedState::load_from_ram(&self.ram)
+        );
+    }
+
+    pub(crate) fn clear_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        self.game_state
+            .sprites
+            .overworld_sprite_loaded
+            .clear_loaded_mask(block, loaded_mask);
+        self.sync_overworld_sprite_loaded_to_ram();
+    }
+
+    pub(crate) fn clear_overworld_sprite_loaded_mask_wrapped(
         &mut self,
-    ) -> NativeOverworldSpriteLoadedBridgeMut<'_> {
-        NativeOverworldSpriteLoadedBridgeMut::new(
-            &mut self.game_state.sprites.overworld_sprite_loaded,
-            &mut self.ram,
-        )
+        block: u16,
+        loaded_mask: u8,
+    ) {
+        let address = (OVERWORLD_SPRITE_WAS_LOADED + usize::from(block >> 3)) & 0x1ffff;
+        self.ram[address] &= !loaded_mask;
+        if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
+            if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT {
+                self.game_state
+                    .sprites
+                    .overworld_sprite_loaded
+                    .clear_loaded_mask(block, loaded_mask);
+            }
+        }
+    }
+
+    pub(crate) fn set_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
+        self.game_state
+            .sprites
+            .overworld_sprite_loaded
+            .set_loaded_mask(block, loaded_mask);
+        self.sync_overworld_sprite_loaded_to_ram();
+    }
+
+    pub(crate) fn clear_all_overworld_sprite_loaded_masks(&mut self) {
+        self.game_state.sprites.overworld_sprite_loaded.clear_all();
+        self.sync_overworld_sprite_loaded_to_ram();
     }
 
     fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {
@@ -4305,39 +6186,174 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
-        NativeSpotlightHdmaBridgeMut::new(
-            &mut self.game_state.display.spotlight_hdma,
-            &mut self.ram,
-        )
+    fn sync_spotlight_hdma_to_ram(&mut self) {
+        self.game_state
+            .display
+            .spotlight_hdma
+            .write_to_ram(&mut self.ram);
+        self.debug_assert_spotlight_hdma_matches_ram();
+    }
+
+    fn debug_assert_spotlight_hdma_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.display.spotlight_hdma,
+            SpotlightHdmaState::load_from_ram(&self.ram)
+        );
+    }
+
+    fn mutate_spotlight_hdma<T>(&mut self, f: impl FnOnce(&mut SpotlightHdmaState) -> T) -> T {
+        let value = f(&mut self.game_state.display.spotlight_hdma);
+        self.sync_spotlight_hdma_to_ram();
+        value
+    }
+
+    pub(crate) fn set_spotlight_y_lower(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_y_lower(value));
+    }
+
+    pub(crate) fn set_spotlight_y_upper(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_y_upper(value));
+    }
+
+    pub(crate) fn set_spotlight_window_x_center(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_x_center(value));
+    }
+
+    pub(crate) fn set_spotlight_window_state(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_state(value));
+    }
+
+    pub(crate) fn set_spotlight_window_radius(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_radius(value));
+    }
+
+    pub(crate) fn set_spotlight_window_y_buffer(&mut self, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_y_buffer(value));
+    }
+
+    pub(crate) fn decrement_spotlight_window_y_buffer(&mut self) -> u16 {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.decrement_window_y_buffer())
+    }
+
+    pub(crate) fn set_spotlight_window_radius_byte(&mut self, value: u8) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_radius_byte(value));
+    }
+
+    pub(crate) fn set_spotlight_window_state_byte(&mut self, value: u8) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_state_byte(value));
+    }
+
+    pub(crate) fn set_spotlight_window_y_buffer_byte(&mut self, value: u8) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_y_buffer_byte(value));
+    }
+
+    pub(crate) fn increment_spotlight_window_y_buffer_byte(&mut self) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.increment_window_y_buffer_byte());
+    }
+
+    pub(crate) fn shr_spotlight_window_radius_byte(&mut self, shift: u8) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.shr_window_radius_byte(shift));
+    }
+
+    pub(crate) fn add_spotlight_window_radius_byte(&mut self, value: u8) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.add_window_radius_byte(value));
+    }
+
+    pub(crate) fn spotlight_hdma_table_dynamic_entry(&self, index: usize) -> u16 {
+        self.game_state
+            .display
+            .spotlight_hdma
+            .hdma_table_dynamic_entry(index)
+    }
+
+    pub(crate) fn set_spotlight_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
+        self.mutate_spotlight_hdma(|spotlight| {
+            spotlight.set_hdma_table_dynamic_entry(index, value)
+        });
+    }
+
+    pub(crate) fn clear_spotlight_hdma_table_dynamic(&mut self, count: usize) {
+        self.mutate_spotlight_hdma(|spotlight| spotlight.clear_hdma_table_dynamic(count));
+    }
+
+    pub(crate) fn clear_spotlight_hdma_table_dynamic_range(&mut self, start: usize, count: usize) {
+        self.mutate_spotlight_hdma(|spotlight| {
+            spotlight.clear_hdma_table_dynamic_range(start, count)
+        });
+    }
+
+    fn sync_spotlight_dynamic_hdma_table_words_from_ram(&mut self, source: usize, count: usize) {
+        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
+        let mut words = vec![0; count];
+        for (index, word) in words.iter_mut().enumerate() {
+            *word = read_le_u16(&self.ram, source + index * 2);
+        }
+        self.mutate_spotlight_hdma(|spotlight| {
+            spotlight.copy_hdma_table_dynamic_from_words(&words);
+        });
+    }
+
+    fn project_spotlight_dynamic_hdma_table_words_to_ram(
+        &mut self,
+        destination: usize,
+        count: usize,
+    ) {
+        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
+        for index in 0..count {
+            let value = self.spotlight_hdma_table_dynamic_entry(index);
+            write_le_u16(&mut self.ram, destination + index * 2, value);
+        }
     }
 
     fn restore_spotlight_hdma_from_saveload_buffer(&mut self) {
-        self.spotlight_hdma_mut()
-            .restore_dynamic_table_from_saveload_buffer(224);
+        self.sync_spotlight_dynamic_hdma_table_words_from_ram(SAVELOAD_HDMA_TABLE, 224);
     }
 
     fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
-        self.spotlight_hdma_mut()
-            .backup_dynamic_table_to_saveload_buffer(224);
+        self.project_spotlight_dynamic_hdma_table_words_to_ram(SAVELOAD_HDMA_TABLE, 224);
     }
 
     pub(crate) fn project_spotlight_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
-        self.spotlight_hdma_mut()
-            .project_dynamic_table_to_reserved_hdma_table(count);
+        self.project_spotlight_dynamic_hdma_table_words_to_ram(RESERVED_HDMA_TABLE, count);
     }
 
     pub(crate) fn water_hdma_window_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
         NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    pub(crate) fn overworld_palette_backup_mut(
-        &mut self,
-    ) -> NativeOverworldPaletteBackupBridgeMut<'_> {
-        NativeOverworldPaletteBackupBridgeMut::new(
-            &mut self.game_state.display.overworld_palette_backup,
-            &mut self.ram,
-        )
+    fn sync_overworld_palette_backup_to_ram(&mut self) {
+        self.game_state
+            .display
+            .overworld_palette_backup
+            .write_to_ram(&mut self.ram);
+        debug_assert_eq!(
+            self.game_state.display.overworld_palette_backup,
+            crate::game_state::OverworldPaletteBackupState::load_from_ram(&self.ram)
+        );
+    }
+
+    pub(crate) fn set_overworld_main_indoors_palette_backup(&mut self, value: u8) {
+        self.game_state
+            .display
+            .overworld_palette_backup
+            .set_main_indoors(value);
+        self.sync_overworld_palette_backup_to_ram();
+    }
+
+    pub(crate) fn set_overworld_aux3_bg_palette_7_backup(&mut self, value: u8) {
+        self.game_state
+            .display
+            .overworld_palette_backup
+            .set_aux3_bg_palette_7(value);
+        self.sync_overworld_palette_backup_to_ram();
+    }
+
+    pub(crate) fn set_overworld_main_indoors_copy_palette_backup(&mut self, value: u8) {
+        self.game_state
+            .display
+            .overworld_palette_backup
+            .set_main_indoors_copy(value);
+        self.sync_overworld_palette_backup_to_ram();
     }
 
     pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
@@ -4429,10 +6445,44 @@ impl ZeldaState {
 
     #[track_caller]
     pub(crate) fn assert_native_display_state_matches_ram(&self) {
+        self.game_state
+            .display
+            .debug_assert_core_matches_ram(&self.ram);
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_native_messaging_render_buffer_matches_ram(&self) {
         debug_assert_eq!(
-            self.game_state.display,
-            crate::game_state::DisplayState::load_from_ram(&self.ram),
-            "native display state diverged from compatibility RAM",
+            self.game_state.messaging.render_buffer,
+            crate::game_state::MessagingRenderBufferState::load_from_ram(&self.ram),
+            "native messaging render buffer diverged from compatibility RAM",
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_native_select_file_menu_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.messaging.select_file_menu,
+            crate::game_state::SelectFileMenuState::load_from_ram(&self.ram),
+            "native select-file menu state diverged from compatibility RAM",
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_native_dungeon_map_display_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.dungeon_map_display,
+            crate::game_state::DungeonMapDisplayState::load_from_ram(&self.ram),
+            "native dungeon-map display state diverged from compatibility RAM",
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_native_vwf_render_matches_ram(&self) {
+        debug_assert_eq!(
+            self.game_state.messaging.vwf_render,
+            crate::game_state::VwfRenderState::load_from_ram(&self.ram),
+            "native VWF render state diverged from compatibility RAM",
         );
     }
 
@@ -5790,7 +7840,7 @@ impl ZeldaState {
             Self::state_recorder_record(&mut state_recorder, inputs as u16);
             let apui00 = self.zelda_is_music_playing() as u8;
             if apui00 != self.game_state.system_signals.apui00() {
-                self.system_signals_mut().set_apui00(apui00);
+                self.set_apui00(apui00);
                 let apui00_offset = SystemSignalsState::apui00_offset();
                 self.emu_sync_memory_region(apui00_offset, 1);
                 Self::state_recorder_record_patch_byte(
@@ -5803,7 +7853,7 @@ impl ZeldaState {
             if self.game_state.display.has_animated_tile_data_source() {
                 if self.game_state.system_signals.bugs_fixed() < BUGFIX_LATEST {
                     if !self.rom_startup_timing {
-                        self.system_signals_mut().set_bugs_fixed(BUGFIX_LATEST);
+                        self.set_bugs_fixed(BUGFIX_LATEST);
                         self.emu_sync_memory_region(RAM_BUGS_FIXED, 1);
                         Self::state_recorder_record_patch_byte(
                             &mut state_recorder,
@@ -6082,7 +8132,11 @@ impl ZeldaState {
                 &mut state_recorder,
                 &mut mp,
                 wram_patch_addr(CHEAT_WALK_THROUGH_WALLS),
-                self.player_state().cheat_walk_through_walls() ^ 1,
+                self.game_state
+                    .player
+                    .follower_link
+                    .cheat_walk_through_walls()
+                    ^ 1,
             ),
             _ => {}
         }
@@ -6203,8 +8257,8 @@ impl ZeldaState {
     }
 
     fn startup_initialize_memory(&mut self) {
-        self.system_work_area_mut().clear_startup_low_memory();
-        self.palette_buffer_mut().set_main_color(0, 0);
+        SystemWorkArea::clear_startup_low_memory(&mut self.ram);
+        self.set_main_color(0, 0);
         self.clear_selected_save_slot();
 
         for offset in [0x03e5, 0x08e5, 0x0de5] {
@@ -6214,7 +8268,7 @@ impl ZeldaState {
         }
 
         self.set_screen_brightness(0x80);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
@@ -6281,34 +8335,37 @@ impl ZeldaState {
     }
 
     fn handle_link_from_1d(&mut self) {
-        self.player_state_mut().clear_item_in_hand();
-        self.player_state_mut().clear_position_mode();
-        self.player_state_mut().clear_action_scratch_state();
-        self.player_state_mut().set_y_button_action_step(0);
-        self.player_state_mut().set_y_button_action_flags(0);
+        self.follower_link_state_mut().clear_item_in_hand();
+        self.follower_link_state_mut().clear_position_mode();
+        self.follower_link_state_mut().clear_action_scratch_state();
+        self.follower_link_state_mut().set_y_button_action_step(0);
+        self.follower_link_state_mut().set_y_button_action_flags(0);
         self.follower_link_state_mut()
             .clear_button_mask_b_y_bits(0x40);
-        self.player_state_mut().clear_state_item_and_grab_flags();
-        self.player_state_mut().clear_defense_flags();
+        self.follower_link_state_mut()
+            .clear_state_item_and_grab_flags();
+        self.follower_link_state_mut().clear_defense_flags();
         self.link_reset_swimming_state();
-        self.player_state_mut().clear_direction_lock_bits(1);
-        self.player_state_mut().clear_z_high();
-        if self.player_state().electrocute_on_touch() != 0 {
-            if self.player_state().is_cape_active() {
+        self.follower_link_state_mut().clear_direction_lock_bits(1);
+        self.follower_link_state_mut().clear_z_high();
+        if self.game_state.player.follower_link.electrocute_on_touch() != 0 {
+            if self.game_state.player.follower_link.is_cape_active() {
                 self.link_force_unequip_cape_quietly();
             }
             self.link_reset_sword_and_item_usage();
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
-            self.player_state_mut().clear_action_handler_timer();
-            self.player_state_mut().set_spin_attack_delay_timer(2);
-            self.player_state_mut().clear_animation_step();
-            self.player_state_mut().clear_cardinal_direction();
+            self.follower_link_state_mut().clear_action_handler_timer();
+            self.follower_link_state_mut()
+                .set_spin_attack_delay_timer(2);
+            self.follower_link_state_mut().clear_animation_step();
+            self.follower_link_state_mut().clear_cardinal_direction();
             self.set_sound_effect_1_with_link_pan(43);
             self.follower_link_state_mut().set_handler_state(7);
             self.link_state_zapped();
         } else {
-            self.player_state_mut().clear_moving_against_diag_tile();
+            self.follower_link_state_mut()
+                .clear_moving_against_diag_tile();
             self.follower_link_state_mut().set_handler_state(6);
             self.link_state_recoil();
         }
@@ -6331,7 +8388,7 @@ impl ZeldaState {
                 .enhanced_features
                 .has(FEATURES0_MISC_BUG_FIXES)
             {
-                self.player_state_mut().clear_near_pit_state();
+                self.follower_link_state_mut().clear_near_pit_state();
             }
             if self.game_state.player.follower_link.is_running() {
                 self.link_state_dashing();
@@ -6339,21 +8396,20 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_speed_setting(0);
             self.link_cancel_dash();
-            if self.player_state().button_mask_b_y() & 0x80 == 0 {
-                self.player_state_mut().clear_direction_lock_bits(1);
+            if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+                self.follower_link_state_mut().clear_direction_lock_bits(1);
             }
-            self.player_state_mut().clear_near_pit_state();
-            let player_state = self.player_state();
-            let handler_state = if !player_state.is_bunny_mirror() {
+            self.follower_link_state_mut().clear_near_pit_state();
+            let handler_state = if !self.game_state.player.follower_link.is_bunny_mirror() {
                 0
-            } else if player_state.has_moon_pearl() {
+            } else if self.game_state.player.follower_link.has_moon_pearl() {
                 3
             } else {
                 23
             };
             self.follower_link_state_mut()
                 .set_handler_state(handler_state);
-            match self.player_state().handler_state() {
+            match self.game_state.player.follower_link.handler_state() {
                 23 => self.player_handler_17_bunny(),
                 3 => self.link_state_temporary_bunny(),
                 _ => self.link_state_default(),
@@ -6367,12 +8423,11 @@ impl ZeldaState {
         self.replay_trace_player_state("pits-after-nearby");
         self.follower_link_state_mut().set_speed_setting(4);
         if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0 {
-            self.player_state_mut().clear_near_pit_state();
+            self.follower_link_state_mut().clear_near_pit_state();
             self.follower_link_state_mut().set_speed_setting(0);
-            let player_state = self.player_state();
-            let handler_state = if !player_state.is_bunny_mirror() {
+            let handler_state = if !self.game_state.player.follower_link.is_bunny_mirror() {
                 0
-            } else if player_state.has_moon_pearl() {
+            } else if self.game_state.player.follower_link.has_moon_pearl() {
                 3
             } else {
                 23
@@ -6380,8 +8435,8 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_handler_state(handler_state);
             self.link_cancel_dash();
-            if self.player_state().button_mask_b_y() & 0x80 == 0 {
-                self.player_state_mut().clear_direction_lock_bits(1);
+            if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+                self.follower_link_state_mut().clear_direction_lock_bits(1);
             }
             self.replay_trace_submodule("pits-clear-low-nibble-exit");
             return;
@@ -6411,14 +8466,14 @@ impl ZeldaState {
             self.tile_detect_position_mut()
                 .set_fall_hole_scan_index(i as u8);
             let idx = i as usize;
-            if self.player_state().direction() & FALL_HOLE_DIRS[idx] != 0 {
-                self.player_state_mut()
+            if self.game_state.player.follower_link.direction() & FALL_HOLE_DIRS[idx] != 0 {
+                self.follower_link_state_mut()
                     .set_last_direction_from_current_direction();
                 self.follower_link_state_mut().set_speed_setting(6);
                 self.link_handle_moving_animation_full_long_entry();
             } else {
-                let old_dir = self.player_state().direction();
-                self.player_state_mut()
+                let old_dir = self.game_state.player.follower_link.direction();
+                self.follower_link_state_mut()
                     .add_direction_flags(FALL_HOLE_DIRS2[idx]);
                 if old_dir != 0 {
                     self.link_handle_moving_animation_full_long_entry();
@@ -6433,41 +8488,45 @@ impl ZeldaState {
             return;
         }
 
-        if !self.player_state().near_pit_state_is(2) {
-            if self.player_state().has_moon_pearl() {
-                self.player_state_mut()
+        if !self.game_state.player.follower_link.near_pit_state_is(2) {
+            if self.game_state.player.follower_link.has_moon_pearl() {
+                self.follower_link_state_mut()
                     .clear_bunny_transform_after_moon_pearl();
             }
-            self.player_state_mut().set_direction(0);
-            self.player_state_mut().set_near_pit_state(2);
+            self.follower_link_state_mut().set_direction(0);
+            self.follower_link_state_mut().set_near_pit_state(2);
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
             self.follower_link_state_mut().set_button_mask_b_y(0);
-            self.player_state_mut().set_button_b_frames(0);
-            self.player_state_mut().clear_item_in_hand();
-            self.player_state_mut().clear_position_mode();
-            self.player_state_mut().set_incapacitated_timer(0);
+            self.follower_link_state_mut().set_button_b_frames(0);
+            self.follower_link_state_mut().clear_item_in_hand();
+            self.follower_link_state_mut().clear_position_mode();
+            self.follower_link_state_mut().set_incapacitated_timer(0);
             self.follower_link_state_mut().clear_auxiliary_state();
             self.ancilla_sfx3_near(31);
         }
 
-        self.player_state_mut().clear_direction_lock();
-        self.player_state_mut().set_incapacitated_timer(0);
+        self.follower_link_state_mut().clear_direction_lock();
+        self.follower_link_state_mut().set_incapacitated_timer(0);
         self.follower_link_state_mut().set_z(0);
         self.follower_link_state_mut().set_actual_z_velocity(0);
         self.follower_link_state_mut().clear_auxiliary_state();
-        self.player_state_mut().clear_given_damage();
-        self.player_state_mut().clear_transforming();
+        self.follower_link_state_mut().clear_given_damage();
+        self.follower_link_state_mut().clear_transforming();
         self.link_force_unequip_cape_quietly();
-        self.player_state_mut()
+        self.follower_link_state_mut()
             .increment_sprite_damage_disable_timer();
-        if (self.player_state_mut().decrement_sprite_oam_state_timer() as i8) >= 0 {
+        if (self
+            .follower_link_state_mut()
+            .decrement_sprite_oam_state_timer() as i8)
+            >= 0
+        {
             return;
         }
 
-        self.player_state_mut().advance_pit_data_index();
-        let x = self.player_state().pit_data_index();
-        self.player_state_mut().set_sprite_oam_state_timer(9);
+        self.follower_link_state_mut().advance_pit_data_index();
+        let x = self.game_state.player.follower_link.pit_data_index();
+        self.follower_link_state_mut().set_sprite_oam_state_timer(9);
         if self.game_state.sprites.follower_runtime.indicator() != 13 && x == 1 {
             self.follower_state_mut().set_appearance_none_flag(x);
         }
@@ -6475,16 +8534,19 @@ impl ZeldaState {
         if x == 6 {
             self.link_cancel_dash();
             self.set_submodule(7);
-            self.player_state_mut().set_pit_data_index(6);
-            self.player_state_mut().set_near_pit_state(3);
-            self.player_state_mut().set_visibility_status(12);
+            self.follower_link_state_mut().set_pit_data_index(6);
+            self.follower_link_state_mut().set_near_pit_state(3);
+            self.follower_link_state_mut().set_visibility_status(12);
             self.follower_link_state_mut().set_speed_modifier(16);
             let y = self
-                .player_state()
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
-            self.player_state_mut().clear_state_item_and_grab_flags();
-            self.player_state_mut().set_y_button_action_timer(0);
+            self.follower_link_state_mut()
+                .clear_state_item_and_grab_flags();
+            self.follower_link_state_mut().set_y_button_action_timer(0);
             if self.game_state.world.location.is_indoors() {
                 let room = self.game_state.world.location.dungeon_room_index();
                 self.dungeon_room_tracking_mut().set_room_index_prev(room);
@@ -6499,14 +8561,16 @@ impl ZeldaState {
                 .set_room_index_prev(previous_room);
             let room = self.game_state.dungeon.header.travel_destination(0);
             self.set_dungeon_room_index(room);
-            let player_y = self.player_state().y();
+            let player_y = self.game_state.player.follower_link.y();
             self.tile_detect_position_mut().set_y(player_y);
             let new_y = self
-                .player_state()
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_sub(y as u16)
                 .wrapping_sub(0x10);
-            self.player_state_mut().set_y(new_y);
+            self.follower_link_state_mut().set_y(new_y);
             if self.game_state.world.location.is_indoors() {
                 self.handle_layer_of_destination();
             } else if self.game_state.world.location.overworld_screen_index() != 5 {
@@ -6525,7 +8589,7 @@ impl ZeldaState {
     fn link_state_tree_pull_reset_to_normal(&mut self) {
         self.follower_link_state_mut().set_facing(0);
         self.follower_link_state_mut().clear_state_bits();
-        self.player_state_mut().clear_direction_lock();
+        self.follower_link_state_mut().clear_direction_lock();
         self.follower_link_state_mut().clear_handler_state();
     }
 
@@ -6536,22 +8600,28 @@ impl ZeldaState {
     }
 
     fn finish_recoil_landing(&mut self) {
-        if self.player_state().lower_level_state() == 2 {
-            self.player_state_mut().set_lower_level_state(0);
+        if self.game_state.player.follower_link.lower_level_state() == 2 {
+            self.follower_link_state_mut().set_lower_level_state(0);
         }
-        if self.player_state().about_to_jump_off_ledge() != 0 {
+        if self
+            .game_state
+            .player
+            .follower_link
+            .about_to_jump_off_ledge()
+            != 0
+        {
             self.dungeon_handle_layer_change();
         }
         self.follower_link_state_mut().set_z(0);
         self.follower_link_state_mut().clear_auxiliary_state();
         self.follower_link_state_mut().set_speed_setting(0);
-        self.player_state_mut().clear_direction_lock();
-        self.player_state_mut().clear_item_in_hand();
-        self.player_state_mut().clear_position_mode();
-        self.player_state_mut().clear_action_handler_timer();
+        self.follower_link_state_mut().clear_direction_lock();
+        self.follower_link_state_mut().clear_item_in_hand();
+        self.follower_link_state_mut().clear_position_mode();
+        self.follower_link_state_mut().clear_action_handler_timer();
         self.follower_link_state_mut()
             .clear_sprite_damage_disable_timer();
-        self.player_state_mut().clear_electrocute_on_touch();
+        self.follower_link_state_mut().clear_electrocute_on_touch();
         self.follower_link_state_mut().clear_actual_velocity_xy();
     }
 
@@ -6573,7 +8643,7 @@ impl ZeldaState {
     }
 
     fn finish_ground_movement_camera_tail(&mut self) {
-        self.player_state_mut().clear_pit_correction();
+        self.follower_link_state_mut().clear_pit_correction();
         if self.apply_links_movement_to_camera_called && self.game_state.enhanced_features.has(4096)
         {
             return;
@@ -6609,7 +8679,7 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
         self.Dungeon_FlagRoomData_Quadrants();
         if self.game_state.system_signals.sound_effect_2() == 0 {
-            self.system_signals_mut().set_sound_effect_2(14);
+            self.set_sound_effect_2(14);
         }
         loc & 0x7fff
     }
@@ -6617,43 +8687,42 @@ impl ZeldaState {
     fn cache_camera_properties_for_player(&mut self) {
         let bg2_x = self.game_state.world.scroll.bg2_x();
         let bg2_y = self.game_state.world.scroll.bg2_y();
-        self.ppu_scroll_copy_mut()
-            .cache_bg2_live_scroll_from(bg2_x, bg2_y);
-        self.player_state_mut().cache_current_position();
+        self.cache_bg2_live_scroll_from(bg2_x, bg2_y);
+        self.follower_link_state_mut().cache_current_position();
         let y_start = self.game_state.world.room_bounds.y_bound(0);
         let y_end = self.game_state.world.room_bounds.y_bound(2);
         let x_start = self.game_state.world.room_bounds.x_bound(0);
         let x_end = self.game_state.world.room_bounds.x_bound(2);
-        self.world_transient_mut()
-            .set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        self.world_camera_boundaries_mut().cache_scroll_targets();
-        self.world_camera_boundaries_mut().cache_camera_scroll();
-        self.world_transient_mut().cache_quadrant_fullsize_state();
-        self.player_state_mut().cache_current_quadrants();
-        self.player_state_mut().cache_facing();
-        self.player_state_mut().cache_lower_level_states();
-        let doorway_state = self.player_state().doorway_state();
-        self.world_transient_mut()
-            .cache_standing_in_doorway(doorway_state);
+        self.set_cached_room_bounds(y_start, y_end, x_start, x_end);
+        self.cache_scroll_targets();
+        self.cache_camera_scroll();
+        self.cache_quadrant_fullsize_state();
+        self.follower_link_state_mut().cache_current_quadrants();
+        self.follower_link_state_mut().cache_facing();
+        self.follower_link_state_mut().cache_lower_level_states();
+        let doorway_state = self.game_state.player.follower_link.doorway_state();
+        self.cache_standing_in_doorway(doorway_state);
         self.dungeon_stair_movement_mut().cache_current_floor();
     }
 
     fn store_link_safe_return_position(&mut self, x: u16, y: u16) {
-        self.player_state_mut().store_safe_return_position(x, y);
+        self.follower_link_state_mut()
+            .store_safe_return_position(x, y);
     }
 
     fn restore_link_safe_return_position(&mut self) {
-        self.player_state_mut().restore_position_from_safe_return();
+        self.follower_link_state_mut()
+            .restore_position_from_safe_return();
     }
 
     fn set_link_z_coord_mirror_low_ff(&mut self) {
-        self.player_state_mut().force_z_mirror_low_ff();
+        self.follower_link_state_mut().force_z_mirror_low_ff();
     }
 
     fn set_backdrop_color_black(&mut self) {
-        self.palette_filter_mut().set_fixed_color_red(0x20);
-        self.palette_filter_mut().set_fixed_color_green(0x40);
-        self.palette_filter_mut().set_fixed_color_blue(0x80);
+        self.set_fixed_color_red(0x20);
+        self.set_fixed_color_green(0x40);
+        self.set_fixed_color_blue(0x80);
     }
 
     fn ancilla_x(&self, k: usize) -> u16 {
@@ -6797,21 +8866,25 @@ impl ZeldaState {
     }
 
     fn clear_attract_low_work_area(&mut self) {
-        self.system_work_area_mut().clear_attract_low_work_area();
+        SystemWorkArea::clear_attract_low_work_area(&mut self.ram);
     }
 
     fn clear_poly_thread_work_area(&mut self) {
-        self.system_work_area_mut().clear_poly_thread_work_area();
+        SystemWorkArea::clear_poly_thread_work_area(&mut self.ram);
     }
 
     fn write_poly_thread_init_bytes(&mut self) {
-        self.system_work_area_mut()
-            .write_poly_thread_bootstrap_bytes();
+        SystemWorkArea::write_poly_thread_bootstrap_bytes(&mut self.ram);
     }
 
     fn clear_intro_wram_block_columns(&mut self, start_offset: u16, stop_offset: u16) -> u16 {
-        self.system_work_area_mut()
-            .clear_intro_wram_block_columns(start_offset, stop_offset)
+        let next_offset = SystemWorkArea::clear_intro_wram_block_columns(
+            &mut self.ram,
+            start_offset,
+            stop_offset,
+        );
+        self.sync_native_game_state_from_ram();
+        next_offset
     }
 
     fn has_player_layer_collision(&self, mask: u8) -> bool {
@@ -7628,9 +9701,7 @@ mod tests {
         write_le_u16(&mut state.ram, MAP16_LOAD_DST_OFF, 0x001f);
         write_le_u16(&mut state.ram, MAP16_LOAD_Y_UNIT, 0x000e);
         state.sync_overworld_map16_state_from_ram();
-        state
-            .spotlight_hdma_mut()
-            .set_hdma_table_dynamic_entry(0, 0x00ab);
+        state.set_spotlight_hdma_table_dynamic_entry(0, 0x00ab);
         state.sram[0x22] = 0x34;
         state.ppu.cgram[7] = 0x2468;
         state.ppu.bg_layer[1].tilemap_higher = true;
@@ -7647,9 +9718,7 @@ mod tests {
         write_le_u16(&mut state.ram, MAP16_LOAD_DST_OFF, 0);
         write_le_u16(&mut state.ram, MAP16_LOAD_Y_UNIT, 0);
         state.sync_overworld_map16_state_from_ram();
-        state
-            .spotlight_hdma_mut()
-            .set_hdma_table_dynamic_entry(0, 0);
+        state.set_spotlight_hdma_table_dynamic_entry(0, 0);
         state.sram[0x22] = 0;
         state.ppu.cgram[7] = 0;
         state.ppu.bg_layer[1].tilemap_higher = false;
@@ -7933,7 +10002,7 @@ mod tests {
         state.ram[reward_addr] = 98;
         set_link_test_word(&mut state, LINK_X_COORD, 0x100);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x80);
-        state.world_scroll_mut().set_bg2_x(0x40);
+        state.set_bg2_x(0x40);
 
         set_link_test_byte(&mut state, LINK_RECEIVEITEM_INDEX, 0x24);
         state.ancilla_add_item_receipt(0x22, 4, 0);
@@ -7986,36 +10055,48 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[ITEM_RECEIPT_METHOD] = 0;
         state.follower_link_state_mut().set_auxiliary_state(1);
-        state.player_state_mut().set_incapacitated_timer(7);
+        state.follower_link_state_mut().set_incapacitated_timer(7);
         state.ram[COUNTDOWN_FOR_BLINK] = 8;
         state.follower_link_state_mut().set_state_bits(0xff);
         state.follower_link_state_mut().set_button_mask_b_y(0xff);
-        state.player_state_mut().set_y_button_action_flags(0xff);
-        state.player_state_mut().set_button_b_frames(0xff);
+        state
+            .follower_link_state_mut()
+            .set_y_button_action_flags(0xff);
+        state.follower_link_state_mut().set_button_b_frames(0xff);
         state.follower_link_state_mut().set_speed_setting(0xff);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
-        state.player_state_mut().set_item_in_hand(0xff);
-        state.player_state_mut().set_position_mode(0xff);
+        state.follower_link_state_mut().set_item_in_hand(0xff);
+        state.follower_link_state_mut().set_position_mode(0xff);
         state.ram[PLAYER_HANDLER_TIMER] = 0xff;
         set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 0);
 
         state.link_receive_item(0x20, 0);
 
-        assert_eq!(state.player_state().auxiliary_state(), 0);
-        assert_eq!(state.player_state().incapacitated_timer(), 0);
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            0
+        );
         assert_eq!(state.ram[COUNTDOWN_FOR_BLINK], 0);
         assert_eq!(link_test_byte(&state, LINK_RECEIVEITEM_INDEX), 0x20);
         assert_eq!(link_test_byte(&state, LINK_ITEM_HOLDING_TIMER), 0x60);
-        assert_eq!(state.player_state().state_bits(), 0);
-        assert_eq!(state.player_state().button_mask_b_y(), 0);
-        assert_eq!(state.player_state().y_button_action_flags(), 0);
-        assert_eq!(state.player_state().button_b_frames(), 0);
+        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_flags(),
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.button_b_frames(), 0);
         assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
-        assert_eq!(state.player_state().item_in_hand(), 0);
-        assert_eq!(state.player_state().position_mode(), 0);
+        assert_eq!(state.game_state.player.follower_link.item_in_hand(), 0);
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(state.player_state().handler_state(), 21);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 21);
         assert_eq!(link_test_byte(&state, LINK_POSE_FOR_ITEM), 2);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
     }
@@ -8023,10 +10104,10 @@ mod tests {
     #[test]
     fn overworld_tile_attribute_uses_map16_and_map8_assets() {
         let mut state = ZeldaState::new();
-        state.world_scroll_mut().set_overworld_offset_base_y(0x20);
-        state.world_scroll_mut().set_overworld_offset_mask_y(0x1f);
-        state.world_scroll_mut().set_overworld_offset_base_x(3);
-        state.world_scroll_mut().set_overworld_offset_mask_x(0x3f);
+        state.set_overworld_offset_base_y(0x20);
+        state.set_overworld_offset_mask_y(0x1f);
+        state.set_overworld_offset_base_x(3);
+        state.set_overworld_offset_mask_x(0x3f);
         state.dungeon_room_tilemaps_mut().set_bg2_tile(32, 5);
 
         let mut data = vec![0; 0x100];
@@ -8052,8 +10133,8 @@ mod tests {
         state.start_movement_collision_checks_y_handle_outdoors();
 
         assert_eq!(link_test_byte(&state, LINK_SPRITE_OAM_STATE_TIMER), 9);
-        assert_eq!(state.player_state().near_pit_state(), 1);
-        assert_eq!(state.player_state().handler_state(), 1);
+        assert_eq!(state.game_state.player.follower_link.near_pit_state(), 1);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 1);
     }
 
     #[test]
@@ -8073,16 +10154,25 @@ mod tests {
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x1234);
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x5678);
         assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 1);
-        assert_eq!(state.player_state().swim_direction_flags(), 3);
+        assert_eq!(
+            state.game_state.player.follower_link.swim_direction_flags(),
+            3
+        );
         assert_eq!(
             state.game_state.player.follower_link.actual_x_velocity(),
             16
         );
         assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
-        assert_eq!(state.player_state().actual_z_velocity(), 24);
-        assert_eq!(state.player_state().incapacitated_timer(), 16);
-        assert_eq!(state.player_state().auxiliary_state(), 1);
-        assert_eq!(state.player_state().handler_state(), 6);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            24
+        );
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            16
+        );
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 1);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 6);
     }
 
     #[test]
@@ -8105,9 +10195,15 @@ mod tests {
             24
         );
         assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
-        assert_eq!(state.player_state().actual_z_velocity(), 36);
-        assert_eq!(state.player_state().incapacitated_timer(), 24);
-        assert_eq!(state.player_state().auxiliary_state(), 1);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            36
+        );
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 1);
     }
 
     #[test]
@@ -8125,9 +10221,15 @@ mod tests {
             24
         );
         assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
-        assert_eq!(state.player_state().actual_z_velocity(), 36);
-        assert_eq!(state.player_state().incapacitated_timer(), 24);
-        assert_eq!(state.player_state().auxiliary_state(), 1);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            36
+        );
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 1);
     }
 
     #[test]
@@ -8170,22 +10272,28 @@ mod tests {
 
         assert_eq!(speed, -4);
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x8c);
-        assert_eq!(state.player_state().facing(), 0);
+        assert_eq!(state.game_state.player.follower_link.facing(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
     }
 
     #[test]
     fn perform_dash_sets_start_dash_state_and_tagalong_timeout() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_somaria_platform_state(1);
+        state
+            .follower_link_state_mut()
+            .set_somaria_platform_state(1);
         state.link_perform_dash();
-        assert_eq!(state.player_state().handler_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
 
-        state.player_state_mut().set_somaria_platform_state(0);
-        state.player_state_mut().set_y_button_action_flags(0xff);
+        state
+            .follower_link_state_mut()
+            .set_somaria_platform_state(0);
+        state
+            .follower_link_state_mut()
+            .set_y_button_action_flags(0xff);
         state.follower_link_state_mut().set_button_mask_b_y(0x7f);
         state.follower_link_state_mut().set_state_bits(0x7f);
-        state.player_state_mut().set_item_in_hand(3);
+        state.follower_link_state_mut().set_item_in_hand(3);
         state.ram[PLAYER_DEFENSE_FLAGS] = 0xff;
         set_link_test_byte(&mut state, LINK_MOVING_AGAINST_DIAG_TILE, 0xff);
         state.follower_link_state_mut().set_speed_setting(5);
@@ -8193,14 +10301,21 @@ mod tests {
 
         state.link_perform_dash();
 
-        assert_eq!(state.player_state().y_button_action_flags(), 0);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_flags(),
+            0
+        );
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 29);
         assert_eq!(link_test_byte(&state, LINK_DASH_CTR), 64);
-        assert_eq!(state.player_state().handler_state(), 17);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 17);
         assert_eq!(state.game_state.player.follower_link.running_state(), 1);
-        assert_eq!(state.player_state().button_mask_b_y(), 0);
-        assert_eq!(state.player_state().state_bits(), 0);
-        assert_eq!(state.player_state().item_in_hand(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
+        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
+        assert_eq!(state.game_state.player.follower_link.item_in_hand(), 0);
         assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS], 0);
         assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0);
         assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
@@ -8212,7 +10327,7 @@ mod tests {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_facing(2);
         state.link_perform_rupee_pull();
-        assert_eq!(state.player_state().handler_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
 
         state.follower_link_state_mut().set_facing(0);
         state.follower_link_state_mut().set_actual_y_velocity(9);
@@ -8222,12 +10337,12 @@ mod tests {
 
         state.link_perform_rupee_pull();
 
-        assert_eq!(state.player_state().grabbing_wall(), 2);
+        assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 2);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
-        assert_eq!(state.player_state().handler_state(), 29);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 29);
         assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
         assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
-        assert_eq!(state.player_state().button_mask_b_y(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
     }
 
@@ -8313,7 +10428,7 @@ mod tests {
 
         assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x3c);
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x8f);
-        assert_eq!(state.player_state().facing(), 4);
+        assert_eq!(state.game_state.player.follower_link.facing(), 4);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
     }
 
@@ -8332,9 +10447,15 @@ mod tests {
             0u8.wrapping_sub(24)
         );
         assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
-        assert_eq!(state.player_state().actual_z_velocity(), 36);
-        assert_eq!(state.player_state().incapacitated_timer(), 24);
-        assert_eq!(state.player_state().auxiliary_state(), 1);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            36
+        );
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            24
+        );
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 1);
         assert_eq!(link_test_byte(&state, LINK_WANT_MAKE_NOISE_WHEN_DASHED), 1);
         assert_eq!(link_test_byte(&state, LINK_DIRECTION), 1);
         assert_eq!(
@@ -8358,7 +10479,10 @@ mod tests {
             24
         );
         assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
-        assert_eq!(state.player_state().incapacitated_timer(), 24);
+        assert_eq!(
+            state.game_state.player.follower_link.incapacitated_timer(),
+            24
+        );
     }
 
     #[test]
@@ -8462,13 +10586,13 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        state.player_state_mut().set_swim_direction_flags(8);
+        state.follower_link_state_mut().set_swim_direction_flags(8);
         state.follower_link_state_mut().set_joypad1h_last(8);
 
         state.link_handle_moving_animation_full_long_entry();
 
-        assert_eq!(state.player_state().facing(), 0);
-        assert_eq!(state.player_state().animation_step(), 1);
+        assert_eq!(state.game_state.player.follower_link.facing(), 0);
+        assert_eq!(state.game_state.player.follower_link.animation_step(), 1);
     }
 
     #[test]
@@ -8480,7 +10604,7 @@ mod tests {
 
         state.link_handle_moving_animation_full_long_entry();
 
-        assert_eq!(state.player_state().facing(), 6);
+        assert_eq!(state.game_state.player.follower_link.facing(), 6);
     }
 
     #[test]
@@ -8494,7 +10618,7 @@ mod tests {
         state.link_handle_moving_animation_full_long_entry();
 
         assert_eq!(link_test_byte(&state, LINK_FRAME_CHANGE_COUNTER), 0);
-        assert_eq!(state.player_state().animation_step(), 1);
+        assert_eq!(state.game_state.player.follower_link.animation_step(), 1);
     }
 
     #[test]
@@ -8598,7 +10722,7 @@ mod tests {
         let mut state = ZeldaState::new();
         state.set_main_module(7);
         set_link_test_byte(&mut state, LINK_X_VEL, 1);
-        state.player_state_mut().set_incapacitated_timer(5);
+        state.follower_link_state_mut().set_incapacitated_timer(5);
         state.follower_link_state_mut().set_actual_x_velocity(12);
         state.follower_link_state_mut().set_actual_y_velocity(34);
         set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
@@ -8622,7 +10746,7 @@ mod tests {
             let mut state = ZeldaState::new();
             state.follower_link_state_mut().set_handler_state(2);
             state.follower_link_state_mut().set_auxiliary_state(1);
-            state.player_state_mut().set_incapacitated_timer(8);
+            state.follower_link_state_mut().set_incapacitated_timer(8);
             set_link_test_byte(&mut state, LINK_RECOILMODE_TIMER, initial_recoil_timer);
             state.follower_link_state_mut().set_actual_z_velocity(0xf8);
             set_link_test_byte(&mut state, LINK_ACTUAL_VEL_Z_COPY, 0x24);
@@ -8632,7 +10756,7 @@ mod tests {
 
             (
                 link_test_byte(&state, LINK_RECOILMODE_TIMER),
-                state.player_state().actual_z_velocity(),
+                state.game_state.player.follower_link.actual_z_velocity(),
             )
         }
 
@@ -8644,25 +10768,19 @@ mod tests {
     #[test]
     fn cache_camera_properties_if_outdoors_snapshots_scroll_state() {
         let mut state = ZeldaState::new();
-        state.world_scroll_mut().set_bg2_x(0x1111);
-        state.world_scroll_mut().set_bg2_y(0x2222);
+        state.set_bg2_x(0x1111);
+        state.set_bg2_y(0x2222);
         set_link_test_word(&mut state, LINK_Y_COORD, 0x3333);
         set_link_test_word(&mut state, LINK_X_COORD, 0x4444);
         state.room_bounds_mut().set_y_bound(0, 0x5555);
         state.room_bounds_mut().set_x_bound(2, 0x6666);
-        state
-            .world_camera_boundaries_mut()
-            .set_up_down_scroll_target(0x7777);
-        state
-            .world_camera_boundaries_mut()
-            .set_left_right_scroll_target_end(0x8888);
-        state
-            .world_camera_boundaries_mut()
-            .set_camera_y_coord_scroll_low(0x9999);
-        state.world_transient_mut().set_quadrant_fullsize_y(2);
+        state.set_up_down_scroll_target(0x7777);
+        state.set_left_right_scroll_target_end(0x8888);
+        state.set_camera_y_coord_scroll_low(0x9999);
+        state.set_quadrant_fullsize_y(2);
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 2);
         state.follower_link_state_mut().set_facing(8);
-        state.player_state_mut().set_lower_level_state(1);
+        state.follower_link_state_mut().set_lower_level_state(1);
         state.ram[IS_STANDING_IN_DOORWAY] = 2;
         state.dungeon_stair_movement_mut().set_current_floor(0xff);
 
@@ -8739,8 +10857,8 @@ mod tests {
         let mut state = ZeldaState::new();
         state.set_dungeon_room(0x0104);
         state.ram[ABOUT_TO_JUMP_OFF_LEDGE] = 1;
-        state.world_transient_mut().set_quadrant_fullsize_y(1);
-        state.world_transient_mut().set_quadrant_fullsize_x(1);
+        state.set_quadrant_fullsize_y(1);
+        state.set_quadrant_fullsize_x(1);
         set_link_test_byte(&mut state, LINK_QUADRANT_Y, 1);
         set_link_test_byte(&mut state, LINK_QUADRANT_X, 1);
 
@@ -8748,16 +10866,16 @@ mod tests {
 
         assert_eq!(state.game_state.world.location.dungeon_room(), 0x0114);
         assert_eq!(link_test_byte(&state, LINK_IS_ON_LOWER_LEVEL_MIRROR), 1);
-        assert_eq!(state.player_state().lower_level_state(), 1);
+        assert_eq!(state.game_state.player.follower_link.lower_level_state(), 1);
         assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
         assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
 
         state
             .dungeon_stair_movement_mut()
             .set_kind_of_in_room_staircase_word(2);
-        state.player_state_mut().set_lower_level_state(0);
+        state.follower_link_state_mut().set_lower_level_state(0);
         state.dungeon_handle_layer_change();
-        assert_eq!(state.player_state().lower_level_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.lower_level_state(), 0);
     }
 
     #[test]
@@ -8769,21 +10887,24 @@ mod tests {
         set_link_test_byte(&mut state, LINK_IS_NEAR_MOVEABLE_STATUE, 1);
         set_link_test_byte(&mut state, LINK_ON_CONVEYOR_BELT, 1);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        state.world_scroll_mut().set_bg1_y_offset(0x1234);
-        state.world_scroll_mut().set_bg1_x_offset(0x5678);
+        state.set_bg1_y_offset(0x1234);
+        state.set_bg1_x_offset(0x5678);
         state.save_progress_mut().set_dark_world_state(1);
 
         state.link_initialize();
 
-        assert_eq!(state.player_state().facing(), 2);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
+        assert_eq!(state.game_state.player.follower_link.facing(), 2);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
         assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
         assert_eq!(link_test_byte(&state, LINK_IS_NEAR_MOVEABLE_STATUE), 0);
         assert_eq!(link_test_byte(&state, LINK_ON_CONVEYOR_BELT), 0);
         assert_eq!(link_test_byte(&state, LINK_FLAG_MOVING), 0);
         assert_eq!(read_le_u16(&state.ram, BG1_Y_OFFSET), 0);
         assert_eq!(read_le_u16(&state.ram, BG1_X_OFFSET), 0);
-        assert_eq!(state.player_state().handler_state(), 23);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 23);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 1);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 1);
     }
@@ -8813,15 +10934,21 @@ mod tests {
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 0);
         assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
         assert_eq!(link_test_byte(&state, LINK_TIMER_TEMPBUNNY), 0);
-        assert_eq!(state.player_state().on_somaria_platform(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.on_somaria_platform(),
+            0
+        );
         assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS], 0);
-        assert_eq!(state.player_state().near_pit_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.near_pit_state(), 0);
         assert_eq!(state.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 0);
         assert_eq!(read_le_u16(&state.ram, TILEDETECT_MISC_TILES), 0);
-        assert_eq!(state.player_state().button_mask_b_y(), 0);
-        assert_eq!(state.player_state().state_bits(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
+        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
         assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(state.player_state().hookshot_interlock(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.hookshot_interlock(),
+            0
+        );
         assert_eq!(link_test_byte(&state, LINK_IS_NEAR_MOVEABLE_STATUE), 0);
     }
 
@@ -8830,10 +10957,10 @@ mod tests {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_IS_BUNNY, 1);
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 0);
-        state.player_state_mut().set_swim_direction_flags(8);
+        state.follower_link_state_mut().set_swim_direction_flags(8);
         set_link_test_byte(&mut state, LINK_IS_IN_DEEP_WATER, 1);
         set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 1);
-        state.player_state_mut().set_pit_data_index(1);
+        state.follower_link_state_mut().set_pit_data_index(1);
         state.ram[SWIMMING_COUNTDOWN] = 7;
         state
             .swim_acceleration_mut()
@@ -8841,11 +10968,11 @@ mod tests {
 
         state.link_reset_state_after_damaging_pit();
 
-        assert_eq!(state.player_state().handler_state(), 23);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 23);
         assert_eq!(link_test_byte(&state, LINK_DIRECTION_LAST), 8);
         assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 0);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
-        assert_eq!(state.player_state().pit_data_index(), 0);
+        assert_eq!(state.game_state.player.follower_link.pit_data_index(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
         assert_eq!(
             state
@@ -8859,7 +10986,7 @@ mod tests {
         set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
         state.follower_link_state_mut().set_handler_state(6);
         state.link_reset_state_after_damaging_pit();
-        assert_eq!(state.player_state().handler_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
     }
 
     #[test]
@@ -8867,28 +10994,34 @@ mod tests {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_actual_z_velocity(10);
         state.player_change_z(2);
-        assert_eq!(state.player_state().actual_z_velocity(), 8);
+        assert_eq!(state.game_state.player.follower_link.actual_z_velocity(), 8);
 
         state.follower_link_state_mut().set_handler_state(19);
         state.link_handle_change_in_z_velocity();
-        assert_eq!(state.player_state().actual_z_velocity(), 7);
+        assert_eq!(state.game_state.player.follower_link.actual_z_velocity(), 7);
 
         state.follower_link_state_mut().set_actual_z_velocity(0xfe);
         set_link_test_byte(&mut state, LINK_Z_COORD, 0);
         state.link_handle_change_in_z_velocity();
-        assert_eq!(state.player_state().actual_z_velocity(), 0xfe);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            0xfe
+        );
 
         set_link_test_byte(&mut state, LINK_Z_COORD, 0x80);
         state.link_handle_change_in_z_velocity();
         assert_eq!(link_test_word(&state, LINK_Z_COORD), 0xffff);
-        assert_eq!(state.player_state().actual_z_velocity(), 0xff);
+        assert_eq!(
+            state.game_state.player.follower_link.actual_z_velocity(),
+            0xff
+        );
     }
 
     #[test]
     fn set_to_deep_water_resets_swim_state_and_latches_direction() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
-        state.player_state_mut().set_grabbing_wall(1);
+        state.follower_link_state_mut().set_grabbing_wall(1);
         state.follower_link_state_mut().set_speed_setting(2);
         state.ram[SWIMMING_COUNTDOWN] = 7;
         state.swim_acceleration_mut().set_acceleration(0, 0x1234);
@@ -8896,8 +11029,11 @@ mod tests {
         state.link_set_to_deep_water();
 
         assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 1);
-        assert_eq!(state.player_state().swim_direction_flags(), 8);
-        assert_eq!(state.player_state().grabbing_wall(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.swim_direction_flags(),
+            8
+        );
+        assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 0);
         assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
         assert_eq!(state.game_state.player.swim_acceleration.acceleration(0), 0);
@@ -8913,7 +11049,7 @@ mod tests {
 
         state.link_splash_upon_landing();
 
-        assert_eq!(state.player_state().handler_state(), 4);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 4);
         assert_eq!(
             state.game_state.system_signals.sound_effect_1() & 0x3f,
             0x24
@@ -8927,17 +11063,17 @@ mod tests {
         set_link_test_byte(&mut bunny, LINK_IS_IN_DEEP_WATER, 1);
         set_link_test_byte(&mut bunny, LINK_ITEM_MOON_PEARL, 1);
         set_link_test_byte(&mut bunny, LINK_IS_BUNNY, 1);
-        bunny.player_state_mut().set_animation_step(3);
+        bunny.follower_link_state_mut().set_animation_step(3);
         bunny
             .swim_acceleration_mut()
             .set_speed_active_flag(0, 0x1111);
 
         bunny.link_splash_upon_landing();
 
-        assert_eq!(bunny.player_state().handler_state(), 0);
+        assert_eq!(bunny.game_state.player.follower_link.handler_state(), 0);
         assert_eq!(link_test_byte(&bunny, LINK_IS_BUNNY), 0);
-        assert_eq!(bunny.player_state().auxiliary_state(), 0);
-        assert_eq!(bunny.player_state().animation_step(), 0);
+        assert_eq!(bunny.game_state.player.follower_link.auxiliary_state(), 0);
+        assert_eq!(bunny.game_state.player.follower_link.animation_step(), 0);
         assert_eq!(
             bunny
                 .game_state
@@ -9018,7 +11154,9 @@ mod tests {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_joypad1h_last(0x09);
         set_link_test_byte(&mut state, LINK_FLAG_MOVING, 2);
-        state.player_state_mut().set_swim_direction_flags(0x04);
+        state
+            .follower_link_state_mut()
+            .set_swim_direction_flags(0x04);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x08);
         state.swim_acceleration_mut().set_max_speed(2, 0x1234);
 
@@ -9105,21 +11243,24 @@ mod tests {
     fn swimming_handler_without_flippers_only_clears_action_state() {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_button_mask_b_y(0xff);
-        state.player_state_mut().set_button_b_frames(9);
+        state.follower_link_state_mut().set_button_b_frames(9);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 7);
         set_link_test_byte(&mut state, LINK_SPIN_ATTACK_STEP_COUNTER, 6);
         state.follower_link_state_mut().set_state_bits(5);
-        state.player_state_mut().set_picking_throw_state(4);
+        state.follower_link_state_mut().set_picking_throw_state(4);
         set_link_test_byte(&mut state, LINK_ITEM_FLIPPERS, 0);
 
         state.player_handler_04_swimming();
 
-        assert_eq!(state.player_state().button_mask_b_y(), 0);
-        assert_eq!(state.player_state().button_b_frames(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
+        assert_eq!(state.game_state.player.follower_link.button_b_frames(), 0);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 0);
         assert_eq!(link_test_byte(&state, LINK_SPIN_ATTACK_STEP_COUNTER), 0);
-        assert_eq!(state.player_state().state_bits(), 0);
-        assert_eq!(state.player_state().picking_throw_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.picking_throw_state(),
+            0
+        );
     }
 
     #[test]
@@ -9135,13 +11276,16 @@ mod tests {
         state.player_handler_04_swimming();
 
         assert_eq!(link_test_byte(&state, LINK_FRAME_CHANGE_COUNTER), 0);
-        assert_eq!(state.player_state().animation_step(), 1);
+        assert_eq!(state.game_state.player.follower_link.animation_step(), 1);
         assert_eq!(state.ram[SWIM_STROKE_ANIM_STEP], 0);
         assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0x80);
         assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 1);
         assert_eq!(state.ram[SWIMMING_COUNTDOWN], 6);
         assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 37);
-        assert_eq!(state.player_state().swim_direction_flags(), 8);
+        assert_eq!(
+            state.game_state.player.follower_link.swim_direction_flags(),
+            8
+        );
     }
 
     #[test]
@@ -9219,26 +11363,57 @@ mod tests {
     #[test]
     fn handle_toss_clears_a_press_state_when_throwing() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_y_button_action_flags(0x80);
+        state
+            .follower_link_state_mut()
+            .set_y_button_action_flags(0x80);
         state.follower_link_state_mut().set_filtered_joypad_l(0x80);
-        state.player_state_mut().set_item_action_step_var(7);
-        state.player_state_mut().set_throw_oam_state_index(8);
-        state.player_state_mut().set_y_button_action_step(9);
+        state.follower_link_state_mut().set_item_action_step_var(7);
+        state.follower_link_state_mut().set_throw_oam_state_index(8);
+        state.follower_link_state_mut().set_y_button_action_step(9);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
 
         assert!(state.link_handle_toss());
 
-        assert_eq!(state.player_state().item_action_step_var(), 0);
-        assert_eq!(state.player_state().throw_oam_state_index(), 0);
-        assert_eq!(state.player_state().y_button_action_step(), 0);
-        assert_eq!(state.player_state().y_button_action_flags(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.item_action_step_var(),
+            0
+        );
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .throw_oam_state_index(),
+            0
+        );
+        assert_eq!(
+            state.game_state.player.follower_link.y_button_action_step(),
+            0
+        );
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_flags(),
+            0
+        );
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
 
-        state.player_state_mut().set_y_button_action_flags(0x80);
+        state
+            .follower_link_state_mut()
+            .set_y_button_action_flags(0x80);
         state.follower_link_state_mut().set_filtered_joypad_l(0x80);
-        state.player_state_mut().set_picking_throw_state(1);
+        state.follower_link_state_mut().set_picking_throw_state(1);
         assert!(!state.link_handle_toss());
-        assert_eq!(state.player_state().y_button_action_flags(), 0x80);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_flags(),
+            0x80
+        );
     }
 
     #[test]
@@ -9266,7 +11441,9 @@ mod tests {
 
         state.ram[DUNG_HDR_COLLISION_2] = 0;
         state.set_player_layer_collision_flags(0);
-        state.player_state_mut().set_somaria_platform_state(1);
+        state
+            .follower_link_state_mut()
+            .set_somaria_platform_state(1);
         set_link_test_byte(&mut state, LINK_Y_VEL, 7);
         set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
         state.halt_link_when_using_items();
@@ -9299,7 +11476,7 @@ mod tests {
         state.ram[CAPE_DECREMENT_COUNTER] = 1;
         set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 2);
         set_link_test_byte(&mut state, LINK_MAGIC_POWER, 2);
-        state.player_state_mut().set_grabbing_wall(1);
+        state.follower_link_state_mut().set_grabbing_wall(1);
         state.enhanced_features_mut().set_bits(0x1000);
 
         state.link_handle_cape_passive_lift_check();
@@ -9315,7 +11492,10 @@ mod tests {
         assert!(!state.check_y_button_press());
         state.follower_link_state_mut().set_filtered_joypad_h(0x40);
         assert!(state.check_y_button_press());
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0x40);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0x40
+        );
         assert!(!state.check_y_button_press());
 
         let mut state = ZeldaState::new();
@@ -9340,18 +11520,31 @@ mod tests {
         state.refund_magic(0);
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 128);
 
-        state.player_state_mut().set_y_button_action_step(1);
-        state.player_state_mut().set_y_button_action_flags(2);
+        state.follower_link_state_mut().set_y_button_action_step(1);
+        state.follower_link_state_mut().set_y_button_action_flags(2);
         state.follower_link_state_mut().set_state_bits(3);
-        state.player_state_mut().set_picking_throw_state(4);
-        state.player_state_mut().set_grabbing_wall(5);
+        state.follower_link_state_mut().set_picking_throw_state(4);
+        state.follower_link_state_mut().set_grabbing_wall(5);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
         state.link_item_reset_from_overworld_things();
-        assert_eq!(state.player_state().y_button_action_step(), 0);
-        assert_eq!(state.player_state().y_button_action_flags(), 0);
-        assert_eq!(state.player_state().state_bits(), 0);
-        assert_eq!(state.player_state().picking_throw_state(), 0);
-        assert_eq!(state.player_state().grabbing_wall(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.y_button_action_step(),
+            0
+        );
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_flags(),
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.picking_throw_state(),
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
     }
 
@@ -9368,7 +11561,10 @@ mod tests {
         assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 8);
         assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 20);
         assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 20);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
 
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -9434,7 +11630,7 @@ mod tests {
         rod.ram[EQ_SELECTED_ROD] = 1;
         rod.link_item_rod();
         assert_eq!(link_test_byte(&rod, LINK_MAGIC_POWER), 4);
-        assert!(rod.player_state().item_in_hand_has(1));
+        assert!(rod.game_state.player.follower_link.item_in_hand_has(1));
         assert_eq!(link_test_byte(&rod, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&rod, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
         assert_eq!(
@@ -9445,23 +11641,26 @@ mod tests {
         let mut hammer = ZeldaState::new();
         hammer.follower_link_state_mut().set_filtered_joypad_h(0x40);
         hammer.link_item_hammer();
-        assert_eq!(hammer.player_state().item_in_hand(), 2);
+        assert_eq!(hammer.game_state.player.follower_link.item_in_hand(), 2);
         assert_eq!(link_test_byte(&hammer, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&hammer, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
 
         let mut bow = ZeldaState::new();
         bow.follower_link_state_mut().set_button_mask_b_y(0x40);
-        bow.player_state_mut().set_item_in_hand(0x10);
+        bow.follower_link_state_mut().set_item_in_hand(0x10);
         set_link_test_byte(&mut bow, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         bow.ram[PLAYER_HANDLER_TIMER] = 2;
         set_link_test_byte(&mut bow, LINK_CANT_CHANGE_DIRECTION, 1);
         bow.player_resources_mut().set_arrows(2);
-        bow.player_state_mut().set_button_b_frames(12);
+        bow.follower_link_state_mut().set_button_b_frames(12);
         bow.link_item_bow();
         assert_eq!(link_test_byte(&bow, LINK_NUM_ARROWS), 1);
-        assert!(!bow.player_state().item_in_hand_has(0x10));
-        assert_eq!(bow.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(bow.player_state().button_b_frames(), 9);
+        assert!(!bow.game_state.player.follower_link.item_in_hand_has(0x10));
+        assert_eq!(
+            bow.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(bow.game_state.player.follower_link.button_b_frames(), 9);
         assert_eq!(
             bow.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
             9
@@ -9474,7 +11673,7 @@ mod tests {
         boom.follower_link_state_mut().set_filtered_joypad_h(0x40);
         boom.inventory_items_mut().set_inventory_item(1, 1);
         boom.link_item_boomerang();
-        assert_eq!(boom.player_state().item_in_hand(), 0x80);
+        assert_eq!(boom.game_state.player.follower_link.item_in_hand(), 0x80);
         assert_eq!(boom.ram[FLAG_FOR_BOOMERANG_IN_PLACE], 1);
         assert_eq!(link_test_byte(&boom, LINK_DELAY_TIMER_SPIN_ATTACK), 6);
         assert_eq!(link_test_byte(&boom, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
@@ -9482,9 +11681,12 @@ mod tests {
         set_link_test_byte(&mut boom, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         boom.ram[PLAYER_HANDLER_TIMER] = 1;
         boom.link_item_boomerang();
-        assert_eq!(boom.player_state().item_in_hand(), 0);
+        assert_eq!(boom.game_state.player.follower_link.item_in_hand(), 0);
         assert_eq!(boom.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(boom.player_state().button_mask_b_y() & 0x40, 0);
+        assert_eq!(
+            boom.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
         assert_eq!(link_test_byte(&boom, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
 
         let mut bombs = ZeldaState::new();
@@ -9503,9 +11705,12 @@ mod tests {
                 .ancilla_type(),
             7
         );
-        assert_eq!(bombs.player_state().button_mask_b_y() & 0x40, 0);
+        assert_eq!(
+            bombs.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
         assert_eq!(link_test_byte(&bombs, LINK_ITEM_BOMBS), 0);
-        assert_eq!(bombs.player_state().item_in_hand(), 0);
+        assert_eq!(bombs.game_state.player.follower_link.item_in_hand(), 0);
 
         let mut book = ZeldaState::new();
         book.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -9522,8 +11727,15 @@ mod tests {
         assert_eq!(prayer.game_state.frame.saved_module_for_menu, 9);
         assert_eq!(prayer.game_state.frame.main_module, 14);
         assert_eq!(prayer.game_state.frame.modal_pause_flag, 1);
-        assert_eq!(prayer.player_state().y_button_action_timer(), 22);
-        assert_eq!(prayer.player_state().state_bits(), 2);
+        assert_eq!(
+            prayer
+                .game_state
+                .player
+                .follower_link
+                .y_button_action_timer(),
+            22
+        );
+        assert_eq!(prayer.game_state.player.follower_link.state_bits(), 2);
         assert_eq!(link_test_byte(&prayer, LINK_DIRECTION), 0);
         assert_eq!(prayer.game_state.system_signals.ambient_sound_effect(), 17);
         assert_eq!(prayer.game_state.system_signals.music_control(), 242);
@@ -9536,11 +11748,11 @@ mod tests {
         lamp.inventory_items_mut().set_inventory_item(10, 1);
         lamp.player_resources_mut().set_magic_power(32);
         set_link_test_byte(&mut lamp, LINK_CANT_CHANGE_DIRECTION, 1);
-        lamp.player_state_mut().set_button_b_frames(9);
+        lamp.follower_link_state_mut().set_button_b_frames(9);
         lamp.link_item_lamp();
         assert_eq!(link_test_byte(&lamp, LINK_MAGIC_POWER), 28);
-        assert_eq!(lamp.player_state().button_mask_b_y(), 0);
-        assert_eq!(lamp.player_state().button_b_frames(), 0);
+        assert_eq!(lamp.game_state.player.follower_link.button_mask_b_y(), 0);
+        assert_eq!(lamp.game_state.player.follower_link.button_b_frames(), 0);
         assert_eq!(link_test_byte(&lamp, LINK_CANT_CHANGE_DIRECTION), 0);
         assert_eq!(
             lamp.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
@@ -9557,24 +11769,34 @@ mod tests {
         powder.player_resources_mut().set_magic_power(16);
         powder.link_item_powder();
         assert_eq!(link_test_byte(&powder, LINK_MAGIC_POWER), 8);
-        assert_eq!(powder.player_state().item_in_hand(), 0x40);
+        assert_eq!(powder.game_state.player.follower_link.item_in_hand(), 0x40);
         assert_eq!(link_test_byte(&powder, LINK_DELAY_TIMER_SPIN_ATTACK), 1);
         assert_eq!(link_test_byte(&powder, LINK_DIRECTION), 0);
 
         let mut shovel = ZeldaState::new();
         shovel.follower_link_state_mut().set_filtered_joypad_h(0x40);
         shovel.link_item_shovel();
-        assert_eq!(shovel.player_state().position_mode(), 1);
+        assert_eq!(shovel.game_state.player.follower_link.position_mode(), 1);
         assert_eq!(link_test_byte(&shovel, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&shovel, LINK_DELAY_TIMER_SPIN_ATTACK), 6);
 
         set_link_test_byte(&mut shovel, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
-        shovel.player_state_mut().set_item_action_step_var(2);
+        shovel.follower_link_state_mut().set_item_action_step_var(2);
         shovel.link_item_shovel();
-        assert_eq!(shovel.player_state().item_action_step_var(), 0);
+        assert_eq!(
+            shovel
+                .game_state
+                .player
+                .follower_link
+                .item_action_step_var(),
+            0
+        );
         assert_eq!(shovel.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(shovel.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(shovel.player_state().position_mode(), 0);
+        assert_eq!(
+            shovel.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(shovel.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(link_test_byte(&shovel, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
     }
 
@@ -9587,7 +11809,10 @@ mod tests {
         countdown.ram[FLUTE_COUNTDOWN] = 2;
         countdown.link_item_flute();
         assert_eq!(countdown.ram[FLUTE_COUNTDOWN], 1);
-        assert_eq!(countdown.player_state().button_mask_b_y() & 0x40, 0x40);
+        assert_eq!(
+            countdown.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0x40
+        );
 
         let mut flute = ZeldaState::new();
         flute.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -9615,7 +11840,14 @@ mod tests {
             .set_filtered_joypad_h(0x40);
         shovel_dispatch.inventory_items_mut().set_flute(1);
         shovel_dispatch.link_item_shovel_and_flute();
-        assert_eq!(shovel_dispatch.player_state().position_mode(), 1);
+        assert_eq!(
+            shovel_dispatch
+                .game_state
+                .player
+                .follower_link
+                .position_mode(),
+            1
+        );
     }
 
     #[test]
@@ -9626,13 +11858,15 @@ mod tests {
         ether.player_resources_mut().set_magic_power(64);
         ether.link_item_ether();
         assert_eq!(link_test_byte(&ether, LINK_MAGIC_POWER), 32);
-        assert_eq!(ether.player_state().handler_state(), 8);
+        assert_eq!(ether.game_state.player.follower_link.handler_state(), 8);
         assert_eq!(link_test_byte(&ether, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&ether, LINK_DELAY_TIMER_SPIN_ATTACK), 5);
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 0);
         assert_eq!(ether.game_state.system_signals.sound_effect_2() & 0x3f, 35);
 
-        ether.player_state_mut().set_spin_attack_delay_timer(0);
+        ether
+            .follower_link_state_mut()
+            .set_spin_attack_delay_timer(0);
         ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK] = 9;
         ether.link_state_using_ether();
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 10);
@@ -9652,7 +11886,7 @@ mod tests {
         quake.inventory_items_mut().set_sword_type(1);
         quake.player_resources_mut().set_magic_power(64);
         quake.link_item_quake();
-        assert_eq!(quake.player_state().handler_state(), 10);
+        assert_eq!(quake.game_state.player.follower_link.handler_state(), 10);
         assert_eq!(link_test_byte(&quake, LINK_ACTUAL_VEL_Z_MIRROR), 40);
         assert_eq!(link_test_byte(&quake, LINK_ACTUAL_VEL_Z_COPY_MIRROR), 40);
         assert_eq!(link_test_byte(&quake, LINK_Z_COORD_MIRROR), 0);
@@ -9663,7 +11897,7 @@ mod tests {
             .set_filtered_joypad_h(0x40);
         blocked.player_resources_mut().set_magic_power(64);
         blocked.link_item_bombos();
-        assert_eq!(blocked.player_state().handler_state(), 0);
+        assert_eq!(blocked.game_state.player.follower_link.handler_state(), 0);
         assert_eq!(
             blocked.game_state.system_signals.sound_effect_1() & 0x3f,
             60
@@ -9689,7 +11923,7 @@ mod tests {
             link_test_byte(&mirror, LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE),
             1
         );
-        assert_eq!(mirror.player_state().handler_state(), 20);
+        assert_eq!(mirror.game_state.player.follower_link.handler_state(), 20);
         assert_eq!(
             mirror.game_state.player.follower_link.actual_x_velocity(),
             0
@@ -9710,7 +11944,7 @@ mod tests {
         crossing.assets = Some(AssetPack { data, ranges });
         crossing.link_state_crossing_worlds();
         assert_eq!(crossing.game_state.frame.submodule, 44);
-        assert_eq!(crossing.player_state().handler_state(), 20);
+        assert_eq!(crossing.game_state.player.follower_link.handler_state(), 20);
 
         let mut follower = ZeldaState::new();
         follower.follower_state_mut().set_indicator(13);
@@ -9735,8 +11969,8 @@ mod tests {
 
         state.link_item_hookshot();
 
-        assert_eq!(state.player_state().handler_state(), 19);
-        assert_eq!(state.player_state().position_mode(), 4);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 19);
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 4);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 7);
         assert_eq!(
@@ -9762,13 +11996,16 @@ mod tests {
             .slot_mut(&mut state.ram, 4)
             .set_ancilla_type(0);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
-        state.player_state_mut().set_button_b_frames(12);
+        state.follower_link_state_mut().set_button_b_frames(12);
         state.link_state_hookshotting();
-        assert_eq!(state.player_state().handler_state(), 0);
-        assert!(!state.player_state().position_mode_has(4));
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
+        assert!(!state.game_state.player.follower_link.position_mode_has(4));
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(state.player_state().button_b_frames(), 9);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.button_b_frames(), 9);
     }
 
     #[test]
@@ -9781,8 +12018,11 @@ mod tests {
         state.link_item_cane_of_somaria();
 
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 24);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0x40);
-        assert!(state.player_state().position_mode_has(8));
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0x40
+        );
+        assert!(state.game_state.player.follower_link.position_mode_has(8));
         assert_eq!(link_test_byte(&state, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
         assert_eq!(
@@ -9815,7 +12055,7 @@ mod tests {
                 .ancilla_type(),
             0x30
         );
-        assert_eq!(state.player_state().position_mode(), 8);
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 8);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 18);
 
@@ -9831,8 +12071,11 @@ mod tests {
         state.link_item_cane_of_byrna();
 
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(state.player_state().position_mode(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
     }
 
@@ -9846,22 +12089,28 @@ mod tests {
 
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 9);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
-        assert_eq!(state.player_state().position_mode(), 16);
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 16);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 50);
 
         state.follower_link_state_mut().set_button_mask_b_y(0x40);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
-        state.player_state_mut().set_item_action_step_var(9);
+        state.follower_link_state_mut().set_item_action_step_var(9);
         state.link_item_net();
 
-        assert_eq!(state.player_state().item_action_step_var(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.item_action_step_var(),
+            0
+        );
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(state.player_state().position_mode(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
-        assert_eq!(state.player_state().oam_x_offset(), 0x80);
-        assert_eq!(state.player_state().oam_y_offset(), 0x80);
+        assert_eq!(state.game_state.player.follower_link.oam_x_offset(), 0x80);
+        assert_eq!(state.game_state.player.follower_link.oam_y_offset(), 0x80);
     }
 
     #[test]
@@ -9870,20 +12119,26 @@ mod tests {
         state.follower_link_state_mut().set_button_mask_b_y(0x40);
         state.follower_link_state_mut().set_facing(6);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
-        state.player_state_mut().set_item_action_step_var(9);
+        state.follower_link_state_mut().set_item_action_step_var(9);
         state.ram[PLAYER_HANDLER_TIMER] = 8;
-        state.player_state_mut().set_position_mode(16);
+        state.follower_link_state_mut().set_position_mode(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
 
         state.link_item_net();
 
-        assert_eq!(state.player_state().item_action_step_var(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.item_action_step_var(),
+            0
+        );
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(state.player_state().button_mask_b_y() & 0x40, 0);
-        assert_eq!(state.player_state().position_mode(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
+            0
+        );
+        assert_eq!(state.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
-        assert_eq!(state.player_state().oam_x_offset(), 0x80);
-        assert_eq!(state.player_state().oam_y_offset(), 0x80);
+        assert_eq!(state.game_state.player.follower_link.oam_x_offset(), 0x80);
+        assert_eq!(state.game_state.player.follower_link.oam_y_offset(), 0x80);
     }
 
     #[test]
@@ -9920,10 +12175,10 @@ mod tests {
         state.link_state_zapped();
 
         assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
-        assert_eq!(state.player_state().handler_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
         assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
-        assert_eq!(state.player_state().auxiliary_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.auxiliary_state(), 0);
         assert_eq!(state.game_state.display.mosaic_level, 0);
         assert_eq!(state.game_state.display.mosaic_copy, 3);
         assert_eq!(state.game_state.display.bg_mode, 9);
@@ -10005,20 +12260,20 @@ mod tests {
         state.link_state_exiting_dash();
 
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 4);
-        assert_eq!(state.player_state().handler_state(), 18);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 18);
 
         state.follower_link_state_mut().set_joypad1h_last(1);
         state.follower_link_state_mut().set_running_state(1);
         state.follower_link_state_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
-        state.player_state_mut().set_button_b_frames(8);
+        state.follower_link_state_mut().set_button_b_frames(8);
         state.swim_acceleration_mut().set_mode(0, 0x1234);
 
         state.link_state_exiting_dash();
 
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 0);
         assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
-        assert_eq!(state.player_state().handler_state(), 0);
+        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
         assert_eq!(state.game_state.player.follower_link.running_state(), 0);
         assert_eq!(state.game_state.player.swim_acceleration.mode(0), 0);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
@@ -10030,8 +12285,8 @@ mod tests {
         state
             .tile_detect_position_mut()
             .set_location_calc_mask(0x01ff);
-        state.world_scroll_mut().set_overworld_offset_mask_y(0x1f);
-        state.world_scroll_mut().set_overworld_offset_mask_x(0x3f);
+        state.set_overworld_offset_mask_y(0x1f);
+        state.set_overworld_offset_mask_x(0x3f);
         state.dungeon_room_tilemaps_mut().set_bg2_tile(16, 7);
 
         let mut data = vec![0; 0x100];
@@ -10062,7 +12317,14 @@ mod tests {
 
         state.tile_detect_main_handler(0);
 
-        assert_eq!(state.player_state().water_ripple_or_grass_state(), 1);
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .water_ripple_or_grass_state(),
+            1
+        );
         assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 28);
         assert_eq!(state.ram[RAW_SFX_PAN_VALUE], 28);
     }
@@ -10108,14 +12370,24 @@ mod tests {
         state.tile_detect_main_handler(0);
 
         assert_eq!(link_test_byte(&state, LINK_FLAG_MOVING), 1);
-        assert_eq!(state.player_state().swim_direction_flags(), 8);
-        assert_eq!(state.player_state().water_ripple_or_grass_state(), 0);
+        assert_eq!(
+            state.game_state.player.follower_link.swim_direction_flags(),
+            8
+        );
+        assert_eq!(
+            state
+                .game_state
+                .player
+                .follower_link
+                .water_ripple_or_grass_state(),
+            0
+        );
     }
 
     #[test]
     fn push_block_target_flag_reads_dungeon_attr_table() {
         let mut state = ZeldaState::new();
-        state.player_state_mut().set_lower_level_state(1);
+        state.follower_link_state_mut().set_lower_level_state(1);
         state
             .dungeon_bg2_attributes_mut()
             .set_bg2_attr(0x1000 + 0x145, 0x72);
@@ -10274,8 +12546,8 @@ mod tests {
         assert_eq!(state.ppu.extra_bottom_cur, 16);
 
         state.set_main_module(7);
-        state.world_scroll_mut().set_bg2_x(0x0110);
-        state.world_scroll_mut().set_bg2_y(0x0108);
+        state.set_bg2_x(0x0110);
+        state.set_bg2_y(0x0108);
         state.room_bounds_mut().set_x_bound(0, 0x0100);
         state.room_bounds_mut().set_x_bound(2, 0x0140);
         state.room_bounds_mut().set_y_bound(2, 0x0120);
@@ -10292,7 +12564,7 @@ mod tests {
         let mut state = ZeldaState::new();
         let mut pixels = vec![0u8; 256 * 224 * 4];
         state.set_irq_control_flag(0x80);
-        state.select_file_scratch_mut().set_name_scroll_x(0x01f0);
+        state.set_select_file_name_scroll_x(0x01f0);
         state.set_hdma_enable_mask(1 << 6);
         state.hdma_setup(0x0cfa87, 0, 0, 0, 0, 0);
 
@@ -10476,7 +12748,7 @@ mod tests {
         state.set_main_module(0);
         state.set_submodule(7);
         state.set_subsubmodule(0xf3);
-        state.palette_filter_mut().set_countdown(0);
+        state.set_countdown(0);
         state.follower_link_state_mut().set_filtered_joypad_h(0x10);
         state.set_indoor_flag(1);
         set_link_test_byte(&mut state, LINK_Y_COORD, 0x12);
@@ -10502,7 +12774,7 @@ mod tests {
     fn name_file_x_scroll_both_horizontal_bits_match_c_rom_table() {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_joypad1h_last(0x03);
-        state.select_file_scratch_mut().set_name_column(21);
+        state.set_select_file_name_column(21);
 
         state.name_file_check_for_scroll_input_x();
 

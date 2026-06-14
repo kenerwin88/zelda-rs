@@ -231,9 +231,8 @@ impl ZeldaState {
         if sprite.hit_timer() != 0 || sprite.delay_aux1() == 1 {
             self.sprite_slot_mut(k).set_hit_timer(0);
             if self.sprite_slot(k).state() == 10 {
-                let mut player = self.player_state_mut();
-                player.clear_state_bits();
-                player.clear_picking_throw_state();
+                self.follower_link_state_mut().clear_state_bits();
+                self.follower_link_state_mut().clear_picking_throw_state();
             }
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
             let mut sprite = self.sprite_slot_mut(k);
@@ -296,10 +295,12 @@ impl ZeldaState {
                 .sprites
                 .workspace
                 .current_sprite_x()
-                .wrapping_sub(self.player_state().x())
+                .wrapping_sub(self.game_state.player.follower_link.x())
                 .wrapping_add(16);
             let y = self
-                .player_state()
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                 .wrapping_add(24);
@@ -307,7 +308,7 @@ impl ZeldaState {
         } else {
             if (self.probe_check_tile_solidity(k)
                 && self.game_state.sprites.workspace.tile_type() != 9)
-                || self.player_state().is_cape_active()
+                || self.game_state.player.follower_link.is_cape_active()
             {
                 self.sprite_slot_mut(k).clear();
                 return;
@@ -317,16 +318,17 @@ impl ZeldaState {
                 .sprites
                 .workspace
                 .current_sprite_x()
-                .wrapping_sub(self.player_state().x());
+                .wrapping_sub(self.game_state.player.follower_link.x());
             let y = self
                 .game_state
                 .sprites
                 .workspace
                 .current_sprite_y()
-                .wrapping_sub(self.player_state().y());
+                .wrapping_sub(self.game_state.player.follower_link.y());
             x < 16
                 && y < 16
-                && self.sprite_slot(k).floor() == self.player_state().lower_level_state()
+                && self.sprite_slot(k).floor()
+                    == self.game_state.player.follower_link.lower_level_state()
         };
 
         if is_close {
@@ -947,7 +949,7 @@ impl ZeldaState {
                 if self.game_state.inventory.save_progress.progress_indicator() == 2
                     && area_lo == 24
                 {
-                    self.system_signals_mut().set_music_control(12);
+                    self.set_music_control(12);
                 }
             }
         }
@@ -1359,8 +1361,18 @@ impl ZeldaState {
                     if self.sprite_slot(k).sprite_type() == 0x48 {
                         j += 4;
                     }
-                    let x = self.player_state().x().wrapping_add(XD[j] as i16 as u16);
-                    let y = self.player_state().y().wrapping_add(YD[j] as i16 as u16);
+                    let x = self
+                        .game_state
+                        .player
+                        .follower_link
+                        .x()
+                        .wrapping_add(XD[j] as i16 as u16);
+                    let y = self
+                        .game_state
+                        .player
+                        .follower_link
+                        .y()
+                        .wrapping_add(YD[j] as i16 as u16);
                     let pt = self.sprite_project_speed_towards_location(k, x, y, 24);
                     {
                         let mut sprite = self.sprite_slot_mut(k);
@@ -1567,7 +1579,7 @@ mod tests {
         let k = 1;
         state.sprite_slot_mut(k).set_g(15);
         state.save_progress_mut().set_progress_indicator(2);
-        state.world_region_mut().set_overworld_area_index(24);
+        state.set_overworld_area_index(24);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot(k).g(), 16);
         assert_eq!(state.game_state.system_signals.music_control(), 12);
@@ -1579,7 +1591,7 @@ mod tests {
         let mut state = fresh_state();
         let k = 3;
         state.sprite_slot_mut(k).set_g(16);
-        state.system_signals_mut().set_music_control(7);
+        state.set_music_control(7);
         state.bolt_guard_trigger_chase_theme(k);
         assert_eq!(state.sprite_slot(k).g(), 16);
         assert_eq!(state.game_state.system_signals.music_control(), 7);

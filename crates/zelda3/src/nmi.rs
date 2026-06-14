@@ -32,22 +32,19 @@ impl ZeldaState {
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
         let music_control = self.game_state.system_signals.music_control();
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
-            self.system_signals_mut()
-                .set_last_music_control(music_control);
+            self.set_last_music_control(music_control);
             self.zelda_play_msu_audio_track(music_control);
             if music_control < 0xf2 {
-                self.system_signals_mut()
-                    .set_current_music_control(music_control);
+                self.set_current_music_control(music_control);
             }
-            self.system_signals_mut().set_music_control(0);
+            self.set_music_control(0);
         }
 
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
         if ambient_sound_effect != 0 {
-            self.system_signals_mut()
-                .save_ambient_sound_effect_as_last();
+            self.save_ambient_sound_effect_as_last();
             self.zelda_apu_write(0x2141, ambient_sound_effect);
-            self.system_signals_mut().clear_ambient_sound_effect();
+            self.clear_ambient_sound_effect();
         } else if self.zelda_apu_read(0x2141)
             == self.game_state.system_signals.last_ambient_sound_effect()
         {
@@ -56,8 +53,8 @@ impl ZeldaState {
 
         self.zelda_apu_write(0x2142, self.game_state.system_signals.sound_effect_1());
         self.zelda_apu_write(0x2143, self.game_state.system_signals.sound_effect_2());
-        self.system_signals_mut().clear_sound_effect_1();
-        self.system_signals_mut().clear_sound_effect_2();
+        self.clear_sound_effect_1();
+        self.clear_sound_effect_2();
     }
 
     pub(super) fn nmi_do_updates(&mut self) {
@@ -96,8 +93,8 @@ impl ZeldaState {
             }
         }
 
-        self.system_signals_mut().clear_hud_update_flag();
-        self.system_signals_mut().clear_cgram_update_flag();
+        self.clear_hud_update_flag();
+        self.clear_cgram_update_flag();
         let oam_buf = self.sprite_oam_shadow_buffer().to_vec();
         for i in 0..self.ppu.oam.len() {
             self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);

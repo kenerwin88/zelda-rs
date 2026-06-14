@@ -835,7 +835,7 @@ impl ZeldaState {
             }
         } else if self.game_state.sprites.follower_runtime.indicator() == 13 {
             if self.game_state.player.follower_link.auxiliary_state() == 2
-                || self.player_state().near_pit_state_is(2)
+                || self.game_state.player.follower_link.near_pit_state_is(2)
             {
                 self.follower_drop();
                 return;
@@ -877,8 +877,8 @@ impl ZeldaState {
                 self.follower_check_game_mode();
                 return;
             }
-            self.hud_state_mut().set_super_bomb_indicator_timer(3);
-            self.hud_state_mut().set_super_bomb_indicator_counter(0xbb);
+            self.set_super_bomb_indicator_timer(3);
+            self.set_super_bomb_indicator_counter(0xbb);
         }
         self.follower_state_mut().set_dropped(128);
         self.follower_state_mut().set_reacquire_timer_low(64);
@@ -915,10 +915,20 @@ impl ZeldaState {
             if link.is_swimming() {
                 layerbits |= 0x20;
             } else {
-                if link.is_hookshot() && self.player_state().has_hookshot_interlock() {
+                if link.is_hookshot()
+                    && self
+                        .game_state
+                        .player
+                        .follower_link
+                        .has_hookshot_interlock()
+                {
                     layerbits |= 0x10;
                 }
-                let surface_effect = self.player_state().water_ripple_or_grass_state();
+                let surface_effect = self
+                    .game_state
+                    .player
+                    .follower_link
+                    .water_ripple_or_grass_state();
                 if surface_effect != 0 {
                     layerbits |= if surface_effect == 1 { 0x80 } else { 0x40 };
                 }
@@ -944,7 +954,7 @@ impl ZeldaState {
         self.follower_handle_trigger();
         if self.game_state.sprites.follower_runtime.indicator() == 10
             && self.game_state.player.follower_link.has_auxiliary_state()
-            && self.player_state().blink_countdown() != 0
+            && self.game_state.player.follower_link.blink_countdown() != 0
         {
             let k = if self
                 .game_state
@@ -987,7 +997,7 @@ impl ZeldaState {
             self.dungeon_doors_mut().clear_current_door_pos();
             self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
-            self.system_signals_mut().set_music_control(21);
+            self.set_music_control(21);
             return;
         }
         if self
@@ -997,7 +1007,11 @@ impl ZeldaState {
             .hookshot_interlock_is_clear()
         {
             if self.game_state.player.follower_link.is_hookshot()
-                && self.player_state().has_hookshot_interlock()
+                && self
+                    .game_state
+                    .player
+                    .follower_link
+                    .has_hookshot_interlock()
             {
                 self.follower_state_mut().set_hookshot_interlock();
                 self.advance_follower_tail();
@@ -1074,8 +1088,8 @@ impl ZeldaState {
             let indoor = self.game_state.world.location.indoor_flag();
             self.follower_state_mut().set_saved_indoor_flag(indoor);
             if self.game_state.sprites.follower_runtime.indicator() == 13 {
-                self.hud_state_mut().set_super_bomb_indicator_timer(254);
-                self.hud_state_mut().set_super_bomb_indicator_counter(0);
+                self.set_super_bomb_indicator_timer(254);
+                self.set_super_bomb_indicator_counter(0);
             }
             self.follower_state_mut().set_dropped(0);
             self.tagalong_draw();
@@ -1095,7 +1109,7 @@ impl ZeldaState {
                         return;
                     }
                 } else {
-                    self.hud_state_mut().set_super_bomb_indicator_counter(1);
+                    self.set_super_bomb_indicator_counter(1);
                 }
             }
             self.follower_do_layers();
@@ -1652,8 +1666,7 @@ impl ZeldaState {
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
         if self.game_state.frame.main_module != 14 {
-            self.world_transient_mut()
-                .clear_tile_interaction_shared_flag();
+            self.clear_tile_interaction_shared_flag();
             self.messaging_state_mut().clear_module();
             self.set_submodule(2);
             self.save_main_module_for_menu();

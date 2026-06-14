@@ -85,6 +85,61 @@ class NativeFieldInfo:
     width: int
 
 
+@dataclass(frozen=True)
+class NativeFieldDraft:
+    field: str
+    const: str
+    width: int
+    methods: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BridgeReductionPlan:
+    accessor: str
+    return_type: str
+    uses: int
+    domain: str
+    risk: str
+    strategy: str
+    first_path: str
+    first_line: int
+    methods: Counter[str]
+    files: Counter[str]
+
+
+LOW_RISK_BRIDGE_ACCESSORS = {
+    "system_signals_mut",
+    "palette_buffer_mut",
+    "palette_filter_mut",
+    "world_scroll_mut",
+    "ppu_scroll_copy_mut",
+    "display_state_bridge_mut",
+    "attract_vram_destination_mut",
+}
+
+MEDIUM_RISK_BRIDGE_ACCESSORS = {
+    "attract_scene_mut",
+    "dungeon_doors_mut",
+    "dungeon_room_load_mut",
+    "follower_state_mut",
+    "hud_state_mut",
+    "inventory_items_mut",
+    "oam_state_mut",
+    "player_resources_mut",
+    "tile_detect_position_mut",
+    "world_region_mut",
+    "world_transient_mut",
+}
+
+HIGH_RISK_BRIDGE_ACCESSORS = {
+    "ancilla_slot_mut",
+    "follower_link_state_mut",
+    "garnish_slot_mut",
+    "overlord_slot_mut",
+    "sprite_slot_mut",
+}
+
+
 def selected_uses(
     kinds: list[str] | None,
     accessor_filter: str | None,
@@ -331,6 +386,185 @@ def codemod_command(plan: AccessorPlan) -> str | None:
             f"--accessor-regex '^{escaped}$' --apply"
         )
     return None
+
+
+def bridge_domain(accessor: str) -> str:
+    if accessor.startswith("oam"):
+        return "display"
+    if accessor.startswith("tile_detect") or accessor.startswith("follower_state"):
+        return "player"
+    if accessor.startswith("sprite") or accessor in {"ancilla_slot_mut", "garnish_slot_mut", "overlord_slot_mut"}:
+        return "sprites"
+    if accessor.startswith("follower_link") or accessor.startswith("player"):
+        return "player"
+    if accessor.startswith("dungeon"):
+        return "dungeon"
+    if accessor.startswith("world") or accessor.startswith("overworld"):
+        return "world"
+    if accessor.startswith("palette") or accessor.startswith("ppu") or accessor.startswith("display"):
+        return "display"
+    if accessor.startswith("hud"):
+        return "hud"
+    if accessor.startswith("inventory"):
+        return "inventory"
+    if accessor.startswith("system"):
+        return "system"
+    if accessor.startswith("attract") or accessor.startswith("intro"):
+        return "ending"
+    return "other"
+
+
+def bridge_risk(accessor: str) -> str:
+    if accessor in HIGH_RISK_BRIDGE_ACCESSORS:
+        return "high"
+    if accessor in LOW_RISK_BRIDGE_ACCESSORS:
+        return "low"
+    if accessor in MEDIUM_RISK_BRIDGE_ACCESSORS:
+        return "medium"
+    domain = bridge_domain(accessor)
+    if domain in {"display", "system", "world"}:
+        return "low"
+    if domain in {"sprites", "player"}:
+        return "high"
+    return "medium"
+
+
+def bridge_strategy(accessor: str) -> str:
+    risk = bridge_risk(accessor)
+    domain = bridge_domain(accessor)
+    if risk == "low":
+        return (
+            "promote the existing native owner to direct reads/writes, keep one bridge projection "
+            "boundary, then codemod same-name call sites"
+        )
+    if domain == "sprites":
+        return (
+            "split slot state by lifecycle/draw/combat first; do not bulk-promote the full slot table "
+            "as a typed RAM mirror"
+        )
+    if domain == "player":
+        return (
+            "continue behavior-shaped player methods; avoid one-field mirrors and verify with route "
+            "parity after each coherent behavior cluster"
+        )
+    return (
+        "promote a cohesive native sub-struct, add load/write parity asserts, then replace bridge "
+        "call sites in a vertical slice"
+    )
+
+
+def bridge_reduction_plans(
+    plans: list[AccessorPlan],
+    max_risk: str | None,
+    limit: int,
+) -> list[BridgeReductionPlan]:
+    rows = [
+        BridgeReductionPlan(
+            accessor=plan.accessor,
+            return_type=plan.return_type,
+            uses=plan.uses,
+            domain=bridge_domain(plan.accessor),
+            risk=bridge_risk(plan.accessor),
+            strategy=bridge_strategy(plan.accessor),
+            first_path=plan.first_path,
+            first_line=plan.first_line,
+            methods=plan.methods,
+            files=plan.files,
+        )
+        for plan in plans
+        if plan.kind == "native-bridge-mutator"
+    ]
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+    if max_risk is not None:
+        max_rank = risk_order[max_risk]
+        rows = [row for row in rows if risk_order.get(row.risk, 9) <= max_rank]
+    rows = sorted(rows, key=lambda row: (risk_order.get(row.risk, 9), -row.uses, row.accessor))
+    return rows if limit <= 0 else rows[:limit]
+
+
+def print_bridge_reduction_text(
+    plans: list[AccessorPlan],
+    method_limit: int,
+    file_limit: int,
+    max_risk: str | None,
+    limit: int,
+) -> None:
+    rows = bridge_reduction_plans(plans, max_risk, limit)
+    total_uses = sum(row.uses for row in rows)
+    suffix = f" (risk <= {max_risk})" if max_risk else ""
+    print(
+        f"bridge reduction plan{suffix}: "
+        f"{total_uses} bridge mutator use(s), {len(rows)} accessor slice(s)"
+    )
+    if not rows:
+        return
+    by_risk = Counter(row.risk for row in rows)
+    by_domain = Counter()
+    for row in rows:
+        by_domain[row.domain] += row.uses
+    print(
+        "risk slices: "
+        + ", ".join(f"{risk}={count}" for risk, count in sorted(by_risk.items()))
+    )
+    print(
+        "top domains by uses: "
+        + ", ".join(f"{domain}={count}" for domain, count in by_domain.most_common(8))
+    )
+    for row in rows:
+        print()
+        print(f"{row.accessor} ({row.uses} use(s), domain={row.domain}, risk={row.risk})")
+        print(f"  return:   {row.return_type}")
+        print(f"  first:    {row.first_path}:{row.first_line}")
+        print(f"  strategy: {row.strategy}")
+        methods = ", ".join(
+            f"{method} x{count}" for method, count in row.methods.most_common(method_limit)
+        )
+        files = ", ".join(f"{path} x{count}" for path, count in row.files.most_common(file_limit))
+        print(f"  methods:  {methods or '(none)'}")
+        print(f"  files:    {files or '(none)'}")
+
+
+def print_bridge_reduction_json(
+    plans: list[AccessorPlan],
+    method_limit: int,
+    file_limit: int,
+    max_risk: str | None,
+    limit: int,
+) -> None:
+    rows = bridge_reduction_plans(plans, max_risk, limit)
+    payload = {
+        "max_risk": max_risk,
+        "total_bridge_mutator_uses": sum(row.uses for row in rows),
+        "total_accessors": len(rows),
+        "risk_slices": dict(Counter(row.risk for row in rows)),
+        "domain_uses": {},
+        "accessors": [
+            {
+                "accessor": row.accessor,
+                "return_type": row.return_type,
+                "uses": row.uses,
+                "domain": row.domain,
+                "risk": row.risk,
+                "strategy": row.strategy,
+                "first_path": row.first_path,
+                "first_line": row.first_line,
+                "top_methods": [
+                    {"method": method, "uses": count}
+                    for method, count in row.methods.most_common(method_limit)
+                ],
+                "top_files": [
+                    {"path": path, "uses": count}
+                    for path, count in row.files.most_common(file_limit)
+                ],
+            }
+            for row in rows
+        ],
+    }
+    domain_uses = Counter()
+    for row in rows:
+        domain_uses[row.domain] += row.uses
+    payload["domain_uses"] = dict(domain_uses.most_common())
+    print(json.dumps(payload, indent=2))
 
 
 def print_projection_text(projection: ProjectionPlan, field_limit: int) -> None:
@@ -600,6 +834,174 @@ def native_fields_by_const(native_type: str) -> dict[str, NativeFieldInfo]:
     return fields
 
 
+def field_name_for_const(const: str) -> str:
+    name = const.lower()
+    prefixes = [
+        "link_",
+        "player_",
+        "flag_",
+        "eq_",
+        "button_",
+        "state_for_",
+        "countdown_for_",
+    ]
+    for prefix in prefixes:
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    suffixes = ["_lo", "_hi"]
+    for suffix in suffixes:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return re.sub(r"[^a-z0-9_]+", "_", name).strip("_")
+
+
+def method_direct_const_reads(method: MethodInfo) -> dict[str, int]:
+    body = method.body
+    reads: dict[str, int] = {}
+
+    def add(const: str, width: int) -> None:
+        reads[const] = max(reads.get(const, 0), width)
+
+    for const in re.findall(r"\b(?:word|read_le_u16)\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)", body):
+        add(const, 2)
+    for const in re.findall(r"\bbyte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*(?:\+\s*1\s*)?\)", body):
+        add(const, 1)
+    return reads
+
+
+def native_field_drafts_for_missing_methods(
+    source_methods: dict[str, MethodInfo],
+    native_methods: dict[str, MethodInfo],
+    native_fields: dict[str, NativeFieldInfo],
+    method_uses: Counter[str],
+    method_limit: int,
+) -> list[NativeFieldDraft]:
+    missing = [
+        method
+        for method in sorted(set(source_methods) - set(native_methods), key=lambda name: (-method_uses.get(name, 0), name))
+        if method_uses.get(method, 0) > 0
+    ]
+    if method_limit > 0:
+        missing = missing[:method_limit]
+
+    methods_by_const: dict[str, set[str]] = defaultdict(set)
+    widths_by_const: dict[str, int] = {}
+    for method_name in missing:
+        for const, width in method_direct_const_reads(source_methods[method_name]).items():
+            if const in native_fields:
+                continue
+            methods_by_const[const].add(method_name)
+            widths_by_const[const] = max(widths_by_const.get(const, 0), width)
+
+    drafts: list[NativeFieldDraft] = []
+    used_fields: set[str] = set()
+    for const in sorted(methods_by_const, key=lambda name: (-len(methods_by_const[name]), name)):
+        field = field_name_for_const(const)
+        if not field:
+            field = const.lower()
+        original = field
+        index = 2
+        while field in used_fields:
+            field = f"{original}_{index}"
+            index += 1
+        used_fields.add(field)
+        drafts.append(
+            NativeFieldDraft(
+                field=field,
+                const=const,
+                width=widths_by_const[const],
+                methods=tuple(sorted(methods_by_const[const])),
+            )
+        )
+    return drafts
+
+
+def print_native_field_promotion_draft(plans: list[AccessorPlan], native_type: str, method_limit: int) -> int:
+    if len(plans) != 1:
+        print(f"--emit-native-field-promotion-draft requires exactly one selected accessor, got {len(plans)}", file=sys.stderr)
+        return 1
+    plan = plans[0]
+    source_type = view_type_name(plan.return_type)
+    if source_type is None:
+        print(f"unable to infer source type from {plan.return_type}", file=sys.stderr)
+        return 1
+    source = impl_methods(source_type)
+    native = impl_methods(native_type)
+    if source is None:
+        print(f"unable to find impl for {source_type}", file=sys.stderr)
+        return 1
+    if native is None:
+        print(f"unable to find impl for {native_type}", file=sys.stderr)
+        return 1
+    _, source_methods = source
+    _, native_methods = native
+    native_fields = native_fields_by_const(native_type)
+    drafts = native_field_drafts_for_missing_methods(
+        source_methods,
+        native_methods,
+        native_fields,
+        plan.methods,
+        method_limit,
+    )
+
+    print(f"// Native field promotion draft for {source_type} -> {native_type}.")
+    print("// Review semantic names and grouped byte fields before applying.")
+    print("// This is intentionally a draft: non-contiguous LO/HI pairs may need one u16 field.")
+    print()
+    print("// struct fields")
+    for draft in drafts:
+        print(
+            f"    {draft.field}: {'u16' if draft.width == 2 else 'u8'},"
+            f" // {draft.const}; used by {', '.join(draft.methods)}"
+        )
+    print()
+    print("// load_from_ram fields")
+    for draft in drafts:
+        if draft.width == 2:
+            print(f"            {draft.field}: read_le_u16(ram, {draft.const}),")
+        else:
+            print(f"            {draft.field}: ram_byte(ram, {draft.const}),")
+    print()
+    print("// write_to_ram fields")
+    for draft in drafts:
+        if draft.width == 2:
+            print(f"        write_le_u16(ram, {draft.const}, self.{draft.field});")
+        else:
+            print(f"        ram[{draft.const}] = self.{draft.field};")
+
+    hypothetical_fields = dict(native_fields)
+    for draft in drafts:
+        hypothetical_fields[draft.const] = NativeFieldInfo(draft.field, draft.width)
+    missing = [
+        method
+        for method in sorted(set(source_methods) - set(native_methods), key=lambda name: (-plan.methods.get(name, 0), name))
+        if plan.methods.get(method, 0) > 0
+    ]
+    if method_limit > 0:
+        missing = missing[:method_limit]
+    print()
+    print("// getter candidates that become available with the drafted fields")
+    emitted = 0
+    unsupported = 0
+    for method_name in missing:
+        header, body = translated_native_read_method(source_methods[method_name], hypothetical_fields)
+        uses = plan.methods.get(method_name, 0)
+        print()
+        print(f"// {method_name}: {uses} current accessor use(s); source line {source_methods[method_name].line}")
+        if header is None or body is None:
+            unsupported += 1
+            print(f"// TODO {method_name}: {body}")
+            continue
+        emitted += 1
+        print(header)
+        print(body)
+    print()
+    print(f"// drafted {len(drafts)} field(s); emitted {emitted} getter(s); {unsupported} getter(s) still need manual handling")
+    return 0
+
+
 def bridge_state_type(native_type: str) -> str | None:
     source = find_impl_source(native_type)
     if source is None:
@@ -635,7 +1037,7 @@ def translated_native_read_method(
 ) -> tuple[str | None, str | None]:
     body = method.body.strip()
 
-    def field_for(const: str, width: int) -> str | None:
+    def field_for_exact(const: str, width: int) -> str | None:
         field = native_fields.get(const)
         if field is None:
             return None
@@ -643,11 +1045,37 @@ def translated_native_read_method(
             return None
         return f"self.{field.field}"
 
+    def field_for_byte(const: str) -> str | None:
+        field = native_fields.get(const)
+        if field is None:
+            return None
+        if field.width == 1:
+            return f"self.{field.field}"
+        if field.width == 2:
+            return f"self.{field.field} as u8"
+        return None
+
+    def field_for_high_byte(const: str) -> str | None:
+        field = native_fields.get(const)
+        if field is None or field.width != 2:
+            return None
+        return f"(self.{field.field} >> 8) as u8"
+
     byte_read = re.fullmatch(r"byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)", body)
     if byte_read:
-        field = field_for(byte_read.group(1), 1)
+        field = field_for_byte(byte_read.group(1))
         if field is None:
             return None, f"unsupported: native target does not load {byte_read.group(1)} as a byte field"
+        return method.signature + " {", indent_body([field]) + "\n    }"
+
+    high_byte_read = re.fullmatch(
+        r"byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\+\s*1\s*\)",
+        body,
+    )
+    if high_byte_read:
+        field = field_for_high_byte(high_byte_read.group(1))
+        if field is None:
+            return None, f"unsupported: native target does not load {high_byte_read.group(1)} as a word field"
         return method.signature + " {", indent_body([field]) + "\n    }"
 
     word_read = re.fullmatch(
@@ -655,7 +1083,7 @@ def translated_native_read_method(
         body,
     )
     if word_read:
-        field = field_for(word_read.group(1), 2)
+        field = field_for_exact(word_read.group(1), 2)
         if field is None:
             return None, f"unsupported: native target does not load {word_read.group(1)} as a word field"
         return method.signature + " {", indent_body([field]) + "\n    }"
@@ -665,17 +1093,37 @@ def translated_native_read_method(
         body,
     )
     if byte_bool:
-        field = field_for(byte_bool.group(1), 1)
+        field = field_for_byte(byte_bool.group(1))
         if field is None:
             return None, f"unsupported: native target does not load {byte_bool.group(1)} as a byte field"
         return method.signature + " {", indent_body([f"{field} != 0"]) + "\n    }"
+
+    byte_eq_value = re.fullmatch(
+        r"byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)\s*==\s*value",
+        body,
+    )
+    if byte_eq_value:
+        field = field_for_byte(byte_eq_value.group(1))
+        if field is None:
+            return None, f"unsupported: native target does not load {byte_eq_value.group(1)} as a byte field"
+        return method.signature + " {", indent_body([f"{field} == value"]) + "\n    }"
+
+    byte_matches = re.fullmatch(
+        r"matches!\(\s*byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\),\s*([^)]+)\)",
+        body,
+    )
+    if byte_matches:
+        field = field_for_byte(byte_matches.group(1))
+        if field is None:
+            return None, f"unsupported: native target does not load {byte_matches.group(1)} as a byte field"
+        return method.signature + " {", indent_body([f"matches!({field}, {byte_matches.group(2).strip()})"]) + "\n    }"
 
     byte_usize = re.fullmatch(
         r"usize::from\(\s*byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)\s*\)",
         body,
     )
     if byte_usize:
-        field = field_for(byte_usize.group(1), 1)
+        field = field_for_byte(byte_usize.group(1))
         if field is None:
             return None, f"unsupported: native target does not load {byte_usize.group(1)} as a byte field"
         return method.signature + " {", indent_body([f"usize::from({field})"]) + "\n    }"
@@ -685,10 +1133,28 @@ def translated_native_read_method(
         body,
     )
     if byte_shift_usize:
-        field = field_for(byte_shift_usize.group(1), 1)
+        field = field_for_byte(byte_shift_usize.group(1))
         if field is None:
             return None, f"unsupported: native target does not load {byte_shift_usize.group(1)} as a byte field"
         return method.signature + " {", indent_body([f"usize::from({field} >> {byte_shift_usize.group(2)})"]) + "\n    }"
+
+    byte_wrapping_sub = re.fullmatch(
+        r"byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)\.wrapping_sub\("
+        r"\s*byte\(\s*self\.ram\s*,\s*([A-Z][A-Z0-9_]+)\s*\)\s*\)",
+        body,
+    )
+    if byte_wrapping_sub:
+        left = field_for_byte(byte_wrapping_sub.group(1))
+        right = field_for_byte(byte_wrapping_sub.group(2))
+        if left is None:
+            return None, f"unsupported: native target does not load {byte_wrapping_sub.group(1)} as a byte field"
+        if right is None:
+            return None, f"unsupported: native target does not load {byte_wrapping_sub.group(2)} as a byte field"
+        return method.signature + " {", indent_body([f"{left}.wrapping_sub({right})"]) + "\n    }"
+
+    same_view_signed = re.fullmatch(r"self\.([a-z][A-Za-z0-9_]*)\(\)\s+as\s+i8", body)
+    if same_view_signed:
+        return method.signature + " {", indent_body([f"self.{same_view_signed.group(1)}() as i8"]) + "\n    }"
 
     return None, "unsupported: body shape needs manual native primitive"
 
@@ -1192,9 +1658,24 @@ def parse_args() -> argparse.Namespace:
         help="emit native bridge method candidates for simple missing RAM view methods",
     )
     parser.add_argument(
+        "--emit-native-field-promotion-draft",
+        action="store_true",
+        help="emit native field/load/write/getter candidates for used source methods missing on a native type",
+    )
+    parser.add_argument(
         "--emit-method-codemod-map",
         action="store_true",
         help="emit --map lines for same-name methods that exist on a target native accessor/type",
+    )
+    parser.add_argument(
+        "--bridge-reduction-report",
+        action="store_true",
+        help="rank remaining native bridge mutator slices by domain, risk, and payoff",
+    )
+    parser.add_argument(
+        "--bridge-max-risk",
+        choices=["low", "medium", "high"],
+        help="with --bridge-reduction-report, include only bridge slices at or below this risk",
     )
     parser.add_argument(
         "--target-accessor",
@@ -1233,6 +1714,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if args.emit_native_field_promotion_draft and not args.target_type:
+        print("--emit-native-field-promotion-draft requires --target-type", file=sys.stderr)
+        return 1
 
     uses = selected_uses(
         args.kind,
@@ -1242,10 +1726,10 @@ def main() -> int:
         args.exclude_path,
     )
     plans = accessor_plans(uses)
-    if args.limit > 0:
-        plans = plans[: args.limit]
 
     if args.emit_work_area_skeleton:
+        if args.limit > 0:
+            plans = plans[: args.limit]
         if len(plans) != 1:
             print(
                 f"--emit-work-area-skeleton requires exactly one selected accessor, got {len(plans)}",
@@ -1255,12 +1739,42 @@ def main() -> int:
         return emit_work_area_skeleton(plans[0], args.field_limit)
 
     if args.api_diff:
+        if args.limit > 0:
+            plans = plans[: args.limit]
         return print_api_diff(plans, args.method_limit)
 
+    if args.bridge_reduction_report:
+        if args.format == "json":
+            print_bridge_reduction_json(
+                plans,
+                args.method_limit,
+                args.file_limit,
+                args.bridge_max_risk,
+                args.limit,
+            )
+        else:
+            print_bridge_reduction_text(
+                plans,
+                args.method_limit,
+                args.file_limit,
+                args.bridge_max_risk,
+                args.limit,
+            )
+        return 0
+
     if args.emit_bridge_method_stubs:
+        if args.limit > 0:
+            plans = plans[: args.limit]
         return emit_bridge_method_stubs(plans, args.method_limit)
 
+    if args.emit_native_field_promotion_draft:
+        if args.limit > 0:
+            plans = plans[: args.limit]
+        return print_native_field_promotion_draft(plans, args.target_type, args.method_limit)
+
     if args.emit_method_codemod_map or args.write_method_codemod_map:
+        if args.limit > 0:
+            plans = plans[: args.limit]
         return print_method_codemod_map(
             plans,
             args.target_type,
@@ -1269,6 +1783,8 @@ def main() -> int:
             args.write_method_codemod_map,
         )
 
+    if args.limit > 0:
+        plans = plans[: args.limit]
     if args.format == "json":
         print_json(plans, args.method_limit, args.file_limit, args.projection_fields, args.field_limit)
     else:

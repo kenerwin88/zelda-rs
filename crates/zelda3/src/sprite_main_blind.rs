@@ -1159,7 +1159,7 @@ impl ZeldaState {
                             sprite.set_delay_main(255);
                             sprite.set_hit_timer(255);
                         }
-                        self.player_state_mut().increment_menu_block_flag();
+                        self.follower_link_state_mut().increment_menu_block_flag();
                         self.sprite_sfx_queue_sfx3_with_pan(k, 0x22);
                         return;
                     }
@@ -1219,9 +1219,8 @@ impl ZeldaState {
             sprite.set_ai_state(0);
         }
         // sprite_x_hi[k] = HIBYTE(link_x_coord); sprite_y_hi[k] = HIBYTE(link_y_coord);
-        let player = self.player_state();
-        let link_x_high = player.x_high();
-        let link_y_high = player.y_high();
+        let link_x_high = self.game_state.player.follower_link.x_high();
+        let link_y_high = self.game_state.player.follower_link.y_high();
         {
             let mut sprite = self.sprite_slot_mut(k);
             sprite.set_x_high(link_x_high);
@@ -1558,19 +1557,22 @@ impl ZeldaState {
         if (sprite.delay_aux4() | sprite.f()) == 0 {
             self.sprite_check_damage_to_and_from_link_for_blind(k);
         }
-        let link_x = self.player_state().x();
+        let link_x = self.game_state.player.follower_link.x();
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
-        let link_y = self.player_state().y();
+        let link_y = self.game_state.player.follower_link.y();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let dx = link_x.wrapping_sub(cur_x).wrapping_add(14);
         let dy = link_y.wrapping_sub(cur_y);
-        let blink_or_disable = self.player_state().blink_countdown()
-            | self.player_state().sprite_damage_disable_timer();
+        let blink_or_disable = self.game_state.player.follower_link.blink_countdown()
+            | self
+                .game_state
+                .player
+                .follower_link
+                .sprite_damage_disable_timer();
         if dx < 28 && dy < 28 && blink_or_disable == 0 {
-            self.player_state_mut().set_given_damage(8);
-            let mut player = self.player_state_mut();
-            player.set_auxiliary_state(1);
-            player.set_incapacitated_timer(16);
+            self.follower_link_state_mut().set_given_damage(8);
+            self.follower_link_state_mut().set_auxiliary_state(1);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
             self.follower_link_state_mut().xor_actual_velocity_xy(255);
         }
     }
@@ -1593,7 +1595,7 @@ impl ZeldaState {
             [0, 1, 2, 3, 4, 3, 2, 1, 0, 15, 14, 13, 12, 13, 14, 15, 0];
         const BLIND_HEAD_FRAME_BY_DISTANCE: [u8; 8] = [0, 1, 1, 2, 2, 3, 3, 4];
         if self.sprite_slot(k).wall_collision() == 0 {
-            let lx = self.player_state().x() as u8;
+            let lx = self.game_state.player.follower_link.x() as u8;
             let t1_raw = BLIND_HEAD_FRAME_BY_DISTANCE[(lx >> 5) as usize] as i32;
             let direction = self.sprite_slot(k).direction();
             let t1 = if direction == 3 { -t1_raw } else { t1_raw };
@@ -1633,7 +1635,7 @@ impl ZeldaState {
             [0, 0, 4, 8, 8, 8, 4, 0, 0, 0, -4, -8, -8, -8, -4, 0];
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
             let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
-            self.system_signals_mut().set_sound_effect_2(sfx);
+            self.set_sound_effect_2(sfx);
             self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
             let i = self.sprite_slot(k).head_direction();
             let i_idx = i as usize;
@@ -1882,7 +1884,7 @@ mod tests {
             sprite.set_wall_collision(0);
             sprite.set_direction(2); // t0 = 0, no negation
         }
-        s.player_state_mut().set_x(0); // tab idx 0 -> t1 = 0
+        s.follower_link_state_mut().set_x(0); // tab idx 0 -> t1 = 0
         s.sprite_system_mut().set_blind_head_anim_counter(0); // idx 0 -> table[0] = 0
         s.blind_animate(1);
         assert_eq!(s.sprite_slot(1).head_direction(), 0);

@@ -86,8 +86,8 @@ impl ZeldaState {
             self.replay_reload_file_select_stall = 0;
         }
 
-        self.ppu_scroll_copy_mut().set_bg3_h_copy2(0);
-        self.ppu_scroll_copy_mut().set_bg3_v_copy2(0);
+        self.set_bg3_h_copy2(0);
+        self.set_bg3_v_copy2(0);
         match self.game_state.frame.submodule {
             0 => self.module_select_file_0(),
             1 => self.file_select_re_init_save_flags_and_erase_triforce(),
@@ -103,11 +103,10 @@ impl ZeldaState {
         self.enable_force_blank();
         self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
-        self.system_signals_mut().set_music_control(11);
+        self.set_music_control(11);
         self.increment_submodule();
-        self.palette_buffer_mut()
-            .select_overworld_aux_palette_offset();
-        self.palette_buffer_mut().set_palette_main_indoors(6);
+        self.select_overworld_aux_palette_offset();
+        self.set_palette_main_indoors(6);
         self.set_core_update_disable_flag(6);
         self.palette_load_dungeon_set();
         self.palette_load_ow_bg3();
@@ -129,15 +128,13 @@ impl ZeldaState {
         let data = self
             .decompressed_sprite_graphics_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
-        self.graphics_scratch_mut()
-            .copy_to_primary_decompression_buffer(&data);
+        self.copy_to_primary_decompression_buffer(&data);
         self.do3_to_4_high_to_vram(0x5000, &data);
 
         let data = self
             .decompressed_sprite_graphics_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
-        self.graphics_scratch_mut()
-            .copy_to_primary_decompression_buffer(&data);
+        self.copy_to_primary_decompression_buffer(&data);
         self.do3_to_4_high_to_vram(0x5400, &data);
 
         self.transfer_font_to_vram();
@@ -145,8 +142,7 @@ impl ZeldaState {
         let data = self
             .decompressed_sprite_graphics_data(0x6b)
             .expect("file select sprite sheet 0x6b must decompress");
-        self.graphics_scratch_mut()
-            .copy_to_primary_decompression_buffer(&data);
+        self.copy_to_primary_decompression_buffer(&data);
         for i in 0..0x300 {
             self.ppu.vram[0x7800 + i] = read_word_from_slice(&data, i * 2);
         }
@@ -182,7 +178,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_re_init_save_flags_and_erase_triforce(&mut self) {
-        self.select_file_scratch_mut().clear_save_slot_flags();
+        self.clear_select_file_save_slot_flags();
         self.file_select_erase_triforce();
     }
 
@@ -191,7 +187,7 @@ impl ZeldaState {
         self.enable_force_blank();
         self.erase_tile_maps_triforce();
         self.palette_load_for_file_select();
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
         self.increment_submodule();
     }
 
@@ -253,7 +249,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_trigger_stripes_and_advance(&mut self) {
-        self.select_file_scratch_mut().restore_remembered_cursor();
+        self.restore_select_file_remembered_cursor();
         self.increment_submodule();
         self.set_bg_vram_load_mode(6);
     }
@@ -291,12 +287,12 @@ impl ZeldaState {
         const FAERIE_Y: [u8; 5] = [0x4a, 0x6a, 0x8a, 0xaf, 0xbf];
 
         if self.game_state.messaging.select_file_menu.cursor() < 3 {
-            self.select_file_scratch_mut().remember_current_cursor();
+            self.remember_select_file_cursor();
         }
 
         for k in 0..3 {
             if read_le_u16(&self.sram, k * 0x500 + 0x03e5) == 0x55aa {
-                self.select_file_scratch_mut().mark_save_slot_present(k);
+                self.mark_select_file_save_slot_present(k);
                 self.select_file_func5_draw_oams(k);
                 self.select_file_func6_draw_oams2(k);
                 self.select_file_func17(k);
@@ -311,22 +307,22 @@ impl ZeldaState {
             | self.game_state.player.follower_link.filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_sound_effect_2(0x20);
             if a & 8 != 0 {
-                self.select_file_scratch_mut().decrement_cursor();
+                self.decrement_select_file_cursor();
                 if self.game_state.messaging.select_file_menu.cursor() & 0x80 != 0 {
-                    self.select_file_scratch_mut().set_cursor(4);
+                    self.set_select_file_cursor(4);
                 }
             } else {
-                self.select_file_scratch_mut().increment_cursor();
+                self.increment_select_file_cursor();
                 if self.game_state.messaging.select_file_menu.cursor() == 5 {
-                    self.select_file_scratch_mut().clear_cursor();
+                    self.clear_select_file_cursor();
                 }
             }
         } else if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if self.game_state.messaging.select_file_menu.cursor() < 3 {
-                self.select_file_scratch_mut().clear_transition_scratch();
+                self.clear_select_file_transition_scratch();
                 if self
                     .game_state
                     .messaging
@@ -338,7 +334,7 @@ impl ZeldaState {
                     self.set_submodule(0);
                     self.set_subsubmodule(0);
                 } else {
-                    self.system_signals_mut().set_music_control(0xf1);
+                    self.set_music_control(0xf1);
                     let slot = self
                         .game_state
                         .messaging
@@ -364,11 +360,11 @@ impl ZeldaState {
                     3
                 };
                 self.set_main_module(main_module);
-                self.select_file_scratch_mut().clear_cursor();
+                self.clear_select_file_cursor();
                 self.set_submodule(0);
                 self.set_subsubmodule(0);
             } else {
-                self.system_signals_mut().set_sound_effect_1(0x3c);
+                self.set_sound_effect_1(0x3c);
             }
         }
     }
@@ -391,7 +387,7 @@ impl ZeldaState {
         const FLAGS2: [u8; 3] = [0x32, 0x36, 0x3a];
         const FLAGS3: [u8; 3] = [0x30, 0x34, 0x38];
 
-        self.player_state_mut()
+        self.follower_link_state_mut()
             .set_link_dma_graphics_index_word(0x116 * 2);
         let sram_base = k * 0x500;
         let oam = OAM_IDX[k] / 4;
@@ -538,20 +534,20 @@ impl ZeldaState {
             } else {
                 k.wrapping_sub(1)
             };
-            self.select_file_scratch_mut().set_cursor(k & 1);
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_select_file_cursor(k & 1);
+            self.set_sound_effect_2(0x20);
         }
 
         let a = (self.game_state.player.follower_link.filtered_joypad_l() & 0xc0
             | self.game_state.player.follower_link.filtered_joypad_h())
             & 0xd0;
         if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if self.game_state.messaging.select_file_menu.cursor() == 0 {
-                self.system_signals_mut().set_sound_effect_2(0x22);
-                self.system_signals_mut().set_sound_effect_1(0);
+                self.set_sound_effect_2(0x22);
+                self.set_sound_effect_1(0);
                 let k = self.game_state.frame.subsubmodule as usize;
-                self.select_file_scratch_mut().clear_save_slot_flag(k);
+                self.clear_select_file_save_slot_flag(k);
                 let base = k * 0x500;
                 self.sram[base..base + 0x500].fill(0);
                 self.sram[base + 0x0f00..base + 0x1400].fill(0);
@@ -563,7 +559,7 @@ impl ZeldaState {
     }
 
     pub(super) fn module02_copy_file(&mut self) {
-        self.select_file_scratch_mut().clear_remembered_cursor();
+        self.clear_select_file_remembered_cursor();
         match self.game_state.frame.submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
@@ -584,7 +580,7 @@ impl ZeldaState {
         while self.game_state.messaging.select_file_menu.save_slot_flag(i) == 0 {
             i += 1;
         }
-        self.select_file_scratch_mut().set_cursor(i as u8);
+        self.set_select_file_cursor(i as u8);
     }
 
     pub(super) fn copy_file_choose_selection(&mut self) {
@@ -702,16 +698,16 @@ impl ZeldaState {
                     }
                 }
             }
-            self.select_file_scratch_mut().set_cursor(k);
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_select_file_cursor(k);
+            self.set_sound_effect_2(0x20);
         } else if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if self.game_state.messaging.select_file_menu.cursor() == 3 {
                 self.return_to_file_select();
                 return;
             }
             let r16 = self.game_state.messaging.select_file_menu.cursor();
-            self.select_file_scratch_mut().set_copy_source_slot(r16);
+            self.set_select_file_copy_source_slot(r16);
             self.copy_vram_upload_buffer_bytes(52, &COPY_TARGET_HEADER_STRIPE);
             if self.game_state.messaging.select_file_menu.cursor() != 2 {
                 let dst = self.game_state.display.vram_upload_buffer_address(
@@ -721,7 +717,7 @@ impl ZeldaState {
                 self.write_vram_upload_absolute_word(dst + 58, 0x4762);
             }
             self.increment_submodule();
-            self.select_file_scratch_mut().clear_cursor();
+            self.clear_select_file_cursor();
         }
     }
 
@@ -736,7 +732,7 @@ impl ZeldaState {
                     .select_file_menu
                     .copy_source_slot_x2()
             {
-                self.select_file_scratch_mut().set_choice(k, t as u8);
+                self.set_select_file_choice(k, t as u8);
                 k = k.wrapping_sub(1);
             }
             t -= 2;
@@ -815,25 +811,25 @@ impl ZeldaState {
                     k = 0;
                 }
             }
-            self.select_file_scratch_mut().set_cursor(k);
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_select_file_cursor(k);
+            self.set_sound_effect_2(0x20);
         } else if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if self.game_state.messaging.select_file_menu.cursor() == 2 {
                 self.return_to_file_select();
-                self.select_file_scratch_mut().clear_cursor();
+                self.clear_select_file_cursor();
                 return;
             }
             let r16 = self.game_state.messaging.select_file_menu.cursor_usize();
             let target = self.game_state.messaging.select_file_menu.choice(r16) as u16;
-            self.select_file_scratch_mut().set_target_word(target);
+            self.set_select_file_target_word(target);
             self.copy_vram_upload_buffer_bytes(52, &COPY_TARGET_CONFIRM_STRIPE);
             if self.game_state.messaging.select_file_menu.cursor() == 0 {
                 self.write_vram_upload_buffer_word(52, 0x1462);
                 self.write_vram_upload_buffer_word(58, 0x3462);
             }
             self.increment_submodule();
-            self.select_file_scratch_mut().clear_cursor();
+            self.clear_select_file_cursor();
         }
     }
 
@@ -848,20 +844,20 @@ impl ZeldaState {
             | self.game_state.player.follower_link.filtered_joypad_h())
             & 0xfc;
         if a & 0x2c != 0 {
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_sound_effect_2(0x20);
             if a & 0x24 != 0 {
-                self.select_file_scratch_mut().increment_cursor();
+                self.increment_select_file_cursor();
                 if self.game_state.messaging.select_file_menu.cursor() >= 2 {
-                    self.select_file_scratch_mut().clear_cursor();
+                    self.clear_select_file_cursor();
                 }
             } else {
-                self.select_file_scratch_mut().decrement_cursor();
+                self.decrement_select_file_cursor();
                 if self.game_state.messaging.select_file_menu.cursor() & 0x80 != 0 {
-                    self.select_file_scratch_mut().set_cursor(1);
+                    self.set_select_file_cursor(1);
                 }
             }
         } else if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if self.game_state.messaging.select_file_menu.cursor() == 0 {
                 let dst_slot =
                     (self.game_state.messaging.select_file_menu.target_word() >> 1) as usize;
@@ -872,12 +868,11 @@ impl ZeldaState {
                     .copy_source_slot();
                 let src = self.sram[src_slot * 0x500..src_slot * 0x500 + 0x500].to_vec();
                 self.sram[dst_slot * 0x500..dst_slot * 0x500 + 0x500].copy_from_slice(&src);
-                self.select_file_scratch_mut()
-                    .mark_save_slot_present(dst_slot);
+                self.mark_select_file_save_slot_present(dst_slot);
                 self.zelda_write_sram();
             }
             self.return_to_file_select();
-            self.select_file_scratch_mut().clear_cursor();
+            self.clear_select_file_cursor();
         }
     }
 
@@ -901,12 +896,12 @@ impl ZeldaState {
         while self.game_state.messaging.select_file_menu.save_slot_flag(i) == 0 {
             i += 1;
         }
-        self.select_file_scratch_mut().set_cursor(i as u8);
+        self.set_select_file_cursor(i as u8);
     }
 
     pub(super) fn kill_file_handle_selection(&mut self) {
         if self.game_state.messaging.select_file_menu.cursor() < 3 {
-            self.select_file_scratch_mut().remember_current_cursor();
+            self.remember_select_file_cursor();
         }
         self.kill_file_choose_target();
         self.set_bg_vram_load_mode(1);
@@ -998,15 +993,15 @@ impl ZeldaState {
                     }
                 }
             }
-            self.system_signals_mut().set_sound_effect_2(0x20);
+            self.set_sound_effect_2(0x20);
         }
-        self.select_file_scratch_mut().set_cursor(k);
+        self.set_select_file_cursor(k);
 
         let a = (self.game_state.player.follower_link.filtered_joypad_l() & 0xc0
             | self.game_state.player.follower_link.filtered_joypad_h())
             & 0xd0;
         if a != 0 {
-            self.system_signals_mut().set_sound_effect_1(0x2c);
+            self.set_sound_effect_1(0x2c);
             if k == 3 {
                 self.return_to_file_select();
                 return;
@@ -1022,7 +1017,7 @@ impl ZeldaState {
             }
             let subsubmodule = self.game_state.messaging.select_file_menu.cursor();
             self.set_subsubmodule(subsubmodule);
-            self.select_file_scratch_mut().clear_cursor();
+            self.clear_select_file_cursor();
         }
     }
 
@@ -1039,8 +1034,8 @@ impl ZeldaState {
     pub(super) fn name_file_erase_save(&mut self) {
         self.file_select_erase_triforce();
         self.set_irq_control_flag(1);
-        self.select_file_scratch_mut().clear_name_entry_state();
-        self.ppu_scroll_copy_mut().set_bg3_h_copy2(0);
+        self.clear_select_file_name_entry_state();
+        self.set_bg3_h_copy2(0);
 
         let offs = self.game_state.messaging.select_file_menu.cursor_usize() * 0x500;
         self.attract_scene_mut().set_legend_ctr(offs as u16);
@@ -1100,8 +1095,7 @@ impl ZeldaState {
                 break;
             }
             if j != 0x31 {
-                self.select_file_scratch_mut()
-                    .advance_name_scroll_x_step_by(4);
+                self.advance_select_file_name_scroll_x_step_by(4);
             }
             j = j.wrapping_sub(1);
             let target = NAME_PLAYER_VRAM_SETUP_WORDS[self
@@ -1115,7 +1109,7 @@ impl ZeldaState {
                 } else {
                     0
                 };
-                self.select_file_scratch_mut().set_name_scroll_x_step(step);
+                self.set_select_file_name_scroll_x_step(step);
                 self.name_file_check_for_scroll_input_x();
                 continue;
             }
@@ -1136,7 +1130,7 @@ impl ZeldaState {
                 .name_scroll_x()
                 .wrapping_add(delta)
                 & 0x01ff;
-            self.select_file_scratch_mut().set_name_scroll_x(next);
+            self.set_select_file_name_scroll_x(next);
             break;
         }
 
@@ -1153,13 +1147,10 @@ impl ZeldaState {
             }
             let target_y = NAME_PLAYER_ROW_TILE_BASES
                 [self.game_state.messaging.select_file_menu.name_row_usize()];
-            if self
-                .select_file_scratch_mut()
-                .step_name_cursor_y_toward(target_y)
-            {
+            if self.step_select_file_name_cursor_y_toward(target_y) {
                 break;
             }
-            self.select_file_scratch_mut().clear_name_scroll_y_step();
+            self.clear_select_file_name_scroll_y_step();
             self.name_file_check_for_scroll_input_y();
         }
 
@@ -1199,7 +1190,7 @@ impl ZeldaState {
                 return;
             }
 
-            self.system_signals_mut().set_sound_effect_1(0x2b);
+            self.set_sound_effect_1(0x2b);
             let table_index = self
                 .game_state
                 .messaging
@@ -1208,11 +1199,10 @@ impl ZeldaState {
                 + self.game_state.messaging.select_file_menu.name_row_usize() * 0x20;
             let t = NAME_PLAYER_CHAR_TILE_BY_CURSOR[table_index];
             if t == 0x5a {
-                self.select_file_scratch_mut().move_name_slot_left_wrapped();
+                self.move_select_file_name_slot_left_wrapped();
                 return;
             } else if t == 0x44 {
-                self.select_file_scratch_mut()
-                    .move_name_slot_right_wrapped();
+                self.move_select_file_name_slot_right_wrapped();
                 return;
             } else if t != 0x6f {
                 let name_slot = self.game_state.messaging.select_file_menu.name_slot_usize();
@@ -1220,15 +1210,14 @@ impl ZeldaState {
                 let chr = ((t as u16 & 0xfff0) * 2) + (t as u16 & 0x0f);
                 write_le_u16(&mut self.sram, p + KSRM_OFFS_NAME, chr);
                 self.name_file_draw_selected_character(name_slot, chr);
-                self.select_file_scratch_mut()
-                    .move_name_slot_right_wrapped();
+                self.move_select_file_name_slot_right_wrapped();
                 return;
             }
         }
 
         let name_base = self.game_state.ending.attract_scene.legend_ctr() as usize;
         if (0..6).all(|i| read_le_u16(&self.sram, name_base + KSRM_OFFS_NAME + i * 2) == 0x00a9) {
-            self.system_signals_mut().set_sound_effect_1(0x3c);
+            self.set_sound_effect_1(0x3c);
             return;
         }
 
@@ -1250,7 +1239,7 @@ impl ZeldaState {
         self.zelda_write_sram();
         self.return_to_file_select();
         self.set_irq_control_flag(0xff);
-        self.system_signals_mut().set_sound_effect_1(0x2c);
+        self.set_sound_effect_1(0x2c);
     }
 
     pub(super) fn name_file_draw_selected_character(&mut self, k: usize, chr: u16) {
@@ -1274,10 +1263,8 @@ impl ZeldaState {
         if a != 0 {
             let k = a.wrapping_sub(1);
             let table_index = k as usize * 2;
-            self.select_file_scratch_mut()
-                .set_name_scroll_x_direction(k);
-            self.select_file_scratch_mut()
-                .advance_name_scroll_x_step_by(1);
+            self.set_select_file_name_scroll_x_direction(k);
+            self.advance_select_file_name_scroll_x_step_by(1);
             let add = read_word_from_slice(&NAME_ENTRY_X_SCROLL_WORDS, table_index);
             let cmp = read_word_from_slice(&NAME_ENTRY_X_SCROLL_WORDS, 4 + table_index);
             let set = read_word_from_slice(&NAME_ENTRY_X_SCROLL_WORDS, 8 + table_index);
@@ -1286,7 +1273,7 @@ impl ZeldaState {
             if t == cmp {
                 t = set;
             }
-            self.select_file_scratch_mut().set_name_column(t as u8);
+            self.set_select_file_name_column(t as u8);
         }
     }
 
@@ -1297,7 +1284,7 @@ impl ZeldaState {
         if a != 0 {
             let row = self.game_state.messaging.select_file_menu.name_row();
             if ((a << 1) | row) == 0x10 || ((a << 2) | row) == 0x13 {
-                self.select_file_scratch_mut().set_choice(1, a);
+                self.set_select_file_choice(1, a);
                 return;
             }
             a >>= 2;
@@ -1306,12 +1293,11 @@ impl ZeldaState {
             if t == NAME_ENTRY_Y_SCROLL_STEPS[2 + k] {
                 t = NAME_ENTRY_Y_SCROLL_STEPS[4 + k];
             }
-            self.select_file_scratch_mut().set_name_row(t);
-            self.select_file_scratch_mut()
-                .increment_name_scroll_y_step();
-            self.select_file_scratch_mut().set_choice(1, a);
+            self.set_select_file_name_row(t);
+            self.increment_select_file_name_scroll_y_step();
+            self.set_select_file_choice(1, a);
         } else {
-            self.select_file_scratch_mut().set_choice(0, 0);
+            self.set_select_file_choice(0, 0);
         }
     }
 
@@ -1333,7 +1319,7 @@ impl ZeldaState {
         self.set_main_module(1);
         self.set_submodule(1);
         self.set_subsubmodule(0);
-        self.select_file_scratch_mut().clear_cursor();
+        self.clear_select_file_cursor();
     }
 }
 
@@ -1344,7 +1330,7 @@ mod tests {
     #[test]
     fn name_entry_vertical_scroll_down_from_top_row_matches_c() {
         let mut state = ZeldaState::new();
-        state.select_file_scratch_mut().set_name_row(0);
+        state.set_select_file_name_row(0);
         state.follower_link_state_mut().set_joypad1h_last(0x04);
 
         state.name_file_check_for_scroll_input_y();
@@ -1364,8 +1350,8 @@ mod tests {
     #[test]
     fn name_entry_vertical_scroll_down_released_settles_on_next_row() {
         let mut state = ZeldaState::new();
-        state.select_file_scratch_mut().set_name_row(0);
-        state.select_file_scratch_mut().set_name_cursor_y(0x83);
+        state.set_select_file_name_row(0);
+        state.set_select_file_name_cursor_y(0x83);
         state.follower_link_state_mut().set_joypad1h_last(0x04);
 
         state.name_file_check_for_scroll_input_y();

@@ -280,7 +280,7 @@ impl ZeldaState {
         loop {
             self.sprite_slot_mut(k).increment_subtype2();
             if (self.sprite_slot(k).subtype2() & 15) == 0 {
-                self.system_signals_mut().set_sound_effect_1(0x21);
+                self.set_sound_effect_1(0x21);
             }
             n -= 1;
             if n == 0 {
@@ -535,7 +535,7 @@ impl ZeldaState {
                 if dir == self.sprite_slot(k).head_direction() {
                     self.sprite_slot_mut(k).set_anim_clock(2);
                     let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
-                    self.system_signals_mut().set_sound_effect_2(sfx);
+                    self.set_sound_effect_2(sfx);
                 }
             }
         }
@@ -567,8 +567,12 @@ impl ZeldaState {
     // }
     pub(super) fn helmasaur_king_check_mask_damage_from_hammer(&mut self, k: usize) {
         if self.sprite_slot(k).c() >= 3
-            || !self.player_state().item_in_hand_has(10)
-            || self.player_state().has_disabled_oam_offsets()
+            || !self.game_state.player.follower_link.item_in_hand_has(10)
+            || self
+                .game_state
+                .player
+                .follower_link
+                .has_disabled_oam_offsets()
         {
             return;
         }
@@ -593,11 +597,11 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_y_low(bak);
         if self.check_if_hit_boxes_overlap(&hb) {
             self.sprite_slot_mut(k).decrement_health();
-            self.system_signals_mut().set_sound_effect_2(0x21);
+            self.set_sound_effect_2(0x21);
             let pt = self.sprite_project_speed_towards_link(k, 0x30);
             self.follower_link_state_mut()
                 .set_actual_velocity_xy(pt.x, pt.y);
-            self.player_state_mut().set_incapacitated_timer(8);
+            self.follower_link_state_mut().set_incapacitated_timer(8);
             if self.game_state.sprites.garnish_runtime.repulsespark_timer() == 0 {
                 let mut garnish = self.garnish_state_mut();
                 garnish.set_repulsespark_x_lo(pt.y);
@@ -618,8 +622,8 @@ impl ZeldaState {
         if (self.game_state.frame.frame_counter & 7) != 0 {
             return;
         }
-        let link_x = self.player_state().x();
-        let link_y = self.player_state().y();
+        let link_x = self.game_state.player.follower_link.x();
+        let link_y = self.game_state.player.follower_link.y();
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         if link_x.wrapping_sub(cur_x).wrapping_add(36) < 72

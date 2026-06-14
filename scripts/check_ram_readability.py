@@ -856,6 +856,99 @@ def print_semantic_migration_progress(limit: int) -> int:
     return len(uses)
 
 
+def print_actionable_semantic_migration(limit: int, output_format: str) -> int:
+    """Print migration work that should be actively driven down now.
+
+    Dual-write native bridge mutators are intentionally excluded. They are the
+    transition mechanism while native state still projects to RAM; call sites
+    using those APIs are not byte-backed-view debt.
+    """
+
+    uses = semantic_accessor_uses()
+    actionable = [
+        use
+        for use in uses
+        if use.accessor.kind
+        in {
+            "native-read-helper",
+            "native-copy-helper",
+            "ram-backed-view",
+        }
+    ]
+
+    by_accessor: dict[tuple[str, str, str], list[SemanticAccessorUse]] = {}
+    for use in actionable:
+        key = (use.accessor.kind, use.accessor.name, use.method)
+        by_accessor.setdefault(key, []).append(use)
+
+    priority = {
+        "native-read-helper": 0,
+        "native-copy-helper": 1,
+        "ram-backed-view": 2,
+    }
+    rows = sorted(
+        by_accessor.items(),
+        key=lambda item: (
+            priority.get(item[0][0], 99),
+            -len(item[1]),
+            item[0][1],
+            item[0][2],
+        ),
+    )
+    total = sum(len(group) for _, group in rows)
+
+    if output_format == "json":
+        shown = rows if limit <= 0 else rows[:limit]
+        payload = {
+            "total_uses": total,
+            "total_groups": len(rows),
+            "groups": [
+                {
+                    "uses": len(group),
+                    "kind": kind,
+                    "accessor": accessor,
+                    "method": method,
+                    "return_type": group[0].accessor.return_type,
+                    "first_path": str(group[0].path.relative_to(REPO_ROOT)),
+                    "first_line": group[0].line,
+                }
+                for (kind, accessor, method), group in shown
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return total
+
+    print(
+        "actionable semantic migration backlog "
+        f"(excludes expected dual-write bridge mutators): {total} accessor use(s), "
+        f"{len(rows)} grouped call pattern(s)"
+    )
+    shown = rows if limit <= 0 else rows[:limit]
+    for (kind, accessor, method), group in shown:
+        sample = group[0]
+        rel = sample.path.relative_to(REPO_ROOT)
+        print(f"{len(group):4} {kind:22} {accessor}().{method}() first={rel}:{sample.line}")
+    if len(shown) < len(rows):
+        print(
+            f"... {len(rows) - len(shown)} more grouped pattern(s); "
+            "pass --migration-candidate-limit 0 to show all"
+        )
+    return total
+
+
+def actionable_semantic_migration_uses() -> list[SemanticAccessorUse]:
+    return [
+        use
+        for use in semantic_accessor_uses()
+        if use.accessor.kind
+        in {
+            "native-read-helper",
+            "native-copy-helper",
+            "ram-backed-view",
+        }
+    ]
+
+
 def scan_consts() -> list[RamConst]:
     constants: list[RamConst] = []
     for path in rust_files():
@@ -1239,6 +1332,16 @@ def main() -> int:
         help="summarize semantic migration progress by authority class",
     )
     parser.add_argument(
+        "--report-actionable-migration",
+        action="store_true",
+        help="print native migration backlog excluding expected dual-write bridge mutators",
+    )
+    parser.add_argument(
+        "--fail-on-actionable-migration",
+        action="store_true",
+        help="fail when actionable native migration debt exists; expected dual-write bridge mutators are ignored",
+    )
+    parser.add_argument(
         "--migration-candidate-limit",
         type=int,
         default=40,
@@ -1342,6 +1445,29 @@ def main() -> int:
         if args.report_migration_progress
         else 0
     )
+    actionable_migration_count = (
+        print_actionable_semantic_migration(
+            args.migration_candidate_limit,
+            args.migration_candidate_format,
+        )
+        if args.report_actionable_migration
+        else 0
+    )
+    if args.fail_on_actionable_migration:
+        actionable_uses = actionable_semantic_migration_uses()
+        actionable_migration_count = len(actionable_uses)
+        if actionable_uses:
+            if not args.report_actionable_migration:
+                print_actionable_semantic_migration(
+                    args.migration_candidate_limit,
+                    args.migration_candidate_format,
+                )
+            print(
+                "actionable semantic migration debt remains; "
+                "migrate native read/copy helpers and byte-backed semantic views",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.write_doc:
         doc_path = args.doc if args.doc.is_absolute() else REPO_ROOT / args.doc
@@ -1375,6 +1501,10 @@ def main() -> int:
         message += f"; {migration_candidate_count} semantic migration candidate accessor use(s)"
     if args.report_migration_progress:
         message += f"; {migration_progress_count} semantic migration accessor use(s)"
+    if args.report_actionable_migration:
+        message += f"; {actionable_migration_count} actionable semantic migration accessor use(s)"
+    if args.fail_on_actionable_migration:
+        message += f"; actionable semantic migration guard passed"
     print(message)
     return 0
 

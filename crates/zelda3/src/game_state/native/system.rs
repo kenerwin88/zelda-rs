@@ -395,6 +395,50 @@ impl SystemSignalsState {
     }
 }
 
+pub(crate) struct SystemWorkArea;
+
+impl SystemWorkArea {
+    pub(crate) fn clear_attract_low_work_area(ram: &mut [u8]) {
+        ram[ATTRACT_LOW_WORK_AREA_START..ATTRACT_LOW_WORK_AREA_START + ATTRACT_LOW_WORK_AREA_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn clear_startup_low_memory(ram: &mut [u8]) {
+        ram[STARTUP_LOW_MEMORY_START..STARTUP_LOW_MEMORY_START + STARTUP_LOW_MEMORY_LEN].fill(0);
+    }
+
+    pub(crate) fn clear_poly_thread_work_area(ram: &mut [u8]) {
+        ram[POLY_THREAD_WORK_AREA_START..POLY_THREAD_WORK_AREA_START + POLY_THREAD_WORK_AREA_LEN]
+            .fill(0);
+    }
+
+    pub(crate) fn write_poly_thread_bootstrap_bytes(ram: &mut [u8]) {
+        ram[POLY_THREAD_BOOTSTRAP_BYTES_OFFSET
+            ..POLY_THREAD_BOOTSTRAP_BYTES_OFFSET + POLY_THREAD_BOOTSTRAP_BYTES.len()]
+            .copy_from_slice(&POLY_THREAD_BOOTSTRAP_BYTES);
+    }
+
+    pub(crate) fn clear_intro_wram_block_columns(
+        ram: &mut [u8],
+        start_offset: u16,
+        stop_offset: u16,
+    ) -> u16 {
+        let mut offset = start_offset;
+        loop {
+            for block in 0..15 {
+                let base =
+                    INTRO_CLEAR_BLOCK_BASE + offset as usize + block * INTRO_CLEAR_BLOCK_STRIDE;
+                ram[base] = 0;
+                ram[base + 1] = 0;
+            }
+            offset = offset.wrapping_sub(2);
+            if offset == stop_offset {
+                return offset;
+            }
+        }
+    }
+}
+
 pub(crate) struct NativeSystemWorkAreaBridgeMut<'a> {
     ram: &'a mut [u8],
 }
@@ -405,26 +449,19 @@ impl<'a> NativeSystemWorkAreaBridgeMut<'a> {
     }
 
     pub(crate) fn clear_attract_low_work_area(&mut self) {
-        self.ram
-            [ATTRACT_LOW_WORK_AREA_START..ATTRACT_LOW_WORK_AREA_START + ATTRACT_LOW_WORK_AREA_LEN]
-            .fill(0);
+        SystemWorkArea::clear_attract_low_work_area(self.ram);
     }
 
     pub(crate) fn clear_startup_low_memory(&mut self) {
-        self.ram[STARTUP_LOW_MEMORY_START..STARTUP_LOW_MEMORY_START + STARTUP_LOW_MEMORY_LEN]
-            .fill(0);
+        SystemWorkArea::clear_startup_low_memory(self.ram);
     }
 
     pub(crate) fn clear_poly_thread_work_area(&mut self) {
-        self.ram
-            [POLY_THREAD_WORK_AREA_START..POLY_THREAD_WORK_AREA_START + POLY_THREAD_WORK_AREA_LEN]
-            .fill(0);
+        SystemWorkArea::clear_poly_thread_work_area(self.ram);
     }
 
     pub(crate) fn write_poly_thread_bootstrap_bytes(&mut self) {
-        self.ram[POLY_THREAD_BOOTSTRAP_BYTES_OFFSET
-            ..POLY_THREAD_BOOTSTRAP_BYTES_OFFSET + POLY_THREAD_BOOTSTRAP_BYTES.len()]
-            .copy_from_slice(&POLY_THREAD_BOOTSTRAP_BYTES);
+        SystemWorkArea::write_poly_thread_bootstrap_bytes(self.ram);
     }
 
     pub(crate) fn clear_intro_wram_block_columns(
@@ -432,19 +469,7 @@ impl<'a> NativeSystemWorkAreaBridgeMut<'a> {
         start_offset: u16,
         stop_offset: u16,
     ) -> u16 {
-        let mut offset = start_offset;
-        loop {
-            for block in 0..15 {
-                let base =
-                    INTRO_CLEAR_BLOCK_BASE + offset as usize + block * INTRO_CLEAR_BLOCK_STRIDE;
-                self.ram[base] = 0;
-                self.ram[base + 1] = 0;
-            }
-            offset = offset.wrapping_sub(2);
-            if offset == stop_offset {
-                return offset;
-            }
-        }
+        SystemWorkArea::clear_intro_wram_block_columns(self.ram, start_offset, stop_offset)
     }
 }
 

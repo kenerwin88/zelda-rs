@@ -328,10 +328,10 @@ impl ZeldaState {
     }
 
     pub(super) fn world_map_setup_hdma(&mut self) {
-        self.world_scroll_mut().set_bg1_x(0x0080);
-        self.world_scroll_mut().set_bg1_y(0x00c8);
-        self.ppu_scroll_copy_mut().set_mode7_center_y(0x01c9);
-        self.ppu_scroll_copy_mut().set_mode7_center_x(0x0100);
+        self.set_bg1_x(0x0080);
+        self.set_bg1_y(0x00c8);
+        self.set_mode7_center_y(0x01c9);
+        self.set_mode7_center_x(0x0100);
         self.set_bg12_window_selection(0);
         self.set_bg34_window_selection(0);
         self.set_object_color_window_selection(0);
@@ -345,9 +345,8 @@ impl ZeldaState {
             self.set_mode7_zoom_timer(12);
             self.set_overworld_map_flags(1);
             let y = self.game_state.player.special_exit_position.map_zoom_y();
-            self.world_scroll_mut().set_bg1_y(y);
-            self.ppu_scroll_copy_mut()
-                .set_mode7_center_y(y.wrapping_add(0x100));
+            self.set_bg1_y(y);
+            self.set_mode7_center_y(y.wrapping_add(0x100));
             let t0 = self
                 .game_state
                 .player
@@ -364,8 +363,7 @@ impl ZeldaState {
             } else {
                 t1
             };
-            self.world_scroll_mut()
-                .set_bg1_x(t2.wrapping_add(0x80) & !1);
+            self.set_bg1_x(t2.wrapping_add(0x80) & !1);
             self.OverworldMap_SetupHdma();
             self.set_hdma_enable_mask(0xc0);
         } else {
@@ -385,8 +383,7 @@ impl ZeldaState {
                 0
             };
             let len = 0x100.min(palette.len().saturating_sub(offset));
-            self.palette_buffer_mut()
-                .copy_main_palette_bytes(&palette[offset..offset + len], len);
+            self.copy_main_palette_bytes(&palette[offset..offset + len], len);
         }
     }
 
@@ -435,17 +432,17 @@ impl ZeldaState {
         self.load_gear_palette_from_asset(83, shield_index * 4, 0x1b8, 3);
 
         self.load_gear_palette_from_asset(81, armor as usize * 15, 0x1e2, 14);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_update_gloves_color(&mut self) {
         let gloves = self.game_state.inventory.items.gloves();
         if gloves != 0 {
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
-            self.palette_buffer_mut().set_aux_color(0xfd, color);
-            self.palette_buffer_mut().set_main_color(0xfd, color);
+            self.set_aux_color(0xfd, color);
+            self.set_main_color(0xfd, color);
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_for_file_select(&mut self) {
@@ -466,12 +463,12 @@ impl ZeldaState {
         };
         for i in 0..7 {
             let color = read_word_from_slice(&main_sprite_palette, (7 + i) * 2);
-            self.palette_buffer_mut().set_aux_color(0xe8 + i, color);
-            self.palette_buffer_mut().set_main_color(0xe8 + i, color);
+            self.set_aux_color(0xe8 + i, color);
+            self.set_main_color(0xe8 + i, color);
 
             let color = read_word_from_slice(&main_sprite_palette, (15 + 7 + i) * 2);
-            self.palette_buffer_mut().set_aux_color(0xf8 + i, color);
-            self.palette_buffer_mut().set_main_color(0xf8 + i, color);
+            self.set_aux_color(0xf8 + i, color);
+            self.set_main_color(0xf8 + i, color);
         }
     }
 
@@ -482,14 +479,13 @@ impl ZeldaState {
         let src = armor as usize * 15 * 2;
         for i in 0..15 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.palette_buffer_mut().set_aux_color(k + 0x81 + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(k + 0x81 + i, color);
+            self.set_aux_color(k + 0x81 + i, color);
+            self.set_main_color(k + 0x81 + i, color);
         }
         if gloves != 0 {
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
-            self.palette_buffer_mut().set_aux_color(k + 0x8d, color);
-            self.palette_buffer_mut().set_main_color(k + 0x8d, color);
+            self.set_aux_color(k + 0x8d, color);
+            self.set_main_color(k + 0x8d, color);
         }
     }
 
@@ -505,9 +501,8 @@ impl ZeldaState {
         let src = sword * 3 * 2;
         for i in 0..3 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.palette_buffer_mut().set_aux_color(k + 0x99 + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(k + 0x99 + i, color);
+            self.set_aux_color(k + 0x99 + i, color);
+            self.set_main_color(k + 0x99 + i, color);
         }
     }
 
@@ -523,9 +518,8 @@ impl ZeldaState {
         let src = shield * 4 * 2;
         for i in 0..4 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.palette_buffer_mut().set_aux_color(k + 0x9c + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(k + 0x9c + i, color);
+            self.set_aux_color(k + 0x9c + i, color);
+            self.set_main_color(k + 0x9c + i, color);
         }
     }
 
@@ -543,21 +537,18 @@ impl ZeldaState {
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let color = read_word_from_slice(&palette, base + i * 2);
-            self.palette_buffer_mut()
-                .set_aux_color(dst_index + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(dst_index + i, color);
+            self.set_aux_color(dst_index + i, color);
+            self.set_main_color(dst_index + i, color);
         }
     }
 
     pub(super) fn reset_hud_palettes_4_and_5(&mut self) {
         for i in 0..8 {
-            self.palette_buffer_mut().set_main_color(16 + i, 0);
+            self.set_main_color(16 + i, 0);
         }
-        self.palette_filter_mut().set_countdown_word(0);
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(2);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.set_countdown_word(0);
+        self.set_darkening_or_lightening_screen_word(2);
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_filter_history(&mut self) {
@@ -606,7 +597,7 @@ impl ZeldaState {
             if PALETTE_FILTERING_BITS[load_ptr_offset + ((a & 0x7c00) >> 9) as usize] & mask == 0 {
                 c = c.wrapping_add(dt.wrapping_shl(10));
             }
-            self.palette_buffer_mut().set_main_color(j, c);
+            self.set_main_color(j, c);
         }
     }
 
@@ -618,36 +609,35 @@ impl ZeldaState {
             .countdown_word()
             .wrapping_add(1);
         if countdown == 0x1f {
-            self.palette_filter_mut().set_countdown_word(0);
+            self.set_countdown_word(0);
             let mode = self
                 .game_state
                 .display
                 .palette_filter
                 .darkening_or_lightening_screen_word()
                 ^ 2;
-            self.palette_filter_mut()
-                .set_darkening_or_lightening_screen_word(mode);
+            self.set_darkening_or_lightening_screen_word(mode);
             if mode != 0 {
                 self.attract_scene_mut().increment_legend_flag();
             }
         } else {
-            self.palette_filter_mut().set_countdown_word(countdown);
+            self.set_countdown_word(countdown);
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_fade_intro_one_step(&mut self) {
         self.palette_filter_restore_additive(0x100, 0x1a0);
         self.palette_filter_restore_additive(0x0c0, 0x100);
-        self.palette_filter_mut().decrement_countdown();
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.decrement_countdown();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_fade_intro2(&mut self) {
         self.palette_filter_restore_additive(0x40, 0xc0);
         self.palette_filter_restore_additive(0x40, 0xc0);
-        self.palette_filter_mut().decrement_countdown();
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.decrement_countdown();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_filter_restore_additive(&mut self, from: usize, to: usize) {
@@ -666,7 +656,7 @@ impl ZeldaState {
             if (c & 0x7c00) != (d & 0x7c00) {
                 cx = cx.wrapping_add(0x400);
             }
-            self.palette_buffer_mut().set_main_color(i, cx);
+            self.set_main_color(i, cx);
             i += 1;
         }
     }
@@ -675,14 +665,14 @@ impl ZeldaState {
         for i in 32..128 {
             let color = self.game_state.display.palette_buffer.aux_color(i);
             let white = self.filter_majorly_whiten_color(color);
-            self.palette_buffer_mut().set_main_color(i, white);
+            self.set_main_color(i, white);
         }
         let color0 = if self.game_state.display.palette_buffer.aux_color(0) != 0 {
             self.game_state.display.palette_buffer.main_color(32)
         } else {
             0
         };
-        self.palette_buffer_mut().set_main_color(0, color0);
+        self.set_main_color(0, color0);
     }
 
     fn filter_majorly_whiten_color(&self, color: u16) -> u16 {
@@ -701,18 +691,17 @@ impl ZeldaState {
     pub(super) fn palette_restore_bg_from_flash(&mut self) {
         for i in 32..128 {
             let color = self.game_state.display.palette_buffer.aux_color(i);
-            self.palette_buffer_mut().set_main_color(i, color);
+            self.set_main_color(i, color);
         }
         let color = self.game_state.display.palette_buffer.main_color(32);
-        self.palette_buffer_mut().set_main_color(0, color);
+        self.set_main_color(0, color);
         self.palette_restore_coldata();
     }
 
     pub(super) fn palette_restore_bg_and_hud(&mut self) {
         let src = self.game_state.display.palette_buffer.aux_full_slice()[..0x100].to_vec();
-        self.palette_buffer_mut()
-            .copy_main_palette_bytes(&src, 0x100);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.copy_main_palette_bytes(&src, 0x100);
+        self.increment_cgram_update_flag();
         self.palette_restore_coldata();
     }
 
@@ -726,27 +715,24 @@ impl ZeldaState {
             0x5b => 0x894f33,
             _ => 0x804020,
         };
-        self.palette_filter_mut().set_fixed_color_red(rgb as u8);
-        self.palette_filter_mut()
-            .set_fixed_color_green((rgb >> 8) as u8);
-        self.palette_filter_mut()
-            .set_fixed_color_blue((rgb >> 16) as u8);
+        self.set_fixed_color_red(rgb as u8);
+        self.set_fixed_color_green((rgb >> 8) as u8);
+        self.set_fixed_color_blue((rgb >> 16) as u8);
     }
 
     pub(super) fn overworld_load_all_palettes(&mut self) {
-        self.palette_buffer_mut().clear_aux_sprite_subpalettes();
-        self.palette_buffer_mut().clear_main_full();
+        self.clear_aux_sprite_subpalettes();
+        self.clear_main_full();
 
-        self.palette_buffer_mut().set_overworld_palette_mode(5);
+        self.set_overworld_palette_mode(5);
         self.world_palette_theme_mut()
             .set_overworld_palette_aux1_hi(3);
-        self.palette_buffer_mut().set_overworld_palette_aux2_hi(3);
-        self.palette_buffer_mut().set_overworld_palette_aux3_lo(0);
-        self.palette_buffer_mut().set_sp6r_indoors(5);
-        self.palette_buffer_mut().set_sp0l(11);
+        self.set_overworld_palette_aux2_hi(3);
+        self.set_overworld_palette_aux3_lo(0);
+        self.set_sp6r_indoors(5);
+        self.set_sp0l(11);
         self.follower_state_mut().set_palette_swap_flag(0);
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.clear_overworld_aux_or_main_offset();
 
         self.palette_bg_and_fixed_color_black();
         self.palette_load_sp0l();
@@ -760,13 +746,12 @@ impl ZeldaState {
 
         for i in 0..8 {
             let color = self.game_state.display.palette_buffer.aux_color(0xe8 + i);
-            self.palette_buffer_mut().set_main_color(0xd8 + i, color);
+            self.set_main_color(0xd8 + i, color);
         }
     }
 
     pub(super) fn dungeon_load_palettes(&mut self) {
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.clear_overworld_aux_or_main_offset();
         self.palette_bg_and_fixed_color_black();
         self.palette_load_sp0l();
         self.palette_load_sprite_main();
@@ -797,15 +782,11 @@ impl ZeldaState {
             .world
             .palette_theme
             .palette_main_indoors_copy();
-        self.overworld_palette_backup_mut()
-            .set_main_indoors_backup(main_indoors);
-        self.overworld_palette_backup_mut()
-            .set_aux3_bg_palette_7_backup(aux3_lo);
-        self.overworld_palette_backup_mut()
-            .set_main_indoors_copy_backup(main_indoors_copy);
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(2);
-        self.palette_filter_mut().set_countdown_word(0);
+        self.set_overworld_main_indoors_palette_backup(main_indoors);
+        self.set_overworld_aux3_bg_palette_7_backup(aux3_lo);
+        self.set_overworld_main_indoors_copy_palette_backup(main_indoors_copy);
+        self.set_darkening_or_lightening_screen_word(2);
+        self.set_countdown_word(0);
         self.clear_mosaic_target_level_word();
         self.overworld_copy_palettes_to_cache();
     }
@@ -859,7 +840,7 @@ impl ZeldaState {
             0
         };
         self.load_gear_palette_from_asset(82, sword_index * 3, 0x1b2, 2);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_shield(&mut self) {
@@ -870,7 +851,7 @@ impl ZeldaState {
             0
         };
         self.load_gear_palette_from_asset(83, shield_index * 4, 0x1b8, 3);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_load_sprite_main(&mut self) {
@@ -985,10 +966,8 @@ impl ZeldaState {
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let color = read_word_from_slice(&palette, (color_offset + i) * 2);
-            self.palette_buffer_mut()
-                .set_aux_color(dst_index + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(dst_index + i, color);
+            self.set_aux_color(dst_index + i, color);
+            self.set_main_color(dst_index + i, color);
         }
     }
 
@@ -1003,10 +982,8 @@ impl ZeldaState {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
                 return;
             };
-            self.palette_buffer_mut()
-                .set_aux_color(dst_index + i, color);
-            self.palette_buffer_mut()
-                .set_main_color(dst_index + i, color);
+            self.set_aux_color(dst_index + i, color);
+            self.set_main_color(dst_index + i, color);
         }
     }
 
@@ -1037,10 +1014,8 @@ impl ZeldaState {
         let src = armor * 15 * 2;
         for i in 0..15 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.palette_buffer_mut()
-                .set_aux_color((0x1e2 >> 1) + i, color);
-            self.palette_buffer_mut()
-                .set_main_color((0x1e2 >> 1) + i, color);
+            self.set_aux_color((0x1e2 >> 1) + i, color);
+            self.set_main_color((0x1e2 >> 1) + i, color);
         }
         self.palette_update_gloves_color();
     }
@@ -1059,7 +1034,7 @@ impl ZeldaState {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
                 return;
             };
-            self.palette_buffer_mut().set_aux_color(base_idx + i, color);
+            self.set_aux_color(base_idx + i, color);
         }
     }
 
@@ -1110,9 +1085,7 @@ impl ZeldaState {
             84,
         );
 
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xa480, &tmp, 0, 0, 8);
         self.expand3_to_4_high_from_slice(0xa580, &tmp, 0x180, 0, 8);
 
@@ -1120,9 +1093,7 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             96,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xb280, &tmp, 0, 0, 3);
         self.expand3_to_4_high_from_slice(0xb2e0, &tmp, 0x180, 0, 3);
 
@@ -1138,10 +1109,7 @@ impl ZeldaState {
     ) -> usize {
         const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
         let Some(source) = (if from_temp {
-            Some(
-                self.graphics_scratch_mut()
-                    .primary_decompression_buffer(0x600),
-            )
+            Some(self.graphics_primary_decompression_buffer(0x600))
         } else {
             self.asset_bytes(64, 0).map(Vec::from)
         }) else {
@@ -1159,27 +1127,21 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x0f,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(PEG_TILE_GFX_BUFFER, &tmp, 0, 16);
 
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x58,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xb540, &tmp, 0, 32);
 
         self.decompress_background_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x05,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xbdc0, &tmp, 0x480, 2);
     }
 
@@ -1208,7 +1170,7 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x65,
         );
-        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+        let tmp = self.graphics_combined_decompression_buffers();
         let offset = TAGALONG_WHICH.get(follower).copied().unwrap_or(0);
         self.do3_to_4_low_16bit_from_slice(0xb940, &tmp, offset, 0x20);
     }
@@ -1224,9 +1186,7 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x5e,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         let sword = self.game_state.inventory.items.sword_type() as usize;
         let src = SWORD_TYPE_TO_GFX_OFFS.get(sword).copied().unwrap_or(0);
         self.expand3_to_4_high_from_slice(0x9000, &tmp, src, 0, 12);
@@ -1245,7 +1205,7 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x5e,
         );
-        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+        let tmp = self.graphics_combined_decompression_buffers();
         let shield = self.game_state.inventory.items.shield_type() as usize;
         let src = SHIELD_TYPE_TO_GFX_OFFS
             .get(shield)
@@ -1293,8 +1253,7 @@ impl ZeldaState {
         let Some(data) = self.decompressed_sprite_graphics_data(pack) else {
             return;
         };
-        self.graphics_scratch_mut()
-            .copy_to_primary_decompression_buffer(&data);
+        self.copy_to_primary_decompression_buffer(&data);
         for i in 0..0x400 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
         }
@@ -1480,8 +1439,7 @@ impl ZeldaState {
         let Some(data) = self.decompressed_sprite_graphics_data(gfx_pack) else {
             return;
         };
-        self.graphics_scratch_mut()
-            .copy_decompressed_graphics_to(decompression_buffer_offset, &data);
+        self.copy_decompressed_graphics_to(decompression_buffer_offset, &data);
         if matches!(gfx_pack, 0x52 | 0x53 | 0x5a | 0x5b | 0x5c | 0x5e | 0x5f) {
             self.do3_to_4_high_to_vram(dst, &data);
         } else {
@@ -1499,8 +1457,7 @@ impl ZeldaState {
         let Some(data) = self.decompressed_background_graphics_data(gfx_pack) else {
             return;
         };
-        self.graphics_scratch_mut()
-            .copy_decompressed_graphics_to(decompression_buffer_offset, &data);
+        self.copy_decompressed_graphics_to(decompression_buffer_offset, &data);
         let high = if self.game_state.world.palette_theme.main_tile_theme_index() >= 0x20 {
             matches!(slot, 7 | 2 | 3 | 4)
         } else {
@@ -1518,22 +1475,17 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             pack,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 48);
 
         self.decompress_background_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x5c,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xac80, &tmp, 0, 48);
 
-        self.graphics_scratch_mut()
-            .rotate_animated_dungeon_tile_planes();
+        self.rotate_animated_dungeon_tile_planes();
 
         self.set_animated_tile_vram_destination_address(0x3b00);
     }
@@ -1549,8 +1501,7 @@ impl ZeldaState {
         let Some(data) = self.decompressed_sprite_graphics_data(gfx) else {
             return 0;
         };
-        self.graphics_scratch_mut()
-            .copy_decompressed_graphics_to(dst, &data)
+        self.copy_decompressed_graphics_to(dst, &data)
     }
 
     pub(super) fn decompress_background_graphics_to_buffer(
@@ -1561,8 +1512,7 @@ impl ZeldaState {
         let Some(data) = self.decompressed_background_graphics_data(gfx) else {
             return 0;
         };
-        self.graphics_scratch_mut()
-            .copy_decompressed_graphics_to(dst, &data)
+        self.copy_decompressed_graphics_to(dst, &data)
     }
 
     pub(super) fn decompressed_sprite_graphics_data(&self, mut gfx: usize) -> Option<Vec<u8>> {
@@ -1595,8 +1545,7 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.graphics_scratch_mut()
-                    .write_expanded_tile_row(dst, lo, hi, u, lo | hi | u);
+                self.write_expanded_graphics_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
             }
             dst += 16;
@@ -1620,8 +1569,7 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                self.graphics_scratch_mut()
-                    .write_expanded_tile_row(dst, lo, hi, u, lo | hi | u);
+                self.write_expanded_graphics_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
             }
             dst += 16;
@@ -1639,7 +1587,7 @@ impl ZeldaState {
         for _ in 0..num {
             let src2 = src + 0x10;
             for i in 0..8 {
-                self.graphics_scratch_mut().write_expanded_tile_row(
+                self.write_expanded_graphics_tile_row(
                     dst,
                     data.get(src + i * 2).copied().unwrap_or(0),
                     data.get(src + i * 2 + 1).copied().unwrap_or(0),
@@ -1662,8 +1610,7 @@ impl ZeldaState {
                 let hi = data.get(src + 1).copied().unwrap_or(0);
                 self.ppu.vram[dst] = lo as u16 | ((hi as u16) << 8);
                 tmp[i] = lo | hi;
-                self.graphics_scratch_mut()
-                    .set_dungeon_line_pointer_row0(i, tmp[i] as u16);
+                self.set_dungeon_line_pointer_row0(i, tmp[i] as u16);
                 dst += 1;
                 src += 2;
             }
@@ -1700,16 +1647,15 @@ impl ZeldaState {
 
         let sp6 = GRAPHICS_LOAD_SP6[k as usize - 1];
         if sp6 >= 0 {
-            self.palette_buffer_mut().set_sp6r_indoors(sp6 as u8);
-            self.palette_buffer_mut()
-                .select_overworld_aux_palette_offset();
+            self.set_sp6r_indoors(sp6 as u8);
+            self.select_overworld_aux_palette_offset();
             if k == 1 {
-                self.palette_buffer_mut().set_sp6r_indoors(10);
+                self.set_sp6r_indoors(10);
                 self.Palette_Load_SpriteEnvironment();
             } else {
                 self.Palette_Load_SpriteEnvironment_Dungeon();
             }
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.increment_cgram_update_flag();
         }
 
         let mut tilebytes = 0x44;
@@ -1719,7 +1665,7 @@ impl ZeldaState {
             if k != 18 {
                 tilebytes = 0x46;
                 if k == 2 {
-                    self.world_transient_mut().clear_custom_spell_animation();
+                    self.clear_custom_spell_animation();
                 }
             }
         }
@@ -1761,13 +1707,7 @@ impl ZeldaState {
                 let lo = sprite_data[i * 2];
                 let hi = sprite_data[i * 2 + 1];
                 let mask = sprite_data[16 + i];
-                self.graphics_scratch_mut().write_expanded_tile_row(
-                    dst,
-                    lo,
-                    hi,
-                    mask,
-                    lo | hi | mask,
-                );
+                self.write_expanded_graphics_tile_row(dst, lo, hi, mask, lo | hi | mask);
                 dst += 2;
             }
             dst += 16;
@@ -1871,18 +1811,14 @@ impl ZeldaState {
             GraphicsDecompressionScratch::primary_buffer_offset(),
             a as usize,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 64);
 
         self.decompress_background_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             a.wrapping_add(1) as usize,
         );
-        let tmp = self
-            .graphics_scratch_mut()
-            .primary_decompression_buffer(0x600);
+        let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
         self.set_animated_tile_vram_destination_address(0x3c00);
     }
@@ -1900,7 +1836,7 @@ impl ZeldaState {
             .get(a as usize)
             .copied()
             .unwrap_or(0);
-        let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+        let tmp = self.graphics_combined_decompression_buffers();
         self.expand3_to_4_high_from_slice(0xbd40, &tmp, src, 0, 2);
         self.expand3_to_4_high_from_slice(0xbd80, &tmp, src + 0x180, 0, 2);
     }
@@ -1939,7 +1875,7 @@ impl ZeldaState {
         let p = aux_tileset(self.game_state.world.palette_theme.aux_tile_theme_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
-                self.graphics_scratch_mut().set_aux_bg_subset_pack(i, pack);
+                self.set_aux_bg_subset_pack(i, pack);
                 assert_eq!(
                     self.decompress_background_graphics_to_buffer(
                         0x6000 + 0x600 * i,
@@ -2047,7 +1983,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 1] as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_low_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
@@ -2060,7 +1996,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 3] as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
@@ -2073,7 +2009,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.game_state.world.palette_theme.aux_bg_subset(2) as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             4 => {
@@ -2085,7 +2021,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 5] as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             5 => {
@@ -2144,7 +2080,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.game_state.sprites.workspace.graphics_subset(1) as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 if matches!(
                     self.game_state.sprites.workspace.graphics_subset(0),
                     0x52 | 0x53 | 0x5a | 0x5b
@@ -2164,7 +2100,7 @@ impl ZeldaState {
                     GraphicsDecompressionScratch::secondary_buffer_offset(),
                     self.game_state.sprites.workspace.graphics_subset(3) as usize,
                 );
-                let tmp = self.graphics_scratch_mut().combined_decompression_buffers();
+                let tmp = self.graphics_combined_decompression_buffers();
                 self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
                 self.handle_followers_after_mirroring();
             }
@@ -2243,9 +2179,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PrepTransAuxGfx(&mut self) {
-        let tmp = self
-            .graphics_scratch_mut()
-            .staged_bg_and_sprite_decompression_buffers();
+        let tmp = self.staged_bg_and_sprite_decompression_buffers();
         self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
         if self.game_state.world.palette_theme.aux_tile_theme_index() >= 32 {
             self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 0x80);
@@ -2264,9 +2198,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadNewSpriteGFXSet(&mut self) {
-        let tmp = self
-            .graphics_scratch_mut()
-            .sprite_decompression_buffer_tail();
+        let tmp = self.graphics_sprite_decompression_buffer_tail();
         self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
         if matches!(
             self.game_state.sprites.workspace.graphics_subset(3),
@@ -2354,7 +2286,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WishPonds(&mut self) {
         self.set_sub_screen_layers(2);
-        self.palette_filter_mut().set_color_math_control(0x30);
+        self.set_color_math_control(0x30);
         self.PaletteFilter_WishPonds_Inner();
     }
 
@@ -2365,22 +2297,21 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WishPonds_Inner(&mut self) {
         for i in 0..8 {
-            self.palette_buffer_mut().set_main_color(0xd0 + i, 0);
+            self.set_main_color(0xd0 + i, 0);
         }
-        self.palette_filter_mut().set_countdown_word(0);
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(2);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.set_countdown_word(0);
+        self.set_darkening_or_lightening_screen_word(2);
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreSP5F(&mut self) {
         for i in 0..8 {
             let color = self.game_state.display.palette_buffer.aux_color(208 + i);
-            self.palette_buffer_mut().set_main_color(208 + i, color);
+            self.set_main_color(208 + i, color);
         }
         self.set_sub_screen_layers(0);
-        self.palette_filter_mut().set_color_math_control(32);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.set_color_math_control(32);
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_SP5F(&mut self) {
@@ -2407,12 +2338,11 @@ impl ZeldaState {
         if self.game_state.frame.subsubmodule == 0 {
             for i in 0..8 {
                 let color = self.game_state.display.palette_buffer.aux_color(t + i);
-                self.palette_buffer_mut().set_main_color(t + i, color);
+                self.set_main_color(t + i, color);
             }
-            self.palette_filter_mut().set_countdown_word(0);
-            self.palette_filter_mut()
-                .set_darkening_or_lightening_screen_word(0);
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.set_countdown_word(0);
+            self.set_darkening_or_lightening_screen_word(0);
+            self.increment_cgram_update_flag();
             self.set_subsubmodule(1);
             return;
         }
@@ -2429,11 +2359,10 @@ impl ZeldaState {
     pub(super) fn AgahnimWarpShadowFilter(&mut self, k: usize) {
         const AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS: [usize; 3] = [0x160, 0x180, 0x1a0];
 
-        let pal_countdown = self.graphics_scratch_mut().agahnim_palette_word(k);
-        let darkening_screen = self.graphics_scratch_mut().agahnim_palette_word(k + 3);
-        self.palette_filter_mut().set_countdown_word(pal_countdown);
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(darkening_screen);
+        let pal_countdown = self.agahnim_palette_word(k);
+        let darkening_screen = self.agahnim_palette_word(k + 3);
+        self.set_countdown_word(pal_countdown);
+        self.set_darkening_or_lightening_screen_word(darkening_screen);
         let t = AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS[k] >> 1;
         for _ in 0..2 {
             self.palette_filter_range(t, t + 8);
@@ -2443,17 +2372,16 @@ impl ZeldaState {
                 .palette_filter
                 .countdown_word()
                 .wrapping_add(1);
-            self.palette_filter_mut().set_countdown_word(countdown);
+            self.set_countdown_word(countdown);
             if countdown == 0x1f {
-                self.palette_filter_mut().set_countdown_word(0);
+                self.set_countdown_word(0);
                 let screen = self
                     .game_state
                     .display
                     .palette_filter
                     .darkening_or_lightening_screen_word()
                     ^ 2;
-                self.palette_filter_mut()
-                    .set_darkening_or_lightening_screen_word(screen);
+                self.set_darkening_or_lightening_screen_word(screen);
                 break;
             }
         }
@@ -2463,11 +2391,9 @@ impl ZeldaState {
             .display
             .palette_filter
             .darkening_or_lightening_screen_word();
-        self.graphics_scratch_mut()
-            .set_agahnim_palette_word(k, pal_countdown);
-        self.graphics_scratch_mut()
-            .set_agahnim_palette_word(k + 3, darkening_screen);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.set_agahnim_palette_word(k, pal_countdown);
+        self.set_agahnim_palette_word(k + 3, darkening_screen);
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn Palette_FadeIntroOneStep(&mut self) {
@@ -2498,25 +2424,24 @@ impl ZeldaState {
             if (c & 0x7c00) != (d & 0x7c00) {
                 cx = cx.wrapping_sub(0x400);
             }
-            self.palette_buffer_mut().set_main_color(i, cx);
+            self.set_main_color(i, cx);
             i += 1;
         }
     }
 
     pub(super) fn PaletteFilter_InitializeWhiteFilter(&mut self) {
         for i in 0..256 {
-            self.palette_buffer_mut().set_aux_color(i, 0x7fff);
+            self.set_aux_color(i, 0x7fff);
         }
         let color = self.game_state.display.palette_buffer.main_color(0);
-        self.palette_buffer_mut().set_main_color(32, color);
-        self.palette_filter_mut().set_countdown_word(0);
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(2);
+        self.set_main_color(32, color);
+        self.set_countdown_word(0);
+        self.set_darkening_or_lightening_screen_word(2);
         if self.game_state.world.location.overworld_screen_index() == 27 {
-            self.palette_buffer_mut().set_aux_color(0, 0);
-            self.palette_buffer_mut().set_aux_color(32, 0);
-            self.palette_buffer_mut().set_main_color(0, 0);
-            self.palette_buffer_mut().set_main_color(32, 0);
+            self.set_aux_color(0, 0);
+            self.set_aux_color(32, 0);
+            self.set_main_color(0, 0);
+            self.set_main_color(32, 0);
         }
         self.mirror_warp_scratch_mut().set_animation_counter(8);
         self.mirror_warp_scratch_mut().reset_load_step_counter();
@@ -2560,7 +2485,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_StartBlindingWhite(&mut self) {
         let color = self.game_state.display.palette_buffer.main_color(32);
-        self.palette_buffer_mut().set_main_color(0, color);
+        self.set_main_color(0, color);
         if self
             .game_state
             .display
@@ -2568,29 +2493,26 @@ impl ZeldaState {
             .darkening_or_lightening_screen()
             == 0
         {
-            self.palette_filter_mut().increment_countdown();
+            self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 66 {
-                self.palette_filter_mut()
-                    .set_darkening_or_lightening_screen(0xff);
+                self.set_darkening_or_lightening_screen(0xff);
                 self.mirror_warp_scratch_mut().set_animation_counter(32);
             }
         } else {
-            self.palette_filter_mut().increment_countdown();
+            self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 31 {
-                self.palette_filter_mut()
-                    .xor_darkening_or_lightening_screen(2);
+                self.xor_darkening_or_lightening_screen(2);
                 if self.game_state.frame.main_module != 21 {
                     return;
                 }
                 self.clear_hdma_enable_mask();
                 for i in 0..240 {
-                    self.spotlight_hdma_mut()
-                        .set_hdma_table_dynamic_entry(i, 0x0778);
+                    self.set_spotlight_hdma_table_dynamic_entry(i, 0x0778);
                 }
                 self.set_hdma_enable_mask(0xc0);
             }
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_BlindingWhiteTriforce(&mut self) {
@@ -2605,23 +2527,23 @@ impl ZeldaState {
                 if (color & 0x7c00) != 0x7c00 {
                     color = color.wrapping_add(0x400);
                 }
-                self.palette_buffer_mut().set_main_color(i, color);
+                self.set_main_color(i, color);
             }
             let color = self.game_state.display.palette_buffer.main_color(32);
-            self.palette_buffer_mut().set_main_color(0, color);
+            self.set_main_color(0, color);
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.increment_mosaic_level_by(16);
             }
-            self.palette_filter_mut().increment_countdown();
+            self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 31 {
-                self.palette_filter_mut().set_countdown(0);
+                self.set_countdown(0);
                 self.increment_subsubmodule();
                 self.set_mosaic_level(0xf0);
             }
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_IsolateWhirlpoolBlue(&mut self) {
@@ -2633,19 +2555,19 @@ impl ZeldaState {
             if color & 0x001f != 0 {
                 color = color.wrapping_sub(1);
             }
-            self.palette_buffer_mut().set_main_color(i, color);
+            self.set_main_color(i, color);
         }
         let color = self.game_state.display.palette_buffer.main_color(32);
-        self.palette_buffer_mut().set_main_color(0, color);
-        self.palette_filter_mut().increment_countdown();
+        self.set_main_color(0, color);
+        self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
-            self.palette_filter_mut().set_countdown(0);
+            self.set_countdown(0);
             self.increment_subsubmodule();
             self.set_mosaic_level(0xf0);
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreBlue(&mut self) {
@@ -2656,23 +2578,23 @@ impl ZeldaState {
                 if color & 0x7c00 != aux {
                     color = color.wrapping_sub(0x400);
                 }
-                self.palette_buffer_mut().set_main_color(i, color);
+                self.set_main_color(i, color);
             }
             let color = self.game_state.display.palette_buffer.main_color(32);
-            self.palette_buffer_mut().set_main_color(0, color);
+            self.set_main_color(0, color);
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.decrement_mosaic_level_by(16);
             }
-            self.palette_filter_mut().increment_countdown();
+            self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 31 {
-                self.palette_filter_mut().set_countdown(0);
+                self.set_countdown(0);
                 self.increment_subsubmodule();
                 self.clear_mosaic_level();
             }
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreRedGreen(&mut self) {
@@ -2685,16 +2607,16 @@ impl ZeldaState {
             if color & 0x001f != aux & 0x001f {
                 color = color.wrapping_add(1);
             }
-            self.palette_buffer_mut().set_main_color(i, color);
+            self.set_main_color(i, color);
         }
         let color = self.game_state.display.palette_buffer.main_color(32);
-        self.palette_buffer_mut().set_main_color(0, color);
-        self.palette_filter_mut().increment_countdown();
+        self.set_main_color(0, color);
+        self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
-            self.palette_filter_mut().set_countdown(0);
+            self.set_countdown(0);
             self.increment_subsubmodule();
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreBGSubstractiveStrict(&mut self) {
@@ -2708,19 +2630,18 @@ impl ZeldaState {
             return;
         }
         self.PaletteFilter_RestoreSubtractive(0x40, 0x100);
-        self.palette_filter_mut().increment_countdown();
+        self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 0x20 {
-            self.palette_filter_mut()
-                .set_darkening_or_lightening_screen(0xff);
+            self.set_darkening_or_lightening_screen(0xff);
             self.clear_sub_screen_layers_word();
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn PaletteFilter_RestoreBGAdditiveStrict(&mut self) {
         self.palette_filter_restore_additive(0x40, 0x100);
-        self.palette_filter_mut().increment_countdown();
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_countdown();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn Trinexx_FlashShellPalette_Red(&mut self) {
@@ -2728,10 +2649,9 @@ impl ZeldaState {
             for i in 0..7 {
                 let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
                 let red = (v & 0x1f).wrapping_add(u16::from((v & 0x1f) != 0x1f));
-                self.palette_buffer_mut()
-                    .set_main_color(0x41 + i, (v & 0xffe0) | red);
+                self.set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_red_shell_palette_step(0);
@@ -2749,10 +2669,9 @@ impl ZeldaState {
                 let u = self.game_state.display.palette_buffer.aux_color(0x41 + i);
                 let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
                 let red = (v & 0x1f).wrapping_sub(u16::from((v & 0x1f) != (u & 0x1f)));
-                self.palette_buffer_mut()
-                    .set_main_color(0x41 + i, (v & 0xffe0) | red);
+                self.set_main_color(0x41 + i, (v & 0xffe0) | red);
             }
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_red_shell_palette_step(0);
@@ -2770,10 +2689,9 @@ impl ZeldaState {
                 let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
                 let blue =
                     (v & 0x7c00).wrapping_add(if (v & 0x7c00) != 0x7c00 { 0x0400 } else { 0 });
-                self.palette_buffer_mut()
-                    .set_main_color(0x41 + i, (v & !0x7c00) | blue);
+                self.set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_blue_shell_palette_step(0);
@@ -2795,10 +2713,9 @@ impl ZeldaState {
                 } else {
                     0
                 });
-                self.palette_buffer_mut()
-                    .set_main_color(0x41 + i, (v & !0x7c00) | blue);
+                self.set_main_color(0x41 + i, (v & !0x7c00) | blue);
             }
-            self.system_signals_mut().increment_cgram_update_flag();
+            self.increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
                 self.set_trinexx_blue_shell_palette_step(0);
@@ -2842,10 +2759,8 @@ impl ZeldaState {
             .window_y()
             .wrapping_sub(self.game_state.world.scroll.bg2_y());
         let y_radius = self.game_state.display.water_hdma_window.window_y_radius();
-        self.spotlight_hdma_mut()
-            .set_y_lower(r10.wrapping_sub(y_radius));
-        self.spotlight_hdma_mut()
-            .set_y_upper(r10.wrapping_add(y_radius));
+        self.set_spotlight_y_lower(r10.wrapping_sub(y_radius));
+        self.set_spotlight_y_upper(r10.wrapping_add(y_radius));
         self.AdjustWaterHDMAWindow_X(r10);
     }
 
@@ -2856,8 +2771,7 @@ impl ZeldaState {
             .water_hdma_window
             .window_x()
             .wrapping_sub(self.game_state.world.scroll.bg2_x());
-        self.spotlight_hdma_mut()
-            .set_window_x_center(window_x_center);
+        self.set_spotlight_window_x_center(window_x_center);
         let r12 = self
             .game_state
             .display
@@ -2882,7 +2796,7 @@ impl ZeldaState {
                     r12_pair
                 };
                 if r4 < 240 {
-                    self.spotlight_hdma_mut().set_hdma_table_dynamic_entry(
+                    self.set_spotlight_hdma_table_dynamic_entry(
                         r4 as usize,
                         if a != 0xffff { a } else { 0x00ff },
                     );
@@ -2907,7 +2821,7 @@ impl ZeldaState {
                 r12_pair
             };
             if r6 < 240 {
-                self.spotlight_hdma_mut().set_hdma_table_dynamic_entry(
+                self.set_spotlight_hdma_table_dynamic_entry(
                     r6 as usize,
                     if a != 0xffff { a } else { 0x00ff },
                 );
@@ -2927,21 +2841,19 @@ impl ZeldaState {
             .water_hdma_window
             .window_y()
             .wrapping_sub(self.game_state.world.scroll.bg2_y());
-        self.spotlight_hdma_mut().set_y_lower(lower);
+        self.set_spotlight_y_lower(lower);
         let window_x_center = self
             .game_state
             .display
             .water_hdma_window
             .window_x()
             .wrapping_sub(self.game_state.world.scroll.bg2_x());
-        self.spotlight_hdma_mut()
-            .set_window_x_center(window_x_center);
+        self.set_spotlight_window_x_center(window_x_center);
         let r14 = self.game_state.display.water_hdma_window.window_x_radius() ^ 1;
         let mut r4 = 0usize;
         let upper = self.game_state.display.spotlight_hdma.y_upper() as usize;
         while r4 != upper {
-            self.spotlight_hdma_mut()
-                .set_hdma_table_dynamic_entry(r4, 0xff00);
+            self.set_spotlight_hdma_table_dynamic_entry(r4, 0xff00);
             r4 += 1;
         }
         let r12w = r14.wrapping_sub(7).wrapping_add(8);
@@ -2956,8 +2868,7 @@ impl ZeldaState {
             ^ 1;
         while r4 < 225 {
             if r4 as u16 >= r10 {
-                self.spotlight_hdma_mut()
-                    .set_hdma_table_dynamic_entry(r4, 0x00ff);
+                self.set_spotlight_hdma_table_dynamic_entry(r4, 0x00ff);
             } else {
                 let mut a = r4 as u16;
                 loop {
@@ -2966,7 +2877,7 @@ impl ZeldaState {
                         break;
                     }
                 }
-                self.spotlight_hdma_mut().set_hdma_table_dynamic_entry(
+                self.set_spotlight_hdma_table_dynamic_entry(
                     a as usize >> 1,
                     if r12_pair == 0xffff { 0x00ff } else { r12_pair },
                 );
@@ -2984,8 +2895,7 @@ impl ZeldaState {
         let (xx, yy) = self.game_state.display.star_tile_restore_source_offsets();
         let src0 = 0xbdc0 + xx;
         let src1 = 0xbdc0 + yy;
-        self.graphics_scratch_mut()
-            .copy_message_rows(0, src0, src1, 32);
+        self.copy_graphics_message_rows(0, src0, src1, 32);
         self.set_pending_nmi_subroutine(0x18);
     }
 
@@ -3043,8 +2953,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_UpdatePegGFXBuffer(&mut self, x: usize, y: usize) {
-        self.graphics_scratch_mut()
-            .copy_peg_tile_graphics_to_message_buffer(x, y);
+        self.copy_peg_tile_graphics_to_message_buffer(x, y);
         self.set_pending_nmi_subroutine(23);
     }
 
@@ -3053,8 +2962,8 @@ impl ZeldaState {
             self.Palette_RevertTranslucencySwap();
         }
 
-        self.palette_filter_mut().set_color_window_selection(2);
-        self.palette_filter_mut().set_color_math_control(0xb3);
+        self.set_color_window_selection(2);
+        self.set_color_math_control(0xb3);
 
         let mut torch = self.game_state.dungeon.torch.lit_torches();
         if self.game_state.dungeon.torch.wants_lights_out() == 0 {
@@ -3068,8 +2977,7 @@ impl ZeldaState {
                         if self.game_state.dungeon.room_load.bg2_properties() == 2 {
                             self.Palette_AssertTranslucencySwap();
                             if self.game_state.world.location.dungeon_room_index() == 13 {
-                                self.graphics_scratch_mut()
-                                    .clear_agahnim_palette_settings(6);
+                                self.clear_agahnim_palette_settings(6);
                                 self.Palette_LoadAgahnim();
                             }
                             a = 0x70;
@@ -3077,7 +2985,7 @@ impl ZeldaState {
                     }
                 }
             }
-            self.palette_filter_mut().set_color_math_control(a);
+            self.set_color_math_control(a);
             torch = 3;
         }
         const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
@@ -3087,12 +2995,10 @@ impl ZeldaState {
                 .copied()
                 .unwrap_or(0),
         );
-        self.palette_filter_mut().set_countdown(31);
+        self.set_countdown(31);
         self.clear_mosaic_target_level();
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen(2);
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.set_darkening_or_lightening_screen(2);
+        self.clear_overworld_aux_or_main_offset();
         self.palette_load_dungeon_set();
         self.palette_load_sp0l();
         self.palette_load_sp5l();
@@ -3122,10 +3028,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadAreaPalettesEx(&mut self, palette: u8) {
-        self.palette_buffer_mut()
-            .set_overworld_palette_mode(palette);
-        self.palette_buffer_mut()
-            .keep_overworld_aux_or_main_low_byte();
+        self.set_overworld_palette_mode(palette);
+        self.keep_overworld_aux_or_main_low_byte();
         self.palette_load_sprite_main();
         self.palette_load_sprite_environment();
         self.palette_load_sp5l();
@@ -3138,7 +3042,7 @@ impl ZeldaState {
         } else {
             1
         };
-        self.palette_buffer_mut().set_sp0l(sp0l);
+        self.set_sp0l(sp0l);
         self.palette_load_sp0l();
         self.palette_load_hud();
         self.palette_load_ow_bg_main();
@@ -3146,17 +3050,17 @@ impl ZeldaState {
 
     pub(super) fn SpecialOverworld_CopyPalettesToCache(&mut self) {
         for i in 32..(32 * 8) {
-            self.palette_buffer_mut().set_main_color(i, 0);
+            self.set_main_color(i, 0);
         }
         for i in 0..8 {
             for base in [0x00, 0x08, 0x10, 0x18, 0xd8, 0xe8, 0xf0, 0xf8] {
                 let color = self.game_state.display.palette_buffer.aux_color(base + i);
-                self.palette_buffer_mut().set_main_color(base + i, color);
+                self.set_main_color(base + i, color);
             }
         }
         self.set_mosaic_copy(0xf7);
         self.set_mosaic_level(0xf7);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn Overworld_CopyPalettesToCache(&mut self) {
@@ -3164,29 +3068,24 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadPalettes(&mut self, bg: u8, spr: u8) {
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.clear_overworld_aux_or_main_offset();
         let bg_base = bg as usize * 3;
         if OW_BG_PAL_INFO[bg_base] >= 0 {
             self.world_palette_theme_mut()
                 .set_overworld_palette_aux1_hi(OW_BG_PAL_INFO[bg_base] as u8);
         }
         if OW_BG_PAL_INFO[bg_base + 1] >= 0 {
-            self.palette_buffer_mut()
-                .set_overworld_palette_aux2_hi(OW_BG_PAL_INFO[bg_base + 1] as u8);
+            self.set_overworld_palette_aux2_hi(OW_BG_PAL_INFO[bg_base + 1] as u8);
         }
         if OW_BG_PAL_INFO[bg_base + 2] >= 0 {
-            self.palette_buffer_mut()
-                .set_overworld_palette_aux3_lo(OW_BG_PAL_INFO[bg_base + 2] as u8);
+            self.set_overworld_palette_aux3_lo(OW_BG_PAL_INFO[bg_base + 2] as u8);
         }
         let spr_base = spr as usize * 2;
         if OW_SPR_PAL_INFO[spr_base] >= 0 {
-            self.palette_buffer_mut()
-                .set_sp5l(OW_SPR_PAL_INFO[spr_base] as u8);
+            self.set_sp5l(OW_SPR_PAL_INFO[spr_base] as u8);
         }
         if OW_SPR_PAL_INFO[spr_base + 1] >= 0 {
-            self.palette_buffer_mut()
-                .set_sp6l(OW_SPR_PAL_INFO[spr_base + 1] as u8);
+            self.set_sp6l(OW_SPR_PAL_INFO[spr_base + 1] as u8);
         }
         self.palette_load_ow_bg1();
         self.palette_load_ow_bg2();
@@ -3200,10 +3099,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Palette_SetBgAndFixedColor(&mut self, color: u16) {
-        self.palette_buffer_mut().set_main_color(0, color);
-        self.palette_buffer_mut().set_main_color(32, color);
-        self.palette_buffer_mut().set_aux_color(0, color);
-        self.palette_buffer_mut().set_aux_color(32, color);
+        self.set_main_color(0, color);
+        self.set_main_color(32, color);
+        self.set_aux_color(0, color);
+        self.set_aux_color(32, color);
         self.set_backdrop_color_black();
     }
 
@@ -3218,8 +3117,8 @@ impl ZeldaState {
 
     pub(super) fn Palette_SpecialOw(&mut self) {
         let color = self.Palette_GetOwBgColor();
-        self.palette_buffer_mut().set_aux_color(0, color);
-        self.palette_buffer_mut().set_aux_color(32, color);
+        self.set_aux_color(0, color);
+        self.set_aux_color(32, color);
         self.set_backdrop_color_black();
     }
 
@@ -3237,13 +3136,13 @@ impl ZeldaState {
             for (a_base, b_base) in [(0x80, 0xf0), (0x88, 0xf8), (0xb8, 0xd8)] {
                 let a = self.game_state.display.palette_buffer.aux_color(a_base + i);
                 let b = self.game_state.display.palette_buffer.aux_color(b_base + i);
-                self.palette_buffer_mut().set_aux_color(b_base + i, a);
-                self.palette_buffer_mut().set_main_color(b_base + i, a);
-                self.palette_buffer_mut().set_aux_color(a_base + i, b);
-                self.palette_buffer_mut().set_main_color(a_base + i, b);
+                self.set_aux_color(b_base + i, a);
+                self.set_main_color(b_base + i, a);
+                self.set_aux_color(a_base + i, b);
+                self.set_main_color(a_base + i, b);
             }
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn Palette_RevertTranslucencySwap(&mut self) {
@@ -3343,7 +3242,7 @@ impl ZeldaState {
                 for i in 0..=6 {
                     let color = read_word_from_slice(&palette, (pal * 7 + i) * 2);
                     let idx = ((0x182 + aux_or_main) >> 1) + pal * 0x10 + i;
-                    self.palette_buffer_mut().set_aux_color(idx, color);
+                    self.set_aux_color(idx, color);
                 }
             }
         }
@@ -3368,7 +3267,7 @@ impl ZeldaState {
                 for i in 0..=15 {
                     let color = read_word_from_slice(&palette, (pal * 16 + i) * 2);
                     let idx = ((0x40 + aux_or_main) >> 1) + pal * 0x10 + i;
-                    self.palette_buffer_mut().set_aux_color(idx, color);
+                    self.set_aux_color(idx, color);
                 }
             }
         }
@@ -3442,7 +3341,7 @@ impl ZeldaState {
             0x1c2,
             6,
         );
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn HandleScreenFlash(&mut self) {
@@ -3471,7 +3370,7 @@ impl ZeldaState {
         } else {
             self.palette_restore_bg_from_flash();
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn asset_bytes(&self, asset: usize, index: usize) -> Option<&[u8]> {
@@ -3506,14 +3405,14 @@ impl ZeldaState {
         } else {
             self.palette_restore_bg_from_flash();
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn apply_palette_filter_bounce(&mut self) {
         self.palette_filter_range(0, 1);
         self.palette_filter_range(0x20, 0xd8);
         self.palette_filter_range(0xe0, 0xf0);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
 
         let countdown = self.game_state.display.palette_filter.countdown_word();
         let target = self.game_state.display.mosaic_target_level as u16;
@@ -3525,13 +3424,12 @@ impl ZeldaState {
             == 0
         {
             let next = countdown.wrapping_add(1);
-            self.palette_filter_mut().set_countdown_word(next);
+            self.set_countdown_word(next);
             if next != target {
                 return;
             }
         } else {
-            self.palette_filter_mut()
-                .set_countdown_word(countdown.wrapping_sub(1));
+            self.set_countdown_word(countdown.wrapping_sub(1));
             if countdown != target {
                 return;
             }
@@ -3542,9 +3440,8 @@ impl ZeldaState {
             .palette_filter
             .darkening_or_lightening_screen_word()
             ^ 2;
-        self.palette_filter_mut()
-            .set_darkening_or_lightening_screen_word(mode);
-        self.palette_filter_mut().set_countdown_word(0);
+        self.set_darkening_or_lightening_screen_word(mode);
+        self.set_countdown_word(0);
         self.increment_subsubmodule();
     }
 
@@ -3553,8 +3450,8 @@ impl ZeldaState {
     }
 
     pub(super) fn spotlight_internal(&mut self, x: u8, y: u8) {
-        self.spotlight_hdma_mut().set_window_radius(x as u16);
-        self.spotlight_hdma_mut().set_window_state(y as u16);
+        self.set_spotlight_window_radius(x as u16);
+        self.set_spotlight_window_state(y as u16);
         self.hdma_setup(0x00f2fb, 0x00f2fb, 0x41, 0x26, 0x26, 0);
         self.set_bg12_window_selection(0x33);
         self.set_bg34_window_selection(3);
@@ -3564,9 +3461,9 @@ impl ZeldaState {
         let sub_screen = self.game_state.display.sub_screen_layers;
         self.set_sub_screen_window_layers(sub_screen);
         if self.game_state.world.location.is_outdoors() {
-            self.palette_filter_mut().set_fixed_color_red(0x20);
-            self.palette_filter_mut().set_fixed_color_green(0x40);
-            self.palette_filter_mut().set_fixed_color_blue(0x80);
+            self.set_fixed_color_red(0x20);
+            self.set_fixed_color_green(0x40);
+            self.set_fixed_color_blue(0x80);
         }
         self.iris_spotlight_configure_table();
         self.set_hdma_enable_mask(0x80);
@@ -3578,22 +3475,24 @@ impl ZeldaState {
         const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
 
         let r14 = self
-            .player_state()
+            .game_state
+            .player
+            .follower_link
             .y()
             .wrapping_sub(self.game_state.world.scroll.bg2_y())
             .wrapping_add(12);
         let radius = self.game_state.display.spotlight_hdma.window_radius();
-        self.spotlight_hdma_mut()
-            .set_y_lower(r14.wrapping_sub(radius));
-        self.spotlight_hdma_mut()
-            .set_y_upper(r14.wrapping_add(radius));
+        self.set_spotlight_y_lower(r14.wrapping_sub(radius));
+        self.set_spotlight_y_upper(r14.wrapping_add(radius));
         let x_center = self
-            .player_state()
+            .game_state
+            .player
+            .follower_link
             .x()
             .wrapping_sub(self.game_state.world.scroll.bg2_x())
             .wrapping_add(8);
-        self.spotlight_hdma_mut().set_window_x_center(x_center);
-        self.spotlight_hdma_mut().set_window_y_buffer(radius);
+        self.set_spotlight_window_x_center(x_center);
+        self.set_spotlight_window_y_buffer(radius);
 
         let mut r6 = r14.wrapping_mul(2);
         if r6 < 224 {
@@ -3609,17 +3508,15 @@ impl ZeldaState {
                     .spotlight_hdma
                     .window_y_buffer_byte();
                 if self.game_state.display.spotlight_hdma.window_y_buffer() != 0 {
-                    self.spotlight_hdma_mut().decrement_window_y_buffer();
+                    self.decrement_spotlight_window_y_buffer();
                 }
                 r8 = self.iris_spotlight_calculate_circle_value(t);
             }
             if r4 < 240 {
-                self.spotlight_hdma_mut()
-                    .set_hdma_table_dynamic_entry(r4 as usize, r8);
+                self.set_spotlight_hdma_table_dynamic_entry(r4 as usize, r8);
             }
             if r6 < 240 {
-                self.spotlight_hdma_mut()
-                    .set_hdma_table_dynamic_entry(r6 as usize, r8);
+                self.set_spotlight_hdma_table_dynamic_entry(r6 as usize, r8);
             }
             if r4 == r14 {
                 break;
@@ -3628,8 +3525,7 @@ impl ZeldaState {
             r6 = r6.wrapping_sub(1);
         }
 
-        self.spotlight_hdma_mut()
-            .clear_hdma_table_dynamic_range(224, 16);
+        self.clear_spotlight_hdma_table_dynamic_range(224, 16);
         self.project_spotlight_dynamic_hdma_table_to_reserved(224);
 
         let idx = (self.game_state.display.spotlight_hdma.window_state() >> 1) as usize;
@@ -3640,7 +3536,7 @@ impl ZeldaState {
             .spotlight_hdma
             .window_radius()
             .wrapping_add(delta);
-        self.spotlight_hdma_mut().set_window_radius(next);
+        self.set_spotlight_window_radius(next);
         if next == SPOTLIGHT_GOAL[idx] {
             if self.game_state.display.spotlight_hdma.window_state() == 0 {
                 self.set_screen_brightness(0x80);
@@ -3653,11 +3549,11 @@ impl ZeldaState {
             if main_module == 7 || main_module == 16 {
                 if self.game_state.world.location.is_outdoors() {
                     let ambient = self.overworld_config_table().current_music() >> 4;
-                    self.system_signals_mut().set_ambient_sound_effect(ambient);
+                    self.set_ambient_sound_effect(ambient);
                 }
                 if self.game_state.system_signals.queued_music_control() != 0xff {
                     let music = self.game_state.system_signals.queued_music_control();
-                    self.system_signals_mut().set_music_control(music);
+                    self.set_music_control(music);
                 }
             }
             let saved_module = self.game_state.frame.saved_module_for_menu;
@@ -3712,8 +3608,7 @@ impl ZeldaState {
 
     pub(super) fn iris_spotlight_reset_table(&mut self) {
         for i in 0..240 {
-            self.spotlight_hdma_mut()
-                .set_hdma_table_dynamic_entry(i, 0xff00);
+            self.set_spotlight_hdma_table_dynamic_entry(i, 0xff00);
         }
     }
 
@@ -3724,8 +3619,8 @@ impl ZeldaState {
             .palette_buffer
             .aux_full_slice()
             .to_vec();
-        self.palette_buffer_mut().copy_main_full_from(&aux);
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.copy_main_full_from(&aux);
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn enable_force_blank(&mut self) {
@@ -3741,17 +3636,17 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_set_bg_and_fixed_color(&mut self, color: u16) {
-        self.palette_buffer_mut().set_main_color(0, color);
-        self.palette_buffer_mut().set_main_color(32, color);
-        self.palette_buffer_mut().set_aux_color(0, color);
-        self.palette_buffer_mut().set_aux_color(32, color);
+        self.set_main_color(0, color);
+        self.set_main_color(32, color);
+        self.set_aux_color(0, color);
+        self.set_aux_color(32, color);
         self.set_backdropcolor_black();
     }
 
     pub(super) fn set_backdropcolor_black(&mut self) {
-        self.palette_filter_mut().set_fixed_color_red(0x20);
-        self.palette_filter_mut().set_fixed_color_green(0x40);
-        self.palette_filter_mut().set_fixed_color_blue(0x80);
+        self.set_fixed_color_red(0x20);
+        self.set_fixed_color_green(0x40);
+        self.set_fixed_color_blue(0x80);
     }
 
     pub(super) fn palette_set_ow_bg_color(&mut self) {
@@ -3761,8 +3656,8 @@ impl ZeldaState {
 
     pub(super) fn palette_special_ow(&mut self) {
         let c = self.palette_get_ow_bg_color();
-        self.palette_buffer_mut().set_aux_color(0, c);
-        self.palette_buffer_mut().set_aux_color(32, c);
+        self.set_aux_color(0, c);
+        self.set_aux_color(32, c);
         self.set_backdropcolor_black();
     }
 
@@ -3801,13 +3696,13 @@ impl ZeldaState {
             for (low, high) in pairs {
                 let a = self.game_state.display.palette_buffer.aux_color(low);
                 let b = self.game_state.display.palette_buffer.aux_color(high);
-                self.palette_buffer_mut().set_main_color(high, a);
-                self.palette_buffer_mut().set_aux_color(high, a);
-                self.palette_buffer_mut().set_main_color(low, b);
-                self.palette_buffer_mut().set_aux_color(low, b);
+                self.set_main_color(high, a);
+                self.set_aux_color(high, a);
+                self.set_main_color(low, b);
+                self.set_aux_color(low, b);
             }
         }
-        self.system_signals_mut().increment_cgram_update_flag();
+        self.increment_cgram_update_flag();
     }
 
     pub(super) fn palette_revert_translucency_swap(&mut self) {
@@ -3822,8 +3717,8 @@ impl ZeldaState {
         let base_idx = base >> 1;
         for i in 0..n as usize {
             let v = src[i];
-            self.palette_buffer_mut().set_aux_color(base_idx + i, v);
-            self.palette_buffer_mut().set_main_color(base_idx + i, v);
+            self.set_aux_color(base_idx + i, v);
+            self.set_main_color(base_idx + i, v);
         }
     }
 }

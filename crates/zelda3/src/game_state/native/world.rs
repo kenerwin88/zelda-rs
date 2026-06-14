@@ -6,6 +6,8 @@ const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
 const BIRD_TRAVEL_STATUS_SLOTS: usize = 16;
 const OVERWORLD_EVENT_INFO_SCREENS: usize = 160;
 const OVERWORLD_CONFIG_SCREENS: usize = 160;
+const OVERWORLD_SPRITE_GFX_SCREENS: usize =
+    OVERWORLD_SPRITE_PALETTE_TABLE - OVERWORLD_SPRITE_GFX_TABLE;
 const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
@@ -67,6 +69,80 @@ impl<'a> OverworldMap16Decode<'a> {
     }
 }
 
+pub(crate) struct OverworldMap16DecodeScratch;
+
+impl OverworldMap16DecodeScratch {
+    pub(crate) fn copy_source_from(ram: &mut [u8], data: &[u8]) {
+        ram[OVERWORLD_MAP16_DECODE_SRC..OVERWORLD_MAP16_DECODE_SRC + data.len()]
+            .copy_from_slice(data);
+    }
+
+    pub(crate) fn copy_scratch_to_source_words_high(ram: &mut [u8], len: usize) {
+        for i in 0..len {
+            ram[OVERWORLD_MAP16_DECODE_SRC + 1 + i * 2] = ram[OVERWORLD_DECOMP_BUFFER + i];
+        }
+    }
+
+    pub(crate) fn copy_scratch_to_source_words_low(ram: &mut [u8], len: usize) {
+        for i in 0..len {
+            ram[OVERWORLD_MAP16_DECODE_SRC + i * 2] = ram[OVERWORLD_DECOMP_BUFFER + i];
+        }
+    }
+
+    pub(crate) fn write_decompressed_byte(ram: &mut [u8], dst: usize, value: u8) {
+        ram[dst] = value;
+    }
+
+    pub(crate) fn copy_decompressed_byte(
+        ram: &mut [u8],
+        dst_org: usize,
+        dst: usize,
+        offset: usize,
+    ) {
+        ram[dst] = ram[dst_org + offset];
+    }
+
+    pub(crate) fn decomp_scratch_byte_mut(ram: &mut [u8], index: usize) -> &mut u8 {
+        &mut ram[OVERWORLD_DECOMP_BUFFER + index]
+    }
+
+    pub(crate) fn decomp_scratch_slice_mut(ram: &mut [u8]) -> &mut [u8] {
+        &mut ram[OVERWORLD_DECOMP_BUFFER..]
+    }
+
+    pub(crate) fn decode_block_fill(ram: &mut [u8], dst: usize, table: &[u8], x: usize) {
+        ram[dst] = table[x];
+        ram[dst + 2] = table[x + 1];
+        ram[dst + 4] = table[x + 2];
+        ram[dst + 6] = table[x + 3];
+        let packed0 = table[x + 4];
+        let packed1 = table[x + 5];
+        ram[dst + 1] = packed0 >> 4;
+        ram[dst + 3] = packed0 & 0x0f;
+        ram[dst + 5] = packed1 >> 4;
+        ram[dst + 7] = packed1 & 0x0f;
+    }
+
+    pub(crate) fn set_decode_last(ram: &mut [u8], value: u16) {
+        write_le_u16(ram, MAP16_DECODE_LAST, value);
+    }
+
+    pub(crate) fn set_decode_tmp(ram: &mut [u8], value: u16) {
+        write_le_u16(ram, MAP16_DECODE_WORK_WORD, value);
+    }
+
+    pub(crate) fn write_decoded_map32_to_bg2_tilemap(ram: &mut [u8], dst: usize, idx: usize) {
+        let v0 = read_le_u16(ram, MAP16_DECODE_0 + idx);
+        let v1 = read_le_u16(ram, MAP16_DECODE_1 + idx);
+        let v2 = read_le_u16(ram, MAP16_DECODE_2 + idx);
+        let v3 = read_le_u16(ram, MAP16_DECODE_3 + idx);
+        write_le_u16(ram, dst, v0);
+        write_le_u16(ram, dst + 128, v2);
+        write_le_u16(ram, dst + 2, v1);
+        write_le_u16(ram, dst + 130, v3);
+    }
+}
+
 pub(crate) struct NativeOverworldMap16DecodeBridgeMut<'a> {
     ram: &'a mut [u8],
 }
@@ -77,69 +153,47 @@ impl<'a> NativeOverworldMap16DecodeBridgeMut<'a> {
     }
 
     pub(crate) fn copy_source_from(&mut self, data: &[u8]) {
-        self.ram[OVERWORLD_MAP16_DECODE_SRC..OVERWORLD_MAP16_DECODE_SRC + data.len()]
-            .copy_from_slice(data);
+        OverworldMap16DecodeScratch::copy_source_from(self.ram, data);
     }
 
     pub(crate) fn copy_scratch_to_source_words_high(&mut self, len: usize) {
-        for i in 0..len {
-            self.ram[OVERWORLD_MAP16_DECODE_SRC + 1 + i * 2] =
-                self.ram[OVERWORLD_DECOMP_BUFFER + i];
-        }
+        OverworldMap16DecodeScratch::copy_scratch_to_source_words_high(self.ram, len);
     }
 
     pub(crate) fn copy_scratch_to_source_words_low(&mut self, len: usize) {
-        for i in 0..len {
-            self.ram[OVERWORLD_MAP16_DECODE_SRC + i * 2] = self.ram[OVERWORLD_DECOMP_BUFFER + i];
-        }
+        OverworldMap16DecodeScratch::copy_scratch_to_source_words_low(self.ram, len);
     }
 
     pub(crate) fn write_decompressed_byte(&mut self, dst: usize, value: u8) {
-        self.ram[dst] = value;
+        OverworldMap16DecodeScratch::write_decompressed_byte(self.ram, dst, value);
     }
 
     pub(crate) fn copy_decompressed_byte(&mut self, dst_org: usize, dst: usize, offset: usize) {
-        self.ram[dst] = self.ram[dst_org + offset];
+        OverworldMap16DecodeScratch::copy_decompressed_byte(self.ram, dst_org, dst, offset);
     }
 
     pub(crate) fn decomp_scratch_byte_mut(&mut self, index: usize) -> &mut u8 {
-        &mut self.ram[OVERWORLD_DECOMP_BUFFER + index]
+        OverworldMap16DecodeScratch::decomp_scratch_byte_mut(self.ram, index)
     }
 
     pub(crate) fn decomp_scratch_slice_mut(&mut self) -> &mut [u8] {
-        &mut self.ram[OVERWORLD_DECOMP_BUFFER..]
+        OverworldMap16DecodeScratch::decomp_scratch_slice_mut(self.ram)
     }
 
     pub(crate) fn decode_block_fill(&mut self, dst: usize, table: &[u8], x: usize) {
-        self.ram[dst] = table[x];
-        self.ram[dst + 2] = table[x + 1];
-        self.ram[dst + 4] = table[x + 2];
-        self.ram[dst + 6] = table[x + 3];
-        let packed0 = table[x + 4];
-        let packed1 = table[x + 5];
-        self.ram[dst + 1] = packed0 >> 4;
-        self.ram[dst + 3] = packed0 & 0x0f;
-        self.ram[dst + 5] = packed1 >> 4;
-        self.ram[dst + 7] = packed1 & 0x0f;
+        OverworldMap16DecodeScratch::decode_block_fill(self.ram, dst, table, x);
     }
 
     pub(crate) fn set_decode_last(&mut self, value: u16) {
-        write_le_u16(self.ram, MAP16_DECODE_LAST, value);
+        OverworldMap16DecodeScratch::set_decode_last(self.ram, value);
     }
 
     pub(crate) fn set_decode_tmp(&mut self, value: u16) {
-        write_le_u16(self.ram, MAP16_DECODE_WORK_WORD, value);
+        OverworldMap16DecodeScratch::set_decode_tmp(self.ram, value);
     }
 
     pub(crate) fn write_decoded_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {
-        let v0 = read_le_u16(self.ram, MAP16_DECODE_0 + idx);
-        let v1 = read_le_u16(self.ram, MAP16_DECODE_1 + idx);
-        let v2 = read_le_u16(self.ram, MAP16_DECODE_2 + idx);
-        let v3 = read_le_u16(self.ram, MAP16_DECODE_3 + idx);
-        write_le_u16(self.ram, dst, v0);
-        write_le_u16(self.ram, dst + 128, v2);
-        write_le_u16(self.ram, dst + 2, v1);
-        write_le_u16(self.ram, dst + 130, v3);
+        OverworldMap16DecodeScratch::write_decoded_map32_to_bg2_tilemap(self.ram, dst, idx);
     }
 }
 
@@ -1314,11 +1368,13 @@ impl OverworldConfigTableState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut music = vec![0; OVERWORLD_CONFIG_SCREENS];
         let mut sprite_palette = vec![0; OVERWORLD_CONFIG_SCREENS];
-        let mut sprite_graphics = vec![0; OVERWORLD_CONFIG_SCREENS];
+        let mut sprite_graphics = vec![0; OVERWORLD_SPRITE_GFX_SCREENS];
         for screen in 0..OVERWORLD_CONFIG_SCREENS {
             music[screen] = ram_byte(ram, OVERWORLD_MUSIC_TABLE + screen);
             sprite_palette[screen] = ram_byte(ram, OVERWORLD_SPRITE_PALETTE_TABLE + screen);
-            sprite_graphics[screen] = ram_byte(ram, OVERWORLD_SPRITE_GFX_TABLE + screen);
+            if screen < OVERWORLD_SPRITE_GFX_SCREENS {
+                sprite_graphics[screen] = ram_byte(ram, OVERWORLD_SPRITE_GFX_TABLE + screen);
+            }
         }
         Self {
             music,
@@ -1331,7 +1387,9 @@ impl OverworldConfigTableState {
         for screen in 0..OVERWORLD_CONFIG_SCREENS {
             ram[OVERWORLD_MUSIC_TABLE + screen] = self.music(screen);
             ram[OVERWORLD_SPRITE_PALETTE_TABLE + screen] = self.sprite_palette(screen);
-            ram[OVERWORLD_SPRITE_GFX_TABLE + screen] = self.sprite_graphics(screen);
+            if screen < OVERWORLD_SPRITE_GFX_SCREENS {
+                ram[OVERWORLD_SPRITE_GFX_TABLE + screen] = self.sprite_graphics(screen);
+            }
         }
     }
 
@@ -1344,10 +1402,14 @@ impl OverworldConfigTableState {
     }
 
     pub(crate) fn sprite_graphics(&self, screen: usize) -> u8 {
-        self.sprite_graphics
-            .get(screen)
-            .copied()
-            .unwrap_or_default()
+        if screen < OVERWORLD_SPRITE_GFX_SCREENS {
+            self.sprite_graphics
+                .get(screen)
+                .copied()
+                .unwrap_or_default()
+        } else {
+            self.sprite_palette(screen - OVERWORLD_SPRITE_GFX_SCREENS)
+        }
     }
 
     pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
@@ -1388,7 +1450,7 @@ impl Default for OverworldConfigTableState {
         Self {
             music: vec![0; OVERWORLD_CONFIG_SCREENS],
             sprite_palette: vec![0; OVERWORLD_CONFIG_SCREENS],
-            sprite_graphics: vec![0; OVERWORLD_CONFIG_SCREENS],
+            sprite_graphics: vec![0; OVERWORLD_SPRITE_GFX_SCREENS],
         }
     }
 }
@@ -2451,7 +2513,7 @@ impl WorldTransientState {
         self.write_scalar_fields_to_ram(ram);
     }
 
-    fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
         ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = self.custom_spell_animation_flag;
         ram[ALLOW_SCROLL_Z] = self.allow_scroll_z;
         ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = self.milestone_item_graphics_countdown;

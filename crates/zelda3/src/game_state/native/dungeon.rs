@@ -3179,6 +3179,12 @@ impl DungeonTorchState {
         self.timers.fill(0);
     }
 
+    fn refresh_object_data_positions_from_ram(&mut self, ram: &[u8]) {
+        for (index, position) in self.object_data_positions.iter_mut().enumerate() {
+            *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
+        }
+    }
+
     fn set_timer(&mut self, index: usize, value: u8) {
         if let Some(timer) = self.timers.get_mut(index) {
             *timer = value;
@@ -5417,12 +5423,14 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     }
 
     pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
+        self.torch.refresh_object_data_positions_from_ram(self.ram);
         self.torch.set_torch_index_range_start(value);
         write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, value);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_torch_index(&mut self, value: u16) {
+        self.torch.refresh_object_data_positions_from_ram(self.ram);
         self.torch.set_torch_index(value);
         write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
         self.debug_assert_matches_ram();

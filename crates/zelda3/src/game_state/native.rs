@@ -19,14 +19,16 @@ mod sprites;
 mod system;
 mod world;
 
+#[cfg(test)]
+use display::NativeVramUploadBufferBridgeMut;
 pub(crate) use display::{
-    DisplayState, GraphicsDecompressionScratch, HudStateRead, LinkDmaSourceSlot,
-    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
-    NativeGraphicsScratchBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
-    NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    PpuScrollCopyState,
+    DisplayState, GraphicsDecompressionScratch, HudRuntimeState, HudStateRead, HudTilemapState,
+    LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut,
+    NativeTrinexxPaletteBridgeMut, NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState,
+    PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState, PALETTE_BANK_BYTES,
+    PALETTE_VISIBLE_BYTES, SPOTLIGHT_HDMA_WORD_COUNT, SPRITE_SUBPALETTE_CLEAR_LEN,
+    SPRITE_SUBPALETTE_CLEAR_START, VISIBLE_SUBPALETTE_CLEAR_LEN, VISIBLE_SUBPALETTE_CLEAR_START,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
@@ -63,18 +65,18 @@ pub(crate) use ending::{
     EndingState, IntroActorRead, NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut,
     NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
-pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
+pub(crate) use frame::FrameState;
 pub(crate) use inventory::{
     InventoryState, NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut,
     NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
     SaveProgressState,
 };
 pub(crate) use messaging::{
-    MessagingState, MultiselectChoiceRead, NativeDecodedMessageTextBridgeMut,
-    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
-    NativeDialogueSourceOffsetBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    MessagingRenderBufferState, MessagingState, MultiselectChoiceRead,
+    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
+    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut,
+    NativeSharedMessageTimerBridgeMut, SelectFileMenuState, VwfRenderState,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -102,29 +104,29 @@ pub(crate) use sprites::{
     NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
-    SpriteSlotSnapshot, SpriteState, TagalongSlotRead,
+    OverworldSpriteLoadedState, OverworldSpritePresenceState, SpriteSlotSnapshot, SpriteState,
+    TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
-    MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, NativeSystemWorkAreaBridgeMut,
-    SystemSignalsState,
+    MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,
+    SystemWorkArea,
 };
 #[cfg(test)]
 use world::OverworldMap16State;
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMap16DecodeBridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
-    NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
-    NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableRead,
-    OverworldMap16Decode, OverworldMap16SourcePage, WorldLocationState, WorldState,
+    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
+    NativeWorldScrollBridgeMut, OverworldConfigTableRead, OverworldConfigTableState,
+    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
+    OverworldMap16SourcePage, OverworldScrollDeltaState, WorldCameraBoundariesState,
+    WorldLocationState, WorldRegionState, WorldScrollState, WorldState, WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -134,9 +136,9 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{
-    HudInventoryOrderState, HudRuntimeState, HudTilemapState, OverworldPaletteBackupState,
-    PaletteBufferState, PaletteFilterState, SpotlightHdmaState, TrinexxPaletteState,
-    WaterHdmaWindowState,
+    HudInventoryOrderState, NativeDisplayStateBridgeMut, NativeHudStateBridgeMut,
+    NativeOverworldPaletteBackupBridgeMut, NativeSpotlightHdmaBridgeMut, PaletteBufferState,
+    TrinexxPaletteState, WaterHdmaWindowState,
 };
 #[cfg(test)]
 use dungeon::{
@@ -151,13 +153,15 @@ use effects::{
 #[cfg(test)]
 use ending::{AttractSceneState, EndingCreditState, IntroSceneState};
 #[cfg(test)]
+use frame::NativeFrameStateBridgeMut;
+#[cfg(test)]
 use inventory::{DungeonKeySlotsState, InventoryItemsState, MirrorWarpState, PlayerResourcesState};
 #[cfg(test)]
 use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
-    DialoguePointerTableState, DialogueSourceOffsetState, MessagingRenderBufferState,
-    MessagingRuntimeState, MultiselectChoiceState, SelectFileMenuState, SharedMessageTimerState,
-    VwfRenderState,
+    DialoguePointerTableState, DialogueSourceOffsetState, MessagingRuntimeState,
+    MultiselectChoiceState, NativeMessagingRenderBufferBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeVwfRenderBridgeMut, SharedMessageTimerState,
 };
 #[cfg(test)]
 use player::{PushedBlockState, SpecialExitPositionState};
@@ -168,17 +172,19 @@ use poly::{
 #[cfg(test)]
 use sprites::{
     ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
-    EtherOrbitState, FailedSpinSparkleSpawnState, MazeGameTimerState, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState,
-    TagalongTrailState,
+    EtherOrbitState, FailedSpinSparkleSpawnState, MazeGameTimerState,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState, TagalongTrailState,
 };
 #[cfg(test)]
+use system::NativeSystemWorkAreaBridgeMut;
+#[cfg(test)]
 use world::{
-    BirdTravelDestinationsState, OverworldConfigTableState, OverworldEntranceState,
-    OverworldEventInfoState, OverworldExitState, OverworldMapUiState, OverworldMapZoomState,
-    OverworldScreenSizeState, OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState,
-    WeatherVaneState, WorldCameraBoundariesState, WorldPaletteThemeState, WorldRegionState,
-    WorldScrollState, WorldTransientState,
+    BirdTravelDestinationsState, NativeOverworldConfigTableBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeWorldLocationBridgeMut, NativeWorldRegionBridgeMut,
+    NativeWorldTransientBridgeMut, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
+    OverworldMapZoomState, OverworldScreenSizeState, OverworldTransitionState, RoomBoundsState,
+    WeatherVaneState, WorldPaletteThemeState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {
@@ -5843,12 +5849,14 @@ mod tests {
         ram[OVERWORLD_MUSIC_TABLE + 0x80] = 0x42;
         ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02] = 0x05;
         ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02] = 0x18;
+        ram[OVERWORLD_SPRITE_PALETTE_TABLE] = 0x09;
 
         let mut config_table = OverworldConfigTableState::load_from_ram(&ram);
         assert_eq!(config_table.music(0x02), 0x31);
         assert_eq!(config_table.music(0x80), 0x42);
         assert_eq!(config_table.sprite_palette(0x02), 0x05);
         assert_eq!(config_table.sprite_graphics(0x02), 0x18);
+        assert_eq!(config_table.sprite_graphics(0x80), 0x09);
         assert_eq!(config_table.music(0xa0), 0);
 
         config_table.set_music(0x02, 0x6a);
@@ -5856,8 +5864,10 @@ mod tests {
 
         assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x02], 0x6a);
         assert_eq!(ram[OVERWORLD_MUSIC_TABLE + 0x80], 0x42);
+        assert_eq!(ram[OVERWORLD_SPRITE_PALETTE_TABLE], 0x09);
         assert_eq!(ram[OVERWORLD_SPRITE_PALETTE_TABLE + 0x02], 0x05);
         assert_eq!(ram[OVERWORLD_SPRITE_GFX_TABLE + 0x02], 0x18);
+        assert_eq!(ram[OVERWORLD_SPRITE_GFX_TABLE + 0x80], 0x09);
     }
 
     #[test]
@@ -7617,6 +7627,7 @@ mod tests {
         );
         assert_eq!(projected[CGWSEL_COPY], 0x20);
         assert_eq!(projected[CGADSUB_COPY], 0x31);
+        assert_eq!(projected[CGADSUB_COPY + 1], 0x42);
         assert_eq!(projected[COLDATA_COPY0], 0x21);
         assert_eq!(projected[COLDATA_COPY1], 0x43);
         assert_eq!(projected[COLDATA_COPY2], 0x85);

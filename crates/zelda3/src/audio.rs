@@ -1001,7 +1001,7 @@ impl ZeldaState {
             self.audio.spc_ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
         }
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
-        self.system_signals_mut().set_msu_volume(msu_volume);
+        self.set_msu_volume(msu_volume);
         self.save_msu_resume_info(MsuResumeSlot::Primary, self.audio.msu_player.resume_info);
     }
 
@@ -1084,7 +1084,7 @@ impl ZeldaState {
     }
 
     fn save_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
-        self.system_signals_mut().set_msu_resume_info(slot, info);
+        self.set_msu_resume_info(slot, info);
     }
 }
 

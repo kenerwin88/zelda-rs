@@ -113,14 +113,14 @@ const LINK_DMA_SOURCE_SLOTS: [LinkDmaSourceSlot; 22] = [
 ];
 
 const HUD_INVENTORY_ORDER_CAPACITY: usize = 24;
-const PALETTE_BANK_BYTES: usize = 512;
-const PALETTE_VISIBLE_BYTES: usize = 256;
-const VISIBLE_SUBPALETTE_CLEAR_START: usize = 32 * 2;
-const VISIBLE_SUBPALETTE_CLEAR_LEN: usize = 192;
-const SPRITE_SUBPALETTE_CLEAR_START: usize = 0x180;
-const SPRITE_SUBPALETTE_CLEAR_LEN: usize = 0x80;
+pub(crate) const PALETTE_BANK_BYTES: usize = 512;
+pub(crate) const PALETTE_VISIBLE_BYTES: usize = 256;
+pub(crate) const VISIBLE_SUBPALETTE_CLEAR_START: usize = 32 * 2;
+pub(crate) const VISIBLE_SUBPALETTE_CLEAR_LEN: usize = 192;
+pub(crate) const SPRITE_SUBPALETTE_CLEAR_START: usize = 0x180;
+pub(crate) const SPRITE_SUBPALETTE_CLEAR_LEN: usize = 0x80;
 const HUD_TILEMAP_BYTES: usize = MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER;
-const SPOTLIGHT_HDMA_WORD_COUNT: usize = 0xf0;
+pub(crate) const SPOTLIGHT_HDMA_WORD_COUNT: usize = 0xf0;
 
 pub(crate) struct GraphicsDecompressionScratch;
 
@@ -171,6 +171,7 @@ impl PaletteFilterState {
         ram[DARKENING_OR_LIGHTENING_SCREEN + 1] = self.darkening_or_lightening_screen_high;
         ram[CGWSEL_COPY] = self.color_window_selection;
         ram[CGADSUB_COPY] = self.color_math_control;
+        ram[CGADSUB_COPY + 1] = self.color_math_control_high;
         ram[COLDATA_COPY0] = self.fixed_color_red;
         ram[COLDATA_COPY1] = self.fixed_color_green;
         ram[COLDATA_COPY2] = self.fixed_color_blue;
@@ -582,15 +583,15 @@ impl HudTilemapState {
         u16::from(self.tile_indices[offset]) | (u16::from(self.tile_indices[offset + 1]) << 8)
     }
 
-    fn set_floor_changed_timer(&mut self, value: u16) {
+    pub(crate) fn set_floor_changed_timer(&mut self, value: u16) {
         self.floor_changed_timer = value;
     }
 
-    fn clear_floor_changed_timer_low(&mut self) {
+    pub(crate) fn clear_floor_changed_timer_low(&mut self) {
         self.floor_changed_timer &= 0xff00;
     }
 
-    fn set_tile_word(&mut self, tile: usize, value: u16) {
+    pub(crate) fn set_tile_word(&mut self, tile: usize, value: u16) {
         let offset = tile * 2;
         if offset + 1 < self.tile_indices.len() {
             self.tile_indices[offset] = value as u8;
@@ -2519,7 +2520,7 @@ impl DisplayState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_core_to_ram(&self, ram: &mut [u8]) {
         ram[INIDISP_COPY] = self.screen_brightness;
         ram[NMI_BOOLEAN] = self.nmi_update_latch;
         ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
@@ -2589,6 +2590,134 @@ impl DisplayState {
             self.animated_tile_vram_destination_address,
         );
         write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
+    }
+
+    pub(crate) fn debug_assert_core_matches_ram(&self, ram: &[u8]) {
+        let ram_state = Self::load_from_ram(ram);
+        debug_assert_eq!(self.screen_brightness, ram_state.screen_brightness);
+        debug_assert_eq!(self.nmi_update_latch, ram_state.nmi_update_latch);
+        debug_assert_eq!(
+            self.core_update_disable_flag,
+            ram_state.core_update_disable_flag
+        );
+        debug_assert_eq!(
+            self.pending_nmi_subroutine,
+            ram_state.pending_nmi_subroutine
+        );
+        debug_assert_eq!(self.bg_vram_load_mode, ram_state.bg_vram_load_mode);
+        debug_assert_eq!(
+            self.pending_tilemap_update_destination_page,
+            ram_state.pending_tilemap_update_destination_page
+        );
+        debug_assert_eq!(
+            self.pending_tilemap_update_source_offset,
+            ram_state.pending_tilemap_update_source_offset
+        );
+        debug_assert_eq!(self.bg_mode, ram_state.bg_mode);
+        debug_assert_eq!(self.main_screen_layers, ram_state.main_screen_layers);
+        debug_assert_eq!(self.sub_screen_layers, ram_state.sub_screen_layers);
+        debug_assert_eq!(self.bg12_window_selection, ram_state.bg12_window_selection);
+        debug_assert_eq!(self.bg34_window_selection, ram_state.bg34_window_selection);
+        debug_assert_eq!(
+            self.object_color_window_selection,
+            ram_state.object_color_window_selection
+        );
+        debug_assert_eq!(
+            self.main_screen_window_layers,
+            ram_state.main_screen_window_layers
+        );
+        debug_assert_eq!(
+            self.sub_screen_window_layers,
+            ram_state.sub_screen_window_layers
+        );
+        debug_assert_eq!(
+            self.nmi_copy_packets_request,
+            ram_state.nmi_copy_packets_request
+        );
+        debug_assert_eq!(
+            self.pending_polyhedral_update,
+            ram_state.pending_polyhedral_update
+        );
+        debug_assert_eq!(self.chr_halfslot_request, ram_state.chr_halfslot_request);
+        debug_assert_eq!(self.nmi_thread_active, ram_state.nmi_thread_active);
+        debug_assert_eq!(
+            self.nmi_thread_stack_pointer,
+            ram_state.nmi_thread_stack_pointer
+        );
+        debug_assert_eq!(self.irq_control_flag, ram_state.irq_control_flag);
+        debug_assert_eq!(self.vertical_irq_trigger, ram_state.vertical_irq_trigger);
+        debug_assert_eq!(
+            self.crystal_rotation_counter,
+            ram_state.crystal_rotation_counter
+        );
+        debug_assert_eq!(
+            self.sprite_dma_head_pointer,
+            ram_state.sprite_dma_head_pointer
+        );
+        debug_assert_eq!(
+            self.sprite_dma_body_pointer,
+            ram_state.sprite_dma_body_pointer
+        );
+        debug_assert_eq!(self.hdma_enable_mask, ram_state.hdma_enable_mask);
+        debug_assert_eq!(self.mosaic_copy, ram_state.mosaic_copy);
+        debug_assert_eq!(self.mosaic_level, ram_state.mosaic_level);
+        debug_assert_eq!(self.mosaic_target_level, ram_state.mosaic_target_level);
+        debug_assert_eq!(self.mosaic_direction, ram_state.mosaic_direction);
+        debug_assert_eq!(
+            self.nmi_load_target_address,
+            ram_state.nmi_load_target_address
+        );
+        debug_assert_eq!(self.vram_upload_cursor, ram_state.vram_upload_cursor);
+        debug_assert_eq!(
+            self.incremental_vram_upload_counter,
+            ram_state.incremental_vram_upload_counter
+        );
+        debug_assert_eq!(self.link_dma_sources, ram_state.link_dma_sources);
+        debug_assert_eq!(
+            self.bg_tile_animation_countdown,
+            ram_state.bg_tile_animation_countdown
+        );
+        debug_assert_eq!(
+            self.message_dma_destination_address,
+            ram_state.message_dma_destination_address
+        );
+        debug_assert_eq!(self.message_dma_tile_base, ram_state.message_dma_tile_base);
+        debug_assert_eq!(
+            self.message_dma_tile_limit,
+            ram_state.message_dma_tile_limit
+        );
+        debug_assert_eq!(
+            self.message_dma_tile_sentinel,
+            ram_state.message_dma_tile_sentinel
+        );
+        debug_assert_eq!(
+            self.overworld_fixed_color_adjustment,
+            ram_state.overworld_fixed_color_adjustment
+        );
+        debug_assert_eq!(
+            self.travel_bird_tile_offset,
+            ram_state.travel_bird_tile_offset
+        );
+        debug_assert_eq!(
+            self.star_tile_restore_phase,
+            ram_state.star_tile_restore_phase
+        );
+        debug_assert_eq!(
+            self.animated_tile_data_source_address,
+            ram_state.animated_tile_data_source_address
+        );
+        debug_assert_eq!(
+            self.animated_tile_vram_destination_address,
+            ram_state.animated_tile_vram_destination_address
+        );
+        debug_assert_eq!(
+            self.attract_vram_destination_address,
+            ram_state.attract_vram_destination_address
+        );
+    }
+
+    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.write_core_to_ram(ram);
         self.palette_buffer.write_to_ram(ram);
         self.palette_filter.write_to_ram(ram);
         self.trinexx_palette.write_to_ram(ram);
@@ -2744,6 +2873,10 @@ impl DisplayState {
     pub(crate) fn clear_sub_screen_layers_word_alias(&mut self) {
         self.sub_screen_layers = 0;
         self.main_screen_window_layers = 0;
+    }
+
+    pub(crate) fn clear_sub_screen_layers_word(&mut self) {
+        self.clear_sub_screen_layers_word_alias();
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
@@ -2952,6 +3085,10 @@ impl DisplayState {
         self.mosaic_level = 0;
     }
 
+    pub(crate) fn clear_mosaic_level_word(&mut self) {
+        self.clear_mosaic_level_word_alias();
+    }
+
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
         self.mosaic_level = self.mosaic_level.wrapping_add(value);
         self.mosaic_level
@@ -2976,6 +3113,10 @@ impl DisplayState {
 
     pub(crate) fn clear_mosaic_target_level_word_alias(&mut self) {
         self.mosaic_target_level = 0;
+    }
+
+    pub(crate) fn clear_mosaic_target_level_word(&mut self) {
+        self.clear_mosaic_target_level_word_alias();
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
@@ -3175,6 +3316,61 @@ impl DisplayState {
 
     pub(crate) fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
         self.link_dma_sources.set_source(slot, value);
+    }
+
+    pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyTop, top);
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyBottom, bottom);
+    }
+
+    pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadTop, top);
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadBottom, bottom);
+    }
+
+    pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HandLeft, left);
+        self.set_link_dma_source(LinkDmaSourceSlot::HandRight, right);
+    }
+
+    pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::SwordUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::SwordLower, lower);
+    }
+
+    pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::ShieldUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::ShieldLower, lower);
+    }
+
+    pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::AuxUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::AuxLower, lower);
+    }
+
+    pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::PushUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::PushLower, lower);
+    }
+
+    pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileLower, lower);
+    }
+
+    pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerLower, lower);
+    }
+
+    pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerLower, lower);
+    }
+
+    pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
+        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdUpper, upper);
+        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdLower, lower);
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
@@ -3956,114 +4152,6 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
 
     pub(crate) fn write_tile_stripe_sentinel(&mut self, address: usize) {
         write_le_u16(self.ram, address, 0xffff);
-    }
-}
-
-pub(crate) struct NativeGraphicsScratchBridgeMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> NativeGraphicsScratchBridgeMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn set_aux_bg_subset_pack(&mut self, index: usize, value: u8) {
-        self.ram[AUX_BG_SUBSET_0 + index] = value;
-    }
-
-    pub(crate) fn primary_decompression_buffer(&self, len: usize) -> Vec<u8> {
-        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len].to_vec()
-    }
-
-    pub(crate) fn combined_decompression_buffers(&self) -> Vec<u8> {
-        self.primary_decompression_buffer(0x0c00)
-    }
-
-    pub(crate) fn copy_to_primary_decompression_buffer(&mut self, data: &[u8]) {
-        let len = data.len().min(
-            self.ram
-                .len()
-                .saturating_sub(PRIMARY_DECOMP_BUFFER_LOAD_GFX),
-        );
-        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len]
-            .copy_from_slice(&data[..len]);
-    }
-
-    pub(crate) fn copy_decompressed_graphics_to(&mut self, dst: usize, data: &[u8]) -> usize {
-        let len = data.len().min(self.ram.len().saturating_sub(dst));
-        self.ram[dst..dst + len].copy_from_slice(&data[..len]);
-        len
-    }
-
-    pub(crate) fn rotate_animated_dungeon_tile_planes(&mut self) {
-        for i in 0..256 {
-            let base = 0x9000 + i * 2;
-            let x = read_le_u16(self.ram, base + 0x1880);
-            let a = read_le_u16(self.ram, base + 0x1c80);
-            let b = read_le_u16(self.ram, base + 0x1e80);
-            let c = read_le_u16(self.ram, base + 0x1a80);
-            write_le_u16(self.ram, base + 0x1880, a);
-            write_le_u16(self.ram, base + 0x1c80, b);
-            write_le_u16(self.ram, base + 0x1e80, c);
-            write_le_u16(self.ram, base + 0x1a80, x);
-        }
-    }
-
-    pub(crate) fn write_expanded_tile_row(
-        &mut self,
-        dst: usize,
-        low_plane: u8,
-        high_plane: u8,
-        upper_plane: u8,
-        composite_plane: u8,
-    ) {
-        self.ram[dst] = low_plane;
-        self.ram[dst + 1] = high_plane;
-        self.ram[dst + 0x10] = upper_plane;
-        self.ram[dst + 0x11] = composite_plane;
-    }
-
-    pub(crate) fn set_dungeon_line_pointer_row0(&mut self, index: usize, value: u16) {
-        write_le_u16(self.ram, DUNG_LINE_PTRS_ROW0 + index * 2, value);
-    }
-
-    pub(crate) fn copy_message_rows(&mut self, dst: usize, src0: usize, src1: usize, len: usize) {
-        for i in 0..len {
-            self.ram[MESSAGING_RENDER_BUFFER + dst + i] = self.ram[src0 + i];
-            self.ram[MESSAGING_RENDER_BUFFER + dst + len + i] = self.ram[src1 + i];
-        }
-    }
-
-    pub(crate) fn copy_peg_tile_graphics_to_message_buffer(&mut self, first: usize, second: usize) {
-        for i in 0..64 {
-            let color = read_le_u16(self.ram, PEG_TILE_GFX_BUFFER + (first >> 1) * 2 + i * 2);
-            write_le_u16(self.ram, MESSAGING_BUF_LOAD_GFX + i * 2, color);
-        }
-        for i in 0..64 {
-            let color = read_le_u16(self.ram, PEG_TILE_GFX_BUFFER + (second >> 1) * 2 + i * 2);
-            write_le_u16(self.ram, MESSAGING_BUF_LOAD_GFX + (64 + i) * 2, color);
-        }
-    }
-
-    pub(crate) fn clear_agahnim_palette_settings(&mut self, len: usize) {
-        self.ram[AGAHNIM_PAL_SETTING..AGAHNIM_PAL_SETTING + len].fill(0);
-    }
-
-    pub(crate) fn agahnim_palette_word(&self, index: usize) -> u16 {
-        read_le_u16(self.ram, AGAHNIM_PAL_SETTING + index * 2)
-    }
-
-    pub(crate) fn set_agahnim_palette_word(&mut self, index: usize, value: u16) {
-        write_le_u16(self.ram, AGAHNIM_PAL_SETTING + index * 2, value);
-    }
-
-    pub(crate) fn sprite_decompression_buffer_tail(&self) -> Vec<u8> {
-        self.ram[SPRITE_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
-    }
-
-    pub(crate) fn staged_bg_and_sprite_decompression_buffers(&self) -> Vec<u8> {
-        self.ram[BG_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
     }
 }
 

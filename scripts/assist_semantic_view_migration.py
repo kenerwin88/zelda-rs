@@ -121,6 +121,19 @@ def parse_args() -> argparse.Namespace:
         help="also let the codemod rewrite aliases whose whole block is mapped",
     )
     parser.add_argument(
+        "--rewrite-partial-read-aliases",
+        action="store_true",
+        help="also rewrite mapped immutable read-alias method calls even when other alias uses remain",
+    )
+    parser.add_argument(
+        "--include-native-alias-methods",
+        action="store_true",
+        help=(
+            "include same-name source/native methods even if they only appear behind aliases; "
+            "useful with --rewrite-partial-read-aliases"
+        ),
+    )
+    parser.add_argument(
         "--path",
         action="append",
         type=Path,
@@ -176,6 +189,7 @@ def build_map(
     method_limit: int,
     constants: dict[str, int],
     blocker_methods_by_const: dict[str, list[tuple[str, int]]],
+    include_native_alias_methods: bool = False,
 ) -> tuple[str, Counter[str], Counter[str]]:
     source_type = planner.view_type_name(plan.return_type)
     if source_type is None:
@@ -198,6 +212,15 @@ def build_map(
         and method in native_methods
         and allowed_method(method, include_patterns, exclude_patterns)
     ]
+    if include_native_alias_methods:
+        seen_candidates = set(candidates)
+        for method in sorted(set(source_methods) & set(native_methods)):
+            if method in seen_candidates:
+                continue
+            if not allowed_method(method, include_patterns, exclude_patterns):
+                continue
+            candidates.append(method)
+            seen_candidates.add(method)
     unblocked_candidates = []
     for method in candidates:
         source_method = source_methods[method]
@@ -225,7 +248,7 @@ def build_map(
             lines.append(f"# {plan.accessor}.{method} skipped  # {uses} use(s)")
     return (
         "\n".join(lines) + "\n",
-        Counter({method: plan.methods[method] for method in candidates}),
+        Counter({method: plan.methods.get(method, 0) for method in candidates}),
         blocked,
     )
 
@@ -520,6 +543,8 @@ def codemod_command(args: argparse.Namespace, map_path: Path) -> list[str]:
         command.append("--summary")
     if args.rewrite_safe_aliases:
         command.append("--rewrite-safe-aliases")
+    if args.rewrite_partial_read_aliases:
+        command.append("--rewrite-partial-read-aliases")
     command.extend(str(path) for path in (args.path or [Path("crates/zelda3/src")]))
     return command
 
@@ -544,6 +569,10 @@ def print_next_commands(args: argparse.Namespace, map_path: Path) -> None:
         apply_command.extend(["--exclude-method", pattern])
     if args.rewrite_safe_aliases:
         apply_command.append("--rewrite-safe-aliases")
+    if args.rewrite_partial_read_aliases:
+        apply_command.append("--rewrite-partial-read-aliases")
+    if args.include_native_alias_methods:
+        apply_command.append("--include-native-alias-methods")
     print()
     print("apply after native ownership is in place:")
     print("  " + " ".join(shell_quote(part) if " " in part else part for part in apply_command))
@@ -593,6 +622,7 @@ def main() -> int:
         args.method_limit,
         constants,
         blocker_methods_by_const,
+        args.include_native_alias_methods,
     )
     map_path.write_text(text)
 

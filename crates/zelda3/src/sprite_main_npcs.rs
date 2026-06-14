@@ -157,10 +157,13 @@ impl ZeldaState {
         let j = self.sprite_spawn_dynamically(x_value, 0xb2, &mut info);
         if j >= 0 {
             let ju = j as usize;
-            let floor = self.player_state().lower_level_state();
+            let floor = self.game_state.player.follower_link.lower_level_state();
             self.sprite_slot_mut(ju).set_floor(floor);
-            self.sprite_set_x(ju, self.player_state().x().wrapping_add(8));
-            self.sprite_set_y(ju, self.player_state().y().wrapping_add(16));
+            self.sprite_set_x(ju, self.game_state.player.follower_link.x().wrapping_add(8));
+            self.sprite_set_y(
+                ju,
+                self.game_state.player.follower_link.y().wrapping_add(16),
+            );
             let bottle = self
                 .game_state
                 .inventory
@@ -254,11 +257,15 @@ impl ZeldaState {
 
         if self.sprite_slot(k).delay_main() == 0 {
             let x = self
-                .player_state()
+                .game_state
+                .player
+                .follower_link
                 .x()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let y = self
-                .player_state()
+                .game_state
+                .player
+                .follower_link
                 .y()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let pt = self.sprite_project_speed_towards_location(k, x, y, 20);
@@ -516,11 +523,15 @@ impl ZeldaState {
                 let mut pt2 = Point16U { x: 0, y: 0 };
                 if !self.player_bee_find_target(k, &mut pt2) {
                     pt2.x = self
-                        .player_state()
+                        .game_state
+                        .player
+                        .follower_link
                         .x()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                     pt2.y = self
-                        .player_state()
+                        .game_state
+                        .player
+                        .follower_link
                         .y()
                         .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
                 }
@@ -747,7 +758,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.player_state_mut().set_item_receipt_method(0);
+                self.follower_link_state_mut().set_item_receipt_method(0);
                 self.link_receive_item(0x16, 0);
                 self.save_progress_mut().or_progress_indicator_3(2);
                 let rupees = self
@@ -1084,7 +1095,7 @@ mod tests {
         state.clear_modal_pause_flag();
         state.set_submodule(0);
         state.follower_link_state_mut().clear_auxiliary_state();
-        state.player_state_mut().clear_item_hold_pose();
+        state.follower_link_state_mut().clear_item_hold_pose();
         state.follower_link_state_mut().clear_state_bits();
         for slot in 0..5 {
             state
@@ -1094,8 +1105,8 @@ mod tests {
                 .slot_mut(&mut state.ram, slot)
                 .clear();
         }
-        state.player_state_mut().set_x(0x1000);
-        state.player_state_mut().set_y(0x1000);
+        state.follower_link_state_mut().set_x(0x1000);
+        state.follower_link_state_mut().set_y(0x1000);
     }
 
     #[test]
@@ -1151,9 +1162,9 @@ mod tests {
     #[test]
     fn release_bee_from_bottle_spawns_at_link_and_marks_good_bee() {
         let mut state = fresh_state();
-        state.player_state_mut().set_x(0x120);
-        state.player_state_mut().set_y(0x230);
-        state.player_state_mut().mark_lower_level();
+        state.follower_link_state_mut().set_x(0x120);
+        state.follower_link_state_mut().set_y(0x230);
+        state.follower_link_state_mut().mark_lower_level();
         state.player_resources_mut().set_equipped_bottle_index(1);
         state.inventory_items_mut().set_bottle(0, 8);
 
@@ -1200,8 +1211,8 @@ mod tests {
             sprite.set_delay_main(0);
         }
         state.set_frame_counter(4);
-        state.player_state_mut().set_x(0x120);
-        state.player_state_mut().set_y(0x220);
+        state.follower_link_state_mut().set_x(0x120);
+        state.follower_link_state_mut().set_y(0x220);
 
         state.bee_main(k);
 

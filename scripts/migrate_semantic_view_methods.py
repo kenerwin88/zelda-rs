@@ -214,6 +214,71 @@ def rewrite_safe_aliases(text: str, mappings: list[MethodMapping]) -> tuple[str,
     return next_text, rewrites, rejected
 
 
+def rewrite_partial_read_aliases(text: str, mappings: list[MethodMapping]) -> tuple[str, list[tuple[int, str]]]:
+    """Rewrite mapped method calls behind immutable read aliases.
+
+    This deliberately leaves the alias binding in place. It is useful when a
+    block mixes already-native methods with not-yet-migrated methods: mapped
+    reads can move to native state without pretending the whole alias is safe to
+    remove. Mutable aliases are skipped because replacing only part of a mutable
+    borrow can create overlapping `&mut self` borrows.
+    """
+
+    read_mappings = [
+        mapping
+        for mapping in mappings
+        if not mapping.source_accessor.endswith("_mut")
+        and not mapping.target_accessor.endswith("_mut")
+    ]
+    source_accessors = sorted({mapping.source_accessor for mapping in read_mappings})
+    if not source_accessors:
+        return text, []
+
+    by_method = mapping_by_accessor_method(read_mappings)
+    source_pattern = "|".join(re.escape(accessor) for accessor in source_accessors)
+    alias_re = re.compile(
+        rf"(?m)^(?P<indent>\s*)let\s+(?P<mut>mut\s+)?(?P<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        rf"(?P<receiver>[A-Za-z_][A-Za-z0-9_]*)\.({source_pattern})\(\)\s*;\n"
+    )
+
+    replacements: list[tuple[int, int, str]] = []
+    rewrites: list[tuple[int, str]] = []
+    for alias_match in alias_re.finditer(text):
+        if alias_match.group("mut"):
+            continue
+        alias = alias_match.group("alias")
+        receiver = alias_match.group("receiver")
+        accessor = alias_match.group(5)
+        scope_start = alias_match.end()
+        scope_end = block_end_for_offset(text, scope_start)
+        scope = text[scope_start:scope_end]
+
+        for use in re.finditer(rf"\b{re.escape(alias)}\b", scope):
+            after = scope[use.end() :]
+            method_match = re.match(r"\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", after)
+            if method_match is None:
+                continue
+            method = method_match.group(1)
+            mapping = by_method.get((accessor, method))
+            if mapping is None:
+                continue
+            alias_abs_start = scope_start + use.start()
+            alias_abs_end = scope_start + use.end()
+            method_start = scope_start + use.end() + method_match.start(1)
+            method_end = scope_start + use.end() + method_match.end(1)
+            replacements.append((alias_abs_start, alias_abs_end, f"{receiver}.{mapping.target_accessor}()"))
+            replacements.append((method_start, method_end, mapping.target_method))
+            rewrites.append((alias_abs_start, f"{accessor}.{method}"))
+
+    if not replacements:
+        return text, []
+
+    next_text = text
+    for start, end, replacement in sorted(replacements, reverse=True):
+        next_text = next_text[:start] + replacement + next_text[end:]
+    return next_text, rewrites
+
+
 def alias_findings(text: str, mappings: list[MethodMapping]) -> list[tuple[int, str]]:
     source_accessors = sorted({mapping.source_accessor for mapping in mappings})
     if not source_accessors:
@@ -274,6 +339,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--rewrite-partial-read-aliases",
+        action="store_true",
+        help=(
+            "rewrite mapped method calls behind immutable read aliases even when other alias uses "
+            "remain; mutable aliases are skipped"
+        ),
+    )
+    parser.add_argument(
         "--fail-on-rejected-alias",
         action="store_true",
         help="return non-zero if --rewrite-safe-aliases rejects any alias candidate",
@@ -311,10 +384,12 @@ def main() -> int:
     direct_hits: list[str] = []
     alias_hits: list[str] = []
     alias_rewrites: list[str] = []
+    partial_alias_rewrites: list[str] = []
     rejected_alias_hits: list[str] = []
     direct_counts: Counter[str] = Counter()
     alias_counts: Counter[str] = Counter()
     alias_rewrite_counts: Counter[str] = Counter()
+    partial_alias_rewrite_counts: Counter[str] = Counter()
     rejected_alias_counts: Counter[str] = Counter()
     paths = args.paths or default_paths()
     for path in paths:
@@ -327,6 +402,10 @@ def main() -> int:
             else:
                 safe_alias_rewrites = []
                 rejected_aliases = []
+            if args.rewrite_partial_read_aliases:
+                next_text, partial_read_alias_rewrites = rewrite_partial_read_aliases(next_text, mappings)
+            else:
+                partial_read_alias_rewrites = []
             aliases = alias_findings(next_text, mappings)
             for offset, label in rewrites:
                 direct_hits.append(f"{relative(file_path)}:{line_for_offset(text, offset)}: {label}")
@@ -334,6 +413,9 @@ def main() -> int:
             for offset, label in safe_alias_rewrites:
                 alias_rewrites.append(f"{relative(file_path)}:{line_for_offset(text, offset)}: {label}")
                 alias_rewrite_counts[label] += 1
+            for offset, label in partial_read_alias_rewrites:
+                partial_alias_rewrites.append(f"{relative(file_path)}:{line_for_offset(text, offset)}: {label}")
+                partial_alias_rewrite_counts[label] += 1
             for offset, label in rejected_aliases:
                 rejected_alias_hits.append(f"{relative(file_path)}:{line_for_offset(text, offset)}: {label}")
                 rejected_alias_counts[label] += 1
@@ -371,6 +453,17 @@ def main() -> int:
                 print(f"  {hit}")
             if len(shown) < len(alias_rewrites):
                 print(f"  ... {len(alias_rewrites) - len(shown)} more; pass --limit 0 to show all")
+
+    if partial_alias_rewrites:
+        print("partial read-alias semantic view method call(s) rewritten:")
+        for label, count in partial_alias_rewrite_counts.most_common():
+            print(f"  {label}: {count}")
+        if not args.summary:
+            shown = partial_alias_rewrites if args.limit <= 0 else partial_alias_rewrites[: args.limit]
+            for hit in shown:
+                print(f"  {hit}")
+            if len(shown) < len(partial_alias_rewrites):
+                print(f"  ... {len(partial_alias_rewrites) - len(shown)} more; pass --limit 0 to show all")
 
     if rejected_alias_hits:
         print("semantic view alias candidate(s) rejected as unsafe:")

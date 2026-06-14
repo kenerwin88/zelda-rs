@@ -513,111 +513,111 @@ impl DungeonMapDisplayState {
         self.current_floor
     }
 
-    fn clear_scroll_state(&mut self) {
+    pub(crate) fn clear_scroll_state(&mut self) {
         self.scroll_draw_offset = 0;
         self.scroll_input = 0;
     }
 
-    fn set_scroll_draw_offset(&mut self, value: u16) {
+    pub(crate) fn set_scroll_draw_offset(&mut self, value: u16) {
         self.scroll_draw_offset = value;
     }
 
-    fn set_scroll_input(&mut self, value: u16) {
+    pub(crate) fn set_scroll_input(&mut self, value: u16) {
         self.scroll_input = value;
     }
 
-    fn reset_marker_offsets(&mut self) {
+    pub(crate) fn reset_marker_offsets(&mut self) {
         self.marker_x_offset = 0x0040;
         self.marker_y_offset = 0x0040;
     }
 
-    fn set_marker_x_offset(&mut self, value: u16) {
+    pub(crate) fn set_marker_x_offset(&mut self, value: u16) {
         self.marker_x_offset = value;
     }
 
-    fn set_marker_y_offset(&mut self, value: u16) {
+    pub(crate) fn set_marker_y_offset(&mut self, value: u16) {
         self.marker_y_offset = value;
     }
 
-    fn set_location_marker_base_y(&mut self, value: u8) {
+    pub(crate) fn set_location_marker_base_y(&mut self, value: u8) {
         self.location_marker_base_y = u16::from(value);
     }
 
-    fn shift_marker_x_left(&mut self) -> u16 {
+    pub(crate) fn shift_marker_x_left(&mut self) -> u16 {
         self.marker_x_offset = self.marker_x_offset.wrapping_sub(0x10);
         self.marker_x_offset
     }
 
-    fn reset_marker_x_offset(&mut self) {
+    pub(crate) fn reset_marker_x_offset(&mut self) {
         self.marker_x_offset = 0x0040;
     }
 
-    fn shift_marker_y_low_up(&mut self) {
+    pub(crate) fn shift_marker_y_low_up(&mut self) {
         self.marker_y_offset = (self.marker_y_offset & 0xff00)
             | u16::from((self.marker_y_offset as u8).wrapping_sub(0x10));
     }
 
-    fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
+    pub(crate) fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
         self.marker_y_offset = self.marker_y_offset.wrapping_add_signed(value);
         self.marker_y_offset
     }
 
-    fn increment_dungmap_init_state(&mut self) {
+    pub(crate) fn increment_dungmap_init_state(&mut self) {
         self.init_state = self.init_state.wrapping_add(1);
     }
 
-    fn clear_dungmap_init_state(&mut self) {
+    pub(crate) fn clear_dungmap_init_state(&mut self) {
         self.init_state = 0;
     }
 
-    fn set_dungmap_cur_floor(&mut self, value: u16) {
+    pub(crate) fn set_dungmap_cur_floor(&mut self, value: u16) {
         self.current_floor = value;
     }
 
-    fn decrement_dungmap_cur_floor_byte(&mut self) {
+    pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
         self.current_floor =
             (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_sub(1));
     }
 
-    fn increment_dungmap_cur_floor(&mut self) -> u16 {
+    pub(crate) fn increment_dungmap_cur_floor(&mut self) -> u16 {
         self.current_floor = self.current_floor.wrapping_add(1);
         self.current_floor
     }
 
-    fn increment_dungmap_cur_floor_byte(&mut self) {
+    pub(crate) fn increment_dungmap_cur_floor_byte(&mut self) {
         self.current_floor =
             (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_add(1));
     }
 
-    fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
+    pub(crate) fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
         self.floor_scroll_step = value;
     }
 
-    fn clear_dungmap_floor_scroll_step(&mut self) {
+    pub(crate) fn clear_dungmap_floor_scroll_step(&mut self) {
         self.floor_scroll_step = 0;
     }
 
-    fn increment_dungmap_floor_scroll_step(&mut self) {
+    pub(crate) fn increment_dungmap_floor_scroll_step(&mut self) {
         self.floor_scroll_step = self.floor_scroll_step.wrapping_add(1);
     }
 
-    fn set_dungmap_idx(&mut self, value: u16) {
+    pub(crate) fn set_dungmap_idx(&mut self, value: u16) {
         self.idx = value;
     }
 
-    fn clear_dungmap_idx(&mut self) {
+    pub(crate) fn clear_dungmap_idx(&mut self) {
         self.idx = 0;
     }
 
-    fn set_dungmap_scroll_target_y(&mut self, value: u16) {
+    pub(crate) fn set_dungmap_scroll_target_y(&mut self, value: u16) {
         self.scroll_target_y = value;
     }
 
-    fn set_dungmap_player_marker_x(&mut self, value: u16) {
+    pub(crate) fn set_dungmap_player_marker_x(&mut self, value: u16) {
         self.player_marker_x = value;
     }
 
-    fn set_dungmap_player_marker_y(&mut self, value: u16) {
+    pub(crate) fn set_dungmap_player_marker_y(&mut self, value: u16) {
         self.player_marker_y = value;
     }
 

@@ -410,8 +410,12 @@ impl ZeldaState {
         const RED_STALFOS_TRAP_DELAY: [u8; 4] = [0x30, 0x50, 0x70, 0x90];
         let x = self.overlord_get_x(k);
         let y = self.overlord_get_y(k);
-        if x.wrapping_sub(self.player_state().x()).wrapping_add(24) >= 48
-            || y.wrapping_sub(self.player_state().y()).wrapping_add(24) >= 48
+        if x.wrapping_sub(self.game_state.player.follower_link.x())
+            .wrapping_add(24)
+            >= 48
+            || y.wrapping_sub(self.game_state.player.follower_link.y())
+                .wrapping_add(24)
+                >= 48
         {
             return;
         }
@@ -429,13 +433,17 @@ impl ZeldaState {
             };
             self.Sprite_SetX(
                 j,
-                self.player_state()
+                self.game_state
+                    .player
+                    .follower_link
                     .x()
                     .wrapping_add(RED_STALFOS_TRAP_X[i] as i16 as u16),
             );
             self.Sprite_SetY(
                 j,
-                self.player_state()
+                self.game_state
+                    .player
+                    .follower_link
                     .y()
                     .wrapping_add(RED_STALFOS_TRAP_Y[i] as i16 as u16),
             );
@@ -456,8 +464,12 @@ impl ZeldaState {
     pub(super) fn overlord17_pot_trap(&mut self, k: usize) {
         let x = self.overlord_get_x(k);
         let y = self.overlord_get_y(k);
-        if x.wrapping_sub(self.player_state().x()).wrapping_add(32) < 64
-            && y.wrapping_sub(self.player_state().y()).wrapping_add(32) < 64
+        if x.wrapping_sub(self.game_state.player.follower_link.x())
+            .wrapping_add(32)
+            < 64
+            && y.wrapping_sub(self.game_state.player.follower_link.y())
+                .wrapping_add(32)
+                < 64
         {
             let value = 0;
             self.game_state
@@ -556,13 +568,17 @@ impl ZeldaState {
             if let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x9b, 12) {
                 self.Sprite_SetX(
                     j,
-                    self.player_state()
+                    self.game_state
+                        .player
+                        .follower_link
                         .x()
                         .wrapping_add(OVERLORD_WIZZROBE_X[i] as i16 as u16),
                 );
                 self.Sprite_SetY(
                     j,
-                    self.player_state()
+                    self.game_state
+                        .player
+                        .follower_link
                         .y()
                         .wrapping_add(OVERLORD_WIZZROBE_Y[i] as i16 as u16),
                 );
@@ -851,7 +867,7 @@ impl ZeldaState {
             let sfx = self
                 .calculate_sfx_pan_arbitrary(self.game_state.sprites.garnish_slots.slot(j).x_low())
                 | 0x1f;
-            self.system_signals_mut().set_sound_effect_1(sfx);
+            self.set_sound_effect_1(sfx);
             let y = self.overlord_get_y(k).wrapping_add(16);
             let value = y as u8;
             self.game_state
@@ -902,11 +918,11 @@ impl ZeldaState {
         let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x90, 12) else {
             return;
         };
-        self.Sprite_SetX(j, self.player_state().x());
-        self.Sprite_SetY(j, self.player_state().y());
+        self.Sprite_SetX(j, self.game_state.player.follower_link.x());
+        self.Sprite_SetY(j, self.game_state.player.follower_link.y());
         self.sprite_slot_mut(j).set_z(208);
         self.sprite_sfx_queue_sfx2_with_pan(j, 0x20);
-        let floor = self.player_state().lower_level_state();
+        let floor = self.game_state.player.follower_link.lower_level_state();
         self.sprite_slot_mut(j).set_floor(floor);
     }
 
@@ -945,20 +961,24 @@ impl ZeldaState {
         if let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x8f, 12) {
             const OVERLORD_ZOL_X: [i8; 4] = [0, 0, -48, 48];
             const OVERLORD_ZOL_Y: [i8; 4] = [-40, 56, 8, 8];
-            let i = self.player_state().facing_index();
+            let i = self.game_state.player.follower_link.facing_index();
             self.Sprite_SetX(
                 j,
-                self.player_state()
+                self.game_state
+                    .player
+                    .follower_link
                     .x()
                     .wrapping_add(OVERLORD_ZOL_X[i] as i16 as u16),
             );
             self.Sprite_SetY(
                 j,
-                self.player_state()
+                self.game_state
+                    .player
+                    .follower_link
                     .y()
                     .wrapping_add(OVERLORD_ZOL_Y[i] as i16 as u16),
             );
-            let floor = self.player_state().lower_level_state();
+            let floor = self.game_state.player.follower_link.lower_level_state();
             let head_direction = self.get_random_number() & 31 | 16;
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_z(192);
@@ -1369,8 +1389,7 @@ impl ZeldaState {
                 .sprite_block_pos();
             if blk != 0xffff {
                 let loadedmask = 0x80 >> (blk & 7);
-                self.overworld_sprite_loaded_mut()
-                    .clear_loaded_mask(blk, loadedmask as u8);
+                self.clear_overworld_sprite_loaded_mask(blk, loadedmask as u8);
             }
         }
     }

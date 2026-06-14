@@ -709,7 +709,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_handle_receipt(&mut self, k: usize, item: u8) {
-        self.player_state_mut().set_item_receipt_method(0);
+        self.follower_link_state_mut().set_item_receipt_method(0);
         self.link_receive_item(item, 0);
         let j = self.sprite_slot(k).subtype2() as usize;
         if j >= 7 {
@@ -861,8 +861,8 @@ mod tests {
         let mut s = fresh_state();
         // Set up so DirectionToFaceLink returns 0 (right).
         // sprite at (0,0), link at (100,0) -> dx>0 dominant axis -> dir 0.
-        s.player_state_mut().set_x(100);
-        s.player_state_mut().set_y(0);
+        s.follower_link_state_mut().set_x(100);
+        s.follower_link_state_mut().set_y(0);
         s.hinox_face_link(5);
         // After hinox_set_direction with dir=0, x_vel=8, then shifted left by 1 -> 16.
         let sprite = s.sprite_slot(5);
@@ -934,9 +934,9 @@ mod tests {
     #[test]
     fn shop_item_handle_receipt_clears_method_and_skips_msg_for_low_subtype() {
         let mut s = fresh_state();
-        s.player_state_mut().set_item_receipt_method(5);
+        s.follower_link_state_mut().set_item_receipt_method(5);
         s.sprite_slot_mut(1).set_subtype2(3); // < 7, no message branch
         s.shop_item_handle_receipt(1, 0x2e);
-        assert_eq!(s.player_state().item_receipt_method(), 0);
+        assert_eq!(s.game_state.player.follower_link.item_receipt_method(), 0);
     }
 }

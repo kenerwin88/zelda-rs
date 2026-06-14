@@ -108,23 +108,21 @@ impl ZeldaState {
         self.clear_attract_low_work_area();
         self.erase_tile_maps_normal();
         self.Attract_LoadBG3GFX();
-        self.palette_buffer_mut().set_overworld_palette_mode(4);
-        self.palette_buffer_mut().set_hud_palette(1);
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.set_overworld_palette_mode(4);
+        self.set_hud_palette(1);
+        self.clear_overworld_aux_or_main_offset();
         self.palette_load_hud();
-        self.palette_buffer_mut()
-            .select_overworld_aux_palette_offset();
+        self.select_overworld_aux_palette_offset();
         self.palette_load_ow_bg_main();
         self.palette_load_hud();
         self.palette_load_link_armor_and_gloves();
-        self.palette_buffer_mut().set_main_color(0x1d, 0x3800);
-        self.system_signals_mut().increment_cgram_update_flag();
-        self.ppu_scroll_copy_mut().set_bg3_v_copy2_low(20);
+        self.set_main_color(0x1d, 0x3800);
+        self.increment_cgram_update_flag();
+        self.set_bg3_v_copy2_low(20);
         self.attract_build_backgrounds();
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x112);
-        self.world_scroll_mut().set_bg2_y(0);
+        self.set_bg2_y(0);
         self.attract_scene_mut().set_legend_ctr(0x1010);
         self.attract_scene_mut().add_state(3);
 
@@ -135,12 +133,12 @@ impl ZeldaState {
         self.set_object_color_window_selection(0xb0);
         self.set_main_screen_window_layers(3);
         self.set_sub_screen_window_layers(0);
-        self.palette_filter_mut().set_fixed_color_red(0x25);
-        self.palette_filter_mut().set_fixed_color_green(0x45);
-        self.palette_filter_mut().set_fixed_color_blue(0x85);
-        self.palette_filter_mut().set_color_window_selection(0x10);
-        self.palette_filter_mut().set_color_math_control(0xa3);
-        self.system_signals_mut().set_music_control(6);
+        self.set_fixed_color_red(0x25);
+        self.set_fixed_color_green(0x45);
+        self.set_fixed_color_blue(0x85);
+        self.set_color_window_selection(0x10);
+        self.set_color_math_control(0xa3);
+        self.set_music_control(6);
         self.attract_scene_mut().increment_legend_flag();
     }
 
@@ -165,14 +163,14 @@ impl ZeldaState {
     pub(super) fn attract_scene_world_map(&mut self) {
         self.zelda_ppu_write(0x2107, 0x13);
         self.zelda_ppu_write(0x2108, 0x03);
-        self.palette_filter_mut().set_color_window_selection(0x80);
-        self.palette_filter_mut().set_color_math_control(0x21);
+        self.set_color_window_selection(0x80);
+        self.set_color_math_control(0x21);
         self.set_bg_mode(7);
         self.world_map_load_light_world_map();
-        self.ppu_scroll_copy_mut().set_mode7_center_y(0x00ed);
-        self.ppu_scroll_copy_mut().set_mode7_center_x(0x0100);
-        self.ppu_scroll_copy_mut().set_bg1_h_copy(0x0080);
-        self.ppu_scroll_copy_mut().set_bg1_v_copy(0x00c0);
+        self.set_mode7_center_y(0x00ed);
+        self.set_mode7_center_x(0x0100);
+        self.set_bg1_h_copy(0x0080);
+        self.set_bg1_v_copy(0x00c0);
         self.attract_scene_mut().set_mode7_zoom_timer(0xff);
         self.attract_control_map_zoom();
         self.attract_scene_mut().set_scene_timer(1);
@@ -182,8 +180,8 @@ impl ZeldaState {
 
     pub(super) fn attract_scene_throne_room(&mut self) {
         self.clear_hdma_enable_mask();
-        self.palette_filter_mut().set_color_window_selection(2);
-        self.palette_filter_mut().set_color_math_control(0x20);
+        self.set_color_window_selection(2);
+        self.set_color_math_control(0x20);
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.load_common_sprites();
@@ -195,13 +193,13 @@ impl ZeldaState {
         self.attract_scene_mut()
             .set_bg2_vofs_backup(attract_bg2_vofs_backup);
 
-        self.palette_buffer_mut().set_palette_main_indoors(0);
-        self.palette_buffer_mut().set_sp0l(0);
-        self.palette_buffer_mut().set_sp5l(14);
-        self.palette_buffer_mut().set_sp6l(3);
+        self.set_palette_main_indoors(0);
+        self.set_sp0l(0);
+        self.set_sp5l(14);
+        self.set_sp6l(3);
         self.dungeon_save_and_load_load_all_palettes(0, 0x7e);
 
-        self.palette_buffer_mut().set_main_color(0x1d, 0x3800);
+        self.set_main_color(0x1d, 0x3800);
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x113);
         self.attract_scene_mut().set_scene_timer(2);
@@ -212,8 +210,8 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_prep_zelda_prison(&mut self) {
-        self.palette_filter_mut().set_color_window_selection(0);
-        self.palette_filter_mut().set_color_math_control(0);
+        self.set_color_window_selection(0);
+        self.set_color_math_control(0);
 
         let attract_bg2_vofs_backup = self.game_state.ending.attract_scene.bg2_vofs_backup();
         let attract_state = self.game_state.ending.attract_scene.state_word();
@@ -222,12 +220,12 @@ impl ZeldaState {
         self.attract_scene_mut()
             .set_bg2_vofs_backup(attract_bg2_vofs_backup);
 
-        self.palette_buffer_mut().set_palette_main_indoors(2);
-        self.palette_buffer_mut().set_sp0l(0);
-        self.palette_buffer_mut().set_sp5l(14);
-        self.palette_buffer_mut().set_sp6l(3);
+        self.set_palette_main_indoors(2);
+        self.set_sp0l(0);
+        self.set_sp5l(14);
+        self.set_sp6l(3);
         self.dungeon_save_and_load_load_all_palettes(1, 0x7f);
-        self.palette_buffer_mut().set_main_color(0x1d, 0x3800);
+        self.set_main_color(0x1d, 0x3800);
 
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x114);
@@ -252,12 +250,11 @@ impl ZeldaState {
         self.attract_scene_mut()
             .set_bg2_vofs_backup(attract_bg2_vofs_backup);
 
-        self.palette_buffer_mut().set_palette_main_indoors(0);
-        self.palette_buffer_mut().set_sp0l(0);
-        self.palette_buffer_mut().set_sp5l(14);
-        self.palette_buffer_mut().set_sp6l(3);
-        self.palette_buffer_mut()
-            .clear_overworld_aux_or_main_offset();
+        self.set_palette_main_indoors(0);
+        self.set_sp0l(0);
+        self.set_sp5l(14);
+        self.set_sp6l(3);
+        self.clear_overworld_aux_or_main_offset();
         self.palette_load_sp0l();
         self.palette_load_sprite_main();
         self.palette_load_sp5l();
@@ -266,8 +263,8 @@ impl ZeldaState {
         self.palette_load_hud();
         self.palette_load_dungeon_set();
         self.dungeon_save_and_load_load_all_palettes(2, 0x7f);
-        self.palette_buffer_mut().set_aux_color(0x1d, 0x3800);
-        self.palette_buffer_mut().set_main_color(0x1d, 0x3800);
+        self.set_aux_color(0x1d, 0x3800);
+        self.set_main_color(0x1d, 0x3800);
 
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x115);
@@ -311,14 +308,14 @@ impl ZeldaState {
         self.increment_core_update_disable_flag();
         self.intro_initialize_memory_darken();
         self.overworld_load_all_palettes();
-        self.ppu_scroll_copy_mut().set_bg3_v_copy2_low(0);
-        self.ppu_scroll_copy_mut().set_mode7_center_y(0);
-        self.ppu_scroll_copy_mut().set_mode7_center_x(0);
-        self.ppu_scroll_copy_mut().set_bg1_h_copy(0);
-        self.ppu_scroll_copy_mut().set_bg1_v_copy(0);
-        self.ppu_scroll_copy_mut().set_bg2_h_copy(0);
-        self.ppu_scroll_copy_mut().set_bg2_v_copy(0);
-        self.system_signals_mut().set_music_control(0xf1);
+        self.set_bg3_v_copy2_low(0);
+        self.set_mode7_center_y(0);
+        self.set_mode7_center_x(0);
+        self.set_bg1_h_copy(0);
+        self.set_bg1_v_copy(0);
+        self.set_bg2_h_copy(0);
+        self.set_bg2_v_copy(0);
+        self.set_music_control(0xf1);
         self.attract_scene_mut().set_sequence(0);
         self.set_main_module(0);
         self.set_submodule(10);
@@ -334,26 +331,26 @@ impl ZeldaState {
         self.zelda_ppu_write(0x2107, 0x13);
         self.zelda_ppu_write(0x2108, 0x03);
         self.attract_setup_conclusion_hdma();
-        self.ppu_scroll_copy_mut().set_mode7_center_y(0);
-        self.ppu_scroll_copy_mut().set_mode7_center_x(0);
-        self.ppu_scroll_copy_mut().set_bg1_h_copy(0);
-        self.ppu_scroll_copy_mut().set_bg1_v_copy(0);
-        self.ppu_scroll_copy_mut().set_bg3_v_copy2_low(0);
+        self.set_mode7_center_y(0);
+        self.set_mode7_center_x(0);
+        self.set_bg1_h_copy(0);
+        self.set_bg1_v_copy(0);
+        self.set_bg3_v_copy2_low(0);
         self.fade_music_and_reset_sram_mirror();
     }
 
     pub(super) fn attract_prep_finish(&mut self) {
         self.attract_scene_mut().increment_state();
         self.set_screen_brightness(0);
-        self.ppu_scroll_copy_mut().set_bg3_v_copy2_low(0);
+        self.set_bg3_v_copy2_low(0);
         let bg2_hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy() & 0x01ff;
         let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy() & 0x01ff;
         let bg2_hofs2 = self.game_state.world.scroll.bg2_x() & 0x01ff;
         let bg2_vofs2 = self.game_state.world.scroll.bg2_y() & 0x01ff;
-        self.ppu_scroll_copy_mut().set_bg2_h_copy(bg2_hofs);
-        self.ppu_scroll_copy_mut().set_bg2_v_copy(bg2_vofs);
-        self.world_scroll_mut().set_bg2_x(bg2_hofs2);
-        self.world_scroll_mut().set_bg2_y(bg2_vofs2);
+        self.set_bg2_h_copy(bg2_hofs);
+        self.set_bg2_v_copy(bg2_vofs);
+        self.set_bg2_x(bg2_hofs2);
+        self.set_bg2_y(bg2_vofs2);
     }
 
     pub(super) fn attract_control_map_zoom(&mut self) {
@@ -376,8 +373,10 @@ impl ZeldaState {
         ];
         let zoom = self.game_state.ending.attract_scene.mode7_zoom_timer() as u16;
         for (i, value) in MAP_MODE_ZOOMS1.iter().enumerate() {
-            self.spotlight_hdma_mut()
-                .set_hdma_table_dynamic_entry(i, ((*value as u32 * zoom as u32) >> 8) as u16);
+            self.set_spotlight_hdma_table_dynamic_entry(
+                i,
+                ((*value as u32 * zoom as u32) >> 8) as u16,
+            );
         }
     }
 
@@ -490,8 +489,8 @@ impl ZeldaState {
                 .ppu_scroll_copy
                 .bg1_v_copy()
                 .wrapping_sub(1);
-            self.ppu_scroll_copy_mut().set_bg2_v_copy(bg2);
-            self.ppu_scroll_copy_mut().set_bg1_v_copy(bg1);
+            self.set_bg2_v_copy(bg2);
+            self.set_bg1_v_copy(bg1);
         }
 
         let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy();
@@ -654,7 +653,7 @@ impl ZeldaState {
             & 4
             != 0
         {
-            self.system_signals_mut().set_sound_effect_2(0x2b);
+            self.set_sound_effect_2(0x2b);
         }
 
         match self.game_state.ending.attract_scene.scene_substep() {
@@ -768,7 +767,7 @@ impl ZeldaState {
         if self.game_state.ending.attract_scene.maiden_warp_step() == 0
             && self.game_state.ending.attract_scene.maiden_warp_timer_b() == 0x70
         {
-            self.system_signals_mut().set_sound_effect_2(0x27);
+            self.set_sound_effect_2(0x27);
         }
 
         if self.game_state.ending.attract_scene.maiden_warp_step() == 15 {
@@ -776,7 +775,7 @@ impl ZeldaState {
         } else {
             if self.game_state.ending.attract_scene.maiden_warp_step() == 6 {
                 self.attract_scene_mut().set_intro_palette_flash_count(0x90);
-                self.system_signals_mut().set_sound_effect_2(0x2b);
+                self.set_sound_effect_2(0x2b);
             }
             if self.game_state.ending.attract_scene.maiden_warp_timer_b() != 0 {
                 self.attract_scene_mut().decrement_maiden_warp_timer_b();
@@ -845,7 +844,7 @@ impl ZeldaState {
 
         if self.game_state.ending.attract_scene.maiden_warp_step() == 6 {
             self.attract_scene_mut().increment_fade_in_complete_flag();
-            self.system_signals_mut().set_sound_effect_1(51);
+            self.set_sound_effect_1(51);
         } else if self.game_state.ending.attract_scene.maiden_warp_step() == 0x40 {
             self.attract_scene_mut().set_maiden_warp_step(224);
             self.attract_scene_mut().increment_scene_substep();
@@ -931,7 +930,7 @@ impl ZeldaState {
                 if self.game_state.ending.attract_scene.soldier_anim_step() == 2 {
                     self.attract_scene_mut().set_soldier_anim_step(0xff);
                     if self.attract_vram_destination_high_is_clear() && step_ctr & 8 != 0 {
-                        self.system_signals_mut().set_sound_effect_2(4);
+                        self.set_sound_effect_2(4);
                     }
                 }
                 self.attract_scene_mut().increment_soldier_anim_step();
@@ -1219,10 +1218,10 @@ impl ZeldaState {
 
     pub(super) fn attract_dramatize_polka_dots(&mut self) {
         if self.game_state.frame.frame_counter & 3 == 0 {
-            self.ppu_scroll_copy_mut().add_bg1_v_copy_low(1);
-            self.ppu_scroll_copy_mut().add_bg1_h_copy_low(1);
-            self.ppu_scroll_copy_mut().add_bg2_v_copy_low(1);
-            self.ppu_scroll_copy_mut().subtract_bg2_h_copy_low(1);
+            self.add_bg1_v_copy_low(1);
+            self.add_bg1_h_copy_low(1);
+            self.add_bg2_v_copy_low(1);
+            self.subtract_bg2_h_copy_low(1);
         }
 
         if self.game_state.ending.attract_scene.legend_flag() != 0 {
