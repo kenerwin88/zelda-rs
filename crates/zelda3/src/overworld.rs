@@ -720,11 +720,11 @@ impl ZeldaState {
         if self.game_state.frame.submodule != 4 {
             self.copy_bg2_live_to_bg1_live();
             if (si & 0x3f) == 0x1b {
-                let bg2_hofs = self.game_state.world.scroll.bg2_x();
+                let bg2_hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
                 let y = (bg2_hofs.wrapping_sub(0x0778) as i16) >> 1;
                 self.set_bg1_h_copy2(bg2_hofs.wrapping_sub(y as u16));
 
-                let mut a = self.game_state.world.scroll.bg1_y();
+                let mut a = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
                 if a >= 0x06c0 {
                     a = a.wrapping_sub(0x0600) & 0x03ff;
                     let value = if a < 0x0180 {
@@ -741,7 +741,7 @@ impl ZeldaState {
             let value = if self.edge_transition_direction_bits() != 8 {
                 0x0838
             } else {
-                self.game_state.world.scroll.bg2_x()
+                self.game_state.display.ppu_scroll_copy.bg2_h_copy2()
             };
             self.set_bg1_x(value);
             self.set_bg1_y(0x06c0);
@@ -890,7 +890,7 @@ impl ZeldaState {
 
         self.LoadOverworldOverlay();
         if self.game_state.world.region.overlay_index() == 0x94 {
-            let value = self.game_state.world.scroll.bg1_y() | 0x0100;
+            let value = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() | 0x0100;
             self.set_bg1_y(value);
         }
 
@@ -1038,10 +1038,10 @@ impl ZeldaState {
         }
         self.replay_trace_submodule("module09-after-submodule");
 
-        let bg2x = self.game_state.world.scroll.bg2_x();
-        let bg2y = self.game_state.world.scroll.bg2_y();
-        let bg1x = self.game_state.world.scroll.bg1_x();
-        let bg1y = self.game_state.world.scroll.bg1_y();
+        let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
+        let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
+        let bg1y = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
         let offx = self.game_state.world.scroll.bg1_x_offset();
         let offy = self.game_state.world.scroll.bg1_y_offset();
 
@@ -2168,15 +2168,15 @@ impl ZeldaState {
         let i = self.increment_move_overlay_ctr();
         let bg1x = self
             .game_state
-            .world
-            .scroll
-            .bg1_x()
+            .display
+            .ppu_scroll_copy
+            .bg1_h_copy2()
             .wrapping_add((X[i as usize] as u16) << 8);
         let bg1y = self
             .game_state
-            .world
-            .scroll
-            .bg1_y()
+            .display
+            .ppu_scroll_copy
+            .bg1_v_copy2()
             .wrapping_add((Y[i as usize] as u16) << 8);
         self.set_bg1_x(bg1x);
         self.set_bg1_y(bg1y);
@@ -2245,7 +2245,7 @@ impl ZeldaState {
 
         self.hdma_setup(0xf2fb, 0xf2fb, 0x42, 0x0d, 0x0f, 0);
 
-        let value = self.game_state.world.scroll.bg2_x();
+        let value = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         for i in 0..240 {
             self.set_spotlight_hdma_table_dynamic_entry(i, value);
         }
@@ -2300,7 +2300,7 @@ impl ZeldaState {
             self.increment_subsubmodule();
             t = 0;
         }
-        let value = t.wrapping_add(self.game_state.world.scroll.bg2_x());
+        let value = t.wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         for off in [0usize, 2, 4, 6] {
             self.set_spotlight_hdma_table_dynamic_entry(off, value);
         }
@@ -2328,13 +2328,13 @@ impl ZeldaState {
             | self.spotlight_hdma_table_dynamic_entry(0x0c8)
             | self.spotlight_hdma_table_dynamic_entry(0x0d0)
             | self.spotlight_hdma_table_dynamic_entry(0x0d8);
-        if t == self.game_state.world.scroll.bg2_x() {
+        if t == self.game_state.display.ppu_scroll_copy.bg2_h_copy2() {
             self.clear_hdma_enable_mask();
             self.increment_subsubmodule();
             self.Overworld_SetFixedColAndScroll();
             if self.game_state.world.location.overworld_screen_index() & 0x3f != 0x1b {
-                let bg2x = self.game_state.world.scroll.bg2_x();
-                let bg2y = self.game_state.world.scroll.bg2_y();
+                let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+                let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
                 self.set_bg1_x(bg2x);
                 self.set_bg1_h_copy(bg2x);
                 self.set_bg2_h_copy(bg2x);
@@ -3033,8 +3033,8 @@ impl ZeldaState {
                 u16::from(self.game_state.world.location.overworld_screen_index()),
                 self.game_state.player.follower_link.x(),
                 self.game_state.player.follower_link.y(),
-                self.game_state.world.scroll.bg2_x(),
-                self.game_state.world.scroll.bg2_y(),
+                self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
                 self.game_state.world.scroll.overworld_offset_base_x(),
                 self.game_state.world.scroll.overworld_offset_base_y(),
                 self.game_state.world.scroll.overworld_offset_mask_x(),
@@ -3988,7 +3988,7 @@ impl ZeldaState {
 
     pub(super) fn Module09_LoadNewSprites(&mut self) {
         if self.screen_transition() == 1 {
-            let bg2v = self.game_state.world.scroll.bg2_y().wrapping_add(2);
+            let bg2v = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(2);
             self.set_bg2_y(bg2v);
             let link_y = self.game_state.player.follower_link.y().wrapping_add(2);
             self.follower_link_state_mut().set_y(link_y);
@@ -4242,7 +4242,7 @@ impl ZeldaState {
                 }
                 self.add_bg1_v_live_subpixel(subp, scroll);
                 if self.game_state.world.location.overworld_screen_index() & 0x3f == 0x1b {
-                    let bg1 = self.game_state.world.scroll.bg1_y();
+                    let bg1 = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
                     if bg1 <= 0x0600 {
                         self.set_bg1_y(0x0600);
                     } else if bg1 >= 0x06c0 {
@@ -4314,9 +4314,9 @@ impl ZeldaState {
                 let scroll_delta = self.overworld_vertical_scroll_delta();
                 let bg1_v = self
                     .game_state
-                    .world
-                    .scroll
-                    .bg1_y()
+                    .display
+                    .ppu_scroll_copy
+                    .bg1_v_copy2()
                     .wrapping_add(scroll_delta);
                 self.set_bg1_y(bg1_v);
                 self.copy_bg2_h_live_to_bg1_h_live();
@@ -4329,7 +4329,7 @@ impl ZeldaState {
         }
 
         if self.game_state.world.location.dungeon_room() == 0x0181 {
-            let bg2v = self.game_state.world.scroll.bg2_y() | 0x0100;
+            let bg2v = self.game_state.display.ppu_scroll_copy.bg2_v_copy2() | 0x0100;
             self.set_bg1_y(bg2v);
             self.copy_bg2_h_live_to_bg1_h_live();
         }
@@ -4381,7 +4381,7 @@ impl ZeldaState {
         let rv;
         if y < 2 {
             self.set_overworld_vertical_scroll_delta_low(d as u8);
-            rv = self.game_state.world.scroll.bg2_y().wrapping_add_signed(d);
+            rv = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add_signed(d);
             self.set_bg2_y(rv);
             if self.game_state.world.location.overworld_screen_index() != 0x1b
                 && self.game_state.world.location.overworld_screen_index() != 0x5b
@@ -4407,7 +4407,7 @@ impl ZeldaState {
                 return rv as i32;
             }
             if y == 0 {
-                let bg2 = self.game_state.world.scroll.bg2_y().wrapping_sub(2);
+                let bg2 = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(2);
                 self.set_bg2_y(bg2);
             }
             let link_y = self.game_state.player.follower_link.y() & !7;
@@ -4419,7 +4419,7 @@ impl ZeldaState {
             self.clear_opposed_scroll_counters(0);
         } else {
             self.set_overworld_horizontal_scroll_delta_low(d as u8);
-            rv = self.game_state.world.scroll.bg2_x().wrapping_add_signed(d);
+            rv = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add_signed(d);
             self.set_bg2_x(rv);
             if self.game_state.world.location.overworld_screen_index() != 0x1b
                 && self.game_state.world.location.overworld_screen_index() != 0x5b

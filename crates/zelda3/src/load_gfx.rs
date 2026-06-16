@@ -2757,7 +2757,7 @@ impl ZeldaState {
             .display
             .water_hdma_window
             .window_y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let y_radius = self.game_state.display.water_hdma_window.window_y_radius();
         self.set_spotlight_y_lower(r10.wrapping_sub(y_radius));
         self.set_spotlight_y_upper(r10.wrapping_add(y_radius));
@@ -2770,7 +2770,7 @@ impl ZeldaState {
             .display
             .water_hdma_window
             .window_x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         self.set_spotlight_window_x_center(window_x_center);
         let r12 = self
             .game_state
@@ -2840,14 +2840,14 @@ impl ZeldaState {
             .display
             .water_hdma_window
             .window_y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         self.set_spotlight_y_lower(lower);
         let window_x_center = self
             .game_state
             .display
             .water_hdma_window
             .window_x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         self.set_spotlight_window_x_center(window_x_center);
         let r14 = self.game_state.display.water_hdma_window.window_x_radius() ^ 1;
         let mut r4 = 0usize;
@@ -3479,7 +3479,7 @@ impl ZeldaState {
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
             .wrapping_add(12);
         let radius = self.game_state.display.spotlight_hdma.window_radius();
         self.set_spotlight_y_lower(r14.wrapping_sub(radius));
@@ -3489,7 +3489,7 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
             .wrapping_add(8);
         self.set_spotlight_window_x_center(x_center);
         self.set_spotlight_window_y_buffer(radius);

@@ -104,7 +104,7 @@ impl ZeldaState {
         if timer & 63 != 0 {
             return;
         }
-        let camera_y_hi = (self.game_state.world.scroll.bg2_y() >> 8) as u8;
+        let camera_y_hi = (self.game_state.display.ppu_scroll_copy.bg2_v_copy2() >> 8) as u8;
         let coll_y_hi = self.game_state.sprites.garnish_runtime.sprcoll_y_hi();
         if sign8(camera_y_hi.wrapping_sub(coll_y_hi).wrapping_sub(2)) {
             return;
@@ -112,12 +112,12 @@ impl ZeldaState {
         if let Some((j, _info)) = self.Sprite_SpawnDynamically(0, 0xc2) {
             let x = self
                 .game_state
-                .world
-                .scroll
-                .bg2_x()
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
                 .wrapping_add((self.get_random_number() & 127) as u16)
                 .wrapping_add(64);
-            let y = self.game_state.world.scroll.bg2_y().wrapping_sub(0x30);
+            let y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(0x30);
             self.Sprite_SetX(j, x);
             self.Sprite_SetY(j, y);
             let mut sprite = self.sprite_slot_mut(j);
@@ -595,10 +595,10 @@ impl ZeldaState {
     pub(super) fn overlord14_tile_room(&mut self, k: usize) {
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x & 0xff00 != 0 || y & 0xff00 != 0 {
             return;
         }
@@ -771,10 +771,10 @@ impl ZeldaState {
             }
             let x = self
                 .overlord_get_x(k)
-                .wrapping_sub(self.game_state.world.scroll.bg2_x());
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
             let y = self
                 .overlord_get_y(k)
-                .wrapping_sub(self.game_state.world.scroll.bg2_y());
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
             if !(x & 0xff00 != 0 || y & 0xff00 != 0) {
                 let value = self
                     .game_state
@@ -1083,10 +1083,10 @@ impl ZeldaState {
         const STALFOS_TRAP_TRIGGER: [u8; 8] = [255, 224, 192, 160, 128, 96, 64, 32];
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x & 0xff00 != 0 || y & 0xff00 != 0 {
             return;
         }
@@ -1214,10 +1214,10 @@ impl ZeldaState {
         ];
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .overlord_get_y(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if (x | y) & 0xff00 != 0 || self.game_state.frame.frame_counter & 0x0f != 0 {
             return;
         }
@@ -1260,7 +1260,7 @@ impl ZeldaState {
     pub(super) fn overlord03_vertical_cannon(&mut self, k: usize) {
         let x = self
             .overlord_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         if x & 0xff00 != 0 {
             let value = 255;
             self.game_state
@@ -1362,16 +1362,16 @@ impl ZeldaState {
         let j = (self.game_state.frame.frame_counter & 1) as usize;
         let x = self
             .game_state
-            .world
-            .scroll
-            .bg2_x()
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
             .wrapping_add(OVERLORD_IN_RANGE_OFFS[j])
             .wrapping_sub(self.overlord_get_x(k));
         let y = self
             .game_state
-            .world
-            .scroll
-            .bg2_y()
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
             .wrapping_add(OVERLORD_IN_RANGE_OFFS[j])
             .wrapping_sub(self.overlord_get_y(k));
         if ((x >> 15) as usize) != j || ((y >> 15) as usize) != j {

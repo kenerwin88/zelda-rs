@@ -177,10 +177,10 @@ impl ZeldaState {
         if self.game_state.dungeon.room_load.header_collision() == 2 {
             self.follower_link_state_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
-                x.wrapping_add(self.game_state.world.scroll.bg1_x())
-                    .wrapping_sub(self.game_state.world.scroll.bg2_x()),
-                y.wrapping_add(self.game_state.world.scroll.bg1_y())
-                    .wrapping_sub(self.game_state.world.scroll.bg2_y()),
+                x.wrapping_add(self.game_state.display.ppu_scroll_copy.bg1_h_copy2())
+                    .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()),
+                y.wrapping_add(self.game_state.display.ppu_scroll_copy.bg1_v_copy2())
+                    .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()),
                 dir,
             );
             self.follower_link_state_mut().set_lower_level_state(0);

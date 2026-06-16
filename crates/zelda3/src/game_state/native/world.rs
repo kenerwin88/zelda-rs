@@ -282,10 +282,7 @@ impl WorldLocationState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldScrollState {
-    pub(crate) bg1_x: u16,
-    pub(crate) bg1_y: u16,
-    pub(crate) bg2_x: u16,
-    pub(crate) bg2_y: u16,
+    // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) now lives solely in PpuScrollCopyState.
     pub(crate) bg1_x_offset: u16,
     pub(crate) bg1_y_offset: u16,
     pub(crate) camera_x: u16,
@@ -302,10 +299,6 @@ pub(crate) struct WorldScrollState {
 impl WorldScrollState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            bg1_x: read_le_u16(ram, BG1_X_SCROLL),
-            bg1_y: read_le_u16(ram, BG1_Y_SCROLL),
-            bg2_x: read_le_u16(ram, BG2_X_SCROLL),
-            bg2_y: read_le_u16(ram, BG2_Y_SCROLL),
             bg1_x_offset: read_le_u16(ram, BG1_X_OFFSET),
             bg1_y_offset: read_le_u16(ram, BG1_Y_OFFSET),
             camera_x: read_le_u16(ram, CAMERA_X),
@@ -321,10 +314,6 @@ impl WorldScrollState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, BG1_X_SCROLL, self.bg1_x);
-        write_le_u16(ram, BG1_Y_SCROLL, self.bg1_y);
-        write_le_u16(ram, BG2_X_SCROLL, self.bg2_x);
-        write_le_u16(ram, BG2_Y_SCROLL, self.bg2_y);
         write_le_u16(ram, BG1_X_OFFSET, self.bg1_x_offset);
         write_le_u16(ram, BG1_Y_OFFSET, self.bg1_y_offset);
         write_le_u16(ram, CAMERA_X, self.camera_x);
@@ -338,37 +327,6 @@ impl WorldScrollState {
         write_le_u16(ram, OVERWORLD_SCROLL_Y_END, self.scroll_y_end);
     }
 
-    pub(crate) fn bg1_x(&self) -> u16 {
-        self.bg1_x
-    }
-
-    pub(crate) fn bg1_x_low(&self) -> u8 {
-        self.bg1_x as u8
-    }
-
-    pub(crate) fn bg1_y(&self) -> u16 {
-        self.bg1_y
-    }
-
-    pub(crate) fn bg1_y_low(&self) -> u8 {
-        self.bg1_y as u8
-    }
-
-    pub(crate) fn bg2_x(&self) -> u16 {
-        self.bg2_x
-    }
-
-    pub(crate) fn bg2_x_low(&self) -> u8 {
-        self.bg2_x as u8
-    }
-
-    pub(crate) fn bg2_y(&self) -> u16 {
-        self.bg2_y
-    }
-
-    pub(crate) fn bg2_y_low(&self) -> u8 {
-        self.bg2_y as u8
-    }
 
     pub(crate) fn bg1_x_offset(&self) -> u16 {
         self.bg1_x_offset
@@ -416,35 +374,6 @@ impl WorldScrollState {
 
     pub(crate) fn scroll_y_end(&self) -> u16 {
         self.scroll_y_end
-    }
-
-    pub(crate) fn set_bg1_x(&mut self, value: u16) {
-        self.bg1_x = value;
-    }
-
-    pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
-        self.bg1_x = (self.bg1_x & 0xff00) | u16::from(value);
-    }
-
-    pub(crate) fn set_bg1_y(&mut self, value: u16) {
-        self.bg1_y = value;
-    }
-
-    pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
-        self.bg1_y = (self.bg1_y & 0xff00) | u16::from(value);
-    }
-
-    pub(crate) fn set_bg2_x(&mut self, value: u16) {
-        self.bg2_x = value;
-    }
-
-    pub(crate) fn add_bg2_x(&mut self, value: u16) -> u16 {
-        self.bg2_x = self.bg2_x.wrapping_add(value);
-        self.bg2_x
-    }
-
-    pub(crate) fn set_bg2_y(&mut self, value: u16) {
-        self.bg2_y = value;
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
@@ -3142,41 +3071,6 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
 
     fn debug_assert_matches_ram(&self) {
         debug_assert_eq!(*self.state, WorldScrollState::load_from_ram(self.ram));
-    }
-
-    pub(crate) fn set_bg1_x(&mut self, value: u16) {
-        self.state.set_bg1_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
-        self.state.set_bg1_x_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg1_y(&mut self, value: u16) {
-        self.state.set_bg1_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
-        self.state.set_bg1_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg2_x(&mut self, value: u16) {
-        self.state.set_bg2_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_bg2_x(&mut self, value: u16) {
-        self.state.add_bg2_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg2_y(&mut self, value: u16) {
-        self.state.set_bg2_y(value);
-        self.sync();
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {

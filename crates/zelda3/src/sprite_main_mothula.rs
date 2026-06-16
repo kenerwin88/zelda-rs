@@ -4142,7 +4142,7 @@ impl ZeldaState {
             self.follower_link_state_mut().set_actual_velocity_xy(0, 0);
             self.follower_link_state_mut().clear_movement_velocity();
             if link_y
-                .wrapping_sub(self.game_state.world.scroll.bg2_y())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
                 .wrapping_sub(16)
                 >= 0x100
             {

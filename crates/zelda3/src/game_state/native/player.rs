@@ -327,7 +327,7 @@ pub(crate) struct FollowerLinkState {
     temp_bunny_timer: u16,
     transform_poof_needed: u8,
     spin_animation_step_counter: u8,
-    button_b_frames: u16,
+    button_b_frames: u8,
     animation_step: u8,
     opening_pose: u8,
     water_ripple_or_grass_state: u8,
@@ -516,7 +516,7 @@ impl FollowerLinkState {
             temp_bunny_timer: read_le_u16(ram, LINK_TIMER_TEMPBUNNY),
             transform_poof_needed: ram_byte(ram, LINK_NEED_FOR_POOF_FOR_TRANSFORM),
             spin_animation_step_counter: ram_byte(ram, STEP_COUNTER_FOR_SPIN_ATTACK),
-            button_b_frames: read_le_u16(ram, BUTTON_B_FRAMES),
+            button_b_frames: ram_byte(ram, BUTTON_B_FRAMES),
             animation_step: ram_byte(ram, LINK_ANIMATION_STEPS),
             opening_pose: ram_byte(ram, LINK_POSE_DURING_OPENING),
             water_ripple_or_grass_state: ram_byte(ram, DRAW_WATER_RIPPLES_OR_GRASS),
@@ -709,7 +709,7 @@ impl FollowerLinkState {
         write_le_u16(ram, LINK_TIMER_TEMPBUNNY, self.temp_bunny_timer);
         ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = self.transform_poof_needed;
         ram[STEP_COUNTER_FOR_SPIN_ATTACK] = self.spin_animation_step_counter;
-        write_le_u16(ram, BUTTON_B_FRAMES, self.button_b_frames);
+        ram[BUTTON_B_FRAMES] = self.button_b_frames;
         ram[LINK_ANIMATION_STEPS] = self.animation_step;
         ram[LINK_POSE_DURING_OPENING] = self.opening_pose;
         ram[DRAW_WATER_RIPPLES_OR_GRASS] = self.water_ripple_or_grass_state;
@@ -1574,11 +1574,13 @@ impl FollowerLinkState {
     }
 
     pub(crate) fn button_b_frames(&self) -> u8 {
-        self.button_b_frames as u8
+        self.button_b_frames
     }
 
     pub(crate) fn button_b_frames_word(&self) -> u16 {
-        self.button_b_frames
+        // The ether/bombos cutscene reinterprets BUTTON_B_FRAMES (0x3c) and the
+        // adjacent LINK_DELAY_TIMER_SPIN_ATTACK (0x3d) as one 16-bit counter.
+        u16::from(self.button_b_frames) | (u16::from(self.spin_attack_delay_timer) << 8)
     }
 
     pub(crate) fn button_b_frames_index(&self) -> usize {
@@ -3036,15 +3038,17 @@ impl FollowerLinkState {
     }
 
     fn clear_button_b_frames(&mut self) {
-        self.button_b_frames &= 0xff00;
+        self.button_b_frames = 0;
     }
 
     fn set_button_b_frames(&mut self, value: u8) {
-        self.button_b_frames = (self.button_b_frames & 0xff00) | u16::from(value);
+        self.button_b_frames = value;
     }
 
     fn set_button_b_frames_word(&mut self, value: u16) {
-        self.button_b_frames = value;
+        // Word access spans the independently-owned spin-attack delay timer (0x3d).
+        self.button_b_frames = value as u8;
+        self.spin_attack_delay_timer = (value >> 8) as u8;
     }
 
     fn increment_button_b_frames(&mut self) -> u8 {
@@ -3054,8 +3058,9 @@ impl FollowerLinkState {
     }
 
     fn decrement_button_b_frames_word(&mut self) -> u16 {
-        self.button_b_frames = self.button_b_frames.wrapping_sub(1);
-        self.button_b_frames
+        let value = self.button_b_frames_word().wrapping_sub(1);
+        self.set_button_b_frames_word(value);
+        value
     }
 
     fn clear_animation_step(&mut self) {

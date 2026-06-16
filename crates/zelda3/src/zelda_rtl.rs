@@ -2244,28 +2244,32 @@ impl ZeldaState {
         result
     }
 
+    // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) is owned solely by PpuScrollCopyState; these
+    // legacy `set_bgN_{x,y}` names delegate to it so the ~80 callers stay unchanged.
     pub(crate) fn set_bg1_x(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_x(value));
+        self.set_bg1_h_copy2(value);
     }
 
     pub(crate) fn set_bg1_x_low(&mut self, value: u8) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_x_low(value));
+        let hi = self.game_state.display.ppu_scroll_copy.bg1_h_copy2() & 0xff00;
+        self.set_bg1_h_copy2(hi | u16::from(value));
     }
 
     pub(crate) fn set_bg1_y(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_y(value));
+        self.set_bg1_v_copy2(value);
     }
 
     pub(crate) fn set_bg1_y_low(&mut self, value: u8) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_y_low(value));
+        let hi = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() & 0xff00;
+        self.set_bg1_v_copy2(hi | u16::from(value));
     }
 
     pub(crate) fn set_bg2_x(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg2_x(value));
+        self.set_bg2_h_copy2(value);
     }
 
     pub(crate) fn set_bg2_y(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg2_y(value));
+        self.set_bg2_v_copy2(value);
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
@@ -4990,6 +4994,13 @@ impl ZeldaState {
 
     pub(crate) fn write_decoded_overworld_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {
         OverworldMap16DecodeScratch::write_decoded_map32_to_bg2_tilemap(&mut self.ram, dst, idx);
+        // The decode wrote the BG2 tilemap as raw RAM, bypassing the live
+        // dungeon tilemap cache. Mirror the four written words back so overworld
+        // readers and the frame-end projection stay coherent with RAM.
+        self.game_state
+            .dungeon
+            .room_tilemaps
+            .mirror_decoded_map32_from_ram(&self.ram, dst);
     }
 
     pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
@@ -7254,8 +7265,8 @@ impl ZeldaState {
                 extra_right = PPU_SIDE_SPACE_LIMIT;
                 extra_bottom = 16;
             } else {
-                let bg2x = self.game_state.world.scroll.bg2_x();
-                let bg2y = self.game_state.world.scroll.bg2_y();
+                let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+                let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
                 extra_left = bg2x.wrapping_sub(self.game_state.world.scroll.scroll_x_start());
                 extra_right = self
                     .game_state
@@ -7275,7 +7286,7 @@ impl ZeldaState {
                 && self.game_state.display.sub_screen_layers != 0)
             {
                 let qm = (self.game_state.world.transient.quadrant_fullsize_x() >> 1) as usize;
-                let bg2x = self.game_state.world.scroll.bg2_x();
+                let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
                 extra_left = bg2x.saturating_sub(self.game_state.world.room_bounds.x_bound(qm));
                 extra_right = self
                     .game_state
@@ -7285,7 +7296,7 @@ impl ZeldaState {
                     .saturating_sub(bg2x);
             }
             let qy = (self.game_state.world.transient.quadrant_fullsize_y() >> 1) as usize;
-            let bg2y = self.game_state.world.scroll.bg2_y();
+            let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
             extra_bottom = self
                 .game_state
                 .world
@@ -8543,7 +8554,7 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
             self.follower_link_state_mut()
                 .clear_state_item_and_grab_flags();
             self.follower_link_state_mut().set_y_button_action_timer(0);
@@ -8685,8 +8696,8 @@ impl ZeldaState {
     }
 
     fn cache_camera_properties_for_player(&mut self) {
-        let bg2_x = self.game_state.world.scroll.bg2_x();
-        let bg2_y = self.game_state.world.scroll.bg2_y();
+        let bg2_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.cache_bg2_live_scroll_from(bg2_x, bg2_y);
         self.follower_link_state_mut().cache_current_position();
         let y_start = self.game_state.world.room_bounds.y_bound(0);

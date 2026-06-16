@@ -1236,7 +1236,7 @@ impl ZeldaState {
         if self
             .sprite_slot(k)
             .y_low()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y_low())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low())
             >= 0xd0
         {
             self.sprite_slot_mut(k).set_state(0);
@@ -1709,8 +1709,8 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_state(0);
             }
             self.sprite_slot_mut(k).decrement_subtype2();
-            let bg2_x = self.game_state.world.scroll.bg2_x_low();
-            let bg2_y = self.game_state.world.scroll.bg2_y_low();
+            let bg2_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low();
+            let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low();
             self.sprite_workspace_mut().add_current_sprite_x_low(bg2_x);
             self.sprite_workspace_mut().add_current_sprite_y_low(bg2_y);
             self.sprite_make_boss_explosion_for_small_bosses(k);

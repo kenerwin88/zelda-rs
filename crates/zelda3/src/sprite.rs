@@ -961,10 +961,10 @@ impl ZeldaState {
     pub(super) fn sprite_place_rupulse_spark_2(&mut self, k: usize) {
         let x = self
             .sprite_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .sprite_get_y(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x & !0xff != 0 || y & !0xff != 0 {
             return;
         }
@@ -1231,8 +1231,8 @@ impl ZeldaState {
         let mut extp = self.game_state.oam.current_extended_pointer_usize();
         let spr_x = self.sprite_get_x(k);
         let spr_y = self.sprite_get_y(k);
-        let scrollx = spr_x.wrapping_sub(self.game_state.world.scroll.bg2_x()) as u8;
-        let scrolly = spr_y.wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
+        let scrollx = spr_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
+        let scrolly = spr_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
         for _ in 0..=n {
             let x = spr_x.wrapping_add(
                 self.game_state.oam.entry_x(oam).wrapping_sub(scrollx) as i8 as i16 as u16,
@@ -1246,10 +1246,10 @@ impl ZeldaState {
                 islarge
             };
             let value =
-                ext + u8::from(x.wrapping_sub(self.game_state.world.scroll.bg2_x()) >= 0x100);
+                ext + u8::from(x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 0x100);
             self.oam_state_mut().set_extended_byte_at(extp, value);
             if y.wrapping_add(0x10)
-                .wrapping_sub(self.game_state.world.scroll.bg2_y())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
                 >= 0x100
             {
                 self.oam_state_mut().hide_entry(oam);
@@ -1382,8 +1382,8 @@ impl ZeldaState {
         self.sprite_slot_mut(k).set_pause(value);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
-        let x = cur_x.wrapping_sub(self.game_state.world.scroll.bg2_x());
-        let y = cur_y.wrapping_sub(self.game_state.world.scroll.bg2_y());
+        let x = cur_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
+        let y = cur_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let prep_y = y.wrapping_sub(self.sprite_slot(k).z() as u16);
         self.sprite_workspace_mut().set_oam_prep_coords(x, prep_y);
         let flags = self.sprite_slot(k).oam_flags() ^ self.sprite_slot(k).object_priority();
@@ -1681,7 +1681,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_activate_all_proxima(&mut self) {
-        let bak0 = self.game_state.world.scroll.bg2_x();
+        let bak0 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bak1 = self.overworld_horizontal_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0xff);
 
@@ -1697,7 +1697,7 @@ impl ZeldaState {
         self.set_bg2_x(bak0.wrapping_sub(xt));
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_activate_when_proximal();
-            let bg = self.game_state.world.scroll.bg2_x().wrapping_add(16);
+            let bg = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(16);
             self.set_bg2_x(bg);
         }
         self.set_overworld_horizontal_scroll_delta_low(bak1);
@@ -1732,14 +1732,14 @@ impl ZeldaState {
         } else {
             0
         };
-        let x = self.game_state.world.scroll.bg2_x().wrapping_add(
+        let x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(
             if sign8(self.overworld_horizontal_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10).wrapping_sub(xt)
             } else {
                 0x110u16.wrapping_add(xt)
             },
         );
-        let mut y = self.game_state.world.scroll.bg2_y().wrapping_sub(0x30);
+        let mut y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(0x30);
         for _ in (0..=21).rev() {
             self.sprite_overworld_proximity_motivated_load(x, y);
             y = y.wrapping_add(16);
@@ -1761,12 +1761,12 @@ impl ZeldaState {
         };
         let mut x = self
             .game_state
-            .world
-            .scroll
-            .bg2_x()
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
             .wrapping_sub(0x30)
             .wrapping_sub(xt);
-        let y = self.game_state.world.scroll.bg2_y().wrapping_add(
+        let y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(
             if sign8(self.overworld_vertical_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10)
             } else {
@@ -2513,7 +2513,7 @@ impl ZeldaState {
         let y = self
             .sprite_y(k)
             .wrapping_add(10)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
@@ -2616,10 +2616,10 @@ impl ZeldaState {
     pub(super) fn garnish_return_if_prep_fails(&mut self, k: usize, pt: &mut Point16U) -> bool {
         let x = self
             .garnish_get_x(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .garnish_get_y(k)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x >= 256 || y >= 256 {
             let value = 0;
             self.game_state
@@ -2820,13 +2820,13 @@ impl ZeldaState {
                 .garnish_slots
                 .slot(k)
                 .x_low()
-                .wrapping_sub(self.game_state.world.scroll.bg2_x_low()),
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low()),
             self.game_state
                 .sprites
                 .garnish_slots
                 .slot(k)
                 .y_low()
-                .wrapping_sub(self.game_state.world.scroll.bg2_y_low()),
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low()),
             0xaa,
             self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority(),
             2,
@@ -2861,8 +2861,8 @@ impl ZeldaState {
 
         let link_x = self.game_state.player.follower_link.x();
         let link_y = self.game_state.player.follower_link.y();
-        let bg_x = self.game_state.world.scroll.bg2_x();
-        let bg_y = self.game_state.world.scroll.bg2_y();
+        let bg_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         if (link_x
             .wrapping_sub(bg_x)
             .wrapping_sub(x as u16)
@@ -2967,7 +2967,7 @@ impl ZeldaState {
             .garnish_slots
             .slot(k)
             .x_low()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x_low());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
         if t >= 248 {
             let value = 0;
             self.game_state
@@ -2984,7 +2984,7 @@ impl ZeldaState {
             .garnish_slots
             .slot(k)
             .y_low()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y_low());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
         if t >= 240 {
             let value = 0;
             self.game_state
@@ -3175,11 +3175,11 @@ impl ZeldaState {
         let x = self
             .garnish_get_x(k)
             .wrapping_add(u16::from(CRUMBLE_TILE_XY[j]))
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .garnish_get_y(k)
             .wrapping_add(u16::from(CRUMBLE_TILE_XY[j]))
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x < 256 && y < 256 {
             self.set_oam_plain_at_for_sprite(
                 self.game_state.oam.current_pointer_usize(),
@@ -7224,7 +7224,7 @@ impl ZeldaState {
         {
             return;
         }
-        y = y.wrapping_sub(self.game_state.world.scroll.bg2_y());
+        y = y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         info.y = y;
         if y.wrapping_add(0x10) >= 0x100 {
             return;
@@ -8435,10 +8435,10 @@ impl ZeldaState {
             if self.sprite_slot(i).state() != 0 && (self.sprite_slot(i).flags4() & 0x40) == 0 {
                 let x = self
                     .sprite_get_x(i)
-                    .wrapping_sub(self.game_state.world.scroll.bg2_x());
+                    .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
                 let y = self
                     .sprite_get_y(i)
-                    .wrapping_sub(self.game_state.world.scroll.bg2_y());
+                    .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
                 if x < 256 && y < 256 {
                     return false;
                 }

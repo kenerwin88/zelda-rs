@@ -1073,8 +1073,8 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_add(self.game_state.world.scroll.bg1_y())
-                .wrapping_sub(self.game_state.world.scroll.bg2_y());
+                .wrapping_add(self.game_state.display.ppu_scroll_copy.bg1_v_copy2())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
             self.follower_link_state_mut().set_y(y);
 
             let x = self
@@ -1082,8 +1082,8 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .x()
-                .wrapping_add(self.game_state.world.scroll.bg1_x())
-                .wrapping_sub(self.game_state.world.scroll.bg2_x());
+                .wrapping_add(self.game_state.display.ppu_scroll_copy.bg1_h_copy2())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
             self.follower_link_state_mut().set_x(x);
             self.follower_link_state_mut()
                 .cache_moving_floor_position(x, y);
@@ -1111,15 +1111,15 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_add(self.game_state.world.scroll.bg2_y())
-                .wrapping_sub(self.game_state.world.scroll.bg1_y());
+                .wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_v_copy2());
             let new_x = self
                 .game_state
                 .player
                 .follower_link
                 .x()
-                .wrapping_add(self.game_state.world.scroll.bg2_x())
-                .wrapping_sub(self.game_state.world.scroll.bg1_x());
+                .wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_h_copy2());
             self.follower_link_state_mut().set_y(new_y);
             self.follower_link_state_mut().set_x(new_x);
             if self.game_state.player.follower_link.direction() != 0 {
@@ -7428,8 +7428,8 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn cache_camera_properties(&mut self) {
-        let bg2_x = self.game_state.world.scroll.bg2_x();
-        let bg2_y = self.game_state.world.scroll.bg2_y();
+        let bg2_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.cache_bg2_live_scroll_from(bg2_x, bg2_y);
         self.follower_link_state_mut().cache_current_position();
         let y_start = self.game_state.world.room_bounds.y_bound(0);
@@ -9887,14 +9887,14 @@ impl ZeldaState {
             .player
             .pushed_block
             .y(j)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
             .wrapping_sub(1);
         let x = self
             .game_state
             .player
             .pushed_block
             .x(j)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE
             [self.game_state.player.pushed_block.animation_mode() as usize]
             .min(CHAR.len() - 1)];

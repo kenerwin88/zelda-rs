@@ -2122,13 +2122,13 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x()) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
         let ycoord = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y()) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
         self.follower_link_state_mut().disable_oam_offsets();
         let scratch_0_var = self
             .game_state
@@ -2643,7 +2643,7 @@ impl ZeldaState {
                         .player
                         .follower_link
                         .y()
-                        .wrapping_sub(self.game_state.world.scroll.bg2_y())
+                        .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
                         .wrapping_add(
                             kOffsToShadowGivenDir_Y
                                 [self.game_state.player.follower_link.facing_mirror_index()]
@@ -2726,13 +2726,13 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let door_y = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let hide = (self.game_state.player.follower_link.doorway_state() != 0
             && (door_x < 4 || door_x >= 252 || door_y < 4 || door_y >= 224))
             || {
@@ -2936,7 +2936,7 @@ impl ZeldaState {
             .tile_detection
             .y()
             .wrapping_sub(12)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
             .wrapping_add(29) as u8;
         let mut oam_pos = ((if self
             .game_state
@@ -3055,7 +3055,7 @@ impl ZeldaState {
     fn link_oam_calculate_x_offset_relative_link(&mut self, x: u8) {
         let x = x as i8 as i32;
         let value = self.game_state.player.follower_link.x() as i32 + x
-            - self.game_state.world.scroll.bg2_x() as i32;
+            - self.game_state.display.ppu_scroll_copy.bg2_h_copy2() as i32;
         self.follower_link_state_mut()
             .set_bit9_of_xcoord_word(((value >> 8) & 1) as u16);
     }

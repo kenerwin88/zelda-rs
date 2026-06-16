@@ -1943,6 +1943,24 @@ mod tests {
     }
 
     #[test]
+    fn native_follower_link_bridge_disables_both_oam_offsets() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[PLAYER_OAM_X_OFFSET] = 0x11;
+        ram[PLAYER_OAM_Y_OFFSET] = 0x22;
+        let mut link = FollowerLinkState::default();
+
+        {
+            let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
+            bridge.disable_oam_offsets();
+        }
+
+        assert_eq!(link.oam_x_offset(), 0x80);
+        assert_eq!(link.oam_y_offset(), 0x80);
+        assert_eq!(ram[PLAYER_OAM_X_OFFSET], 0x80);
+        assert_eq!(ram[PLAYER_OAM_Y_OFFSET], 0x80);
+    }
+
+    #[test]
     fn special_exit_position_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, LINK_X_COORD_SPEXIT, 0x0900);
@@ -4088,7 +4106,7 @@ mod tests {
     }
 
     #[test]
-    fn native_attract_scene_bridge_projects_native_state_over_stale_ram() {
+    fn native_attract_scene_bridge_updates_only_targeted_ram_fields() {
         let mut ram = vec![0xff; WRAM_SIZE];
         let mut native_ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut native_ram, ATTRACT_STATE, 0x1203);
@@ -4118,11 +4136,13 @@ mod tests {
         assert_eq!(attract.intro_step_timer(), 0);
         assert_eq!(attract.intro_frame_counter(), 0);
         assert_eq!(read_le_u16(&ram, ATTRACT_STATE), 0x3404);
-        assert_eq!(read_le_u16(&ram, ATTRACT_X_BASE), 0x9a78);
+        assert_eq!(ram[ATTRACT_X_BASE], 0xff);
+        assert_eq!(ram[ATTRACT_Y_BASE], 0x9a);
         assert_eq!(ram[ATTRACT_SCENE_TIMER], 8);
         assert_eq!(ram[INTRO_STEP_INDEX], 0);
         assert_eq!(ram[INTRO_STEP_TIMER], 0);
         assert_eq!(ram[INTRO_FRAME_CTR], 0);
+        assert_eq!(ram[INTRO_TIMES_PAL_FLASH], 0xff);
     }
 
     #[test]
@@ -5470,10 +5490,7 @@ mod tests {
     #[test]
     fn world_scroll_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, BG1_X_SCROLL, 0x0101);
-        write_le_u16(&mut ram, BG1_Y_SCROLL, 0x0202);
-        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0303);
-        write_le_u16(&mut ram, BG2_Y_SCROLL, 0x0404);
+        // BG scroll copy2 (0xe0-0xe9) moved to PpuScrollCopyState; tested there.
         write_le_u16(&mut ram, BG1_X_OFFSET, 0x0505);
         write_le_u16(&mut ram, BG1_Y_OFFSET, 0x0606);
         write_le_u16(&mut ram, CAMERA_X, 0x0707);
@@ -5487,10 +5504,6 @@ mod tests {
         write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x0f0f);
 
         let mut scroll = WorldScrollState::load_from_ram(&ram);
-        assert_eq!(scroll.bg1_x(), 0x0101);
-        assert_eq!(scroll.bg1_y(), 0x0202);
-        assert_eq!(scroll.bg2_x(), 0x0303);
-        assert_eq!(scroll.bg2_y(), 0x0404);
         assert_eq!(scroll.bg1_x_offset(), 0x0505);
         assert_eq!(scroll.bg1_y_offset(), 0x0606);
         assert_eq!(scroll.camera_x(), 0x0707);
@@ -5503,10 +5516,6 @@ mod tests {
         assert_eq!(scroll.scroll_x_end(), 0x0e0e);
         assert_eq!(scroll.scroll_y_end(), 0x0f0f);
 
-        scroll.set_bg1_x(0x1111);
-        scroll.set_bg1_y(0x2222);
-        scroll.set_bg2_x(0x3333);
-        scroll.set_bg2_y(0x4444);
         scroll.set_bg1_x_offset(0x5555);
         scroll.set_bg1_y_offset(0x6666);
         scroll.set_camera_x(0x7777);
@@ -5520,10 +5529,6 @@ mod tests {
         scroll.set_scroll_y_end(0xffff);
         scroll.write_to_ram(&mut ram);
 
-        assert_eq!(read_le_u16(&ram, BG1_X_SCROLL), 0x1111);
-        assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x2222);
-        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x3333);
-        assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x4444);
         assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x5555);
         assert_eq!(read_le_u16(&ram, BG1_Y_OFFSET), 0x6666);
         assert_eq!(read_le_u16(&ram, CAMERA_X), 0x7777);
@@ -5539,17 +5544,8 @@ mod tests {
 
     #[test]
     fn world_scroll_state_owns_scroll_and_offset_behavior() {
-        let mut scroll = WorldScrollState {
-            bg1_x: 0x1200,
-            bg1_y: 0x3400,
-            bg2_x: 0xfff0,
-            ..WorldScrollState::default()
-        };
+        let mut scroll = WorldScrollState::default();
 
-        scroll.set_bg1_x_low(0x56);
-        scroll.set_bg1_y_low(0x78);
-        assert_eq!(scroll.add_bg2_x(0x20), 0x0010);
-        scroll.set_bg2_y(0x4444);
         scroll.set_bg1_offsets(0x1111, 0x2222);
         assert_eq!(scroll.bg1_offset_mask(), 0x3333);
         scroll.clear_bg1_offsets();
@@ -5561,10 +5557,6 @@ mod tests {
         scroll.set_scroll_x_end(0xeeee);
         scroll.set_scroll_y_end(0xffff);
 
-        assert_eq!(scroll.bg1_x(), 0x1256);
-        assert_eq!(scroll.bg1_y(), 0x3478);
-        assert_eq!(scroll.bg2_x(), 0x0010);
-        assert_eq!(scroll.bg2_y(), 0x4444);
         assert_eq!(scroll.bg1_x_offset(), 0);
         assert_eq!(scroll.bg1_y_offset(), 0);
         assert_eq!(scroll.overworld_offset_base_x(), 0x9999);
@@ -5580,10 +5572,6 @@ mod tests {
     fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         let mut scroll = WorldScrollState {
-            bg1_x: 0x0101,
-            bg1_y: 0x0202,
-            bg2_x: 0x0303,
-            bg2_y: 0x0404,
             bg1_x_offset: 0x0505,
             bg1_y_offset: 0x0606,
             camera_x: 0x0707,
@@ -5598,21 +5586,18 @@ mod tests {
         };
         scroll.write_to_ram(&mut ram);
 
-        write_le_u16(&mut ram, BG2_X_SCROLL, 0xaaaa);
-        write_le_u16(&mut ram, BG2_Y_SCROLL, 0xbbbb);
         write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0xcccc);
+        write_le_u16(&mut ram, BG1_X_OFFSET, 0xaaaa);
 
         {
             let mut bridge = NativeWorldScrollBridgeMut::new(&mut scroll, &mut ram);
-            bridge.set_bg2_x(0x1234);
+            bridge.set_bg1_x_offset(0x1234);
         }
 
-        assert_eq!(scroll.bg2_x(), 0x1234);
-        assert_eq!(scroll.bg2_y(), 0x0404);
+        assert_eq!(scroll.bg1_x_offset(), 0x1234);
         assert_eq!(scroll.overworld_offset_base_x(), 0x0909);
         assert_eq!(WorldScrollState::load_from_ram(&ram), scroll);
-        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x1234);
-        assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x0404);
+        assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x1234);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x0909);
     }
 
@@ -7120,7 +7105,8 @@ mod tests {
         assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);
-        assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0068);
+        // ATTRACT_VRAM_DST (0x30) overlaps LINK velocity and is NOT bulk-projected;
+        // it's written only by the targeted attract-vram bridge (tested below).
         assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_X), 0x0220);
         assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y), 0x0240);
         assert_eq!(ram[WATER_HDMA_WINDOW_Y_RADIUS], 0x31);
@@ -7598,7 +7584,6 @@ mod tests {
         write_le_u16(&mut ram, DARKENING_OR_LIGHTENING_SCREEN, 0x34ff);
         ram[CGWSEL_COPY] = 0x20;
         ram[CGADSUB_COPY] = 0x31;
-        ram[CGADSUB_COPY + 1] = 0x42;
         ram[COLDATA_COPY0] = 0x21;
         ram[COLDATA_COPY1] = 0x43;
         ram[COLDATA_COPY2] = 0x85;
@@ -7611,7 +7596,6 @@ mod tests {
         assert_eq!(palette_filter.color_window_selection(), 0x20);
         assert_eq!(palette_filter.color_math_control(), 0x31);
         assert_eq!(palette_filter.color_window_and_math_word(), 0x3120);
-        assert_eq!(palette_filter.color_math_control_word(), 0x4231);
         assert_eq!(palette_filter.fixed_color_red(), 0x21);
         assert_eq!(palette_filter.fixed_color_green(), 0x43);
         assert_eq!(palette_filter.fixed_color_blue(), 0x85);
@@ -7619,6 +7603,9 @@ mod tests {
         assert_eq!(palette_filter.fixed_color_component(3), 0);
 
         let mut projected = vec![0; WRAM_SIZE];
+        // CGADSUB_COPY + 1 is HDMAEN_COPY, owned by a different system; the
+        // palette filter must leave it untouched when projecting.
+        projected[CGADSUB_COPY + 1] = 0xab;
         palette_filter.write_to_ram(&mut projected);
         assert_eq!(read_le_u16(&projected, PALETTE_FILTER_COUNTDOWN), 0x1204);
         assert_eq!(
@@ -7627,7 +7614,7 @@ mod tests {
         );
         assert_eq!(projected[CGWSEL_COPY], 0x20);
         assert_eq!(projected[CGADSUB_COPY], 0x31);
-        assert_eq!(projected[CGADSUB_COPY + 1], 0x42);
+        assert_eq!(projected[CGADSUB_COPY + 1], 0xab);
         assert_eq!(projected[COLDATA_COPY0], 0x21);
         assert_eq!(projected[COLDATA_COPY1], 0x43);
         assert_eq!(projected[COLDATA_COPY2], 0x85);
@@ -7713,7 +7700,6 @@ mod tests {
             0x7809
         );
         assert_eq!(display.palette_filter.color_window_and_math_word(), 0x3524);
-        assert_eq!(display.palette_filter.color_math_control_word(), 0x4235);
         assert_eq!(display.palette_filter.fixed_color_red(), 0x22);
         assert_eq!(display.palette_filter.fixed_color_green(), 0x5e);
         assert_eq!(display.palette_filter.fixed_color_blue(), 0x88);
@@ -7721,6 +7707,7 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DARKENING_OR_LIGHTENING_SCREEN), 0x7809);
         assert_eq!(ram[CGWSEL_COPY], 0x24);
         assert_eq!(ram[CGADSUB_COPY], 0x35);
+        // CGADSUB_COPY + 1 is HDMAEN_COPY; the palette bridge leaves it untouched.
         assert_eq!(ram[CGADSUB_COPY + 1], 0x42);
         assert_eq!(ram[COLDATA_COPY0], 0x22);
         assert_eq!(ram[COLDATA_COPY1], 0x5e);

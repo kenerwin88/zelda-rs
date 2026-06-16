@@ -345,8 +345,8 @@ impl ZeldaState {
         self.set_bg3_v_copy2_low(0);
         let bg2_hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy() & 0x01ff;
         let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy() & 0x01ff;
-        let bg2_hofs2 = self.game_state.world.scroll.bg2_x() & 0x01ff;
-        let bg2_vofs2 = self.game_state.world.scroll.bg2_y() & 0x01ff;
+        let bg2_hofs2 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2() & 0x01ff;
+        let bg2_vofs2 = self.game_state.display.ppu_scroll_copy.bg2_v_copy2() & 0x01ff;
         self.set_bg2_h_copy(bg2_hofs);
         self.set_bg2_v_copy(bg2_vofs);
         self.set_bg2_x(bg2_hofs2);
@@ -509,7 +509,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_show_timed_text_message(&mut self) {
-        let bg2_vofs2 = self.game_state.world.scroll.bg2_y();
+        let bg2_vofs2 = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.attract_scene_mut().set_bg2_vofs_backup(bg2_vofs2);
         self.follower_link_state_mut().set_joypad1l_last(0);
         self.follower_link_state_mut().set_filtered_joypad_l(0);
@@ -1202,7 +1202,7 @@ impl ZeldaState {
             .sprite_slot(k)
             .y()
             .wrapping_add(y_offset as u16)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }

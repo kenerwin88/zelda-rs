@@ -572,13 +572,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
         Self { attract_scene, ram }
     }
 
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.attract_scene,
-            AttractSceneState::load_from_ram(self.ram)
-        );
-    }
-
     fn apply_byte(&mut self, offset: usize, value: u8) {
         match offset {
             ATTRACT_STATE => {
@@ -646,15 +639,13 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
 
     fn write_byte(&mut self, offset: usize, value: u8) -> u8 {
         self.apply_byte(offset, value);
-        self.attract_scene.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        self.ram[offset] = value;
         value
     }
 
     fn write_word(&mut self, offset: usize, value: u16) -> u16 {
         self.apply_word(offset, value);
-        self.attract_scene.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        write_le_u16(self.ram, offset, value);
         value
     }
 
@@ -771,8 +762,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
         self.attract_scene.intro_step_index = 0;
         self.attract_scene.intro_step_timer = 0;
         self.attract_scene.intro_frame_counter = 0;
-        self.attract_scene.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn increment_intro_step_index(&mut self) -> u8 {

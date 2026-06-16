@@ -142,7 +142,6 @@ pub(crate) struct PaletteFilterState {
     darkening_or_lightening_screen_high: u8,
     color_window_selection: u8,
     color_math_control: u8,
-    color_math_control_high: u8,
     fixed_color_red: u8,
     fixed_color_green: u8,
     fixed_color_blue: u8,
@@ -157,7 +156,6 @@ impl PaletteFilterState {
             darkening_or_lightening_screen_high: ram_byte(ram, DARKENING_OR_LIGHTENING_SCREEN + 1),
             color_window_selection: ram_byte(ram, CGWSEL_COPY),
             color_math_control: ram_byte(ram, CGADSUB_COPY),
-            color_math_control_high: ram_byte(ram, CGADSUB_COPY + 1),
             fixed_color_red: ram_byte(ram, COLDATA_COPY0),
             fixed_color_green: ram_byte(ram, COLDATA_COPY1),
             fixed_color_blue: ram_byte(ram, COLDATA_COPY2),
@@ -171,7 +169,6 @@ impl PaletteFilterState {
         ram[DARKENING_OR_LIGHTENING_SCREEN + 1] = self.darkening_or_lightening_screen_high;
         ram[CGWSEL_COPY] = self.color_window_selection;
         ram[CGADSUB_COPY] = self.color_math_control;
-        ram[CGADSUB_COPY + 1] = self.color_math_control_high;
         ram[COLDATA_COPY0] = self.fixed_color_red;
         ram[COLDATA_COPY1] = self.fixed_color_green;
         ram[COLDATA_COPY2] = self.fixed_color_blue;
@@ -204,10 +201,6 @@ impl PaletteFilterState {
 
     pub(crate) fn color_math_control(&self) -> u8 {
         self.color_math_control
-    }
-
-    pub(crate) fn color_math_control_word(&self) -> u16 {
-        u16::from(self.color_math_control) | (u16::from(self.color_math_control_high) << 8)
     }
 
     pub(crate) fn fixed_color_red(&self) -> u8 {
@@ -1836,6 +1829,22 @@ impl PpuScrollCopyState {
         self.bg2_v_copy2
     }
 
+    pub(crate) fn bg1_h_copy2_low(&self) -> u8 {
+        self.bg1_h_copy2 as u8
+    }
+
+    pub(crate) fn bg1_v_copy2_low(&self) -> u8 {
+        self.bg1_v_copy2 as u8
+    }
+
+    pub(crate) fn bg2_h_copy2_low(&self) -> u8 {
+        self.bg2_h_copy2 as u8
+    }
+
+    pub(crate) fn bg2_v_copy2_low(&self) -> u8 {
+        self.bg2_v_copy2 as u8
+    }
+
     pub(crate) fn bg2_copy2_for_axis(&self, vertical: bool) -> u16 {
         if vertical {
             self.bg2_v_copy2()
@@ -2589,7 +2598,9 @@ impl DisplayState {
             ANIMATED_TILE_VRAM_ADDR,
             self.animated_tile_vram_destination_address,
         );
-        write_le_u16(ram, ATTRACT_VRAM_DST, self.attract_vram_destination_address);
+        // ATTRACT_VRAM_DST (0x30) overlaps LINK_Y/X_VELOCITY (0x30/0x31) during gameplay.
+        // It is written only by the attract VRAM-upload bridge (targeted set_address/etc.);
+        // bulk-projecting it here clobbers Link's velocity to 0 every frame.
     }
 
     pub(crate) fn debug_assert_core_matches_ram(&self, ram: &[u8]) {

@@ -244,27 +244,27 @@ impl ZeldaState {
         let bg1_y_offset = self.game_state.world.scroll.bg1_y_offset();
         let bg2x = self
             .game_state
-            .world
-            .scroll
-            .bg2_x()
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
             .wrapping_add(bg1_x_offset);
         let bg2y = self
             .game_state
-            .world
-            .scroll
-            .bg2_y()
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
             .wrapping_add(bg1_y_offset);
         let bg1x = self
             .game_state
-            .world
-            .scroll
-            .bg1_x()
+            .display
+            .ppu_scroll_copy
+            .bg1_h_copy2()
             .wrapping_add(bg1_x_offset);
         let bg1y = self
             .game_state
-            .world
-            .scroll
-            .bg1_y()
+            .display
+            .ppu_scroll_copy
+            .bg1_v_copy2()
             .wrapping_add(bg1_y_offset);
         self.set_bg2_h_copy(bg2x);
         self.set_bg2_v_copy(bg2y);
@@ -450,7 +450,7 @@ impl ZeldaState {
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
             .wrapping_add(12);
         let radius = self.game_state.display.spotlight_hdma.window_radius_byte();
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(radius));
@@ -467,7 +467,7 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_sub(self.game_state.world.scroll.bg2_x())
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
             .wrapping_add(8);
         self.set_spotlight_window_x_center(spotlight_x_center);
         self.set_spotlight_window_y_buffer_byte(1);
@@ -1447,10 +1447,10 @@ impl ZeldaState {
         self.increment_overworld_map_state();
         let tm_ts = self.game_state.display.layer_masks_word();
         self.set_mapbak_tm_word(tm_ts);
-        let bg1hofs = self.game_state.world.scroll.bg1_x();
-        let bg2hofs = self.game_state.world.scroll.bg2_x();
-        let bg1vofs = self.game_state.world.scroll.bg1_y();
-        let bg2vofs = self.game_state.world.scroll.bg2_y();
+        let bg1hofs = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
+        let bg2hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg1vofs = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
+        let bg2vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
         self.set_bg1_x(0);
         self.set_bg2_x(0);
@@ -1579,14 +1579,14 @@ impl ZeldaState {
 
         if self.overworld_map_flags() != 0 {
             let k = ((self.game_state.player.follower_link.joypad1h_last() & 12) >> 1) as usize;
-            let bg1vofs = self.game_state.world.scroll.bg1_y();
+            let bg1vofs = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
             if bg1vofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 let next = bg1vofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16);
                 self.set_bg1_y(next);
                 self.set_mode7_center_y(next.wrapping_add(0x100));
             }
             let k = ((self.game_state.player.follower_link.joypad1h_last() & 3) * 2 + 1) as usize;
-            let bg1hofs = self.game_state.world.scroll.bg1_x();
+            let bg1hofs = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
             if bg1hofs != OVERWORLD_MAP_SCROLL_TARGETS[k] {
                 self.set_bg1_h_copy2(bg1hofs.wrapping_add(OVERWORLD_MAP_SCROLL_DELTAS[k] as u16));
             }
@@ -1897,7 +1897,7 @@ impl ZeldaState {
                 u16::from(t2).wrapping_add(0x80)
             };
             Some((
-                x.wrapping_sub(self.game_state.world.scroll.bg1_x())
+                x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_h_copy2())
                     .wrapping_add(0x80),
                 yval + 12,
             ))
@@ -1935,7 +1935,7 @@ impl ZeldaState {
             } else {
                 t10.wrapping_add(0x80)
             };
-            let xval = t11.wrapping_sub(self.game_state.world.scroll.bg1_x());
+            let xval = t11.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_h_copy2());
             let xt = if self
                 .game_state
                 .enhanced_features
@@ -2534,9 +2534,9 @@ impl ZeldaState {
         let x = usize::from((joypad_h >> 3) & 1);
         let target = self
             .game_state
-            .world
-            .scroll
-            .bg2_y()
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
             .wrapping_add_signed(DUNGEON_MAP_FLOOR_SCROLL_TARGET_DELTAS[x]);
         self.set_dungeon_map_scroll_target_y(target);
         if x == 0 {
@@ -2563,9 +2563,9 @@ impl ZeldaState {
         ));
         let bg2 = self
             .game_state
-            .world
-            .scroll
-            .bg2_y()
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
             .wrapping_add_signed(i16::from(DUNGEON_MAP_SCROLL_BG_Y_DELTAS[x]));
         self.set_bg2_y(bg2);
         if bg2
@@ -2943,9 +2943,9 @@ impl ZeldaState {
             .dungmap_scroll_target_y();
         let y = self
             .game_state
-            .world
-            .scroll
-            .bg2_y()
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
             .wrapping_add(scroll_target);
         self.set_bg2_y(y);
         let marker_y = self
@@ -2997,10 +2997,10 @@ impl ZeldaState {
         self.set_mapbak_bg1_y_offset(bg1_y_offset);
         self.set_bg1_x_offset(0);
         self.set_bg1_y_offset(0);
-        let bg1hofs = self.game_state.world.scroll.bg1_x();
-        let bg2hofs = self.game_state.world.scroll.bg2_x();
-        let bg1vofs = self.game_state.world.scroll.bg1_y();
-        let bg2vofs = self.game_state.world.scroll.bg2_y();
+        let bg1hofs = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
+        let bg2hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg1vofs = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
+        let bg2vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.set_map_backup_scrolls(bg1hofs, bg2hofs, bg1vofs, bg2vofs);
         self.set_bg1_x(0);
         self.set_bg1_y(0);
@@ -3853,7 +3853,7 @@ impl ZeldaState {
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.world.scroll.bg2_y());
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let flag = usize::from(y < 0x78);
         self.messaging_state_mut()
             .set_text_msgbox_topleft(TEXT_POSITIONS[flag]);
@@ -3976,14 +3976,14 @@ impl ZeldaState {
             .follower_link
             .y()
             .wrapping_add(16)
-            .wrapping_sub(self.game_state.world.scroll.bg2_y())) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())) as u8;
         let x = (self
             .game_state
             .player
             .follower_link
             .x()
             .wrapping_add(7)
-            .wrapping_sub(self.game_state.world.scroll.bg2_x())) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())) as u8;
         let flags = DEATH_SPR_FLAGS
             [self.game_state.player.follower_link.lower_level_state() as usize & 1]
             | 2;

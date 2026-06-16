@@ -247,6 +247,22 @@ impl DungeonRoomTilemapState {
         }
     }
 
+    /// Mirror the four words written by an overworld map32 decode (`dst`,
+    /// `dst+2`, `dst+128`, `dst+130`) from RAM back into the live bg2 cache.
+    ///
+    /// The overworld map16 decode writes the BG2 tilemap as raw RAM, bypassing
+    /// this cache. Without mirroring, the cache (loaded at frame start) stays
+    /// stale: overworld readers (`overworld_bg2_word`) would read pre-decode
+    /// tiles and the frame-end projection would clobber the decoded RAM.
+    pub(crate) fn mirror_decoded_map32_from_ram(&mut self, ram: &[u8], dst: usize) {
+        for offset in [0usize, 2, 128, 130] {
+            let addr = dst + offset;
+            if addr >= DUNG_BG2 && addr + 1 < DUNG_BG2 + DUNGEON_ROOM_TILEMAP_WORDS * 2 {
+                self.bg2_tiles[(addr - DUNG_BG2) / 2] = read_le_u16(ram, addr);
+            }
+        }
+    }
+
     pub(crate) fn bg1_tilemap_base(&self) -> usize {
         DUNG_BG1
     }

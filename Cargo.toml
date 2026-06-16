@@ -24,3 +24,13 @@ opt-level = 1
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+
+# Fast-iteration profile for the parity/replay debug loop: builds far quicker
+# than release (no LTO, many codegen units, opt-level 2) while still running
+# replays fast enough. Behavior is deterministic regardless of opt-level, so an
+# opt-level-2 build compares byte-for-byte against the release reference.
+[profile.parity]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 256

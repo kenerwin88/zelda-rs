@@ -2,7 +2,10 @@ use crate::game_state::constants::messaging::DIALOGUE_TEXT_COLOR;
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
-const MESSAGING_RENDER_BUFFER_LEN: usize = 0x7e0;
+// The dungeon-map renderer fills 2048 words (`for i in 0..2048 { messaging_buf[i] = .. }`)
+// and addresses this region with a `& 0xfff` byte mask, so the buffer spans the full
+// 0x1000 WRAM bytes at MESSAGING_RENDER_BUFFER, not the smaller text-box extent.
+const MESSAGING_RENDER_BUFFER_LEN: usize = 0x1000;
 const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0x400;
 const DIALOGUE_POINTER_COUNT: usize = 398;
 const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
